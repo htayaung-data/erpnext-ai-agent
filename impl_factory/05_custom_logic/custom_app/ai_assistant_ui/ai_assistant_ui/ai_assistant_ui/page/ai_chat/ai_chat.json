@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "ai-chat",
+  "page_name": "ai-chat",
+  "title": "AI Chat",
+  "icon": "octicon octicon-comment-discussion",
+  "module": "AI Assistant UI",
+  "standard": "Yes"
+}

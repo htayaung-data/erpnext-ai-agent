@@ -1,0 +1,98 @@
+{
+  "executed_at_utc": "2026-02-19T12:36:45Z",
+  "mode": "phase8_release_gate",
+  "label": "phase8_stage10_replay",
+  "input_artifacts": [
+    "impl_factory/04_automation/logs/20260219T085231Z_phase6_canary_uat_raw_v1.json",
+    "impl_factory/04_automation/logs/20260219T100916Z_phase6_canary_uat_raw_v3.json"
+  ],
+  "first_run_policy": {
+    "enforced": true,
+    "source": "earliest_result_per_case_id",
+    "diagnostic_ignored_count": 1,
+    "selected_case_count": 23
+  },
+  "stage": {
+    "stage_percent": 10,
+    "go": false,
+    "action": "rollback_to_v2",
+    "next_stage_percent": 10,
+    "rollback_triggered": true,
+    "rollback_target": "assistant_engine=v2",
+    "reason": "Gate failed at current stage.",
+    "failed_gate_checks": [
+      "critical_clear_query_pass_100",
+      "fac_preconditions_ok",
+      "latency_p95_within_sla",
+      "mandatory_pass_rate_100",
+      "output_shape_pass_rate_eq_100pct"
+    ]
+  },
+  "summary": {
+    "total": 23,
+    "passed": 23,
+    "failed": 0,
+    "missing_mandatory_ids": [
+      "COR-01",
+      "DET-01",
+      "DOC-01"
+    ],
+    "missing_critical_ids": [
+      "COR-01"
+    ],
+    "clear_read_total": 12,
+    "direct_answer_count_clear_read": 12,
+    "direct_answer_rate_clear_read": 1.0,
+    "clarification_count_clear_read": 0,
+    "clarification_rate_clear_read": 0.0,
+    "unnecessary_clarification_count_clear_read": 0,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_count_clear_read": 0,
+    "wrong_report_rate_clear_read": 0.0,
+    "loop_fail_count": 0,
+    "loop_scope_total": 16,
+    "clarification_loop_rate": 0.0,
+    "meta_clarification_count_clear_read": 0,
+    "output_shape_pass_rate_clear_read": 0.0,
+    "write_safety_incidents": 0,
+    "user_correction_total": 0,
+    "user_correction_fail_count": 0,
+    "user_correction_rate": 0.0,
+    "latency_p95_ms_clear_read": null,
+    "reader_total": 17,
+    "reader_pass_rate": 1.0,
+    "operator_total": 6,
+    "operator_pass_rate": 1.0
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": false,
+    "fac_preconditions_ok": false,
+    "direct_answer_rate_clear_read_ge_90pct": true,
+    "clarification_rate_clear_read_le_10pct": true,
+    "unnecessary_clarification_rate_clear_read_le_5pct": true,
+    "wrong_report_rate_clear_read_le_3pct": true,
+    "clarification_loop_rate_lt_1pct": true,
+    "zero_meta_clarification_on_clear_asks": true,
+    "role_parity_reader_vs_operator": true,
+    "write_safety_incidents_eq_0": true,
+    "output_shape_pass_rate_eq_100pct": false,
+    "latency_p95_within_sla": false,
+    "overall_go": false,
+    "failed_gate_checks": [
+      "critical_clear_query_pass_100",
+      "fac_preconditions_ok",
+      "latency_p95_within_sla",
+      "mandatory_pass_rate_100",
+      "output_shape_pass_rate_eq_100pct"
+    ]
+  },
+  "baseline": {
+    "baseline_correction_rate": null,
+    "correction_trend_gate_applied": false
+  },
+  "sla": {
+    "latency_p95_sla_ms": 5000,
+    "latency_gate_applied": true
+  }
+}

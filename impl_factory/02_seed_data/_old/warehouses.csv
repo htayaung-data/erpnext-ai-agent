@@ -1,0 +1,12 @@
+Warehouse Name,Parent Warehouse,Is Group,Company
+MMOB Warehouses,All Warehouses,1,"Mingalar Mobile Distribution Co., Ltd."
+Yangon,MMOB Warehouses - MMOB,1,"Mingalar Mobile Distribution Co., Ltd."
+Mandalay,MMOB Warehouses - MMOB,1,"Mingalar Mobile Distribution Co., Ltd."
+YGN-Main Warehouse,Yangon - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+YGN-Showroom/Counter,Yangon - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+YGN-Import QC/Transit,Yangon - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+YGN-Transit,Yangon - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+YGN-Returns & Damaged,Yangon - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+MDY-Branch Warehouse,Mandalay - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+MDY-Transit,Mandalay - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+MDY-Returns & Damaged,Mandalay - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."

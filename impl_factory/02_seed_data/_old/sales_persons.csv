@@ -1,0 +1,18 @@
+Sales Person Name,Parent Sales Person,Is Group,Enabled
+Mingalar Mobile Sales Team,,1,1
+Yangon Sales,Mingalar Mobile Sales Team,1,1
+Mandalay Sales,Mingalar Mobile Sales Team,1,1
+Key Accounts,Mingalar Mobile Sales Team,1,1
+Ko Aung Ko Ko (Sales Supervisor),Yangon Sales,1,1
+Ma Thazin Nwe (Sales Exec),Ko Aung Ko Ko (Sales Supervisor),0,1
+Ko Htet Aung (Sales Exec),Ko Aung Ko Ko (Sales Supervisor),0,1
+Ko Min Khant (Sales Exec),Ko Aung Ko Ko (Sales Supervisor),0,1
+Ma Ei Ei Khaing (Sales Exec),Ko Aung Ko Ko (Sales Supervisor),0,1
+Ko Hla Myint (Sales Exec),Ko Aung Ko Ko (Sales Supervisor),0,1
+Ko Zaw Win (Sales Exec),Ko Aung Ko Ko (Sales Supervisor),0,1
+U Thet Naing Oo (Sales Supervisor),Mandalay Sales,1,1
+Ma Su Su Win (Sales Exec),U Thet Naing Oo (Sales Supervisor),0,1
+Ko Nay Myo Aung (Sales Exec),U Thet Naing Oo (Sales Supervisor),0,1
+Ma Khin Thiri Aye (Sales Exec),U Thet Naing Oo (Sales Supervisor),0,1
+Ko Sai Htet Aung (Sales Exec),U Thet Naing Oo (Sales Supervisor),0,1
+Ko Pyae Phyo Aung (KAM),Key Accounts,0,1

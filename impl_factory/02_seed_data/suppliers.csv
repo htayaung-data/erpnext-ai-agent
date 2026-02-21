@@ -1,0 +1,9 @@
+supplier_name,supplier_type,accounts,allow_purchase_invoice_creation_without_purchase_order,allow_purchase_invoice_creation_without_purchase_receipt,companies,country,customer_numbers,default_bank_account,default_currency,default_price_list,disabled,email_id,hold_type,image,is_frozen,is_internal_supplier,is_transporter,language,mobile_no,naming_series,on_hold,payment_terms,portal_users,prevent_pos,prevent_rfqs,primary_address,release_date,represents_company,supplier_details,supplier_group,supplier_primary_address,supplier_primary_contact,tax_category,tax_id,tax_withholding_category,tax_withholding_group,warn_pos,warn_rfqs,website
+Golden Dragon Trading Co Ltd,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09421004567,,,,,,,,,,,,,,,,,,,,
+Shwe Taung Electronics Supply,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09447001123,,,,,,,,,,,,,,,,,,,,
+Myanmar Tech Import Services,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09425009988,,,,,,,,,,,,,,,,,,,,
+Mandalay Device Wholesale,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09444488012,,,,,,,,,,,,,,,,,,,,
+Asia Connect Logistics And Customs,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09431120456,,,,,,,,,,,,,,,,,,,,
+Sunrise Mobile Accessories Co Ltd,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09426677110,,,,,,,,,,,,,,,,,,,,
+Royal Gadget Importers,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09450911662,,,,,,,,,,,,,,,,,,,,
+Maha Aung Myay Spare Parts Hub,Company,,,,,Myanmar,,,MMK,,,,,,,,,,09444412090,,,,,,,,,,,,,,,,,,,,

@@ -1,0 +1,37 @@
+{
+  "version": "v7_phase1_baseline_2026_02_21_r2",
+  "packs": [
+    {
+      "name": "core_read",
+      "file": "core_read.jsonl",
+      "case_count": 10,
+      "description": "single-turn core read baseline"
+    },
+    {
+      "name": "multiturn_context",
+      "file": "multiturn_context.jsonl",
+      "case_count": 2,
+      "description": "3-turn and 4-turn context/reference chains"
+    },
+    {
+      "name": "transform_followup",
+      "file": "transform_followup.jsonl",
+      "case_count": 3,
+      "description": "transform-last and idempotency"
+    },
+    {
+      "name": "no_data_unsupported",
+      "file": "no_data_unsupported.jsonl",
+      "case_count": 7,
+      "description": "unsupported/no-data/error-envelope and observability behavior"
+    },
+    {
+      "name": "write_safety",
+      "file": "write_safety.jsonl",
+      "case_count": 4,
+      "description": "write safety expectations"
+    }
+  ],
+  "total_case_count": 26,
+  "first_run_only": true
+}

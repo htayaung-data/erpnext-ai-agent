@@ -1,0 +1,91 @@
+{
+  "suite_name": "transform_followup_replay",
+  "version": "r0.1",
+  "captured_on": "2026-02-21",
+  "policy": {
+    "transform_must_use_last_result": true,
+    "max_transform_chain_length": 3
+  },
+  "cases": [
+    {
+      "id": "TF-001",
+      "setup_prompt": "Total receivable amount as of today",
+      "transform_prompt": "Show as million",
+      "expected": "Scale receivable outstanding to million with 2 decimals.",
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "TF-002",
+      "setup_prompt": "Compare last month sales between Yangon and Mandalay territories",
+      "transform_prompt": "Show as million",
+      "expected": "Scale territory revenue values only; preserve territory rows.",
+      "baseline_result": "fail",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "TF-003",
+      "setup_prompt": "Show accounts receivable as of today",
+      "transform_prompt": "Total outstanding amount",
+      "expected": "Return KPI total from current receivable result (no unrelated report run).",
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "TF-004",
+      "setup_prompt": "Show accounts receivable as of today",
+      "transform_prompt": "Sort that by outstanding amount descending",
+      "expected": "Sort rows by outstanding descending on same result set.",
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "TF-005",
+      "setup_prompt": "How many unique items that we sold last month",
+      "transform_prompt": "Please give me the list of those sold item",
+      "expected": "Return distinct sold item list tied to the counted set.",
+      "baseline_result": "fail",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "TF-006",
+      "setup_prompt": "Please give me the list of those sold item",
+      "transform_prompt": "Now give me the list of those sold item along with sold Qty",
+      "expected": "Return distinct item with aggregated sold qty from same scope.",
+      "baseline_result": "fail",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "TF-007",
+      "setup_prompt": "Who are those suppliers and their payable outstanding amounts?",
+      "transform_prompt": "show as million",
+      "expected": "Scale supplier payable amounts to million and preserve supplier names.",
+      "baseline_result": "mixed",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "TF-008",
+      "setup_prompt": "Top 10 customers by revenue last month",
+      "transform_prompt": "Show only customer and revenue columns",
+      "expected": "Project minimal columns only on same ranked result.",
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "TF-009",
+      "setup_prompt": "Show details for invoice ACC-SINV-2026-00006: customer, items, qty, amount, outstanding",
+      "transform_prompt": "Total amount of that invoice? show as million",
+      "expected": "Aggregate amount from that invoice rows and convert to million.",
+      "baseline_result": "fail",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "TF-010",
+      "setup_prompt": "Total receivable amount as of today -> Total payable amount as of today",
+      "transform_prompt": "Show the previous receivable result in million",
+      "expected": "Resolve previous receivable context explicitly and transform correct KPI.",
+      "baseline_result": "fail",
+      "failure_stage": "context_binding"
+    }
+  ]
+}

@@ -1,0 +1,3306 @@
+{
+  "executed_at_utc": "2026-02-19T10:22:36Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase6_canary",
+  "run_policy": {
+    "gate_source": "first_run_only",
+    "rerun_policy": "diagnostic_only_non_gating"
+  },
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": "1",
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": "1",
+    "write_flag_during_default": 0,
+    "write_flag_wr_phase": 1
+  },
+  "preconditions": {
+    "report_list_ok": true,
+    "report_requirements_ok": false,
+    "generate_report_ok": true,
+    "report_list_count": 219,
+    "report_requirements_error": "Traceback (most recent call last):\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/utils/bench_helper.py\", line 48, in invoke\n    return super().invoke(ctx)\n           ~~~~~~~~~~~~~~^^^^^\n  File \"/home/frappe/frappe-bench/env/lib/pytho",
+    "generate_report_error": ""
+  },
+  "summary": {
+    "total": 26,
+    "passed": 25,
+    "failed": 1,
+    "missing_mandatory_ids": [],
+    "clear_read_total": 15,
+    "direct_answer_count_clear_read": 15,
+    "direct_answer_rate_clear_read": 1.0,
+    "unnecessary_clarification_count_clear_read": 0,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_count_clear_read": 0,
+    "wrong_report_rate_clear_read": 0.0,
+    "loop_fail_count": 0,
+    "loop_scope_total": 19,
+    "clarification_loop_rate": 0.0,
+    "meta_clarification_count_clear_read": 0,
+    "user_correction_total": 1,
+    "user_correction_fail_count": 0,
+    "user_correction_rate": 0.0,
+    "latency_p50_ms_clear_read": 7478,
+    "latency_p95_ms_clear_read": 10581,
+    "reader_total": 19,
+    "reader_pass_rate": 1.0,
+    "operator_total": 7,
+    "operator_pass_rate": 0.8571
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": true,
+    "fac_preconditions_ok": false,
+    "direct_answer_rate_clear_read_ge_90pct": true,
+    "unnecessary_clarification_rate_clear_read_le_5pct": true,
+    "wrong_report_rate_clear_read_le_3pct": true,
+    "clarification_loop_rate_lt_1pct": true,
+    "zero_meta_clarification_on_clear_asks": true,
+    "role_parity_reader_vs_operator": false,
+    "overall_go": false
+  },
+  "results": [
+    {
+      "id": "FIN-01",
+      "role": "ai.reader",
+      "prompt": "Show accounts receivable as of today",
+      "expected": "Returns FAC-backed result directly; no clarification for clear ask.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Accounts Receivable",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 1,
+        "column_labels": [
+          "Outstanding Amount"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Accounts Receivable",
+          "filters": {},
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "kpi",
+          "subject": "accounts receivable",
+          "metric": "outstanding amount",
+          "aggregation": "sum",
+          "group_by": [],
+          "time_scope": {
+            "mode": "as_of",
+            "value": "today"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "kpi",
+            "minimal_columns": [
+              "outstanding amount"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": "outstanding",
+            "metric_column_fallback": false,
+            "output_mode": "kpi",
+            "top_n": 0,
+            "row_count": 1,
+            "local_repair_steps": [
+              "kpi_total:outstanding",
+              "project_minimal_columns"
+            ]
+          },
+          "attempt_count": 1,
+          "decision_path": [
+            "iter_step_1_local_repair_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 8980,
+        "applied_filters": {
+          "report_date": "2026-02-19"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-03",
+      "role": "ai.reader",
+      "prompt": "Total outstanding amount",
+      "expected": "Uses transform_last only and returns total in same turn.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Total Outstanding Amount",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 1,
+        "column_labels": [
+          "Outstanding Amount"
+        ],
+        "assistant_idx": 11,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "transform_last",
+          "operation": "total",
+          "params": {
+            "column_hint": "Outstanding Amount"
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "kpi",
+          "subject": "accounts receivable",
+          "metric": "outstanding amount",
+          "aggregation": "sum",
+          "group_by": [],
+          "time_scope": {
+            "mode": "as_of",
+            "value": "today"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "kpi",
+            "minimal_columns": [
+              "outstanding amount"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10015,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-04",
+      "role": "ai.reader",
+      "prompt": "Sort that by outstanding amount descending",
+      "expected": "Deterministic sort transform on last-result rows in same turn.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sorted by Outstanding Amount (desc)",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 1,
+        "column_labels": [
+          "Outstanding Amount"
+        ],
+        "assistant_idx": 17,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "transform_last",
+          "operation": "sort",
+          "params": {
+            "column_hint": "Outstanding Amount",
+            "direction": "desc"
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "accounts receivable",
+          "metric": "outstanding amount",
+          "aggregation": "sum",
+          "group_by": [],
+          "time_scope": {
+            "mode": "as_of",
+            "value": "today"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "outstanding amount"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6031,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-02",
+      "role": "ai.reader",
+      "prompt": "Show accounts receivable last month",
+      "expected": "Returns date-scoped FAC result directly when report supports it; otherwise one concrete constraint mismatch question.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Total Outstanding Amount",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 1,
+        "column_labels": [
+          "Outstanding Amount"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Accounts Receivable Summary",
+          "filters": {
+            "report_date": "2026-01-31"
+          },
+          "export": false,
+          "needs_clarification": false,
+          "post_transform": {
+            "operation": "total",
+            "params": {
+              "column_hint": "Outstanding Amount"
+            }
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "kpi",
+          "subject": "accounts receivable",
+          "metric": "total amount",
+          "aggregation": "sum",
+          "group_by": [],
+          "time_scope": {
+            "mode": "relative",
+            "value": "last_month"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "kpi",
+            "minimal_columns": [
+              "total amount"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": "outstanding",
+            "metric_column_fallback": true,
+            "output_mode": "kpi",
+            "top_n": 0,
+            "row_count": 1
+          },
+          "attempt_count": 1,
+          "decision_path": [
+            "iter_step_1_fail",
+            "iter_step_2_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10785,
+        "applied_filters": {
+          "report_date": "2026-01-31",
+          "from_date": "2026-01-01",
+          "to_date": "2026-01-31"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "SAL-01",
+      "role": "ai.reader",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Returns top-5 customer ranking table (customer + revenue), sorted desc, no clarification loop.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Top 5 by Total",
+        "downloads": 0,
+        "rows": 5,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Customer Name",
+          "Jan 2026",
+          "Total"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Sales Analytics",
+          "filters": {
+            "tree_type": "Customer",
+            "doc_type": "Sales Invoice",
+            "date_range": {
+              "from": "2026-01-01",
+              "to": "2026-01-31"
+            }
+          },
+          "export": false,
+          "needs_clarification": false,
+          "post_transform": {
+            "operation": "top_n",
+            "params": {
+              "n": 5,
+              "column_hint": "Value"
+            }
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "ranking",
+          "subject": "customers",
+          "metric": "revenue",
+          "aggregation": "sum",
+          "group_by": [
+            "customer"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "last_month"
+          },
+          "filters": {},
+          "top_n": 5,
+          "output_contract": {
+            "mode": "top_n",
+            "minimal_columns": [
+              "customer",
+              "revenue"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": "total",
+            "metric_column_fallback": true,
+            "output_mode": "top_n",
+            "top_n": 5,
+            "row_count": 5
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10493,
+        "applied_filters": {
+          "tree_type": "Customer",
+          "doc_type": "Sales Invoice",
+          "from_date": "2026-01-01",
+          "to_date": "2026-01-31"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "SAL-02",
+      "role": "ai.reader",
+      "prompt": "Show sales by item and download excel",
+      "expected": "Export only because explicitly requested.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sales Analytics",
+        "downloads": 2,
+        "rows": 16,
+        "columns": 16,
+        "column_labels": [
+          "Item",
+          "Item Name",
+          "UOM",
+          "Apr 2025",
+          "May 2025",
+          "Jun 2025",
+          "Jul 2025",
+          "Aug 2025",
+          "Sep 2025",
+          "Oct 2025",
+          "Nov 2025",
+          "Dec 2025"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Sales Analytics",
+          "filters": {
+            "tree_type": "Item",
+            "doc_type": "Sales Invoice"
+          },
+          "export": true,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "sales",
+          "metric": "sales amount",
+          "aggregation": "sum",
+          "group_by": [
+            "item"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "last_month"
+          },
+          "filters": {
+            "doc_type": "Sales Invoice"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "item",
+              "sales amount"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": "total",
+            "metric_column_fallback": true,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 16
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 7633,
+        "applied_filters": {
+          "tree_type": "Item",
+          "doc_type": "Sales Invoice"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-01",
+      "role": "ai.reader",
+      "prompt": "Show stock balance in Main warehouse",
+      "expected": "Warehouse constraint enforced; returns result directly when unambiguous.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Warehouse Wise Stock Balance",
+        "downloads": 0,
+        "rows": 10,
+        "columns": 2,
+        "column_labels": [
+          "Warehouse",
+          "Stock Balance"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Warehouse Wise Stock Balance",
+          "filters": {
+            "warehouse": "Main warehouse"
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "stock balance",
+          "metric": "stock balance",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "warehouse": "Main warehouse"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "warehouse",
+              "stock balance"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": "stock_balance",
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 10
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6365,
+        "applied_filters": {
+          "warehouse": "Yangon Main Warehouse - MMOB"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-02",
+      "role": "ai.reader",
+      "prompt": "Show stock balance in the same warehouse",
+      "expected": "Reuses follow-up context and returns result without re-asking same filter.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Filtered by Warehouse contains Main warehouse",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 2,
+        "column_labels": [
+          "Warehouse",
+          "Stock Balance"
+        ],
+        "assistant_idx": 11,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "transform_last",
+          "operation": "filter",
+          "params": {
+            "column_hint": "Warehouse",
+            "operator": "equals",
+            "value": "Main warehouse"
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "stock balance",
+          "metric": "stock balance",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "warehouse": "Main warehouse"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "warehouse",
+              "stock balance"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 7449,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "HR-01",
+      "role": "ai.operator",
+      "prompt": "Which employee has attendance issues this month?",
+      "expected": "Returns report-based response directly for clear ask (or one concrete required-input clarification).",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Monthly Attendance Sheet",
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Monthly Attendance Sheet",
+          "filters": {
+            "date_range": {
+              "from": "2026-02-01",
+              "to": "2026-02-28"
+            }
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "employee attendance",
+          "metric": "attendance issues",
+          "aggregation": "count",
+          "group_by": [
+            "employee"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "this_month"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "employee",
+              "attendance issues"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": null,
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 0
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6744,
+        "applied_filters": {
+          "from_date": "2026-02-01",
+          "to_date": "2026-02-28"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OPS-01",
+      "role": "ai.operator",
+      "prompt": "What are the open material requests for production",
+      "expected": "Planner selects report path; response from FAC only.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Material Request",
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Material Request",
+          "filters": {
+            "status": "Open",
+            "type": "Production"
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "material requests",
+          "metric": "open requests",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "status": "Open",
+            "type": "Production"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "request_id",
+              "material",
+              "quantity",
+              "status"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": null,
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 0
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 7478,
+        "applied_filters": {
+          "status": "Open",
+          "type": "Production"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "COR-01",
+      "role": "ai.reader",
+      "prompt": "I mean sold qty, not received qty",
+      "expected": "Reroutes metric semantics to sold qty without topic contamination.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Top 5 by Total",
+        "downloads": 0,
+        "rows": 5,
+        "columns": 5,
+        "column_labels": [
+          "Item",
+          "Item Name",
+          "UOM",
+          "Jan 2026",
+          "Total"
+        ],
+        "assistant_idx": 11,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Sales Analytics",
+          "filters": {
+            "tree_type": "Item",
+            "doc_type": "Sales Invoice",
+            "date_range": {
+              "from": "2026-01-01",
+              "to": "2026-01-31"
+            }
+          },
+          "export": false,
+          "needs_clarification": false,
+          "post_transform": {
+            "operation": "top_n",
+            "params": {
+              "n": 5,
+              "column_hint": "Sold Qty"
+            }
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "products",
+          "metric": "sold quantity",
+          "aggregation": "sum",
+          "group_by": [
+            "item"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "last_month"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "item",
+              "sold quantity"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": null,
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 5
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 8041,
+        "applied_filters": {
+          "tree_type": "Item",
+          "doc_type": "Sales Invoice",
+          "from_date": "2026-01-01",
+          "to_date": "2026-01-31"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "DET-01",
+      "role": "ai.reader",
+      "prompt": "Show only customer and revenue columns",
+      "expected": "Returns requested minimal business columns only.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Filtered by Customer Name contains Customer Name",
+        "downloads": 0,
+        "rows": 0,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Customer Name",
+          "Jan 2026",
+          "Total"
+        ],
+        "assistant_idx": 11,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "transform_last",
+          "operation": "filter",
+          "params": {
+            "column_hint": "Customer Name",
+            "operator": "exclude",
+            "value": "Customer Name"
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "customers",
+          "metric": "revenue",
+          "aggregation": "sum",
+          "group_by": [
+            "customer"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "last_month"
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "customer",
+              "revenue"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6050,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "DOC-01",
+      "role": "ai.operator",
+      "prompt": "Show details for Sales Invoice ACC-SINV-2026-00013",
+      "expected": "Returns targeted document details, not generic aggregate summary.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sales Invoice",
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Sales Invoice",
+          "filters": {
+            "invoice_number": "ACC-SINV-2026-00013"
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "sales invoice",
+          "metric": "invoice details",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "invoice_number": "ACC-SINV-2026-00013"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "invoice_number",
+              "details"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": null,
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 0
+          },
+          "attempt_count": 1,
+          "decision_path": [
+            "iter_step_1_fail",
+            "iter_step_2_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9570,
+        "applied_filters": {
+          "invoice_number": "ACC-SINV-2026-00013"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null,
+        "expected_doc": "ACC-SINV-2026-00013"
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": false,
+      "defect_id": "UAT-DOC-01-001",
+      "note": ""
+    },
+    {
+      "id": "CFG-01",
+      "role": "ai.reader",
+      "prompt": "Show the report",
+      "expected": "Asks exactly one clarification question.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Which specific report would you like to see?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show the report",
+          "clarification_question": "Which specific report would you like to see?",
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "clarify",
+          "report_name": "",
+          "needs_clarification": true,
+          "ask": {
+            "question": "Which specific report would you like to see?"
+          },
+          "filters_so_far": {},
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "",
+          "metric": "",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": []
+          },
+          "ambiguities": [],
+          "needs_clarification": true,
+          "clarification_question": "Which specific report would you like to see?",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6996,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-02",
+      "role": "ai.reader",
+      "prompt": "Show open material requests for production",
+      "expected": "Pending flow is canceled and new topic starts.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Material Request",
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Material Request",
+          "filters": {
+            "status": "Open",
+            "type": "Production"
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "material requests",
+          "metric": "open requests",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "status": "open",
+            "type": "production"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "request_id",
+              "item",
+              "quantity",
+              "status"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": null,
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 0
+          },
+          "attempt_count": 1,
+          "decision_path": [
+            "iter_step_1_fail",
+            "iter_step_2_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9852,
+        "applied_filters": {
+          "status": "Open",
+          "type": "Production"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-03",
+      "role": "ai.reader",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Must not ask abstract planner-preference questions (metric vs grouping vs period).",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Top 5 by Total",
+        "downloads": 0,
+        "rows": 5,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Customer Name",
+          "Jan 2026",
+          "Total"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Sales Analytics",
+          "filters": {
+            "tree_type": "Customer",
+            "doc_type": "Sales Invoice",
+            "date_range": {
+              "from": "2026-01-01",
+              "to": "2026-01-31"
+            }
+          },
+          "export": false,
+          "needs_clarification": false,
+          "post_transform": {
+            "operation": "top_n",
+            "params": {
+              "n": 5,
+              "column_hint": "Value"
+            }
+          },
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "ranking",
+          "subject": "customers",
+          "metric": "revenue",
+          "aggregation": "sum",
+          "group_by": [
+            "customer"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "last_month"
+          },
+          "filters": {},
+          "top_n": 5,
+          "output_contract": {
+            "mode": "top_n",
+            "minimal_columns": [
+              "customer",
+              "revenue"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": "total",
+            "metric_column_fallback": true,
+            "output_mode": "top_n",
+            "top_n": 5,
+            "row_count": 5
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 7233,
+        "applied_filters": {
+          "tree_type": "Customer",
+          "doc_type": "Sales Invoice",
+          "from_date": "2026-01-01",
+          "to_date": "2026-01-31"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ENT-01",
+      "role": "ai.reader",
+      "prompt": "Show stock balance in warehouse ZZZ-NO-MATCH-999999",
+      "expected": "Asks refine question; does not guess names.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "I couldn’t find any **Warehouse** matching \"warehouse ZZZ-NO-MATCH-999999\". Which exact value should I use?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 4,
+        "pending_mode": "need_filters",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "need_filters",
+          "base_question": "Show stock balance in warehouse ZZZ-NO-MATCH-999999",
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "clarify",
+          "report_name": "",
+          "export": false,
+          "needs_clarification": true,
+          "ask": {
+            "question": "What specific stock balance report would you like to see for warehouse ZZZ-NO-MATCH-999999?"
+          },
+          "filters_so_far": {},
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "stock balance",
+          "metric": "stock balance",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "warehouse": "ZZZ-NO-MATCH-999999"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "warehouse",
+              "stock balance"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": true,
+          "clarification_question": "What specific stock balance report would you like to see for warehouse ZZZ-NO-MATCH-999999?",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 8493,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=NA, M=NA, T=NA, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": true
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ENT-02",
+      "role": "ai.reader",
+      "prompt": "Show stock balance in warehouse mmob",
+      "expected": "Presents options and asks to choose one.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "I found multiple matches for **Warehouse** matching \"mmob\": Returns and Damaged - MMOB, Transit Warehouse - MMOB, Mandalay Warehouse - MMOB, Yangon Showroom Counter - MMOB, Yangon Main Warehouse - MMOB, Goods In Transit - MMOB. Which one should I use?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 4,
+        "pending_mode": "need_filters",
+        "pending_cleared": false,
+        "options_count": 6,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "need_filters",
+          "base_question": "Show stock balance in warehouse mmob",
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [
+            "Returns and Damaged - MMOB",
+            "Transit Warehouse - MMOB",
+            "Mandalay Warehouse - MMOB",
+            "Yangon Showroom Counter - MMOB",
+            "Yangon Main Warehouse - MMOB",
+            "Goods In Transit - MMOB"
+          ],
+          "clarification_round": 0
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Warehouse Wise Stock Balance",
+          "filters": {
+            "warehouse": "mmob"
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "stock balance",
+          "metric": "stock balance",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {
+            "warehouse": "mmob"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "warehouse",
+              "stock balance"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 7966,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=NA, M=NA, T=NA, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": true
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-01",
+      "role": "ai.operator",
+      "prompt": "Create a ToDo for follow-up",
+      "expected": "Returns write-disabled message; no write execution.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Write-actions are disabled in this environment. Please ask an administrator to enable them.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 3,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "write_draft",
+          "operation": "create",
+          "doctype": "ToDo",
+          "payload": {
+            "title": "Follow-up",
+            "status": "Open",
+            "date": "2026-02-19"
+          },
+          "confirmation_text": "Create a ToDo for follow-up?",
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "follow-up",
+          "metric": "",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "title",
+              "status",
+              "date"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6377,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-02",
+      "role": "ai.operator",
+      "prompt": "Delete ToDo pa501d73n7",
+      "expected": "Requires explicit confirmation before execution.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Are you sure you want to delete the ToDo with ID pa501d73n7? Reply **confirm** to execute or **cancel** to stop.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 4,
+        "pending_mode": "write_confirmation",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "write_confirmation",
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "write_draft",
+          "operation": "delete",
+          "doctype": "ToDo",
+          "payload": {
+            "name": "pa501d73n7"
+          },
+          "confirmation_text": "Are you sure you want to delete the ToDo with ID pa501d73n7?",
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "ToDo item",
+          "metric": "",
+          "aggregation": "none",
+          "group_by": [],
+          "time_scope": {
+            "mode": "none",
+            "value": ""
+          },
+          "filters": {},
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": []
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 8508,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-03",
+      "role": "ai.operator",
+      "prompt": "cancel",
+      "expected": "Cancels write and clears pending state.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Write action canceled.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 9,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 36,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-04",
+      "role": "ai.operator",
+      "prompt": "Delete ToDo pornbk8m52 -> confirm",
+      "expected": "Executes exactly one draft action and returns safe result text.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Confirmed. Deleted **ToDo** `pornbk8m52`.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result",
+          "write_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 771,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OBS-01",
+      "role": "ai.reader",
+      "prompt": "get_messages(debug=0)",
+      "expected": "No tool/internal messages in normal user view.",
+      "actual": {
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": false,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OBS-02",
+      "role": "ai.reader",
+      "prompt": "get_messages(debug=1)",
+      "expected": "Debug view includes audit_turn tool messages.",
+      "actual": {
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ERR-01",
+      "role": "ai.reader",
+      "prompt": "Show stock balance",
+      "expected": "User gets safe error text; no stacktrace/internal exception leakage.",
+      "actual": {
+        "assistant_type": "error",
+        "assistant_text": "I couldn’t process that request right now. Please try again.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": true,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "error_envelope",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 844,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "EXP-01",
+      "role": "ai.reader",
+      "prompt": "Show sales by item for this month",
+      "expected": "No export artifacts unless explicit request.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sales Analytics",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 5,
+        "column_labels": [
+          "Item",
+          "Item Name",
+          "UOM",
+          "Feb 2026",
+          "Total"
+        ],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {
+          "action": "run_report",
+          "report_name": "Sales Analytics",
+          "filters": {
+            "tree_type": "Item",
+            "doc_type": "Sales Invoice",
+            "date": {
+              "from": "2026-02-01",
+              "to": "2026-02-28"
+            }
+          },
+          "export": false,
+          "needs_clarification": false,
+          "llm_meta": {
+            "prompt_version": "planner_prompt_v2026_02_19_now1",
+            "few_shot_version": "planner_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "business_request_spec": {
+          "intent": "READ",
+          "task_type": "detail",
+          "subject": "items",
+          "metric": "sold quantity",
+          "aggregation": "sum",
+          "group_by": [
+            "item"
+          ],
+          "time_scope": {
+            "mode": "relative",
+            "value": "this_month"
+          },
+          "filters": {
+            "doc_type": "Sales Invoice"
+          },
+          "top_n": 0,
+          "output_contract": {
+            "mode": "detail",
+            "minimal_columns": [
+              "item",
+              "sold quantity"
+            ]
+          },
+          "ambiguities": [],
+          "needs_clarification": false,
+          "clarification_question": "",
+          "llm_meta": {
+            "prompt_version": "spec_prompt_v2026_02_19_now1",
+            "few_shot_version": "spec_fs_v2026_02_19_now1",
+            "attempt_count": 1,
+            "fallback_used": false
+          }
+        },
+        "result_quality_gate": {
+          "verdict": "PASS",
+          "failed_checks": [],
+          "context": {
+            "metric_column": null,
+            "metric_column_fallback": false,
+            "output_mode": "detail",
+            "top_n": 0,
+            "row_count": 1
+          },
+          "attempt_count": 0,
+          "decision_path": [
+            "iter_step_1_pass"
+          ]
+        },
+        "quality_verdict": "PASS",
+        "quality_failed_check_ids": [],
+        "duration_ms": 6843,
+        "applied_filters": {
+          "tree_type": "Item",
+          "doc_type": "Sales Invoice",
+          "date": {
+            "from": "2026-02-01",
+            "to": "2026-02-28"
+          },
+          "from_date": "2026-02-01",
+          "to_date": "2026-02-28"
+        },
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "PASS",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    }
+  ]
+}

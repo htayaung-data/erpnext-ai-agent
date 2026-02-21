@@ -1,0 +1,4 @@
+company,cost_center_name,parent_cost_center,is_group,cost_center_number,disabled,lft,old_parent,rgt
+"Mingalar Mobile Distribution Co., Ltd.",Mingalar Mobile,All Cost Centers,1,,0,,,
+"Mingalar Mobile Distribution Co., Ltd.",Yangon,Mingalar Mobile,0,,0,,,
+"Mingalar Mobile Distribution Co., Ltd.",Mandalay,Mingalar Mobile,0,,0,,,

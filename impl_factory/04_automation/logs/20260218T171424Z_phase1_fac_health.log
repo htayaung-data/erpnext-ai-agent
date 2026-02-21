@@ -1,0 +1,15 @@
+[docker_compose_ps]
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.oneoff%3DFalse%22%3Atrue%2C%22com.docker.compose.project%3Derpai_project1%22%3Atrue%7D%7D": dial unix /var/run/docker.sock: connect: operation not permitted
+
+[bench_list_apps]
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.project%3Derpai_project1%22%3Atrue%2C%22com.docker.compose.service%3Dbackend%22%3Atrue%7D%7D": dial unix /var/run/docker.sock: connect: operation not permitted
+
+[fac_report_list_probe]
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.project%3Derpai_project1%22%3Atrue%2C%22com.docker.compose.service%3Dbackend%22%3Atrue%7D%7D": dial unix /var/run/docker.sock: connect: operation not permitted
+
+[fac_report_requirements_probe_sales_analytics]
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.project%3Derpai_project1%22%3Atrue%2C%22com.docker.compose.service%3Dbackend%22%3Atrue%7D%7D": dial unix /var/run/docker.sock: connect: operation not permitted
+rc=1
+
+[fac_generate_report_probe_sales_analytics]
+permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.project%3Derpai_project1%22%3Atrue%2C%22com.docker.compose.service%3Dbackend%22%3Atrue%7D%7D": dial unix /var/run/docker.sock: connect: operation not permitted

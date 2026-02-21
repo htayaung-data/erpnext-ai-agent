@@ -1,0 +1,54 @@
+===== branch_template.csv =====
+branch
+
+===== brand_template.csv =====
+brand,brand_defaults,description,image
+
+===== cost_center_template.csv =====
+company,cost_center_name,parent_cost_center,is_group,cost_center_number,disabled,lft,old_parent,rgt
+
+===== customer_group_template.csv =====
+customer_group_name,is_group,accounts,credit_limits,default_price_list,lft,old_parent,parent_customer_group,payment_terms,rgt
+
+===== customer_template.csv =====
+customer_name,customer_type,customer_group,territory,account_manager,accounts,companies,credit_limits,customer_details,customer_pos_id,customer_primary_address,customer_primary_contact,default_bank_account,default_commission_rate,default_currency,default_price_list,default_sales_partner,disabled,dn_required,email_id,first_name,gender,image,industry,is_frozen,is_internal_customer,language,last_name,lead_name,loyalty_program,loyalty_program_tier,market_segment,mobile_no,naming_series,opportunity_name,payment_terms,portal_users,primary_address,prospect_name,represents_company,sales_team,salutation,so_required,supplier_numbers,tax_category,tax_id,tax_withholding_category,tax_withholding_group,website
+
+===== department_template.csv =====
+company,department_name,is_group,disabled,expense_approvers,leave_approvers,leave_block_list,lft,old_parent,parent_department,payroll_cost_center,rgt,shift_request_approver
+
+===== designation_template.csv =====
+designation_name,appraisal_template,description,skills
+
+===== employee_template.csv =====
+company,date_of_birth,date_of_joining,first_name,gender,naming_series,status,branch,department,designation,attendance_device_id,bank_ac_no,bank_name,bio,blood_group,cell_number,company_email,contract_end_date,create_user_permission,ctc,current_accommodation_type,current_address,date_of_issue,date_of_retirement,default_shift,education,emergency_phone_number,employee,employee_advance_account,employee_name,employee_number,employment_type,encashment_date,expense_approver,external_work_history,family_background,feedback,final_confirmation_date,grade,health_details,health_insurance_no,health_insurance_provider,held_on,holiday_list,iban,image,internal_work_history,job_applicant,last_name,leave_approver,leave_encashed,lft,marital_status,middle_name,new_workplace,notice_number_of_days,old_parent,passport_number,payroll_cost_center,permanent_accommodation_type,permanent_address,person_to_be_contacted,personal_email,place_of_issue,prefered_contact_email,prefered_email,reason_for_leaving,relation,relieving_date,reports_to,resignation_letter_date,rgt,salary_currency,salary_mode,salutation,scheduled_confirmation_date,shift_request_approver,unsubscribed,user_id,valid_upto
+
+===== item_group_template.csv =====
+item_group_name,is_group,image,item_group_defaults,lft,old_parent,parent_item_group,rgt,taxes
+
+===== item_price_template.csv =====
+item_code,price_list,price_list_rate,uom,item_name,brand,currency,batch_no,buying,customer,item_description,lead_time_days,note,packing_unit,reference,selling,supplier,valid_from,valid_upto
+
+===== item_template.csv =====
+item_code,item_group,stock_uom,item_name,brand,allow_alternative_item,allow_negative_stock,asset_category,asset_naming_series,attributes,auto_create_assets,barcodes,batch_number_series,country_of_origin,create_new_batch,customer,customer_code,customer_items,customs_tariff_number,default_bom,default_item_manufacturer,default_manufacturer_part_no,default_material_request_type,delivered_by_supplier,description,disabled,enable_deferred_expense,enable_deferred_revenue,end_of_life,grant_commission,has_batch_no,has_expiry_date,has_serial_no,has_variants,image,include_item_in_manufacturing,inspection_required_before_delivery,inspection_required_before_purchase,is_customer_provided_item,is_fixed_asset,is_grouped_asset,is_purchase_item,is_sales_item,is_stock_item,is_sub_contracted_item,item_defaults,last_purchase_rate,lead_time_days,max_discount,min_order_qty,naming_series,no_of_months,no_of_months_exp,opening_stock,over_billing_allowance,over_delivery_receipt_allowance,production_capacity,purchase_tax_withholding_category,purchase_uom,quality_inspection_template,reorder_levels,retain_sample,safety_stock,sales_tax_withholding_category,sales_uom,sample_quantity,serial_no_series,shelf_life_in_days,standard_rate,supplier_items,taxes,total_projected_qty,uoms,valuation_method,valuation_rate,variant_based_on,variant_of,warranty_period,weight_per_unit,weight_uom
+
+===== mode_of_payment_template.csv =====
+mode_of_payment,enabled,accounts,type
+
+===== price_list_template.csv =====
+currency,price_list_name,enabled,buying,countries,price_not_uom_dependent,selling
+
+===== sales_person_template.csv =====
+sales_person_name,is_group,department,parent_sales_person,enabled,commission_rate,employee,lft,old_parent,rgt,targets
+
+===== supplier_template.csv =====
+supplier_name,supplier_type,accounts,allow_purchase_invoice_creation_without_purchase_order,allow_purchase_invoice_creation_without_purchase_receipt,companies,country,customer_numbers,default_bank_account,default_currency,default_price_list,disabled,email_id,hold_type,image,is_frozen,is_internal_supplier,is_transporter,language,mobile_no,naming_series,on_hold,payment_terms,portal_users,prevent_pos,prevent_rfqs,primary_address,release_date,represents_company,supplier_details,supplier_group,supplier_primary_address,supplier_primary_contact,tax_category,tax_id,tax_withholding_category,tax_withholding_group,warn_pos,warn_rfqs,website
+
+===== territory_template.csv =====
+territory_name,is_group,lft,old_parent,parent_territory,rgt,targets,territory_manager
+
+===== uom_template.csv =====
+uom_name,enabled,common_code,description,must_be_whole_number,symbol
+
+===== warehouse_template.csv =====
+company,warehouse_name,is_group,account,address_line_1,address_line_2,city,customer,default_in_transit_warehouse,disabled,email_id,is_rejected_warehouse,lft,mobile_no,old_parent,parent_warehouse,phone_no,pin,rgt,state,warehouse_type
+

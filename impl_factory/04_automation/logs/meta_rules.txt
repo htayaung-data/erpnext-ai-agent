@@ -1,0 +1,96 @@
+==== Branch ====
+REQUIRED: ['branch']
+LINKS: []
+
+==== Brand ====
+REQUIRED: ['brand']
+LINKS: []
+
+==== UOM ====
+REQUIRED: ['uom_name']
+LINKS: []
+
+==== Item Group ====
+REQUIRED: ['item_group_name']
+LINKS: [('parent_item_group', 'Item Group'), ('old_parent', 'Item Group')]
+
+==== Price List ====
+REQUIRED: ['price_list_name', 'currency']
+LINKS: [('currency', 'Currency')]
+
+==== Territory ====
+REQUIRED: ['territory_name']
+LINKS: [('parent_territory', 'Territory'), ('territory_manager', 'Sales Person'), ('old_parent', 'Territory')]
+
+==== Customer Group ====
+REQUIRED: ['customer_group_name']
+LINKS: [('parent_customer_group', 'Customer Group'), ('default_price_list', 'Price List'), ('payment_terms', 'Payment Terms Template'), ('old_parent', 'Customer Group')]
+
+==== Supplier ====
+REQUIRED: ['supplier_name', 'supplier_type']
+LINKS: [('country', 'Country'), ('supplier_group', 'Supplier Group'), ('default_currency', 'Currency'), ('default_bank_account', 'Bank Account'), ('default_price_list', 'Price List'), ('represents_company', 'Company'), ('language', 'Language'), ('tax_category', 'Tax Category'), ('tax_withholding_category', 'Tax Withholding Category'), ('tax_withholding_group', 'Tax Withholding Group'), ('supplier_primary_address', 'Address'), ('supplier_primary_contact', 'Contact'), ('payment_terms', 'Payment Terms Template')]
+SELECTS:
+ - naming_series => ['SUP-.YYYY.-']
+ - supplier_type => ['Company', 'Individual', 'Partnership']
+ - hold_type => ['All', 'Invoices', 'Payments']
+
+==== Customer ====
+REQUIRED: ['customer_name', 'customer_type']
+LINKS: [('salutation', 'Salutation'), ('customer_group', 'Customer Group'), ('territory', 'Territory'), ('gender', 'Gender'), ('lead_name', 'Lead'), ('opportunity_name', 'Opportunity'), ('prospect_name', 'Prospect'), ('account_manager', 'User'), ('default_currency', 'Currency'), ('default_bank_account', 'Bank Account'), ('default_price_list', 'Price List'), ('represents_company', 'Company'), ('market_segment', 'Market Segment'), ('industry', 'Industry Type'), ('language', 'Language'), ('customer_primary_address', 'Address'), ('customer_primary_contact', 'Contact'), ('tax_category', 'Tax Category'), ('tax_withholding_category', 'Tax Withholding Category'), ('tax_withholding_group', 'Tax Withholding Group'), ('payment_terms', 'Payment Terms Template'), ('loyalty_program', 'Loyalty Program'), ('default_sales_partner', 'Sales Partner')]
+SELECTS:
+ - naming_series => ['CUST-.YYYY.-']
+ - customer_type => ['Company', 'Individual', 'Partnership']
+
+==== Sales Person ====
+REQUIRED: ['sales_person_name', 'is_group']
+LINKS: [('parent_sales_person', 'Sales Person'), ('employee', 'Employee'), ('department', 'Department')]
+
+==== Department ====
+REQUIRED: ['department_name', 'company']
+LINKS: [('parent_department', 'Department'), ('company', 'Company'), ('payroll_cost_center', 'Cost Center'), ('leave_block_list', 'Leave Block List')]
+
+==== Designation ====
+REQUIRED: ['designation_name']
+LINKS: [('appraisal_template', 'Appraisal Template')]
+
+==== Employee ====
+REQUIRED: ['naming_series', 'first_name', 'gender', 'date_of_birth', 'date_of_joining', 'status', 'company']
+LINKS: [('gender', 'Gender'), ('salutation', 'Salutation'), ('user_id', 'User'), ('company', 'Company'), ('department', 'Department'), ('employment_type', 'Employment Type'), ('designation', 'Designation'), ('reports_to', 'Employee'), ('branch', 'Branch'), ('grade', 'Employee Grade'), ('job_applicant', 'Job Applicant'), ('holiday_list', 'Holiday List'), ('default_shift', 'Shift Type'), ('expense_approver', 'User'), ('leave_approver', 'User'), ('shift_request_approver', 'User'), ('salary_currency', 'Currency'), ('employee_advance_account', 'Account'), ('payroll_cost_center', 'Cost Center'), ('health_insurance_provider', 'Employee Health Insurance')]
+SELECTS:
+ - naming_series => ['HR-EMP-']
+ - status => ['Active', 'Inactive', 'Suspended', 'Left']
+ - prefered_contact_email => ['Company Email', 'Personal Email', 'User ID']
+ - current_accommodation_type => ['Rented', 'Owned']
+ - permanent_accommodation_type => ['Rented', 'Owned']
+ - salary_mode => ['Bank', 'Cash', 'Cheque']
+ - marital_status => ['Single', 'Married', 'Divorced', 'Widowed']
+ - blood_group => ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+ - leave_encashed => ['Yes', 'No']
+
+==== Warehouse ====
+REQUIRED: ['warehouse_name', 'company']
+LINKS: [('parent_warehouse', 'Warehouse'), ('account', 'Account'), ('company', 'Company'), ('customer', 'Customer'), ('warehouse_type', 'Warehouse Type'), ('default_in_transit_warehouse', 'Warehouse'), ('old_parent', 'Warehouse')]
+
+==== Cost Center ====
+REQUIRED: ['cost_center_name', 'parent_cost_center', 'company']
+LINKS: [('parent_cost_center', 'Cost Center'), ('company', 'Company'), ('old_parent', 'Cost Center')]
+
+==== Mode of Payment ====
+REQUIRED: ['mode_of_payment']
+LINKS: []
+SELECTS:
+ - type => ['Cash', 'Bank', 'General', 'Phone']
+
+==== Item ====
+REQUIRED: ['item_code', 'item_group', 'stock_uom']
+LINKS: [('item_group', 'Item Group'), ('stock_uom', 'UOM'), ('asset_category', 'Asset Category'), ('brand', 'Brand'), ('weight_uom', 'UOM'), ('variant_of', 'Item'), ('purchase_uom', 'UOM'), ('customer', 'Customer'), ('country_of_origin', 'Country'), ('customs_tariff_number', 'Customs Tariff Number'), ('sales_uom', 'UOM'), ('purchase_tax_withholding_category', 'Tax Withholding Category'), ('sales_tax_withholding_category', 'Tax Withholding Category'), ('quality_inspection_template', 'Quality Inspection Template'), ('default_bom', 'BOM'), ('default_item_manufacturer', 'Manufacturer')]
+SELECTS:
+ - naming_series => ['STO-ITEM-.YYYY.-']
+ - default_material_request_type => ['Purchase', 'Material Transfer', 'Material Issue', 'Manufacture', 'Customer Provided']
+ - valuation_method => ['FIFO', 'Moving Average', 'LIFO']
+ - variant_based_on => ['Item Attribute', 'Manufacturer']
+
+==== Item Price ====
+REQUIRED: ['item_code', 'uom', 'price_list', 'price_list_rate']
+LINKS: [('item_code', 'Item'), ('uom', 'UOM'), ('brand', 'Brand'), ('price_list', 'Price List'), ('customer', 'Customer'), ('supplier', 'Supplier'), ('batch_no', 'Batch'), ('currency', 'Currency')]
+

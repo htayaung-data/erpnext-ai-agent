@@ -1,0 +1,5 @@
+mode_of_payment,enabled,accounts,type
+Cash,1,,Cash
+Bank Transfer,1,,Bank
+KBZPay,1,,Phone
+WavePay,1,,Phone

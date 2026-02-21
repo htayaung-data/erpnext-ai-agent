@@ -1,0 +1,7 @@
+{"case_id":"CFG-01","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"user","text":"Show the report"}],"expected":{"clarification":"single_blocker_question"},"tags":["clarification"]}
+{"case_id":"CFG-03","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"user","text":"Top 5 customers by revenue in last month"}],"expected":{"meta_clarification":false},"tags":["clarification_policy"]}
+{"case_id":"ENT-01","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"user","text":"Show stock balance in warehouse ZZZ-NO-MATCH-999999"}],"expected":{"clarification_reason":"entity_no_match"},"tags":["entity_resolution","no_match"]}
+{"case_id":"ENT-02","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"user","text":"Show stock balance in warehouse mmob"}],"expected":{"clarification_reason":"entity_ambiguous","options_required":true},"tags":["entity_resolution","ambiguous"]}
+{"case_id":"OBS-01","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"system","text":"get_messages(debug=0)"}],"expected":{"tool_messages_hidden":true},"tags":["observability"]}
+{"case_id":"OBS-02","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"system","text":"get_messages(debug=1)"}],"expected":{"audit_tool_visible":true},"tags":["observability"]}
+{"case_id":"ERR-01","suite":"no_data_unsupported","role":"ai.reader","turns":[{"role":"user","text":"Show stock balance (forced backend failure test)"}],"expected":{"safe_error_envelope":true},"tags":["error_envelope"]}

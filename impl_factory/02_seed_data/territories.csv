@@ -1,0 +1,6 @@
+territory_name,is_group,lft,old_parent,parent_territory,rgt,targets,territory_manager
+Myanmar,1,,,,,,
+Yangon,0,,,Myanmar,,,
+Mandalay,0,,,Myanmar,,,
+Bago,0,,,Myanmar,,,
+Taunggyi,0,,,Myanmar,,,

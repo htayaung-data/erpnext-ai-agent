@@ -1,0 +1,8 @@
+company,department_name,is_group,disabled,expense_approvers,leave_approvers,leave_block_list,lft,old_parent,parent_department,payroll_cost_center,rgt,shift_request_approver
+"Mingalar Mobile Distribution Co., Ltd.",Sales,0,0,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",Warehouse,0,0,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",Purchasing,0,0,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",Accounts,0,0,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",HR/Admin,0,0,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",Delivery/Logistics,0,0,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",IT,0,0,,,,,,,,,

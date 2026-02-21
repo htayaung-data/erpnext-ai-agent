@@ -1,0 +1,107 @@
+[Step11] Command: python -m unittest apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract -v
+test_handle_user_message_failure_persists_error_envelope_and_safe_response (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ChatServiceAuditStep10Tests.test_handle_user_message_failure_persists_error_envelope_and_safe_response) ... ok
+test_handle_user_message_persists_audit_turn_with_planner_output (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ChatServiceAuditStep10Tests.test_handle_user_message_persists_audit_turn_with_planner_output) ... ok
+test_choose_business_request_spec_validates_shape (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportPlannerContractTests.test_choose_business_request_spec_validates_shape) ... ok
+test_choose_plan_accepts_transform_sort (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportPlannerContractTests.test_choose_plan_accepts_transform_sort) ... ok
+test_choose_plan_invalid_action_falls_back_to_clarify (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportPlannerContractTests.test_choose_plan_invalid_action_falls_back_to_clarify) ... ok
+test_choose_plan_normalizes_run_report_shape (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportPlannerContractTests.test_choose_plan_normalizes_run_report_shape) ... ok
+test_report_qa_continue_planner_clarify_accepts_option_choice (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaClarifyTests.test_report_qa_continue_planner_clarify_accepts_option_choice) ... ok
+test_report_qa_continue_planner_clarify_blocks_low_information_reply (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaClarifyTests.test_report_qa_continue_planner_clarify_blocks_low_information_reply) ... ok
+test_report_qa_continue_planner_clarify_restarts_start (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaClarifyTests.test_report_qa_continue_planner_clarify_restarts_start) ... ok
+test_report_qa_continue_planner_clarify_yes_no_option_allows_yes (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaClarifyTests.test_report_qa_continue_planner_clarify_yes_no_option_allows_yes) ... ok
+test_report_qa_start_honors_planner_clarify (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaClarifyTests.test_report_qa_start_honors_planner_clarify) ... ok
+test_report_qa_continue_enforces_pending_option_selection (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_continue_enforces_pending_option_selection) ... ok
+test_report_qa_start_allows_as_of_date_when_filter_metadata_missing (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_allows_as_of_date_when_filter_metadata_missing) ... ok
+test_report_qa_start_allows_date_range_when_filter_metadata_missing (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_allows_date_range_when_filter_metadata_missing) ... ok
+test_report_qa_start_autofills_missing_link_filter_from_question (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_autofills_missing_link_filter_from_question) ... ok
+test_report_qa_start_blocks_unsupported_date_range_constraint (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_blocks_unsupported_date_range_constraint) ... ok
+test_report_qa_start_blocks_unsupported_warehouse_constraint (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_blocks_unsupported_warehouse_constraint) ... ok
+test_report_qa_start_clarify_preempted_by_entity_ambiguity_resolution (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_clarify_preempted_by_entity_ambiguity_resolution) ... ok
+test_report_qa_start_clarify_preempted_by_entity_no_match_resolution (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_clarify_preempted_by_entity_no_match_resolution) ... ok
+test_report_qa_start_clarify_preempted_entity_prompt_preserves_report_context (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_clarify_preempted_entity_prompt_preserves_report_context) ... ok
+test_report_qa_start_link_ambiguous_prompts_user_choice (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_link_ambiguous_prompts_user_choice) ... ok
+test_report_qa_start_link_no_match_requires_refine (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_link_no_match_requires_refine) ... ok
+test_report_qa_start_missing_link_filter_no_match_returns_refine (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_missing_link_filter_no_match_returns_refine) ... ok
+test_report_qa_start_normalizes_date_range_object_when_filter_metadata_missing (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_normalizes_date_range_object_when_filter_metadata_missing) ... ok
+test_report_qa_start_normalizes_non_ranking_business_spec_for_which_query (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_normalizes_non_ranking_business_spec_for_which_query) ... ok
+test_report_qa_start_semantic_link_fallback_no_match_when_metadata_missing (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaConstraintAndEntityTests.test_report_qa_start_semantic_link_fallback_no_match_when_metadata_missing) ... ok
+test_recent_context_window_keeps_last_five_turns_and_summarizes_assistant_payload (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaContextStep8Tests.test_recent_context_window_keeps_last_five_turns_and_summarizes_assistant_payload) ... ok
+test_report_qa_start_applies_same_period_from_last_result_filters (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaContextStep8Tests.test_report_qa_start_applies_same_period_from_last_result_filters) ... ok
+test_report_qa_start_applies_same_warehouse_from_last_result_filters (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaContextStep8Tests.test_report_qa_start_applies_same_warehouse_from_last_result_filters) ... ok
+test_report_qa_start_iterative_blocks_repeated_tool_call_with_actionable_clarify (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaIterativePhase2Tests.test_report_qa_start_iterative_blocks_repeated_tool_call_with_actionable_clarify) ... ok
+test_report_qa_start_iterative_max_steps_returns_actionable_clarify (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaIterativePhase2Tests.test_report_qa_start_iterative_max_steps_returns_actionable_clarify) ... ERROR
+test_report_qa_start_iterative_retries_until_pass (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaIterativePhase2Tests.test_report_qa_start_iterative_retries_until_pass) ... ok
+test_report_qa_start_iterative_retry_clarify_returns_planner_question (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaIterativePhase2Tests.test_report_qa_start_iterative_retry_clarify_returns_planner_question) ... ok
+test_report_qa_start_iterative_unsupported_action_returns_safe_error (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaIterativePhase2Tests.test_report_qa_start_iterative_unsupported_action_returns_safe_error) ... ok
+test_report_qa_continue_need_filters_quality_gate_local_repair_applies_top_n (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_report_qa_continue_need_filters_quality_gate_local_repair_applies_top_n) ... ok
+test_report_qa_continue_need_filters_quality_gate_retries_once_with_replan (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_report_qa_continue_need_filters_quality_gate_retries_once_with_replan) ... ok
+test_report_qa_start_applies_post_transform_sort (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_report_qa_start_applies_post_transform_sort) ... ok
+test_report_qa_start_quality_gate_local_repair_applies_top_n (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_report_qa_start_quality_gate_local_repair_applies_top_n) ... ok
+test_report_qa_start_quality_gate_retries_once_with_replan (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_report_qa_start_quality_gate_retries_once_with_replan) ... ok
+test_transform_filter_contains (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_transform_filter_contains) ... ok
+test_transform_sort_descending_numeric (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_transform_sort_descending_numeric) ... ok
+test_transform_summary_has_row_count (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaTransformStep6Tests.test_transform_summary_has_row_count) ... ok
+test_build_write_confirmation_text_for_non_create_operations (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_build_write_confirmation_text_for_non_create_operations) ... ok
+test_report_qa_continue_write_confirmation_cancel (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_continue_write_confirmation_cancel) ... ok
+test_report_qa_continue_write_confirmation_confirm_blocked_when_capability_disabled (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_continue_write_confirmation_confirm_blocked_when_capability_disabled) ... ok
+test_report_qa_continue_write_confirmation_confirm_executes (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_continue_write_confirmation_confirm_executes) ... ok
+test_report_qa_continue_write_confirmation_permission_error_returns_safe_message (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_continue_write_confirmation_permission_error_returns_safe_message) ... ok
+test_report_qa_continue_write_confirmation_requires_explicit_decision (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_continue_write_confirmation_requires_explicit_decision) ... ok
+test_report_qa_start_write_draft_disabled (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_start_write_draft_disabled) ... ok
+test_report_qa_start_write_draft_sets_pending_confirmation (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_start_write_draft_sets_pending_confirmation) ... ok
+test_report_qa_start_write_draft_update_without_changes_requests_clarify (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaWriteConfirmationStep7Tests.test_report_qa_start_write_draft_update_without_changes_requests_clarify) ... ok
+test_quality_gate_allows_single_numeric_metric_fallback_for_value_semantics (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ResultQualityGateTests.test_quality_gate_allows_single_numeric_metric_fallback_for_value_semantics) ... ok
+test_quality_gate_detail_mode_skips_metric_alignment_strictness (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ResultQualityGateTests.test_quality_gate_detail_mode_skips_metric_alignment_strictness) ... ok
+test_quality_gate_flags_dimension_metric_mismatch (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ResultQualityGateTests.test_quality_gate_flags_dimension_metric_mismatch) ... ok
+test_quality_gate_flags_sold_vs_received_metric_mismatch (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ResultQualityGateTests.test_quality_gate_flags_sold_vs_received_metric_mismatch) ... ok
+test_quality_gate_prefers_total_over_time_buckets_for_value_metric (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ResultQualityGateTests.test_quality_gate_prefers_total_over_time_buckets_for_value_metric) ... ok
+
+======================================================================
+ERROR: test_report_qa_start_iterative_max_steps_returns_actionable_clarify (apps.ai_assistant_ui.ai_assistant_ui.tests.test_planner_contract.ReportQaIterativePhase2Tests.test_report_qa_start_iterative_max_steps_returns_actionable_clarify)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/tests/test_planner_contract.py", line 1783, in test_report_qa_start_iterative_max_steps_returns_actionable_clarify
+    out = report_qa.report_qa_start(message="Top 5 products by sold qty", session_name=None, user="Administrator")
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/ai_core/tools/report_qa.py", line 2746, in report_qa_start
+    return _run_iterative_read_orchestrator(
+        question=question,
+    ...<13 lines>...
+        source="report_qa_start_iterative",
+    )
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/ai_core/tools/report_qa.py", line 2371, in _run_iterative_read_orchestrator
+    out, run_ctx = _execute_run_report_plan(
+                   ~~~~~~~~~~~~~~~~~~~~~~~~^
+        question=question,
+        ^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        pending_context=pending_context,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/ai_core/tools/report_qa.py", line 1965, in _execute_run_report_plan
+    filters, semantic_link_prompt = _resolve_semantic_link_fallbacks(
+                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        report_name=report_name,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        pending_context=pending_context,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/ai_core/tools/report_qa.py", line 956, in _resolve_semantic_link_fallbacks
+    resolved, options, status = _resolve_link_value("Company", value)
+                                ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/ai_core/tools/report_qa.py", line 721, in _resolve_link_value
+    if frappe.db.exists(doctype, v):
+       ^^^^^^^^^^^^^^^^
+  File "/home/frappe/frappe-bench/apps/frappe/frappe/utils/local.py", line 66, in __getattr__
+    return getattr(self._get_current_object(), name)
+                   ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/frappe/frappe-bench/apps/frappe/frappe/utils/local.py", line 55, in _get_current_object
+    raise RuntimeError("object is not bound") from None
+RuntimeError: object is not bound
+
+----------------------------------------------------------------------
+Ran 56 tests in 0.188s
+
+FAILED (errors=1)

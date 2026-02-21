@@ -1,0 +1,16 @@
+Item Group Name,Parent Item Group,Is Group
+Electronics,All Item Groups,1
+Smartphones,Electronics,0
+Accessories,Electronics,1
+Chargers,Accessories,0
+Cables,Accessories,0
+Earbuds,Accessories,0
+Speakers,Accessories,0
+Power Banks,Accessories,0
+Phone Cases,Accessories,0
+Memory,Electronics,1
+Memory Cards,Memory,0
+USB Flash,Memory,0
+Networking,Electronics,1
+Routers,Networking,0
+Spare Parts,Electronics,0

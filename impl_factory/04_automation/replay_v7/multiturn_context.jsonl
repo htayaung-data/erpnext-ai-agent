@@ -1,0 +1,2 @@
+{"case_id":"COR-01","suite":"multiturn_context","role":"ai.reader","turns":[{"role":"user","text":"Top 5 products by received qty in last month"},{"role":"user","text":"I mean sold qty, not received qty"}],"expected":{"correction_applied":true,"topic_consistency":true},"tags":["context","correction"]}
+{"case_id":"CFG-02","suite":"multiturn_context","role":"ai.reader","turns":[{"role":"user","text":"Show the report"},{"role":"user","text":"Show open material requests for production"}],"expected":{"pending_cleared_on_new_topic":true},"tags":["context","pending_reset"]}

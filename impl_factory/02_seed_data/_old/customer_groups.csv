@@ -1,0 +1,5 @@
+Customer Group Name,Parent Customer Group,Is Group
+Wholesale,All Customer Groups,1
+Wholesale-A,Wholesale,0
+Wholesale-B,Wholesale,0
+Retail,All Customer Groups,0

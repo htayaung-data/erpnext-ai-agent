@@ -1,0 +1,61 @@
+[
+  {
+    "id": "SAL-02-R1",
+    "prompt": "Show sales by item and download excel",
+    "assistant_type": "report_table",
+    "downloads": 2,
+    "pending_mode": null,
+    "pass": true
+  },
+  {
+    "id": "CFG-02-R1",
+    "prompt": "Cancel that. Show open material requests for production planning.",
+    "assistant_type": "report_table",
+    "title": "Material Request",
+    "pending_cleared": true,
+    "pass": true
+  },
+  {
+    "id": "ENT-02-R1",
+    "trials": [
+      {
+        "prompt": "Show warehouse wise stock balance in Main",
+        "assistant_type": "text",
+        "text": "Which specific warehouse should I use for the stock balance?",
+        "pending_mode": "planner_clarify",
+        "options": 0
+      },
+      {
+        "prompt": "Show stock balance in Main Warehouse",
+        "assistant_type": "text",
+        "text": "I can’t apply a **warehouse** constraint on **Warehouse Wise Stock Balance** because it does not support that filter. Should I choose a different report that supports it?",
+        "pending_mode": "planner_clarify",
+        "options": 0
+      },
+      {
+        "prompt": "Show stock balance in Yangon",
+        "assistant_type": "report_table",
+        "text": "",
+        "pending_mode": null,
+        "options": 0
+      },
+      {
+        "prompt": "Show stock balance in Main",
+        "assistant_type": "report_table",
+        "text": "",
+        "pending_mode": null,
+        "options": 0
+      }
+    ],
+    "pass": false
+  },
+  {
+    "id": "ENT-02-R2",
+    "prompt": "Show accounts receivable for customer Shwe",
+    "token": "Shwe",
+    "assistant_type": "report_table",
+    "pending_mode": null,
+    "options": 0,
+    "pass": false
+  }
+]

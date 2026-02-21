@@ -1,0 +1,315 @@
+{
+  "suite_name": "core_read_replay",
+  "version": "r0.1",
+  "captured_on": "2026-02-21",
+  "source_mix": [
+    "manual_transcript_2026-02-20_21",
+    "20260219T102236Z_phase6_canary_uat_raw_v3.json"
+  ],
+  "policy": {
+    "first_run_only": true,
+    "no_keyword_hacks": true
+  },
+  "required_assertions": [
+    "report_alignment_pass",
+    "dimension_alignment_pass",
+    "metric_alignment_pass",
+    "time_scope_alignment_pass",
+    "filter_alignment_pass",
+    "output_shape_pass",
+    "clarification_policy_pass",
+    "loop_policy_pass"
+  ],
+  "cases": [
+    {
+      "id": "CR-001",
+      "prompt": "Top 10 customers by revenue last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "revenue",
+        "dimension": "customer",
+        "time_scope": "last_month",
+        "top_n": 10,
+        "output_mode": "top_n",
+        "minimal_columns": ["Customer", "Revenue"]
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-002",
+      "prompt": "How many unique customers bought from us last month?",
+      "expected": {
+        "intent": "READ",
+        "task_type": "kpi",
+        "metric": "count_distinct(customer)",
+        "time_scope": "last_month",
+        "output_mode": "kpi"
+      },
+      "baseline_result": "mixed",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-003",
+      "prompt": "Show top 10 products by sold quantity last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "sold_qty",
+        "dimension": "item",
+        "time_scope": "last_month",
+        "top_n": 10,
+        "output_mode": "top_n",
+        "minimal_columns": ["Item Code", "Sold Quantity"]
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-004",
+      "prompt": "Show sales revenue trend by week for the last 8 weeks",
+      "expected": {
+        "intent": "READ",
+        "task_type": "trend",
+        "metric": "revenue",
+        "dimension": "week",
+        "time_scope": "last_8_weeks",
+        "output_mode": "detail",
+        "minimal_columns": ["Week", "Revenue"]
+      },
+      "baseline_result": "mixed",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-005",
+      "prompt": "Stock balance in Yangon Main Warehouse as of today",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "metric": "stock_qty",
+        "dimension": "item",
+        "filters": {"warehouse": "Yangon Main Warehouse - MMOB"},
+        "time_scope": "as_of_today",
+        "output_mode": "detail"
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-006",
+      "prompt": "Which items in Yangon Main Warehouse are below reorder level?",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "subject": "reorder_breach_items",
+        "filters": {"warehouse": "Yangon Main Warehouse - MMOB"},
+        "output_mode": "detail"
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-007",
+      "prompt": "Top 15 items by inventory value in Yangon Main Warehouse",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "inventory_value",
+        "dimension": "item",
+        "filters": {"warehouse": "Yangon Main Warehouse - MMOB"},
+        "top_n": 15,
+        "output_mode": "top_n",
+        "minimal_columns": ["Item", "Inventory Value"]
+      },
+      "baseline_result": "fail",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-008",
+      "prompt": "Which items are slow-moving (no sales in the last 60 days)?",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "subject": "no_sales_items",
+        "time_scope": "last_60_days",
+        "output_mode": "detail",
+        "minimal_columns": ["Item Code", "Item Name"]
+      },
+      "baseline_result": "fail",
+      "failure_stage": "quality_gate"
+    },
+    {
+      "id": "CR-009",
+      "prompt": "Top 10 suppliers by purchase amount last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "purchase_amount",
+        "dimension": "supplier",
+        "time_scope": "last_month",
+        "top_n": 10,
+        "output_mode": "top_n",
+        "minimal_columns": ["Supplier", "Purchase Amount"]
+      },
+      "baseline_result": "fail",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-010",
+      "prompt": "Total receivable amount as of today",
+      "expected": {
+        "intent": "READ",
+        "task_type": "kpi",
+        "metric": "receivable_outstanding",
+        "time_scope": "as_of_today",
+        "output_mode": "kpi"
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-011",
+      "prompt": "Which customers have overdue receivables more than 30 days? Show top 10 by outstanding amount",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "outstanding_amount",
+        "dimension": "customer",
+        "filters": {"age_bucket": "gt_30_days"},
+        "top_n": 10,
+        "output_mode": "top_n",
+        "minimal_columns": ["Customer", "Outstanding Amount"]
+      },
+      "baseline_result": "mixed",
+      "failure_stage": "response_shaping"
+    },
+    {
+      "id": "CR-012",
+      "prompt": "Total payable amount as of today",
+      "expected": {
+        "intent": "READ",
+        "task_type": "kpi",
+        "metric": "payable_outstanding",
+        "time_scope": "as_of_today",
+        "output_mode": "kpi"
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-013",
+      "prompt": "How many suppliers do we need to pay today?",
+      "expected": {
+        "intent": "READ",
+        "task_type": "kpi",
+        "metric": "count_distinct(supplier_with_outstanding)",
+        "time_scope": "as_of_today",
+        "output_mode": "kpi"
+      },
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "CR-014",
+      "prompt": "Who are those suppliers and their payable outstanding amounts?",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "dimension": "supplier",
+        "metric": "outstanding_amount",
+        "output_mode": "detail",
+        "minimal_columns": ["Supplier", "Outstanding Amount"]
+      },
+      "baseline_result": "mixed",
+      "failure_stage": "response_shaping"
+    },
+    {
+      "id": "CR-015",
+      "prompt": "Compare last month sales between Yangon and Mandalay territories",
+      "expected": {
+        "intent": "READ",
+        "task_type": "comparison",
+        "dimension": "territory",
+        "metric": "revenue",
+        "filters": {"territory_in": ["Yangon", "Mandalay"]},
+        "time_scope": "last_month",
+        "output_mode": "detail",
+        "minimal_columns": ["Territory", "Revenue"]
+      },
+      "baseline_result": "mixed",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-016",
+      "prompt": "Show details for invoice ACC-SINV-2026-00006: customer, items, qty, amount, outstanding",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "subject": "sales_invoice_detail",
+        "filters": {"invoice_id": "ACC-SINV-2026-00006"},
+        "output_mode": "detail",
+        "minimal_columns": ["Customer", "Item Code", "Qty", "Amount", "Outstanding"]
+      },
+      "baseline_result": "fail",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-017",
+      "prompt": "Show gross margin by item group for last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "trend",
+        "metric": "gross_margin",
+        "dimension": "item_group",
+        "time_scope": "last_month",
+        "output_mode": "detail"
+      },
+      "baseline_result": "unsupported_or_error",
+      "failure_stage": "response_shaping"
+    },
+    {
+      "id": "CR-018",
+      "prompt": "Top 10 customers by gross profit (not revenue) last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "gross_profit",
+        "dimension": "customer",
+        "time_scope": "last_month",
+        "top_n": 10,
+        "output_mode": "top_n"
+      },
+      "baseline_result": "fail",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-019",
+      "prompt": "Compare Yangon vs Mandalay last month: revenue, gross margin, avg order value",
+      "expected": {
+        "intent": "READ",
+        "task_type": "comparison",
+        "dimension": "territory",
+        "metrics": ["revenue", "gross_margin", "avg_order_value"],
+        "time_scope": "last_month",
+        "output_mode": "detail"
+      },
+      "baseline_result": "fail",
+      "failure_stage": "capability_resolution"
+    },
+    {
+      "id": "CR-020",
+      "prompt": "Forecast next month demand by item based on last 6 months",
+      "expected": {
+        "intent": "READ",
+        "task_type": "forecast",
+        "dimension": "item",
+        "metric": "demand_qty",
+        "time_scope": "last_6_months_to_next_month",
+        "output_mode": "detail"
+      },
+      "baseline_result": "unsupported_or_error",
+      "failure_stage": "response_shaping"
+    }
+  ]
+}

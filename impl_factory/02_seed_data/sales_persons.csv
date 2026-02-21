@@ -1,0 +1,11 @@
+sales_person_name,is_group,department,parent_sales_person,enabled,commission_rate,employee,lft,old_parent,rgt,targets
+Mingalar Mobile Sales Team,1,Sales,,1,,,,,,
+Yangon Sales,1,Sales,Mingalar Mobile Sales Team,1,,,,,,
+Mandalay Sales,1,Sales,Mingalar Mobile Sales Team,1,,,,,,
+YGN-SP-01 Aung Ko Ko,0,Sales,Yangon Sales,1,,,,,,
+YGN-SP-02 Htet Naing,0,Sales,Yangon Sales,1,,,,,,
+YGN-SP-03 Thura Win,0,Sales,Yangon Sales,1,,,,,,
+YGN-SP-04 May Myint,0,Sales,Yangon Sales,1,,,,,,
+MDY-SP-01 Su Su Win,0,Sales,Mandalay Sales,1,,,,,,
+MDY-SP-02 Nay Lin,0,Sales,Mandalay Sales,1,,,,,,
+MDY-SP-03 Hnin Ei,0,Sales,Mandalay Sales,1,,,,,,

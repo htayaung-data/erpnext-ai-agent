@@ -1,0 +1,16 @@
+Item Code,Item Name,Item Group,Brand,Stock UOM,Is Stock Item,Has Serial No
+PH-XMI-RN13-8/256,Xiaomi Redmi Note 13 (8GB/256GB),Smartphones,Xiaomi,Nos,1,1
+PH-OPP-A58-6/128,OPPO A58 (6GB/128GB),Smartphones,OPPO,Nos,1,1
+PH-SSG-A15-6/128,Samsung Galaxy A15 (6GB/128GB),Smartphones,Samsung,Nos,1,1
+PH-RLM-C55-8/256,realme C55 (8GB/256GB),Smartphones,realme,Nos,1,1
+ACC-CHR-20W-USB-C,20W USB-C Fast Charger,Chargers,Baseus,Nos,1,0
+ACC-CBL-UGR-TC1M,Type-C Cable 1m (Fast Charge),Cables,UGREEN,Nos,1,0
+ACC-PWB-ANK-10K,Power Bank 10,000mAh,Power Banks,Anker,Nos,1,0
+ACC-EAR-RDM-BUDS4,Redmi Buds (TWS Earbuds),Earbuds,Xiaomi,Nos,1,0
+ACC-SPK-JBL-GO3,Bluetooth Speaker GO3,Speakers,JBL,Nos,1,0
+NET-RTR-TPA-C6,Wi-Fi Router Archer C6,Routers,TP-Link,Nos,1,1
+MEM-MSD-KNG-64,MicroSD Card 64GB,Memory Cards,Kingston,Nos,1,0
+MEM-USB-SND-64,USB Flash Drive 64GB,USB Flash,SanDisk,Nos,1,0
+ACC-CAS-TPU-RN13,TPU Case (Redmi Note 13),Phone Cases,No Brand,Nos,1,0
+SP-BAT-IP11,Replacement Battery (iPhone 11),Spare Parts,No Brand,Nos,1,0
+SP-LCD-RN13,LCD Screen (Redmi Note 13),Spare Parts,No Brand,Nos,1,0

@@ -1,0 +1,194 @@
+project:
+  name: "Mingalar Mobile Distribution ERPNext v16 + HRMS"
+  vertical: "Electronics Trading + Distribution"
+  country: "Myanmar"
+  currency: "MMK"
+  fiscal_year_start_month: "April"
+  environment:
+    stack: ["ERPNext v16", "HRMS", "FAC"]
+    deployment: "Docker"
+  governance:
+    ai_rules:
+      - "AI cannot submit accounting-impacting docs in production (SI/PI/PE/Stock Entry)."
+      - "AI may create drafts (docstatus=0) for test/demo; human reviews + submits."
+      - "All changes must be artifacted (CSVs/scripts/FAC payloads/logs)."
+      - "No ignore_permissions=True"
+
+company:
+  legal_name: "Mingalar Mobile Distribution Co., Ltd."
+  trade_name: "Mingalar Mobile"
+  abbr: "MMOB"
+  addresses:
+    - label: "HQ"
+      city: "Yangon"
+      address: "No(35), Bayint Naung Road, Hlaing Township, Yangon"
+    - label: "Branch"
+      city: "Mandalay"
+      address: "No(12), 78th Street, Chan Aye Thar Zan Township, Mandalay"
+  branches:
+    - name: "Yangon"
+      code: "YGN"
+    - name: "Mandalay"
+      code: "MDY"
+
+business_model:
+  avg_monthly_sales_volume:
+    estimate_mmk: 180000000
+    estimate_invoices_per_month: 220
+  customer_mix: "B2B mainly (retail shops) + some B2C walk-in"
+  sell_categories:
+    - "Smartphones"
+    - "Phone accessories"
+    - "Small gadgets"
+    - "Spare parts"
+  pricing:
+    model: "Tiered + customer-specific"
+    customer_groups:
+      - "Wholesale-A"
+      - "Wholesale-B"
+      - "Retail"
+    discount_behavior: ["line_level", "invoice_level"]
+  warranty_returns:
+    replacement_window_days: 7
+    phones_supplier_warranty_months: 12
+    conditions: "Return accepted only for wrong item delivered or confirmed defect; within 7 days; packaging/accessories included."
+  serial_tracking:
+    enabled: true
+    scope: ["Smartphones", "Routers"]
+    capture_points:
+      inbound: "Purchase Receipt"
+      outbound: "Delivery Note"
+
+compliance:
+  commercial_tax:
+    enabled: true
+    rate_percent: 5
+    pricing_is_tax_inclusive: false
+    apply_on: "net_total_after_discount"
+    show_line_on_sales_invoice: true
+    print_on_invoice: true
+    accounts:
+      output_tax_liability_account: "Commercial Tax - Payable"
+      purchase_tax_handling: "Expense"
+      purchase_tax_expense_account: "Commercial Tax - Expense"
+  banks:
+    - bank_name: "KBZ Bank"
+      account_name: "KBZ - Main Operating"
+    - bank_name: "AYA Bank"
+      account_name: "AYA - Payroll"
+    - bank_name: "CB Bank"
+      account_name: "CB - Import/Settlement"
+  cash:
+    - account_name: "Main Cash"
+
+inventory:
+  perpetual_inventory: true
+  valuation_method: "Moving Average"
+  allow_negative_stock: false
+  warehouses:
+    - name: "YGN-Main Warehouse"
+      branch: "Yangon"
+      purpose: "Stock"
+    - name: "YGN-Showroom/Counter"
+      branch: "Yangon"
+      purpose: "Counter"
+    - name: "MDY-Branch Warehouse"
+      branch: "Mandalay"
+      purpose: "Stock"
+    - name: "YGN-Import QC/Transit"
+      branch: "Yangon"
+      purpose: "Import_QC"
+    - name: "YGN-Transit"
+      branch: "Yangon"
+      purpose: "Transit"
+    - name: "MDY-Transit"
+      branch: "Mandalay"
+      purpose: "Transit"
+    - name: "YGN-Returns & Damaged"
+      branch: "Yangon"
+      purpose: "Returns"
+    - name: "MDY-Returns & Damaged"
+      branch: "Mandalay"
+      purpose: "Returns"
+  stock_adjustment_frequency: "Monthly"
+  reorder:
+    method: "Manual_MinMax"
+    min_max_scope: "Fast movers only"
+
+sales:
+  typical_flow: ["Quotation", "Sales Order", "Delivery Note", "Sales Invoice"]
+  exceptions:
+    - "B2C walk-in can use direct Sales Invoice (no SO/DN)."
+  credit_policy:
+    enabled: true
+    standard_credit_days: 14
+    overdue_block_dn_over_days: 7
+    alerts_for_overdue: true
+  payment_modes:
+    - "Cash"
+    - "Bank Transfer"
+    - "KBZPay"
+    - "WavePay"
+  approvals:
+    discount_total_percent_requires_approval_over: 3
+
+buying:
+  typical_flow: ["Purchase Order", "Purchase Receipt", "Purchase Invoice"]
+  exceptions:
+    - "Supplier invoice may arrive first; match to receipt later."
+  importing_goods: true
+  landed_cost_allocation: true
+  supplier_terms_default_credit_days: 30
+  approvals:
+    po_requires_approval_over_mmk: 5000000
+
+accounting:
+  dimensions:
+    branch_enabled: true
+    cost_centers_enabled: true
+    cost_centers_by: "Branch"
+  payments:
+    approvals:
+      payment_entry_requires_approval_over_mmk: 10000000
+
+hrms:
+  headcount_estimate: 28
+  departments:
+    - "Sales"
+    - "Warehouse"
+    - "Purchasing"
+    - "Accounts"
+    - "HR/Admin"
+    - "Delivery/Logistics"
+    - "IT"
+  designations:
+    - "General Manager"
+    - "Sales Supervisor"
+    - "Sales Executive"
+    - "Warehouse Supervisor"
+    - "Storekeeper"
+    - "Purchasing Officer"
+    - "Accountant"
+    - "Cashier"
+    - "HR/Admin Officer"
+    - "Delivery Driver"
+  payroll:
+    frequency: "Monthly"
+    structure: "Basic salary + allowances (commission/OT)"
+  leave_types:
+    - "Annual Leave"
+    - "Casual Leave"
+    - "Medical Leave"
+    - "Unpaid Leave"
+    - "Maternity Leave"
+  attendance:
+    hq: "Device"
+    branch: "Manual"
+
+controls:
+  approvals:
+    po_over_mmk_requires_owner_approval: 5000000
+    discount_over_percent_requires_approval: 3
+    payment_entry_over_mmk_requires_approval: 10000000
+  enforcement:
+    credit_control_block_dn_if_overdue_over_days: 7

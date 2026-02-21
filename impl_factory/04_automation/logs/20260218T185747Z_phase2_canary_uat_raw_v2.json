@@ -1,0 +1,925 @@
+{
+  "executed_at_utc": "2026-02-18T18:57:47Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase2_canary",
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": "1",
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": "0",
+    "write_flag_during_default": 0,
+    "write_flag_wr_phase": 1
+  },
+  "preconditions": {
+    "report_list_ok": true,
+    "report_requirements_ok": false,
+    "generate_report_ok": true,
+    "report_list_count": 219,
+    "report_requirements_error": "Traceback (most recent call last):\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/utils/bench_helper.py\", line 48, in invoke\n    return super().invoke(ctx)\n           ~~~~~~~~~~~~~~^^^^^\n  File \"/home/frappe/frappe-bench/env/lib/pytho",
+    "generate_report_error": ""
+  },
+  "summary": {
+    "total": 23,
+    "passed": 21,
+    "failed": 2,
+    "clarification_rate_clear_set": 0.0,
+    "clarification_count_clear_set": 0,
+    "clear_set_total": 12,
+    "meta_clarification_count_clear_set": 0
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": true,
+    "clarification_rate_clear_set_le_10pct": true,
+    "zero_meta_clarification_on_clear_set": true,
+    "overall_go": false
+  },
+  "results": [
+    {
+      "id": "FIN-01",
+      "prompt": "Show accounts receivable as of today",
+      "expected": "Returns FAC-backed result directly; no clarification for clear ask.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Accounts Receivable",
+        "downloads": 0,
+        "rows": 32,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-03",
+      "prompt": "Total outstanding amount",
+      "expected": "Uses transform_last only and returns total in same turn.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Total Outstanding Amount",
+        "downloads": 0,
+        "rows": 1,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-04",
+      "prompt": "Sort that by outstanding amount descending",
+      "expected": "Deterministic sort transform on last-result rows in same turn.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sorted by Outstanding Amount (desc)",
+        "downloads": 0,
+        "rows": 32,
+        "assistant_idx": 15,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-02",
+      "prompt": "Show accounts receivable last month",
+      "expected": "Returns date-scoped FAC result directly when report supports it; otherwise one concrete constraint mismatch question.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Accounts Receivable",
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "SAL-01",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Returns top-5 customer ranking table (customer + revenue), sorted desc, no clarification loop.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Top 5 by Total",
+        "downloads": 0,
+        "rows": 5,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "SAL-02",
+      "prompt": "Show sales by item and download excel",
+      "expected": "Export only because explicitly requested.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sales Analytics",
+        "downloads": 2,
+        "rows": 16,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-01",
+      "prompt": "Show stock balance in Main warehouse",
+      "expected": "Warehouse constraint enforced; returns result directly when unambiguous.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Warehouse Wise Stock Balance",
+        "downloads": 0,
+        "rows": 10,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-02",
+      "prompt": "Show stock balance in the same warehouse",
+      "expected": "Reuses follow-up context and returns result without re-asking same filter.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Filtered by Warehouse contains Main warehouse",
+        "downloads": 0,
+        "rows": 1,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "HR-01",
+      "prompt": "Which employee has attendance issues this month?",
+      "expected": "Returns report-based response directly for clear ask (or one concrete required-input clarification).",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Monthly Attendance Sheet",
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OPS-01",
+      "prompt": "What are the open material requests for production",
+      "expected": "Planner selects report path; response from FAC only.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Material Request",
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-01",
+      "prompt": "Show the report",
+      "expected": "Asks exactly one clarification question.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Which specific report would you like to see?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show the report",
+          "clarification_question": "Which specific report would you like to see?",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-02",
+      "prompt": "Show open material requests for production",
+      "expected": "Pending flow is canceled and new topic starts.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Material Request",
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-03",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Must not ask abstract planner-preference questions (metric vs grouping vs period).",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Top 5 by Total",
+        "downloads": 0,
+        "rows": 5,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ENT-01",
+      "prompt": "Show stock balance in warehouse ZZZ-NO-MATCH-999999",
+      "expected": "Asks refine question; does not guess names.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Which specific item or items do you want to check the stock balance for in warehouse ZZZ-NO-MATCH-999999?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show stock balance in warehouse ZZZ-NO-MATCH-999999",
+          "clarification_question": "Which specific item or items do you want to check the stock balance for in warehouse ZZZ-NO-MATCH-999999?",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": false,
+      "defect_id": "UAT-ENT-01-001",
+      "note": ""
+    },
+    {
+      "id": "ENT-02",
+      "prompt": "Show stock balance in warehouse mmob",
+      "expected": "Presents options and asks to choose one.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "I found multiple matches for **Warehouse** matching \"mmob\": Returns and Damaged - MMOB, Transit Warehouse - MMOB, Mandalay Warehouse - MMOB, Yangon Showroom Counter - MMOB, Yangon Main Warehouse - MMOB, Goods In Transit - MMOB. Which one should I use?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "need_filters",
+        "pending_cleared": false,
+        "options_count": 6,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "need_filters",
+          "base_question": "Show stock balance in warehouse mmob",
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [
+            "Returns and Damaged - MMOB",
+            "Transit Warehouse - MMOB",
+            "Mandalay Warehouse - MMOB",
+            "Yangon Showroom Counter - MMOB",
+            "Yangon Main Warehouse - MMOB",
+            "Goods In Transit - MMOB"
+          ]
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-01",
+      "prompt": "Create a ToDo for follow-up",
+      "expected": "Returns write-disabled message; no write execution.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Write-actions are disabled in this environment. Please ask an administrator to enable them.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 3,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-02",
+      "prompt": "Delete ToDo rk5glo9v9h",
+      "expected": "Requires explicit confirmation before execution.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Are you sure you want to delete the ToDo with ID rk5glo9v9h? Reply **confirm** to execute or **cancel** to stop.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "write_confirmation",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "write_confirmation",
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-03",
+      "prompt": "cancel",
+      "expected": "Cancels write and clears pending state.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Write action canceled.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 9,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-04",
+      "prompt": "Delete ToDo s01k7d524r -> confirm",
+      "expected": "Executes exactly one draft action and returns safe result text.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Confirmed. Deleted **ToDo** `s01k7d524r`.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result",
+          "write_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OBS-01",
+      "prompt": "get_messages(debug=0)",
+      "expected": "No tool/internal messages in normal user view.",
+      "actual": {
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": false,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OBS-02",
+      "prompt": "get_messages(debug=1)",
+      "expected": "Debug view includes audit_turn tool messages.",
+      "actual": {
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ERR-01",
+      "prompt": "Show stock balance",
+      "expected": "User gets safe error text; no stacktrace/internal exception leakage.",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": false,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": false,
+        "send_error": "Traceback (most recent call last):\n  File \"<stdin>\", line 7, in <module>\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/__init__.py\", line 251, in connect\n    local.db = get_db(\n               ~~~~~~^\n    \tsocket=conf.db_socket,\n     ^^^^^^^^^^^^^^^^^^^^^^\n    ...<4 lines>...\n    \tcur_db_name=db_name_,\n     ^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/database/__init__.py\", line 81, in get_db\n    return frappe.database.mariadb.mysqlclient.MariaDBDatabase(\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n    \tsocket, host, user, password, port, cur_db_name\n     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/database/database.py\", line 126, in __init__\n    self.logger = frappe.logger(\"database\")\n                  ~~~~~~~~~~~~~^^^^^^^^^^^^\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/__init__.py\", line 1462, in logger\n    return get_logger(\n    \tmodule=module,\n    ...<4 lines>...\n    \tfile_count=file_count,\n    )\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/utils/logger.py\", line 83, in get_logger\n    handlers = create_handler(module, site, max_size, file_count, stream_only)\n  File \"/home/frappe/frappe-bench/apps/frappe/frappe/utils/logger.py\", line 31, in create_handler\n    site_handler = RotatingFileHandler(sitelog_filename, maxBytes=max_size, backupCount=file_count)\n  File \"/usr/local/lib/python3.14/logging/handlers.py\", line 161, in __init__\n    BaseRotatingHandler.__init__(self, filename, mode, encoding=encoding,\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                 delay=delay, errors=errors)\n                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.14/logging/handlers.py\", line 64, in __init__\n    logging.FileHandler.__init__(self, filename, mode=mode,\n    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                 encoding=encoding, delay=delay,\n                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                                 errors=errors)\n                                 ^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.14/logging/__init__.py\", line 1219, in __init__\n    StreamHandler.__init__(self, self._open())\n                                 ~~~~~~~~~~^^\n  File \"/usr/local/lib/python3.14/logging/__init__.py\", line 1248, in _open\n    return open_func(self.baseFilename, self.mode,\n                     encoding=self.encoding, errors=self.errors)\nFileNotFoundError: [Errno 2] No such file or directory: '/home/frappe/frappe-bench/erpai_prj1/logs/database.log'\n"
+      },
+      "pass": false,
+      "defect_id": "UAT-ERR-01-001",
+      "note": ""
+    },
+    {
+      "id": "EXP-01",
+      "prompt": "Show sales by item for this month",
+      "expected": "No export artifacts unless explicit request.",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sales Analytics",
+        "downloads": 0,
+        "rows": 1,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    }
+  ]
+}

@@ -1,0 +1,908 @@
+{
+  "executed_at_utc": "2026-02-18T17:59:08Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase2_canary",
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": null,
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": null,
+    "write_flag_during_default": 0,
+    "write_flag_wr_phase": 1
+  },
+  "preconditions": {
+    "report_list_ok": true,
+    "report_requirements_ok": true,
+    "generate_report_ok": true,
+    "report_list_count": 218,
+    "report_requirements_error": "",
+    "generate_report_error": ""
+  },
+  "summary": {
+    "total": 23,
+    "passed": 15,
+    "failed": 8,
+    "clarification_rate_clear_set": 0.75,
+    "clarification_count_clear_set": 9,
+    "clear_set_total": 12,
+    "meta_clarification_count_clear_set": 3
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": false,
+    "clarification_rate_clear_set_le_10pct": false,
+    "zero_meta_clarification_on_clear_set": false,
+    "overall_go": false
+  },
+  "results": [
+    {
+      "id": "FIN-01",
+      "prompt": "Show accounts receivable as of today",
+      "expected": "Returns FAC-backed result directly; no clarification for clear ask.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Accounts Receivable",
+        "downloads": 0,
+        "rows": 32,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-03",
+      "prompt": "Total outstanding amount",
+      "expected": "Uses transform_last only and returns total in same turn.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Total Outstanding Amount",
+        "downloads": 0,
+        "rows": 1,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-04",
+      "prompt": "Sort that by outstanding amount descending",
+      "expected": "Deterministic sort transform on last-result rows in same turn.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Sorted by Outstanding Amount (desc)",
+        "downloads": 0,
+        "rows": 32,
+        "assistant_idx": 15,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-02",
+      "prompt": "Show accounts receivable last month",
+      "expected": "Returns date-scoped FAC result directly when report supports it; otherwise one concrete constraint mismatch question.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Please specify one concrete metric or grouping so I can return the correct result.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show accounts receivable last month",
+          "clarification_question": "Please specify one concrete metric or grouping so I can return the correct result.",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": true
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "SAL-01",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Returns top-5 customer ranking table (customer + revenue), sorted desc, no clarification loop.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which metric column should I use from **Sales Analytics**? Options: Jan 2026, Total.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 2,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Top 5 customers by revenue in last month",
+          "clarification_question": "Which metric column should I use from **Sales Analytics**? Options: Jan 2026, Total.",
+          "clarification_options": [
+            "Jan 2026",
+            "Total"
+          ],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": "rows=0"
+    },
+    {
+      "id": "SAL-02",
+      "prompt": "Show sales by item and download excel",
+      "expected": "Export only because explicitly requested.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which metric column should I use from **Sales Analytics**? Options: Apr 2025, May 2025, Jun 2025, Jul 2025, Aug 2025, Sep 2025.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 6,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show sales by item and download excel",
+          "clarification_question": "Which metric column should I use from **Sales Analytics**? Options: Apr 2025, May 2025, Jun 2025, Jul 2025, Aug 2025, Sep 2025.",
+          "clarification_options": [
+            "Apr 2025",
+            "May 2025",
+            "Jun 2025",
+            "Jul 2025",
+            "Aug 2025",
+            "Sep 2025"
+          ],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-01",
+      "prompt": "Show stock balance in Returns and Damaged - MMOB",
+      "expected": "Warehouse constraint enforced; returns result directly when unambiguous.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which specific warehouse should I use for the stock balance?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show stock balance in Returns and Damaged - MMOB",
+          "clarification_question": "Which specific warehouse should I use for the stock balance?",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "warehouse=Returns and Damaged - MMOB"
+    },
+    {
+      "id": "STK-02",
+      "prompt": "Show stock balance in the same warehouse",
+      "expected": "Reuses follow-up context and returns result without re-asking same filter.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "I can group by **Warehouse** from **Warehouse Wise Stock Balance**. Should I proceed?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 9,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 2,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show stock balance in Returns and Damaged - MMOB\nClarification question: Which specific warehouse should I use for the stock balance?\nUser clarification answer: Show stock balance in the same warehouse",
+          "clarification_question": "I can group by **Warehouse** from **Warehouse Wise Stock Balance**. Should I proceed?",
+          "clarification_options": [
+            "yes",
+            "no"
+          ],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "HR-01",
+      "prompt": "Which employee has attendance issues this month?",
+      "expected": "Returns report-based response directly for clear ask (or one concrete required-input clarification).",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Please specify one concrete metric or grouping so I can return the correct result.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Which employee has attendance issues this month?",
+          "clarification_question": "Please specify one concrete metric or grouping so I can return the correct result.",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": true
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OPS-01",
+      "prompt": "What are the open material requests for production",
+      "expected": "Planner selects report path; response from FAC only.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Please specify one concrete metric or grouping so I can return the correct result.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "What are the open material requests for production",
+          "clarification_question": "Please specify one concrete metric or grouping so I can return the correct result.",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": true
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-01",
+      "prompt": "Show the report",
+      "expected": "Asks exactly one clarification question.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which specific report would you like to see?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show the report",
+          "clarification_question": "Which specific report would you like to see?",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-02",
+      "prompt": "Show open material requests for production",
+      "expected": "Pending flow is canceled and new topic starts.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Material Request",
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-03",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Must not ask abstract planner-preference questions.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which metric column should I use from **Sales Analytics**? Options: Jan 2026, Total.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 2,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Top 5 customers by revenue in last month",
+          "clarification_question": "Which metric column should I use from **Sales Analytics**? Options: Jan 2026, Total.",
+          "clarification_options": [
+            "Jan 2026",
+            "Total"
+          ],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "Derived from SAL-01"
+    },
+    {
+      "id": "ENT-01",
+      "prompt": "Show stock balance in ZZZ-NO-MATCH-33NLDH",
+      "expected": "Asks refine question; does not guess names.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which warehouse should I use for the stock balance?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show stock balance in ZZZ-NO-MATCH-33NLDH",
+          "clarification_question": "Which warehouse should I use for the stock balance?",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ENT-02",
+      "prompt": "Show stock balance in mmob",
+      "expected": "Presents options and asks to choose one.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which warehouse should I use?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show stock balance in mmob",
+          "clarification_question": "Which warehouse should I use?",
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": false,
+      "defect_id": "UAT-ENT-02-001",
+      "note": "token=mmob"
+    },
+    {
+      "id": "WR-01",
+      "prompt": "Create a ToDo for follow-up",
+      "expected": "Returns write-disabled message; no write execution.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Write-actions are disabled in this environment. Please ask an administrator to enable them.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 3,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-02",
+      "prompt": "Delete ToDo ql9ucnn8l1",
+      "expected": "Requires explicit confirmation before execution.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Are you sure you want to delete the ToDo with ID ql9ucnn8l1? Reply **confirm** to execute or **cancel** to stop.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "write_confirmation",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "write_confirmation",
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-03",
+      "prompt": "cancel",
+      "expected": "Cancels write and clears pending state.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Write action canceled.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 9,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-04",
+      "prompt": "Delete ToDo qma34eghq6 -> confirm",
+      "expected": "Executes exactly one draft action and returns safe result text.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Confirmed. Deleted **ToDo** `qma34eghq6`.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result",
+          "write_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "deleted=True"
+    },
+    {
+      "id": "OBS-01",
+      "prompt": "get_messages(debug=0)",
+      "expected": "No tool/internal messages in normal user view.",
+      "actual": {
+        "send_ok": true,
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "downloads": 0,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OBS-02",
+      "prompt": "get_messages(debug=1)",
+      "expected": "Debug view includes audit_turn tool messages.",
+      "actual": {
+        "send_ok": true,
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "downloads": 0,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ERR-01",
+      "prompt": "Show stock balance",
+      "expected": "User gets safe error text; no stacktrace/internal exception leakage.",
+      "actual": {
+        "send_ok": false,
+        "send_error": "I couldn’t process that request right now. Please try again.",
+        "assistant_type": "error",
+        "assistant_text": "I couldn’t process that request right now. Please try again.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": true,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "error_envelope",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "EXP-01",
+      "prompt": "Show sales by item for this month",
+      "expected": "No export artifacts unless explicit request.",
+      "actual": {
+        "send_ok": true,
+        "send_error": null,
+        "assistant_type": "text",
+        "assistant_text": "Which metric column should I use from **Sales Analytics**? Options: Feb 2026, Total.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 2,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Show sales by item for this month",
+          "clarification_question": "Which metric column should I use from **Sales Analytics**? Options: Feb 2026, Total.",
+          "clarification_options": [
+            "Feb 2026",
+            "Total"
+          ],
+          "options": []
+        },
+        "clarification": true,
+        "meta_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    }
+  ]
+}

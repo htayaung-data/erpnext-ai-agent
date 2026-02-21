@@ -1,0 +1,6 @@
+company,warehouse_name,is_group,account,address_line_1,address_line_2,city,customer,default_in_transit_warehouse,disabled,email_id,is_rejected_warehouse,lft,mobile_no,old_parent,parent_warehouse,phone_no,pin,rgt,state,warehouse_type
+"Mingalar Mobile Distribution Co., Ltd.",YGN-Main Warehouse,0,,,,Yangon,,,,,,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",YGN-Showroom Counter,0,,,,Yangon,,,,,,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",MDY-Branch Warehouse,0,,,,Mandalay,,,,,,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",In-Transit Warehouse,0,,,,Yangon,,,,,,,,,,,,,,
+"Mingalar Mobile Distribution Co., Ltd.",Returns And Damaged Warehouse,0,,,,Yangon,,,,,1,,,,,,,,,

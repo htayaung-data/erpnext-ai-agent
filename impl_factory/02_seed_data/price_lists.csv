@@ -1,0 +1,4 @@
+currency,price_list_name,enabled,buying,countries,price_not_uom_dependent,selling
+MMK,Retail,1,0,,1,1
+MMK,Wholesale,1,0,,1,1
+MMK,Buying,1,1,,1,0

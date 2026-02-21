@@ -1,0 +1,563 @@
+{
+  "executed_at_utc": "2026-02-18T13:17:49Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "summary": {
+    "total": 22,
+    "passed": 19,
+    "failed": 3
+  },
+  "results": [
+    {
+      "id": "FIN-01",
+      "prompt": "Show accounts receivable aging as of today for all customers",
+      "expected": "FAC-backed AR response (table or one-question clarify)",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date** constraint on **Accounts Receivable** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-02",
+      "prompt": "Show accounts receivable for last month with date range",
+      "expected": "Date-range aware response",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Accounts Receivable Summary** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 10,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-03",
+      "prompt": "Total outstanding amount from that",
+      "expected": "Transform-last total or single clarify",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Accounts Receivable** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 15,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "FIN-04",
+      "prompt": "Sort that by outstanding amount descending",
+      "expected": "Deterministic sort transform behavior",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Accounts Receivable** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 20,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "SAL-01",
+      "prompt": "Top 5 customers by revenue in last month",
+      "expected": "Run report + top_n style behavior",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Sales Analytics** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "rows=0"
+    },
+    {
+      "id": "SAL-02",
+      "prompt": "Show sales by item this month and download as excel",
+      "expected": "Explicit export includes download links",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Sales Analytics** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 10,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-01",
+      "prompt": "Show stock balance in Returns and Damaged - MMOB",
+      "expected": "Warehouse-constrained stock response",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Which specific warehouse should I use for the stock balance?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "STK-02",
+      "prompt": "Now show stock balance in the same warehouse",
+      "expected": "Follow-up same-warehouse context reuse",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Which specific warehouse should I use for the stock balance?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 9,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "HR-01",
+      "prompt": "Which employees have attendance issues this month?",
+      "expected": "HR report-driven response",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Monthly Attendance Sheet** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OPS-01",
+      "prompt": "What are the open material requests for production planning?",
+      "expected": "Operations report path response",
+      "actual": {
+        "ok": true,
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Material Request",
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "last_result",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-01",
+      "prompt": "Show the report",
+      "expected": "Exactly one clarify question",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Which specific report would you like to see?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-02",
+      "prompt": "Switch topic: show sales by customer for this month",
+      "expected": "Pending flow canceled on topic switch",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Which specific report would you like to see for sales by customer?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 10,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ENT-01",
+      "prompt": "Show stock balance in warehouse ZZZ-NO-MATCH-999999",
+      "expected": "No-match asks refine; no guessing",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Which specific item or items do you want to check the stock balance for in warehouse ZZZ-NO-MATCH-999999?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ENT-02",
+      "prompt": "Show stock balance in Yangon",
+      "expected": "Ambiguous entity asks user to choose",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Which specific item or items do you want to check the stock balance for in Yangon?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 10,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": false,
+      "defect_id": "",
+      "note": "options=0"
+    },
+    {
+      "id": "WR-01",
+      "prompt": "Create a ToDo for quarterly budget review follow-up",
+      "expected": "Write disabled gate blocks execution",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Write-actions are disabled in this environment. Please ask an administrator to enable them.",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 3,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-02",
+      "prompt": "Delete ToDo lsg9dp4m99",
+      "expected": "Write requires explicit confirmation",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Delete the ToDo with ID lsg9dp4m99? Reply **confirm** to execute or **cancel** to stop.",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 8,
+        "pending_mode": "write_confirmation",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-03",
+      "prompt": "cancel",
+      "expected": "Cancel clears pending write",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Write action canceled.",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 13,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "WR-04",
+      "prompt": "Delete ToDo ltfkj5fh0f -> confirm",
+      "expected": "Explicit confirm executes exactly one write draft",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Confirmed. Deleted **ToDo** `ltfkj5fh0f`.",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 24,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result",
+          "write_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "pre_pending=write_confirmation"
+    },
+    {
+      "id": "OBS-01",
+      "prompt": "get_messages(debug=0)",
+      "expected": "No tool/internal messages in normal user view",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Public view",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": null,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "OBS-02",
+      "prompt": "get_messages(debug=1)",
+      "expected": "Debug view includes audit_turn",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "Debug view",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": null,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    },
+    {
+      "id": "ERR-01",
+      "prompt": "Forced runtime failure via patched run_tool",
+      "expected": "Safe error payload + hidden error envelope",
+      "actual": {
+        "ok": false,
+        "assistant_type": "error",
+        "assistant_text": "I couldn’t process that request right now. Please try again.",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "audit_present": true,
+        "error_env_present": true,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "error_envelope",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "handle_user_message_error=I couldn’t process that request right now. Please try again."
+    },
+    {
+      "id": "EXP-01",
+      "prompt": "Show sales by item for this month",
+      "expected": "No export artifact unless explicitly requested",
+      "actual": {
+        "ok": true,
+        "assistant_type": "text",
+        "assistant_text": "I can’t apply a **date range** constraint on **Sales Analytics** because it does not support that filter. Should I choose a different report that supports it?",
+        "assistant_title": null,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "pending_state",
+          "tool_result"
+        ]
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": ""
+    }
+  ]
+}

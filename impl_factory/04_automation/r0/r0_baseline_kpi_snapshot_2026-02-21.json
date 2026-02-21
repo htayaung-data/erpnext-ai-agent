@@ -1,0 +1,91 @@
+{
+  "snapshot_id": "r0_baseline_2026-02-21",
+  "captured_at_utc": "2026-02-21T00:00:00Z",
+  "contract_version": "v3.1",
+  "source_artifacts": {
+    "release_gate_raw": "impl_factory/04_automation/logs/20260220T063410Z_phase8_release_gate_stage10.json",
+    "canary_raw": "impl_factory/04_automation/logs/20260219T102236Z_phase6_canary_uat_raw_v3.json",
+    "shadow_diff_raw": "impl_factory/04_automation/logs/20260219T123637Z_phase8_shadow_diff.json",
+    "defect_ledger": "impl_factory/04_automation/r0/r0_defect_stage_ledger_2026-02-21.csv",
+    "replay_suites": [
+      "impl_factory/04_automation/r0/core_read_replay.json",
+      "impl_factory/04_automation/r0/multiturn_context_replay.json",
+      "impl_factory/04_automation/r0/transform_followup_replay.json"
+    ]
+  },
+  "automation_gate_baseline": {
+    "total_cases": 26,
+    "passed_cases": 25,
+    "failed_cases": 1,
+    "direct_answer_rate_clear_read": 1.0,
+    "clarification_rate_clear_read": 0.0,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_rate_clear_read": 0.0,
+    "clarification_loop_rate": 0.0,
+    "output_shape_pass_rate_clear_read": 1.0,
+    "write_safety_incidents": 0,
+    "user_correction_rate": 0.0,
+    "latency_p95_ms_clear_read": 10581,
+    "latency_p95_sla_ms": 5000,
+    "reader_pass_rate": 1.0,
+    "operator_pass_rate": 0.8571,
+    "overall_go": false,
+    "failed_gate_checks": [
+      "fac_preconditions_ok",
+      "latency_p95_within_sla",
+      "mandatory_pass_rate_100",
+      "role_parity_reader_vs_operator"
+    ]
+  },
+  "shadow_baseline": {
+    "total_cases": 23,
+    "improved": 0,
+    "regressed": 21,
+    "unchanged": 2
+  },
+  "manual_replay_seed_baseline": {
+    "core_read_replay": {
+      "total": 20,
+      "pass": 7,
+      "mixed": 5,
+      "fail": 6,
+      "unsupported_or_error": 2
+    },
+    "multiturn_context_replay": {
+      "total": 10,
+      "pass": 1,
+      "mixed": 4,
+      "fail": 5
+    },
+    "transform_followup_replay": {
+      "total": 10,
+      "pass": 4,
+      "mixed": 1,
+      "fail": 5
+    }
+  },
+  "defect_ledger_snapshot": {
+    "total_open_defects": 31,
+    "severity_counts": {
+      "critical": 5,
+      "high": 15,
+      "medium": 11
+    },
+    "stage_counts": {
+      "intent_normalization": 0,
+      "capability_resolution": 7,
+      "execution_loop": 4,
+      "quality_gate": 4,
+      "transform_last": 3,
+      "context_binding": 3,
+      "response_shaping": 7,
+      "clarification_policy": 3
+    }
+  },
+  "r0_exit_assessment": {
+    "all_known_failures_stage_tagged": true,
+    "canonical_replay_suites_created": true,
+    "baseline_kpis_frozen": true,
+    "ready_for_r1": true
+  }
+}

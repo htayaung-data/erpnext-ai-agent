@@ -1,0 +1,75 @@
+{
+  "executed_at_utc": "2026-02-19T05:02:47Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase2_canary",
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": null,
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": null,
+    "write_flag_during_default": 0,
+    "write_flag_wr_phase": 1
+  },
+  "preconditions": {
+    "report_list_ok": false,
+    "report_requirements_ok": false,
+    "generate_report_ok": false,
+    "report_list_count": 0,
+    "report_requirements_error": "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22",
+    "generate_report_error": "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22"
+  },
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "clarification_rate_clear_set": 0.0,
+    "clarification_count_clear_set": 0,
+    "clear_set_total": 0,
+    "meta_clarification_count_clear_set": 0
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": true,
+    "clarification_rate_clear_set_le_10pct": true,
+    "zero_meta_clarification_on_clear_set": true,
+    "overall_go": false
+  },
+  "results": [
+    {
+      "id": "ERR-01",
+      "prompt": "Show stock balance",
+      "expected": "User gets safe error text; no stacktrace/internal exception leakage.",
+      "actual": {
+        "assistant_type": "error",
+        "assistant_text": "session_create_failed",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": false,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "send_ok": false,
+        "send_error": "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.51/containers/json?filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.project%3Derpai_project1%22%3Atrue%2C%22com.docker.compose.service%3Dbackend%22%3Atrue%7D%7D\": dial unix /var/run/docker.sock: connect: operation not permitted\n"
+      },
+      "pass": false,
+      "defect_id": "UAT-ERR-01-001",
+      "note": ""
+    }
+  ]
+}

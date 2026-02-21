@@ -1,0 +1,4 @@
+Cost Center Name,Parent Cost Center,Is Group,Company
+MMOB Cost Centers,All Cost Centers,1,"Mingalar Mobile Distribution Co., Ltd."
+Yangon,MMOB Cost Centers - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."
+Mandalay,MMOB Cost Centers - MMOB,0,"Mingalar Mobile Distribution Co., Ltd."

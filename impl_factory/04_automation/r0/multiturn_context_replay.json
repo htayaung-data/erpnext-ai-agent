@@ -1,0 +1,115 @@
+{
+  "suite_name": "multiturn_context_replay",
+  "version": "r0.1",
+  "captured_on": "2026-02-21",
+  "policy": {
+    "max_turns_per_case": 4,
+    "requires_reference_binding": true
+  },
+  "cases": [
+    {
+      "id": "MT-001",
+      "turns": [
+        "Show top 10 products by sold quantity last month",
+        "Give me the list of those products with sold quantity and revenue"
+      ],
+      "expected": "Second turn reuses prior top-10 item set and returns 10 rows with Item, Sold Qty, Revenue.",
+      "baseline_result": "mixed",
+      "failure_stage": "context_binding"
+    },
+    {
+      "id": "MT-002",
+      "turns": [
+        "How many suppliers do we need to pay today?",
+        "Who are those suppliers and their payable outstanding amounts?",
+        "Not supplier group, show supplier name with payable amount"
+      ],
+      "expected": "Second and third turns stay on supplier dimension and honor correction phrase.",
+      "baseline_result": "mixed",
+      "failure_stage": "context_binding"
+    },
+    {
+      "id": "MT-003",
+      "turns": [
+        "Compare last month sales between Yangon and Mandalay territories",
+        "Show as million"
+      ],
+      "expected": "Transform applies to same territory comparison result only.",
+      "baseline_result": "fail",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "MT-004",
+      "turns": [
+        "Show details for invoice ACC-SINV-2026-00006: customer, items, qty, amount, outstanding",
+        "Total Amount of that invoice? show as million",
+        "I mean total amount of ACC-SINV-2026-00006"
+      ],
+      "expected": "Reference `that invoice` remains anchored to ACC-SINV-2026-00006 in all turns.",
+      "baseline_result": "fail",
+      "failure_stage": "context_binding"
+    },
+    {
+      "id": "MT-005",
+      "turns": [
+        "Total receivable amount as of today",
+        "Show as million"
+      ],
+      "expected": "Second turn scales receivable metric from prior result with correct numeric formatting.",
+      "baseline_result": "pass",
+      "failure_stage": null
+    },
+    {
+      "id": "MT-006",
+      "turns": [
+        "Show the report",
+        "Show open material requests for production"
+      ],
+      "expected": "Second turn cancels prior pending clarification and starts new topic.",
+      "baseline_result": "mixed",
+      "failure_stage": "context_binding"
+    },
+    {
+      "id": "MT-007",
+      "turns": [
+        "Show goods received quantity by item for last month",
+        "I mean sold qty, not received qty"
+      ],
+      "expected": "Correction phrase swaps metric semantics while keeping same topic and time scope.",
+      "baseline_result": "mixed",
+      "failure_stage": "context_binding"
+    },
+    {
+      "id": "MT-008",
+      "turns": [
+        "Who are those suppliers and their payable outstanding amounts?",
+        "Show previous payable supplier list again, but sort by payable amount desc and show in million"
+      ],
+      "expected": "Second turn transforms previous payable list (sort + million) without report re-route.",
+      "baseline_result": "fail",
+      "failure_stage": "transform_last"
+    },
+    {
+      "id": "MT-009",
+      "turns": [
+        "How many unique items that we sold last month",
+        "Please give me the list of those sold item",
+        "Now give me the list of those sold item along with sold Qty"
+      ],
+      "expected": "Follow-ups remain scoped to sold-item set and produce deduplicated item-level output.",
+      "baseline_result": "fail",
+      "failure_stage": "context_binding"
+    },
+    {
+      "id": "MT-010",
+      "turns": [
+        "Total receivable amount as of today",
+        "Total payable amount as of today",
+        "Show the previous receivable result in million"
+      ],
+      "expected": "Third turn resolves `previous receivable` explicitly, not the most recent payable table.",
+      "baseline_result": "fail",
+      "failure_stage": "context_binding"
+    }
+  ]
+}

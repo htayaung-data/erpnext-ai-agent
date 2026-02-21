@@ -1,0 +1,54 @@
+{
+  "snapshot_id": "r1_delta_2026-02-21",
+  "baseline_snapshot": "r0_baseline_2026-02-21",
+  "new_artifacts": {
+    "canary_raw": "impl_factory/04_automation/logs/20260221T043044Z_phase6_canary_uat_raw_v3.json",
+    "release_gate": "impl_factory/04_automation/logs/20260221T043108Z_phase8_release_gate_stage10.json"
+  },
+  "kpi_baseline": {
+    "total_cases": 26,
+    "passed_cases": 25,
+    "failed_cases": 1,
+    "direct_answer_rate_clear_read": 1.0,
+    "clarification_rate_clear_read": 0.0,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_rate_clear_read": 0.0,
+    "clarification_loop_rate": 0.0,
+    "output_shape_pass_rate_clear_read": 1.0,
+    "write_safety_incidents": 0,
+    "user_correction_rate": 0.0,
+    "latency_p95_ms_clear_read": 10581,
+    "latency_p95_sla_ms": 5000,
+    "reader_pass_rate": 1.0,
+    "operator_pass_rate": 0.8571,
+    "overall_go": false,
+    "failed_gate_checks": [
+      "fac_preconditions_ok",
+      "latency_p95_within_sla",
+      "mandatory_pass_rate_100",
+      "role_parity_reader_vs_operator"
+    ]
+  },
+  "kpi_current": {
+    "total_cases": 26,
+    "passed_cases": 26,
+    "failed_cases": 0,
+    "direct_answer_rate_clear_read": 0.9333,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_rate_clear_read": 0.0,
+    "clarification_loop_rate": 0.0,
+    "latency_p95_ms_clear_read": 6278,
+    "reader_pass_rate": 1.0,
+    "operator_pass_rate": 1.0,
+    "overall_go": true,
+    "failed_gate_checks": []
+  },
+  "delta": {
+    "pass_count_delta": 1,
+    "wrong_report_rate_delta": 0.0,
+    "latency_p95_delta_ms": -4303,
+    "reader_pass_rate_delta": 0.0,
+    "operator_pass_rate_delta": 0.1429
+  },
+  "failed_case_ids": []
+}

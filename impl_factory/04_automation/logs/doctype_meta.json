@@ -1,0 +1,5961 @@
+{
+  "Branch": {
+    "autoname": "field:branch",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "branch",
+        "label": "Branch",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "branch",
+        "label": "Branch",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ]
+  },
+  "Brand": {
+    "autoname": "field:brand",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "brand",
+        "label": "Brand Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "brand",
+        "label": "Brand Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "image",
+        "label": "Image",
+        "fieldtype": "Attach Image",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "description",
+        "label": "Description",
+        "fieldtype": "Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "defaults",
+        "label": "Defaults",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "brand_defaults",
+        "label": "Brand Defaults",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Default",
+        "default": null
+      }
+    ]
+  },
+  "UOM": {
+    "autoname": "field:uom_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "uom_name",
+        "label": "UOM Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "uom_name",
+        "label": "UOM Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "symbol",
+        "label": "Symbol",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "common_code",
+        "label": "Common Code",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "description",
+        "label": "Description",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_obth",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "enabled",
+        "label": "Enabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "must_be_whole_number",
+        "label": "Must be Whole Number",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      }
+    ]
+  },
+  "Item Group": {
+    "autoname": "field:item_group_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "item_group_name",
+        "label": "Item Group Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_item_group",
+        "label": "Parent Item Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Item Group",
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Item Group",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "gs",
+        "label": "General Settings",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_group_name",
+        "label": "Item Group Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_item_group",
+        "label": "Parent Item Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Item Group",
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "image",
+        "label": "Image",
+        "fieldtype": "Attach Image",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_5",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "defaults",
+        "label": "Defaults",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_group_defaults",
+        "label": "Item Group Defaults",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Default",
+        "default": null
+      },
+      {
+        "fieldname": "sec_break_taxes",
+        "label": "Item Tax",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "taxes",
+        "label": "Taxes",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Tax",
+        "default": null
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Item Group",
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      }
+    ]
+  },
+  "Price List": {
+    "autoname": "field:price_list_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "price_list_name",
+        "label": "Price List Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "currency",
+        "label": "Currency",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Currency",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "currency",
+        "label": "Currency",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Currency",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "enabled",
+        "label": "Enabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "sb_1",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "price_list_name",
+        "label": "Price List Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "currency",
+        "label": "Currency",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "buying",
+        "label": "Buying",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "selling",
+        "label": "Selling",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "price_not_uom_dependent",
+        "label": "Price Not UOM Dependent",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break_3",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "countries",
+        "label": "Applicable for Countries",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Price List Country",
+        "default": null
+      }
+    ]
+  },
+  "Territory": {
+    "autoname": "field:territory_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "territory_name",
+        "label": "Territory Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_territory",
+        "label": "Parent Territory",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Territory",
+        "default": null
+      },
+      {
+        "fieldname": "territory_manager",
+        "label": "Territory Manager",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Sales Person",
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Territory",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "territory_name",
+        "label": "Territory Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_territory",
+        "label": "Parent Territory",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Territory",
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "cb0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "territory_manager",
+        "label": "Territory Manager",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Sales Person",
+        "default": null
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Territory",
+        "default": null
+      },
+      {
+        "fieldname": "target_details_section_break",
+        "label": "Territory Targets",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "targets",
+        "label": "Targets",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Target Detail",
+        "default": null
+      }
+    ]
+  },
+  "Customer Group": {
+    "autoname": "field:customer_group_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "customer_group_name",
+        "label": "Customer Group Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_customer_group",
+        "label": "Parent Customer Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer Group",
+        "default": null
+      },
+      {
+        "fieldname": "default_price_list",
+        "label": "Default Price List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "payment_terms",
+        "label": "Default Payment Terms Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Payment Terms Template",
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer Group",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "customer_group_name",
+        "label": "Customer Group Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_customer_group",
+        "label": "Parent Customer Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer Group",
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "cb0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_price_list",
+        "label": "Default Price List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "payment_terms",
+        "label": "Default Payment Terms Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Payment Terms Template",
+        "default": null
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer Group",
+        "default": null
+      },
+      {
+        "fieldname": "default_receivable_account",
+        "label": "Default Accounts",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "accounts",
+        "label": "Accounts",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Party Account",
+        "default": null
+      },
+      {
+        "fieldname": "credit_limit_section",
+        "label": "Credit Limits",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "credit_limits",
+        "label": "Credit Limit",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Customer Credit Limit",
+        "default": null
+      }
+    ]
+  },
+  "Supplier": {
+    "autoname": "naming_series:",
+    "title_field": "supplier_name",
+    "mandatory_fields": [
+      {
+        "fieldname": "supplier_name",
+        "label": "Supplier Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_type",
+        "label": "Supplier Type",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Company\nIndividual\nPartnership",
+        "default": "Company"
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "country",
+        "label": "Country",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Country",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_group",
+        "label": "Supplier Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Supplier Group",
+        "default": null
+      },
+      {
+        "fieldname": "default_currency",
+        "label": "Billing Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "default_bank_account",
+        "label": "Default Company Bank Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Bank Account",
+        "default": null
+      },
+      {
+        "fieldname": "default_price_list",
+        "label": "Price List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "represents_company",
+        "label": "Represents Company",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "language",
+        "label": "Print Language",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Language",
+        "default": null
+      },
+      {
+        "fieldname": "tax_category",
+        "label": "Tax Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Category",
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_category",
+        "label": "Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_group",
+        "label": "Tax Withholding Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Group",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_primary_address",
+        "label": "Supplier Primary Address",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Address",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_primary_contact",
+        "label": "Supplier Primary Contact",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Contact",
+        "default": null
+      },
+      {
+        "fieldname": "payment_terms",
+        "label": "Default Payment Terms Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Payment Terms Template",
+        "default": null
+      }
+    ],
+    "select_fields": [
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "SUP-.YYYY.-",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_type",
+        "label": "Supplier Type",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Company\nIndividual\nPartnership",
+        "default": "Company"
+      },
+      {
+        "fieldname": "hold_type",
+        "label": "Hold Type",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nAll\nInvoices\nPayments",
+        "default": null
+      }
+    ],
+    "fields": [
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "SUP-.YYYY.-",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_name",
+        "label": "Supplier Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "country",
+        "label": "Country",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Country",
+        "default": null
+      },
+      {
+        "fieldname": "column_break0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_group",
+        "label": "Supplier Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Supplier Group",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_type",
+        "label": "Supplier Type",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Company\nIndividual\nPartnership",
+        "default": "Company"
+      },
+      {
+        "fieldname": "is_transporter",
+        "label": "Is Transporter",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "image",
+        "label": "Image",
+        "fieldtype": "Attach Image",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "defaults_section",
+        "label": "Defaults",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_currency",
+        "label": "Billing Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "default_bank_account",
+        "label": "Default Company Bank Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Bank Account",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_10",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_price_list",
+        "label": "Price List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "internal_supplier_section",
+        "label": "Internal Supplier",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_internal_supplier",
+        "label": "Is Internal Supplier",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "represents_company",
+        "label": "Represents Company",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_16",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "companies",
+        "label": "Allowed To Transact With",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Allowed To Transact With",
+        "default": null
+      },
+      {
+        "fieldname": "column_break2",
+        "label": "More Information",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_details",
+        "label": "Supplier Details",
+        "fieldtype": "Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_30",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "website",
+        "label": "Website",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "language",
+        "label": "Print Language",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Language",
+        "default": null
+      },
+      {
+        "fieldname": "customer_numbers",
+        "label": "Customer Numbers",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Customer Number At Supplier",
+        "default": null
+      },
+      {
+        "fieldname": "dashboard_tab",
+        "label": "Dashboard",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_tab",
+        "label": "Tax",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_id",
+        "label": "Tax ID",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_category",
+        "label": "Tax Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Category",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_27",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_category",
+        "label": "Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_group",
+        "label": "Tax Withholding Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Group",
+        "default": null
+      },
+      {
+        "fieldname": "contact_and_address_tab",
+        "label": "Address & Contact",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "address_contacts",
+        "label": "Address and Contacts",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-map-marker",
+        "default": null
+      },
+      {
+        "fieldname": "address_html",
+        "label": "Address HTML",
+        "fieldtype": "HTML",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break1",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "contact_html",
+        "label": "Contact HTML",
+        "fieldtype": "HTML",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "primary_address_and_contact_detail_section",
+        "label": "Primary Address and Contact",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_44",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_primary_address",
+        "label": "Supplier Primary Address",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Address",
+        "default": null
+      },
+      {
+        "fieldname": "primary_address",
+        "label": "Primary Address",
+        "fieldtype": "Text Editor",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_mglr",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_primary_contact",
+        "label": "Supplier Primary Contact",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Contact",
+        "default": null
+      },
+      {
+        "fieldname": "mobile_no",
+        "label": "Mobile No",
+        "fieldtype": "Read Only",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "email_id",
+        "label": "Email Id",
+        "fieldtype": "Read Only",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "accounting_tab",
+        "label": "Accounting",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "payment_terms",
+        "label": "Default Payment Terms Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Payment Terms Template",
+        "default": null
+      },
+      {
+        "fieldname": "default_accounts_section",
+        "label": "Default Accounts",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "accounts",
+        "label": "Accounts",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Party Account",
+        "default": null
+      },
+      {
+        "fieldname": "settings_tab",
+        "label": "Settings",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "allow_purchase_invoice_creation_without_purchase_order",
+        "label": "Allow Purchase Invoice Creation Without Purchase Order",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "allow_purchase_invoice_creation_without_purchase_receipt",
+        "label": "Allow Purchase Invoice Creation Without Purchase Receipt",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break_54",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_frozen",
+        "label": "Is Frozen",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "disabled",
+        "label": "Disabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "warn_rfqs",
+        "label": "Warn RFQs",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "warn_pos",
+        "label": "Warn POs",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "prevent_rfqs",
+        "label": "Prevent RFQs",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "prevent_pos",
+        "label": "Prevent POs",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "block_supplier_section",
+        "label": "Block Supplier",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "on_hold",
+        "label": "Block Supplier",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "hold_type",
+        "label": "Hold Type",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nAll\nInvoices\nPayments",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_59",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "release_date",
+        "label": "Release Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "portal_users_tab",
+        "label": "Portal Users",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "portal_users",
+        "label": "Supplier Portal Users",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Portal User",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_1mqv",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      }
+    ]
+  },
+  "Customer": {
+    "autoname": "naming_series:",
+    "title_field": "customer_name",
+    "mandatory_fields": [
+      {
+        "fieldname": "customer_name",
+        "label": "Customer Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_type",
+        "label": "Customer Type",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Company\nIndividual\nPartnership",
+        "default": "Company"
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "salutation",
+        "label": "Salutation",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Salutation",
+        "default": null
+      },
+      {
+        "fieldname": "customer_group",
+        "label": "Customer Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer Group",
+        "default": null
+      },
+      {
+        "fieldname": "territory",
+        "label": "Territory",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Territory",
+        "default": null
+      },
+      {
+        "fieldname": "gender",
+        "label": "Gender",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Gender",
+        "default": null
+      },
+      {
+        "fieldname": "lead_name",
+        "label": "From Lead",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Lead",
+        "default": null
+      },
+      {
+        "fieldname": "opportunity_name",
+        "label": "From Opportunity",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Opportunity",
+        "default": null
+      },
+      {
+        "fieldname": "prospect_name",
+        "label": "From Prospect",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Prospect",
+        "default": null
+      },
+      {
+        "fieldname": "account_manager",
+        "label": "Account Manager",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "default_currency",
+        "label": "Billing Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "default_bank_account",
+        "label": "Default Company Bank Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Bank Account",
+        "default": null
+      },
+      {
+        "fieldname": "default_price_list",
+        "label": "Default Price List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "represents_company",
+        "label": "Represents Company",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "market_segment",
+        "label": "Market Segment",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Market Segment",
+        "default": null
+      },
+      {
+        "fieldname": "industry",
+        "label": "Industry",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Industry Type",
+        "default": null
+      },
+      {
+        "fieldname": "language",
+        "label": "Print Language",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Language",
+        "default": null
+      },
+      {
+        "fieldname": "customer_primary_address",
+        "label": "Customer Primary Address",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Address",
+        "default": null
+      },
+      {
+        "fieldname": "customer_primary_contact",
+        "label": "Customer Primary Contact",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Contact",
+        "default": null
+      },
+      {
+        "fieldname": "tax_category",
+        "label": "Tax Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Category",
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_category",
+        "label": "Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_group",
+        "label": "Tax Withholding Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Group",
+        "default": null
+      },
+      {
+        "fieldname": "payment_terms",
+        "label": "Default Payment Terms Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Payment Terms Template",
+        "default": null
+      },
+      {
+        "fieldname": "loyalty_program",
+        "label": "Loyalty Program",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Loyalty Program",
+        "default": null
+      },
+      {
+        "fieldname": "default_sales_partner",
+        "label": "Sales Partner",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Sales Partner",
+        "default": null
+      }
+    ],
+    "select_fields": [
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "CUST-.YYYY.-",
+        "default": null
+      },
+      {
+        "fieldname": "customer_type",
+        "label": "Customer Type",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Company\nIndividual\nPartnership",
+        "default": "Company"
+      }
+    ],
+    "fields": [
+      {
+        "fieldname": "basic_info",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-user",
+        "default": null
+      },
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "CUST-.YYYY.-",
+        "default": null
+      },
+      {
+        "fieldname": "salutation",
+        "label": "Salutation",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Salutation",
+        "default": null
+      },
+      {
+        "fieldname": "customer_name",
+        "label": "Customer Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_type",
+        "label": "Customer Type",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Company\nIndividual\nPartnership",
+        "default": "Company"
+      },
+      {
+        "fieldname": "customer_group",
+        "label": "Customer Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer Group",
+        "default": null
+      },
+      {
+        "fieldname": "column_break0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "territory",
+        "label": "Territory",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Territory",
+        "default": null
+      },
+      {
+        "fieldname": "gender",
+        "label": "Gender",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Gender",
+        "default": null
+      },
+      {
+        "fieldname": "lead_name",
+        "label": "From Lead",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Lead",
+        "default": null
+      },
+      {
+        "fieldname": "opportunity_name",
+        "label": "From Opportunity",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Opportunity",
+        "default": null
+      },
+      {
+        "fieldname": "prospect_name",
+        "label": "From Prospect",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Prospect",
+        "default": null
+      },
+      {
+        "fieldname": "account_manager",
+        "label": "Account Manager",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "image",
+        "label": "Image",
+        "fieldtype": "Attach Image",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "defaults_tab",
+        "label": "Defaults",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_currency",
+        "label": "Billing Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "default_bank_account",
+        "label": "Default Company Bank Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Bank Account",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_14",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_price_list",
+        "label": "Default Price List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "internal_customer_section",
+        "label": "Internal Customer",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_internal_customer",
+        "label": "Is Internal Customer",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "represents_company",
+        "label": "Represents Company",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_70",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "companies",
+        "label": "Allowed To Transact With",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Allowed To Transact With",
+        "default": null
+      },
+      {
+        "fieldname": "more_info",
+        "label": "More Information",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-file-text",
+        "default": null
+      },
+      {
+        "fieldname": "market_segment",
+        "label": "Market Segment",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Market Segment",
+        "default": null
+      },
+      {
+        "fieldname": "industry",
+        "label": "Industry",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Industry Type",
+        "default": null
+      },
+      {
+        "fieldname": "customer_pos_id",
+        "label": "Customer POS id",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "website",
+        "label": "Website",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "language",
+        "label": "Print Language",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Language",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_45",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_details",
+        "label": "Customer Details",
+        "fieldtype": "Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_numbers",
+        "label": "Supplier Numbers",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Supplier Number At Customer",
+        "default": null
+      },
+      {
+        "fieldname": "dashboard_tab",
+        "label": "Dashboard",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "contact_and_address_tab",
+        "label": "Address & Contact",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "address_contacts",
+        "label": "Address and Contact",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-map-marker",
+        "default": null
+      },
+      {
+        "fieldname": "address_html",
+        "label": "Address HTML",
+        "fieldtype": "HTML",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break1",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "contact_html",
+        "label": "Contact HTML",
+        "fieldtype": "HTML",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "primary_address_and_contact_detail",
+        "label": "Primary Address and Contact",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_26",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_primary_address",
+        "label": "Customer Primary Address",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Address",
+        "default": null
+      },
+      {
+        "fieldname": "primary_address",
+        "label": "Primary Address",
+        "fieldtype": "Text Editor",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_nwor",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_primary_contact",
+        "label": "Customer Primary Contact",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Contact",
+        "default": null
+      },
+      {
+        "fieldname": "mobile_no",
+        "label": "Mobile No",
+        "fieldtype": "Read Only",
+        "reqd": 0,
+        "options": "Mobile",
+        "default": null
+      },
+      {
+        "fieldname": "email_id",
+        "label": "Email Id",
+        "fieldtype": "Read Only",
+        "reqd": 0,
+        "options": "Email",
+        "default": null
+      },
+      {
+        "fieldname": "first_name",
+        "label": "First Name",
+        "fieldtype": "Read Only",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "last_name",
+        "label": "Last Name",
+        "fieldtype": "Read Only",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_tab",
+        "label": "Tax",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "taxation_section",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_id",
+        "label": "Tax ID",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_category",
+        "label": "Tax Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Category",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_21",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_category",
+        "label": "Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "tax_withholding_group",
+        "label": "Tax Withholding Group",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Group",
+        "default": null
+      },
+      {
+        "fieldname": "accounting_tab",
+        "label": "Accounting",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "credit_limit_section",
+        "label": "Credit Limit and Payment Terms",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "payment_terms",
+        "label": "Default Payment Terms Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Payment Terms Template",
+        "default": null
+      },
+      {
+        "fieldname": "credit_limits",
+        "label": "Credit Limit",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Customer Credit Limit",
+        "default": null
+      },
+      {
+        "fieldname": "default_receivable_accounts",
+        "label": "Default Accounts",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "accounts",
+        "label": "Accounts",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Party Account",
+        "default": null
+      },
+      {
+        "fieldname": "loyalty_points_tab",
+        "label": "Loyalty Points",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "loyalty_program",
+        "label": "Loyalty Program",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Loyalty Program",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_54",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "loyalty_program_tier",
+        "label": "Loyalty Program Tier",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "sales_team_tab",
+        "label": "Sales Team",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": "fa fa-group",
+        "default": null
+      },
+      {
+        "fieldname": "sales_team",
+        "label": "Sales Team",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Sales Team",
+        "default": null
+      },
+      {
+        "fieldname": "sales_team_section",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_sales_partner",
+        "label": "Sales Partner",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Sales Partner",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_66",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_commission_rate",
+        "label": "Commission Rate",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "settings_tab",
+        "label": "Settings",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "so_required",
+        "label": "Allow Sales Invoice Creation Without Sales Order",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "dn_required",
+        "label": "Allow Sales Invoice Creation Without Delivery Note",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break_53",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_frozen",
+        "label": "Is Frozen",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "disabled",
+        "label": "Disabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "portal_users_tab",
+        "label": "Portal Users",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "portal_users",
+        "label": "Customer Portal Users",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Portal User",
+        "default": null
+      }
+    ]
+  },
+  "Sales Person": {
+    "autoname": "field:sales_person_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "sales_person_name",
+        "label": "Sales Person Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 1,
+        "options": null,
+        "default": "0"
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_sales_person",
+        "label": "Parent Sales Person",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Sales Person",
+        "default": null
+      },
+      {
+        "fieldname": "employee",
+        "label": "Employee",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee",
+        "default": null
+      },
+      {
+        "fieldname": "department",
+        "label": "Department",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Department",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "name_and_employee_id",
+        "label": "Name and Employee ID",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "icon-user",
+        "default": null
+      },
+      {
+        "fieldname": "sales_person_name",
+        "label": "Sales Person Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_sales_person",
+        "label": "Parent Sales Person",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Sales Person",
+        "default": null
+      },
+      {
+        "fieldname": "commission_rate",
+        "label": "Commission Rate",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 1,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "enabled",
+        "label": "Enabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "cb0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "employee",
+        "label": "Employee",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee",
+        "default": null
+      },
+      {
+        "fieldname": "department",
+        "label": "Department",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Department",
+        "default": null
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "target_details_section_break",
+        "label": "Sales Person Targets",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "icon-bullseye",
+        "default": null
+      },
+      {
+        "fieldname": "targets",
+        "label": "Targets",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Target Detail",
+        "default": null
+      }
+    ]
+  },
+  "Department": {
+    "autoname": null,
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "department_name",
+        "label": "Department",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_department",
+        "label": "Parent Department",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Department",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "payroll_cost_center",
+        "label": "Payroll Cost Center",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "leave_block_list",
+        "label": "Leave Block List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Leave Block List",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "department_name",
+        "label": "Department",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_department",
+        "label": "Parent Department",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Department",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_3",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "disabled",
+        "label": "Disabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "Old Parent",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "section_break_4",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "payroll_cost_center",
+        "label": "Payroll Cost Center",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_9",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "leave_block_list",
+        "label": "Leave Block List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Leave Block List",
+        "default": null
+      },
+      {
+        "fieldname": "approvers",
+        "label": "Approvers",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "shift_request_approver",
+        "label": "Shift Request Approver",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Department Approver",
+        "default": null
+      },
+      {
+        "fieldname": "leave_approvers",
+        "label": "Leave Approver",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Department Approver",
+        "default": null
+      },
+      {
+        "fieldname": "expense_approvers",
+        "label": "Expense Approver",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Department Approver",
+        "default": null
+      }
+    ]
+  },
+  "Designation": {
+    "autoname": "field:designation_name",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "designation_name",
+        "label": "Designation",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "appraisal_template",
+        "label": "Appraisal Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Appraisal Template",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "designation_name",
+        "label": "Designation",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "description",
+        "label": "Description",
+        "fieldtype": "Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "appraisal_template",
+        "label": "Appraisal Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Appraisal Template",
+        "default": null
+      },
+      {
+        "fieldname": "required_skills_section",
+        "label": "Required Skills",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "skills",
+        "label": "Skills",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Designation Skill",
+        "default": null
+      }
+    ]
+  },
+  "Employee": {
+    "autoname": "naming_series:",
+    "title_field": "employee_name",
+    "mandatory_fields": [
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "HR-EMP-",
+        "default": null
+      },
+      {
+        "fieldname": "first_name",
+        "label": "First Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "gender",
+        "label": "Gender",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Gender",
+        "default": null
+      },
+      {
+        "fieldname": "date_of_birth",
+        "label": "Date of Birth",
+        "fieldtype": "Date",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "date_of_joining",
+        "label": "Date of Joining",
+        "fieldtype": "Date",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "status",
+        "label": "Status",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Active\nInactive\nSuspended\nLeft",
+        "default": "Active"
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "gender",
+        "label": "Gender",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Gender",
+        "default": null
+      },
+      {
+        "fieldname": "salutation",
+        "label": "Salutation",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Salutation",
+        "default": null
+      },
+      {
+        "fieldname": "user_id",
+        "label": "User ID",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "department",
+        "label": "Department",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Department",
+        "default": null
+      },
+      {
+        "fieldname": "employment_type",
+        "label": "Employment Type",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employment Type",
+        "default": null
+      },
+      {
+        "fieldname": "designation",
+        "label": "Designation",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Designation",
+        "default": null
+      },
+      {
+        "fieldname": "reports_to",
+        "label": "Reports to",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee",
+        "default": null
+      },
+      {
+        "fieldname": "branch",
+        "label": "Branch",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Branch",
+        "default": null
+      },
+      {
+        "fieldname": "grade",
+        "label": "Grade",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee Grade",
+        "default": null
+      },
+      {
+        "fieldname": "job_applicant",
+        "label": "Job Applicant",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Job Applicant",
+        "default": null
+      },
+      {
+        "fieldname": "holiday_list",
+        "label": "Holiday List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Holiday List",
+        "default": null
+      },
+      {
+        "fieldname": "default_shift",
+        "label": "Default Shift",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Shift Type",
+        "default": null
+      },
+      {
+        "fieldname": "expense_approver",
+        "label": "Expense Approver",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "leave_approver",
+        "label": "Leave Approver",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "shift_request_approver",
+        "label": "Shift Request Approver",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "salary_currency",
+        "label": "Salary Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "employee_advance_account",
+        "label": "Employee Advance Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Account",
+        "default": null
+      },
+      {
+        "fieldname": "payroll_cost_center",
+        "label": "Payroll Cost Center",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "health_insurance_provider",
+        "label": "Health Insurance Provider",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee Health Insurance",
+        "default": null
+      }
+    ],
+    "select_fields": [
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "HR-EMP-",
+        "default": null
+      },
+      {
+        "fieldname": "status",
+        "label": "Status",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Active\nInactive\nSuspended\nLeft",
+        "default": "Active"
+      },
+      {
+        "fieldname": "prefered_contact_email",
+        "label": "Preferred Contact Email",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nCompany Email\nPersonal Email\nUser ID",
+        "default": null
+      },
+      {
+        "fieldname": "current_accommodation_type",
+        "label": "Current Address Is",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nRented\nOwned",
+        "default": null
+      },
+      {
+        "fieldname": "permanent_accommodation_type",
+        "label": "Permanent Address Is",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nRented\nOwned",
+        "default": null
+      },
+      {
+        "fieldname": "salary_mode",
+        "label": "Salary Mode",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nBank\nCash\nCheque",
+        "default": null
+      },
+      {
+        "fieldname": "marital_status",
+        "label": "Marital Status",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nSingle\nMarried\nDivorced\nWidowed",
+        "default": null
+      },
+      {
+        "fieldname": "blood_group",
+        "label": "Blood Group",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nA+\nA-\nB+\nB-\nAB+\nAB-\nO+\nO-",
+        "default": null
+      },
+      {
+        "fieldname": "leave_encashed",
+        "label": "Leave Encashed?",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nYes\nNo",
+        "default": null
+      }
+    ],
+    "fields": [
+      {
+        "fieldname": "basic_details_tab",
+        "label": "Overview",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "basic_information",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "employee",
+        "label": "Employee",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "HR-EMP-",
+        "default": null
+      },
+      {
+        "fieldname": "first_name",
+        "label": "First Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "middle_name",
+        "label": "Middle Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "last_name",
+        "label": "Last Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "employee_name",
+        "label": "Full Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_9",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "gender",
+        "label": "Gender",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Gender",
+        "default": null
+      },
+      {
+        "fieldname": "date_of_birth",
+        "label": "Date of Birth",
+        "fieldtype": "Date",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "salutation",
+        "label": "Salutation",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Salutation",
+        "default": null
+      },
+      {
+        "fieldname": "column_break1",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "date_of_joining",
+        "label": "Date of Joining",
+        "fieldtype": "Date",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "image",
+        "label": "Image",
+        "fieldtype": "Attach Image",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "status",
+        "label": "Status",
+        "fieldtype": "Select",
+        "reqd": 1,
+        "options": "Active\nInactive\nSuspended\nLeft",
+        "default": "Active"
+      },
+      {
+        "fieldname": "erpnext_user",
+        "label": "User Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "user_id",
+        "label": "User ID",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "create_user",
+        "label": "Create User",
+        "fieldtype": "Button",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "create_user_permission",
+        "label": "Create User Permission",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "company_details_section",
+        "label": "Company Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "department",
+        "label": "Department",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Department",
+        "default": null
+      },
+      {
+        "fieldname": "employment_type",
+        "label": "Employment Type",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employment Type",
+        "default": null
+      },
+      {
+        "fieldname": "employee_number",
+        "label": "Employee Number",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_25",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "designation",
+        "label": "Designation",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Designation",
+        "default": null
+      },
+      {
+        "fieldname": "reports_to",
+        "label": "Reports to",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_18",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "branch",
+        "label": "Branch",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Branch",
+        "default": null
+      },
+      {
+        "fieldname": "grade",
+        "label": "Grade",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee Grade",
+        "default": null
+      },
+      {
+        "fieldname": "employment_details",
+        "label": "Joining",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "job_applicant",
+        "label": "Job Applicant",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Job Applicant",
+        "default": null
+      },
+      {
+        "fieldname": "scheduled_confirmation_date",
+        "label": "Offer Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_32",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "final_confirmation_date",
+        "label": "Confirmation Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "contract_end_date",
+        "label": "Contract End Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "col_break_22",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "notice_number_of_days",
+        "label": "Notice (days)",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "date_of_retirement",
+        "label": "Date Of Retirement",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "contact_details",
+        "label": "Address & Contacts",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "cell_number",
+        "label": "Mobile",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Phone",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_40",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "personal_email",
+        "label": "Personal Email",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Email",
+        "default": null
+      },
+      {
+        "fieldname": "company_email",
+        "label": "Company Email",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Email",
+        "default": null
+      },
+      {
+        "fieldname": "column_break4",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "prefered_contact_email",
+        "label": "Preferred Contact Email",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nCompany Email\nPersonal Email\nUser ID",
+        "default": null
+      },
+      {
+        "fieldname": "prefered_email",
+        "label": "Preferred Email",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Email",
+        "default": null
+      },
+      {
+        "fieldname": "unsubscribed",
+        "label": "Unsubscribed",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "address_section",
+        "label": "Address",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "current_address",
+        "label": "Current Address",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "current_accommodation_type",
+        "label": "Current Address Is",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nRented\nOwned",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_46",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "permanent_address",
+        "label": "Permanent Address",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "permanent_accommodation_type",
+        "label": "Permanent Address Is",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nRented\nOwned",
+        "default": null
+      },
+      {
+        "fieldname": "emergency_contact_details",
+        "label": "Emergency Contact",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "person_to_be_contacted",
+        "label": "Emergency Contact Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_55",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "emergency_phone_number",
+        "label": "Emergency Phone",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Phone",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_19",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "relation",
+        "label": "Relation",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "attendance_and_leave_details",
+        "label": "Attendance & Leaves",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "attendance_device_id",
+        "label": "Attendance Device ID (Biometric/RF tag ID)",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_44",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "holiday_list",
+        "label": "Holiday List",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Holiday List",
+        "default": null
+      },
+      {
+        "fieldname": "default_shift",
+        "label": "Default Shift",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Shift Type",
+        "default": null
+      },
+      {
+        "fieldname": "approvers_section",
+        "label": "Approvers",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "expense_approver",
+        "label": "Expense Approver",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "leave_approver",
+        "label": "Leave Approver",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_45",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "shift_request_approver",
+        "label": "Shift Request Approver",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "User",
+        "default": null
+      },
+      {
+        "fieldname": "salary_information",
+        "label": "Salary",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "ctc",
+        "label": "Cost to Company (CTC)",
+        "fieldtype": "Currency",
+        "reqd": 0,
+        "options": "salary_currency",
+        "default": null
+      },
+      {
+        "fieldname": "salary_currency",
+        "label": "Salary Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "salary_mode",
+        "label": "Salary Mode",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nBank\nCash\nCheque",
+        "default": null
+      },
+      {
+        "fieldname": "employee_advance_account",
+        "label": "Employee Advance Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Account",
+        "default": null
+      },
+      {
+        "fieldname": "salary_cb",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "payroll_cost_center",
+        "label": "Payroll Cost Center",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "bank_details_section",
+        "label": "Bank Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "bank_name",
+        "label": "Bank Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_heye",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "bank_ac_no",
+        "label": "Bank A/C No.",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "iban",
+        "label": "IBAN",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "IBAN",
+        "default": null
+      },
+      {
+        "fieldname": "personal_details",
+        "label": "Personal Details",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "marital_status",
+        "label": "Marital Status",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nSingle\nMarried\nDivorced\nWidowed",
+        "default": null
+      },
+      {
+        "fieldname": "family_background",
+        "label": "Family Background",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break6",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "blood_group",
+        "label": "Blood Group",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nA+\nA-\nB+\nB-\nAB+\nAB-\nO+\nO-",
+        "default": null
+      },
+      {
+        "fieldname": "health_details",
+        "label": "Health Details",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "health_insurance_section",
+        "label": "Health Insurance",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "health_insurance_provider",
+        "label": "Health Insurance Provider",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Employee Health Insurance",
+        "default": null
+      },
+      {
+        "fieldname": "health_insurance_no",
+        "label": "Health Insurance No",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "passport_details_section",
+        "label": "Passport Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "passport_number",
+        "label": "Passport Number",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "valid_upto",
+        "label": "Valid Up To",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_73",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "date_of_issue",
+        "label": "Date of Issue",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "place_of_issue",
+        "label": "Place of Issue",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "profile_tab",
+        "label": "Profile",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "bio",
+        "label": "Bio / Cover Letter",
+        "fieldtype": "Text Editor",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "educational_qualification",
+        "label": "Educational Qualification",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "education",
+        "label": "Education",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Employee Education",
+        "default": null
+      },
+      {
+        "fieldname": "previous_work_experience",
+        "label": "Previous Work Experience",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "Simple",
+        "default": null
+      },
+      {
+        "fieldname": "external_work_history",
+        "label": "External Work History",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Employee External Work History",
+        "default": null
+      },
+      {
+        "fieldname": "history_in_company",
+        "label": "History In Company",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "Simple",
+        "default": null
+      },
+      {
+        "fieldname": "internal_work_history",
+        "label": "Internal Work History",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Employee Internal Work History",
+        "default": null
+      },
+      {
+        "fieldname": "exit",
+        "label": "Employee Exit",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "resignation_letter_date",
+        "label": "Resignation Letter Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "relieving_date",
+        "label": "Relieving Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "exit_interview_details",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "held_on",
+        "label": "Exit Interview Held On",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "new_workplace",
+        "label": "New Workplace",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_99",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "leave_encashed",
+        "label": "Leave Encashed?",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nYes\nNo",
+        "default": null
+      },
+      {
+        "fieldname": "encashment_date",
+        "label": "Encashment Date",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "feedback_section",
+        "label": "Feedback",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "reason_for_leaving",
+        "label": "Reason for Leaving",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_104",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "feedback",
+        "label": "Feedback",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "Old Parent",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "connections_tab",
+        "label": "Connections",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      }
+    ]
+  },
+  "Warehouse": {
+    "autoname": null,
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "warehouse_name",
+        "label": "Warehouse Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_warehouse",
+        "label": "Parent Warehouse",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse",
+        "default": null
+      },
+      {
+        "fieldname": "account",
+        "label": "Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Account",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "customer",
+        "label": "Customer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer",
+        "default": null
+      },
+      {
+        "fieldname": "warehouse_type",
+        "label": "Warehouse Type",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse Type",
+        "default": null
+      },
+      {
+        "fieldname": "default_in_transit_warehouse",
+        "label": "Default In-Transit Warehouse",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse",
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "Old Parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "warehouse_detail",
+        "label": "Warehouse Detail",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "disabled",
+        "label": "Disabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "warehouse_name",
+        "label": "Warehouse Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_3",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group Warehouse",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "parent_warehouse",
+        "label": "Parent Warehouse",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse",
+        "default": null
+      },
+      {
+        "fieldname": "is_rejected_warehouse",
+        "label": "Is Rejected Warehouse",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break_4",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "account",
+        "label": "Account",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Account",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "customer",
+        "label": "Customer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer",
+        "default": null
+      },
+      {
+        "fieldname": "address_and_contact",
+        "label": "Address and Contact",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "address_html",
+        "label": "Address HTML",
+        "fieldtype": "HTML",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_10",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "contact_html",
+        "label": "Contact HTML",
+        "fieldtype": "HTML",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "warehouse_contact_info",
+        "label": "Warehouse Contact Info",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "email_id",
+        "label": "Email Address",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "phone_no",
+        "label": "Phone No",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Phone",
+        "default": null
+      },
+      {
+        "fieldname": "mobile_no",
+        "label": "Mobile No",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": "Phone",
+        "default": null
+      },
+      {
+        "fieldname": "column_break0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "address_line_1",
+        "label": "Address Line 1",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "address_line_2",
+        "label": "Address Line 2",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "city",
+        "label": "City",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "state",
+        "label": "State/Province",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "pin",
+        "label": "PIN",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "transit_section",
+        "label": "Transit",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "warehouse_type",
+        "label": "Warehouse Type",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse Type",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_qajx",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_in_transit_warehouse",
+        "label": "Default In-Transit Warehouse",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse",
+        "default": null
+      },
+      {
+        "fieldname": "tree_details",
+        "label": "Tree Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "Old Parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Warehouse",
+        "default": null
+      }
+    ]
+  },
+  "Cost Center": {
+    "autoname": null,
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "cost_center_name",
+        "label": "Cost Center Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_cost_center",
+        "label": "Parent Cost Center",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "parent_cost_center",
+        "label": "Parent Cost Center",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Cost Center",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "sb0",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "cost_center_name",
+        "label": "Cost Center Name",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "cost_center_number",
+        "label": "Cost Center Number",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "parent_cost_center",
+        "label": "Parent Cost Center",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Cost Center",
+        "default": null
+      },
+      {
+        "fieldname": "company",
+        "label": "Company",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Company",
+        "default": null
+      },
+      {
+        "fieldname": "cb0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_group",
+        "label": "Is Group",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "disabled",
+        "label": "Disabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "lft",
+        "label": "lft",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "rgt",
+        "label": "rgt",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "old_parent",
+        "label": "old_parent",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Cost Center",
+        "default": null
+      }
+    ]
+  },
+  "Mode of Payment": {
+    "autoname": "field:mode_of_payment",
+    "title_field": null,
+    "mandatory_fields": [
+      {
+        "fieldname": "mode_of_payment",
+        "label": "Mode of Payment",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      }
+    ],
+    "link_fields": [],
+    "select_fields": [
+      {
+        "fieldname": "type",
+        "label": "Type",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "Cash\nBank\nGeneral\nPhone",
+        "default": null
+      }
+    ],
+    "fields": [
+      {
+        "fieldname": "mode_of_payment",
+        "label": "Mode of Payment",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "enabled",
+        "label": "Enabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "type",
+        "label": "Type",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "Cash\nBank\nGeneral\nPhone",
+        "default": null
+      },
+      {
+        "fieldname": "accounts",
+        "label": "Accounts",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Mode of Payment Account",
+        "default": null
+      }
+    ]
+  },
+  "Item": {
+    "autoname": "field:item_code",
+    "title_field": "item_name",
+    "mandatory_fields": [
+      {
+        "fieldname": "item_code",
+        "label": "Item Code",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_group",
+        "label": "Item Group",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Item Group",
+        "default": null
+      },
+      {
+        "fieldname": "stock_uom",
+        "label": "Default Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "UOM",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "item_group",
+        "label": "Item Group",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Item Group",
+        "default": null
+      },
+      {
+        "fieldname": "stock_uom",
+        "label": "Default Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "asset_category",
+        "label": "Asset Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Asset Category",
+        "default": null
+      },
+      {
+        "fieldname": "brand",
+        "label": "Brand",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Brand",
+        "default": null
+      },
+      {
+        "fieldname": "weight_uom",
+        "label": "Weight UOM",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "variant_of",
+        "label": "Variant Of",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Item",
+        "default": null
+      },
+      {
+        "fieldname": "purchase_uom",
+        "label": "Default Purchase Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "customer",
+        "label": "Customer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer",
+        "default": null
+      },
+      {
+        "fieldname": "country_of_origin",
+        "label": "Country of Origin",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Country",
+        "default": null
+      },
+      {
+        "fieldname": "customs_tariff_number",
+        "label": "Customs Tariff Number",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customs Tariff Number",
+        "default": null
+      },
+      {
+        "fieldname": "sales_uom",
+        "label": "Default Sales Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "purchase_tax_withholding_category",
+        "label": "Purchase Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "sales_tax_withholding_category",
+        "label": "Sales Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "quality_inspection_template",
+        "label": "Quality Inspection Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Quality Inspection Template",
+        "default": null
+      },
+      {
+        "fieldname": "default_bom",
+        "label": "Default BOM",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "BOM",
+        "default": null
+      },
+      {
+        "fieldname": "default_item_manufacturer",
+        "label": "Default Item Manufacturer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Manufacturer",
+        "default": null
+      }
+    ],
+    "select_fields": [
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "STO-ITEM-.YYYY.-",
+        "default": null
+      },
+      {
+        "fieldname": "asset_naming_series",
+        "label": "Asset Naming Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_material_request_type",
+        "label": "Default Material Request Type",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "Purchase\nMaterial Transfer\nMaterial Issue\nManufacture\nCustomer Provided",
+        "default": "Purchase"
+      },
+      {
+        "fieldname": "valuation_method",
+        "label": "Valuation Method",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nFIFO\nMoving Average\nLIFO",
+        "default": null
+      },
+      {
+        "fieldname": "variant_based_on",
+        "label": "Variant Based On",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "Item Attribute\nManufacturer",
+        "default": "Item Attribute"
+      }
+    ],
+    "fields": [
+      {
+        "fieldname": "details",
+        "label": "Details",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": "fa fa-flag",
+        "default": null
+      },
+      {
+        "fieldname": "naming_series",
+        "label": "Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "STO-ITEM-.YYYY.-",
+        "default": null
+      },
+      {
+        "fieldname": "item_code",
+        "label": "Item Code",
+        "fieldtype": "Data",
+        "reqd": 1,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_name",
+        "label": "Item Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_group",
+        "label": "Item Group",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Item Group",
+        "default": null
+      },
+      {
+        "fieldname": "stock_uom",
+        "label": "Default Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "opening_stock",
+        "label": "Opening Stock",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "valuation_rate",
+        "label": "Valuation Rate",
+        "fieldtype": "Currency",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "standard_rate",
+        "label": "Standard Selling Rate",
+        "fieldtype": "Currency",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break0",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "disabled",
+        "label": "Disabled",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "allow_alternative_item",
+        "label": "Allow Alternative Item",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "is_stock_item",
+        "label": "Maintain Stock",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "has_variants",
+        "label": "Has Variants",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "is_fixed_asset",
+        "label": "Is Fixed Asset",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "auto_create_assets",
+        "label": "Auto Create Assets on Purchase",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "is_grouped_asset",
+        "label": "Create Grouped Asset",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "asset_category",
+        "label": "Asset Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Asset Category",
+        "default": null
+      },
+      {
+        "fieldname": "asset_naming_series",
+        "label": "Asset Naming Series",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "section_break_znra",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "over_delivery_receipt_allowance",
+        "label": "Over Delivery/Receipt Allowance (%)",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_wugd",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "over_billing_allowance",
+        "label": "Over Billing Allowance (%)",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "image",
+        "label": "Image",
+        "fieldtype": "Attach Image",
+        "reqd": 0,
+        "options": "image",
+        "default": null
+      },
+      {
+        "fieldname": "section_break_11",
+        "label": "Description",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "description",
+        "label": "Description",
+        "fieldtype": "Text Editor",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "brand",
+        "label": "Brand",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Brand",
+        "default": null
+      },
+      {
+        "fieldname": "unit_of_measure_conversion",
+        "label": "Units of Measure",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "uoms",
+        "label": "UOMs",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "UOM Conversion Detail",
+        "default": null
+      },
+      {
+        "fieldname": "dashboard_tab",
+        "label": "Dashboard",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "inventory_section",
+        "label": "Inventory",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": "fa fa-truck",
+        "default": null
+      },
+      {
+        "fieldname": "inventory_settings_section",
+        "label": "Inventory Settings",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "shelf_life_in_days",
+        "label": "Shelf Life In Days",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "end_of_life",
+        "label": "End of Life",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": "2099-12-31"
+      },
+      {
+        "fieldname": "default_material_request_type",
+        "label": "Default Material Request Type",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "Purchase\nMaterial Transfer\nMaterial Issue\nManufacture\nCustomer Provided",
+        "default": "Purchase"
+      },
+      {
+        "fieldname": "valuation_method",
+        "label": "Valuation Method",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "\nFIFO\nMoving Average\nLIFO",
+        "default": null
+      },
+      {
+        "fieldname": "column_break1",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "warranty_period",
+        "label": "Warranty Period (in days)",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "weight_per_unit",
+        "label": "Weight Per Unit",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "weight_uom",
+        "label": "Weight UOM",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "allow_negative_stock",
+        "label": "Allow Negative Stock",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "sb_barcodes",
+        "label": "Barcodes",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "barcodes",
+        "label": "Barcodes",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Barcode",
+        "default": null
+      },
+      {
+        "fieldname": "reorder_section",
+        "label": "Auto re-order",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-rss",
+        "default": null
+      },
+      {
+        "fieldname": "reorder_levels",
+        "label": "Reorder level based on Warehouse",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Reorder",
+        "default": null
+      },
+      {
+        "fieldname": "serial_nos_and_batches",
+        "label": "Serial Nos and Batches",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "has_batch_no",
+        "label": "Has Batch No",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "create_new_batch",
+        "label": "Automatically Create New Batch",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "batch_number_series",
+        "label": "Batch Number Series",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "has_expiry_date",
+        "label": "Has Expiry Date",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "retain_sample",
+        "label": "Retain Sample",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "sample_quantity",
+        "label": "Max Sample Quantity",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_37",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "has_serial_no",
+        "label": "Has Serial No",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "serial_no_series",
+        "label": "Serial Number Series",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "defaults_tab",
+        "label": "Defaults",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_defaults",
+        "label": "Item Defaults",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Default",
+        "default": null
+      },
+      {
+        "fieldname": "variants_section",
+        "label": "Variants",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "variant_of",
+        "label": "Variant Of",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Item",
+        "default": null
+      },
+      {
+        "fieldname": "variant_based_on",
+        "label": "Variant Based On",
+        "fieldtype": "Select",
+        "reqd": 0,
+        "options": "Item Attribute\nManufacturer",
+        "default": "Item Attribute"
+      },
+      {
+        "fieldname": "attributes",
+        "label": "Variant Attributes",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Variant Attribute",
+        "default": null
+      },
+      {
+        "fieldname": "accounting",
+        "label": "Accounting",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "deferred_accounting_section",
+        "label": "Deferred Accounting",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "enable_deferred_expense",
+        "label": "Enable Deferred Expense",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "no_of_months_exp",
+        "label": "No of Months (Expense)",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_9s9o",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "enable_deferred_revenue",
+        "label": "Enable Deferred Revenue",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "no_of_months",
+        "label": "No of Months (Revenue)",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "purchasing_tab",
+        "label": "Purchasing",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "purchase_uom",
+        "label": "Default Purchase Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "min_order_qty",
+        "label": "Minimum Order Qty",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": "0.00"
+      },
+      {
+        "fieldname": "safety_stock",
+        "label": "Safety Stock",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_purchase_item",
+        "label": "Allow Purchase",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "purchase_details_cb",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "lead_time_days",
+        "label": "Lead Time in days",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "last_purchase_rate",
+        "label": "Last Purchase Rate",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "is_customer_provided_item",
+        "label": "Is Customer Provided Item",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "customer",
+        "label": "Customer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer",
+        "default": null
+      },
+      {
+        "fieldname": "supplier_details",
+        "label": "Supplier Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "delivered_by_supplier",
+        "label": "Delivered by Supplier (Drop Ship)",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break2",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "supplier_items",
+        "label": "Supplier Items",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Supplier",
+        "default": null
+      },
+      {
+        "fieldname": "foreign_trade_details",
+        "label": "Foreign Trade Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "country_of_origin",
+        "label": "Country of Origin",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Country",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_59",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customs_tariff_number",
+        "label": "Customs Tariff Number",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customs Tariff Number",
+        "default": null
+      },
+      {
+        "fieldname": "sales_details",
+        "label": "Sales",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": "fa fa-tag",
+        "default": null
+      },
+      {
+        "fieldname": "sales_uom",
+        "label": "Default Sales Unit of Measure",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "grant_commission",
+        "label": "Grant Commission",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "is_sales_item",
+        "label": "Allow Sales",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "column_break3",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "max_discount",
+        "label": "Max Discount (%)",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_details",
+        "label": "Customer Details",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_items",
+        "label": "Customer Items",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Customer Detail",
+        "default": null
+      },
+      {
+        "fieldname": "item_tax_section_break",
+        "label": "Tax",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": "fa fa-money",
+        "default": null
+      },
+      {
+        "fieldname": "section_break_oilf",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "column_break_aytr",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "taxes",
+        "label": "Taxes",
+        "fieldtype": "Table",
+        "reqd": 0,
+        "options": "Item Tax",
+        "default": null
+      },
+      {
+        "fieldname": "section_break_fxqz",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "purchase_tax_withholding_category",
+        "label": "Purchase Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_ltlb",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "sales_tax_withholding_category",
+        "label": "Sales Tax Withholding Category",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Tax Withholding Category",
+        "default": null
+      },
+      {
+        "fieldname": "quality_tab",
+        "label": "Quality",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "inspection_required_before_purchase",
+        "label": "Inspection Required before Purchase",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "quality_inspection_template",
+        "label": "Quality Inspection Template",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Quality Inspection Template",
+        "default": null
+      },
+      {
+        "fieldname": "inspection_required_before_delivery",
+        "label": "Inspection Required before Delivery",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "manufacturing",
+        "label": "Manufacturing",
+        "fieldtype": "Tab Break",
+        "reqd": 0,
+        "options": "fa fa-cogs",
+        "default": null
+      },
+      {
+        "fieldname": "include_item_in_manufacturing",
+        "label": "Include Item In Manufacturing",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "1"
+      },
+      {
+        "fieldname": "is_sub_contracted_item",
+        "label": "Is Subcontracted Item",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "default_bom",
+        "label": "Default BOM",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "BOM",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_74",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "customer_code",
+        "label": "Customer Code",
+        "fieldtype": "Small Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "default_item_manufacturer",
+        "label": "Default Item Manufacturer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Manufacturer",
+        "default": null
+      },
+      {
+        "fieldname": "default_manufacturer_part_no",
+        "label": "Default Manufacturer Part No",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "total_projected_qty",
+        "label": "Total Projected Qty",
+        "fieldtype": "Float",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "capacity_in_days_section",
+        "label": "Capacity (In Days)",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "production_capacity",
+        "label": "Production Capacity",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      }
+    ]
+  },
+  "Item Price": {
+    "autoname": "hash",
+    "title_field": "item_name",
+    "mandatory_fields": [
+      {
+        "fieldname": "item_code",
+        "label": "Item Code",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Item",
+        "default": null
+      },
+      {
+        "fieldname": "uom",
+        "label": "UOM",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "price_list",
+        "label": "Price List",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "price_list_rate",
+        "label": "Rate",
+        "fieldtype": "Currency",
+        "reqd": 1,
+        "options": "currency",
+        "default": null
+      }
+    ],
+    "link_fields": [
+      {
+        "fieldname": "item_code",
+        "label": "Item Code",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Item",
+        "default": null
+      },
+      {
+        "fieldname": "uom",
+        "label": "UOM",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "brand",
+        "label": "Brand",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Brand",
+        "default": null
+      },
+      {
+        "fieldname": "price_list",
+        "label": "Price List",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "customer",
+        "label": "Customer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer",
+        "default": null
+      },
+      {
+        "fieldname": "supplier",
+        "label": "Supplier",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Supplier",
+        "default": null
+      },
+      {
+        "fieldname": "batch_no",
+        "label": "Batch No",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Batch",
+        "default": null
+      },
+      {
+        "fieldname": "currency",
+        "label": "Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      }
+    ],
+    "select_fields": [],
+    "fields": [
+      {
+        "fieldname": "item_code",
+        "label": "Item Code",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Item",
+        "default": null
+      },
+      {
+        "fieldname": "uom",
+        "label": "UOM",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "UOM",
+        "default": null
+      },
+      {
+        "fieldname": "packing_unit",
+        "label": "Packing Unit",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break_17",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "item_name",
+        "label": "Item Name",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "brand",
+        "label": "Brand",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Brand",
+        "default": null
+      },
+      {
+        "fieldname": "item_description",
+        "label": "Item Description",
+        "fieldtype": "Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "price_list_details",
+        "label": "Price List",
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-tags",
+        "default": null
+      },
+      {
+        "fieldname": "price_list",
+        "label": "Price List",
+        "fieldtype": "Link",
+        "reqd": 1,
+        "options": "Price List",
+        "default": null
+      },
+      {
+        "fieldname": "customer",
+        "label": "Customer",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Customer",
+        "default": null
+      },
+      {
+        "fieldname": "supplier",
+        "label": "Supplier",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Supplier",
+        "default": null
+      },
+      {
+        "fieldname": "batch_no",
+        "label": "Batch No",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Batch",
+        "default": null
+      },
+      {
+        "fieldname": "column_break_3",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "buying",
+        "label": "Buying",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "selling",
+        "label": "Selling",
+        "fieldtype": "Check",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "item_details",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": "fa fa-tag",
+        "default": null
+      },
+      {
+        "fieldname": "currency",
+        "label": "Currency",
+        "fieldtype": "Link",
+        "reqd": 0,
+        "options": "Currency",
+        "default": null
+      },
+      {
+        "fieldname": "col_br_1",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "price_list_rate",
+        "label": "Rate",
+        "fieldtype": "Currency",
+        "reqd": 1,
+        "options": "currency",
+        "default": null
+      },
+      {
+        "fieldname": "section_break_15",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "valid_from",
+        "label": "Valid From",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": "Today"
+      },
+      {
+        "fieldname": "lead_time_days",
+        "label": "Lead Time in days",
+        "fieldtype": "Int",
+        "reqd": 0,
+        "options": null,
+        "default": "0"
+      },
+      {
+        "fieldname": "column_break_18",
+        "label": null,
+        "fieldtype": "Column Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "valid_upto",
+        "label": "Valid Up To",
+        "fieldtype": "Date",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "section_break_24",
+        "label": null,
+        "fieldtype": "Section Break",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "note",
+        "label": "Note",
+        "fieldtype": "Text",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      },
+      {
+        "fieldname": "reference",
+        "label": "Reference",
+        "fieldtype": "Data",
+        "reqd": 0,
+        "options": null,
+        "default": null
+      }
+    ]
+  }
+}

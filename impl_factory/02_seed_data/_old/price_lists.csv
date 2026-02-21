@@ -1,0 +1,5 @@
+Price List Name,Enabled,Currency,Selling,Buying
+Wholesale-A,1,MMK,1,0
+Wholesale-B,1,MMK,1,0
+Retail,1,MMK,1,0
+Standard Buying,1,MMK,0,1

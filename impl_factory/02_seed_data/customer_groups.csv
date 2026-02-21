@@ -1,0 +1,4 @@
+customer_group_name,is_group,accounts,credit_limits,default_price_list,lft,old_parent,parent_customer_group,payment_terms,rgt
+All Customer Groups,1,,,,,,,,
+Wholesale,0,,,Wholesale,,,All Customer Groups,,
+Retail,0,,,Retail,,,All Customer Groups,,

@@ -1,0 +1,65 @@
+[docker_compose_ps]
+NAME                              IMAGE                                                                              COMMAND                  SERVICE          CREATED       STATUS                    PORTS
+erpai_project1-backend-1          ghcr.io/htayaung-data/erpnext-factory:erp16.4.1-hrms16.4.0-fac2.3.1-frappe16.5.0   "/home/frappe/frappe…"   backend          7 hours ago   Up 41 minutes (healthy)   
+erpai_project1-caddy-1            caddy:2                                                                            "caddy run --config …"   caddy            4 days ago    Up 4 days                 0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:443->443/tcp, [::]:443->443/tcp, 443/udp, 2019/tcp
+erpai_project1-db-1               mariadb:10.6                                                                       "docker-entrypoint.s…"   db               4 days ago    Up 4 days (healthy)       3306/tcp
+erpai_project1-frontend-1         ghcr.io/htayaung-data/erpnext-factory:erp16.4.1-hrms16.4.0-fac2.3.1-frappe16.5.0   "nginx-entrypoint.sh"    frontend         5 days ago    Up 4 days                 0.0.0.0:8083->8080/tcp, [::]:8083->8080/tcp
+erpai_project1-queue-long-1       ghcr.io/htayaung-data/erpnext-factory:erp16.4.1-hrms16.4.0-fac2.3.1-frappe16.5.0   "bench worker --queu…"   queue-long       7 hours ago   Up 41 minutes             
+erpai_project1-queue-short-1      ghcr.io/htayaung-data/erpnext-factory:erp16.4.1-hrms16.4.0-fac2.3.1-frappe16.5.0   "bench worker --queu…"   queue-short      7 hours ago   Up 41 minutes             
+erpai_project1-redis-cache-1      redis:6.2-alpine                                                                   "docker-entrypoint.s…"   redis-cache      5 days ago    Up 4 days                 6379/tcp
+erpai_project1-redis-queue-1      redis:6.2-alpine                                                                   "docker-entrypoint.s…"   redis-queue      5 days ago    Up 4 days                 6379/tcp
+erpai_project1-redis-socketio-1   redis:6.2-alpine                                                                   "docker-entrypoint.s…"   redis-socketio   5 days ago    Up 4 days                 6379/tcp
+erpai_project1-scheduler-1        ghcr.io/htayaung-data/erpnext-factory:erp16.4.1-hrms16.4.0-fac2.3.1-frappe16.5.0   "bench schedule"         scheduler        7 hours ago   Up 40 minutes             
+erpai_project1-websocket-1        ghcr.io/htayaung-data/erpnext-factory:erp16.4.1-hrms16.4.0-fac2.3.1-frappe16.5.0   "node /home/frappe/f…"   websocket        7 hours ago   Up 40 minutes (healthy)   
+
+[bench_list_apps]
+
+frappe                16.5.0 UNVERSIONED
+erpnext               16.4.1 UNVERSIONED
+hrms                  16.4.0 UNVERSIONED
+frappe_assistant_core 2.3.1  UNVERSIONED
+ai_assistant_ui       0.0.1  main
+
+
+[fac_report_list_probe]
+1
+
+[fac_report_requirements_probe_sales_analytics]
+Traceback (most recent call last):
+  File "/home/frappe/frappe-bench/apps/frappe/frappe/commands/utils.py", line 284, in execute
+    ret = frappe.get_attr(method)(*fn_args, **fn_kwargs)
+  File "/home/frappe/frappe-bench/apps/ai_assistant_ui/ai_assistant_ui/ai_core/fac/client.py", line 156, in fac_report_requirements
+    raise AttributeError("FAC API has no report_requirements()")
+AttributeError: FAC API has no report_requirements()
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/frappe/frappe-bench/apps/frappe/frappe/utils/bench_helper.py", line 48, in invoke
+    return super().invoke(ctx)
+           ~~~~~~~~~~~~~~^^^^^
+  File "/home/frappe/frappe-bench/env/lib/python3.14/site-packages/click/core.py", line 1873, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/home/frappe/frappe-bench/env/lib/python3.14/site-packages/click/core.py", line 1269, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/frappe/frappe-bench/env/lib/python3.14/site-packages/click/core.py", line 824, in invoke
+    return callback(*args, **kwargs)
+  File "/home/frappe/frappe-bench/env/lib/python3.14/site-packages/click/decorators.py", line 34, in new_func
+    return f(get_current_context(), *args, **kwargs)
+  File "/home/frappe/frappe-bench/apps/frappe/frappe/commands/__init__.py", line 28, in _func
+    ret = f(ctx.obj, *args, **kwargs)
+  File "/home/frappe/frappe-bench/apps/frappe/frappe/commands/utils.py", line 288, in execute
+    ret = eval(code, globals(), locals())  # nosemgrep
+  File "<bench execute>", line 1, in <module>
+NameError: name 'ai_assistant_ui' is not defined
+
+name 'ai_assistant_ui' is not defined
+rc=1
+
+[fac_generate_report_probe_sales_analytics]
+{"success": true, "report_name": "Sales Analytics", "report_type": "Script Report", "data": [{"entity": "Zegyo Market Mobile Shop", "entity_name": "Zegyo Market Mobile Shop", "jan_2026": 701000.0, "total": 701000.0}, {"entity": "Amarapura Phone Corner", "entity_name": "Amarapura Phone Corner", "jan_2026": 558000.0, "total": 558000.0}, {"entity": "Pazundaung Phone House", "entity_name": "Pazundaung Phone House", "jan_2026": 825000.0, "total": 825000.0}, {"entity": "Hledan Phone Hub", "entity_name": "Hledan Phone Hub", "jan_2026": 790500.0, "total": 790500.0}, {"entity": "City Mobile Mart", "entity_name": "City Mobile Mart", "jan_2026": 1318000.0, "total": 1318000.0}, {"entity": "Lanmadaw Telecom & Gadgets", "entity_name": "Lanmadaw Telecom & Gadgets", "jan_2026": 1158000.0, "total": 1158000.0}, {"entity": "Capital Telecom (NPT)", "entity_name": "Capital Telecom (NPT)", "jan_2026": 15068000.0, "total": 15068000.0}, {"entity": "Mandalay Accessories Wholesale", "entity_name": "Mandalay Accessories Wholesale", "jan_2026": 3130000.0, "total": 3130000.0}, {"entity": "Mandalay Mobile Hub", "entity_name": "Mandalay Mobile Hub", "jan_2026": 16610000.0, "total": 16610000.0}, {"entity": "Bayint Naung Wholesale Mobile", "entity_name": "Bayint Naung Wholesale Mobile", "jan_2026": 18060000.0, "total": 18060000.0}, {"entity": "Shwe Li Road Mobile Wholesale", "entity_name": "Shwe Li Road Mobile Wholesale", "jan_2026": 27436000.0, "total": 27436000.0}, {"entity": "Latha Mobile Wholesale", "entity_name": "Latha Mobile Wholesale", "jan_2026": 25260000.0, "total": 25260000.0}, ["Total", "", 110914500.0, 110914500.0]], "columns": [{"label": "Customer", "options": "Customer", "fieldname": "entity", "fieldtype": "Link", "width": 140}, {"label": "Customer Name", "fieldname": "entity_name", "fieldtype": "Data", "width": 140}, {"label": "Jan 2026", "fieldname": "jan_2026", "fieldtype": "Float", "width": 120}, {"label": "Total", "fieldname": "total", "fieldtype": "Float", "width": 120}], "message": null, "filters_applied": {"tree_type": "Customer", "doc_type": "Sales Invoice", "value_quantity": "Value", "from_date": "2026-01-01", "to_date": "2026-01-31", "range": "Monthly", "curves": "Total Only"}, "auto_filters_added": "Automatic date range and company filters applied if missing", "raw_result_keys": ["result", "columns", "message", "chart", "report_summary", "skip_total_row", "status", "execution_time", "add_total_row"], "data_count": 13, "result_type": "dict"}
+
+[run_fac_report_probe_sales_analytics]
+{"type": "report_table", "report_name": "Sales Analytics", "title": "Sales Analytics", "filters": {"tree_type": "Customer", "doc_type": "Sales Invoice", "date_range": {"from": "2026-01-01", "to": "2026-01-31"}, "value_quantity": "Value", "range": "Monthly", "curves": "Total Only", "company": "Mingalar Mobile Distribution Co., Ltd."}, "debug": {"fac_report_raw_type": "report:raw", "requirements_error": "unavailable"}, "table": {"columns": [{"label": "Customer", "options": "Customer", "fieldname": "entity", "fieldtype": "Link", "width": 140}, {"label": "Customer Name", "fieldname": "entity_name", "fieldtype": "Data", "width": 140}, {"label": "Apr 2025", "fieldname": "apr_2025", "fieldtype": "Float", "width": 120}, {"label": "May 2025", "fieldname": "may_2025", "fieldtype": "Float", "width": 120}, {"label": "Jun 2025", "fieldname": "jun_2025", "fieldtype": "Float", "width": 120}, {"label": "Jul 2025", "fieldname": "jul_2025", "fieldtype": "Float", "width": 120}, {"label": "Aug 2025", "fieldname": "aug_2025", "fieldtype": "Float", "width": 120}, {"label": "Sep 2025", "fieldname": "sep_2025", "fieldtype": "Float", "width": 120}, {"label": "Oct 2025", "fieldname": "oct_2025", "fieldtype": "Float", "width": 120}, {"label": "Nov 2025", "fieldname": "nov_2025", "fieldtype": "Float", "width": 120}, {"label": "Dec 2025", "fieldname": "dec_2025", "fieldtype": "Float", "width": 120}, {"label": "Jan 2026", "fieldname": "jan_2026", "fieldtype": "Float", "width": 120}, {"label": "Feb 2026", "fieldname": "feb_2026", "fieldtype": "Float", "width": 120}, {"label": "Mar 2026", "fieldname": "mar_2026", "fieldtype": "Float", "width": 120}, {"label": "Total", "fieldname": "total", "fieldtype": "Float", "width": 120}], "rows": [{"entity": "aaaa", "entity_name": "aaaa", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 0.0, "feb_2026": 53200.0, "mar_2026": 0.0, "total": 53200.0}, {"entity": "Zegyo Market Mobile Shop", "entity_name": "Zegyo Market Mobile Shop", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 701000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 701000.0}, {"entity": "Amarapura Phone Corner", "entity_name": "Amarapura Phone Corner", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 558000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 558000.0}, {"entity": "Pazundaung Phone House", "entity_name": "Pazundaung Phone House", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 825000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 825000.0}, {"entity": "Hledan Phone Hub", "entity_name": "Hledan Phone Hub", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 790500.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 790500.0}, {"entity": "City Mobile Mart", "entity_name": "City Mobile Mart", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 1318000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 1318000.0}, {"entity": "Lanmadaw Telecom & Gadgets", "entity_name": "Lanmadaw Telecom & Gadgets", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 1158000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 1158000.0}, {"entity": "Capital Telecom (NPT)", "entity_name": "Capital Telecom (NPT)", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 15068000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 15068000.0}, {"entity": "Mandalay Accessories Wholesale", "entity_name": "Mandalay Accessories Wholesale", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 3130000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 3130000.0}, {"entity": "Mandalay Mobile Hub", "entity_name": "Mandalay Mobile Hub", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 16610000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 16610000.0}, {"entity": "Bayint Naung Wholesale Mobile", "entity_name": "Bayint Naung Wholesale Mobile", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 18060000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 18060000.0}, {"entity": "Shwe Li Road Mobile Wholesale", "entity_name": "Shwe Li Road Mobile Wholesale", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 27436000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 27436000.0}, {"entity": "Latha Mobile Wholesale", "entity_name": "Latha Mobile Wholesale", "apr_2025": 0.0, "may_2025": 0.0, "jun_2025": 0.0, "jul_2025": 0.0, "aug_2025": 0.0, "sep_2025": 0.0, "oct_2025": 0.0, "nov_2025": 0.0, "dec_2025": 0.0, "jan_2026": 25260000.0, "feb_2026": 0.0, "mar_2026": 0.0, "total": 25260000.0}]}, "downloads": []}

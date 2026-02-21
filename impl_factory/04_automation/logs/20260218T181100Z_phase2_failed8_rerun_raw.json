@@ -1,0 +1,161 @@
+{
+  "executed_at_utc": "2026-02-18T18:12:12Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "summary": {
+    "total": 8,
+    "passed": 5,
+    "failed": 3
+  },
+  "results": [
+    {
+      "id": "FIN-02",
+      "prompt": "Show accounts receivable last month",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Accounts Receivable",
+        "rows": 0,
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true
+    },
+    {
+      "id": "SAL-01",
+      "prompt": "Top 5 customers by revenue in last month",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Top 5 by Total",
+        "rows": 5,
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true
+    },
+    {
+      "id": "SAL-02",
+      "prompt": "Show sales by item and download excel",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Sales Analytics",
+        "rows": 16,
+        "downloads": 2,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true
+    },
+    {
+      "id": "STK-02",
+      "prompt": "Show stock balance in the same warehouse",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Filtered by Warehouse contains Returns and Damaged - MMOB",
+        "rows": 1,
+        "downloads": 0,
+        "assistant_idx": 10,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true,
+      "note": "seed_warehouse=Returns and Damaged - MMOB"
+    },
+    {
+      "id": "HR-01",
+      "prompt": "Which employee has attendance issues this month?",
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "I couldn’t map **Monthly Attendance Sheet** output to your request safely. Should I switch to another compatible report?",
+        "title": null,
+        "rows": 0,
+        "downloads": 0,
+        "assistant_idx": 4,
+        "pending_mode": "planner_clarify",
+        "clarification_options": [
+          "yes",
+          "no"
+        ],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": false
+    },
+    {
+      "id": "OPS-01",
+      "prompt": "What are the open material requests for production",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Material Request",
+        "rows": 0,
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": true
+    },
+    {
+      "id": "ENT-01",
+      "prompt": "Show stock balance in warehouse ZZZ-NO-MATCH-ZAZGL1",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Warehouse Wise Stock Balance",
+        "rows": 0,
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": false
+    },
+    {
+      "id": "ENT-02",
+      "prompt": "Show stock balance in warehouse mmob",
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "title": "Warehouse Wise Stock Balance",
+        "rows": 0,
+        "downloads": 0,
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "clarification_options": [],
+        "options": [],
+        "send_ok": true,
+        "send_error": null
+      },
+      "pass": false,
+      "note": "token=mmob"
+    }
+  ]
+}

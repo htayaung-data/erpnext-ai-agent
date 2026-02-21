@@ -1,0 +1,12 @@
+{
+  "executed_at_utc": "2026-02-18T19:03:59Z",
+  "session": "0o39c12aep",
+  "forced_call_rc": 0,
+  "forced_call_stdout": "{\"ok\": false, \"msg\": \"I couldn’t process that request right now. Please try again.\"}",
+  "has_error_envelope": true,
+  "has_audit_turn": true,
+  "has_safe_error_text": true,
+  "has_error_type_payload": true,
+  "assistant_last": "{\"type\": \"error\", \"text\": \"I couldn’t process that request right now. Please try again.\"}",
+  "pass": true
+}
