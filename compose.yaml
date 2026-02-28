@@ -8,43 +8,51 @@ services:
       - --skip-innodb-read-only-compressed
     environment:
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-admin}
+      GUNICORN_CMD_ARGS: "--forwarded-allow-ips=*"
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p${DB_ROOT_PASSWORD:-admin} --silent"]
       interval: 5s
       retries: 30
+    restart: unless-stopped
 
   redis-cache:
     image: redis:6.2-alpine
     volumes:
       - redis-cache-data:/data
+    restart: unless-stopped
 
   redis-queue:
     image: redis:6.2-alpine
     volumes:
       - redis-queue-data:/data
+    restart: unless-stopped
 
   redis-socketio:
     image: redis:6.2-alpine
     volumes:
       - redis-socketio-data:/data
+    restart: unless-stopped
 
-  # Writes common config (db/redis/socketio/default_site) into sites/common_site_config.json
+  # Writes common config into sites/common_site_config.json
   configurator:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
-    entrypoint: ["bash", "-lc"]
-    command: >
-      set -e;
-      ls -1 apps > sites/apps.txt;
-      bench set-config -g db_host $$DB_HOST;
-      bench set-config -gp db_port $$DB_PORT;
-      bench set-config -g redis_cache "redis://$$REDIS_CACHE";
-      bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
-      bench set-config -g redis_socketio "redis://$$REDIS_SOCKETIO";
-      bench set-config -gp socketio_port $$SOCKETIO_PORT;
-      bench set-config -g default_site $$DEFAULT_SITE;
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        ls -1 apps > sites/apps.txt
+        bench set-config -g db_host $$DB_HOST
+        bench set-config -gp db_port $$DB_PORT
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE"
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE"
+        bench set-config -g redis_socketio "redis://$$REDIS_SOCKETIO"
+        bench set-config -gp socketio_port $$SOCKETIO_PORT
+        bench set-config -g default_site $$DEFAULT_SITE
+        echo "OK: common_site_config.json written"
     environment:
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT:-3306}
@@ -52,7 +60,8 @@ services:
       REDIS_QUEUE: ${REDIS_QUEUE:-redis-queue:6379}
       REDIS_SOCKETIO: ${REDIS_SOCKETIO:-redis-socketio:6379}
       SOCKETIO_PORT: ${SOCKETIO_PORT:-9000}
-      DEFAULT_SITE: ${SITE_NAME:-frontend}
+      DEFAULT_SITE: ${DEFAULT_SITE:-${SITE_NAME:-frontend}}
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       db:
         condition: service_healthy
@@ -63,105 +72,155 @@ services:
       redis-socketio:
         condition: service_started
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
     restart: "no"
 
   backend:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
+    environment:
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       configurator:
         condition: service_completed_successfully
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+    healthcheck:
+      # no curl needed; just check TCP connect to 8000
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',8000)); s.close()\""
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
 
   websocket:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+    environment:
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       configurator:
         condition: service_completed_successfully
+      redis-socketio:
+        condition: service_started
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1',9000)); s.close()\""
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
 
   queue-short:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["bench", "worker", "--queue", "short,default"]
+    environment:
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       configurator:
         condition: service_completed_successfully
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+    restart: unless-stopped
 
   queue-long:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["bench", "worker", "--queue", "long,default,short"]
+    environment:
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       configurator:
         condition: service_completed_successfully
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+    restart: unless-stopped
 
   scheduler:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["bench", "schedule"]
+    environment:
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       configurator:
         condition: service_completed_successfully
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
+    restart: unless-stopped
 
   frontend:
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
     command: ["nginx-entrypoint.sh"]
     depends_on:
-      - backend
-      - websocket
+      backend:
+        condition: service_healthy
+      websocket:
+        condition: service_healthy
     environment:
       BACKEND: backend:8000
       SOCKETIO: websocket:9000
-      # IMPORTANT: $$host keeps "$host" literal (prevents Compose from substituting $host)
+      # Keep $host literal inside nginx template
       FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-$$host}
       PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
     ports:
       - "${HTTP_PORT:-8082}:8080"
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+    restart: unless-stopped
 
   # First-time only: create site + install apps
   create-site:
     profiles: ["init"]
     image: ${CUSTOM_IMAGE}:${CUSTOM_TAG}
     pull_policy: ${PULL_POLICY:-if_not_present}
-    entrypoint: ["bash", "-lc"]
-    command: >
-      set -e;
-      wait-for-it db:3306 -t 120;
-      wait-for-it redis-cache:6379 -t 120;
-      wait-for-it redis-queue:6379 -t 120;
-      wait-for-it redis-socketio:6379 -t 120;
-      bench --site $$SITE_NAME new-site $$SITE_NAME
-        --mariadb-root-password $$DB_ROOT_PASSWORD
-        --admin-password $$ADMIN_PASSWORD
-        --install-app erpnext
-        --install-app hrms
-        --install-app frappe_assistant_core
-        --set-default;
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        wait-for-it db:3306 -t 120
+        wait-for-it redis-cache:6379 -t 120
+        wait-for-it redis-queue:6379 -t 120
+        wait-for-it redis-socketio:6379 -t 120
+        bench --site $$SITE_NAME new-site $$SITE_NAME \
+          --mariadb-root-password $$DB_ROOT_PASSWORD \
+          --admin-password $$ADMIN_PASSWORD \
+          --install-app erpnext \
+          --install-app hrms \
+          --install-app frappe_assistant_core \
+          --install-app ai_assistant_ui \
+          --set-default
     environment:
       SITE_NAME: ${SITE_NAME:-frontend}
       DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      PYTHONPATH: /home/frappe/frappe-bench/apps/ai_assistant_ui
     depends_on:
       configurator:
         condition: service_completed_successfully
     volumes:
-      - sites:/home/frappe/frappe-bench/sites
+      - /mnt/volume_sgp1_01/frappe/sites:/home/frappe/frappe-bench/sites
+      - ./impl_factory/05_custom_logic/custom_app/ai_assistant_ui:/home/frappe/frappe-bench/apps/ai_assistant_ui
     restart: "no"
 
 volumes:
@@ -169,4 +228,3 @@ volumes:
   redis-cache-data:
   redis-queue-data:
   redis-socketio-data:
-  sites:

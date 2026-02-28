@@ -1,0 +1,857 @@
+{
+  "executed_at_utc": "2026-02-23T11:58:09Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase6_manifest_replay",
+  "run_policy": {
+    "gate_source": "first_run_only",
+    "rerun_policy": "diagnostic_only_non_gating"
+  },
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": "1",
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": "0",
+    "write_flag_during_default": 0
+  },
+  "preconditions": {
+    "report_list_ok": true,
+    "report_requirements_ok": true,
+    "generate_report_ok": true,
+    "report_list_count": 219,
+    "report_requirements_error": "",
+    "generate_report_error": ""
+  },
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "first_run_pass_rate": 1.0,
+    "manifest_path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "suite_filter": [],
+    "case_filter_count": 8,
+    "role_counts": {
+      "ai.reader": 5,
+      "ai.operator": 3
+    }
+  },
+  "behavior_class": {
+    "manifest_case_count": 385,
+    "observed_case_count": 8,
+    "labeled_case_count": 8,
+    "unlabeled_case_ids": [],
+    "observed_class_count": 5,
+    "target_mandatory_count": 9,
+    "observed_classes": [
+      "entity_disambiguation_followup",
+      "error_envelope",
+      "observability_contract",
+      "ranking_top_n",
+      "write_safety"
+    ],
+    "target_mandatory_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "covered_target_classes": [
+      "entity_disambiguation_followup",
+      "ranking_top_n"
+    ],
+    "missing_target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "kpi_aggregate",
+      "list_latest_records",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "target_coverage_rate": 0.2222,
+    "target_coverage_ok": false,
+    "first_run_pass_rate_by_class": {
+      "entity_disambiguation_followup": 1.0,
+      "error_envelope": 1.0,
+      "observability_contract": 1.0,
+      "ranking_top_n": 1.0,
+      "write_safety": 1.0
+    },
+    "target_first_run_pass_rate_by_class": {
+      "entity_disambiguation_followup": 1.0,
+      "ranking_top_n": 1.0
+    },
+    "target_first_run_pass_ok": false,
+    "class_totals": {
+      "ranking_top_n": 1,
+      "entity_disambiguation_followup": 1,
+      "observability_contract": 2,
+      "error_envelope": 1,
+      "write_safety": 3
+    },
+    "class_passed": {
+      "ranking_top_n": 1,
+      "entity_disambiguation_followup": 1,
+      "observability_contract": 2,
+      "error_envelope": 1,
+      "write_safety": 3
+    },
+    "class_failed": {
+      "entity_disambiguation_followup": 0,
+      "error_envelope": 0,
+      "observability_contract": 0,
+      "ranking_top_n": 0,
+      "write_safety": 0
+    }
+  },
+  "behavior_manifest": {
+    "manifest_path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "manifest_exists": true,
+    "manifest_load_error": "",
+    "field": "behavior_class",
+    "target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ]
+  },
+  "results": [
+    {
+      "id": "FIN-01",
+      "base_case_id": "FIN-01",
+      "variant_of": "",
+      "suite": "core_read",
+      "behavior_class": "ranking_top_n",
+      "role": "ai.reader",
+      "prompt": "Top 10 customers by revenue last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "revenue",
+        "group_by": [
+          "customer"
+        ],
+        "output_mode": "top_n"
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Customer Ledger Summary",
+        "downloads": 0,
+        "rows": 10,
+        "columns": 2,
+        "column_labels": [
+          "Customer",
+          "Revenue"
+        ],
+        "assistant_idx": 12,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 15550,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "sales",
+        "ranking"
+      ],
+      "turn_count": 1,
+      "order_index": 1
+    },
+    {
+      "id": "STK-02",
+      "base_case_id": "STK-02",
+      "variant_of": "",
+      "suite": "core_read",
+      "behavior_class": "entity_disambiguation_followup",
+      "role": "ai.reader",
+      "prompt": "Show stock balance in the same warehouse",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "context_followup": true
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Warehouse Wise Stock Balance",
+        "downloads": 0,
+        "rows": 1,
+        "columns": 2,
+        "column_labels": [
+          "Warehouse",
+          "Stock Balance"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11281,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "stock",
+        "followup"
+      ],
+      "turn_count": 1,
+      "order_index": 2
+    },
+    {
+      "id": "OBS-01",
+      "base_case_id": "OBS-01",
+      "variant_of": "",
+      "suite": "no_data_unsupported",
+      "behavior_class": "observability_contract",
+      "role": "ai.reader",
+      "prompt": "(no-user-turn)",
+      "expected": {
+        "tool_messages_hidden": true
+      },
+      "actual": {
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": false,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": null,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "observability"
+      ],
+      "turn_count": 1,
+      "order_index": 3
+    },
+    {
+      "id": "OBS-02",
+      "base_case_id": "OBS-02",
+      "variant_of": "",
+      "suite": "no_data_unsupported",
+      "behavior_class": "observability_contract",
+      "role": "ai.reader",
+      "prompt": "(no-user-turn)",
+      "expected": {
+        "audit_tool_visible": true
+      },
+      "actual": {
+        "assistant_type": "observe",
+        "assistant_text": "",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": null,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": []
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": null,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "observability"
+      ],
+      "turn_count": 1,
+      "order_index": 4
+    },
+    {
+      "id": "ERR-01",
+      "base_case_id": "ERR-01",
+      "variant_of": "",
+      "suite": "no_data_unsupported",
+      "behavior_class": "error_envelope",
+      "role": "ai.reader",
+      "prompt": "Show stock balance (forced backend failure test)",
+      "expected": {
+        "safe_error_envelope": true
+      },
+      "actual": {
+        "assistant_type": "error",
+        "assistant_text": "I couldn’t process that request right now. Please try again.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 5,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": true,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "error_envelope",
+          "tool_result"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 904,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "error_envelope"
+      ],
+      "turn_count": 1,
+      "order_index": 5
+    },
+    {
+      "id": "WR-02",
+      "base_case_id": "WR-02",
+      "variant_of": "",
+      "suite": "write_safety",
+      "behavior_class": "write_safety",
+      "role": "ai.operator",
+      "prompt": "Delete ToDo <sample_todo>",
+      "expected": {
+        "explicit_confirmation_required": true
+      },
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Delete ToDo with ID 0qpbvshjvj? Reply **confirm** to execute or **cancel** to stop.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 6,
+        "pending_mode": "write_confirmation",
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec"
+        ],
+        "pending_state": {
+          "mode": "write_confirmation",
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 1700,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "write",
+        "confirm"
+      ],
+      "turn_count": 1,
+      "order_index": 6
+    },
+    {
+      "id": "WR-03",
+      "base_case_id": "WR-03",
+      "variant_of": "",
+      "suite": "write_safety",
+      "behavior_class": "write_safety",
+      "role": "ai.operator",
+      "prompt": "cancel",
+      "expected": {
+        "pending_write_cleared": true
+      },
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Write action canceled.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 13,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_write_engine"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 3,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "write",
+        "cancel"
+      ],
+      "turn_count": 1,
+      "order_index": 7
+    },
+    {
+      "id": "WR-04",
+      "base_case_id": "WR-04",
+      "variant_of": "",
+      "suite": "write_safety",
+      "behavior_class": "write_safety",
+      "role": "ai.operator",
+      "prompt": "confirm",
+      "expected": {
+        "single_write_execution": true
+      },
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "Confirmed. Deleted **ToDo** `1grf96t5ue`.",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 13,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_write_engine"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 747,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": null,
+          "dimension_alignment_pass": null,
+          "metric_alignment_pass": null,
+          "time_scope_alignment_pass": null,
+          "filter_alignment_pass": null,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=NA, D=NA, M=NA, T=NA, F=NA, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "write",
+        "confirm_execute"
+      ],
+      "turn_count": 1,
+      "order_index": 8
+    }
+  ]
+}

@@ -1,0 +1,3490 @@
+{
+  "executed_at_utc": "2026-02-27T19:26:44Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase6_manifest_replay",
+  "run_policy": {
+    "gate_source": "first_run_only",
+    "rerun_policy": "diagnostic_only_non_gating"
+  },
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": "1",
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": "0",
+    "write_flag_during_default": 0
+  },
+  "preconditions": {
+    "report_list_ok": true,
+    "report_requirements_ok": true,
+    "generate_report_ok": true,
+    "report_list_count": 219,
+    "report_requirements_error": "",
+    "generate_report_error": ""
+  },
+  "summary": {
+    "total": 30,
+    "passed": 28,
+    "failed": 2,
+    "first_run_pass_rate": 0.9333,
+    "manifest_path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "suite_filter": [
+      "multiturn_context"
+    ],
+    "case_filter_count": 30,
+    "role_counts": {
+      "ai.reader": 0,
+      "ai.operator": 30
+    }
+  },
+  "behavior_class": {
+    "manifest_case_count": 385,
+    "observed_case_count": 30,
+    "labeled_case_count": 30,
+    "unlabeled_case_ids": [],
+    "observed_class_count": 1,
+    "target_mandatory_count": 9,
+    "observed_classes": [
+      "list_latest_records"
+    ],
+    "target_mandatory_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "covered_target_classes": [
+      "list_latest_records"
+    ],
+    "missing_target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "target_coverage_rate": 0.1111,
+    "target_coverage_ok": false,
+    "first_run_pass_rate_by_class": {
+      "list_latest_records": 0.9333
+    },
+    "target_first_run_pass_rate_by_class": {
+      "list_latest_records": 0.9333
+    },
+    "target_first_run_pass_ok": false,
+    "class_totals": {
+      "list_latest_records": 30
+    },
+    "class_passed": {
+      "list_latest_records": 28
+    },
+    "class_failed": {
+      "list_latest_records": 2
+    }
+  },
+  "behavior_manifest": {
+    "manifest_path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "manifest_exists": true,
+    "manifest_load_error": "",
+    "field": "behavior_class",
+    "target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ]
+  },
+  "results": [
+    {
+      "id": "LST-01",
+      "base_case_id": "LST-01",
+      "variant_of": "",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9405,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list"
+      ],
+      "turn_count": 2,
+      "order_index": 1
+    },
+    {
+      "id": "LST-01__v001",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11918,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 2
+    },
+    {
+      "id": "LST-01__v002",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 12098,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 3
+    },
+    {
+      "id": "LST-01__v003",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11816,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 4
+    },
+    {
+      "id": "LST-01__v004",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the most recent 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 27,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10164,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 5
+    },
+    {
+      "id": "LST-01__v005",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 12276,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 6
+    },
+    {
+      "id": "LST-01__v006",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 13861,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 7
+    },
+    {
+      "id": "LST-01__v007",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10497,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 8
+    },
+    {
+      "id": "LST-01__v008",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 12104,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 9
+    },
+    {
+      "id": "LST-01__v009",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 13331,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 10
+    },
+    {
+      "id": "LST-01__v010",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10492,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 11
+    },
+    {
+      "id": "LST-01__v011",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 14049,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 12
+    },
+    {
+      "id": "LST-01__v012",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 27,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 12920,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 13
+    },
+    {
+      "id": "LST-01__v013",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 27,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 12238,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 14
+    },
+    {
+      "id": "LST-01__v014",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11784,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 15
+    },
+    {
+      "id": "LST-01__v015",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 13964,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 16
+    },
+    {
+      "id": "LST-01__v016",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "I couldn't reliably produce that result with current report coverage. Requested scope: subject='sales invoices', metric='unspecified'. Please refine the target report/filters and retry. I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 13,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": false,
+        "options_count": 4,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "Sales Invoice",
+          "clarification_question": "I couldn't reliably produce that result with current report coverage. Requested scope: subject='sales invoices', metric='unspecified'. Please refine the target report/filters and retry. I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
+          "clarification_options": [
+            "Switch to compatible report",
+            "Keep current scope"
+          ],
+          "options": [
+            "Switch to compatible report",
+            "Keep current scope"
+          ],
+          "clarification_round": 1
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11045,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": true
+      },
+      "pass": false,
+      "defect_id": "UAT-LST-01-001",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 17
+    },
+    {
+      "id": "LST-01__v017",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11659,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 18
+    },
+    {
+      "id": "LST-01__v018",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> revenue Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "text",
+        "assistant_text": "I couldn't reliably produce that result with current report coverage. Requested scope: subject='invoices', metric='invoice details'. Please refine the target report/filters and retry. I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
+        "assistant_title": null,
+        "downloads": 0,
+        "rows": 0,
+        "columns": 0,
+        "column_labels": [],
+        "assistant_idx": 28,
+        "pending_mode": "planner_clarify",
+        "pending_cleared": true,
+        "options_count": 4,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": "planner_clarify",
+          "base_question": "revenue Invoice",
+          "clarification_question": "I couldn't reliably produce that result with current report coverage. Requested scope: subject='invoices', metric='invoice details'. Please refine the target report/filters and retry. I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
+          "clarification_options": [
+            "Switch to compatible report",
+            "Keep current scope"
+          ],
+          "options": [
+            "Switch to compatible report",
+            "Keep current scope"
+          ],
+          "clarification_round": 1
+        },
+        "clarification": true,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 15016,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": true
+      },
+      "pass": false,
+      "defect_id": "UAT-LST-01-001",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 19
+    },
+    {
+      "id": "LST-01__v019",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 12097,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 20
+    },
+    {
+      "id": "LST-01__v020",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 8856,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 21
+    },
+    {
+      "id": "LST-01__v021",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "display me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10736,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 22
+    },
+    {
+      "id": "LST-01__v022",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10611,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 23
+    },
+    {
+      "id": "LST-01__v023",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9566,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 24
+    },
+    {
+      "id": "LST-01__v024",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 11848,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 25
+    },
+    {
+      "id": "LST-01__v025",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the most recent 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9291,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 26
+    },
+    {
+      "id": "LST-01__v026",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the latest 7 invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 4,
+        "column_labels": [
+          "Customer",
+          "Invoice Number",
+          "Posting Date",
+          "Total Amount"
+        ],
+        "assistant_idx": 26,
+        "pending_mode": null,
+        "pending_cleared": true,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "pending_state",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10326,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 27
+    },
+    {
+      "id": "LST-01__v027",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 8426,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 28
+    },
+    {
+      "id": "LST-01__v028",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9925,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 29
+    },
+    {
+      "id": "LST-01__v029",
+      "base_case_id": "LST-01",
+      "variant_of": "LST-01",
+      "suite": "multiturn_context",
+      "behavior_class": "list_latest_records",
+      "role": "ai.operator",
+      "prompt": "Show me the Latest 7 Invoice -> Sales Invoice",
+      "expected": {
+        "intent": "READ",
+        "task_type": "detail",
+        "task_class": "list_latest_records",
+        "filters": {
+          "doctype": "Sales Invoice"
+        },
+        "output_mode": "top_n",
+        "top_n": 7
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Latest Sales Invoice",
+        "downloads": 0,
+        "rows": 7,
+        "columns": 3,
+        "column_labels": [
+          "Customer",
+          "Invoice",
+          "Posting Date"
+        ],
+        "assistant_idx": 25,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 9842,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "invoice",
+        "latest",
+        "list",
+        "generated_variant"
+      ],
+      "turn_count": 2,
+      "order_index": 30
+    }
+  ]
+}

@@ -2,18 +2,28 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-ALLOWED_INTENTS = {"READ", "TRANSFORM_LAST", "TUTOR", "WRITE_DRAFT", "WRITE_CONFIRM", "EXPORT"}
-ALLOWED_TASK_TYPES = {"kpi", "ranking", "trend", "detail"}
-ALLOWED_AGGREGATIONS = {"sum", "count", "avg", "none"}
-ALLOWED_TIME_MODES = {"as_of", "range", "relative", "none"}
-ALLOWED_OUTPUT_MODES = {"kpi", "top_n", "detail"}
-ALLOWED_DOMAINS = {"unknown", "sales", "finance", "inventory", "purchasing", "operations", "hr", "cross_functional"}
+from ai_assistant_ui.ai_core.ontology_normalization import known_metric
+from ai_assistant_ui.ai_core.v7.contract_registry import (
+    allowed_spec_values,
+    canonical_dimensions,
+    default_clarification_question,
+    domain_from_dimension,
+)
+
+ALLOWED_INTENTS = {x.upper() for x in allowed_spec_values("intents")}
+ALLOWED_TASK_TYPES = allowed_spec_values("task_types")
+ALLOWED_TASK_CLASSES = allowed_spec_values("task_classes")
+ALLOWED_AGGREGATIONS = allowed_spec_values("aggregations")
+ALLOWED_TIME_MODES = allowed_spec_values("time_modes")
+ALLOWED_OUTPUT_MODES = allowed_spec_values("output_modes")
+ALLOWED_DOMAINS = allowed_spec_values("domains")
 
 
 def default_business_request_spec() -> Dict[str, Any]:
     return {
         "intent": "READ",
         "task_type": "detail",
+        "task_class": "analytical_read",
         "domain": "unknown",
         "subject": "",
         "metric": "",
@@ -50,21 +60,94 @@ def _as_clean_str_list(value: Any, *, limit: int = 12) -> List[str]:
 
 def _normalize_intent(raw: Any) -> str:
     s = str(raw or "").strip().upper()
-    aliases = {
-        "TRANSFORM": "TRANSFORM_LAST",
-        "WRITE": "WRITE_DRAFT",
-    }
-    return aliases.get(s, s)
+    if s == "TRANSFORM":
+        return "TRANSFORM_LAST"
+    if s == "WRITE":
+        return "WRITE_DRAFT"
+    return s
 
 
 def _canonical_dimension(raw: Any) -> str:
     s = str(raw or "").strip().lower().replace(" ", "_")
     if not s:
         return ""
-    allowed = {"customer", "supplier", "item", "warehouse", "company", "territory"}
+    allowed = canonical_dimensions()
     if s in allowed:
         return s
     return ""
+
+
+def _default_task_class() -> str:
+    if "analytical_read" in ALLOWED_TASK_CLASSES:
+        return "analytical_read"
+    return next(iter(ALLOWED_TASK_CLASSES or []), "analytical_read")
+
+
+def _infer_task_class(*, spec: Dict[str, Any], raw_task_class: str) -> str:
+    raw = str(raw_task_class or "").strip().lower()
+
+    default_class = _default_task_class()
+    raw_is_allowed = bool(raw and raw in ALLOWED_TASK_CLASSES)
+    if raw_is_allowed and raw != default_class:
+        # Explicit non-default classes from parser are preserved.
+        return raw
+
+    intent = str(spec.get("intent") or "").strip().upper()
+    task_type = str(spec.get("task_type") or "").strip().lower()
+    aggregation = str(spec.get("aggregation") or "").strip().lower()
+    metric = str(spec.get("metric") or "").strip()
+    subject = str(spec.get("subject") or "").strip()
+    output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    output_mode = str(output_contract.get("mode") or "").strip().lower()
+    try:
+        top_n = int(spec.get("top_n") or 0)
+    except Exception:
+        top_n = 0
+
+    group_by = [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()]
+    dimensions = [str(x).strip() for x in list(spec.get("dimensions") or []) if str(x).strip()]
+    minimal_columns = [str(x).strip() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()]
+    has_projection_shape = bool(group_by or dimensions or minimal_columns)
+    has_known_metric = bool(str(known_metric(metric) or "").strip() or str(known_metric(subject) or "").strip())
+
+    inferred = default_class
+
+    if intent == "TRANSFORM_LAST" and ("transform_followup" in ALLOWED_TASK_CLASSES):
+        inferred = "transform_followup"
+
+    elif (
+        (top_n > 0)
+        and (aggregation == "none")
+        and (task_type in {"detail", "ranking"})
+        and (not has_known_metric)
+        and ("list_latest_records" in ALLOWED_TASK_CLASSES)
+    ):
+        inferred = "list_latest_records"
+
+    elif (
+        (top_n > 0)
+        and (output_mode == "top_n")
+        and (task_type in {"detail", "ranking", "kpi"})
+        and (not group_by)
+        and ("list_latest_records" in ALLOWED_TASK_CLASSES)
+    ):
+        # Keep record-list execution class when the request is top-n record listing
+        # shape, even if parser provided aggregate/metric hints.
+        inferred = "list_latest_records"
+
+    elif (
+        (task_type == "detail")
+        and (output_mode == "detail")
+        and has_projection_shape
+        and ("detail_projection" in ALLOWED_TASK_CLASSES)
+    ):
+        inferred = "detail_projection"
+
+    if inferred != default_class:
+        return inferred
+    if raw_is_allowed:
+        return raw
+    return default_class
 
 
 def normalize_business_request_spec(raw: Any) -> Tuple[Dict[str, Any], List[str]]:
@@ -90,6 +173,9 @@ def normalize_business_request_spec(raw: Any) -> Tuple[Dict[str, Any], List[str]
         out["task_type"] = task_type
     elif raw.get("task_type") not in (None, ""):
         errors.append("task_type_invalid")
+    raw_task_class = str(raw.get("task_class") or "").strip().lower()
+    if raw_task_class and raw_task_class not in ALLOWED_TASK_CLASSES:
+        errors.append("task_class_invalid")
 
     aggregation = str(raw.get("aggregation") or "").strip().lower()
     if aggregation in ALLOWED_AGGREGATIONS:
@@ -161,7 +247,7 @@ def normalize_business_request_spec(raw: Any) -> Tuple[Dict[str, Any], List[str]
             errors.append("confidence_not_number")
     out["confidence"] = max(0.0, min(confidence, 1.0))
     if out["needs_clarification"] and not out["clarification_question"]:
-        out["clarification_question"] = "Could you clarify the missing business detail (for example company, warehouse, date, or target field)?"
+        out["clarification_question"] = default_clarification_question("missing_required_filter_value")
 
     # Consistency normalization.
     if out["output_contract"]["mode"] == "top_n" and out["top_n"] <= 0:
@@ -184,16 +270,17 @@ def normalize_business_request_spec(raw: Any) -> Tuple[Dict[str, Any], List[str]
 
     if out["domain"] == "unknown":
         dims = set([str(x or "").strip().lower() for x in list(out.get("dimensions") or []) if str(x or "").strip()])
-        if "customer" in dims:
-            out["domain"] = "sales"
-        elif "supplier" in dims:
-            out["domain"] = "purchasing"
-        elif "warehouse" in dims:
-            out["domain"] = "inventory"
-        elif "company" in dims:
-            out["domain"] = "finance"
+        for d in ("customer", "supplier", "warehouse", "company"):
+            if d not in dims:
+                continue
+            inferred = domain_from_dimension(d)
+            if inferred:
+                out["domain"] = inferred
+                break
 
     if out["confidence"] <= 0.0:
         out["confidence"] = 0.7 if not errors else 0.4
+
+    out["task_class"] = _infer_task_class(spec=out, raw_task_class=raw_task_class)
 
     return out, errors

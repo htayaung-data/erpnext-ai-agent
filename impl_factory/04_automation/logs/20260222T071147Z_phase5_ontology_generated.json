@@ -1,0 +1,72 @@
+{
+  "schema_version": "ontology_generated_v1",
+  "version": "generated_v1",
+  "generated_at_utc": "2026-02-22T07:11:47Z",
+  "source": {
+    "phase": "phase5",
+    "capability_path": "/tmp/tmpzx5bbnfs/capability.json",
+    "db_semantic_path": "/tmp/tmpzx5bbnfs/db_catalog.json",
+    "capability_report_count": 1,
+    "projection_metric_count": 2,
+    "projection_domain_count": 2,
+    "projection_dimension_count": 2,
+    "projection_filter_kind_count": 4
+  },
+  "metric_aliases": {
+    "outstanding_amount": [
+      "outstanding amount",
+      "outstanding_amount"
+    ],
+    "revenue": [
+      "revenue"
+    ]
+  },
+  "metric_domain_map": {
+    "outstanding_amount": "finance",
+    "revenue": "sales"
+  },
+  "domain_aliases": {
+    "finance": [
+      "finance"
+    ],
+    "sales": [
+      "sales"
+    ]
+  },
+  "dimension_aliases": {
+    "customer": [
+      "customer"
+    ],
+    "territory": [
+      "territory"
+    ]
+  },
+  "primary_dimension_aliases": {
+    "customer": [
+      "customer",
+      "customer wise",
+      "customer-wise"
+    ],
+    "territory": [
+      "territory",
+      "territory wise",
+      "territory-wise"
+    ]
+  },
+  "filter_kind_aliases": {
+    "company": [
+      "company"
+    ],
+    "customer": [
+      "customer"
+    ],
+    "from_date": [
+      "from date",
+      "from_date"
+    ],
+    "to_date": [
+      "to date",
+      "to_date"
+    ]
+  }
+}

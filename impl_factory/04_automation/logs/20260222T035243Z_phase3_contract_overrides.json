@@ -1,0 +1,42 @@
+{
+  "version": "phase3_generated_contract_overrides_v1",
+  "generated_at_utc": "2026-02-22T03:52:43Z",
+  "source": {
+    "phase": "phase3",
+    "input_payload": "impl_factory/04_automation/capability_v7/latest_capability_platform.json",
+    "report_count": 218
+  },
+  "spec_contract": {
+    "version": "generated_v1_from_capability_platform",
+    "allowed": {
+      "domains": [
+        "cross_functional",
+        "finance",
+        "hr",
+        "inventory",
+        "operations",
+        "purchasing",
+        "sales",
+        "unknown"
+      ]
+    },
+    "canonical_dimensions": [
+      "company",
+      "customer",
+      "item",
+      "supplier",
+      "warehouse"
+    ],
+    "dimension_domain_map": {
+      "company": "finance",
+      "customer": "sales",
+      "item": "inventory",
+      "supplier": "purchasing",
+      "warehouse": "inventory"
+    }
+  },
+  "clarification_contract": {
+    "version": "generated_v1_from_capability_platform",
+    "questions_by_filter_kind": {}
+  }
+}

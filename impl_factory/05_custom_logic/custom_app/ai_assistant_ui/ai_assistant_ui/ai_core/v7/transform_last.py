@@ -64,9 +64,13 @@ def apply_transform_last(*, payload: Dict[str, Any], business_spec: Dict[str, An
     """
     out = dict(payload or {})
     spec = business_spec if isinstance(business_spec, dict) else {}
-    if str(spec.get("intent") or "").strip().upper() != "TRANSFORM_LAST":
-        return out
     if str(out.get("type") or "").strip().lower() != "report_table":
+        return out
+
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x).strip()]
+    scale_million = any(a == "transform_scale:million" for a in ambiguities)
+    is_transform_intent = str(spec.get("intent") or "").strip().upper() == "TRANSFORM_LAST"
+    if (not is_transform_intent) and (not scale_million):
         return out
 
     cols = _columns(out)
@@ -83,8 +87,6 @@ def apply_transform_last(*, payload: Dict[str, Any], business_spec: Dict[str, An
 
     metric_fn = _metric_column(spec, cols)
     dim_fn = _dim_column(spec, cols)
-    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x).strip()]
-    scale_million = any(a == "transform_scale:million" for a in ambiguities)
     sort_desc = any(a == "transform_sort:desc" for a in ambiguities)
     sort_asc = any(a == "transform_sort:asc" for a in ambiguities)
     has_explicit_metric = bool(str(spec.get("metric") or "").strip())

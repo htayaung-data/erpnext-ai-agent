@@ -1,0 +1,37 @@
+{
+  "version": "v1",
+  "allowed_blocker_reasons": [
+    "missing_required_filter_value",
+    "hard_constraint_not_supported",
+    "entity_no_match",
+    "entity_ambiguous",
+    "no_candidate",
+    "low_confidence_candidate",
+    "resolver_pipeline_error"
+  ],
+  "default_questions_by_reason": {
+    "missing_required_filter_value": "Which required filter value should I use (for example company, warehouse, customer, or supplier)?",
+    "hard_constraint_not_supported": "I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
+    "entity_no_match": "I couldn't find a matching value for that filter. Which exact value should I use?",
+    "entity_ambiguous": "I found multiple matches for that filter. Which one should I use?",
+    "no_candidate": "Please provide one concrete missing detail so I can run the correct report.",
+    "low_confidence_candidate": "Please provide one concrete missing detail so I can run the correct report.",
+    "resolver_pipeline_error": "Please provide one concrete missing detail so I can run the correct report."
+  },
+  "questions_by_filter_kind": {
+    "company": "Which company should I use?",
+    "warehouse": "Which warehouse should I use?",
+    "customer": "Which customer should I use?",
+    "supplier": "Which supplier should I use?",
+    "item": "Which item should I use?",
+    "from_date": "Which date range should I use?",
+    "to_date": "Which date range should I use?",
+    "date": "Which date range should I use?",
+    "report_date": "Which date range should I use?",
+    "start_year": "Which fiscal year or year range should I use?",
+    "end_year": "Which fiscal year or year range should I use?",
+    "year": "Which fiscal year or year range should I use?",
+    "fiscal_year": "Which fiscal year or year range should I use?"
+  },
+  "fallback_question": "Please provide one concrete missing detail so I can run the correct report."
+}

@@ -1,0 +1,31 @@
+{
+  "version": "phase3_generated_contract_overrides_v1",
+  "generated_at_utc": "2026-02-22T07:22:20Z",
+  "source": {
+    "phase": "phase3",
+    "input_payload": "/tmp/tmp25m2l79o/capability.json",
+    "report_count": 1
+  },
+  "spec_contract": {
+    "version": "generated_v1_from_capability_platform",
+    "allowed": {
+      "domains": [
+        "cross_functional",
+        "sales",
+        "unknown"
+      ]
+    },
+    "canonical_dimensions": [
+      "customer"
+    ],
+    "dimension_domain_map": {
+      "customer": "sales"
+    }
+  },
+  "clarification_contract": {
+    "version": "generated_v1_from_capability_platform",
+    "questions_by_filter_kind": {
+      "cost_center": "Which cost center should I use?"
+    }
+  }
+}

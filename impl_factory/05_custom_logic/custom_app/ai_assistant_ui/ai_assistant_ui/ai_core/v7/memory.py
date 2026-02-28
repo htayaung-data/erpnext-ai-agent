@@ -10,6 +10,8 @@ try:
 except Exception:  # pragma: no cover - local tests without Frappe
     frappe = None
 
+from ai_assistant_ui.ai_core.ontology_normalization import canonical_dimension, infer_filter_kinds, known_dimension
+
 _DOC_ID_REGEX = re.compile(r"\b[A-Z]{2,}-[A-Z0-9]+-\d{4}-\d+\b")
 _DOC_FILTER_KEYS = (
     "invoice",
@@ -45,6 +47,7 @@ def _ensure_spec_shape(spec: Dict[str, Any]) -> Dict[str, Any]:
     out["subject"] = str(out.get("subject") or "").strip()
     out["metric"] = str(out.get("metric") or "").strip()
     out["task_type"] = str(out.get("task_type") or "detail").strip().lower() or "detail"
+    out["task_class"] = str(out.get("task_class") or "analytical_read").strip().lower() or "analytical_read"
     out["aggregation"] = str(out.get("aggregation") or "none").strip().lower() or "none"
     out["group_by"] = [str(x).strip() for x in list(out.get("group_by") or []) if str(x).strip()][:10]
     try:
@@ -75,11 +78,59 @@ def _tokenize(text: str) -> Set[str]:
     return {w for w in words if len(w) >= 3}
 
 
+def _message_dimensions(message: str) -> List[str]:
+    msg = str(message or "").strip()
+    if not msg:
+        return []
+    allowed = {"customer", "supplier", "item", "warehouse", "company", "territory"}
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    direct = str(canonical_dimension(msg) or "").strip().lower()
+    if direct in allowed and direct not in seen:
+        seen.add(direct)
+        out.append(direct)
+
+    inferred = [str(x).strip().lower() for x in list(infer_filter_kinds(msg) or []) if str(x).strip()]
+    for d in inferred:
+        if d in allowed and d not in seen:
+            seen.add(d)
+            out.append(d)
+    return out
+
+
+def _spec_requested_dimensions(spec: Dict[str, Any]) -> List[str]:
+    out: List[str] = []
+    seen: Set[str] = set()
+    dims = [str(x).strip() for x in list(spec.get("dimensions") or []) if str(x).strip()]
+    group_by = [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()]
+    oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    minimal = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
+    for raw in dims + group_by + minimal:
+        d = str(known_dimension(raw) or "").strip().lower()
+        if not d or d in seen:
+            continue
+        seen.add(d)
+        out.append(d)
+    return out
+
+
+def _filter_dimensions(filters: Dict[str, Any]) -> Set[str]:
+    out: Set[str] = set()
+    for k in list((filters or {}).keys()):
+        kinds = [str(x).strip().lower() for x in list(infer_filter_kinds(k) or []) if str(x).strip()]
+        for kind in kinds:
+            if kind in {"customer", "supplier", "item", "warehouse", "company", "territory"}:
+                out.add(kind)
+    return out
+
+
 def _topic_signature_from_spec(spec: Dict[str, Any]) -> Set[str]:
     bits: List[str] = [
         str(spec.get("subject") or ""),
         str(spec.get("metric") or ""),
         str(spec.get("task_type") or ""),
+        str(spec.get("task_class") or ""),
         str(spec.get("aggregation") or ""),
         " ".join([str(x) for x in list(spec.get("group_by") or [])]),
         " ".join([str(k) for k in list((spec.get("filters") or {}).keys())]),
@@ -206,6 +257,7 @@ def apply_memory_context(
     prev_top_n = int(prev_topic.get("top_n") or 0) if str(prev_topic.get("top_n") or "0").strip().isdigit() else 0
     prev_metric = str(prev_topic.get("metric") or "").strip()
     prev_subject = str(prev_topic.get("subject") or "").strip()
+    prev_domain = str(prev_topic.get("domain") or "").strip().lower()
     prev_result_doc_id = str(prev_result.get("document_id") or "").strip()
 
     curr_sig = _topic_signature_from_spec(spec)
@@ -231,10 +283,16 @@ def apply_memory_context(
     topic_switched = bool(prev_topic and curr_strength >= 3 and prev_strength >= 2 and overlap_ratio < 0.10)
 
     anchors_applied: List[str] = []
+    corrections_applied: List[str] = []
 
     # Only anchor when current turn is structurally underspecified.
     can_anchor = bool(prev_topic) and (not topic_switched) and (curr_strength <= 2)
     if can_anchor:
+        curr_domain = str(spec.get("domain") or "").strip().lower()
+        if (not curr_domain or curr_domain == "unknown") and prev_domain:
+            spec["domain"] = prev_domain
+            anchors_applied.append("domain")
+
         if not str(spec.get("subject") or "").strip() and prev_subject:
             spec["subject"] = prev_subject
             anchors_applied.append("subject")
@@ -273,6 +331,37 @@ def apply_memory_context(
                 spec["filters"]["document_id"] = prev_result_doc_id
                 anchors_applied.append("document_id")
 
+    # Deterministic dimension correction from explicit message semantics.
+    # This is contract/ontology-driven and avoids ad-hoc phrase routing.
+    msg_dims = _message_dimensions(message)
+    req_dims = _spec_requested_dimensions(spec)
+    filter_dims = _filter_dimensions(spec.get("filters") if isinstance(spec.get("filters"), dict) else {})
+    if msg_dims:
+        target_dims = [d for d in msg_dims if d not in filter_dims]
+        if not target_dims:
+            target_dims = list(msg_dims)
+        missing_dims = [d for d in target_dims if d not in req_dims]
+        if missing_dims:
+            group_by = [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()]
+            merged_group_by = list(dict.fromkeys(group_by + missing_dims))
+            if merged_group_by != group_by:
+                spec["group_by"] = merged_group_by[:10]
+                corrections_applied.append("group_by_from_message_dimension")
+            oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+            mode = str(oc.get("mode") or "detail").strip().lower() or "detail"
+            if mode == "kpi":
+                spec["output_contract"] = dict(oc)
+                spec["output_contract"]["mode"] = "detail"
+                corrections_applied.append("output_mode_from_kpi_to_detail")
+            if missing_dims:
+                oc2 = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+                wanted2 = [str(x).strip() for x in list(oc2.get("minimal_columns") or []) if str(x).strip()]
+                merged_wanted = list(dict.fromkeys(wanted2 + missing_dims))
+                if merged_wanted != wanted2:
+                    spec["output_contract"] = dict(oc2)
+                    spec["output_contract"]["minimal_columns"] = merged_wanted[:12]
+                    corrections_applied.append("minimal_columns_from_message_dimension")
+
     # Keep output contract aligned with resolved semantic fields.
     oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
     wanted = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
@@ -292,11 +381,11 @@ def apply_memory_context(
 
     meta = {
         "memory_version": "phase6_topic_memory_v2_generic",
-        "prev_domain": str((prev_topic.get("domain") if isinstance(prev_topic, dict) else "") or "").strip(),
-        "curr_domain": "",
+        "prev_domain": prev_domain,
+        "curr_domain": str(spec.get("domain") or "").strip().lower(),
         "topic_switched": bool(topic_switched),
         "anchors_applied": anchors_applied,
-        "corrections_applied": [],
+        "corrections_applied": corrections_applied,
         "curr_strength": curr_strength,
         "anchored_strength": anchored_strength,
         "overlap_ratio": round(overlap_ratio, 4),
@@ -345,9 +434,10 @@ def build_topic_state(
     return {
         "active_topic": {
             "topic_key": topic_key,
-            "domain": str(spec.get("subject") or report_name or "").strip().lower()[:64],
+            "domain": str(spec.get("domain") or "").strip().lower(),
             "subject": str(spec.get("subject") or "").strip(),
             "metric": str(spec.get("metric") or "").strip(),
+            "task_class": str(spec.get("task_class") or "analytical_read").strip().lower(),
             "group_by": [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()][:10],
             "top_n": int(spec.get("top_n") or 0) if str(spec.get("top_n") or "0").strip().isdigit() else 0,
             "report_name": report_name,
@@ -358,6 +448,7 @@ def build_topic_state(
             "result_id": str(doc_id or report_name or topic_key),
             "report_name": report_name,
             "document_id": str(doc_id or ""),
+            "task_class": str(spec.get("task_class") or "analytical_read").strip().lower(),
             "group_by": [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()][:10],
             "top_n": int(spec.get("top_n") or 0) if str(spec.get("top_n") or "0").strip().isdigit() else 0,
             "filters": kept_filters,

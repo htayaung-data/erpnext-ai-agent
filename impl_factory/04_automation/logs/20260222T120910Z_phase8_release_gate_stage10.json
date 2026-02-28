@@ -1,0 +1,87 @@
+{
+  "executed_at_utc": "2026-02-22T12:09:10Z",
+  "mode": "phase8_release_gate",
+  "label": "v7_stk03_freeze_check",
+  "input_artifacts": [
+    "impl_factory/04_automation/logs/20260222T120905Z_phase6_canary_uat_raw_v3.json"
+  ],
+  "first_run_policy": {
+    "enforced": true,
+    "source": "earliest_result_per_case_id",
+    "diagnostic_ignored_count": 0,
+    "selected_case_count": 27
+  },
+  "stage": {
+    "stage_percent": 10,
+    "go": false,
+    "action": "rollback_to_v2",
+    "next_stage_percent": 10,
+    "rollback_triggered": true,
+    "rollback_target": "assistant_engine=v2",
+    "reason": "Gate failed at current stage.",
+    "failed_gate_checks": [
+      "clarification_rate_clear_read_le_10pct",
+      "direct_answer_rate_clear_read_ge_90pct",
+      "mandatory_pass_rate_100"
+    ]
+  },
+  "summary": {
+    "total": 27,
+    "passed": 23,
+    "failed": 4,
+    "missing_mandatory_ids": [],
+    "missing_critical_ids": [],
+    "clear_read_total": 16,
+    "direct_answer_count_clear_read": 12,
+    "direct_answer_rate_clear_read": 0.75,
+    "clarification_count_clear_read": 4,
+    "clarification_rate_clear_read": 0.25,
+    "unnecessary_clarification_count_clear_read": 0,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_count_clear_read": 0,
+    "wrong_report_rate_clear_read": 0.0,
+    "loop_fail_count": 0,
+    "loop_scope_total": 20,
+    "clarification_loop_rate": 0.0,
+    "meta_clarification_count_clear_read": 0,
+    "output_shape_pass_rate_clear_read": 1.0,
+    "write_safety_incidents": 0,
+    "user_correction_total": 1,
+    "user_correction_fail_count": 0,
+    "user_correction_rate": 0.0,
+    "latency_p95_ms_clear_read": 14894,
+    "reader_total": 20,
+    "reader_pass_rate": 0.85,
+    "operator_total": 7,
+    "operator_pass_rate": 0.8571
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": true,
+    "first_run_policy_declared": true,
+    "fac_preconditions_ok": true,
+    "direct_answer_rate_clear_read_ge_90pct": false,
+    "clarification_rate_clear_read_le_10pct": false,
+    "unnecessary_clarification_rate_clear_read_le_5pct": true,
+    "wrong_report_rate_clear_read_le_3pct": true,
+    "clarification_loop_rate_lt_1pct": true,
+    "zero_meta_clarification_on_clear_asks": true,
+    "role_parity_reader_vs_operator": true,
+    "write_safety_incidents_eq_0": true,
+    "output_shape_pass_rate_eq_100pct": true,
+    "overall_go": false,
+    "failed_gate_checks": [
+      "clarification_rate_clear_read_le_10pct",
+      "direct_answer_rate_clear_read_ge_90pct",
+      "mandatory_pass_rate_100"
+    ]
+  },
+  "baseline": {
+    "baseline_correction_rate": null,
+    "correction_trend_gate_applied": false
+  },
+  "sla": {
+    "latency_p95_sla_ms": null,
+    "latency_gate_applied": false
+  }
+}

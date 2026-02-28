@@ -4,10 +4,13 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ai_assistant_ui.ai_core.llm.report_planner import choose_candidate_report
+from ai_assistant_ui.ai_core.v7.constraint_engine import build_constraint_set
+from ai_assistant_ui.ai_core.v7.db_semantic_catalog import retrieve_db_semantic_context
 from ai_assistant_ui.ai_core.util_dates import last_month_range, last_week_range, this_month_range, this_week_range, today_date
 from ai_assistant_ui.ai_core.v7.capability_platform import build_capability_platform_payload
 from ai_assistant_ui.ai_core.v7.plan_compiler import compile_execution_plan
 from ai_assistant_ui.ai_core.v7.semantic_resolver import resolve_semantics
+from ai_assistant_ui.ai_core.v7.contract_registry import default_clarification_question
 
 
 def _build_time_context(ref_date) -> Dict[str, Dict[str, str]]:
@@ -107,8 +110,10 @@ def resolve_business_request(
     business_spec: Dict[str, Any],
     message: str = "",
     user: Optional[str],
+    topic_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     spec = business_spec if isinstance(business_spec, dict) else {}
+    state = topic_state if isinstance(topic_state, dict) else {}
     try:
         platform_payload = build_capability_platform_payload(
             user=user,
@@ -122,7 +127,21 @@ def resolve_business_request(
         coverage = platform_payload.get("coverage") if isinstance(platform_payload.get("coverage"), dict) else {}
         drift = platform_payload.get("drift") if isinstance(platform_payload.get("drift"), dict) else {}
         alerts = [a for a in list(platform_payload.get("alerts") or []) if isinstance(a, dict)]
-        resolved = resolve_semantics(business_spec=spec, capability_index=index)
+        constraint_set = build_constraint_set(
+            business_spec=spec,
+            topic_state=state,
+        )
+        semantic_context = retrieve_db_semantic_context(
+            business_spec=spec,
+            constraint_set=constraint_set,
+            top_k=6,
+        )
+        resolved = resolve_semantics(
+            business_spec=spec,
+            capability_index=index,
+            constraint_set=constraint_set,
+            semantic_context=semantic_context,
+        )
         # Do not allow unconstrained planner override at runtime. Any model-assisted
         # rerank is allowed only within resolver-feasible candidates.
         reranked_report = _llm_rerank_selected_report(message=message, resolved=resolved, index=index)
@@ -139,7 +158,7 @@ def resolve_business_request(
             resolved["reranked_by"] = reranked_by
         plan = compile_execution_plan(resolved=resolved)
         meta = {
-            "phase": "phase2_resolver_pipeline",
+            "phase": "phase3_resolver_pipeline",
             "resolver_ok": True,
             "report_count": int(index.get("report_count") or 0),
             "reports_scanned": int(index.get("report_count") or 0),
@@ -150,6 +169,13 @@ def resolve_business_request(
             "drift_changed_count": drift.get("changed_count"),
             "alert_count": len(alerts),
             "reranked_by": str(resolved.get("reranked_by") or ""),
+            "constraint_domain": str(constraint_set.get("domain") or ""),
+            "constraint_task_class": str(constraint_set.get("task_class") or ""),
+            "constraint_hard_filter_kinds_count": len(list(constraint_set.get("hard_filter_kinds") or [])),
+            "constraint_requested_dimensions_count": len(list(constraint_set.get("requested_dimensions") or [])),
+            "db_semantic_catalog_available": bool(semantic_context.get("catalog_available")),
+            "db_semantic_selected_table_count": len(list(semantic_context.get("selected_tables") or [])),
+            "db_semantic_join_path_count": len(list(semantic_context.get("join_paths") or [])),
         }
         return {
             "index_meta": {
@@ -160,28 +186,40 @@ def resolve_business_request(
                 "drift": drift,
                 "alerts": alerts,
             },
+            "constraint_set": constraint_set,
+            "semantic_context": semantic_context,
             "resolved": resolved,
             "plan": plan,
             "meta": meta,
         }
     except Exception as exc:
+        fallback_constraint_set = build_constraint_set(business_spec=spec, topic_state=state)
+        fallback_semantic_context = retrieve_db_semantic_context(
+            business_spec=spec,
+            constraint_set=fallback_constraint_set,
+            top_k=6,
+        )
         fallback_resolved = {
-            "_phase": "phase2_semantic_resolver_fallback",
+            "_phase": "phase3_semantic_resolver_fallback",
             "business_spec": spec,
+            "hard_constraints": fallback_constraint_set,
+            "semantic_context": fallback_semantic_context,
             "candidate_reports": [],
             "selected_report": "",
             "selected_score": None,
             "needs_clarification": True,
             "clarification_reason": "resolver_pipeline_error",
-            "clarification_question": "Could you clarify the exact report target (for example receivable, payable, stock, sales)?",
+            "clarification_question": default_clarification_question("resolver_pipeline_error"),
         }
         fallback_plan = compile_execution_plan(resolved=fallback_resolved)
         return {
             "index_meta": {"report_count": 0, "built_from": {}},
+            "constraint_set": fallback_constraint_set,
+            "semantic_context": fallback_semantic_context,
             "resolved": fallback_resolved,
             "plan": fallback_plan,
             "meta": {
-                "phase": "phase2_resolver_pipeline",
+                "phase": "phase3_resolver_pipeline",
                 "resolver_ok": False,
                 "error": str(exc)[:200],
                 "report_count": 0,
@@ -195,6 +233,8 @@ def resolve_business_request(
 def make_resolver_tool_message(*, tool: str, mode: str, envelope: Dict[str, Any]) -> str:
     resolved = envelope.get("resolved") if isinstance(envelope.get("resolved"), dict) else {}
     plan = envelope.get("plan") if isinstance(envelope.get("plan"), dict) else {}
+    constraint_set = envelope.get("constraint_set") if isinstance(envelope.get("constraint_set"), dict) else {}
+    semantic_context = envelope.get("semantic_context") if isinstance(envelope.get("semantic_context"), dict) else {}
     candidates = list(resolved.get("candidate_reports") or [])
     top_candidates = []
     for c in candidates[:3]:
@@ -210,7 +250,7 @@ def make_resolver_tool_message(*, tool: str, mode: str, envelope: Dict[str, Any]
 
     payload = {
         "type": "v7_semantic_resolution",
-        "phase": "phase2",
+        "phase": "phase3",
         "mode": str(mode or "").strip(),
         "tool": str(tool or "").strip(),
         "resolver_ok": bool(((envelope.get("meta") or {}).get("resolver_ok"))),
@@ -219,6 +259,11 @@ def make_resolver_tool_message(*, tool: str, mode: str, envelope: Dict[str, Any]
         "needs_clarification": bool(resolved.get("needs_clarification")),
         "clarification_reason": resolved.get("clarification_reason") or "",
         "plan_action": plan.get("action") or "",
+        "constraint_domain": str(constraint_set.get("domain") or ""),
+        "constraint_task_class": str(constraint_set.get("task_class") or ""),
+        "constraint_hard_filter_kinds_count": len(list(constraint_set.get("hard_filter_kinds") or [])),
+        "db_semantic_catalog_available": bool(semantic_context.get("catalog_available")),
+        "db_semantic_selected_table_count": len(list(semantic_context.get("selected_tables") or [])),
         "top_candidates": top_candidates,
     }
     return json.dumps(payload, ensure_ascii=False, default=str)

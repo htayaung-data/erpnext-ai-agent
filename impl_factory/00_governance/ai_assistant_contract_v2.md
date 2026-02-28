@@ -1,12 +1,12 @@
-# AI Assistant Contract Specification (Commercial v7.1)
+# AI Assistant Contract Specification (Commercial v7.3)
 
-Version: 7.1  
-Effective date: 2026-02-21  
+Version: 7.3  
+Effective date: 2026-02-22  
 System: ERPNext Desk Embedded Assistant (`ai_assistant_ui`)  
 Primary data source: FAC tools (`frappe_assistant_core`)  
-Supersedes: v7.0 (2026-02-21)
+Supersedes: v7.2 (2026-02-22)
 
-Note: file path keeps `v2` name for repository continuity; active contract version is `v7.1`.
+Note: file path keeps `v2` name for repository continuity; active contract version is `v7.3`.
 
 ## 1) Purpose
 Define the enterprise production contract for an ERP assistant that is:
@@ -30,6 +30,8 @@ Define the enterprise production contract for an ERP assistant that is:
 6. No promotion without first-run replay evidence.
 7. No phase overlap without prior phase exit pass.
 8. Any write without explicit confirm is Sev1 release blocker.
+9. Quality acceptance is based on behavior-class coverage and class-level KPIs, not exact question memorization.
+10. If a request is outside current behavior-class support, runtime must return a controlled blocker clarification or explicit unsupported envelope; never loop through ad-hoc rerouting.
 
 ## 4) Explicitly Prohibited Patterns
 1. Keyword/regex/phrase-list routing as primary resolver logic.
@@ -37,6 +39,7 @@ Define the enterprise production contract for an ERP assistant that is:
 3. One-off runtime patches for single transcript outcomes without generalized stage-level fix.
 4. Mixed read/write state machines.
 5. Promotion based on rerun success when first-run fails.
+6. Treating a fixed sample question list as sufficient acceptance evidence.
 
 ## 5) Architecture Contract
 
@@ -62,6 +65,8 @@ Define the enterprise production contract for an ERP assistant that is:
 5. `drift_monitor`: schema/capability drift and staleness alerts.
 6. `kpi_gate_service`: first-run scoring and gate evaluation.
 7. `version_registry`: model/prompt/capability versions + rollback pointer.
+8. `behavior_class_registry`: canonical query behavior classes and acceptance targets.
+9. `capability_enrichment`: auto-derived capability semantics from schema/report metadata (entity, default sort field, projection support, limit support), plus minimal manual overrides for locale/business terms.
 
 ### 5.3 Security Plane
 1. RBAC + row-level and field-level policy at tool boundary.
@@ -75,6 +80,9 @@ Define the enterprise production contract for an ERP assistant that is:
 3. CI must fail on banned legacy imports (`v2`, `v3`, old report_qa monolith path).
 4. CI must fail if mandatory audit envelope fields are absent.
 5. CI must fail when mandatory replay/KPI gates fail.
+6. CI must fail when core runtime modules contain lexical/regex steering logic for task, report, metric, or follow-up routing.
+7. Core runtime modules (`read_engine`, `resolver_pipeline`, `spec_schema`, `clarification_policy`) must not parse user intent by phrase token lists; only parser output + constraints + capability metadata are allowed.
+8. Any guardrail violation blocks phase promotion and starts breach-recovery mode.
 
 ## 7) Mandatory Data Contracts
 
@@ -82,13 +90,14 @@ Define the enterprise production contract for an ERP assistant that is:
 Required fields:
 1. `intent`
 2. `task_type`
-3. `domain`
-4. `metric`
-5. `dimensions[]`
-6. `filters{}`
-7. `time_scope{}`
-8. `output_contract{}`
-9. `confidence`
+3. `task_class`
+4. `domain`
+5. `metric`
+6. `dimensions[]`
+7. `filters{}`
+8. `time_scope{}`
+9. `output_contract{}`
+10. `confidence`
 
 ### 7.2 ConstraintSet
 Required fields:
@@ -163,6 +172,21 @@ Required fields:
 4. Cross-topic contamination is hard failure.
 5. Transforms operate on persisted prior result; no silent report switch.
 
+## 9A) Behavior-Class Contract
+1. Runtime must classify user asks into canonical behavior classes before resolver selection.
+2. Mandatory class set includes at minimum:
+- `ranking_top_n`
+- `kpi_aggregate`
+- `detail_projection`
+- `comparison`
+- `trend_time_series`
+- `list_latest_records`
+- `entity_disambiguation_followup`
+- `correction_rebind` (`I mean`, `not X use Y`)
+- `transform_last_result`
+3. For `list_latest_records`, planner must express deterministic sort and limit semantics (e.g., date DESC + LIMIT N) rather than misclassifying as KPI metric.
+4. Clarification for class gaps must ask one blocker question only and preserve active topic context.
+
 ## 10) Clarification and Error Envelope Contract
 1. Clarify only for true blockers:
 - missing required filter not safely inferable
@@ -210,6 +234,8 @@ Promotion allowed only when all pass:
 7. unsupported/no-data/permission envelope correctness >= 98%
 8. write safety violations = 0
 9. P95 latency within class-specific SLA
+10. behavior-class mandatory coverage >= 95% in replay manifest
+11. behavior-class first-run pass rate >= 90% for each mandatory class
 
 ## 15) Rollout Contract (Read/Write Split)
 1. Read rollout track: `shadow -> 10% -> 25% -> 50% -> 100%`.
@@ -240,7 +266,16 @@ Every phase must publish:
 3. Runtime logic merge requires linked replay/KPI evidence.
 4. No emergency bypass of guardrails without written incident record.
 
-## 19) Acceptance Criteria (Commercial v7.1)
+## 18A) Breach Recovery Mode (Mandatory)
+When contract breaches are detected in runtime core:
+1. Freeze feature development immediately.
+2. Open a breach register with file/line evidence and owner.
+3. Remove breaches to zero before any phase advancement.
+4. Add/adjust CI checks so the same breach class cannot recur.
+5. Re-run mandatory replay/canary on first-run scoring only.
+6. If breach count is non-zero after 5 working days, trigger formal go/no-go review.
+
+## 19) Acceptance Criteria (Commercial v7.3)
 Commercial-ready means:
 1. clear business asks are correct on first run,
 2. 3-4 turn follow-up chains are context-correct and contamination-free,
@@ -249,7 +284,10 @@ Commercial-ready means:
 5. output shape and numeric formatting are contract-compliant,
 6. write path is safe, permission-correct, and fully audited,
 7. all KPI gates pass with versioned evidence.
+8. behavior classes are implemented and passing class-level gates with adversarial paraphrase coverage.
 
 ## 20) Changelog
-1. `v7.1` (2026-02-21): added read/write split rollout contract, explicit sample-size KPI gates, per-phase evidence contract, and version-registry requirement.
-2. `v7.0` (2026-02-21): enterprise architecture contract with runtime/control/security planes and deterministic gate policy.
+1. `v7.3` (2026-02-22): added breach-recovery mode, explicit CI ban on lexical/regex runtime steering in core modules, and fail-fast policy for unsupported behavior classes.
+2. `v7.2` (2026-02-22): added behavior-class contract, task-class field requirement, capability auto-enrichment requirement, and class-level KPI gates.
+3. `v7.1` (2026-02-21): added read/write split rollout contract, explicit sample-size KPI gates, per-phase evidence contract, and version-registry requirement.
+4. `v7.0` (2026-02-21): enterprise architecture contract with runtime/control/security planes and deterministic gate policy.

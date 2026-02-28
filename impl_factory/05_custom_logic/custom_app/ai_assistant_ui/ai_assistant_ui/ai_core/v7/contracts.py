@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 class BusinessRequestSpec:
     intent: str = "READ"
     task_type: str = "detail"
+    task_class: str = "analytical_read"
     domain: str = "unknown"
     subject: str = ""
     metric: str = ""

@@ -1,16 +1,47 @@
 {
-  "version": "v7_phase1_baseline_2026_02_21_r2",
+  "version": "v7_phase1_baseline_2026_02_23_r4",
+  "behavior_class_schema": {
+    "field": "behavior_class",
+    "required": true,
+    "allowed": [
+      "ranking_top_n",
+      "kpi_aggregate",
+      "comparison",
+      "trend_time_series",
+      "detail_projection",
+      "list_latest_records",
+      "entity_disambiguation_followup",
+      "correction_rebind",
+      "transform_last_result",
+      "clarification_blocker",
+      "observability_contract",
+      "error_envelope",
+      "write_safety",
+      "context_topic_switch"
+    ],
+    "target_mandatory_classes": [
+      "ranking_top_n",
+      "kpi_aggregate",
+      "detail_projection",
+      "comparison",
+      "trend_time_series",
+      "list_latest_records",
+      "entity_disambiguation_followup",
+      "correction_rebind",
+      "transform_last_result"
+    ]
+  },
   "packs": [
     {
       "name": "core_read",
       "file": "core_read.jsonl",
-      "case_count": 10,
+      "case_count": 12,
       "description": "single-turn core read baseline"
     },
     {
       "name": "multiturn_context",
       "file": "multiturn_context.jsonl",
-      "case_count": 2,
+      "case_count": 4,
       "description": "3-turn and 4-turn context/reference chains"
     },
     {
@@ -32,6 +63,6 @@
       "description": "write safety expectations"
     }
   ],
-  "total_case_count": 26,
+  "total_case_count": 30,
   "first_run_only": true
 }

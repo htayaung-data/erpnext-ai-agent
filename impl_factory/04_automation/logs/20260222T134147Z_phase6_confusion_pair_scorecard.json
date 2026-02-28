@@ -1,0 +1,90 @@
+{
+  "executed_at_utc": "2026-02-22T13:41:47Z",
+  "mode": "phase6_confusion_pair_scorecard",
+  "baseline_artifact": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260221T190025Z_phase1_first_run_baseline.json",
+  "current_artifact": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260222T120905Z_phase6_canary_uat_raw_v3.json",
+  "wrong_report_delta": {
+    "baseline_wrong_report_rate": 0.0,
+    "current_wrong_report_rate": 0.0,
+    "relative_improvement": 0.0,
+    "rule_mode": "baseline_zero_non_regression",
+    "gate_pass": true,
+    "note": ""
+  },
+  "confusion_pair_suite": {
+    "suite_name": "phase6_confusion_pairs_v1",
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "threshold": 0.95,
+    "threshold_pass": true,
+    "cases": [
+      {
+        "id": "CP-01-payable-vs-receivable",
+        "expected_report": "Accounts Payable Summary",
+        "selected_report": "Accounts Payable Summary",
+        "needs_clarification": false,
+        "hard_blockers": [],
+        "score": 189,
+        "confidence": 0.97,
+        "pass": true
+      },
+      {
+        "id": "CP-02-receivable-vs-payable",
+        "expected_report": "Accounts Receivable Summary",
+        "selected_report": "Accounts Receivable Summary",
+        "needs_clarification": false,
+        "hard_blockers": [],
+        "score": 189,
+        "confidence": 0.97,
+        "pass": true
+      },
+      {
+        "id": "CP-03-sold-vs-received",
+        "expected_report": "Item-wise Sales Register",
+        "selected_report": "Item-wise Sales Register",
+        "needs_clarification": false,
+        "hard_blockers": [],
+        "score": 196,
+        "confidence": 0.96,
+        "pass": true
+      },
+      {
+        "id": "CP-04-received-vs-sold",
+        "expected_report": "Item-wise Purchase Register",
+        "selected_report": "Item-wise Purchase Register",
+        "needs_clarification": false,
+        "hard_blockers": [],
+        "score": 196,
+        "confidence": 0.96,
+        "pass": true
+      },
+      {
+        "id": "CP-05-customer-vs-supplier",
+        "expected_report": "Accounts Receivable Summary",
+        "selected_report": "Accounts Receivable Summary",
+        "needs_clarification": false,
+        "hard_blockers": [],
+        "score": 197,
+        "confidence": 0.97,
+        "pass": true
+      },
+      {
+        "id": "CP-06-supplier-vs-customer",
+        "expected_report": "Accounts Payable Summary",
+        "selected_report": "Accounts Payable Summary",
+        "needs_clarification": false,
+        "hard_blockers": [],
+        "score": 197,
+        "confidence": 0.97,
+        "pass": true
+      }
+    ]
+  },
+  "phase6_gate": {
+    "wrong_report_delta_gate_pass": true,
+    "confusion_pair_gate_pass": true,
+    "overall_pass": true
+  }
+}

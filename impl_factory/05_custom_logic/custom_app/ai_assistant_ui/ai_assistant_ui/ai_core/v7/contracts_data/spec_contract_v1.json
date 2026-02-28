@@ -1,0 +1,42 @@
+{
+  "version": "v1",
+  "allowed": {
+    "intents": [
+      "READ",
+      "TRANSFORM_LAST",
+      "TUTOR",
+      "WRITE_DRAFT",
+      "WRITE_CONFIRM",
+      "EXPORT"
+    ],
+    "task_types": ["kpi", "ranking", "trend", "detail"],
+    "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup"],
+    "aggregations": ["sum", "count", "avg", "none"],
+    "time_modes": ["as_of", "range", "relative", "none"],
+    "output_modes": ["kpi", "top_n", "detail"],
+    "domains": [
+      "unknown",
+      "sales",
+      "finance",
+      "inventory",
+      "purchasing",
+      "operations",
+      "hr",
+      "cross_functional"
+    ]
+  },
+  "canonical_dimensions": [
+    "customer",
+    "supplier",
+    "item",
+    "warehouse",
+    "company",
+    "territory"
+  ],
+  "dimension_domain_map": {
+    "customer": "sales",
+    "supplier": "purchasing",
+    "warehouse": "inventory",
+    "company": "finance"
+  }
+}

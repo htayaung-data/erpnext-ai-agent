@@ -1,0 +1,286 @@
+{
+  "version": "base_v1",
+  "metric_aliases": {
+    "revenue": [
+      "revenue",
+      "sales",
+      "sales amount",
+      "sales value",
+      "invoiced amount",
+      "income",
+      "total sales",
+      "amount"
+    ],
+    "sold_quantity": [
+      "sold quantity",
+      "sold qty",
+      "sales qty",
+      "sales quantity",
+      "qty sold",
+      "stock qty",
+      "quantity sold"
+    ],
+    "received_quantity": [
+      "received quantity",
+      "received qty",
+      "purchase qty",
+      "qty received"
+    ],
+    "stock_balance": [
+      "stock balance",
+      "item balance",
+      "balance qty",
+      "warehouse balance",
+      "inventory balance"
+    ],
+    "outstanding_amount": [
+      "outstanding amount",
+      "total amount due",
+      "amount due",
+      "receivable amount",
+      "payable amount"
+    ],
+    "open_requests": [
+      "open requests",
+      "open material requests",
+      "pending requests",
+      "material request"
+    ]
+  },
+  "metric_domain_map": {
+    "revenue": "sales",
+    "sold_quantity": "sales",
+    "received_quantity": "purchasing",
+    "stock_balance": "inventory",
+    "outstanding_amount": "finance",
+    "open_requests": "operations"
+  },
+  "domain_aliases": {
+    "sales": [
+      "sales",
+      "selling",
+      "customer",
+      "invoice"
+    ],
+    "purchasing": [
+      "purchase",
+      "buying",
+      "supplier",
+      "vendor"
+    ],
+    "inventory": [
+      "stock",
+      "inventory",
+      "warehouse",
+      "item balance"
+    ],
+    "finance": [
+      "receivable",
+      "payable",
+      "ledger",
+      "outstanding",
+      "account"
+    ],
+    "operations": [
+      "material request",
+      "production",
+      "manufacturing",
+      "work order"
+    ],
+    "hr": [
+      "employee",
+      "attendance",
+      "leave",
+      "payroll",
+      "hr"
+    ]
+  },
+  "dimension_aliases": {
+    "customer": [
+      "customer",
+      "party"
+    ],
+    "supplier": [
+      "supplier",
+      "vendor"
+    ],
+    "item": [
+      "item",
+      "product",
+      "sku"
+    ],
+    "warehouse": [
+      "warehouse",
+      "store"
+    ],
+    "territory": [
+      "territory",
+      "region",
+      "city"
+    ],
+    "company": [
+      "company",
+      "business unit"
+    ]
+  },
+  "primary_dimension_aliases": {
+    "customer": [
+      "customer-wise",
+      "customer wise",
+      "customer"
+    ],
+    "supplier": [
+      "supplier-wise",
+      "supplier wise",
+      "supplier",
+      "vendor"
+    ],
+    "item": [
+      "item-wise",
+      "item wise",
+      "product-wise",
+      "product wise",
+      "item",
+      "product",
+      "sku"
+    ],
+    "warehouse": [
+      "warehouse-wise",
+      "warehouse wise",
+      "warehouse"
+    ],
+    "territory": [
+      "territory-wise",
+      "territory wise",
+      "territory",
+      "region"
+    ],
+    "sales_person": [
+      "sales person-wise",
+      "sales person wise",
+      "sales person"
+    ],
+    "sales_partner": [
+      "sales partner-wise",
+      "sales partner wise",
+      "sales partner"
+    ]
+  },
+  "filter_kind_aliases": {
+    "warehouse": [
+      "warehouse"
+    ],
+    "company": [
+      "company"
+    ],
+    "customer": [
+      "customer"
+    ],
+    "supplier": [
+      "supplier",
+      "vendor"
+    ],
+    "item": [
+      "item",
+      "product",
+      "sku"
+    ],
+    "date": [
+      "date",
+      "posting",
+      "as on",
+      "as_of"
+    ],
+    "from_date": [
+      "from_date",
+      "from date"
+    ],
+    "to_date": [
+      "to_date",
+      "to date"
+    ],
+    "report_date": [
+      "report_date",
+      "report date",
+      "as on",
+      "as_of"
+    ],
+    "start_year": [
+      "start_year",
+      "start year",
+      "from_year",
+      "from year"
+    ],
+    "end_year": [
+      "end_year",
+      "end year",
+      "to_year",
+      "to year"
+    ],
+    "fiscal_year": [
+      "fiscal_year",
+      "fiscal year"
+    ],
+    "year": [
+      "year"
+    ]
+  },
+  "write_operation_aliases": {
+    "create": [
+      "create",
+      "add",
+      "new",
+      "make"
+    ],
+    "update": [
+      "update",
+      "edit",
+      "change",
+      "modify",
+      "set"
+    ],
+    "delete": [
+      "delete",
+      "remove"
+    ],
+    "confirm": [
+      "confirm",
+      "yes",
+      "proceed",
+      "approve",
+      "execute",
+      "do it",
+      "ok",
+      "okay"
+    ],
+    "cancel": [
+      "cancel",
+      "stop",
+      "abort",
+      "no"
+    ]
+  },
+  "write_doctype_aliases": {
+    "ToDo": [
+      "todo",
+      "to do",
+      "task"
+    ]
+  },
+  "export_aliases": {
+    "include_download": [
+      "download",
+      "export",
+      "excel",
+      "xlsx",
+      "csv",
+      "pdf"
+    ]
+  },
+  "generic_metric_terms": [
+    "amount",
+    "count",
+    "total",
+    "value"
+  ]
+}

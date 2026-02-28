@@ -1,7 +1,7 @@
-# AI Assistant Roadmap 2026 (V7.1 Enterprise Delivery Program)
+# AI Assistant Roadmap 2026 (V7.3 Enterprise Delivery Program)
 
-Version: 7.1  
-Effective date: 2026-02-21  
+Version: 7.3  
+Effective date: 2026-02-22  
 Program window: 2026-02-23 to 2026-07-26 (22 weeks)  
 Primary codebase: `ai_assistant_ui`  
 Engine policy: `v7` only (legacy runtime engines forbidden)
@@ -14,11 +14,14 @@ Deliver an enterprise-grade ERP AI Assistant that is:
 4. safe and auditable for write operations.
 
 ## 2) Delivery Rules (Hard Constraints)
-1. Contract-bound implementation only (`ai_assistant_contract_v2.md` v7.1).
+1. Contract-bound implementation only (`ai_assistant_contract_v2.md` v7.3).
 2. No keyword-driven runtime routing/scoring logic.
 3. No phase overlap without prior phase exit pass.
 4. Promotion is first-run only; rerun pass does not override first-run fail.
 5. Read GA and write GA are separate release tracks.
+6. Acceptance is by behavior-class coverage and class-level KPIs, not by fixed question list only.
+7. Any detected core-runtime contract breach triggers immediate breach-recovery mode and feature freeze.
+8. Phase advancement is blocked while breach register count is non-zero.
 
 ## 3) Workstream Model
 1. Runtime Plane: parser, constraints, resolver, planner, executor, validator, context, clarification, composer.
@@ -49,27 +52,55 @@ Evidence:
 Rollback:
 1. not applicable (governance phase)
 
-### Phase P1 (Week 2) - Benchmark and First-Run Scoring Foundation
+### Phase P0b (Week 1.5) - Contract Breach Hardening Sprint
 Entry:
 1. P0 pass
+2. breach report exists or contract-drift suspected
+
+Work:
+1. publish breach register with file/line evidence
+2. remove lexical/regex steering logic from core runtime modules
+3. move allowed lexical mappings to ontology boundary only
+4. strengthen CI guardrails for recurrence prevention
+5. run first-run replay/canary and publish delta
+
+Exit:
+1. breach register count = 0
+2. CI guardrails fail on recurrence patterns
+3. mandatory replay/canary first-run pass meets minimum gate
+
+Evidence:
+1. breach register before/after report
+2. guardrail execution logs
+3. first-run replay/canary artifacts
+
+Rollback:
+1. if breach count remains non-zero after 5 working days, stop promotion and trigger go/no-go decision
+
+### Phase P1 (Week 2) - Benchmark and First-Run Scoring Foundation
+Entry:
+1. P0 and P0b pass
 
 Work:
 1. finalize replay packs: `core_read`, `multiturn_context`, `transform_followup`, `no_data_unsupported`, `write_safety`
 2. implement deterministic first-run scorer
 3. publish baseline KPI report
+4. define mandatory behavior-class baseline labels for each replay case
 
 Exit:
 1. reproducible baseline KPI pack available
 2. scorer reproducibility verified
+3. every replay case linked to one behavior class
 
 Evidence:
 1. replay manifest and case inventory
 2. baseline JSON/MD KPI output
+3. behavior-class mapping artifact
 
 Rollback:
 1. keep runtime in non-promoting mode
 
-### Phase P2 (Weeks 3-4) - Ontology and Data Contracts
+### Phase P2 (Weeks 3-4) - Ontology, Data Contracts, and Behavior Taxonomy
 Entry:
 1. P1 pass
 
@@ -77,14 +108,18 @@ Work:
 1. finalize canonical contracts for metric/dimension/filter/time/output
 2. finalize clarification reason-code taxonomy
 3. version and validate schema contracts
+4. formalize behavior-class taxonomy and task-class schema fields
+5. define mandatory task classes: `ranking_top_n`, `kpi_aggregate`, `detail_projection`, `comparison`, `trend_time_series`, `list_latest_records`, `entity_disambiguation_followup`, `correction_rebind`, `transform_last_result`
 
 Exit:
 1. contract schema versioned and validated
 2. parser and validator consume contract definitions from one source
+3. behavior-class definitions published and consumed by scorer
 
 Evidence:
 1. contract schema docs + validation report
 2. contract version tag and compatibility notes
+3. behavior-class contract and mapping report
 
 Rollback:
 1. revert contract version pointer
@@ -98,14 +133,18 @@ Work:
 2. persist capability confidence/freshness
 3. implement drift/staleness alerts
 4. publish capability coverage report
+5. auto-enrich capability semantics (entity, projection support, default date/sort field, limit support)
+6. support minimal manual override file for business/locale synonyms only
 
 Exit:
 1. active report-family coverage >= 95%
 2. stale/unknown capability alerts active
+3. enrichment coverage report published for mandatory task classes
 
 Evidence:
 1. coverage report
 2. drift monitor test output
+3. capability enrichment validation report
 
 Rollback:
 1. revert to prior capability snapshot
@@ -118,14 +157,17 @@ Work:
 1. implement top-k retrieval for relevant capability/schema context
 2. apply confidence thresholds and miss handling
 3. log retrieval evidence per turn
+4. include behavior-class and enriched-capability context in retrieval payload
 
 Exit:
 1. retrieval relevance KPI passes target
 2. no full-schema prompt stuffing path in runtime
+3. retrieval hit-rate for mandatory behavior classes meets target
 
 Evidence:
 1. retrieval evaluation report (`Top-1`, `Top-3`, misses)
 2. trace samples with retrieval context
+3. class-wise retrieval scorecard
 
 Rollback:
 1. disable retrieval-grounding and fallback to deterministic capability filtering
@@ -138,14 +180,20 @@ Work:
 1. strict parser with max 1 retry
 2. deterministic constraints for polarity/entity/time/filter requirements
 3. convert required-filter misses to blocker clarifications
+4. implement task-class parse semantics for missing classes:
+- `list_latest_records` (`latest/recent/newest/last N` => sort+limit, not KPI metric)
+- `detail_projection` (`show only X columns`)
+5. add explicit ambiguity policy for `invoice` entity (`Sales Invoice` vs `Purchase Invoice`)
 
 Exit:
 1. parser schema-valid rate >= 99%
 2. mandatory-filter runtime errors eliminated
+3. mandatory task classes parse correctly in class replay suite
 
 Evidence:
 1. parser validity metrics
 2. blocker-conversion report
+3. task-class parse conformance report
 
 Rollback:
 1. revert parser prompt/model/contract version pointer
@@ -158,14 +206,18 @@ Work:
 1. resolver chooses only feasible candidates
 2. typed planner with bounded retries/timeouts/idempotency
 3. deterministic executor and confusion-pair hardening
+4. planner support for `list_latest_records` with deterministic sort+limit plan template
+5. projection-only planner path for minimal column output without report drift
 
 Exit:
 1. wrong-report rate improves >= 40% vs baseline
 2. confusion-pair suite pass >= 95%
+3. latest-list and projection behavior classes pass planner/executor tests
 
 Evidence:
 1. confusion-pair scorecard
 2. planner/executor contract tests
+3. latest-list/projection class test report
 
 Rollback:
 1. feature-flag fallback to prior stable resolver/planner
@@ -201,16 +253,19 @@ Work:
 2. blocker-only dynamic clarification with dedupe memory
 3. fact-locked response composer
 4. enforce output contract and number formatting globally
+5. enforce class-aware clarification templates (single blocker question, no generic loop fallbacks on clear asks)
 
 Exit:
 1. unnecessary clarification <= 5%
 2. clarification loop < 1%
 3. output-shape pass = 100% on mandatory set
+4. class-level clarification pass rate meets threshold on mandatory classes
 
 Evidence:
 1. clarification policy report
 2. validator check-ID report
 3. composer factual-lock tests
+4. class-level clarification scorecard
 
 Rollback:
 1. bypass composer and return validated deterministic response mode
@@ -290,6 +345,8 @@ Rollback:
 7. unsupported/no-data/permission envelope correctness >= 98%
 8. write safety violations = 0
 9. P95 latency within SLA by query class
+10. behavior-class mandatory coverage >= 95%
+11. behavior-class first-run pass rate >= 90% for each mandatory class
 
 ## 6) Canary Stop Rules
 1. stop stage if wrong-report rate breaches threshold by >20% relative margin
@@ -322,8 +379,13 @@ Rollback:
 1. contract and roadmap versions must change together
 2. gate changes require explicit version bump and changelog
 3. no merge for runtime logic without replay and KPI evidence links
+4. no phase promotion while breach-recovery mode is active
 
 ## 11) Current Program Status
 1. P0 guardrail foundation exists and is active.
 2. P1 replay baseline artifacts exist and are usable.
-3. Program now proceeds under v7.1 phase model from P2 onward, with P10a/P10b split rollout enforced.
+3. Program now proceeds under v7.3 phase model, with P0b breach-hardening mandatory before next phase promotion.
+
+## 12) Changelog
+1. `v7.3` (2026-02-22): added P0b breach-hardening sprint, breach freeze/kill-gate rules, and explicit phase block while contract breaches exist.
+2. `v7.2` (2026-02-22): behavior-class coverage and class-level KPI acceptance model.

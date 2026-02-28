@@ -11,6 +11,7 @@ def normalize_business_request(*, message: str, context: Dict[str, Any]) -> Dict
     return {
         "intent": "READ",
         "task_type": "detail",
+        "task_class": "analytical_read",
         "subject": "",
         "metric": "",
         "aggregation": "none",

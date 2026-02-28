@@ -87,7 +87,12 @@ class Phase8ReleaseGateTests(unittest.TestCase):
             # Intentionally keep only reader role to trigger role parity fail.
             results.append(_mk_result(cid, passed=True, role="ai.reader", clarification=False))
         p = self._write_payload("test_phase8_role_parity_fail", executed_at_utc=now.strftime("%Y-%m-%dT%H:%M:%SZ"), results=results)
-        out = build_release_evaluation(raw_paths=[p], stage_percent=10)
+        out = build_release_evaluation(
+            raw_paths=[p],
+            stage_percent=10,
+            min_first_run_sample_size=0,
+            min_target_class_sample_size=0,
+        )
         gate = out.get("release_gate") or {}
         self.assertEqual(gate.get("role_parity_reader_vs_operator"), False)
         self.assertEqual(gate.get("overall_go"), False)
@@ -100,12 +105,36 @@ class Phase8ReleaseGateTests(unittest.TestCase):
             clar = cid in {"ENT-01", "ENT-02", "CFG-01"}
             results.append(_mk_result(cid, passed=True, role=role, clarification=clar))
         p = self._write_payload("test_phase8_release_gate_payload", executed_at_utc=now.strftime("%Y-%m-%dT%H:%M:%SZ"), results=results)
-        out = build_release_evaluation(raw_paths=[p], stage_percent=10, latency_p95_sla_ms=5000)
+        out = build_release_evaluation(
+            raw_paths=[p],
+            stage_percent=10,
+            latency_p95_sla_ms=5000,
+            min_first_run_sample_size=0,
+            min_target_class_sample_size=0,
+        )
         gate = out.get("release_gate") or {}
         self.assertEqual(gate.get("mandatory_pass_rate_100"), True)
         self.assertEqual(gate.get("critical_clear_query_pass_100"), True)
         self.assertEqual(gate.get("role_parity_reader_vs_operator"), True)
         self.assertEqual(gate.get("overall_go"), True)
+
+    def test_gate_fails_when_first_run_sample_size_below_threshold(self):
+        now = datetime.utcnow()
+        results = []
+        for cid in sorted(MANDATORY_IDS):
+            role = "ai.operator" if cid in {"HR-01", "OPS-01", "DOC-01", "WR-01", "WR-02", "WR-03", "WR-04"} else "ai.reader"
+            clar = cid in {"ENT-01", "ENT-02", "CFG-01"}
+            results.append(_mk_result(cid, passed=True, role=role, clarification=clar))
+        p = self._write_payload("test_phase8_sample_size_fail", executed_at_utc=now.strftime("%Y-%m-%dT%H:%M:%SZ"), results=results)
+        out = build_release_evaluation(
+            raw_paths=[p],
+            stage_percent=10,
+            min_first_run_sample_size=300,
+            min_target_class_sample_size=0,
+        )
+        gate = out.get("release_gate") or {}
+        self.assertEqual(gate.get("first_run_sample_size_ge_threshold"), False)
+        self.assertEqual(gate.get("overall_go"), False)
 
 
 if __name__ == "__main__":

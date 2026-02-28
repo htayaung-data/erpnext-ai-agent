@@ -11,6 +11,11 @@ This repo is a **template** to spin up a fresh ERPNext environment using a **pre
 
 You will create a **new project folder per customer/project**, each with its **own DB/Redis/sites volumes**, so projects do not mix.
 
+## AI Assistant Governance (Commercial)
+
+- Contract specification: `impl_factory/00_governance/ai_assistant_contract_v2.md`
+- Delivery roadmap: `impl_factory/00_governance/ai_assistant_roadmap_2026.md`
+
 ---
 
 ## 1) Create a New Project on the Same Computer (Local Factory Use)

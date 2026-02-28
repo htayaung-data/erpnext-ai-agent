@@ -1,0 +1,163 @@
+{
+  "schema_version": "ontology_generated_v1",
+  "version": "generated_v1",
+  "generated_at_utc": "2026-02-22T07:22:59Z",
+  "source": {
+    "phase": "phase5",
+    "capability_path": "impl_factory/04_automation/capability_v7/latest_capability_platform.json",
+    "db_semantic_path": "impl_factory/04_automation/capability_v7/latest_db_semantic_catalog.json",
+    "capability_report_count": 218,
+    "projection_metric_count": 6,
+    "projection_domain_count": 7,
+    "projection_dimension_count": 5,
+    "projection_filter_kind_count": 13
+  },
+  "metric_aliases": {
+    "open_requests": [
+      "open requests",
+      "open_requests"
+    ],
+    "outstanding_amount": [
+      "outstanding amount",
+      "outstanding_amount"
+    ],
+    "received_quantity": [
+      "received quantity",
+      "received_quantity"
+    ],
+    "revenue": [
+      "revenue"
+    ],
+    "sold_quantity": [
+      "sold quantity",
+      "sold_quantity"
+    ],
+    "stock_balance": [
+      "stock balance",
+      "stock_balance"
+    ]
+  },
+  "metric_domain_map": {
+    "open_requests": "operations",
+    "outstanding_amount": "finance",
+    "received_quantity": "purchasing",
+    "revenue": "sales",
+    "sold_quantity": "sales",
+    "stock_balance": "inventory"
+  },
+  "domain_aliases": {
+    "cross_functional": [
+      "cross functional",
+      "cross_functional"
+    ],
+    "finance": [
+      "finance"
+    ],
+    "hr": [
+      "hr"
+    ],
+    "inventory": [
+      "inventory"
+    ],
+    "operations": [
+      "operations"
+    ],
+    "purchasing": [
+      "purchasing"
+    ],
+    "sales": [
+      "sales"
+    ]
+  },
+  "dimension_aliases": {
+    "company": [
+      "company"
+    ],
+    "customer": [
+      "customer"
+    ],
+    "item": [
+      "item"
+    ],
+    "supplier": [
+      "supplier"
+    ],
+    "warehouse": [
+      "warehouse"
+    ]
+  },
+  "primary_dimension_aliases": {
+    "company": [
+      "company",
+      "company wise",
+      "company-wise"
+    ],
+    "customer": [
+      "customer",
+      "customer wise",
+      "customer-wise"
+    ],
+    "item": [
+      "item",
+      "item wise",
+      "item-wise"
+    ],
+    "supplier": [
+      "supplier",
+      "supplier wise",
+      "supplier-wise"
+    ],
+    "warehouse": [
+      "warehouse",
+      "warehouse wise",
+      "warehouse-wise"
+    ]
+  },
+  "filter_kind_aliases": {
+    "company": [
+      "company"
+    ],
+    "customer": [
+      "customer"
+    ],
+    "date": [
+      "date"
+    ],
+    "end_year": [
+      "end year",
+      "end_year"
+    ],
+    "fiscal_year": [
+      "fiscal year",
+      "fiscal_year"
+    ],
+    "from_date": [
+      "from date",
+      "from_date"
+    ],
+    "item": [
+      "item"
+    ],
+    "report_date": [
+      "report date",
+      "report_date"
+    ],
+    "start_year": [
+      "start year",
+      "start_year"
+    ],
+    "supplier": [
+      "supplier"
+    ],
+    "to_date": [
+      "to date",
+      "to_date"
+    ],
+    "warehouse": [
+      "warehouse"
+    ],
+    "year": [
+      "year"
+    ]
+  }
+}

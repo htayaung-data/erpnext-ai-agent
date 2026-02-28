@@ -1,0 +1,76 @@
+meet.erpbosai.com {
+    log {
+        output stdout
+        format console
+    }
+
+    # RFC7591 Registration endpoint
+    # Allow ONLY Cloudflare IP ranges (ChatGPT traffic will come via CF)
+    @oauth_register_ok {
+        path /oauth/register
+        remote_ip 104.16.0.0/12 172.64.0.0/13 131.0.72.0/22
+    }
+    handle @oauth_register_ok {
+        header Content-Type application/json
+        respond `{"client_id":"fc4bmv0ghn","token_endpoint_auth_method":"none","redirect_uris":["https://chatgpt.com/connector_platform_oauth_redirect","https://chat.openai.com/connector_platform_oauth_redirect"],"grant_types":["authorization_code"],"response_types":["code"],"client_secret":""}` 201
+    }
+    handle_path /oauth/register {
+        respond "not found" 404
+    }
+
+    handle_path /.well-known/oauth-protected-resource* {
+        header Content-Type application/json
+        respond `{"resource":"https://meet.erpbosai.com","authorization_servers":["https://meet.erpbosai.com"],"scopes_supported":["openid","all","profile","email","offline_access"]}` 200
+    }
+
+    handle_path /.well-known/oauth-authorization-server* {
+        header Content-Type application/json
+        respond `{"issuer":"https://meet.erpbosai.com","authorization_endpoint":"https://meet.erpbosai.com/api/method/frappe.integrations.oauth2.authorize","token_endpoint":"https://meet.erpbosai.com/api/method/frappe.integrations.oauth2.get_token","jwks_uri":"https://meet.erpbosai.com/api/method/frappe_assistant_core.api.oauth_discovery.jwks","registration_endpoint":"https://meet.erpbosai.com/oauth/register","response_types_supported":["code"],"grant_types_supported":["authorization_code"],"code_challenge_methods_supported":["S256"],"scopes_supported":["openid","all","profile","email","offline_access"]}` 200
+    }
+
+    @mcp_noauth {
+        path /api/method/frappe_assistant_core.api.fac_endpoint.handle_mcp
+        not header Authorization *
+    }
+    handle @mcp_noauth {
+        header WWW-Authenticate "Bearer resource_metadata=\"https://meet.erpbosai.com/.well-known/oauth-protected-resource\""
+        respond "" 401
+    }
+
+    @socketio {
+        path /socket.io/*
+    }
+    reverse_proxy @socketio websocket:9000 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Port 443
+        header_up X-Frappe-Site-Name erpai_prj1
+    }
+
+    @assets {
+        path /assets/*
+    }
+    reverse_proxy @assets frontend:8080 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Port 443
+        header_up X-Frappe-Site-Name erpai_prj1
+    }
+
+    @api {
+        path /api/*
+    }
+    reverse_proxy @api backend:8000 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Port 443
+        header_up X-Frappe-Site-Name erpai_prj1
+    }
+
+    reverse_proxy backend:8000 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Port 443
+        header_up X-Frappe-Site-Name erpai_prj1
+    }
+}

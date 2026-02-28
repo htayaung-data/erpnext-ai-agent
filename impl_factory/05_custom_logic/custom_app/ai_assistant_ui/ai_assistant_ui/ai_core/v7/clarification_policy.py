@@ -3,37 +3,33 @@ from __future__ import annotations
 import json
 from typing import Any, Dict
 
-ALLOWED_BLOCKER_REASONS = {
-    "missing_required_filter_value",
-    "hard_constraint_not_supported",
-    "entity_no_match",
-    "entity_ambiguous",
-    "no_candidate",
-    "low_confidence_candidate",
-    "resolver_pipeline_error",
-}
-
-_META_QUESTION_PHRASES = (
-    "metric or grouping",
-    "grouping or metric",
-    "which metric",
-    "which grouping",
+from ai_assistant_ui.ai_core.v7.contract_registry import (
+    allowed_blocker_reasons,
+    default_clarification_question,
 )
+
+ALLOWED_BLOCKER_REASONS = allowed_blocker_reasons()
+_SOFT_EXECUTION_BLOCKERS = {
+    "unsupported_metric",
+    "metric_domain_mismatch",
+    "primary_dimension_mismatch",
+    "unsupported_dimension",
+}
 
 
 def _sanitize_question(text: str, *, reason: str) -> str:
+    reason_lc = str(reason or "").strip().lower()
     q = str(text or "").strip()
-    q_lc = q.lower()
-    if (not q) or any(p in q_lc for p in _META_QUESTION_PHRASES):
-        if reason == "missing_required_filter_value":
-            return "Which required filter value should I use (for example company, warehouse, customer, or supplier)?"
-        if reason == "hard_constraint_not_supported":
-            return "I could not match all requested constraints in one report. Which constraint should I prioritize?"
-        if reason == "entity_no_match":
-            return "I couldn't find a matching value for that filter. Which exact value should I use?"
-        if reason == "entity_ambiguous":
-            return "I found multiple matches for that filter. Which one should I use?"
-        return "Please provide one concrete missing detail so I can run the correct report."
+    if not q:
+        return default_clarification_question(reason_lc)
+    # For resolver-level blocker reasons, enforce contract question templates.
+    # Entity reasons can still carry contextual dynamic prompts/options.
+    if reason_lc in {
+        "missing_required_filter_value",
+        "hard_constraint_not_supported",
+        "resolver_pipeline_error",
+    }:
+        return default_clarification_question(reason_lc)
     return q[:280]
 
 
@@ -42,6 +38,65 @@ def should_clarify(*, blocker: Dict[str, Any]) -> bool:
     Backward-compatible boolean helper.
     """
     return bool((blocker or {}).get("should_clarify"))
+
+
+def _selected_candidate(resolved: Dict[str, Any]) -> Dict[str, Any]:
+    res = resolved if isinstance(resolved, dict) else {}
+    selected = str(res.get("selected_report") or "").strip()
+    if not selected:
+        return {}
+    for c in list(res.get("candidate_reports") or []):
+        if not isinstance(c, dict):
+            continue
+        if str(c.get("report_name") or "").strip() == selected:
+            return c
+    return {}
+
+
+def _can_execute_despite_semantic_blockers(resolved: Dict[str, Any]) -> bool:
+    cand = _selected_candidate(resolved)
+    if not cand:
+        return False
+    missing_required = [str(x).strip() for x in list(cand.get("missing_required_filter_values") or []) if str(x).strip()]
+    if missing_required:
+        return False
+    blockers = [str(x).strip().lower() for x in list(cand.get("hard_blockers") or []) if str(x).strip()]
+    if not blockers:
+        return False
+    return all(b in _SOFT_EXECUTION_BLOCKERS for b in blockers)
+
+
+def _should_clarify_record_type(spec: Dict[str, Any], resolved: Dict[str, Any]) -> bool:
+    s = spec if isinstance(spec, dict) else {}
+    r = resolved if isinstance(resolved, dict) else {}
+    task_class = str(s.get("task_class") or "").strip().lower()
+    hc = r.get("hard_constraints") if isinstance(r.get("hard_constraints"), dict) else {}
+    domain = (
+        str(hc.get("domain") or "").strip().lower()
+        if "domain" in hc
+        else str(s.get("domain") or "").strip().lower()
+    )
+    metric = (
+        str(hc.get("metric") or "").strip().lower()
+        if "metric" in hc
+        else str(s.get("metric") or "").strip().lower()
+    )
+    dims = (
+        list(hc.get("requested_dimensions") or [])
+        if "requested_dimensions" in hc
+        else list(s.get("dimensions") or [])
+    )
+    unknown_scope = (domain in {"", "unknown"}) and (not metric) and (len([d for d in dims if str(d).strip()]) == 0)
+    if not unknown_scope:
+        return False
+    if task_class == "list_latest_records":
+        return True
+    if task_class == "detail_projection":
+        oc = s.get("output_contract") if isinstance(s.get("output_contract"), dict) else {}
+        minimal = [str(x).strip().lower() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
+        id_like = any(("number" in m) or ("id" in m) for m in minimal)
+        return id_like
+    return False
 
 
 def evaluate_clarification(
@@ -57,9 +112,17 @@ def evaluate_clarification(
 
     reason = str(res.get("clarification_reason") or "").strip().lower()
     resolver_needs = bool(res.get("needs_clarification"))
-    spec_needs = bool(spec.get("needs_clarification"))
-    should = bool((resolver_needs or spec_needs) and (reason in ALLOWED_BLOCKER_REASONS or reason == ""))
+    # Contract: blocker-only clarification is emitted by resolver reason codes.
+    # Spec-level LLM ambiguity hints are non-authoritative and must not drive runtime clarification loops.
+    should = bool(resolver_needs and (reason in ALLOWED_BLOCKER_REASONS))
+    if should and reason == "hard_constraint_not_supported" and _can_execute_despite_semantic_blockers(res):
+        should = False
+        reason = ""
     question_raw = str(res.get("clarification_question") or spec.get("clarification_question") or "").strip()
+    if (not should) and _should_clarify_record_type(spec, res):
+        should = True
+        reason = "no_candidate"
+        question_raw = "Which record type should I list (for example Sales Invoice, Purchase Invoice, Sales Order)?"
     question = _sanitize_question(question_raw, reason=reason)
 
     return {

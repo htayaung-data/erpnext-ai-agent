@@ -1,0 +1,218 @@
+{
+  "executed_at_utc": "2026-02-23T12:39:46Z",
+  "site": "erpai_prj1",
+  "user": "Administrator",
+  "mode": "phase6_manifest_replay",
+  "run_policy": {
+    "gate_source": "first_run_only",
+    "rerun_policy": "diagnostic_only_non_gating"
+  },
+  "flags": {
+    "orchestrator_flag_key": "ai_assistant_orchestrator_v2_enabled",
+    "orchestrator_flag_before": "1",
+    "orchestrator_flag_during": 1,
+    "write_flag_key": "ai_assistant_write_enabled",
+    "write_flag_before": "0",
+    "write_flag_during_default": 0
+  },
+  "preconditions": {
+    "report_list_ok": true,
+    "report_requirements_ok": true,
+    "generate_report_ok": true,
+    "report_list_count": 219,
+    "report_requirements_error": "",
+    "generate_report_error": ""
+  },
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "first_run_pass_rate": 1.0,
+    "manifest_path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "suite_filter": [],
+    "case_filter_count": 0,
+    "role_counts": {
+      "ai.reader": 1,
+      "ai.operator": 0
+    }
+  },
+  "behavior_class": {
+    "manifest_case_count": 385,
+    "observed_case_count": 1,
+    "labeled_case_count": 1,
+    "unlabeled_case_ids": [],
+    "observed_class_count": 1,
+    "target_mandatory_count": 9,
+    "observed_classes": [
+      "ranking_top_n"
+    ],
+    "target_mandatory_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "covered_target_classes": [
+      "ranking_top_n"
+    ],
+    "missing_target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "target_coverage_rate": 0.1111,
+    "target_coverage_ok": false,
+    "first_run_pass_rate_by_class": {
+      "ranking_top_n": 1.0
+    },
+    "target_first_run_pass_rate_by_class": {
+      "ranking_top_n": 1.0
+    },
+    "target_first_run_pass_ok": false,
+    "class_totals": {
+      "ranking_top_n": 1
+    },
+    "class_passed": {
+      "ranking_top_n": 1
+    },
+    "class_failed": {
+      "ranking_top_n": 0
+    }
+  },
+  "behavior_manifest": {
+    "manifest_path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "manifest_exists": true,
+    "manifest_load_error": "",
+    "field": "behavior_class",
+    "target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "entity_disambiguation_followup",
+      "kpi_aggregate",
+      "list_latest_records",
+      "ranking_top_n",
+      "transform_last_result",
+      "trend_time_series"
+    ]
+  },
+  "results": [
+    {
+      "id": "FIN-01",
+      "base_case_id": "FIN-01",
+      "variant_of": "",
+      "suite": "core_read",
+      "behavior_class": "ranking_top_n",
+      "role": "ai.reader",
+      "prompt": "Top 10 customers by revenue last month",
+      "expected": {
+        "intent": "READ",
+        "task_type": "ranking",
+        "metric": "revenue",
+        "group_by": [
+          "customer"
+        ],
+        "output_mode": "top_n"
+      },
+      "actual": {
+        "assistant_type": "report_table",
+        "assistant_text": "",
+        "assistant_title": "Customer Ledger Summary",
+        "downloads": 0,
+        "rows": 10,
+        "columns": 2,
+        "column_labels": [
+          "Customer",
+          "Revenue"
+        ],
+        "assistant_idx": 12,
+        "pending_mode": null,
+        "pending_cleared": false,
+        "options_count": 0,
+        "audit_present": true,
+        "error_env_present": false,
+        "public_has_tool": false,
+        "tool_types": [
+          "audit_turn",
+          "engine_route",
+          "tool_result",
+          "v7_business_request_spec",
+          "v7_clarification_policy",
+          "v7_quality_gate",
+          "v7_read_engine",
+          "v7_response_shaper",
+          "v7_semantic_resolution",
+          "v7_topic_state",
+          "v7_transform_last"
+        ],
+        "pending_state": {
+          "mode": null,
+          "base_question": null,
+          "clarification_question": null,
+          "clarification_options": [],
+          "options": [],
+          "clarification_round": 0
+        },
+        "clarification": false,
+        "meta_clarification": false,
+        "planner_plan": {},
+        "business_request_spec": {},
+        "result_quality_gate": {},
+        "quality_verdict": "",
+        "quality_failed_check_ids": [],
+        "duration_ms": 10153,
+        "applied_filters": {},
+        "executed_as_user": "Administrator",
+        "send_ok": true,
+        "send_error": null
+      },
+      "semantic": {
+        "assertions": {
+          "report_alignment_pass": true,
+          "dimension_alignment_pass": true,
+          "metric_alignment_pass": true,
+          "time_scope_alignment_pass": true,
+          "filter_alignment_pass": true,
+          "output_shape_pass": true,
+          "clarification_policy_pass": true,
+          "loop_policy_pass": true
+        },
+        "required_assertions": [
+          "report_alignment_pass",
+          "dimension_alignment_pass",
+          "metric_alignment_pass",
+          "time_scope_alignment_pass",
+          "filter_alignment_pass",
+          "output_shape_pass",
+          "clarification_policy_pass",
+          "loop_policy_pass"
+        ],
+        "required_pass": true,
+        "summary": "R=PASS, D=PASS, M=PASS, T=PASS, F=PASS, O=PASS, C=PASS, L=PASS",
+        "failed_check_ids": [],
+        "quality_verdict": "",
+        "meta_clarification": false,
+        "blocker_clarification": false
+      },
+      "pass": true,
+      "defect_id": "",
+      "note": "",
+      "tags": [
+        "sales",
+        "ranking"
+      ],
+      "turn_count": 1,
+      "order_index": 1
+    }
+  ]
+}

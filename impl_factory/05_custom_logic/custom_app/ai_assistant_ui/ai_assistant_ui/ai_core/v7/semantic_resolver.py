@@ -5,11 +5,13 @@ from typing import Any, Dict, Iterable, List, Set
 
 from ai_assistant_ui.ai_core.ontology_normalization import (
     canonical_dimension,
-    canonical_domain,
     canonical_metric,
-    infer_filter_kinds,
+    known_metric,
     metric_domain,
 )
+from ai_assistant_ui.ai_core.v7.constraint_engine import build_constraint_set
+from ai_assistant_ui.ai_core.v7.contract_registry import clarification_question_for_filter_kind
+from ai_assistant_ui.ai_core.v7.contract_registry import default_clarification_question
 
 
 def _non_empty(v: Any) -> bool:
@@ -20,16 +22,6 @@ def _non_empty(v: Any) -> bool:
     if isinstance(v, (list, dict, tuple, set)):
         return bool(v)
     return True
-
-
-def _extract_filter_kinds(filters: Dict[str, Any]) -> List[str]:
-    kinds: Set[str] = set()
-    for k, v in (filters or {}).items():
-        if not _non_empty(v):
-            continue
-        for kind in infer_filter_kinds(k):
-            kinds.add(kind)
-    return sorted(kinds)
 
 
 def _canonical_dim(value: Any) -> str:
@@ -53,40 +45,9 @@ def _tokens(value: Any) -> Set[str]:
 
 
 def _extract_spec_semantics(spec: Dict[str, Any]) -> Dict[str, Any]:
-    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
-    group_by = [str(x).strip().lower() for x in list(spec.get("group_by") or []) if str(x or "").strip()]
-    output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
-    dimensions = [str(x).strip().lower() for x in list(spec.get("dimensions") or []) if str(x or "").strip()]
-
-    requested_dims: Set[str] = set()
-    for raw in dimensions + group_by:
-        dim = _canonical_dim(raw)
-        if dim:
-            requested_dims.add(dim)
-
-    time_scope = spec.get("time_scope") if isinstance(spec.get("time_scope"), dict) else {}
-    time_mode = str(time_scope.get("mode") or "none").strip().lower()
-    metric = canonical_metric(spec.get("metric"))
-    domain_raw = canonical_domain(spec.get("domain"))
-    subject_raw = canonical_domain(spec.get("subject"))
-    domain_unspecified = {"", "unknown", "none", "generic", "general", "cross_functional"}
-    if domain_raw in domain_unspecified:
-        domain = metric_domain(metric) or (subject_raw if subject_raw not in domain_unspecified else "") or "unknown"
-    else:
-        domain = domain_raw
-
-    return {
-        "filters": filters,
-        "hard_filter_kinds": _extract_filter_kinds(filters),
-        "requested_dimensions": sorted(requested_dims),
-        "task_type": str(spec.get("task_type") or "").strip().lower(),
-        "output_mode": str(output_contract.get("mode") or "").strip().lower(),
-        "aggregation": str(spec.get("aggregation") or "").strip().lower(),
-        "time_mode": time_mode,
-        "domain": domain,
-        "metric": metric,
-        "subject_tokens": sorted(_tokens(spec.get("subject"))),
-    }
+    out = build_constraint_set(business_spec=spec, topic_state={})
+    out["aggregation"] = str(spec.get("aggregation") or "").strip().lower()
+    return out
 
 
 def _required_kind_satisfied(*, kind: str, spec_sem: Dict[str, Any], spec_filters: Dict[str, Any]) -> bool:
@@ -101,10 +62,12 @@ def _required_kind_satisfied(*, kind: str, spec_sem: Dict[str, Any], spec_filter
 
     time_mode = str(spec_sem.get("time_mode") or "none").strip().lower()
     has_time_scope = time_mode in {"range", "relative", "as_of"}
-    if k in {"date", "from_date", "to_date", "report_date", "start_year", "end_year", "year"}:
-        return has_time_scope
-    if k == "fiscal_year":
-        return False
+    # Read engine can deterministically materialize these required filters:
+    # - temporal fields via timeframe defaults
+    # - company via user/system defaults
+    # So resolver should not down-rank valid candidates when user omits them.
+    if k in {"date", "from_date", "to_date", "report_date", "start_year", "end_year", "year", "fiscal_year", "company"}:
+        return True
     return False
 
 
@@ -162,7 +125,7 @@ def _cap_meta(cap: Dict[str, Any]) -> Dict[str, Any]:
     return cap.get("metadata") if isinstance(cap.get("metadata"), dict) else {}
 
 
-def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str, Any]:
+def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_context: Dict[str, Any]) -> Dict[str, Any]:
     constraints = _cap_constraints(cap)
     meta = _cap_meta(cap)
     cap_filters = {str(x or "").strip().lower() for x in list(constraints.get("supported_filter_kinds") or []) if str(x or "").strip()}
@@ -173,6 +136,7 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
     score = int(round(float(meta.get("confidence") or 0.0) * 100.0))
     reasons: List[str] = [f"confidence_base={score}"]
     hard_blockers: List[str] = []
+    tie_break_score = 0
 
     if not bool(meta.get("fresh", True)):
         score -= 40
@@ -200,11 +164,13 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
     cap_dims = _cap_dimensions(cap)
     cap_primary_dim = _cap_primary_dimension(cap)
     task_type = str(spec_sem.get("task_type") or "").strip().lower()
+    task_class = str(spec_sem.get("task_class") or "").strip().lower() or "analytical_read"
+    output_mode = str(spec_sem.get("output_mode") or "").strip().lower()
     if requested_dims:
         if cap_primary_dim and cap_primary_dim not in requested_dims:
             score -= 36
             reasons.append("primary_dimension_mismatch(-36)")
-            if task_type in {"ranking", "detail", "comparison"}:
+            if task_type in {"ranking", "detail", "comparison"} and task_class != "list_latest_records":
                 hard_blockers.append("primary_dimension_mismatch")
         if cap_dims:
             hits = sorted(list(requested_dims & cap_dims))
@@ -215,11 +181,18 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
             else:
                 score -= 28
                 reasons.append("dimension_mismatch(-28)")
-                if task_type in {"ranking", "detail", "comparison"}:
+                if task_type in {"ranking", "detail", "comparison"} and task_class != "list_latest_records":
                     hard_blockers.append("unsupported_dimension")
         else:
             score -= 18
             reasons.append("dimension_unknown(-18)")
+            if (
+                task_type in {"ranking", "detail", "comparison"}
+                and output_mode != "kpi"
+                and (not cap_primary_dim or cap_primary_dim not in requested_dims)
+                and task_class != "list_latest_records"
+            ):
+                hard_blockers.append("unsupported_dimension")
 
     requested_domain = str(spec_sem.get("domain") or "").strip().lower()
     cap_domains = _cap_domains(cap)
@@ -231,22 +204,78 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
             score -= 30
             reasons.append("domain_mismatch(-30)")
 
-    requested_metric = str(spec_sem.get("metric") or "").strip().lower()
+    # Metadata-grounded nudges from DB semantic catalog retrieval.
+    ctx = semantic_context if isinstance(semantic_context, dict) else {}
+    preferred_domains = {
+        str(x).strip().lower()
+        for x in list(ctx.get("preferred_domains") or [])
+        if str(x).strip()
+    }
+    preferred_dims = {
+        str(x).strip().lower()
+        for x in list(ctx.get("preferred_dimensions") or [])
+        if str(x).strip()
+    }
+    preferred_filter_kinds = {
+        str(x).strip().lower()
+        for x in list(ctx.get("preferred_filter_kinds") or [])
+        if str(x).strip()
+    }
+    if preferred_domains and cap_domains:
+        if cap_domains & preferred_domains:
+            score += 10
+            reasons.append("catalog_domain_alignment(+10)")
+        else:
+            score -= 8
+            reasons.append("catalog_domain_mismatch(-8)")
+    if preferred_dims and cap_dims:
+        if cap_dims & preferred_dims:
+            score += 8
+            reasons.append("catalog_dimension_alignment(+8)")
+        else:
+            score -= 6
+            reasons.append("catalog_dimension_mismatch(-6)")
+    if preferred_filter_kinds and cap_filters:
+        if cap_filters & preferred_filter_kinds:
+            score += 6
+            reasons.append("catalog_filter_alignment(+6)")
+
+    requested_metric_raw = str(spec_sem.get("metric") or "").strip().lower()
+    requested_metric = str(canonical_metric(requested_metric_raw) or requested_metric_raw).strip().lower()
+    metric_is_known = bool(str(known_metric(requested_metric_raw) or "").strip())
     cap_metrics = _cap_metrics(cap)
     if requested_metric and requested_metric not in {"unspecified", "none"}:
-        if cap_metrics:
+        if not metric_is_known:
+            score -= 2
+            reasons.append("metric_unmapped_soft(-2)")
+        elif cap_metrics:
             if requested_metric in cap_metrics:
                 score += 26
                 reasons.append("metric_match(+26)")
             else:
-                score -= 18
-                reasons.append("metric_mismatch(-18)")
+                score -= 28
+                reasons.append("metric_mismatch(-28)")
+                if task_type in {"ranking", "detail", "comparison", "kpi"} and task_class != "list_latest_records":
+                    hard_blockers.append("unsupported_metric")
+                req_metric_domain = str(metric_domain(requested_metric) or "").strip().lower()
+                cap_metric_domains = {
+                    str(metric_domain(m) or "").strip().lower()
+                    for m in cap_metrics
+                    if str(metric_domain(m) or "").strip()
+                }
+                if (
+                    req_metric_domain
+                    and cap_metric_domains
+                    and req_metric_domain not in cap_metric_domains
+                    and task_type in {"ranking", "detail", "comparison"}
+                    and task_class != "list_latest_records"
+                ):
+                    hard_blockers.append("metric_domain_mismatch")
         else:
             score -= 6
             reasons.append("metric_unknown(-6)")
 
-    # Subject relevance scoring: keeps broad unseen phrasing anchored to
-    # semantically relevant report families/names instead of random ties.
+    # Subject lexical signals are tie-break only (non-primary), never hard blockers.
     subject_tokens = {str(x or "").strip().lower() for x in list(spec_sem.get("subject_tokens") or []) if str(x or "").strip()}
     if subject_tokens:
         report_name = str(cap.get("report_name") or cap.get("name") or "").strip().lower()
@@ -264,16 +293,9 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
             token_pool |= _tokens(m)
         overlap = sorted(list(subject_tokens & token_pool))
         if overlap:
-            delta = min(24, len(overlap) * 8)
-            score += delta
-            reasons.append(f"subject_overlap(+{delta})")
-        else:
-            score -= 16
-            reasons.append("subject_mismatch(-16)")
-            if task_type in {"ranking", "detail", "comparison", "trend", "kpi"} and len(subject_tokens) >= 2:
-                hard_blockers.append("subject_mismatch")
+            tie_break_score = min(8, len(overlap) * 2)
+            reasons.append(f"subject_tiebreak(+{tie_break_score})")
 
-    output_mode = str(spec_sem.get("output_mode") or "").strip().lower()
     if task_type == "ranking" and output_mode == "top_n":
         if requested_dims and (requested_dims & cap_dims):
             score += 8
@@ -294,27 +316,23 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
             score -= 30
             reasons.append("time_not_supported(-30)")
 
+    if task_class == "list_latest_records":
+        if bool(time_support.get("any")):
+            score += 16
+            reasons.append("latest_records_time_ready(+16)")
+        else:
+            score -= 22
+            reasons.append("latest_records_time_missing(-22)")
+        if cap_primary_dim:
+            score += 4
+            reasons.append("latest_records_primary_dimension(+4)")
+
     missing_required_values: List[str] = []
     spec_filters = spec_sem.get("filters") if isinstance(spec_sem.get("filters"), dict) else {}
     for kind in sorted(cap_req_kinds):
         if _required_kind_satisfied(kind=kind, spec_sem=spec_sem, spec_filters=spec_filters):
             continue
-        if kind in {
-            "company",
-            "warehouse",
-            "customer",
-            "supplier",
-            "item",
-            "from_date",
-            "to_date",
-            "report_date",
-            "date",
-            "start_year",
-            "end_year",
-            "fiscal_year",
-            "year",
-        }:
-            missing_required_values.append(kind)
+        missing_required_values.append(kind)
 
     if missing_required_values:
         score -= min(35, len(missing_required_values) * 12)
@@ -323,6 +341,7 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
     return {
         "report_name": str(cap.get("report_name") or cap.get("name") or "").strip(),
         "score": int(score),
+        "tie_break_score": int(tie_break_score),
         "confidence": round(float(meta.get("confidence") or 0.0), 4),
         "fresh": bool(meta.get("fresh", True)),
         "reasons": reasons,
@@ -334,34 +353,38 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any]) -> Dict[str,
 
 
 def _clarification_question_for_kind(kind: str) -> str:
-    k = str(kind or "").strip().lower()
-    if k == "company":
-        return "Which company should I use?"
-    if k == "warehouse":
-        return "Which warehouse should I use?"
-    if k == "customer":
-        return "Which customer should I use?"
-    if k == "supplier":
-        return "Which supplier should I use?"
-    if k == "item":
-        return "Which item should I use?"
-    if k in {"from_date", "to_date", "date", "report_date"}:
-        return "Which date range should I use?"
-    if k in {"start_year", "end_year", "year", "fiscal_year"}:
-        return "Which fiscal year or year range should I use?"
-    return "Which missing filter value should I use?"
+    return clarification_question_for_filter_kind(kind)
 
 
-def resolve_semantics(*, business_spec: Dict[str, Any], capability_index: Dict[str, Any]) -> Dict[str, Any]:
+def resolve_semantics(
+    *,
+    business_spec: Dict[str, Any],
+    capability_index: Dict[str, Any],
+    constraint_set: Dict[str, Any] | None = None,
+    semantic_context: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     spec = business_spec if isinstance(business_spec, dict) else {}
     index = capability_index if isinstance(capability_index, dict) else {}
     reports = [r for r in list(index.get("reports") or []) if isinstance(r, dict)]
-    spec_sem = _extract_spec_semantics(spec)
+    spec_sem = (
+        dict(constraint_set)
+        if isinstance(constraint_set, dict) and bool(constraint_set)
+        else _extract_spec_semantics(spec)
+    )
 
+    ctx = semantic_context if isinstance(semantic_context, dict) else {}
     scored: List[Dict[str, Any]] = []
     for cap in reports:
-        scored.append(_score_candidate(spec_sem, cap))
-    scored.sort(key=lambda x: (int(x.get("score") or -9999), float(x.get("confidence") or 0.0), str(x.get("report_name") or "")), reverse=True)
+        scored.append(_score_candidate(spec_sem, cap, ctx))
+    scored.sort(
+        key=lambda x: (
+            int(x.get("score") or -9999),
+            int(x.get("tie_break_score") or 0),
+            float(x.get("confidence") or 0.0),
+            str(x.get("report_name") or ""),
+        ),
+        reverse=True,
+    )
 
     feasible_non_missing = [
         c for c in scored if (not list(c.get("hard_blockers") or [])) and (not list(c.get("missing_required_filter_values") or []))
@@ -398,23 +421,14 @@ def resolve_semantics(*, business_spec: Dict[str, Any], capability_index: Dict[s
     clarification_question = ""
     if clarification_reason == "missing_required_filter_value" and missing_required_values:
         clarification_question = _clarification_question_for_kind(missing_required_values[0])
-    elif clarification_reason == "hard_constraint_not_supported":
-        clarification_question = (
-            "I could not find a capability-feasible report for the requested constraints. "
-            "Please refine the required filters or business scope."
-        )
-    elif clarification_reason in ("no_candidate", "low_confidence_candidate"):
-        clarification_question = "Please specify the business domain and target metric so I can choose the right report."
+    elif clarification_reason:
+        clarification_question = default_clarification_question(clarification_reason)
 
     return {
-        "_phase": "phase2_semantic_resolver",
+        "_phase": "phase3_semantic_resolver",
         "business_spec": spec,
-        "hard_constraints": {
-            "hard_filter_kinds": spec_sem.get("hard_filter_kinds"),
-            "time_mode": spec_sem.get("time_mode"),
-            "requested_dimensions": spec_sem.get("requested_dimensions"),
-            "domain": spec_sem.get("domain"),
-        },
+        "hard_constraints": dict(spec_sem),
+        "semantic_context": ctx,
         "candidate_reports": scored[:80],
         "selected_report": selected.get("report_name") or "",
         "selected_score": selected_score,

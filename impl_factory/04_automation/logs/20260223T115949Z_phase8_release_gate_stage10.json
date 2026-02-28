@@ -1,0 +1,201 @@
+{
+  "executed_at_utc": "2026-02-23T11:59:49Z",
+  "mode": "phase8_release_gate",
+  "label": "",
+  "input_artifacts": [
+    "impl_factory/04_automation/logs/20260223T115809Z_phase6_manifest_uat_raw_v3.json"
+  ],
+  "behavior_manifest": {
+    "path": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7_expanded/manifest.json",
+    "exists": true,
+    "field": "behavior_class"
+  },
+  "sample_size_policy": {
+    "min_first_run_sample_size": 300,
+    "min_target_class_sample_size": 20,
+    "first_run_sample_size": 8,
+    "first_run_sample_size_ok": false,
+    "target_class_sample_size_ok": false
+  },
+  "first_run_policy": {
+    "enforced": true,
+    "source": "earliest_result_per_case_id",
+    "diagnostic_ignored_count": 0,
+    "selected_case_count": 8
+  },
+  "stage": {
+    "stage_percent": 10,
+    "go": false,
+    "action": "rollback_to_v2",
+    "next_stage_percent": 10,
+    "rollback_triggered": true,
+    "rollback_target": "assistant_engine=v2",
+    "reason": "Gate failed at current stage.",
+    "failed_gate_checks": [
+      "behavior_class_first_run_pass_ge_90pct_each",
+      "behavior_class_mandatory_coverage_ge_95pct",
+      "behavior_class_target_sample_size_ge_threshold",
+      "critical_clear_query_pass_100",
+      "first_run_sample_size_ge_threshold",
+      "mandatory_pass_rate_100"
+    ]
+  },
+  "summary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "missing_mandatory_ids": [
+      "CFG-01",
+      "CFG-02",
+      "CFG-03",
+      "CMP-01",
+      "COR-01",
+      "DET-01",
+      "DOC-01",
+      "ENT-01",
+      "ENT-02",
+      "EXP-01",
+      "FIN-02",
+      "FIN-03",
+      "FIN-04",
+      "HR-01",
+      "LST-01",
+      "OPS-01",
+      "SAL-01",
+      "SAL-02",
+      "STK-01",
+      "STK-03",
+      "TRN-01",
+      "WR-01"
+    ],
+    "missing_critical_ids": [
+      "CFG-03",
+      "COR-01",
+      "FIN-03",
+      "FIN-04",
+      "SAL-01"
+    ],
+    "clear_read_total": 2,
+    "direct_answer_count_clear_read": 2,
+    "direct_answer_rate_clear_read": 1.0,
+    "clarification_count_clear_read": 0,
+    "clarification_rate_clear_read": 0.0,
+    "unnecessary_clarification_count_clear_read": 0,
+    "unnecessary_clarification_rate_clear_read": 0.0,
+    "wrong_report_count_clear_read": 0,
+    "wrong_report_rate_clear_read": 0.0,
+    "loop_fail_count": 0,
+    "loop_scope_total": 2,
+    "clarification_loop_rate": 0.0,
+    "meta_clarification_count_clear_read": 0,
+    "output_shape_pass_rate_clear_read": 1.0,
+    "write_safety_incidents": 0,
+    "user_correction_total": 0,
+    "user_correction_fail_count": 0,
+    "user_correction_rate": 0.0,
+    "latency_p95_ms_clear_read": 15337,
+    "reader_total": 5,
+    "reader_pass_rate": 1.0,
+    "operator_total": 3,
+    "operator_pass_rate": 1.0,
+    "first_run_sample_size": 8,
+    "first_run_sample_size_threshold": 300,
+    "target_class_sample_size_threshold": 20
+  },
+  "behavior_class": {
+    "behavior_contract_declared": true,
+    "labeled_case_count": 8,
+    "unlabeled_case_ids": [],
+    "observed_class_count": 5,
+    "target_class_count": 9,
+    "target_covered_class_count": 2,
+    "target_coverage_rate": 0.2222,
+    "missing_target_classes": [
+      "comparison",
+      "correction_rebind",
+      "detail_projection",
+      "kpi_aggregate",
+      "list_latest_records",
+      "transform_last_result",
+      "trend_time_series"
+    ],
+    "target_coverage_ok": false,
+    "target_first_run_pass_ok": false,
+    "first_run_pass_rate_by_class": {
+      "error_envelope": 1.0,
+      "ranking_top_n": 1.0,
+      "observability_contract": 1.0,
+      "entity_disambiguation_followup": 1.0,
+      "write_safety": 1.0
+    },
+    "target_first_run_pass_rate_by_class": {
+      "comparison": 0.0,
+      "correction_rebind": 0.0,
+      "detail_projection": 0.0,
+      "entity_disambiguation_followup": 1.0,
+      "kpi_aggregate": 0.0,
+      "list_latest_records": 0.0,
+      "ranking_top_n": 1.0,
+      "transform_last_result": 0.0,
+      "trend_time_series": 0.0
+    },
+    "class_totals": {
+      "error_envelope": 1,
+      "ranking_top_n": 1,
+      "observability_contract": 2,
+      "entity_disambiguation_followup": 1,
+      "write_safety": 3
+    },
+    "class_passed": {
+      "error_envelope": 1,
+      "ranking_top_n": 1,
+      "observability_contract": 2,
+      "entity_disambiguation_followup": 1,
+      "write_safety": 3
+    },
+    "class_failed": {
+      "error_envelope": 0,
+      "ranking_top_n": 0,
+      "observability_contract": 0,
+      "entity_disambiguation_followup": 0,
+      "write_safety": 0
+    }
+  },
+  "release_gate": {
+    "mandatory_pass_rate_100": false,
+    "critical_clear_query_pass_100": false,
+    "first_run_policy_declared": true,
+    "fac_preconditions_ok": true,
+    "first_run_sample_size_ge_threshold": false,
+    "behavior_class_contract_declared": true,
+    "behavior_class_mandatory_coverage_ge_95pct": false,
+    "behavior_class_first_run_pass_ge_90pct_each": false,
+    "behavior_class_target_sample_size_ge_threshold": false,
+    "direct_answer_rate_clear_read_ge_90pct": true,
+    "clarification_rate_clear_read_le_10pct": true,
+    "unnecessary_clarification_rate_clear_read_le_5pct": true,
+    "wrong_report_rate_clear_read_le_3pct": true,
+    "clarification_loop_rate_lt_1pct": true,
+    "zero_meta_clarification_on_clear_asks": true,
+    "role_parity_reader_vs_operator": true,
+    "write_safety_incidents_eq_0": true,
+    "output_shape_pass_rate_eq_100pct": true,
+    "overall_go": false,
+    "failed_gate_checks": [
+      "behavior_class_first_run_pass_ge_90pct_each",
+      "behavior_class_mandatory_coverage_ge_95pct",
+      "behavior_class_target_sample_size_ge_threshold",
+      "critical_clear_query_pass_100",
+      "first_run_sample_size_ge_threshold",
+      "mandatory_pass_rate_100"
+    ]
+  },
+  "baseline": {
+    "baseline_correction_rate": null,
+    "correction_trend_gate_applied": false
+  },
+  "sla": {
+    "latency_p95_sla_ms": null,
+    "latency_gate_applied": false
+  }
+}

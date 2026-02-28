@@ -1,0 +1,14 @@
+{
+  "version": "overrides_v1",
+  "metric_aliases": {},
+  "metric_domain_map": {},
+  "domain_aliases": {},
+  "dimension_aliases": {},
+  "primary_dimension_aliases": {},
+  "filter_kind_aliases": {},
+  "write_operation_aliases": {},
+  "write_doctype_aliases": {},
+  "export_aliases": {},
+  "generic_metric_terms": []
+}
+

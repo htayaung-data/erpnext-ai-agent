@@ -1,0 +1,93 @@
+{
+  "schema_version": "db_semantic_catalog_v1",
+  "generated_at_utc": "2026-02-22T07:22:20Z",
+  "source": {
+    "phase": "phase4",
+    "doctype_meta_path": "/tmp/tmp2_9d6wn7/doctype_meta.json",
+    "capability_path": "/tmp/tmp2_9d6wn7/capability.json",
+    "doctype_count": 2,
+    "capability_report_count": 1
+  },
+  "catalog": {
+    "tables": [
+      {
+        "doctype": "Customer",
+        "title_field": "customer_name",
+        "autoname": "field:customer_name",
+        "field_count": 2,
+        "field_names": [
+          "customer_name",
+          "territory"
+        ],
+        "field_labels": [
+          "Customer Name",
+          "Territory"
+        ],
+        "mandatory_fields": [
+          "customer_name"
+        ],
+        "links": [
+          {
+            "fieldname": "territory",
+            "target_doctype": "Territory"
+          }
+        ],
+        "link_targets": [
+          "Territory"
+        ],
+        "tokens": [
+          "customer",
+          "name",
+          "territory"
+        ]
+      },
+      {
+        "doctype": "Territory",
+        "title_field": "territory_name",
+        "autoname": "field:territory_name",
+        "field_count": 1,
+        "field_names": [
+          "territory_name"
+        ],
+        "field_labels": [
+          "Territory Name"
+        ],
+        "mandatory_fields": [
+          "territory_name"
+        ],
+        "links": [],
+        "link_targets": [],
+        "tokens": [
+          "name",
+          "territory"
+        ]
+      }
+    ],
+    "joins": [
+      {
+        "from_doctype": "Customer",
+        "fieldname": "territory",
+        "to_doctype": "Territory",
+        "join_type": "link"
+      }
+    ],
+    "capability_projection": {
+      "domains": [
+        "sales"
+      ],
+      "dimensions": [
+        "customer",
+        "territory"
+      ],
+      "metrics": [
+        "revenue"
+      ],
+      "filter_kinds": [
+        "company",
+        "customer",
+        "from date",
+        "to date"
+      ]
+    }
+  }
+}

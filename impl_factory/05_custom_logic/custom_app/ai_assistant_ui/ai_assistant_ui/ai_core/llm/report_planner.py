@@ -38,6 +38,7 @@ _ALLOWED_POST_OPS = ('total', 'sum', 'top', 'top_n', 'sort', 'filter', 'summary'
 _ALLOWED_TRANSFORM_OPS = ('total', 'sum', 'top', 'top_n', 'sort', 'filter', 'summary')
 _ALLOWED_SPEC_INTENTS = ('READ', 'TRANSFORM', 'TUTOR', 'WRITE_DRAFT', 'WRITE_CONFIRM', 'EXPORT')
 _ALLOWED_SPEC_TASK_TYPES = ('kpi', 'ranking', 'trend', 'detail')
+_ALLOWED_SPEC_TASK_CLASSES = ('analytical_read', 'list_latest_records', 'detail_projection', 'transform_followup')
 _ALLOWED_SPEC_AGG = ('sum', 'count', 'avg', 'none')
 _ALLOWED_SPEC_TIME_MODES = ('as_of', 'range', 'relative', 'none')
 _ALLOWED_SPEC_OUTPUT_MODES = ('kpi', 'top_n', 'detail')
@@ -204,6 +205,7 @@ def _default_business_request_spec() -> Dict[str, Any]:
     return {
         "intent": "READ",
         "task_type": "detail",
+        "task_class": "analytical_read",
         "domain": "unknown",
         "subject": "",
         "metric": "",
@@ -245,6 +247,9 @@ def _validate_business_request_spec(obj: Dict[str, Any]) -> Dict[str, Any]:
     task_type = str(obj.get("task_type") or "").strip().lower()
     if task_type in _ALLOWED_SPEC_TASK_TYPES:
         out["task_type"] = task_type
+    task_class = str(obj.get("task_class") or "").strip().lower()
+    if task_class in _ALLOWED_SPEC_TASK_CLASSES:
+        out["task_class"] = task_class
 
     aggregation = str(obj.get("aggregation") or "").strip().lower()
     if aggregation in _ALLOWED_SPEC_AGG:
@@ -403,6 +408,7 @@ def choose_business_request_spec(
         "output_schema_example": {
             "intent": "READ",
             "task_type": "ranking",
+            "task_class": "analytical_read",
             "domain": "sales",
             "subject": "products",
             "metric": "sold quantity",

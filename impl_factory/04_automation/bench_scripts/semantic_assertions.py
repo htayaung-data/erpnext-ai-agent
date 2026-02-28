@@ -31,13 +31,17 @@ FULL_SEMANTIC_CASES = {
     "FIN-04",
     "SAL-01",
     "SAL-02",
+    "CMP-01",
+    "TRN-01",
     "STK-01",
     "STK-02",
+    "STK-03",
     "HR-01",
     "OPS-01",
     "COR-01",
     "DET-01",
     "DOC-01",
+    "LST-01",
     "CFG-02",
     "CFG-03",
     "EXP-01",
@@ -111,10 +115,10 @@ def _is_blocker_clarification(actual: Dict[str, Any]) -> bool:
     if not bool(actual.get("clarification")):
         return False
     pending_mode = str(actual.get("pending_mode") or "").strip().lower()
-    text = _lower_text(actual.get("assistant_text"))
     pstate = actual.get("pending_state") if isinstance(actual.get("pending_state"), dict) else {}
     options = pstate.get("options") if isinstance(pstate.get("options"), list) else []
     clar_opts = pstate.get("clarification_options") if isinstance(pstate.get("clarification_options"), list) else []
+    failed_ids = set(str(x).strip() for x in list(actual.get("quality_failed_check_ids") or []) if str(x).strip())
 
     if pending_mode == "need_filters":
         return True
@@ -122,17 +126,16 @@ def _is_blocker_clarification(actual: Dict[str, Any]) -> bool:
     if pending_mode != "planner_clarify":
         return False
 
-    markers = (
-        "does not support",
-        "can’t apply",
-        "can't apply",
-        "which exact value should i use",
-        "multiple matches",
-        "which one should i use",
-        "switch to another compatible report",
-        "should i switch",
-    )
-    if any(m in text for m in markers):
+    blocker_ids = {
+        "required_filter_missing",
+        "time_scope_missing",
+        "dimension_alignment_mismatch",
+        "metric_alignment_mismatch",
+        "unsupported_action_in_read_loop",
+        "blocked_report_selected_again",
+        "output_mode_mismatch",
+    }
+    if failed_ids & blocker_ids:
         return True
 
     if options and len(options) >= 2:

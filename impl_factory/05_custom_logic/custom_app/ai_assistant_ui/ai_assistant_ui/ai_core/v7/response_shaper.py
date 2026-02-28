@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List
+from datetime import datetime
+from typing import Any, Dict, List, Tuple
 
 from ai_assistant_ui.ai_core.ontology_normalization import (
-    DIMENSION_ALIAS_MAP,
-    METRIC_ALIAS_MAP,
-    canonical_dimension,
-    canonical_metric,
+    known_dimension,
+    known_metric,
+    semantic_aliases,
 )
 
 _DOC_ID_REGEX = re.compile(r"\b[A-Z]{2,}-[A-Z0-9]+-\d{4}-\d+\b")
@@ -56,55 +56,54 @@ def _is_numeric_col(col: Dict[str, Any], rows: List[Dict[str, Any]]) -> bool:
 
 def _minimal_columns(spec: Dict[str, Any]) -> List[str]:
     oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
-    cols = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
-    if cols:
-        return cols[:12]
-    derived: List[str] = []
-    for g in list(spec.get("group_by") or []):
-        s = str(g).strip()
-        if s and s.lower() not in [x.lower() for x in derived]:
-            derived.append(s)
-    m = str(spec.get("metric") or "").strip()
-    if m and m.lower() not in [x.lower() for x in derived]:
-        derived.append(m)
-    return derived[:12]
+    contract_cols = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
+    group_by_cols = [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()]
+    dimension_cols = [str(x).strip() for x in list(spec.get("dimensions") or []) if str(x).strip()]
+    metric_col = str(spec.get("metric") or "").strip()
+
+    # Semantic ordering for detail outputs:
+    # 1) requested dimensions (group_by/dimensions), 2) requested metric, 3) remaining contract hints.
+    merged: List[str] = []
+    seen = set()
+
+    def _append_unique(value: str) -> None:
+        s = str(value or "").strip()
+        if not s:
+            return
+        key = s.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        merged.append(s)
+
+    for c in group_by_cols:
+        _append_unique(c)
+    for c in dimension_cols:
+        _append_unique(c)
+    _append_unique(metric_col)
+    for c in contract_cols:
+        _append_unique(c)
+
+    return merged[:12]
 
 
-def _match_column_indexes(columns: List[Dict[str, Any]], rows: List[Dict[str, Any]], wanted: List[str]) -> List[int]:
+def _match_column_indexes(columns: List[Dict[str, Any]], rows: List[Dict[str, Any]], wanted: List[str]) -> List[Tuple[int, str]]:
     if not columns:
         return []
-    wanted_norm = [_norm(w) for w in wanted if _norm(w)]
-    if not wanted_norm:
+    wanted_pairs = [(str(w).strip(), _norm(w)) for w in wanted if _norm(w)]
+    if not wanted_pairs:
         return []
 
     alias_expansions: Dict[str, List[str]] = {}
-    generic_metric_aliases = {"amount", "value", "total", "count"}
-    for w in wanted_norm:
-        aliases = {w}
-        metric = canonical_metric(w)
-        if metric and metric in METRIC_ALIAS_MAP:
-            aliases.add(metric.replace("_", " "))
-            for a in METRIC_ALIAS_MAP.get(metric, []):
-                a_n = _norm(a)
-                if a_n and a_n not in generic_metric_aliases:
-                    aliases.add(a_n)
-        dim = canonical_dimension(w)
-        if dim and dim in DIMENSION_ALIAS_MAP:
-            aliases.add(dim.replace("_", " "))
-            for a in DIMENSION_ALIAS_MAP.get(dim, []):
-                a_n = _norm(a)
-                if a_n:
-                    aliases.add(a_n)
-        if "revenue" in aliases:
-            aliases.update({"sales", "sales amount", "sales value"})
-        alias_expansions[w] = sorted([a for a in aliases if a])
+    for _, w in wanted_pairs:
+        alias_expansions[w] = [_norm(a) for a in semantic_aliases(w, exclude_generic_metric_terms=True) if _norm(a)]
 
-    chosen: List[int] = []
+    chosen: List[Tuple[int, str]] = []
     used = set()
-    for w in wanted_norm:
+    for raw_wanted, w in wanted_pairs:
         aliases = alias_expansions.get(w) or [w]
-        metric = canonical_metric(w)
-        dim = canonical_dimension(w)
+        metric = known_metric(w)
+        dim = known_dimension(w)
         best_idx = None
         best_score = -10**9
         for idx, c in enumerate(columns):
@@ -129,18 +128,17 @@ def _match_column_indexes(columns: List[Dict[str, Any]], rows: List[Dict[str, An
             if score < 0:
                 continue
             is_numeric = _is_numeric_col(c, rows)
-            if metric and metric in METRIC_ALIAS_MAP:
-                score += 18 if is_numeric else -8
-                # Avoid mapping revenue/sales to non-metric process fields like sales order.
-                if metric == "revenue" and ("sales order" in txt):
-                    score -= 22
-            if dim and dim in DIMENSION_ALIAS_MAP:
+            if metric:
+                if not is_numeric:
+                    continue
+                score += 18
+            if dim:
                 score += 8 if (not is_numeric) else -4
             if score > best_score:
                 best_score = score
                 best_idx = idx
         if best_idx is not None:
-            chosen.append(best_idx)
+            chosen.append((best_idx, raw_wanted))
             used.add(best_idx)
 
     return chosen
@@ -154,18 +152,17 @@ def _project_table(payload: Dict[str, Any], wanted: List[str]) -> Dict[str, Any]
     if not cols or not rows or not wanted:
         return out
 
-    idxs = _match_column_indexes(cols, rows, wanted)
-    if not idxs:
+    bindings = _match_column_indexes(cols, rows, wanted)
+    if not bindings:
         return out
 
     projected_cols: List[Dict[str, Any]] = []
-    for pos, i in enumerate(idxs):
+    for i, desired in bindings:
         base_col = cols[i] if isinstance(cols[i], dict) else {}
         new_col = dict(base_col)
-        if pos < len(wanted):
-            desired = str(wanted[pos] or "").strip()
-            if desired:
-                new_col["label"] = desired.replace("_", " ").title()
+        desired = str(desired or "").strip()
+        if desired:
+            new_col["label"] = desired.replace("_", " ").title()
         projected_cols.append(new_col)
     projected_rows: List[Dict[str, Any]] = []
     for r in rows:
@@ -196,6 +193,49 @@ def _detect_metric_column(columns: List[Dict[str, Any]], rows: List[Dict[str, An
     return ""
 
 
+def _temporal_sort_value(value: Any) -> float:
+    s = str(value or "").strip()
+    if not s:
+        return float("-inf")
+    s_norm = s.replace("/", "-")
+    # ISO-like values.
+    try:
+        if len(s_norm) == 10 and re.match(r"^\d{4}-\d{2}-\d{2}$", s_norm):
+            return float(datetime.strptime(s_norm, "%Y-%m-%d").timestamp())
+        if re.match(r"^\d{4}-\d{2}$", s_norm):
+            return float(datetime.strptime(s_norm + "-01", "%Y-%m-%d").timestamp())
+        if re.match(r"^\d{4}-W\d{2}$", s_norm):
+            year = int(s_norm[0:4])
+            week = int(s_norm[6:8])
+            return float(datetime.fromisocalendar(year, week, 1).timestamp())
+        # Tolerate full datetime string.
+        return float(datetime.fromisoformat(s_norm.replace("Z", "+00:00")).timestamp())
+    except Exception:
+        return float("-inf")
+
+
+def _detect_temporal_column(columns: List[Dict[str, Any]]) -> str:
+    preferred: List[str] = []
+    fallback: List[str] = []
+    for c in columns:
+        fn = str(c.get("fieldname") or "").strip()
+        if not fn:
+            continue
+        ft = str(c.get("fieldtype") or "").strip().lower()
+        lb = _norm(c.get("label"))
+        txt = f"{_norm(fn)} {lb}".strip()
+        if ft in {"date", "datetime"}:
+            preferred.append(fn)
+            continue
+        if any(t in txt for t in ("date", "time", "week", "month", "quarter", "year")):
+            fallback.append(fn)
+    if preferred:
+        return preferred[0]
+    if fallback:
+        return fallback[0]
+    return ""
+
+
 def _apply_top_n(payload: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload or {})
     table = out.get("table") if isinstance(out.get("table"), dict) else {}
@@ -211,11 +251,19 @@ def _apply_top_n(payload: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any
     if n <= 0:
         return out
 
-    metric_fn = _detect_metric_column(cols, rows, spec)
-    if metric_fn:
-        rows_sorted = sorted(rows, key=lambda r: _to_float((r or {}).get(metric_fn)), reverse=True)
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    if task_class == "list_latest_records":
+        temporal_fn = _detect_temporal_column(cols)
+        if temporal_fn:
+            rows_sorted = sorted(rows, key=lambda r: _temporal_sort_value((r or {}).get(temporal_fn)), reverse=True)
+        else:
+            rows_sorted = list(rows)
     else:
-        rows_sorted = list(rows)
+        metric_fn = _detect_metric_column(cols, rows, spec)
+        if metric_fn:
+            rows_sorted = sorted(rows, key=lambda r: _to_float((r or {}).get(metric_fn)), reverse=True)
+        else:
+            rows_sorted = list(rows)
     out["table"] = {"columns": cols, "rows": rows_sorted[:n]}
     return out
 

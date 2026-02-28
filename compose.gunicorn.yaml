@@ -1,0 +1,4 @@
+services:
+  backend:
+    environment:
+      GUNICORN_CMD_ARGS: "--forwarded-allow-ips=*"

@@ -5,14 +5,15 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 MANDATORY_IDS = {
     "FIN-01", "FIN-02", "FIN-03", "FIN-04",
     "SAL-01", "SAL-02",
-    "STK-01", "STK-02",
+    "CMP-01", "TRN-01",
+    "STK-01", "STK-02", "STK-03",
     "HR-01", "OPS-01",
-    "COR-01", "DET-01", "DOC-01",
+    "COR-01", "DET-01", "DOC-01", "LST-01",
     "CFG-01", "CFG-02", "CFG-03",
     "ENT-01", "ENT-02",
     "WR-01", "WR-02", "WR-03", "WR-04",
@@ -23,9 +24,10 @@ CRITICAL_IDS = {"FIN-01", "FIN-03", "FIN-04", "SAL-01", "CFG-03", "COR-01"}
 CLEAR_READ_IDS = {
     "FIN-01", "FIN-02", "FIN-03", "FIN-04",
     "SAL-01", "SAL-02",
-    "STK-01", "STK-02",
+    "CMP-01", "TRN-01",
+    "STK-01", "STK-02", "STK-03",
     "HR-01", "OPS-01",
-    "COR-01", "DET-01", "DOC-01",
+    "COR-01", "DET-01", "DOC-01", "LST-01",
     "CFG-03", "EXP-01",
 }
 LOOP_SCOPE_IDS = CLEAR_READ_IDS | {"CFG-01", "CFG-02", "ENT-01", "ENT-02"}
@@ -39,6 +41,22 @@ ROLE_DEFAULTS = {
     "WR-03": "ai.operator",
     "WR-04": "ai.operator",
 }
+
+
+def _repo_root() -> Path:
+    cur = Path(__file__).resolve()
+    for p in [cur] + list(cur.parents):
+        if (p / "impl_factory").is_dir():
+            return p
+    return Path.cwd()
+
+
+def _default_manifest_path() -> Path:
+    root = _repo_root()
+    expanded = (root / "impl_factory/04_automation/replay_v7_expanded/manifest.json").resolve()
+    if expanded.exists():
+        return expanded
+    return (root / "impl_factory/04_automation/replay_v7/manifest.json").resolve()
 
 
 @dataclass
@@ -78,6 +96,15 @@ def _percentile(values: List[int], pct: float) -> Optional[int]:
     return int(round(out))
 
 
+def _to_lc_set(values: Any) -> Set[str]:
+    out: Set[str] = set()
+    for v in list(values or []):
+        s = str(v or "").strip().lower()
+        if s:
+            out.add(s)
+    return out
+
+
 def _load_artifact(path: Path) -> Artifact:
     raw = json.loads(path.read_text(encoding="utf-8"))
     return Artifact(
@@ -86,6 +113,126 @@ def _load_artifact(path: Path) -> Artifact:
         ts=_parse_ts(raw.get("executed_at_utc")),
         data=raw if isinstance(raw, dict) else {},
     )
+
+
+def _load_behavior_class_manifest(manifest_path: Optional[Path]) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "manifest_path": "",
+        "manifest_exists": False,
+        "behavior_field": "behavior_class",
+        "target_classes": set(),
+        "case_to_class": {},
+    }
+    if manifest_path is None:
+        return info
+    p = Path(manifest_path).resolve()
+    info["manifest_path"] = str(p)
+    if not p.exists():
+        return info
+    info["manifest_exists"] = True
+    try:
+        manifest = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return info
+    if not isinstance(manifest, dict):
+        return info
+
+    behavior_schema = manifest.get("behavior_class_schema") if isinstance(manifest.get("behavior_class_schema"), dict) else {}
+    behavior_field = str(behavior_schema.get("field") or "behavior_class").strip() or "behavior_class"
+    target_classes = _to_lc_set(behavior_schema.get("target_mandatory_classes"))
+    packs = [x for x in list(manifest.get("packs") or []) if isinstance(x, dict)]
+
+    case_to_class: Dict[str, str] = {}
+    for pack in packs:
+        fname = str(pack.get("file") or "").strip()
+        if not fname:
+            continue
+        pack_path = (p.parent / fname).resolve()
+        if not pack_path.exists():
+            continue
+        for line in pack_path.read_text(encoding="utf-8").splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            try:
+                row = json.loads(s)
+            except Exception:
+                continue
+            if not isinstance(row, dict):
+                continue
+            cid = str(row.get("case_id") or "").strip()
+            cls = str(row.get(behavior_field) or "").strip().lower()
+            if cid and cls:
+                case_to_class[cid] = cls
+
+    info["behavior_field"] = behavior_field
+    info["target_classes"] = target_classes
+    info["case_to_class"] = case_to_class
+    return info
+
+
+def _compute_behavior_class_metrics(
+    *,
+    selected_results: List[Dict[str, Any]],
+    case_to_class: Dict[str, str],
+    target_classes: Set[str],
+) -> Dict[str, Any]:
+    totals: Dict[str, int] = {}
+    passed: Dict[str, int] = {}
+    unlabeled_case_ids: List[str] = []
+
+    for r in selected_results:
+        cid = str(r.get("id") or "").strip()
+        cls = str(case_to_class.get(cid) or "").strip().lower()
+        if not cls:
+            if cid:
+                unlabeled_case_ids.append(cid)
+            continue
+        totals[cls] = int(totals.get(cls) or 0) + 1
+        if bool(r.get("pass")):
+            passed[cls] = int(passed.get(cls) or 0) + 1
+
+    failed: Dict[str, int] = {}
+    pass_rate_all: Dict[str, float] = {}
+    for cls, total in totals.items():
+        cls_passed = int(passed.get(cls) or 0)
+        cls_failed = int(total - cls_passed)
+        failed[cls] = cls_failed
+        pass_rate_all[cls] = round(_safe_rate(cls_passed, total), 4)
+
+    covered_targets = {cls for cls in target_classes if int(totals.get(cls) or 0) > 0}
+    missing_targets = sorted(list(target_classes - covered_targets))
+    target_coverage_rate = round(_safe_rate(len(covered_targets), len(target_classes)), 4) if target_classes else 0.0
+
+    pass_rate_targets: Dict[str, float] = {}
+    target_first_run_pass_ok = bool(target_classes)
+    for cls in sorted(target_classes):
+        total = int(totals.get(cls) or 0)
+        cls_passed = int(passed.get(cls) or 0)
+        rate = round(_safe_rate(cls_passed, total), 4) if total > 0 else 0.0
+        pass_rate_targets[cls] = rate
+        if total <= 0 or rate < 0.90:
+            target_first_run_pass_ok = False
+
+    target_coverage_ok = bool(target_classes) and (target_coverage_rate >= 0.95)
+
+    return {
+        "behavior_contract_declared": bool(target_classes),
+        "labeled_case_count": int(sum(totals.values())),
+        "unlabeled_case_ids": sorted(list(set(unlabeled_case_ids))),
+        "observed_class_count": len(totals),
+        "target_class_count": len(target_classes),
+        "target_covered_class_count": len(covered_targets),
+        "target_coverage_rate": target_coverage_rate,
+        "missing_target_classes": missing_targets,
+        "target_coverage_ok": target_coverage_ok,
+        "target_first_run_pass_ok": target_first_run_pass_ok,
+        "first_run_pass_rate_by_class": pass_rate_all,
+        "target_first_run_pass_rate_by_class": pass_rate_targets,
+        "class_totals": totals,
+        "class_passed": passed,
+        "class_failed": failed,
+    }
 
 
 def _result_role(result: Dict[str, Any]) -> str:
@@ -169,6 +316,10 @@ def compute_gate(
     artifacts: List[Artifact],
     baseline_correction_rate: Optional[float] = None,
     latency_p95_sla_ms: Optional[int] = None,
+    behavior_case_to_class: Optional[Dict[str, str]] = None,
+    target_behavior_classes: Optional[Set[str]] = None,
+    min_first_run_sample_size: int = 300,
+    min_target_class_sample_size: int = 20,
 ) -> Dict[str, Any]:
     ids = {str(r.get("id") or "").strip() for r in selected_results}
     missing_mandatory = sorted(list(MANDATORY_IDS - ids))
@@ -244,6 +395,20 @@ def compute_gate(
     latency_p95 = _percentile(durations, 95.0)
     fac_ok = _fac_preconditions_ok(artifacts)
     first_run_declared = _first_run_policy_declared(artifacts)
+    behavior_metrics = _compute_behavior_class_metrics(
+        selected_results=selected_results,
+        case_to_class=dict(behavior_case_to_class or {}),
+        target_classes=set(target_behavior_classes or set()),
+    )
+    class_totals = behavior_metrics.get("class_totals") if isinstance(behavior_metrics.get("class_totals"), dict) else {}
+    target_classes_lc = set(target_behavior_classes or set())
+    first_run_sample_ok = len(selected_results) >= int(max(0, min_first_run_sample_size))
+    target_class_sample_ok = True
+    if int(max(0, min_target_class_sample_size)) > 0 and target_classes_lc:
+        target_class_sample_ok = all(
+            int(class_totals.get(cls) or 0) >= int(min_target_class_sample_size)
+            for cls in sorted(target_classes_lc)
+        )
 
     correction_trend_ok: Optional[bool] = None
     if baseline_correction_rate is not None:
@@ -258,6 +423,11 @@ def compute_gate(
         "critical_clear_query_pass_100": critical_pass,
         "first_run_policy_declared": first_run_declared,
         "fac_preconditions_ok": fac_ok,
+        "first_run_sample_size_ge_threshold": bool(first_run_sample_ok),
+        "behavior_class_contract_declared": bool(behavior_metrics.get("behavior_contract_declared")),
+        "behavior_class_mandatory_coverage_ge_95pct": bool(behavior_metrics.get("target_coverage_ok")),
+        "behavior_class_first_run_pass_ge_90pct_each": bool(behavior_metrics.get("target_first_run_pass_ok")),
+        "behavior_class_target_sample_size_ge_threshold": bool(target_class_sample_ok),
         "direct_answer_rate_clear_read_ge_90pct": direct_answer_rate >= 0.90,
         "clarification_rate_clear_read_le_10pct": clarification_rate <= 0.10,
         "unnecessary_clarification_rate_clear_read_le_5pct": unnecessary_clarification_rate <= 0.05,
@@ -308,11 +478,22 @@ def compute_gate(
             "reader_pass_rate": round(reader_pass_rate, 4),
             "operator_total": len(operator_rows),
             "operator_pass_rate": round(operator_pass_rate, 4),
+            "first_run_sample_size": len(selected_results),
+            "first_run_sample_size_threshold": int(max(0, min_first_run_sample_size)),
+            "target_class_sample_size_threshold": int(max(0, min_target_class_sample_size)),
         },
+        "behavior_class": behavior_metrics,
         "release_gate": {
             **gate_checks,
             "overall_go": bool(overall_go),
             "failed_gate_checks": failed_checks,
+        },
+        "sample_size_policy": {
+            "min_first_run_sample_size": int(max(0, min_first_run_sample_size)),
+            "min_target_class_sample_size": int(max(0, min_target_class_sample_size)),
+            "first_run_sample_size": len(selected_results),
+            "first_run_sample_size_ok": bool(first_run_sample_ok),
+            "target_class_sample_size_ok": bool(target_class_sample_ok),
         },
         "baseline": {
             "baseline_correction_rate": baseline_correction_rate,
@@ -366,14 +547,23 @@ def build_release_evaluation(
     baseline_correction_rate: Optional[float] = None,
     latency_p95_sla_ms: Optional[int] = None,
     label: str = "",
+    manifest_path: Optional[Path] = None,
+    min_first_run_sample_size: int = 300,
+    min_target_class_sample_size: int = 20,
 ) -> Dict[str, Any]:
     artifacts = [_load_artifact(p) for p in raw_paths]
     selected, first_run_stats = select_first_run_results(artifacts)
+    effective_manifest = Path(manifest_path).resolve() if manifest_path is not None else _default_manifest_path()
+    behavior_manifest = _load_behavior_class_manifest(effective_manifest)
     gate = compute_gate(
         selected_results=selected,
         artifacts=artifacts,
         baseline_correction_rate=baseline_correction_rate,
         latency_p95_sla_ms=latency_p95_sla_ms,
+        behavior_case_to_class=behavior_manifest.get("case_to_class"),
+        target_behavior_classes=behavior_manifest.get("target_classes"),
+        min_first_run_sample_size=min_first_run_sample_size,
+        min_target_class_sample_size=min_target_class_sample_size,
     )
     decision = stage_decision(stage_percent=stage_percent, gate=gate)
     return {
@@ -381,6 +571,15 @@ def build_release_evaluation(
         "mode": "phase8_release_gate",
         "label": str(label or "").strip(),
         "input_artifacts": [str(p) for p in raw_paths],
+        "behavior_manifest": {
+            "path": str(behavior_manifest.get("manifest_path") or ""),
+            "exists": bool(behavior_manifest.get("manifest_exists")),
+            "field": str(behavior_manifest.get("behavior_field") or "behavior_class"),
+        },
+        "sample_size_policy": {
+            "min_first_run_sample_size": int(max(0, min_first_run_sample_size)),
+            "min_target_class_sample_size": int(max(0, min_target_class_sample_size)),
+        },
         "first_run_policy": {
             "enforced": True,
             "source": "earliest_result_per_case_id",
@@ -395,6 +594,8 @@ def _markdown_report(payload: Dict[str, Any]) -> str:
     stage = payload.get("stage") if isinstance(payload.get("stage"), dict) else {}
     summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
     gate = payload.get("release_gate") if isinstance(payload.get("release_gate"), dict) else {}
+    behavior = payload.get("behavior_class") if isinstance(payload.get("behavior_class"), dict) else {}
+    sample_size = payload.get("sample_size_policy") if isinstance(payload.get("sample_size_policy"), dict) else {}
     lines = [
         "# Phase 8 Release Gate Decision",
         "",
@@ -417,6 +618,19 @@ def _markdown_report(payload: Dict[str, Any]) -> str:
         f"- Output-shape pass rate (clear): {summary.get('output_shape_pass_rate_clear_read')}",
         f"- Write safety incidents: {summary.get('write_safety_incidents')}",
         f"- Role parity reader/operator: {gate.get('role_parity_reader_vs_operator')}",
+        f"- First-run sample size: {summary.get('first_run_sample_size')}",
+        f"- First-run sample threshold: {summary.get('first_run_sample_size_threshold')}",
+        f"- Target-class sample threshold: {summary.get('target_class_sample_size_threshold')}",
+        "",
+        "## Behavior Class",
+        f"- Declared: {behavior.get('behavior_contract_declared')}",
+        f"- Target coverage rate: {behavior.get('target_coverage_rate')}",
+        f"- Missing target classes: {behavior.get('missing_target_classes') or []}",
+        f"- Target first-run pass ok: {behavior.get('target_first_run_pass_ok')}",
+        "",
+        "## Sample Size Policy",
+        f"- First-run sample size ok: {sample_size.get('first_run_sample_size_ok')}",
+        f"- Target-class sample size ok: {sample_size.get('target_class_sample_size_ok')}",
         "",
         "## Gate Checks",
     ]
@@ -442,6 +656,9 @@ def main() -> None:
     ap.add_argument("--baseline-correction-rate", dest="baseline_correction_rate", type=float, default=None, help="Baseline user correction rate for trend gate.")
     ap.add_argument("--latency-p95-sla-ms", dest="latency_p95_sla_ms", type=int, default=None, help="Latency p95 SLA in ms.")
     ap.add_argument("--label", dest="label", default="", help="Optional release label.")
+    ap.add_argument("--manifest", dest="manifest_path", default=str(_default_manifest_path()), help="Replay manifest path with behavior_class_schema.")
+    ap.add_argument("--min-first-run-sample-size", dest="min_first_run_sample_size", type=int, default=300, help="Minimum first-run sample size required by release gate.")
+    ap.add_argument("--min-target-class-sample-size", dest="min_target_class_sample_size", type=int, default=20, help="Minimum sample size required for each target behavior class.")
     ap.add_argument("--output-dir", dest="output_dir", default="impl_factory/04_automation/logs", help="Output folder.")
     args = ap.parse_args()
 
@@ -452,6 +669,9 @@ def main() -> None:
         baseline_correction_rate=args.baseline_correction_rate,
         latency_p95_sla_ms=args.latency_p95_sla_ms,
         label=str(args.label or ""),
+        manifest_path=Path(str(args.manifest_path or "")).resolve(),
+        min_first_run_sample_size=int(args.min_first_run_sample_size),
+        min_target_class_sample_size=int(args.min_target_class_sample_size),
     )
 
     out_dir = Path(args.output_dir)
