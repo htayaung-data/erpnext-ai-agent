@@ -1,0 +1,371 @@
+{
+  "version": "capability_registry_overrides_v1",
+  "reports_by_name": {
+    "Customer Ledger Summary": {
+      "domain_tags": [
+        "finance",
+        "sales"
+      ],
+      "dimension_tags": [
+        "customer"
+      ],
+      "metric_tags": [
+        "outstanding_amount",
+        "revenue"
+      ],
+      "primary_dimension": "customer",
+      "semantics": {
+        "domain_hints": [
+          "finance",
+          "sales"
+        ],
+        "dimension_hints": [
+          "customer"
+        ],
+        "metric_hints": [
+          "outstanding_amount",
+          "revenue"
+        ],
+        "primary_dimension": "customer"
+      },
+      "presentation": {
+        "result_grain": "summary",
+        "supports_ranking": true,
+        "aggregate_dimension_values": [
+          "All Customers"
+        ],
+        "column_roles": {
+          "dimensions": {
+            "customer": [
+              "party",
+              "customer"
+            ]
+          },
+          "metrics": {
+            "outstanding_amount": [
+              "closing_balance"
+            ],
+            "revenue": [
+              "invoiced_amount",
+              "amount"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "party",
+          "customer",
+          "closing_balance",
+          "invoiced_amount",
+          "amount"
+        ]
+      }
+    },
+    "Supplier Ledger Summary": {
+      "domain_tags": [
+        "finance",
+        "purchasing"
+      ],
+      "dimension_tags": [
+        "supplier"
+      ],
+      "metric_tags": [
+        "outstanding_amount",
+        "purchase_amount"
+      ],
+      "primary_dimension": "supplier",
+      "semantics": {
+        "domain_hints": [
+          "finance",
+          "purchasing"
+        ],
+        "dimension_hints": [
+          "supplier"
+        ],
+        "metric_hints": [
+          "outstanding_amount",
+          "purchase_amount"
+        ],
+        "primary_dimension": "supplier"
+      },
+      "presentation": {
+        "result_grain": "summary",
+        "supports_ranking": true,
+        "aggregate_dimension_values": [
+          "All Suppliers"
+        ],
+        "column_roles": {
+          "dimensions": {
+            "supplier": [
+              "party",
+              "supplier"
+            ]
+          },
+          "metrics": {
+            "outstanding_amount": [
+              "closing_balance"
+            ],
+            "purchase_amount": [
+              "invoiced_amount",
+              "billed_amount",
+              "amount"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "party",
+          "supplier",
+          "closing_balance",
+          "invoiced_amount",
+          "billed_amount",
+          "amount"
+        ]
+      }
+    },
+    "Item-wise Sales Register": {
+      "domain_tags": [
+        "sales"
+      ],
+      "dimension_tags": [
+        "item",
+        "customer"
+      ],
+      "metric_tags": [
+        "revenue",
+        "sold_quantity",
+        "outstanding_amount"
+      ],
+      "primary_dimension": "item",
+      "semantics": {
+        "domain_hints": [
+          "sales"
+        ],
+        "dimension_hints": [
+          "item",
+          "customer"
+        ],
+        "metric_hints": [
+          "revenue",
+          "sold_quantity",
+          "outstanding_amount"
+        ],
+        "primary_dimension": "item"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": true,
+        "column_roles": {
+          "dimensions": {
+            "item": [
+              "item_code",
+              "item"
+            ],
+            "customer": [
+              "customer",
+              "party"
+            ]
+          },
+          "metrics": {
+            "revenue": [
+              "amount"
+            ],
+            "sold_quantity": [
+              "qty",
+              "sold_quantity"
+            ],
+            "outstanding_amount": [
+              "outstanding_amount",
+              "amount"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "item_code",
+          "item_name",
+          "customer",
+          "amount",
+          "qty",
+          "sold_quantity",
+          "outstanding_amount"
+        ]
+      }
+    },
+    "Item-wise Purchase Register": {
+      "domain_tags": [
+        "purchasing"
+      ],
+      "dimension_tags": [
+        "item",
+        "supplier"
+      ],
+      "metric_tags": [
+        "purchase_amount",
+        "received_quantity",
+        "outstanding_amount"
+      ],
+      "primary_dimension": "item",
+      "semantics": {
+        "domain_hints": [
+          "purchasing"
+        ],
+        "dimension_hints": [
+          "item",
+          "supplier"
+        ],
+        "metric_hints": [
+          "purchase_amount",
+          "received_quantity",
+          "outstanding_amount"
+        ],
+        "primary_dimension": "item"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": true,
+        "column_roles": {
+          "dimensions": {
+            "item": [
+              "item_code",
+              "item"
+            ],
+            "supplier": [
+              "supplier",
+              "party"
+            ]
+          },
+          "metrics": {
+            "purchase_amount": [
+              "purchase_amount",
+              "amount",
+              "invoiced_amount",
+              "billed_amount"
+            ],
+            "received_quantity": [
+              "qty",
+              "received_quantity"
+            ],
+            "outstanding_amount": [
+              "outstanding_amount",
+              "amount"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "item_code",
+          "item_name",
+          "supplier",
+          "amount",
+          "purchase_amount",
+          "qty",
+          "outstanding_amount"
+        ]
+      }
+    },
+    "Warehouse Wise Stock Balance": {
+      "domain_tags": [
+        "inventory"
+      ],
+      "dimension_tags": [
+        "warehouse"
+      ],
+      "metric_tags": [
+        "stock_balance"
+      ],
+      "primary_dimension": "warehouse",
+      "semantics": {
+        "domain_hints": [
+          "inventory"
+        ],
+        "dimension_hints": [
+          "warehouse"
+        ],
+        "metric_hints": [
+          "stock_balance"
+        ],
+        "primary_dimension": "warehouse"
+      },
+      "presentation": {
+        "result_grain": "summary",
+        "supports_ranking": true,
+        "aggregate_dimension_values": [
+          "All Warehouses",
+          "All Warehouses - MMOB"
+        ],
+        "column_roles": {
+          "dimensions": {
+            "warehouse": [
+              "warehouse"
+            ]
+          },
+          "metrics": {
+            "stock_balance": [
+              "stock_balance",
+              "balance",
+              "bal_qty"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "warehouse",
+          "stock_balance",
+          "balance",
+          "bal_qty"
+        ]
+      }
+    },
+    "Product Bundle Balance": {
+      "domain_tags": [
+        "inventory"
+      ],
+      "dimension_tags": [
+        "item",
+        "warehouse"
+      ],
+      "metric_tags": [
+        "stock_balance"
+      ],
+      "primary_dimension": "item",
+      "semantics": {
+        "domain_hints": [
+          "inventory"
+        ],
+        "dimension_hints": [
+          "item",
+          "warehouse"
+        ],
+        "metric_hints": [
+          "stock_balance"
+        ],
+        "primary_dimension": "item"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": false,
+        "column_roles": {
+          "dimensions": {
+            "item": [
+              "item",
+              "item_code"
+            ],
+            "warehouse": [
+              "warehouse"
+            ]
+          },
+          "metrics": {
+            "stock_balance": [
+              "actual_qty",
+              "stock_balance",
+              "bundle_qty"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "item",
+          "item_code",
+          "warehouse",
+          "actual_qty",
+          "bundle_qty"
+        ]
+      }
+    }
+  }
+}

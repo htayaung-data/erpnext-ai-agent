@@ -85,6 +85,27 @@ class V7OntologyNormalizationTests(unittest.TestCase):
         amb = list(mod.infer_transform_ambiguities("Show total amount as million"))
         self.assertIn("transform_scale:million", amb)
 
+    def test_infer_transform_ambiguities_does_not_false_match_million_inside_column(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        amb = list(mod.infer_transform_ambiguities("Give me Customer Column only"))
+        self.assertEqual(amb, ["transform_projection:only"])
+
+    def test_infer_reference_value_detects_same_reference(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        self.assertEqual(mod.infer_reference_value("same warehouse"), "same")
+        self.assertEqual(mod.infer_reference_value("Yangon Main Warehouse - MMOB"), "")
+
+    def test_metric_normalization_distinguishes_outstanding_and_purchase_amount(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        self.assertEqual(mod.canonical_metric("outstanding amount"), "outstanding_amount")
+        self.assertEqual(mod.known_metric("outstanding amount"), "outstanding_amount")
+        self.assertEqual(mod.canonical_metric("purchase amount"), "purchase_amount")
+        self.assertEqual(mod.known_metric("purchase amount"), "purchase_amount")
+        self.assertEqual(mod.metric_domain("purchase amount"), "purchasing")
+
 
 if __name__ == "__main__":
     unittest.main()

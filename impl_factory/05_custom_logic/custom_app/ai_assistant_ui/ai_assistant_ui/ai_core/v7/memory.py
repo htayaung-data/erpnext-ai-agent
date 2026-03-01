@@ -10,7 +10,15 @@ try:
 except Exception:  # pragma: no cover - local tests without Frappe
     frappe = None
 
-from ai_assistant_ui.ai_core.ontology_normalization import canonical_dimension, infer_filter_kinds, known_dimension
+from ai_assistant_ui.ai_core.ontology_normalization import (
+    canonical_metric,
+    canonical_dimension,
+    infer_filter_kinds,
+    infer_reference_value,
+    infer_transform_ambiguities,
+    known_dimension,
+    metric_domain,
+)
 
 _DOC_ID_REGEX = re.compile(r"\b[A-Z]{2,}-[A-Z0-9]+-\d{4}-\d+\b")
 _DOC_FILTER_KEYS = (
@@ -78,6 +86,32 @@ def _tokenize(text: str) -> Set[str]:
     return {w for w in words if len(w) >= 3}
 
 
+def _norm_text(text: Any) -> str:
+    return " ".join(str(text or "").strip().lower().replace("_", " ").split())
+
+
+def _first_int_in_text(text: Any) -> int:
+    m = re.search(r"\b(\d{1,3})\b", str(text or ""))
+    if not m:
+        return 0
+    try:
+        return int(m.group(1))
+    except Exception:
+        return 0
+
+
+def _message_has_explicit_time_words(message: str) -> bool:
+    txt = _norm_text(message)
+    if not txt:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:today|yesterday|tomorrow|this month|last month|this week|last week|this year|last year|as of)\b",
+            txt,
+        )
+    )
+
+
 def _message_dimensions(message: str) -> List[str]:
     msg = str(message or "").strip()
     if not msg:
@@ -97,6 +131,92 @@ def _message_dimensions(message: str) -> List[str]:
             seen.add(d)
             out.append(d)
     return out
+
+
+def _projection_column_candidates(active_result: Dict[str, Any]) -> List[str]:
+    result = active_result if isinstance(active_result, dict) else {}
+    source_columns = [c for c in list(result.get("source_columns") or []) if isinstance(c, dict)]
+    out: List[str] = []
+    seen: Set[str] = set()
+    for col in source_columns:
+        label = _norm_text(col.get("label"))
+        fieldname = _norm_text(col.get("fieldname"))
+        canonical = label or fieldname
+        if not canonical:
+            continue
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        out.append(canonical)
+    return out
+
+
+def _message_projection_columns(message: str, active_result: Dict[str, Any]) -> List[str]:
+    txt = _norm_text(message)
+    if not txt:
+        return []
+    matches: List[str] = []
+    seen: Set[str] = set()
+    for candidate in sorted(_projection_column_candidates(active_result), key=len, reverse=True):
+        if len(candidate) < 4:
+            continue
+        if candidate not in txt:
+            continue
+        if any(candidate in existing for existing in matches):
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        matches.append(candidate)
+    return matches
+
+
+def _semantic_column_keys(*, group_by: List[str], metric: str) -> Set[str]:
+    out: Set[str] = set()
+    for raw in list(group_by or []):
+        key = _norm_text(raw)
+        if key:
+            out.add(key)
+    metric_key = _norm_text(metric)
+    if metric_key:
+        out.add(metric_key)
+    return out
+
+
+def _message_transform_ambiguities(message: str) -> List[str]:
+    return [str(x).strip().lower() for x in list(infer_transform_ambiguities(message) or []) if str(x).strip()]
+
+
+def _explicit_message_projection_columns(*, message: str, requested_columns: List[str], semantic_column_keys: Set[str]) -> List[str]:
+    txt = _norm_text(message)
+    if not txt:
+        return []
+    out: List[str] = []
+    seen: Set[str] = set()
+    for raw in sorted([str(x or "").strip() for x in list(requested_columns or []) if str(x or "").strip()], key=len, reverse=True):
+        s = str(raw or "").strip()
+        key = _norm_text(s)
+        if (not s) or (not key) or (key in semantic_column_keys):
+            continue
+        if key not in txt:
+            continue
+        key_tokens = set(key.split())
+        if any(key == existing or key_tokens < set(existing.split()) for existing in seen):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+def _preferred_subject_from_dimension(dim: str) -> str:
+    d = str(dim or "").strip().lower()
+    if d == "item":
+        return "products"
+    if not d:
+        return ""
+    return f"{d}s"
 
 
 def _spec_requested_dimensions(spec: Dict[str, Any]) -> List[str]:
@@ -123,6 +243,33 @@ def _filter_dimensions(filters: Dict[str, Any]) -> Set[str]:
             if kind in {"customer", "supplier", "item", "warehouse", "company", "territory"}:
                 out.add(kind)
     return out
+
+
+def _resolve_reference_filters(*, filters: Dict[str, Any], prev_filters: Dict[str, Any]) -> Dict[str, Any]:
+    current = filters if isinstance(filters, dict) else {}
+    previous = prev_filters if isinstance(prev_filters, dict) else {}
+    if (not current) or (not previous):
+        return {"filters": dict(current), "applied": []}
+
+    out = dict(current)
+    applied: List[str] = []
+    for key, value in current.items():
+        prev_value = previous.get(key)
+        if prev_value in (None, "", []):
+            continue
+        if isinstance(value, list):
+            if len(value) != 1:
+                continue
+            ref_code = infer_reference_value(value[0])
+            if ref_code == "same":
+                out[key] = prev_value
+                applied.append(str(key))
+            continue
+        ref_code = infer_reference_value(value)
+        if ref_code == "same":
+            out[key] = prev_value
+            applied.append(str(key))
+    return {"filters": out, "applied": applied}
 
 
 def _topic_signature_from_spec(spec: Dict[str, Any]) -> Set[str]:
@@ -259,6 +406,10 @@ def apply_memory_context(
     prev_subject = str(prev_topic.get("subject") or "").strip()
     prev_domain = str(prev_topic.get("domain") or "").strip().lower()
     prev_result_doc_id = str(prev_result.get("document_id") or "").strip()
+    incoming_output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    incoming_requested_columns = [
+        str(x).strip() for x in list(incoming_output_contract.get("minimal_columns") or []) if str(x).strip()
+    ]
 
     curr_sig = _topic_signature_from_spec(spec)
     prev_sig = _topic_signature_from_state(prev_topic)
@@ -284,6 +435,29 @@ def apply_memory_context(
 
     anchors_applied: List[str] = []
     corrections_applied: List[str] = []
+    prev_semantic_column_keys = _semantic_column_keys(group_by=prev_group_by, metric=prev_metric)
+    projection_columns = [
+        c
+        for c in _message_projection_columns(message, prev_result)
+        if _norm_text(c) not in prev_semantic_column_keys
+    ]
+    wants_projection_from_active_report = bool(
+        prev_topic
+        and prev_result
+        and (not topic_switched)
+        and projection_columns
+    )
+
+    # Resolve deictic filter references like "same warehouse" to the prior
+    # validated filter value for that same filter key when the topic is stable.
+    if prev_topic and (not topic_switched):
+        current_filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+        reference_resolution = _resolve_reference_filters(filters=current_filters, prev_filters=prev_filters)
+        resolved_filters = reference_resolution.get("filters") if isinstance(reference_resolution.get("filters"), dict) else current_filters
+        applied_refs = [str(x).strip() for x in list(reference_resolution.get("applied") or []) if str(x).strip()]
+        if applied_refs and resolved_filters != current_filters:
+            spec["filters"] = resolved_filters
+            anchors_applied.append("filter_reference")
 
     # Only anchor when current turn is structurally underspecified.
     can_anchor = bool(prev_topic) and (not topic_switched) and (curr_strength <= 2)
@@ -330,6 +504,334 @@ def apply_memory_context(
             if "document_id" not in (spec.get("filters") or {}):
                 spec["filters"]["document_id"] = prev_result_doc_id
                 anchors_applied.append("document_id")
+
+    requested_top_n = _first_int_in_text(message)
+    if (
+        prev_topic
+        and (not topic_switched)
+        and prev_top_n > 0
+        and requested_top_n > 0
+        and requested_top_n != int(spec.get("top_n") or 0)
+        and curr_strength <= 2
+    ):
+        spec["top_n"] = max(1, min(requested_top_n, 200))
+        oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        spec["output_contract"] = dict(oc)
+        spec["output_contract"]["mode"] = "top_n"
+        corrections_applied.append("top_n_from_message_followup")
+
+    current_transform_ambiguities = _message_transform_ambiguities(message)
+    projection_only_followup = bool("transform_projection:only" in current_transform_ambiguities)
+    ranking_direction_followup = bool(
+        prev_topic
+        and prev_result
+        and (not topic_switched)
+        and any(a in {"transform_sort:asc", "transform_sort:desc"} for a in current_transform_ambiguities)
+        and int(prev_top_n or 0) > 0
+        and curr_strength <= 4
+        and (
+            str(spec.get("intent") or "").strip().upper() == "TRANSFORM_LAST"
+            or int(spec.get("top_n") or 0) <= 0
+            or (not list(spec.get("group_by") or []))
+        )
+    )
+    msg_metric_canonical = str(canonical_metric(message) or "").strip().lower()
+    explicit_metric = msg_metric_canonical if msg_metric_canonical and msg_metric_canonical != _norm_text(message).replace(" ", "_") else ""
+    explicit_dims = [str(x).strip().lower() for x in _message_dimensions(message)]
+    strong_fresh_ranking_read = bool(
+        str(spec.get("intent") or "").strip().upper() == "READ"
+        and curr_strength >= 3
+        and (explicit_metric or explicit_dims)
+        and (requested_top_n > 0 or _message_has_explicit_time_words(message))
+    )
+
+    if strong_fresh_ranking_read:
+        wants_projection_from_active_report = False
+
+    explicit_read_rebind = bool(
+        str(spec.get("intent") or "").strip().upper() == "READ"
+        and curr_strength >= 3
+        and (explicit_metric or explicit_dims)
+    )
+    if explicit_read_rebind:
+        if explicit_metric:
+            current_metric = str(canonical_metric(spec.get("metric") or "") or "").strip().lower()
+            if explicit_metric != current_metric:
+                spec["metric"] = explicit_metric.replace("_", " ")
+                corrections_applied.append("metric_from_message_semantics")
+                inferred_domain = str(metric_domain(explicit_metric) or "").strip().lower()
+                if inferred_domain:
+                    spec["domain"] = inferred_domain
+                    corrections_applied.append("domain_from_metric_semantics")
+        if explicit_dims:
+            current_dims = _spec_requested_dimensions(spec)
+            target_dims = [d for d in explicit_dims if d]
+            if target_dims and target_dims != current_dims:
+                spec["group_by"] = target_dims[:10]
+                corrections_applied.append("group_by_from_message_semantics")
+                subject = _preferred_subject_from_dimension(target_dims[0])
+                if subject:
+                    spec["subject"] = subject
+                    corrections_applied.append("subject_from_message_dimension")
+        if requested_top_n > 0 and requested_top_n != int(spec.get("top_n") or 0):
+            spec["top_n"] = max(1, min(requested_top_n, 200))
+            corrections_applied.append("top_n_from_message_semantics")
+        oc_bind = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        base_cols = [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()]
+        metric_text = str(spec.get("metric") or "").strip()
+        if metric_text:
+            base_cols.append(metric_text)
+        explicit_projection_cols = _explicit_message_projection_columns(
+            message=message,
+            requested_columns=incoming_requested_columns,
+            semantic_column_keys=_semantic_column_keys(group_by=list(spec.get("group_by") or []), metric=metric_text),
+        )
+        spec["output_contract"] = dict(oc_bind)
+        if int(spec.get("top_n") or 0) > 0:
+            spec["output_contract"]["mode"] = "top_n"
+        spec["output_contract"]["minimal_columns"] = list(dict.fromkeys(base_cols + explicit_projection_cols))[:12]
+
+    explicit_read_reset = bool(
+        str(spec.get("intent") or "").strip().upper() == "READ"
+        and curr_strength >= 3
+        and (not wants_projection_from_active_report)
+    )
+    if explicit_read_reset:
+        existing_ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+        non_transform_ambiguities = [x for x in existing_ambiguities if not x.startswith("transform_")]
+        spec["ambiguities"] = list(dict.fromkeys(non_transform_ambiguities + current_transform_ambiguities))[:12]
+
+        semantic_cols: List[str] = []
+        for raw in list(spec.get("group_by") or []):
+            s = str(raw or "").strip()
+            if s:
+                semantic_cols.append(s)
+        metric = str(spec.get("metric") or "").strip()
+        if metric:
+            semantic_cols.append(metric)
+
+        oc_reset = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        current_cols = [str(x).strip() for x in list(oc_reset.get("minimal_columns") or []) if str(x or "").strip()]
+        explicit_projection_cols = _explicit_message_projection_columns(
+            message=message,
+            requested_columns=current_cols,
+            semantic_column_keys=_semantic_column_keys(group_by=list(spec.get("group_by") or []), metric=metric),
+        )
+        normalized_cols: List[str] = []
+        seen_cols: Set[str] = set()
+        for raw in semantic_cols + explicit_projection_cols:
+            s = str(raw or "").strip()
+            key = _norm_text(s)
+            if (not s) or (not key) or (key in seen_cols):
+                continue
+            seen_cols.add(key)
+            normalized_cols.append(s)
+        spec["output_contract"] = dict(oc_reset)
+        if int(spec.get("top_n") or 0) > 0:
+            spec["output_contract"]["mode"] = "top_n"
+        elif str(spec.get("task_type") or "").strip().lower() == "kpi":
+            spec["output_contract"]["mode"] = "kpi"
+        else:
+            spec["output_contract"]["mode"] = "detail"
+        spec["output_contract"]["minimal_columns"] = normalized_cols[:12]
+        corrections_applied.append("fresh_read_contract_reset")
+
+    if ranking_direction_followup:
+        spec["intent"] = "READ"
+        spec["subject"] = prev_subject or str(spec.get("subject") or "").strip()
+        spec["metric"] = prev_metric or str(spec.get("metric") or "").strip()
+        spec["domain"] = prev_domain or str(spec.get("domain") or "").strip().lower()
+        spec["group_by"] = prev_group_by[:10]
+        spec["top_n"] = prev_top_n
+        if prev_time_scope:
+            spec["time_scope"] = dict(prev_time_scope)
+        if prev_filters:
+            spec["filters"] = dict(prev_filters)
+        spec["task_type"] = "ranking"
+        spec["task_class"] = str(prev_topic.get("task_class") or spec.get("task_class") or "analytical_read").strip().lower()
+        existing_ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+        non_transform_ambiguities = [x for x in existing_ambiguities if not x.startswith("transform_")]
+        spec["ambiguities"] = list(dict.fromkeys(non_transform_ambiguities + current_transform_ambiguities))[:12]
+        oc_rank = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        base_cols: List[str] = []
+        for raw in prev_group_by:
+            s = str(raw or "").strip()
+            if s:
+                base_cols.append(s)
+        if prev_metric:
+            base_cols.append(prev_metric)
+        spec["output_contract"] = dict(oc_rank)
+        spec["output_contract"]["mode"] = "top_n"
+        spec["output_contract"]["minimal_columns"] = list(dict.fromkeys(base_cols))[:12]
+        corrections_applied.append("ranking_direction_from_message_followup")
+        wants_projection_from_active_report = False
+
+    projection_only_active_followup = bool(
+        prev_topic
+        and prev_result
+        and (not topic_switched)
+        and projection_only_followup
+    )
+    if projection_only_active_followup:
+        spec["subject"] = prev_subject or str(spec.get("subject") or "").strip()
+        spec["metric"] = prev_metric or str(spec.get("metric") or "").strip()
+        spec["domain"] = prev_domain or str(spec.get("domain") or "").strip().lower()
+        spec["group_by"] = prev_group_by[:10]
+        if prev_top_n > 0:
+            spec["top_n"] = prev_top_n
+            spec["task_type"] = "ranking"
+        if prev_time_scope:
+            spec["time_scope"] = dict(prev_time_scope)
+        if prev_filters:
+            spec["filters"] = dict(prev_filters)
+        spec["task_class"] = str(prev_topic.get("task_class") or spec.get("task_class") or "analytical_read").strip().lower()
+        output_mode = str(prev_result.get("output_mode") or "").strip().lower()
+        oc_proj = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        current = [str(x).strip() for x in list(oc_proj.get("minimal_columns") or []) if str(x).strip()]
+        base_cols: List[str] = []
+        for raw in prev_group_by:
+            s = str(raw or "").strip()
+            if s:
+                base_cols.append(s)
+        if prev_metric:
+            base_cols.append(prev_metric)
+        explicit_requested_cols = _explicit_message_projection_columns(
+            message=message,
+            requested_columns=current + base_cols + projection_columns,
+            semantic_column_keys=set(),
+        )
+        projection_only_cols = list(explicit_requested_cols)
+        prev_metric_canonical = str(canonical_metric(prev_metric) or "").strip().lower()
+        if prev_metric and (
+            _norm_text(message).find(_norm_text(prev_metric)) >= 0
+            or (msg_metric_canonical and prev_metric_canonical and msg_metric_canonical == prev_metric_canonical)
+        ):
+            projection_only_cols.append(prev_metric)
+        if projection_only_cols:
+            merged_cols: List[str] = []
+            seen_cols: Set[str] = set()
+            for raw in projection_only_cols:
+                s = str(raw or "").strip()
+                key = _norm_text(s)
+                if (not s) or (not key) or (key in seen_cols):
+                    continue
+                seen_cols.add(key)
+                merged_cols.append(s)
+            spec["output_contract"] = dict(oc_proj)
+            spec["output_contract"]["mode"] = output_mode or str(oc_proj.get("mode") or "detail").strip().lower() or "detail"
+            spec["output_contract"]["minimal_columns"] = merged_cols[:12]
+            corrections_applied.append("projection_only_followup_to_active_topic")
+            wants_projection_from_active_report = False
+
+    low_signal_followup_rebind = bool(
+        prev_topic
+        and prev_result
+        and (not topic_switched)
+        and curr_strength <= 2
+        and (current_transform_ambiguities or projection_columns or requested_top_n > 0)
+    )
+    if low_signal_followup_rebind:
+        spec["subject"] = prev_subject or str(spec.get("subject") or "").strip()
+        spec["metric"] = prev_metric or str(spec.get("metric") or "").strip()
+        spec["domain"] = prev_domain or str(spec.get("domain") or "").strip().lower()
+        spec["group_by"] = prev_group_by[:10]
+        if requested_top_n > 0:
+            spec["top_n"] = max(1, min(requested_top_n, 200))
+        elif prev_top_n > 0:
+            spec["top_n"] = prev_top_n
+        if prev_time_scope:
+            spec["time_scope"] = dict(prev_time_scope)
+        if prev_filters:
+            spec["filters"] = dict(prev_filters)
+        spec["task_class"] = str(prev_topic.get("task_class") or spec.get("task_class") or "analytical_read").strip().lower()
+        if int(spec.get("top_n") or 0) > 0:
+            spec["task_type"] = "ranking"
+        output_mode = str(prev_result.get("output_mode") or "").strip().lower()
+        oc_follow = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        base_cols: List[str] = []
+        for raw in prev_group_by:
+            s = str(raw or "").strip()
+            if s:
+                base_cols.append(s)
+        if prev_metric:
+            base_cols.append(prev_metric)
+        merged_cols: List[str] = []
+        seen_cols: Set[str] = set()
+        explicit_requested_cols = _explicit_message_projection_columns(
+            message=message,
+            requested_columns=base_cols + projection_columns,
+            semantic_column_keys=set(),
+        )
+        projection_only_cols = list(explicit_requested_cols)
+        prev_metric_canonical = str(canonical_metric(prev_metric) or "").strip().lower()
+        if projection_only_followup and prev_metric and (
+            _norm_text(message).find(_norm_text(prev_metric)) >= 0
+            or (msg_metric_canonical and prev_metric_canonical and msg_metric_canonical == prev_metric_canonical)
+        ):
+            projection_only_cols.append(prev_metric)
+        selected_cols = projection_only_cols if (projection_only_followup and projection_only_cols) else (base_cols + projection_columns)
+        for raw in selected_cols:
+            s = str(raw or "").strip()
+            key = _norm_text(s)
+            if (not s) or (not key) or (key in seen_cols):
+                continue
+            seen_cols.add(key)
+            merged_cols.append(s)
+        spec["output_contract"] = dict(oc_follow)
+        spec["output_contract"]["mode"] = output_mode or str(oc_follow.get("mode") or "detail").strip().lower() or "detail"
+        spec["output_contract"]["minimal_columns"] = merged_cols[:12]
+        corrections_applied.append("followup_rebind_to_active_topic")
+
+    if wants_projection_from_active_report:
+        spec["subject"] = prev_subject or str(spec.get("subject") or "").strip()
+        spec["metric"] = prev_metric or str(spec.get("metric") or "").strip()
+        spec["domain"] = prev_domain or str(spec.get("domain") or "").strip().lower()
+        spec["group_by"] = prev_group_by[:10]
+        if prev_top_n > 0:
+            spec["top_n"] = prev_top_n
+            spec["task_type"] = "ranking"
+        if prev_time_scope:
+            spec["time_scope"] = dict(prev_time_scope)
+        if prev_filters:
+            spec["filters"] = dict(prev_filters)
+        spec["task_class"] = str(prev_topic.get("task_class") or spec.get("task_class") or "analytical_read").strip().lower()
+        output_mode = str(prev_result.get("output_mode") or "").strip().lower()
+        oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        current = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
+        base_cols: List[str] = []
+        for raw in prev_group_by:
+            s = str(raw or "").strip()
+            if s:
+                base_cols.append(s)
+        if prev_metric:
+            base_cols.append(prev_metric)
+        merged_cols: List[str] = []
+        seen_cols: Set[str] = set()
+        explicit_requested_cols = _explicit_message_projection_columns(
+            message=message,
+            requested_columns=current + base_cols + projection_columns,
+            semantic_column_keys=set(),
+        )
+        projection_only_cols = list(explicit_requested_cols)
+        prev_metric_canonical = str(canonical_metric(prev_metric) or "").strip().lower()
+        if projection_only_followup and prev_metric and (
+            _norm_text(message).find(_norm_text(prev_metric)) >= 0
+            or (msg_metric_canonical and prev_metric_canonical and msg_metric_canonical == prev_metric_canonical)
+        ):
+            projection_only_cols.append(prev_metric)
+        selected_cols = projection_only_cols if (projection_only_followup and projection_only_cols) else (base_cols + projection_columns + current)
+        for raw in selected_cols:
+            s = str(raw or "").strip()
+            key = _norm_text(s)
+            if (not s) or (not key) or (key in seen_cols):
+                continue
+            seen_cols.add(key)
+            merged_cols.append(s)
+        spec["output_contract"] = dict(oc)
+        spec["output_contract"]["mode"] = output_mode or str(oc.get("mode") or "detail").strip().lower() or "detail"
+        spec["output_contract"]["minimal_columns"] = merged_cols[:12]
+        anchors_applied.append("projection_columns")
+        corrections_applied.append("projection_followup_from_active_report")
 
     # Deterministic dimension correction from explicit message semantics.
     # This is contract/ontology-driven and avoids ad-hoc phrase routing.
@@ -417,6 +919,21 @@ def build_topic_state(
     doc_id = _extract_doc_id_from_filters(filters) or _extract_doc_id_from_payload(out)
     scaled_unit = str(out.get("_scaled_unit") or "").strip().lower()
     output_mode = str(out.get("_output_mode") or "").strip().lower() or str((spec.get("output_contract") or {}).get("mode") or "").strip().lower()
+    source_columns = []
+    for col in list(out.get("_source_columns") or []):
+        if not isinstance(col, dict):
+            continue
+        fieldname = str(col.get("fieldname") or "").strip()
+        label = str(col.get("label") or "").strip()
+        if not fieldname and not label:
+            continue
+        source_columns.append(
+            {
+                "fieldname": fieldname,
+                "label": label,
+                "fieldtype": str(col.get("fieldtype") or "").strip(),
+            }
+        )
 
     kept_filters: Dict[str, Any] = {}
     for k, v in (filters or {}).items():
@@ -455,6 +972,7 @@ def build_topic_state(
             "time_scope": dict(time_scope),
             "scaled_unit": scaled_unit,
             "output_mode": output_mode,
+            "source_columns": source_columns[:40],
         },
         "unresolved_blocker": {
             "present": bool(clar.get("should_clarify")),

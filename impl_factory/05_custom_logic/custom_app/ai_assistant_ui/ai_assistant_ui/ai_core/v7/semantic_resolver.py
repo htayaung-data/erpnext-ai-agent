@@ -125,6 +125,10 @@ def _cap_meta(cap: Dict[str, Any]) -> Dict[str, Any]:
     return cap.get("metadata") if isinstance(cap.get("metadata"), dict) else {}
 
 
+def _cap_presentation(cap: Dict[str, Any]) -> Dict[str, Any]:
+    return cap.get("presentation") if isinstance(cap.get("presentation"), dict) else {}
+
+
 def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_context: Dict[str, Any]) -> Dict[str, Any]:
     constraints = _cap_constraints(cap)
     meta = _cap_meta(cap)
@@ -163,6 +167,7 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
     requested_dims = {str(x or "").strip().lower() for x in list(spec_sem.get("requested_dimensions") or []) if str(x or "").strip()}
     cap_dims = _cap_dimensions(cap)
     cap_primary_dim = _cap_primary_dimension(cap)
+    presentation = _cap_presentation(cap)
     task_type = str(spec_sem.get("task_type") or "").strip().lower()
     task_class = str(spec_sem.get("task_class") or "").strip().lower() or "analytical_read"
     output_mode = str(spec_sem.get("output_mode") or "").strip().lower()
@@ -297,6 +302,28 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
             reasons.append(f"subject_tiebreak(+{tie_break_score})")
 
     if task_type == "ranking" and output_mode == "top_n":
+        supports_ranking = presentation.get("supports_ranking")
+        result_grain = str(presentation.get("result_grain") or "").strip().lower()
+        if supports_ranking is True:
+            score += 6
+            reasons.append("ranking_supported(+6)")
+        elif supports_ranking is False:
+            score -= 24
+            reasons.append("ranking_not_supported(-24)")
+            hard_blockers.append("ranking_not_supported")
+        if requested_dims:
+            if cap_primary_dim and cap_primary_dim in requested_dims:
+                score += 12
+                reasons.append("ranking_primary_dimension_match(+12)")
+            elif not cap_primary_dim:
+                score -= 18
+                reasons.append("ranking_primary_dimension_unknown(-18)")
+            if result_grain == "summary" and cap_primary_dim and cap_primary_dim in requested_dims:
+                score += 4
+                reasons.append("ranking_summary_grain_match(+4)")
+            elif result_grain == "detail" and cap_primary_dim and cap_primary_dim not in requested_dims:
+                score -= 10
+                reasons.append("ranking_detail_grain_mismatch(-10)")
         if requested_dims and (requested_dims & cap_dims):
             score += 8
             reasons.append("ranking_dimension_ready(+8)")

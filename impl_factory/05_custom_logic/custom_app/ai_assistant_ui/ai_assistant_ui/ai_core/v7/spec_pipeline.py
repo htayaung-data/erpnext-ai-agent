@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 try:
@@ -9,7 +10,8 @@ except Exception:  # pragma: no cover - allows local unit tests without Frappe r
     frappe = None
 
 from ai_assistant_ui.ai_core.llm.report_planner import choose_business_request_spec
-from ai_assistant_ui.ai_core.util_dates import last_month_range, last_week_range, this_month_range, this_week_range, today_date
+from ai_assistant_ui.ai_core.ontology_normalization import canonical_dimension, canonical_metric
+from ai_assistant_ui.ai_core.util_dates import extract_timeframe, last_month_range, last_week_range, this_month_range, this_week_range, today_date
 from ai_assistant_ui.ai_core.v7.spec_schema import default_business_request_spec, normalize_business_request_spec
 
 
@@ -76,6 +78,57 @@ def _recent_user_assistant(session_doc, limit: int = 5) -> List[Dict[str, str]]:
 
 def _last_result_meta(session_doc) -> Optional[Dict[str, Any]]:
     msgs = session_doc.get("messages") or []
+    active_report_name = ""
+    active_source_columns: List[Dict[str, Any]] = []
+    for m in reversed(msgs):
+        if str(m.role or "").strip().lower() != "tool":
+            continue
+        obj = _safe_parse_json_dict(m.content)
+        if obj.get("type") != "v7_topic_state":
+            continue
+        state = obj.get("state") if isinstance(obj.get("state"), dict) else {}
+        active_result = state.get("active_result") if isinstance(state.get("active_result"), dict) else {}
+        active_report_name = str(active_result.get("report_name") or "").strip()
+        for c in list(active_result.get("source_columns") or []):
+            if not isinstance(c, dict):
+                continue
+            active_source_columns.append(
+                {
+                    "fieldname": c.get("fieldname"),
+                    "label": c.get("label"),
+                    "fieldtype": c.get("fieldtype"),
+                }
+            )
+        break
+
+    if active_report_name:
+        for m in reversed(msgs):
+            if str(m.role or "").strip().lower() != "assistant":
+                continue
+            obj = _safe_parse_json_dict(m.content)
+            if str(obj.get("type") or "").strip().lower() != "report_table":
+                continue
+            report_name = str(obj.get("report_name") or "").strip()
+            if report_name.lower() != active_report_name.lower():
+                continue
+            table = obj.get("table") if isinstance(obj.get("table"), dict) else {}
+            cols = table.get("columns") if isinstance(table.get("columns"), list) else []
+            out_cols = [
+                {
+                    "fieldname": c.get("fieldname"),
+                    "label": c.get("label"),
+                    "fieldtype": c.get("fieldtype"),
+                }
+                for c in cols
+                if isinstance(c, dict)
+            ]
+            if active_source_columns:
+                out_cols = active_source_columns
+            return {
+                "report_name": report_name,
+                "columns": out_cols,
+            }
+
     for m in reversed(msgs):
         if str(m.role or "").strip().lower() != "tool":
             continue
@@ -133,6 +186,78 @@ def _normalize_minimal_columns(spec: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _message_has_explicit_time_scope(message: str) -> bool:
+    text = str(message or "").strip()
+    if not text:
+        return False
+    as_of_date, date_range = extract_timeframe(text, ref=today_date())
+    if as_of_date or date_range:
+        return True
+    lowered = text.lower()
+    if re.search(r"\b(?:fiscal year|fy|quarter|q[1-4]|\d{4})\b", lowered):
+        return True
+    return False
+
+
+def _message_has_explicit_top_n(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return bool(re.search(r"\b(?:top|latest|lowest|bottom)\s+\d+\b", text))
+
+
+def _should_suppress_last_result_meta_for_message(message: str) -> bool:
+    text = str(message or "").strip()
+    if not text:
+        return False
+    explicit_metric = bool(str(canonical_metric(text) or "").strip())
+    explicit_dimension = bool(str(canonical_dimension(text) or "").strip())
+    explicit_top_n = _message_has_explicit_top_n(text)
+    explicit_time_scope = _message_has_explicit_time_scope(text)
+    strong_axes = int(explicit_metric) + int(explicit_dimension) + int(explicit_top_n) + int(explicit_time_scope)
+    return strong_axes >= 2
+
+
+def _suppress_unrequested_time_scope(spec: Dict[str, Any], *, message: str) -> Dict[str, Any]:
+    out = dict(spec or {})
+    ts = out.get("time_scope") if isinstance(out.get("time_scope"), dict) else {}
+    mode = str(ts.get("mode") or "").strip().lower()
+    if mode not in {"relative", "as_of", "range"}:
+        return out
+    if _message_has_explicit_time_scope(message):
+        return out
+    out["time_scope"] = {"mode": "none", "value": ""}
+    return out
+
+
+def _normalize_task_class_for_explicit_ranking(spec: Dict[str, Any], *, message: str) -> Dict[str, Any]:
+    out = dict(spec or {})
+    task_class = str(out.get("task_class") or "").strip().lower()
+    if task_class != "list_latest_records":
+        return out
+    if str(out.get("intent") or "").strip().upper() != "READ":
+        return out
+    if str(out.get("task_type") or "").strip().lower() != "ranking":
+        return out
+    try:
+        top_n = int(out.get("top_n") or 0)
+    except Exception:
+        top_n = 0
+    metric = str(canonical_metric(out.get("metric") or message) or "").strip()
+    requested_dims = [
+        str(x).strip()
+        for x in list(out.get("group_by") or []) + list(out.get("dimensions") or [])
+        if str(x).strip()
+    ]
+    explicit_dimension = str(canonical_dimension(message) or "").strip()
+    if top_n <= 0 or not metric:
+        return out
+    if not (requested_dims or explicit_dimension):
+        return out
+    out["task_class"] = "analytical_read"
+    return out
+
+
 def generate_business_request_spec(
     *,
     message: str,
@@ -140,6 +265,7 @@ def generate_business_request_spec(
     planner_plan: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     session_ctx = _load_session_context(session_name)
+    suppress_last_result_meta = _should_suppress_last_result_meta_for_message(message)
     ref_date = today_date()
     today_iso = ref_date.isoformat()
     time_ctx = _build_time_context(ref_date)
@@ -154,13 +280,15 @@ def generate_business_request_spec(
             user_message=str(message or ""),
             recent_messages=session_ctx.get("recent_messages") or [],
             planner_plan=plan,
-            has_last_result=bool(session_ctx.get("has_last_result")),
+            has_last_result=bool(session_ctx.get("has_last_result")) and (not suppress_last_result_meta),
             today_iso=today_iso,
             time_context=time_ctx,
-            last_result_meta=session_ctx.get("last_result_meta"),
+            last_result_meta=None if suppress_last_result_meta else session_ctx.get("last_result_meta"),
         )
         normalized, errs = normalize_business_request_spec(raw)
         normalized = _normalize_minimal_columns(normalized)
+        normalized = _normalize_task_class_for_explicit_ranking(normalized, message=message)
+        normalized = _suppress_unrequested_time_scope(normalized, message=message)
         attempts.append(
             {
                 "outer_attempt": outer_attempt,

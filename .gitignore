@@ -3,3 +3,8 @@
 __pycache__/
 *.py[cod]
 impl_factory/05_backups/
+
+# Automation run history should stay local; canonical checked-in state lives in
+# impl_factory/04_automation/capability_v7/latest_*.
+impl_factory/04_automation/logs/*
+!impl_factory/04_automation/logs/doctype_meta.json

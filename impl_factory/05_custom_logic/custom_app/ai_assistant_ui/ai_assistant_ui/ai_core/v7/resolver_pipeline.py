@@ -41,7 +41,16 @@ def _requirements_by_report(index: Dict[str, Any], candidate_names: Dict[str, bo
 def _llm_rerank_selected_report(*, message: str, resolved: Dict[str, Any], index: Dict[str, Any]) -> str:
     if not str(message or "").strip():
         return ""
+    selected_report = str(resolved.get("selected_report") or "").strip()
     candidate_rows = [c for c in list(resolved.get("candidate_reports") or []) if isinstance(c, dict)]
+    if selected_report:
+        for cand in candidate_rows:
+            if str(cand.get("report_name") or "").strip() != selected_report:
+                continue
+            if (not list(cand.get("hard_blockers") or [])) and (not list(cand.get("missing_required_filter_values") or [])):
+                # Deterministic resolver winner takes precedence whenever it is already feasible.
+                return ""
+            break
     feasible = [
         c
         for c in candidate_rows

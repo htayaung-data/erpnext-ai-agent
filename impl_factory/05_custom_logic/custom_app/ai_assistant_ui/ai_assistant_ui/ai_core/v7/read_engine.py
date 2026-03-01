@@ -11,11 +11,13 @@ except Exception:  # pragma: no cover
     frappe = None
 
 from ai_assistant_ui.ai_core.ontology_normalization import (
+    canonical_metric,
     infer_filter_kinds,
     infer_output_flags,
     infer_record_doctype_candidates,
     infer_transform_ambiguities,
     infer_write_request,
+    metric_domain,
 )
 try:
     from ai_assistant_ui.ai_core.tools_write import create_document, delete_document, update_document
@@ -29,6 +31,7 @@ except Exception:  # pragma: no cover
     def delete_document(*args, **kwargs):
         raise RuntimeError("tools_write backend unavailable")
 from ai_assistant_ui.ai_core.v7.clarification_policy import evaluate_clarification, make_clarification_tool_message
+from ai_assistant_ui.ai_core.v7.capability_registry import report_semantics_contract
 from ai_assistant_ui.ai_core.v7.entity_resolution import resolve_entity_filters
 from ai_assistant_ui.ai_core.v7.memory import (
     apply_memory_context,
@@ -48,10 +51,58 @@ from ai_assistant_ui.ai_core.v7.response_shaper import (
     make_response_shaper_tool_message,
     shape_response,
 )
+from ai_assistant_ui.ai_core.v7.resume_policy import (
+    first_int_in_text as _resume_first_int_in_text,
+    looks_like_scope_answer_text as _resume_looks_like_scope_answer_text,
+    match_option_choice as _resume_match_option_choice,
+    normalize_option_label as _resume_normalize_option_label,
+    planner_option_actions as _resume_planner_option_actions,
+    prepare_resume_from_pending as _resume_prepare_resume_from_pending,
+    recover_latest_record_followup_spec as _resume_recover_latest_record_followup_spec,
+)
+from ai_assistant_ui.ai_core.v7.execution_loop_policy import (
+    build_candidate_report_state as _loop_build_candidate_report_state,
+    extract_auto_switch_pending as _loop_extract_auto_switch_pending,
+    planner_plan as _loop_planner_plan,
+    read_engine_tool_message as _loop_read_engine_tool_message,
+    resolver_selected_step_trace as _loop_resolver_selected_step_trace,
+)
+from ai_assistant_ui.ai_core.v7.read_execution_runner import execute_read_loop as _runner_execute_read_loop
+from ai_assistant_ui.ai_core.v7.session_result_state import (
+    apply_active_result_meta as _state_apply_active_result_meta,
+    capture_source_columns as _state_capture_source_columns,
+    latest_active_result_meta as _state_latest_active_result_meta,
+    load_last_result_payload as _state_load_last_result_payload,
+)
+from ai_assistant_ui.ai_core.v7.shaping_policy import (
+    enrich_minimal_columns_from_report_metadata as _shape_enrich_minimal_columns_from_report_metadata,
+    has_explicit_time_scope as _shape_has_explicit_time_scope,
+    has_report_table_rows as _shape_has_report_table_rows,
+    humanize_fieldname as _shape_humanize_fieldname,
+    is_low_signal_read_spec as _shape_is_low_signal_read_spec,
+    is_projection_followup_request as _shape_is_projection_followup_request,
+    looks_like_system_error_text as _shape_looks_like_system_error_text,
+    metadata_requested_columns as _shape_metadata_requested_columns,
+    normalized_message_text as _shape_normalized_message_text,
+    quality_has_repairable_failure_class as _shape_quality_has_repairable_failure_class,
+    requested_minimal_columns as _shape_requested_minimal_columns,
+    sanitize_user_payload as _shape_sanitize_user_payload,
+    should_switch_candidate_on_repairable as _shape_should_switch_candidate_on_repairable,
+    unsupported_message_from_spec as _shape_unsupported_message_from_spec,
+)
 from ai_assistant_ui.ai_core.v7.resolver_pipeline import make_resolver_tool_message, resolve_business_request
 from ai_assistant_ui.ai_core.v7.spec_pipeline import generate_business_request_spec, make_spec_tool_message
 from ai_assistant_ui.ai_core.v7.transform_last import apply_transform_last, make_transform_tool_message
-from ai_assistant_ui.ai_core.v7.write_engine import execute_write_flow, make_write_engine_tool_message
+from ai_assistant_ui.ai_core.v7.transform_followup_policy import (
+    merge_transform_ambiguities_into_spec as _policy_merge_transform_ambiguities_into_spec,
+    promote_spec_to_transform_followup as _policy_promote_spec_to_transform_followup,
+    should_promote_to_transform_followup as _policy_should_promote_to_transform_followup,
+)
+from ai_assistant_ui.ai_core.v7.write_engine import (
+    execute_write_flow,
+    is_explicit_confirm,
+    make_write_engine_tool_message,
+)
 from ai_assistant_ui.ai_core.v7.contract_registry import canonical_dimensions, default_clarification_question
 try:
     from ai_assistant_ui.ai_core.tools.report_tools import run_fac_report
@@ -167,29 +218,11 @@ def _apply_requested_entity_row_filters(*, payload: Dict[str, Any], business_spe
 
 
 def _latest_active_result_meta(session_doc: Any) -> Dict[str, Any]:
-    for m in reversed(session_doc.get("messages") or []):
-        if str(m.role or "").strip().lower() != "tool":
-            continue
-        obj = _safe_json_obj(m.content)
-        obj_type = str(obj.get("type") or "").strip()
-        if obj_type != "v7_topic_state":
-            continue
-        state = obj.get("state") if isinstance(obj.get("state"), dict) else {}
-        active_result = state.get("active_result") if isinstance(state.get("active_result"), dict) else {}
-        return dict(active_result)
-    return {}
+    return _state_latest_active_result_meta(session_doc=session_doc, safe_json_obj=_safe_json_obj)
 
 
 def _apply_active_result_meta(payload: Dict[str, Any], *, active_result_meta: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(payload or {})
-    meta = active_result_meta if isinstance(active_result_meta, dict) else {}
-    scaled_unit = str(meta.get("scaled_unit") or "").strip().lower()
-    if ("_scaled_unit" not in out) and scaled_unit:
-        out["_scaled_unit"] = scaled_unit
-    output_mode = str(meta.get("output_mode") or "").strip().lower()
-    if ("_output_mode" not in out) and output_mode:
-        out["_output_mode"] = output_mode
-    return out
+    return _state_apply_active_result_meta(payload, active_result_meta=active_result_meta)
 
 
 def _merge_pinned_filters_into_spec(*, spec_obj: Dict[str, Any], plan_seed: Dict[str, Any]) -> Dict[str, Any]:
@@ -250,61 +283,11 @@ def _merge_pinned_filters_into_spec(*, spec_obj: Dict[str, Any], plan_seed: Dict
 
 
 def _load_last_result_payload(*, session_name: Optional[str]) -> Optional[Dict[str, Any]]:
-    if (not session_name) or (frappe is None):
-        return None
-    try:
-        session_doc = frappe.get_doc("AI Chat Session", session_name)
-    except Exception:
-        return None
-    active_result_meta = _latest_active_result_meta(session_doc)
-
-    # Prefer the latest assistant-visible report table (already shaped for user intent).
-    for m in reversed(session_doc.get("messages") or []):
-        if str(m.role or "").strip().lower() != "assistant":
-            continue
-        obj = _safe_json_obj(m.content)
-        if str(obj.get("type") or "").strip().lower() != "report_table":
-            continue
-        table = obj.get("table") if isinstance(obj.get("table"), dict) else {}
-        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
-        cols = table.get("columns") if isinstance(table.get("columns"), list) else []
-        if not rows or not cols:
-            continue
-        out = {
-            "type": "report_table",
-            "report_name": str(obj.get("report_name") or "").strip(),
-            "title": str(obj.get("title") or obj.get("report_name") or "Previous Result").strip(),
-            "table": {"columns": cols, "rows": rows},
-        }
-        for k in ("_transform_last_applied", "_scaled_unit", "_output_mode"):
-            if k in obj:
-                out[k] = obj.get(k)
-        return _apply_active_result_meta(out, active_result_meta=active_result_meta)
-
-    # Fallback to raw tool last_result snapshot.
-    for m in reversed(session_doc.get("messages") or []):
-        if str(m.role or "").strip().lower() != "tool":
-            continue
-        obj = _safe_json_obj(m.content)
-        if obj.get("type") != "last_result":
-            continue
-        table = obj.get("table") if isinstance(obj.get("table"), dict) else {}
-        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
-        cols = table.get("columns") if isinstance(table.get("columns"), list) else []
-        if not rows or not cols:
-            continue
-        report_name = str(obj.get("report_name") or "").strip()
-        out = {
-            "type": "report_table",
-            "report_name": report_name,
-            "title": report_name or "Previous Result",
-            "table": {"columns": cols, "rows": rows},
-        }
-        for k in ("_transform_last_applied", "_scaled_unit", "_output_mode"):
-            if k in obj:
-                out[k] = obj.get(k)
-        return _apply_active_result_meta(out, active_result_meta=active_result_meta)
-    return None
+    return _state_load_last_result_payload(
+        session_name=session_name,
+        frappe_module=frappe,
+        safe_json_obj=_safe_json_obj,
+    )
 
 
 def _legacy_path_unavailable_payload() -> Dict[str, Any]:
@@ -415,7 +398,20 @@ def _build_write_draft_payload(*, message: str, spec: Dict[str, Any], user: Opti
     return {"type": "text", "text": text, "_pending_state": pending}
 
 
+def _draft_operation(payload: Optional[Dict[str, Any]]) -> str:
+    obj = payload if isinstance(payload, dict) else {}
+    pending = obj.get("_pending_state") if isinstance(obj.get("_pending_state"), dict) else {}
+    write_draft = pending.get("write_draft") if isinstance(pending.get("write_draft"), dict) else {}
+    return str(write_draft.get("operation") or "").strip().lower()
+
+
 def _handle_write_confirmation(*, message: str, pending: Dict[str, Any], source: str) -> Dict[str, Any]:
+    if is_explicit_confirm(message) and (not _is_write_enabled()):
+        out = _write_not_enabled_payload()
+        out["_clear_pending_state"] = True
+        tool_msg = make_write_engine_tool_message(tool=source, decision=message, output=out)
+        return _append_tool_message(out, tool_msg)
+
     out = execute_write_flow(
         draft=pending,
         decision=message,
@@ -685,64 +681,27 @@ def _read_engine_tool_message(
     failed_check_ids: List[str],
     step_trace: List[Dict[str, Any]],
 ) -> str:
-    return json.dumps(
-        {
-            "type": "v7_read_engine",
-            "phase": "phase6",
-            "mode": str(mode or "").strip(),
-            "tool": str(source_tool or "").strip(),
-            "selected_report": str(selected_report or "").strip(),
-            "selected_score": selected_score,
-            "max_steps": int(max_steps),
-            "executed_steps": int(executed_steps),
-            "repair_attempts": int(repair_attempts),
-            "quality_verdict": str(quality_verdict or ""),
-            "failed_check_ids": list(failed_check_ids or []),
-            "repeated_call_guard_triggered": bool(repeated_call_guard_triggered),
-            "step_trace": step_trace[:6],
-        },
-        ensure_ascii=False,
-        default=str,
+    return _loop_read_engine_tool_message(
+        source_tool=source_tool,
+        mode=mode,
+        selected_report=selected_report,
+        selected_score=selected_score,
+        max_steps=max_steps,
+        executed_steps=executed_steps,
+        repeated_call_guard_triggered=repeated_call_guard_triggered,
+        repair_attempts=repair_attempts,
+        quality_verdict=quality_verdict,
+        failed_check_ids=failed_check_ids,
+        step_trace=step_trace,
     )
 
 
 def _planner_plan(*, export: bool, pending_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    pending = pending_state if isinstance(pending_state, dict) else {}
-    if pending:
-        return {
-            "action": "run_report",
-            "report_name": pending.get("report_name"),
-            "filters": pending.get("filters_so_far") if isinstance(pending.get("filters_so_far"), dict) else {},
-        }
-    return {"action": "run_report", "export": bool(export)}
+    return _loop_planner_plan(export=export, pending_state=pending_state)
 
 
 def _quality_has_repairable_failure_class(quality: Dict[str, Any], classes: List[str]) -> bool:
-    q = quality if isinstance(quality, dict) else {}
-    wanted = {str(x or "").strip().lower() for x in list(classes or []) if str(x or "").strip()}
-    if not wanted:
-        return False
-    repairable_classes = {
-        str(x or "").strip().lower()
-        for x in list(q.get("repairable_failure_classes") or [])
-        if str(x or "").strip()
-    }
-    if repairable_classes:
-        return bool(repairable_classes & wanted)
-
-    # Backward-compat fallback for older quality payloads without failure classes.
-    failed_ids = [str(x or "") for x in list(q.get("failed_check_ids") or [])]
-    return any(
-        x.endswith("_non_empty_rows")
-        or x.endswith("_kpi_payload_shape")
-        or x.endswith("_trend_has_time_axis")
-        or x.endswith("_minimal_columns_present")
-        or x.endswith("_requested_dimensions_present")
-        or x.endswith("_document_filter_applied")
-        or x.endswith("_actual_sales_not_opportunity_metric")
-        or x.endswith("_output_mode_payload_alignment")
-        for x in failed_ids
-    )
+    return _shape_quality_has_repairable_failure_class(quality, classes)
 
 
 def _should_switch_candidate_on_repairable(
@@ -754,96 +713,34 @@ def _should_switch_candidate_on_repairable(
     candidate_reports: List[str],
     candidate_switch_attempts: int,
 ) -> bool:
-    if str(quality.get("verdict") or "").strip() != VERDICT_REPAIRABLE_FAIL:
-        return False
-    if str(intent or "").strip().upper() == "TRANSFORM_LAST":
-        return False
-    if candidate_cursor + 1 >= len(list(candidate_reports or [])):
-        return False
-    if int(candidate_switch_attempts) >= 4:
-        return False
-    switch_classes = ["shape", "data", "constraint", "semantic"]
-    if str(task_class or "").strip().lower() == "list_latest_records":
-        # For list-latest flows, semantic subject checks can be noisy and cause
-        # over-switching to unrelated reports; prefer staying on the current best
-        # candidate unless shape/data constraints are clearly repairable.
-        switch_classes = ["shape", "data", "constraint"]
-    return _quality_has_repairable_failure_class(
-        quality,
-        classes=switch_classes,
+    return _shape_should_switch_candidate_on_repairable(
+        quality=quality,
+        intent=intent,
+        task_class=task_class,
+        candidate_cursor=candidate_cursor,
+        candidate_reports=candidate_reports,
+        candidate_switch_attempts=candidate_switch_attempts,
     )
 
 
 def _normalize_option_label(value: str) -> str:
-    return " ".join(str(value or "").strip().lower().replace("_", " ").replace("-", " ").split())
+    return _resume_normalize_option_label(value)
 
 
 def _match_option_choice(message: str, options: List[str]) -> str:
-    msg = str(message or "").strip()
-    if (not msg) or (not options):
-        return ""
-    normalized = [str(x).strip() for x in list(options or []) if str(x or "").strip()]
-    if not normalized:
-        return ""
-    msg_norm = _normalize_option_label(msg)
-
-    m_idx = re.search(r"\b(\d{1,2})\b", msg_norm)
-    if m_idx:
-        try:
-            idx = int(m_idx.group(1)) - 1
-        except Exception:
-            idx = -1
-        if 0 <= idx < len(normalized):
-            return normalized[idx]
-
-    for opt in normalized:
-        opt_norm = _normalize_option_label(opt)
-        if msg_norm == opt_norm:
-            return opt
-    for opt in normalized:
-        opt_norm = _normalize_option_label(opt)
-        if opt_norm and (opt_norm in msg_norm or msg_norm in opt_norm):
-            return opt
-    return ""
+    return _resume_match_option_choice(message, options)
 
 
 def _planner_option_actions(*, options: List[str], pending: Dict[str, Any]) -> Dict[str, str]:
-    p = pending if isinstance(pending, dict) else {}
-    raw_map = p.get("option_actions") if isinstance(p.get("option_actions"), dict) else {}
-    out: Dict[str, str] = {}
-    for k, v in raw_map.items():
-        key = _normalize_option_label(str(k or ""))
-        val = str(v or "").strip().lower()
-        if key and val:
-            out[key] = val
-    if out:
-        return out
-    vals = [str(x).strip() for x in list(options or []) if str(x or "").strip()]
-    if len(vals) >= 2:
-        out[_normalize_option_label(vals[0])] = "switch_report"
-        out[_normalize_option_label(vals[1])] = "keep_current"
-    return out
+    return _resume_planner_option_actions(options=options, pending=pending)
 
 
 def _looks_like_scope_answer_text(text: str) -> bool:
-    toks = [t for t in re.findall(r"[A-Za-z0-9_]+", str(text or "").strip().lower()) if t]
-    if not toks:
-        return False
-    if len(toks) > 4:
-        return False
-    if any(t.isdigit() for t in toks):
-        return False
-    return True
+    return _resume_looks_like_scope_answer_text(text)
 
 
 def _first_int_in_text(text: str) -> int:
-    m = re.search(r"\b(\d{1,3})\b", str(text or ""))
-    if not m:
-        return 0
-    try:
-        return int(m.group(1))
-    except Exception:
-        return 0
+    return _resume_first_int_in_text(text)
 
 
 def _recover_latest_record_followup_spec(
@@ -852,90 +749,14 @@ def _recover_latest_record_followup_spec(
     message: str,
     previous_topic_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Recover list-latest follow-ups when pending-state is missing but topic-state
-    still indicates an unresolved record-type clarification.
-    """
-    spec = dict(spec_obj or {})
-    prev = previous_topic_state if isinstance(previous_topic_state, dict) else {}
-    active_topic = prev.get("active_topic") if isinstance(prev.get("active_topic"), dict) else {}
-    unresolved = prev.get("unresolved_blocker") if isinstance(prev.get("unresolved_blocker"), dict) else {}
-
-    if not bool(unresolved.get("present")):
-        return spec
-    if not _looks_like_scope_answer_text(message):
-        return spec
-    active_task = str(active_topic.get("task_class") or "").strip().lower()
-    active_subject = str(active_topic.get("subject") or "").strip().lower()
-    unresolved_q = str(unresolved.get("question") or "").strip().lower()
-    likely_record_type_followup = (
-        active_task == "list_latest_records"
-        or ("invoice" in active_subject)
-        or ("record type" in unresolved_q)
+    return _resume_recover_latest_record_followup_spec(
+        spec_obj=spec_obj,
+        message=message,
+        previous_topic_state=previous_topic_state,
+        resolve_record_doctype_candidates=lambda msg, spec: _resolve_record_doctype_candidates(message=msg, spec=spec),
+        resolve_explicit_doctype_name=_resolve_explicit_doctype_name,
+        load_submittable_doctypes=_load_submittable_doctypes,
     )
-    if not likely_record_type_followup:
-        return spec
-
-    infer_spec = {
-        "subject": str(active_topic.get("subject") or spec.get("subject") or "").strip(),
-        "metric": str(active_topic.get("metric") or spec.get("metric") or "").strip(),
-        "filters": dict(spec.get("filters") or {}) if isinstance(spec.get("filters"), dict) else {},
-        "domain": str(active_topic.get("domain") or spec.get("domain") or "").strip(),
-    }
-    dt_candidates = _resolve_record_doctype_candidates(message=message, spec=infer_spec)
-    typed = str(message or "").strip().lower()
-    all_doctypes = _load_submittable_doctypes()
-    exact = [dt for dt in all_doctypes if str(dt or "").strip().lower() == typed]
-    if exact:
-        dt_candidates = [str(exact[0] or "").strip()]
-    if not dt_candidates:
-        return spec
-
-    chosen = str(dt_candidates[0] or "").strip()
-    if len(dt_candidates) > 1:
-        domain_hint = str(active_topic.get("domain") or infer_spec.get("domain") or "").strip().lower()
-        if domain_hint == "sales":
-            for dt in dt_candidates:
-                if "sales" in str(dt or "").strip().lower():
-                    chosen = str(dt or "").strip()
-                    break
-        elif domain_hint in {"purchasing", "purchase"}:
-            for dt in dt_candidates:
-                if "purchase" in str(dt or "").strip().lower():
-                    chosen = str(dt or "").strip()
-                    break
-    if not chosen:
-        return spec
-
-    out = dict(spec)
-    out["intent"] = "READ"
-    out["task_type"] = "detail"
-    out["task_class"] = "list_latest_records"
-    out["output_mode"] = "top_n"
-
-    filters = dict(out.get("filters") or {}) if isinstance(out.get("filters"), dict) else {}
-    filters["doctype"] = chosen
-    out["filters"] = filters
-
-    try:
-        top_n = int(out.get("top_n") or active_topic.get("top_n") or 0)
-    except Exception:
-        top_n = 0
-    if top_n <= 0:
-        top_n = _first_int_in_text(str((prev.get("turn_meta") or {}).get("message_preview") or ""))
-    if top_n <= 0:
-        top_n = 20
-    out["top_n"] = max(1, min(top_n, 200))
-
-    oc = dict(out.get("output_contract") or {}) if isinstance(out.get("output_contract"), dict) else {}
-    oc["mode"] = "top_n"
-    out["output_contract"] = oc
-
-    if not str(out.get("subject") or "").strip():
-        out["subject"] = str(active_topic.get("subject") or "invoices").strip()
-    if not str(out.get("domain") or "").strip():
-        out["domain"] = str(active_topic.get("domain") or infer_spec.get("domain") or "sales").strip()
-    return out
 
 
 def _has_actionable_spec_signal(spec: Dict[str, Any]) -> bool:
@@ -982,222 +803,16 @@ def _prepare_resume_from_pending(
     pending: Dict[str, Any],
     session_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Handles blocker-only follow-up continuations in a deterministic way:
-    - need_filters with entity options/value
-    - planner_clarify with natural switch/keep choice
-    Returns either a clarified payload or a start-mode resume plan.
-    """
-    p = pending if isinstance(pending, dict) else {}
-    mode = str(p.get("mode") or "").strip().lower()
-    base_question = str(p.get("base_question") or "").strip()
-    if mode not in {"need_filters", "planner_clarify"}:
-        return {"active": False}
-    if not base_question:
-        return {"active": False}
-
-    options = [str(x).strip() for x in list(p.get("options") or p.get("clarification_options") or []) if str(x or "").strip()]
-    report_name = str(p.get("report_name") or "").strip()
-    filters_so_far = dict(p.get("filters_so_far") or {}) if isinstance(p.get("filters_so_far"), dict) else {}
-    spec_so_far = p.get("spec_so_far") if isinstance(p.get("spec_so_far"), dict) else {}
-    pending_reason = str(p.get("clarification_reason") or "").strip().lower()
-    target_filter_key = str(p.get("target_filter_key") or "").strip()
-    raw_input = str(message or "").strip()
-    new_request_decision: Optional[bool] = None
-
-    def _plan_seed_from_pending_spec(*, include_filters: bool) -> Dict[str, Any]:
-        seed: Dict[str, Any] = {"action": "run_report"}
-        task_class = str(spec_so_far.get("task_class") or "").strip().lower()
-        if task_class:
-            seed["task_class"] = task_class
-        try:
-            top_n = int(spec_so_far.get("top_n") or 0)
-        except Exception:
-            top_n = 0
-        if top_n > 0:
-            seed["top_n"] = top_n
-            seed["output_mode"] = "top_n"
-        oc = spec_so_far.get("output_contract") if isinstance(spec_so_far.get("output_contract"), dict) else {}
-        minimal_columns = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x or "").strip()]
-        if minimal_columns:
-            seed["minimal_columns"] = minimal_columns[:12]
-        if include_filters and filters_so_far:
-            seed["filters"] = dict(filters_so_far)
-        return seed
-
-    def _is_new_request() -> bool:
-        nonlocal new_request_decision
-        if new_request_decision is None:
-            new_request_decision = _is_new_business_request_structured(message=raw_input, session_name=session_name)
-        return bool(new_request_decision)
-
-    if mode == "planner_clarify":
-        planner_options = options or ["Switch to compatible report", "Keep current scope"]
-        option_actions = _planner_option_actions(options=planner_options, pending=p)
-        chosen = _match_option_choice(raw_input, planner_options)
-        if not chosen:
-            if _looks_like_scope_answer_text(raw_input):
-                merged = f"{base_question}. {raw_input}".strip()
-                seed = _plan_seed_from_pending_spec(include_filters=False)
-                infer_spec: Dict[str, Any] = {
-                    "subject": str(spec_so_far.get("subject") or "").strip(),
-                    "metric": str(spec_so_far.get("metric") or "").strip(),
-                    "filters": dict(filters_so_far),
-                    "domain": str(spec_so_far.get("domain") or "").strip(),
-                }
-                doctype_candidates = _resolve_record_doctype_candidates(message=raw_input, spec=infer_spec)
-                explicit_doctype = _resolve_explicit_doctype_name(raw_input)
-                if explicit_doctype:
-                    all_doctypes = _load_submittable_doctypes()
-                    if explicit_doctype in all_doctypes:
-                        doctype_candidates = [explicit_doctype]
-                if not doctype_candidates:
-                    pending_task_class = str(spec_so_far.get("task_class") or "").strip().lower()
-                    is_record_type_followup = (
-                        pending_task_class == "list_latest_records"
-                        or ("invoice" in str(base_question or "").strip().lower())
-                    )
-                    if is_record_type_followup and explicit_doctype:
-                        # Handle concise follow-up answers like "Sales Invoice"
-                        # deterministically in pending clarifications.
-                        doctype_candidates = [explicit_doctype]
-                synthetic_query = merged
-                if len(doctype_candidates) == 1:
-                    chosen_doctype = str(doctype_candidates[0] or "").strip()
-                    seed_filters = dict(seed.get("filters") or {})
-                    seed_filters["doctype"] = chosen_doctype
-                    seed["filters"] = seed_filters
-                    seed["task_class"] = "list_latest_records"
-                    seed["output_mode"] = "top_n"
-                    try:
-                        top_n = int(spec_so_far.get("top_n") or 0)
-                    except Exception:
-                        top_n = 0
-                    if top_n <= 0:
-                        top_n = _first_int_in_text(base_question)
-                    if top_n > 0:
-                        seed["top_n"] = max(1, min(top_n, 200))
-                        synthetic_query = f"Show me the latest {seed['top_n']} {chosen_doctype}"
-                    else:
-                        synthetic_query = f"Show me the latest records for {chosen_doctype}"
-                return {
-                    "active": True,
-                    "resume_message": synthetic_query,
-                    "plan_seed": seed,
-                    "clear_pending": True,
-                    "source": "report_qa_start",
-                }
-            if pending_reason == "no_candidate":
-                merged = f"{base_question}. {raw_input}".strip()
-                return {
-                    "active": True,
-                    "resume_message": merged,
-                    "plan_seed": _plan_seed_from_pending_spec(include_filters=False),
-                    "clear_pending": True,
-                    "source": "report_qa_start",
-                }
-            if _is_new_request():
-                return {
-                    "active": True,
-                    "resume_message": raw_input,
-                    "plan_seed": {"action": "run_report"},
-                    "clear_pending": True,
-                    "source": "report_qa_start",
-                }
-            # Treat free-text reply as a refinement for the same blocked request.
-            # This prevents clarification loops when users answer with concrete
-            # scope (e.g., "Sales Invoice") instead of clicking switch/keep options.
-            merged = f"{base_question}. {raw_input}".strip()
-            return {
-                "active": True,
-                "resume_message": merged,
-                "plan_seed": _plan_seed_from_pending_spec(include_filters=False),
-                "clear_pending": True,
-                "source": "report_qa_start",
-            }
-        chosen_action = str(option_actions.get(_normalize_option_label(chosen)) or "").strip().lower()
-        if chosen_action == "keep_current":
-            return {
-                "active": False,
-                "payload": {
-                    "type": "text",
-                    "text": default_clarification_question("missing_required_filter_value"),
-                    "_clear_pending_state": True,
-                },
-            }
-        return {
-            "active": True,
-            "resume_message": base_question,
-            "plan_seed": dict(_plan_seed_from_pending_spec(include_filters=True), report_name=report_name),
-            "clear_pending": True,
-            "source": "report_qa_start",
-        }
-
-    if mode == "need_filters":
-        selected_value = ""
-        if options:
-            selected_value = _match_option_choice(raw_input, options)
-            if not selected_value:
-                if _is_new_request():
-                    return {
-                        "active": True,
-                        "resume_message": raw_input,
-                        "plan_seed": {"action": "run_report"},
-                        "clear_pending": True,
-                        "source": "report_qa_start",
-                    }
-                text = default_clarification_question("entity_ambiguous")
-                return {
-                    "active": False,
-                    "payload": {
-                        "type": "text",
-                        "text": text,
-                        "_pending_state": {
-                            "mode": "need_filters",
-                            "base_question": base_question,
-                            "report_name": report_name,
-                            "filters_so_far": filters_so_far,
-                            "clarification_question": text,
-                            "clarification_options": options,
-                            "options": options,
-                            "target_filter_key": target_filter_key,
-                            "clarification_round": int(p.get("clarification_round") or 1),
-                        },
-                    },
-                }
-        else:
-            if _is_new_request():
-                return {
-                    "active": True,
-                    "resume_message": raw_input,
-                    "plan_seed": {"action": "run_report"},
-                    "clear_pending": True,
-                    "source": "report_qa_start",
-                }
-            selected_value = raw_input
-
-        if target_filter_key and selected_value:
-            filters_so_far[target_filter_key] = selected_value
-        elif selected_value:
-            # Fallback: update the first available filter key when key metadata is missing.
-            for k in list(filters_so_far.keys()):
-                if str(k or "").strip():
-                    filters_so_far[k] = selected_value
-                    break
-
-        return {
-            "active": True,
-            "resume_message": base_question,
-            "plan_seed": {
-                "action": "run_report",
-                "report_name": report_name,
-                "filters": filters_so_far,
-            },
-            "clear_pending": True,
-            "source": "report_qa_start",
-        }
-
-    return {"active": False}
+    return _resume_prepare_resume_from_pending(
+        message=message,
+        pending=pending,
+        session_name=session_name,
+        is_new_business_request_structured=lambda msg, sess: _is_new_business_request_structured(message=msg, session_name=sess),
+        resolve_record_doctype_candidates=lambda msg, spec: _resolve_record_doctype_candidates(message=msg, spec=spec),
+        resolve_explicit_doctype_name=_resolve_explicit_doctype_name,
+        load_submittable_doctypes=_load_submittable_doctypes,
+        default_clarification_question_fn=default_clarification_question,
+    )
 
 
 def _extract_document_id_from_spec(spec: Dict[str, Any]) -> str:
@@ -1293,6 +908,10 @@ def _resolve_record_doctype_candidates(*, message: str, spec: Dict[str, Any]) ->
         if any(t in fk_l for t in ("doctype", "record", "voucher")):
             query_chunks.append(str(fv or "").strip())
     domain = str(spec.get("domain") or "").strip().lower()
+    if domain in {"", "unknown", "cross_functional"}:
+        metric_hint = metric or str(canonical_metric(txt) or "").strip().lower()
+        if metric_hint:
+            domain = str(metric_domain(metric_hint) or "").strip().lower()
     return infer_record_doctype_candidates(
         query_parts=query_chunks,
         candidate_doctypes=doctypes,
@@ -1602,201 +1221,113 @@ def _direct_document_lookup_payload(spec: Dict[str, Any], *, message: str = "") 
 
 
 def _extract_auto_switch_pending(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Detect internal quality clarification where v2 asks:
-    "Should I switch to another compatible report?".
-    This is not a true business blocker, so v7 may auto-accept once.
-    """
-    out = payload if isinstance(payload, dict) else {}
-    pending = out.get("_pending_state") if isinstance(out.get("_pending_state"), dict) else None
-    if not isinstance(pending, dict):
-        return None
-    if str(pending.get("mode") or "").strip() != "planner_clarify":
-        return None
-    qc = pending.get("quality_clarification") if isinstance(pending.get("quality_clarification"), dict) else {}
-    if str(qc.get("intent") or "").strip() != "switch_report":
-        return None
-    try:
-        switch_attempt = int(qc.get("switch_attempt") or 0)
-    except Exception:
-        switch_attempt = 0
-    if switch_attempt >= 1:
-        return None
-    return pending
+    return _loop_extract_auto_switch_pending(payload)
 
 
 def _looks_like_system_error_text(payload: Dict[str, Any]) -> bool:
-    if not isinstance(payload, dict):
-        return False
-    typ = str(payload.get("type") or "").strip().lower()
-    if typ not in {"text", "error"}:
-        return False
-    txt = str(payload.get("text") or payload.get("message") or "").strip().lower()
-    if not txt:
-        return False
-    patterns = (
-        "is mandatory",
-        "not found",
-        "must be greater than",
-        "must be less than",
-        "traceback",
-        "exception",
-        "error:",
-        "sql",
-    )
-    return any(p in txt for p in patterns)
+    return _shape_looks_like_system_error_text(payload)
 
 
 def _unsupported_message_from_spec(spec: Dict[str, Any]) -> str:
-    subject = str(spec.get("subject") or "").strip()
-    metric = str(spec.get("metric") or "").strip()
-    if subject or metric:
-        return (
-            "I couldn't reliably produce that result with current report coverage. "
-            f"Requested scope: subject='{subject or 'unspecified'}', metric='{metric or 'unspecified'}'. "
-            "Please refine the target report/filters and retry."
-        )
-    return "I couldn't reliably produce that result with current report coverage. Please refine the request (target report/filters), and I'll retry."
+    return _shape_unsupported_message_from_spec(spec)
 
 
 def _is_low_signal_read_spec(spec: Dict[str, Any]) -> bool:
-    s = spec if isinstance(spec, dict) else {}
-    intent = str(s.get("intent") or "").strip().upper()
-    if intent and intent != "READ":
-        return False
-    if str(s.get("task_class") or "").strip().lower() == "transform_followup":
-        return False
-    if isinstance(s.get("filters"), dict) and bool(s.get("filters")):
-        return False
-    if list(s.get("group_by") or []) or list(s.get("dimensions") or []):
-        return False
-    try:
-        if int(s.get("top_n") or 0) > 0:
-            return False
-    except Exception:
-        pass
-    ts = s.get("time_scope") if isinstance(s.get("time_scope"), dict) else {}
-    if str(ts.get("mode") or "none").strip().lower() not in {"", "none"}:
-        return False
-    metric = str(s.get("metric") or "").strip()
-    if metric:
-        return False
-    oc = s.get("output_contract") if isinstance(s.get("output_contract"), dict) else {}
-    if list(oc.get("minimal_columns") or []):
-        return False
-    subject = str(s.get("subject") or "").strip().lower()
-    if not subject:
-        return True
-    tokens = re.findall(r"[a-z0-9]+", subject)
-    if not tokens:
-        return True
-    generic = {"report", "reports", "data", "result", "results", "detail", "details", "information", "show", "view"}
-    non_generic = [t for t in tokens if t not in generic]
-    return len(non_generic) == 0
+    return _shape_is_low_signal_read_spec(spec)
 
 
 def _has_explicit_time_scope(spec: Dict[str, Any]) -> bool:
-    ts = spec.get("time_scope") if isinstance(spec.get("time_scope"), dict) else {}
-    mode = str(ts.get("mode") or "none").strip().lower()
-    value = str(ts.get("value") or "").strip()
-    return bool((mode not in {"", "none"}) or value)
+    return _shape_has_explicit_time_scope(spec)
+
+
+def _requested_minimal_columns(spec: Dict[str, Any]) -> List[str]:
+    return _shape_requested_minimal_columns(spec)
+
+
+def _normalized_message_text(message: str) -> str:
+    return _shape_normalized_message_text(message)
+
+
+def _humanize_fieldname(fieldname: str) -> str:
+    return _shape_humanize_fieldname(fieldname)
+
+
+def _metadata_requested_columns(
+    *,
+    message: str,
+    selected_report: str,
+    last_result_payload: Optional[Dict[str, Any]],
+) -> List[str]:
+    return _shape_metadata_requested_columns(
+        message=message,
+        selected_report=selected_report,
+        last_result_payload=last_result_payload,
+    )
+
+
+def _enrich_minimal_columns_from_report_metadata(
+    *,
+    spec_obj: Dict[str, Any],
+    message: str,
+    selected_report: str,
+    last_result_payload: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    return _shape_enrich_minimal_columns_from_report_metadata(
+        spec_obj=spec_obj,
+        message=message,
+        selected_report=selected_report,
+        last_result_payload=last_result_payload,
+    )
+
+
+def _is_projection_followup_request(spec: Dict[str, Any]) -> bool:
+    return _shape_is_projection_followup_request(spec)
 
 
 def _has_report_table_rows(payload: Optional[Dict[str, Any]]) -> bool:
-    p = payload if isinstance(payload, dict) else {}
-    if str(p.get("type") or "").strip().lower() != "report_table":
-        return False
-    table = p.get("table") if isinstance(p.get("table"), dict) else {}
-    rows = table.get("rows") if isinstance(table.get("rows"), list) else []
-    cols = table.get("columns") if isinstance(table.get("columns"), list) else []
-    return bool(rows and cols)
+    return _shape_has_report_table_rows(payload)
 
 
 def _merge_transform_ambiguities_into_spec(*, spec_obj: Dict[str, Any], message: str) -> List[str]:
-    spec = spec_obj if isinstance(spec_obj, dict) else {}
-    hints = [str(x).strip().lower() for x in list(infer_transform_ambiguities(message)) if str(x or "").strip()]
-    if not hints:
-        return []
-    existing = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
-    merged: List[str] = []
-    seen = set()
-    for x in existing + hints:
-        if not x or x in seen:
-            continue
-        seen.add(x)
-        merged.append(x)
-    spec["ambiguities"] = merged[:12]
-    return hints
+    return _policy_merge_transform_ambiguities_into_spec(spec_obj=spec_obj, message=message)
 
 
 def _should_promote_to_transform_followup(
     *,
+    message: str,
     spec_obj: Dict[str, Any],
     memory_meta: Dict[str, Any],
     last_result_payload: Optional[Dict[str, Any]],
 ) -> bool:
     spec = spec_obj if isinstance(spec_obj, dict) else {}
-    if str(spec.get("intent") or "").strip().upper() != "READ":
-        return False
-    if str(spec.get("task_class") or "").strip().lower() == "transform_followup":
-        return False
-    if not _has_report_table_rows(last_result_payload):
-        return False
-    if _has_explicit_time_scope(spec):
-        return False
-
-    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
-    has_transform_hint = any(a.startswith("transform_") for a in ambiguities)
-    task_type = str(spec.get("task_type") or "").strip().lower()
-    aggregation = str(spec.get("aggregation") or "").strip().lower()
-    wants_aggregate = bool(task_type == "kpi" or aggregation in {"sum", "avg", "average", "count", "min", "max"})
-
-    mm = memory_meta if isinstance(memory_meta, dict) else {}
-    anchors_applied = [str(x).strip() for x in list(mm.get("anchors_applied") or []) if str(x or "").strip()]
-    try:
-        curr_strength = int(mm.get("curr_strength") or 9)
-    except Exception:
-        curr_strength = 9
-    weak_current_turn = curr_strength <= 2
-    anchored_followup = bool(anchors_applied)
-
-    if has_transform_hint and (weak_current_turn or anchored_followup):
-        return True
-    if wants_aggregate and weak_current_turn and anchored_followup:
-        return True
-    return False
+    return _policy_should_promote_to_transform_followup(
+        message=message,
+        spec_obj=spec,
+        memory_meta=memory_meta,
+        last_result_payload=last_result_payload,
+        has_report_table_rows=_has_report_table_rows(last_result_payload),
+        wants_projection_followup=_is_projection_followup_request(spec),
+        has_explicit_time_scope=_has_explicit_time_scope(spec),
+    )
 
 
-def _promote_spec_to_transform_followup(*, spec_obj: Dict[str, Any]) -> Dict[str, Any]:
-    spec = dict(spec_obj or {})
-    spec["intent"] = "TRANSFORM_LAST"
-    spec["task_class"] = "transform_followup"
-    task_type = str(spec.get("task_type") or "").strip().lower()
-    if task_type not in {"kpi", "detail", "ranking"}:
-        spec["task_type"] = "detail"
-    if str(spec.get("task_type") or "").strip().lower() == "kpi":
-        aggregation = str(spec.get("aggregation") or "").strip().lower()
-        if aggregation in {"", "none"}:
-            spec["aggregation"] = "sum"
-    return spec
+def _promote_spec_to_transform_followup(
+    *,
+    spec_obj: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    return _policy_promote_spec_to_transform_followup(
+        spec_obj=spec_obj,
+        last_result_payload=last_result_payload,
+    )
 
 
 def _sanitize_user_payload(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
-    out = dict(payload or {})
-    typ = str(out.get("type") or "").strip().lower()
-    if typ == "text":
-        txt = str(out.get("text") or "").strip()
-        if txt:
-            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-            if len(lines) > 1 and len(set(lines)) == 1:
-                txt = lines[0]
-            out["text"] = txt
-        if _looks_like_system_error_text({"type": "text", "text": out.get("text")}):
-            out["text"] = _unsupported_message_from_spec(business_spec)
-            out.pop("_pending_state", None)
-    elif typ == "error":
-        out = {"type": "text", "text": _unsupported_message_from_spec(business_spec)}
-    return out
+    return _shape_sanitize_user_payload(payload=payload, business_spec=business_spec)
+
+
+def _capture_source_columns(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return _state_capture_source_columns(payload)
 
 
 def execute_read_plan(*, plan: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
@@ -1894,11 +1425,14 @@ def execute_unified_read_turn(
     export_requested = bool(export_requested or include_download)
     intent = str(spec_obj.get("intent") or "").strip().upper()
     if intent in {"WRITE_DRAFT", "WRITE_CONFIRM"}:
+        draft_payload = _build_write_draft_payload(message=message, spec=spec_obj, user=user)
+        if _draft_operation(draft_payload) == "delete":
+            spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
+            return _append_tool_message(draft_payload, spec_tool_msg)
         if not _is_write_enabled():
             early = _write_not_enabled_payload()
             spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
             return _append_tool_message(early, spec_tool_msg)
-        draft_payload = _build_write_draft_payload(message=message, spec=spec_obj, user=user)
         if isinstance(draft_payload, dict):
             spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
             return _append_tool_message(draft_payload, spec_tool_msg)
@@ -1934,14 +1468,13 @@ def execute_unified_read_turn(
     _merge_transform_ambiguities_into_spec(spec_obj=spec_obj, message=message)
     last_result_payload = _load_last_result_payload(session_name=session_name)
     if _should_promote_to_transform_followup(
+        message=message,
         spec_obj=spec_obj,
         memory_meta=memory_meta,
         last_result_payload=last_result_payload,
     ):
-        spec_obj = _promote_spec_to_transform_followup(spec_obj=spec_obj)
+        spec_obj = _promote_spec_to_transform_followup(spec_obj=spec_obj, last_result_payload=last_result_payload)
     entity_clarification = entity_resolution.get("clarification") if isinstance(entity_resolution.get("clarification"), dict) else None
-    spec_envelope["spec"] = spec_obj
-    spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
 
     resolve_envelope = resolve_business_request(
         business_spec=spec_obj,
@@ -1951,6 +1484,16 @@ def execute_unified_read_turn(
     )
     resolve_tool_msg = make_resolver_tool_message(tool=source, mode="v7", envelope=resolve_envelope)
     resolved = resolve_envelope.get("resolved") if isinstance(resolve_envelope.get("resolved"), dict) else {}
+    selected_report = str(resolved.get("selected_report") or "").strip()
+    if selected_report:
+        spec_obj = _enrich_minimal_columns_from_report_metadata(
+            spec_obj=spec_obj,
+            message=message,
+            selected_report=selected_report,
+            last_result_payload=last_result_payload,
+        )
+    spec_envelope["spec"] = spec_obj
+    spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
     clarify_decision = evaluate_clarification(
         business_spec=spec_obj,
         resolved=resolved,
@@ -1981,70 +1524,21 @@ def execute_unified_read_turn(
             "question": "",
             "policy_version": "phase5_blocker_only_v1",
         }
-    selected_report = str(resolved.get("selected_report") or "").strip()
     selected_score = resolved.get("selected_score")
-    candidate_reports = []
-    feasible_candidate_reports = []
-    candidate_scores: Dict[str, Any] = {}
-    for c in list(resolved.get("candidate_reports") or []):
-        if not isinstance(c, dict):
-            continue
-        nm = str(c.get("report_name") or "").strip()
-        if not nm:
-            continue
-        hard_blockers = [str(x).strip() for x in list(c.get("hard_blockers") or []) if str(x).strip()]
-        if nm not in candidate_reports:
-            candidate_reports.append(nm)
-            candidate_scores[nm] = c.get("score")
-        if (not hard_blockers) and (nm not in feasible_candidate_reports):
-            feasible_candidate_reports.append(nm)
-    if feasible_candidate_reports:
-        candidate_reports = list(feasible_candidate_reports)
-    if selected_report and selected_report not in candidate_reports:
-        candidate_reports.insert(0, selected_report)
-    candidate_cursor = candidate_reports.index(selected_report) if (selected_report and selected_report in candidate_reports) else 0
+    candidate_state = _loop_build_candidate_report_state(resolved=resolved, selected_report=selected_report)
+    candidate_reports = list(candidate_state.get("candidate_reports") or [])
+    candidate_scores = dict(candidate_state.get("candidate_scores") or {})
+    candidate_cursor = int(candidate_state.get("candidate_cursor") or 0)
 
-    seen_signatures = set()
-    executed_steps = 0
-    repair_attempts = 0
-    candidate_switch_attempts = 0
-    repeated_guard = False
     step_trace: List[Dict[str, Any]] = []
-    top_candidates: List[Dict[str, Any]] = []
-    for c in list(resolved.get("candidate_reports") or [])[:6]:
-        if not isinstance(c, dict):
-            continue
-        top_candidates.append(
-            {
-                "report_name": str(c.get("report_name") or "").strip(),
-                "score": c.get("score"),
-                "hard_blockers": [str(x).strip() for x in list(c.get("hard_blockers") or []) if str(x).strip()],
-                "missing_required_filter_values": [
-                    str(x).strip() for x in list(c.get("missing_required_filter_values") or []) if str(x).strip()
-                ],
-                "reasons": [str(x) for x in list(c.get("reasons") or []) if str(x).strip()][:6],
-            }
-        )
+    top_candidates: List[Dict[str, Any]] = list(candidate_state.get("top_candidates") or [])
     step_trace.append(
-        {
-            "step": 0,
-            "action": "resolver_selected",
-            "requested_metric": str((resolved.get("hard_constraints") or {}).get("metric") or ""),
-            "requested_dimensions": list((resolved.get("hard_constraints") or {}).get("requested_dimensions") or []),
-            "selected_report": str(selected_report or ""),
-            "top_candidates": top_candidates,
-        }
+        _loop_resolver_selected_step_trace(
+            resolved=resolved,
+            selected_report=selected_report,
+            top_candidates=top_candidates,
+        )
     )
-    payload: Dict[str, Any] = {"type": "text", "text": "No output generated."}
-    quality: Dict[str, Any] = {
-        "verdict": VERDICT_HARD_FAIL,
-        "failed_check_ids": ["QG00_NOT_EVALUATED"],
-        "hard_fail_check_ids": ["QG00_NOT_EVALUATED"],
-        "repairable_check_ids": [],
-        "checks": [],
-    }
-    shaper_tool_msg = ""
-    transform_tool_msg = ""
     direct_doc_payload = _direct_document_lookup_payload(spec_obj, message=message)
     direct_latest_payload = _direct_latest_records_payload(spec_obj, message=message)
     if isinstance(direct_doc_payload, dict):
@@ -2150,284 +1644,71 @@ def execute_unified_read_turn(
         payload = _append_tool_message(payload, topic_tool_msg)
         return _append_tool_message(payload, read_engine_msg)
 
-    for step_no in range(1, max(1, int(max_steps)) + 1):
-        sig = f"{mode}|{source}|{selected_report}|{str(message or '').strip().lower()}|{json.dumps(plan_seed, sort_keys=True, default=str)}"
-        if sig in seen_signatures:
-            repeated_guard = True
-            step_trace.append({"step": step_no, "action": "guard_stop", "signature_repeated": True})
-            payload = {
-                "type": "text",
-                "text": "I couldn't progress this request safely due to a repeated execution path. Please restate the request in one sentence.",
-            }
-            quality = evaluate_quality_gate(
-                business_spec=(spec_envelope.get("spec") if isinstance(spec_envelope.get("spec"), dict) else {}),
-                resolved=resolved,
-                payload=payload,
-                repeated_call_guard_triggered=True,
-            )
-            break
-
-        seen_signatures.add(sig)
-        if mode == "continue":
-            out = _execute_selected_report_direct(
-                message=message,
-                selected_report=selected_report,
-                business_spec=spec_obj,
-                export=export_requested,
-                session_name=session_name,
-                user=user,
-            )
-            if out is None:
-                out = _legacy_path_unavailable_payload()
-                action = "continue_unavailable"
-            else:
-                action = "direct_selected_report_continue"
-        else:
-            if str(spec_obj.get("intent") or "").strip().upper() == "TRANSFORM_LAST":
-                from_last = _load_last_result_payload(session_name=session_name)
-                if isinstance(from_last, dict):
-                    out = from_last
-                    action = "transform_from_last_result"
-                else:
-                    out = {
-                        "type": "text",
-                        "text": "I need a previous result in this chat to apply that transform.",
-                    }
-                    action = "transform_without_prior_result"
-            elif isinstance(direct_doc_payload, dict):
-                out = dict(direct_doc_payload)
-                action = "direct_document_lookup"
-            elif isinstance(direct_latest_payload, dict):
-                out = dict(direct_latest_payload)
-                action = "direct_latest_records_lookup"
-            else:
-                out = _execute_selected_report_direct(
-                    message=message,
-                    selected_report=selected_report,
-                    business_spec=spec_obj,
-                    export=export_requested,
-                    session_name=session_name,
-                    user=user,
-                )
-                if out is None:
-                    out = _legacy_path_unavailable_payload()
-                    action = "direct_selected_report_failed"
-                else:
-                    action = "direct_selected_report"
-
-        executed_steps += 1
-        auto_pending = _extract_auto_switch_pending(out if isinstance(out, dict) else {})
-        if auto_pending is not None:
-            qc = auto_pending.get("quality_clarification") if isinstance(auto_pending.get("quality_clarification"), dict) else {}
-            suggested_report = str(
-                qc.get("suggested_report")
-                or qc.get("report_name")
-                or auto_pending.get("report_name")
-                or ""
-            ).strip()
-            switched = False
-
-            if suggested_report:
-                if suggested_report not in candidate_reports:
-                    # Quality-triggered switching may only select resolver-feasible candidates.
-                    suggested_report = ""
-                if suggested_report in candidate_reports and (candidate_switch_attempts < 4):
-                    suggested_idx = candidate_reports.index(suggested_report)
-                    if suggested_idx != candidate_cursor or suggested_report != selected_report:
-                        candidate_switch_attempts += 1
-                        candidate_cursor = suggested_idx
-                        selected_report = suggested_report
-                        selected_score = candidate_scores.get(selected_report, selected_score)
-                        resolved = dict(resolved)
-                        resolved["selected_report"] = selected_report
-                        resolved["selected_score"] = selected_score
-                        switched = True
-                        step_trace.append(
-                            {
-                                "step": step_no,
-                                "action": "auto_switch_report_from_quality_pending",
-                                "selected_report": selected_report,
-                                "switch_attempt": candidate_switch_attempts,
-                            }
-                        )
-                        continue
-
-            if (not switched) and (candidate_cursor + 1 < len(candidate_reports)) and (candidate_switch_attempts < 4):
-                candidate_switch_attempts += 1
-                candidate_cursor += 1
-                selected_report = candidate_reports[candidate_cursor]
-                selected_score = candidate_scores.get(selected_report, selected_score)
-                resolved = dict(resolved)
-                resolved["selected_report"] = selected_report
-                resolved["selected_score"] = selected_score
-                step_trace.append(
-                    {
-                        "step": step_no,
-                        "action": "auto_switch_next_candidate_from_quality_pending",
-                        "selected_report": selected_report,
-                        "switch_attempt": candidate_switch_attempts,
-                    }
-                )
-                continue
-
-            out = _legacy_path_unavailable_payload()
-            step_trace.append({"step": step_no, "action": "auto_switch_pending_exhausted", "applied": False})
-        wants_retry = bool(out.get(_INTERNAL_RETRY_KEY))
-        step_trace.append({"step": step_no, "action": action, "retry_requested": wants_retry})
-        out.pop(_INTERNAL_RETRY_KEY, None)
-        payload = apply_transform_last(payload=_as_payload(out), business_spec=spec_obj)
-        if _looks_like_system_error_text(payload):
-            payload = {
-                "type": "text",
-                "text": "I hit a report execution issue for this request. Please adjust one filter (date/company/warehouse) and retry.",
-            }
-        transform_tool_msg = make_transform_tool_message(tool=source, mode=mode, payload=payload)
-        payload = shape_response(payload=payload, business_spec=spec_obj)
-        payload = _sanitize_user_payload(payload=payload, business_spec=spec_obj)
-        payload = _apply_requested_entity_row_filters(payload=payload, business_spec=spec_obj)
-        shaper_tool_msg = make_response_shaper_tool_message(tool=source, mode=mode, shaped_payload=payload)
-        # Delegate output may resolve a different concrete report than resolver guess.
-        # Align selected_report to executed payload for deterministic quality checks.
-        payload_report = str(payload.get("report_name") or "").strip()
-        if payload_report:
-            selected_report = payload_report
-            resolved = dict(resolved)
-            resolved["selected_report"] = payload_report
-            if payload_report not in candidate_reports:
-                candidate_reports.append(payload_report)
-            try:
-                candidate_cursor = candidate_reports.index(payload_report)
-            except Exception:
-                pass
-
-        quality = evaluate_quality_gate(
-            business_spec=spec_obj,
-            resolved=resolved,
-            payload=payload,
-            repeated_call_guard_triggered=False,
-        )
-        q_table = payload.get("table") if isinstance(payload.get("table"), dict) else {}
-        q_rows = q_table.get("rows") if isinstance(q_table.get("rows"), list) else []
-        q_cols = q_table.get("columns") if isinstance(q_table.get("columns"), list) else []
-        step_trace.append(
-            {
-                "step": step_no,
-                "quality_verdict": quality.get("verdict"),
-                "failed_check_ids": list(quality.get("failed_check_ids") or []),
-                "report_name": str(payload.get("report_name") or selected_report or ""),
-                "row_count": len(q_rows),
-                "column_labels": [
-                    str((c.get("label") or c.get("fieldname") or "")).strip()
-                    for c in q_cols[:10]
-                    if isinstance(c, dict)
-                ],
-            }
-        )
-
-        if wants_retry and repair_attempts < 1:
-            repair_attempts += 1
-            continue
-
-        if quality.get("verdict") == VERDICT_PASS:
-            break
-
-        if quality.get("verdict") == VERDICT_HARD_FAIL:
-            break
-
-        if _should_switch_candidate_on_repairable(
-            quality=quality,
-            intent=str(spec_obj.get("intent") or "").strip().upper(),
-            task_class=str(spec_obj.get("task_class") or "").strip().lower(),
-            candidate_cursor=candidate_cursor,
-            candidate_reports=candidate_reports,
-            candidate_switch_attempts=candidate_switch_attempts,
-        ):
-            candidate_switch_attempts += 1
-            candidate_cursor += 1
-            selected_report = candidate_reports[candidate_cursor]
-            selected_score = candidate_scores.get(selected_report, selected_score)
-            resolved = dict(resolved)
-            resolved["selected_report"] = selected_report
-            resolved["selected_score"] = selected_score
-            step_trace.append(
-                {
-                    "step": step_no,
-                    "action": "switch_candidate_after_quality_fail",
-                    "selected_report": selected_report,
-                }
-            )
-            continue
-
-        # REPAIRABLE_FAIL path: one bounded replan/repair attempt maximum.
-        if (
-            quality.get("verdict") == VERDICT_REPAIRABLE_FAIL
-            and (repair_attempts < 1)
-            and str(spec_obj.get("intent") or "").strip().upper() != "TRANSFORM_LAST"
-        ):
-            repair_attempts += 1
-            # Mark plan seed to allow exactly one deterministic replan signature.
-            plan_seed["_repair_attempt"] = repair_attempts
-            resolve_envelope = resolve_business_request(
-                business_spec=spec_obj,
-                user=user,
-                topic_state=previous_topic_state,
-            )
-            resolved = resolve_envelope.get("resolved") if isinstance(resolve_envelope.get("resolved"), dict) else {}
-            selected_report = str(resolved.get("selected_report") or "").strip()
-            selected_score = resolved.get("selected_score")
-            continue
-
-        break
-
-    # Final bounded fallback: avoid returning broken empty/wrong-shaped tables to users.
-    if quality.get("verdict") == VERDICT_REPAIRABLE_FAIL:
-        if str(spec_obj.get("intent") or "").strip().upper() == "TRANSFORM_LAST":
-            pass
-        else:
-            if _quality_has_repairable_failure_class(
-                quality,
-                classes=["shape", "data", "constraint", "semantic"],
-            ):
-                unsupported = _unsupported_message_from_spec(spec_obj)
-                clarify_text = default_clarification_question("hard_constraint_not_supported")
-                planner_options = ["Switch to compatible report", "Keep current scope"]
-                option_actions = _planner_option_actions(options=planner_options, pending={})
-                payload = {
-                    "type": "text",
-                    "text": f"{unsupported} {clarify_text}",
-                    "_pending_state": {
-                        "mode": "planner_clarify",
-                        "base_question": str(message or "").strip(),
-                        "report_name": str(selected_report or "").strip(),
-                        "filters_so_far": dict(spec_obj.get("filters") or {}) if isinstance(spec_obj.get("filters"), dict) else {},
-                        "clarification_question": f"{unsupported} {clarify_text}",
-                        "clarification_options": list(planner_options),
-                        "options": list(planner_options),
-                        "option_actions": dict(option_actions),
-                        "clarification_reason": "hard_constraint_not_supported",
-                        "spec_so_far": {
-                            "task_class": str(spec_obj.get("task_class") or "").strip().lower(),
-                            "subject": str(spec_obj.get("subject") or "").strip(),
-                            "metric": str(spec_obj.get("metric") or "").strip(),
-                            "domain": str(spec_obj.get("domain") or "").strip(),
-                            "top_n": int(spec_obj.get("top_n") or 0),
-                            "output_contract": dict(spec_obj.get("output_contract") or {}) if isinstance(spec_obj.get("output_contract"), dict) else {},
-                        },
-                        "clarification_round": 1,
-                    },
-                }
-                clarify_decision = {
-                    "should_clarify": True,
-                    "reason": "hard_constraint_not_supported",
-                    "question": f"{unsupported} {clarify_text}",
-                    "policy_version": "phase5_blocker_only_v1",
-                }
-                quality = evaluate_quality_gate(
-                    business_spec=spec_obj,
-                    resolved=resolved,
-                    payload=payload,
-                    repeated_call_guard_triggered=False,
-                )
+    loop_result = _runner_execute_read_loop(
+        message=message,
+        mode=mode,
+        source=source,
+        plan_seed=plan_seed,
+        max_steps=max_steps,
+        spec_obj=spec_obj,
+        spec_envelope=spec_envelope,
+        resolved=resolved,
+        selected_report=selected_report,
+        selected_score=selected_score,
+        candidate_reports=candidate_reports,
+        candidate_scores=candidate_scores,
+        candidate_cursor=candidate_cursor,
+        initial_step_trace=step_trace,
+        previous_topic_state=previous_topic_state,
+        session_name=session_name,
+        user=user,
+        export_requested=export_requested,
+        direct_doc_payload=direct_doc_payload,
+        direct_latest_payload=direct_latest_payload,
+        clarify_decision=clarify_decision,
+        internal_retry_key=_INTERNAL_RETRY_KEY,
+        verdict_pass=VERDICT_PASS,
+        verdict_hard_fail=VERDICT_HARD_FAIL,
+        verdict_repairable_fail=VERDICT_REPAIRABLE_FAIL,
+        execute_selected_report_direct_fn=_execute_selected_report_direct,
+        legacy_path_unavailable_payload_fn=_legacy_path_unavailable_payload,
+        load_last_result_payload_fn=_load_last_result_payload,
+        extract_auto_switch_pending_fn=_extract_auto_switch_pending,
+        capture_source_columns_fn=_capture_source_columns,
+        as_payload_fn=_as_payload,
+        apply_transform_last_fn=lambda payload, business_spec: apply_transform_last(payload=payload, business_spec=business_spec),
+        looks_like_system_error_text_fn=_looks_like_system_error_text,
+        make_transform_tool_message_fn=make_transform_tool_message,
+        shape_response_fn=lambda payload, business_spec: shape_response(payload=payload, business_spec=business_spec),
+        sanitize_user_payload_fn=_sanitize_user_payload,
+        apply_requested_entity_row_filters_fn=_apply_requested_entity_row_filters,
+        make_response_shaper_tool_message_fn=make_response_shaper_tool_message,
+        evaluate_quality_gate_fn=evaluate_quality_gate,
+        should_switch_candidate_on_repairable_fn=_should_switch_candidate_on_repairable,
+        resolve_business_request_fn=lambda **kwargs: resolve_business_request(**kwargs),
+        quality_has_repairable_failure_class_fn=_quality_has_repairable_failure_class,
+        unsupported_message_from_spec_fn=_unsupported_message_from_spec,
+        planner_option_actions_fn=_planner_option_actions,
+        default_clarification_question_fn=default_clarification_question,
+    )
+    payload = loop_result.get("payload") if isinstance(loop_result.get("payload"), dict) else {"type": "text", "text": "No output generated."}
+    quality = loop_result.get("quality") if isinstance(loop_result.get("quality"), dict) else {
+        "verdict": VERDICT_HARD_FAIL,
+        "failed_check_ids": ["QG00_NOT_EVALUATED"],
+        "hard_fail_check_ids": ["QG00_NOT_EVALUATED"],
+        "repairable_check_ids": [],
+        "checks": [],
+    }
+    shaper_tool_msg = str(loop_result.get("shaper_tool_msg") or "")
+    transform_tool_msg = str(loop_result.get("transform_tool_msg") or "")
+    selected_report = str(loop_result.get("selected_report") or selected_report or "")
+    selected_score = loop_result.get("selected_score")
+    resolved = loop_result.get("resolved") if isinstance(loop_result.get("resolved"), dict) else resolved
+    step_trace = [x for x in list(loop_result.get("step_trace") or []) if isinstance(x, dict)]
+    executed_steps = int(loop_result.get("executed_steps") or 0)
+    repair_attempts = int(loop_result.get("repair_attempts") or 0)
+    repeated_guard = bool(loop_result.get("repeated_guard"))
+    clarify_decision = loop_result.get("clarify_decision") if isinstance(loop_result.get("clarify_decision"), dict) else clarify_decision
 
     quality_tool_msg = make_quality_gate_tool_message(
         tool=source,

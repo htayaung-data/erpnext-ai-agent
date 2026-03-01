@@ -12,6 +12,7 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
     "version": "fallback_v1",
     "metric_aliases": {
         "revenue": ["revenue"],
+        "purchase_amount": ["purchase_amount", "purchase amount", "procurement amount", "vendor spend"],
         "sold_quantity": ["sold_quantity", "sold quantity"],
         "received_quantity": ["received_quantity", "received quantity"],
         "stock_balance": ["stock_balance", "stock balance"],
@@ -19,8 +20,40 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
         "outstanding_amount": ["outstanding_amount", "outstanding amount"],
         "open_requests": ["open_requests", "open requests"],
     },
-    "metric_domain_map": {
+    "metric_column_aliases": {
+        "revenue": [
+            "revenue",
+            "sales amount",
+            "sales value",
+            "invoiced amount",
+            "billed amount",
+            "amount",
+            "total",
+            "value",
+            "sales",
+            "income",
+        ],
+        "purchase_amount": ["purchase amount", "procurement amount", "vendor spend", "invoiced amount", "billed amount", "purchase value"],
+        "sold_quantity": ["sold quantity", "sold qty", "sales qty", "sales quantity", "qty sold", "quantity", "qty"],
+        "received_quantity": ["received quantity", "received qty", "purchase qty", "qty received", "quantity", "qty"],
+        "stock_balance": ["stock balance", "item balance", "balance qty", "warehouse balance", "inventory balance", "balance", "quantity", "qty"],
+        "projected_quantity": ["projected quantity", "projected qty", "quantity", "qty"],
+        "outstanding_amount": [
+            "outstanding amount",
+            "amount due",
+            "receivable amount",
+            "payable amount",
+            "outstanding balance",
+            "receivable balance",
+            "payable balance",
+            "balance due",
+            "closing balance",
+        ],
+        "open_requests": ["open requests", "pending requests", "request count", "count"],
+    },
+        "metric_domain_map": {
         "revenue": "sales",
+        "purchase_amount": "purchasing",
         "sold_quantity": "sales",
         "received_quantity": "purchasing",
         "stock_balance": "inventory",
@@ -81,10 +114,23 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
     "export_aliases": {
         "include_download": ["download"],
     },
+    "reference_value_aliases": {
+        "same": [
+            "same",
+            "the same",
+            "same as before",
+            "same one",
+            "that one",
+            "this one",
+            "previous one",
+            "same value",
+        ],
+    },
     "transform_ambiguity_aliases": {
         "transform_scale:million": ["as million", "in million", "million", "mn"],
-        "transform_sort:desc": ["descending", "desc", "high to low"],
-        "transform_sort:asc": ["ascending", "asc", "low to high"],
+        "transform_sort:desc": ["descending", "desc", "high to low", "highest", "largest", "greatest", "top"],
+        "transform_sort:asc": ["ascending", "asc", "low to high", "lowest", "bottom", "least", "smallest"],
+        "transform_projection:only": ["only", "only these", "only this", "just these", "just this"],
         "transform_aggregate:sum": ["total", "sum"],
     },
     "record_query_stop_tokens": [
@@ -211,6 +257,7 @@ def _merge_catalog(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
 
     for key in (
         "metric_aliases",
+        "metric_column_aliases",
         "domain_aliases",
         "dimension_aliases",
         "primary_dimension_aliases",
@@ -218,6 +265,7 @@ def _merge_catalog(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
         "write_operation_aliases",
         "write_doctype_aliases",
         "export_aliases",
+        "reference_value_aliases",
         "transform_ambiguity_aliases",
     ):
         out[key] = _merge_alias_maps(_as_alias_map(out.get(key)), _as_alias_map(extra.get(key)))
@@ -286,6 +334,10 @@ def _metric_domain_map() -> Dict[str, str]:
     return _as_str_map(get_ontology_catalog().get("metric_domain_map"))
 
 
+def _metric_column_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("metric_column_aliases"))
+
+
 def _domain_alias_map() -> Dict[str, List[str]]:
     return _as_alias_map(get_ontology_catalog().get("domain_aliases"))
 
@@ -314,6 +366,10 @@ def _export_alias_map() -> Dict[str, List[str]]:
     return _as_alias_map(get_ontology_catalog().get("export_aliases"))
 
 
+def _reference_value_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("reference_value_aliases"))
+
+
 def _transform_ambiguity_alias_map() -> Dict[str, List[str]]:
     return _as_alias_map(get_ontology_catalog().get("transform_ambiguity_aliases"))
 
@@ -334,9 +390,20 @@ def _contains_any(text: str, aliases: Iterable[str]) -> bool:
     t = _norm(text)
     if not t:
         return False
+    semantic_tokens = set(_tokenize_semantic_text(t))
     for a in aliases:
         a_n = _norm(a)
-        if a_n and a_n in t:
+        if not a_n:
+            continue
+        if " " not in a_n:
+            alias_tokens = [tok for tok in _tokenize_semantic_text(a_n) if tok]
+            if alias_tokens:
+                if len(alias_tokens) == 1 and alias_tokens[0] in semantic_tokens:
+                    return True
+                if len(alias_tokens) > 1 and all(tok in semantic_tokens for tok in alias_tokens):
+                    return True
+        pattern = r"(?<![a-z0-9_])" + re.escape(a_n) + r"(?![a-z0-9_])"
+        if re.search(pattern, t):
             return True
     return False
 
@@ -362,15 +429,15 @@ def canonical_domain(value: Any) -> str:
 
 
 def canonical_dimension(value: Any) -> str:
-    txt = _norm(value).replace(" ", "_")
+    txt = _norm(value)
     if not txt:
         return ""
     for canonical, aliases in _dimension_alias_map().items():
-        if txt == canonical:
+        if txt == canonical or txt.replace(" ", "_") == canonical:
             return canonical
         if _contains_any(txt, aliases):
             return canonical
-    return txt
+    return txt.replace(" ", "_")
 
 
 def known_metric(value: Any) -> str:
@@ -416,6 +483,20 @@ def semantic_aliases(value: Any, *, exclude_generic_metric_terms: bool = False) 
 def metric_domain(metric: Any) -> str:
     canonical = canonical_metric(metric)
     return _metric_domain_map().get(canonical, "")
+
+
+def metric_column_aliases(metric: Any) -> List[str]:
+    canonical = canonical_metric(metric)
+    aliases: List[str] = []
+    seen: Set[str] = set()
+    for source in (_metric_column_alias_map().get(canonical) or [], _metric_alias_map().get(canonical) or []):
+        for value in source:
+            normalized = _norm(value).replace("_", " ")
+            if (not normalized) or (normalized in seen):
+                continue
+            seen.add(normalized)
+            aliases.append(normalized)
+    return aliases
 
 
 def infer_filter_kinds(text: Any) -> List[str]:
@@ -588,6 +669,16 @@ def infer_output_flags(message: Any) -> Dict[str, Any]:
         return {"include_download": False}
     include_download = _contains_any(txt, _export_alias_map().get("include_download") or [])
     return {"include_download": bool(include_download)}
+
+
+def infer_reference_value(value: Any) -> str:
+    txt = _norm(value)
+    if not txt:
+        return ""
+    for code, aliases in _reference_value_alias_map().items():
+        if _contains_any(txt, aliases):
+            return str(code).strip()
+    return ""
 
 
 def infer_transform_ambiguities(message: Any) -> List[str]:

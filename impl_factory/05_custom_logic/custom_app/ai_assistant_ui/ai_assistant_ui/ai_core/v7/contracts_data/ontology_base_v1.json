@@ -8,8 +8,12 @@
       "sales value",
       "invoiced amount",
       "income",
-      "total sales",
-      "amount"
+      "total sales"
+    ],
+    "purchase_amount": [
+      "purchase amount",
+      "procurement amount",
+      "vendor spend"
     ],
     "sold_quantity": [
       "sold quantity",
@@ -47,8 +51,81 @@
       "material request"
     ]
   },
+  "metric_column_aliases": {
+    "revenue": [
+      "revenue",
+      "sales amount",
+      "sales value",
+      "invoiced amount",
+      "billed amount",
+      "amount",
+      "total",
+      "value",
+      "sales",
+      "income"
+    ],
+    "purchase_amount": [
+      "purchase amount",
+      "procurement amount",
+      "vendor spend",
+      "invoiced amount",
+      "billed amount",
+      "purchase value"
+    ],
+    "sold_quantity": [
+      "sold quantity",
+      "sold qty",
+      "sales qty",
+      "sales quantity",
+      "qty sold",
+      "quantity",
+      "qty"
+    ],
+    "received_quantity": [
+      "received quantity",
+      "received qty",
+      "purchase qty",
+      "qty received",
+      "quantity",
+      "qty"
+    ],
+    "stock_balance": [
+      "stock balance",
+      "item balance",
+      "balance qty",
+      "warehouse balance",
+      "inventory balance",
+      "balance",
+      "quantity",
+      "qty"
+    ],
+    "projected_quantity": [
+      "projected quantity",
+      "projected qty",
+      "quantity",
+      "qty"
+    ],
+    "outstanding_amount": [
+      "outstanding amount",
+      "amount due",
+      "receivable amount",
+      "payable amount",
+      "outstanding balance",
+      "receivable balance",
+      "payable balance",
+      "balance due",
+      "closing balance"
+    ],
+    "open_requests": [
+      "open requests",
+      "pending requests",
+      "request count",
+      "count"
+    ]
+  },
   "metric_domain_map": {
     "revenue": "sales",
+    "purchase_amount": "purchasing",
     "sold_quantity": "sales",
     "received_quantity": "purchasing",
     "stock_balance": "inventory",
@@ -275,6 +352,57 @@
       "xlsx",
       "csv",
       "pdf"
+    ]
+  },
+  "reference_value_aliases": {
+    "same": [
+      "same",
+      "the same",
+      "same as before",
+      "same one",
+      "that one",
+      "this one",
+      "previous one",
+      "same value"
+    ]
+  },
+  "transform_ambiguity_aliases": {
+    "transform_scale:million": [
+      "show as million",
+      "show in million",
+      "as million",
+      "in million",
+      "million",
+      "mn"
+    ],
+    "transform_sort:desc": [
+      "descending",
+      "desc",
+      "high to low",
+      "highest",
+      "largest",
+      "greatest",
+      "top"
+    ],
+    "transform_sort:asc": [
+      "ascending",
+      "asc",
+      "low to high",
+      "lowest",
+      "bottom",
+      "least",
+      "smallest"
+    ],
+    "transform_projection:only": [
+      "only",
+      "only these",
+      "only this",
+      "just these",
+      "just this"
+    ],
+    "transform_aggregate:sum": [
+      "total",
+      "sum"
     ]
   },
   "generic_metric_terms": [

@@ -8,7 +8,9 @@ Scope: ERPNext Embedded AI Assistant (`ai_assistant_ui`) custom app
    Business-facing UAT scenarios with expected outcomes and contract mapping.
 2. `impl_factory/04_automation/uat/step11_uat_evidence_template.md`  
    Fillable template for execution evidence and sign-off.
-3. `impl_factory/04_automation/bench_scripts/run_step11_regression.sh`  
+3. `impl_factory/04_automation/uat/step11_behavior_variation_matrix_ranking_projection.md`  
+   Class-variation checklist for ranking/projection/transform stabilization.
+4. `impl_factory/04_automation/bench_scripts/run_step11_regression.sh`  
    Deterministic regression runner (compile + contract regression tests + summary artifacts).
 
 ## How To Use

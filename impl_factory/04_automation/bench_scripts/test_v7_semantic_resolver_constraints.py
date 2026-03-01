@@ -669,6 +669,162 @@ class V7SemanticResolverConstraintTests(unittest.TestCase):
         self.assertTrue(bool(cands))
         self.assertNotIn("unsupported_metric", list(cands[0].get("hard_blockers") or []))
 
+    def test_ranking_prefers_declared_primary_dimension_over_generic_hint_match(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Customer Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "customer", "date", "from_date", "to_date"],
+                        "required_filter_kinds": ["company", "date", "from_date", "to_date"],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales", "finance"],
+                        "dimension_hints": ["customer", "company"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "customer",
+                    },
+                    "metadata": {"confidence": 0.82, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Payment Terms Status for Sales Order",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "customer", "date", "item"],
+                        "required_filter_kinds": ["company", "date"],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["customer", "item", "company"],
+                        "metric_hints": ["revenue", "sold_quantity"],
+                        "primary_dimension": "",
+                    },
+                    "metadata": {"confidence": 0.82, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "sales",
+            "subject": "top customers by revenue",
+            "metric": "revenue",
+            "task_type": "ranking",
+            "filters": {"company": "MMOB"},
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "sales",
+            "metric": "revenue",
+            "task_type": "ranking",
+            "output_mode": "top_n",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["customer"],
+            "subject_tokens": ["top", "customers", "revenue"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+            "time_mode": "relative",
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Customer Ledger Summary")
+        cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("report_name") or ""): c for c in cands}
+        self.assertIn("ranking_primary_dimension_match(+12)", list(by_name["Customer Ledger Summary"].get("reasons") or []))
+        self.assertIn("ranking_primary_dimension_unknown(-18)", list(by_name["Payment Terms Status for Sales Order"].get("reasons") or []))
+
+    def test_ranking_blocks_report_declared_not_ranking_capable(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Warehouse Wise Stock Balance",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "warehouse"],
+                        "required_filter_kinds": ["company"],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["inventory"],
+                        "dimension_hints": ["warehouse"],
+                        "metric_hints": ["stock_balance"],
+                        "primary_dimension": "warehouse",
+                    },
+                    "presentation": {
+                        "supports_ranking": True,
+                        "result_grain": "summary",
+                    },
+                    "metadata": {"confidence": 0.8, "fresh": True},
+                    "time_support": {"as_of": True, "range": False, "any": True},
+                },
+                {
+                    "report_name": "Product Bundle Balance",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "warehouse", "item"],
+                        "required_filter_kinds": ["company"],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["inventory"],
+                        "dimension_hints": ["item", "warehouse"],
+                        "metric_hints": ["stock_balance"],
+                        "primary_dimension": "item",
+                    },
+                    "presentation": {
+                        "supports_ranking": False,
+                        "result_grain": "detail",
+                    },
+                    "metadata": {"confidence": 0.92, "fresh": True},
+                    "time_support": {"as_of": True, "range": False, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "inventory",
+            "subject": "top warehouses by stock balance",
+            "metric": "stock balance",
+            "task_type": "ranking",
+            "filters": {"company": "MMOB"},
+            "group_by": ["warehouse"],
+            "dimensions": ["warehouse"],
+            "time_scope": {"mode": "as_of", "value": "today"},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["warehouse", "stock balance"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "inventory",
+            "metric": "stock_balance",
+            "task_type": "ranking",
+            "output_mode": "top_n",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["warehouse"],
+            "subject_tokens": ["top", "warehouses", "stock", "balance"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+            "time_mode": "as_of",
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Warehouse Wise Stock Balance")
+        cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("report_name") or ""): c for c in cands}
+        self.assertIn("ranking_not_supported(-24)", list(by_name["Product Bundle Balance"].get("reasons") or []))
+        self.assertIn("ranking_not_supported", list(by_name["Product Bundle Balance"].get("hard_blockers") or []))
+
 
 if __name__ == "__main__":
     unittest.main()

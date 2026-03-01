@@ -147,7 +147,7 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         finally:
             mod._is_new_business_request_structured = orig
         self.assertTrue(bool(out.get("active")))
-        self.assertIn("Show me the latest 7 Invoice", str(out.get("resume_message") or ""))
+        self.assertIn("Show me the latest 7 Sales Invoice", str(out.get("resume_message") or ""))
         self.assertIn("Sales Invoice", str(out.get("resume_message") or ""))
 
     def test_merge_pinned_filters_overrides_ambiguous_raw_filter(self):
@@ -179,6 +179,239 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         oc = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
         self.assertEqual(str(oc.get("mode") or ""), "top_n")
         self.assertEqual(list(oc.get("minimal_columns") or []), ["invoice number"])
+
+    def test_load_last_result_preserves_visible_table_and_hidden_source_snapshot(self):
+        mod = _load_module()
+
+        class _Message:
+            def __init__(self, role, content):
+                self.role = role
+                self.content = content
+
+        assistant_payload = {
+            "type": "report_table",
+            "report_name": "Item-wise Sales Register",
+            "title": "Item-wise Sales Register",
+            "table": {
+                "columns": [
+                    {"fieldname": "item_code", "label": "Item"},
+                    {"fieldname": "amount", "label": "Revenue"},
+                ],
+                "rows": [{"item_code": "A", "amount": "10.00"}],
+            },
+            "_source_columns": [
+                {"fieldname": "item_code", "label": "Item Code", "fieldtype": "Link"},
+                {"fieldname": "item_name", "label": "Item Name", "fieldtype": "Data"},
+                {"fieldname": "amount", "label": "Amount", "fieldtype": "Currency"},
+            ],
+            "_source_table": {
+                "columns": [
+                    {"fieldname": "item_code", "label": "Item Code"},
+                    {"fieldname": "item_name", "label": "Item Name"},
+                    {"fieldname": "amount", "label": "Amount"},
+                ],
+                "rows": [{"item_code": "A", "item_name": "Alpha", "amount": 10}],
+            },
+        }
+        topic_state = {
+            "type": "v7_topic_state",
+            "state": {
+                "active_result": {
+                    "scaled_unit": "million",
+                    "output_mode": "top_n",
+                }
+            },
+        }
+
+        class _FakeSession:
+            def get(self, key):
+                if key == "messages":
+                    return [
+                        _Message("assistant", mod.json.dumps(assistant_payload)),
+                        _Message("tool", mod.json.dumps(topic_state)),
+                    ]
+                return []
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_doc(doctype, name):
+                return _FakeSession()
+
+        mod.frappe = _FakeFrappe()
+        out = mod._load_last_result_payload(session_name="browser-session")
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        cols = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+        rows = [r for r in list(table.get("rows") or []) if isinstance(r, dict)]
+        labels = [str(c.get("label") or "").strip().lower() for c in cols]
+        self.assertEqual(labels, ["item", "revenue"])
+        self.assertEqual(str(rows[0].get("item_code") or ""), "A")
+        source_table = out.get("_source_table") if isinstance(out.get("_source_table"), dict) else {}
+        source_rows = [r for r in list(source_table.get("rows") or []) if isinstance(r, dict)]
+        self.assertEqual(str(source_rows[0].get("item_name") or ""), "Alpha")
+        self.assertEqual(str(out.get("_scaled_unit") or ""), "million")
+        self.assertEqual(str(out.get("_output_mode") or ""), "top_n")
+
+    def test_load_last_result_prefers_payload_matching_active_report(self):
+        mod = _load_module()
+
+        class _Message:
+            def __init__(self, role, content):
+                self.role = role
+                self.content = content
+
+        supplier_payload = {
+            "type": "report_table",
+            "report_name": "Supplier Ledger Summary",
+            "title": "Supplier Ledger Summary",
+            "table": {
+                "columns": [{"fieldname": "party", "label": "Supplier"}, {"fieldname": "closing_balance", "label": "Outstanding Amount"}],
+                "rows": [{"party": "Supplier A", "closing_balance": 100.0}],
+            },
+        }
+        warehouse_payload = {
+            "type": "report_table",
+            "report_name": "Warehouse Wise Stock Balance",
+            "title": "Warehouse Wise Stock Balance",
+            "table": {
+                "columns": [{"fieldname": "warehouse", "label": "Warehouse"}, {"fieldname": "stock_balance", "label": "Stock Balance"}],
+                "rows": [{"warehouse": "Yangon Main Warehouse - MMOB", "stock_balance": 399386000.0}],
+            },
+        }
+        topic_state = {
+            "type": "v7_topic_state",
+            "state": {
+                "active_result": {
+                    "report_name": "Warehouse Wise Stock Balance",
+                    "output_mode": "top_n",
+                }
+            },
+        }
+
+        class _FakeSession:
+            def get(self, key):
+                if key == "messages":
+                    return [
+                        _Message("assistant", mod.json.dumps(supplier_payload)),
+                        _Message("assistant", mod.json.dumps(warehouse_payload)),
+                        _Message("tool", mod.json.dumps(topic_state)),
+                    ]
+                return []
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_doc(doctype, name):
+                return _FakeSession()
+
+        mod.frappe = _FakeFrappe()
+        out = mod._load_last_result_payload(session_name="browser-session")
+        self.assertEqual(str(out.get("report_name") or ""), "Warehouse Wise Stock Balance")
+        self.assertEqual(str(out.get("_output_mode") or ""), "top_n")
+
+    def test_load_last_result_prefers_active_report_over_newer_mismatched_assistant_payload(self):
+        mod = _load_module()
+
+        class _Message:
+            def __init__(self, role, content):
+                self.role = role
+                self.content = content
+
+        warehouse_payload = {
+            "type": "report_table",
+            "report_name": "Warehouse Wise Stock Balance",
+            "title": "Warehouse Wise Stock Balance",
+            "table": {
+                "columns": [{"fieldname": "warehouse", "label": "Warehouse"}, {"fieldname": "stock_balance", "label": "Stock Balance"}],
+                "rows": [{"warehouse": "Yangon Main Warehouse - MMOB", "stock_balance": 399386000.0}],
+            },
+        }
+        supplier_payload = {
+            "type": "report_table",
+            "report_name": "Supplier Ledger Summary",
+            "title": "Supplier Ledger Summary",
+            "table": {
+                "columns": [{"fieldname": "party", "label": "Supplier"}, {"fieldname": "closing_balance", "label": "Outstanding Amount"}],
+                "rows": [{"party": "Supplier A", "closing_balance": 100.0}],
+            },
+        }
+        topic_state = {
+            "type": "v7_topic_state",
+            "state": {
+                "active_result": {
+                    "report_name": "Warehouse Wise Stock Balance",
+                    "output_mode": "top_n",
+                }
+            },
+        }
+
+        class _FakeSession:
+            def get(self, key):
+                if key == "messages":
+                    return [
+                        _Message("assistant", mod.json.dumps(warehouse_payload)),
+                        _Message("assistant", mod.json.dumps(supplier_payload)),
+                        _Message("tool", mod.json.dumps(topic_state)),
+                    ]
+                return []
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_doc(doctype, name):
+                return _FakeSession()
+
+        mod.frappe = _FakeFrappe()
+        out = mod._load_last_result_payload(session_name="browser-session")
+        self.assertEqual(str(out.get("report_name") or ""), "Warehouse Wise Stock Balance")
+        self.assertEqual(str(out.get("_output_mode") or ""), "top_n")
+
+    def test_load_last_result_does_not_overlay_stale_scaled_meta_from_different_report(self):
+        mod = _load_module()
+
+        class _Message:
+            def __init__(self, role, content):
+                self.role = role
+                self.content = content
+
+        warehouse_payload = {
+            "type": "report_table",
+            "report_name": "Warehouse Wise Stock Balance",
+            "title": "Warehouse Wise Stock Balance",
+            "table": {
+                "columns": [
+                    {"fieldname": "warehouse", "label": "Warehouse"},
+                    {"fieldname": "stock_balance", "label": "Stock Balance"},
+                ],
+                "rows": [{"warehouse": "Yangon Main Warehouse - MMOB", "stock_balance": 399386000.0}],
+            },
+        }
+        topic_state = {
+            "type": "v7_topic_state",
+            "state": {
+                "active_result": {
+                    "report_name": "Supplier Ledger Summary",
+                    "scaled_unit": "million",
+                    "output_mode": "top_n",
+                }
+            },
+        }
+
+        class _FakeSession:
+            def get(self, key):
+                if key == "messages":
+                    return [
+                        _Message("assistant", mod.json.dumps(warehouse_payload)),
+                        _Message("tool", mod.json.dumps(topic_state)),
+                    ]
+                return []
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_doc(doctype, name):
+                return _FakeSession()
+
+        mod.frappe = _FakeFrappe()
+        out = mod._load_last_result_payload(session_name="browser-session")
+        self.assertEqual(str(out.get("report_name") or ""), "Warehouse Wise Stock Balance")
+        self.assertEqual(str(out.get("_scaled_unit") or ""), "")
 
     def test_apply_requested_entity_row_filters_reduces_to_selected_warehouse(self):
         mod = _load_module()
@@ -254,6 +487,60 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
             "filters": {},
         }
         out = mod._resolve_record_doctype_candidates(message="Sales Invoice", spec=spec)
+        self.assertEqual(out, ["Sales Invoice"])
+
+    def test_resolve_record_doctype_candidates_uses_metric_domain_to_break_invoice_tie(self):
+        mod = _load_module()
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_all(doctype, **kwargs):
+                if doctype != "DocType":
+                    return []
+                return [
+                    {"name": "Sales Invoice"},
+                    {"name": "Purchase Invoice"},
+                    {"name": "Sales Order"},
+                ]
+
+        mod.frappe = _FakeFrappe()
+        mod._load_submittable_doctypes.cache_clear()
+        spec = {
+            "intent": "READ",
+            "task_class": "list_latest_records",
+            "subject": "invoices",
+            "metric": "revenue",
+            "domain": "unknown",
+            "filters": {},
+        }
+        out = mod._resolve_record_doctype_candidates(message="revenue Invoice", spec=spec)
+        self.assertEqual(out, ["Sales Invoice"])
+
+    def test_resolve_record_doctype_candidates_uses_message_metric_when_pending_metric_missing(self):
+        mod = _load_module()
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_all(doctype, **kwargs):
+                if doctype != "DocType":
+                    return []
+                return [
+                    {"name": "Sales Invoice"},
+                    {"name": "Purchase Invoice"},
+                    {"name": "Sales Order"},
+                ]
+
+        mod.frappe = _FakeFrappe()
+        mod._load_submittable_doctypes.cache_clear()
+        spec = {
+            "intent": "READ",
+            "task_class": "list_latest_records",
+            "subject": "invoices",
+            "metric": "",
+            "domain": "unknown",
+            "filters": {},
+        }
+        out = mod._resolve_record_doctype_candidates(message="revenue Invoice", spec=spec)
         self.assertEqual(out, ["Sales Invoice"])
 
     def test_resolve_record_doctype_candidates_handles_plural_and_sale_sales_variants(self):
@@ -402,6 +689,7 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         ok = mod._should_switch_candidate_on_repairable(
             quality=quality,
             intent="READ",
+            task_class="detail_projection",
             candidate_cursor=0,
             candidate_reports=["Warehouse Wise Stock Balance", "Stock Balance"],
             candidate_switch_attempts=0,
@@ -432,6 +720,7 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         self.assertTrue(
             bool(
                 mod._should_promote_to_transform_followup(
+                    message="Show as million",
                     spec_obj=spec,
                     memory_meta=memory_meta,
                     last_result_payload=last_result,
@@ -441,6 +730,424 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         promoted = mod._promote_spec_to_transform_followup(spec_obj=spec)
         self.assertEqual(str(promoted.get("intent") or ""), "TRANSFORM_LAST")
         self.assertEqual(str(promoted.get("task_class") or ""), "transform_followup")
+
+    def test_promote_transform_followup_for_projection_only_followup(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "detail_projection",
+            "task_type": "detail",
+            "aggregation": "none",
+            "time_scope": {"mode": "none", "value": ""},
+            "output_contract": {"mode": "detail", "minimal_columns": ["customer", "revenue"]},
+            "ambiguities": [],
+        }
+        memory_meta = {
+            "curr_strength": 2,
+            "anchors_applied": ["metric", "group_by", "top_n", "time_scope"],
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "customer", "label": "Customer"},
+                    {"fieldname": "revenue", "label": "Revenue"},
+                    {"fieldname": "posting_date", "label": "Posting Date"},
+                ],
+                "rows": [{"customer": "A", "revenue": 100.0, "posting_date": "2026-02-01"}],
+            },
+        }
+        self.assertTrue(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Show only customer and revenue columns",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_promote_transform_followup_allows_anchored_time_scope_for_transform(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "aggregation": "none",
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "top_n", "minimal_columns": []},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {
+            "curr_strength": 1,
+            "anchors_applied": ["metric", "group_by", "top_n", "time_scope"],
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "customer", "label": "Customer"},
+                    {"fieldname": "revenue", "label": "Revenue"},
+                ],
+                "rows": [{"customer": "A", "revenue": 1000000.0}],
+            },
+        }
+        self.assertTrue(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Show as million",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_does_not_promote_rank_direction_change_on_limited_top_n_result(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "aggregation": "none",
+            "time_scope": {"mode": "none", "value": ""},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["warehouse", "stock balance"]},
+            "ambiguities": ["transform_sort:desc"],
+        }
+        memory_meta = {
+            "curr_strength": 3,
+            "anchors_applied": [],
+            "overlap_ratio": 0.7,
+        }
+        last_result = {
+            "_output_mode": "top_n",
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "warehouse", "label": "Warehouse"},
+                    {"fieldname": "stock_balance", "label": "Stock Balance"},
+                ],
+                "rows": [
+                    {"warehouse": "Stores - MMOB", "stock_balance": 0.0},
+                    {"warehouse": "Work In Progress - MMOB", "stock_balance": 0.0},
+                    {"warehouse": "Finished Goods - MMOB", "stock_balance": 0.0},
+                ],
+            },
+        }
+        self.assertFalse(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="I mean Top",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_promote_transform_followup_for_short_transform_message_with_context_filled_spec(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "aggregation": "sum",
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "top_n": 10,
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {
+            "curr_strength": 6,
+            "anchors_applied": [],
+            "overlap_ratio": 0.625,
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "customer", "label": "Customer"},
+                    {"fieldname": "revenue", "label": "Revenue"},
+                ],
+                "rows": [{"customer": "A", "revenue": 1000000.0}],
+            },
+        }
+        self.assertTrue(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Show as Million",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_promote_transform_followup_when_parser_already_marks_task_class_but_intent_is_read(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "transform_followup",
+            "task_type": "ranking",
+            "aggregation": "sum",
+            "domain": "sales",
+            "subject": "products",
+            "metric": "sold quantity",
+            "group_by": ["item"],
+            "top_n": 10,
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["item name"]},
+            "ambiguities": ["transform_projection:only"],
+        }
+        memory_meta = {
+            "curr_strength": 6,
+            "anchors_applied": ["projection_columns"],
+            "overlap_ratio": 0.6667,
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "item", "label": "Item"},
+                    {"fieldname": "sold_quantity", "label": "Sold Quantity"},
+                    {"fieldname": "item_name", "label": "Item Name"},
+                ],
+                "rows": [{"item": "A", "sold_quantity": 10.0, "item_name": "Alpha"}],
+            },
+        }
+        self.assertTrue(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Give me item name only",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_do_not_promote_transform_followup_for_fresh_transform_bearing_read(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "aggregation": "sum",
+            "domain": "finance",
+            "subject": "accounts receivable",
+            "metric": "outstanding_amount",
+            "group_by": ["customer"],
+            "top_n": 10,
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "outstanding_amount"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {
+            "curr_strength": 6,
+            "anchors_applied": [],
+            "overlap_ratio": 0.0,
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "customer", "label": "Customer"},
+                    {"fieldname": "revenue", "label": "Revenue"},
+                ],
+                "rows": [{"customer": "A", "revenue": 1000000.0}],
+            },
+        }
+        self.assertFalse(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Top 10 accounts receivable customers in million last month",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_delete_draft_keeps_confirmation_stage_when_write_disabled(self):
+        mod = _load_module()
+        orig_is_write_enabled = mod._is_write_enabled
+        orig_generate_business_request_spec = mod.generate_business_request_spec
+        orig_infer_write_request = mod.infer_write_request
+        try:
+            mod._is_write_enabled = lambda: False
+            mod.generate_business_request_spec = lambda **kwargs: {
+                "spec": {
+                    "intent": "READ",
+                    "task_class": "analytical_read",
+                    "filters": {},
+                    "output_contract": {"mode": "detail", "minimal_columns": []},
+                }
+            }
+            mod.infer_write_request = lambda message: {
+                "intent": "WRITE_DRAFT",
+                "operation": "delete",
+                "doctype": "ToDo",
+                "document_id": "TD-0001",
+                "confidence": 0.9,
+            }
+            out = mod.execute_unified_read_turn(
+                message="Delete ToDo TD-0001",
+                session_name="UT-WR-02",
+                user="Administrator",
+            )
+        finally:
+            mod._is_write_enabled = orig_is_write_enabled
+            mod.generate_business_request_spec = orig_generate_business_request_spec
+            mod.infer_write_request = orig_infer_write_request
+
+        pending = out.get("_pending_state") if isinstance(out.get("_pending_state"), dict) else {}
+        write_draft = pending.get("write_draft") if isinstance(pending.get("write_draft"), dict) else {}
+        self.assertEqual(str(out.get("type") or ""), "text")
+        self.assertEqual(str(pending.get("mode") or ""), "write_confirmation")
+        self.assertEqual(str(write_draft.get("operation") or ""), "delete")
+        self.assertIn("Reply **confirm**", str(out.get("text") or ""))
+
+    def test_create_draft_still_blocks_when_write_disabled(self):
+        mod = _load_module()
+        orig_is_write_enabled = mod._is_write_enabled
+        orig_generate_business_request_spec = mod.generate_business_request_spec
+        orig_infer_write_request = mod.infer_write_request
+        try:
+            mod._is_write_enabled = lambda: False
+            mod.generate_business_request_spec = lambda **kwargs: {
+                "spec": {
+                    "intent": "READ",
+                    "task_class": "analytical_read",
+                    "filters": {},
+                    "output_contract": {"mode": "detail", "minimal_columns": []},
+                }
+            }
+            mod.infer_write_request = lambda message: {
+                "intent": "WRITE_DRAFT",
+                "operation": "create",
+                "doctype": "ToDo",
+                "document_id": "",
+                "confidence": 0.9,
+            }
+            out = mod.execute_unified_read_turn(
+                message="Create a ToDo for follow-up",
+                session_name="UT-WR-01",
+                user="Administrator",
+            )
+        finally:
+            mod._is_write_enabled = orig_is_write_enabled
+            mod.generate_business_request_spec = orig_generate_business_request_spec
+            mod.infer_write_request = orig_infer_write_request
+
+        self.assertEqual(str(out.get("type") or ""), "text")
+        self.assertIn("Write-actions are disabled", str(out.get("text") or ""))
+        self.assertFalse(isinstance(out.get("_pending_state"), dict))
+
+    def test_confirmed_delete_blocks_execution_when_write_disabled(self):
+        mod = _load_module()
+        orig_is_write_enabled = mod._is_write_enabled
+        try:
+            mod._is_write_enabled = lambda: False
+            out = mod._handle_write_confirmation(
+                message="confirm",
+                pending={
+                    "mode": "write_confirmation",
+                    "write_draft": {
+                        "doctype": "ToDo",
+                        "operation": "delete",
+                        "payload": {"name": "TD-0001"},
+                    },
+                },
+                source="report_qa_continue",
+            )
+        finally:
+            mod._is_write_enabled = orig_is_write_enabled
+
+        self.assertEqual(str(out.get("type") or ""), "text")
+        self.assertIn("Write-actions are disabled", str(out.get("text") or ""))
+        self.assertTrue(bool(out.get("_clear_pending_state")))
+
+    def test_confirmed_delete_executes_when_write_enabled(self):
+        mod = _load_module()
+        orig_is_write_enabled = mod._is_write_enabled
+        orig_write_execute_fn = mod._write_execute_fn
+        try:
+            mod._is_write_enabled = lambda: True
+            mod._write_execute_fn = lambda draft: {"status": "success", "name": "TD-0001"}
+            out = mod._handle_write_confirmation(
+                message="confirm",
+                pending={
+                    "mode": "write_confirmation",
+                    "write_draft": {
+                        "doctype": "ToDo",
+                        "operation": "delete",
+                        "payload": {"name": "TD-0001"},
+                    },
+                },
+                source="report_qa_continue",
+            )
+        finally:
+            mod._is_write_enabled = orig_is_write_enabled
+            mod._write_execute_fn = orig_write_execute_fn
+
+        self.assertEqual(str(out.get("type") or ""), "text")
+        self.assertEqual(str(out.get("text") or ""), "Confirmed. Deleted **ToDo** `TD-0001`.")
+        self.assertTrue(bool(out.get("_clear_pending_state")))
+
+    def test_enrich_minimal_columns_from_selected_report_metadata(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_type": "ranking",
+            "task_class": "analytical_read",
+            "subject": "products",
+            "metric": "sold quantity",
+            "group_by": ["item"],
+            "top_n": 10,
+            "output_contract": {"mode": "top_n", "minimal_columns": ["item", "sold quantity"]},
+        }
+        out = mod._enrich_minimal_columns_from_report_metadata(
+            spec_obj=spec,
+            message="Top 10 products by sold quantity last month with Item Name",
+            selected_report="Item-wise Sales Register",
+            last_result_payload=None,
+        )
+        minimal_cols = [
+            str(x).strip().lower()
+            for x in list((out.get("output_contract") or {}).get("minimal_columns") or [])
+            if str(x).strip()
+        ]
+        self.assertEqual(minimal_cols, ["item", "sold quantity", "item name"])
+
+    def test_enrich_minimal_columns_prefers_specific_metric_name_over_generic_amount(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_type": "ranking",
+            "task_class": "analytical_read",
+            "subject": "suppliers",
+            "metric": "purchase amount",
+            "group_by": ["supplier"],
+            "top_n": 10,
+            "output_contract": {"mode": "top_n", "minimal_columns": ["supplier", "purchase amount"]},
+        }
+        out = mod._enrich_minimal_columns_from_report_metadata(
+            spec_obj=spec,
+            message="Top 10 suppliers by purchase amount last month",
+            selected_report="Supplier Ledger Summary",
+            last_result_payload=None,
+        )
+        minimal_cols = [
+            str(x).strip().lower()
+            for x in list((out.get("output_contract") or {}).get("minimal_columns") or [])
+            if str(x).strip()
+        ]
+        self.assertEqual(minimal_cols, ["supplier", "purchase amount"])
 
 
 if __name__ == "__main__":
