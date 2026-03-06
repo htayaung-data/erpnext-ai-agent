@@ -275,14 +275,23 @@ def apply_transform_last(*, payload: Dict[str, Any], business_spec: Dict[str, An
     # detail/default transform: keep only dimension+metric when both are known.
     if (mode not in ("kpi", "top_n")) and dim_fn and metric_fn and dim_fn != metric_fn:
         picked_cols = []
+        contribution_fn = ""
+        if bool(out.get("_contribution_rule_applied")):
+            contribution_fn = str(out.get("_contribution_share_fieldname") or "contribution_share").strip()
         for c in cols:
             fn = str(c.get("fieldname") or "").strip()
-            if fn in (dim_fn, metric_fn):
+            if fn in tuple(x for x in (dim_fn, metric_fn, contribution_fn) if x):
                 picked_cols.append(c)
         if picked_cols:
             out["table"] = {
                 "columns": picked_cols,
-                "rows": [{dim_fn: r.get(dim_fn), metric_fn: r.get(metric_fn)} for r in rows],
+                "rows": [
+                    {
+                        key: r.get(key)
+                        for key in tuple(x for x in (dim_fn, metric_fn, contribution_fn) if x)
+                    }
+                    for r in rows
+                ],
             }
             out["_transform_last_applied"] = "detail_project"
 

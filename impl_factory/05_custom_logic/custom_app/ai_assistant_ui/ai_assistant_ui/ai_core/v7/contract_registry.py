@@ -13,7 +13,7 @@ _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
     "allowed": {
         "intents": ["READ", "TRANSFORM_LAST", "TUTOR", "WRITE_DRAFT", "WRITE_CONFIRM", "EXPORT"],
         "task_types": ["kpi", "ranking", "trend", "detail"],
-        "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup"],
+        "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup", "threshold_exception_list", "contribution_share"],
         "aggregations": ["sum", "count", "avg", "none"],
         "time_modes": ["as_of", "range", "relative", "none"],
         "output_modes": ["kpi", "top_n", "detail"],
@@ -44,6 +44,10 @@ _DEFAULT_CLARIFICATION_CONTRACT: Dict[str, Any] = {
         "hard_constraint_not_supported": "I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
         "entity_no_match": "I couldn't find a matching value for that filter. Which exact value should I use?",
         "entity_ambiguous": "I found multiple matches for that filter. Which one should I use?",
+    },
+    "questions_by_filter_kind": {
+        "contribution_metric": "Which business measure should I use for the contribution share (for example revenue or purchase amount)?",
+        "contribution_dimension": "Which business grouping should I use for the contribution share (for example customer, supplier, or item)?",
     },
     "fallback_question": "Please provide one concrete missing detail so I can run the correct report.",
 }

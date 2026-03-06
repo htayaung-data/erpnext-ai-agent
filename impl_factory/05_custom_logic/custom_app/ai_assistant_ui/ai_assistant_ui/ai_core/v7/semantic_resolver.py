@@ -104,6 +104,17 @@ def _cap_metrics(cap: Dict[str, Any]) -> Set[str]:
     return out
 
 
+def _cap_subject_hints(cap: Dict[str, Any]) -> Set[str]:
+    semantics = cap.get("semantics") if isinstance(cap.get("semantics"), dict) else {}
+    hints = semantics.get("subject_hints") if isinstance(semantics.get("subject_hints"), list) else cap.get("subject_tags") or []
+    out: Set[str] = set()
+    for h in list(hints or []):
+        s = str(h or "").strip().lower()
+        if s:
+            out.add(s)
+    return out
+
+
 def _cap_primary_dimension(cap: Dict[str, Any]) -> str:
     semantics = cap.get("semantics") if isinstance(cap.get("semantics"), dict) else {}
     primary = str(semantics.get("primary_dimension") or cap.get("primary_dimension") or "").strip().lower()
@@ -129,6 +140,50 @@ def _cap_presentation(cap: Dict[str, Any]) -> Dict[str, Any]:
     return cap.get("presentation") if isinstance(cap.get("presentation"), dict) else {}
 
 
+def _cap_threshold_metrics(cap: Dict[str, Any]) -> Set[str]:
+    semantics = cap.get("semantics") if isinstance(cap.get("semantics"), dict) else {}
+    raw = semantics.get("threshold_metrics") if isinstance(semantics.get("threshold_metrics"), list) else cap.get("threshold_metrics") or []
+    out: Set[str] = set()
+    for value in list(raw or []):
+        metric = str(canonical_metric(value) or "").strip().lower()
+        if metric:
+            out.add(metric)
+    return out
+
+
+def _cap_contribution_metrics(cap: Dict[str, Any]) -> Set[str]:
+    semantics = cap.get("semantics") if isinstance(cap.get("semantics"), dict) else {}
+    raw = semantics.get("contribution_metrics") if isinstance(semantics.get("contribution_metrics"), list) else cap.get("contribution_metrics") or []
+    out: Set[str] = set()
+    for value in list(raw or []):
+        metric = str(canonical_metric(value) or "").strip().lower()
+        if metric:
+            out.add(metric)
+    return out
+
+
+def _cap_supported_comparators(cap: Dict[str, Any]) -> Set[str]:
+    semantics = cap.get("semantics") if isinstance(cap.get("semantics"), dict) else {}
+    raw = semantics.get("supported_comparators") if isinstance(semantics.get("supported_comparators"), list) else cap.get("supported_comparators") or []
+    out: Set[str] = set()
+    for value in list(raw or []):
+        comp = str(value or "").strip().lower()
+        if comp:
+            out.add(comp)
+    return out
+
+
+def _cap_status_dimensions(cap: Dict[str, Any]) -> Set[str]:
+    semantics = cap.get("semantics") if isinstance(cap.get("semantics"), dict) else {}
+    raw = semantics.get("status_dimensions") if isinstance(semantics.get("status_dimensions"), list) else cap.get("status_dimensions") or []
+    out: Set[str] = set()
+    for value in list(raw or []):
+        dim = str(value or "").strip().lower()
+        if dim:
+            out.add(dim)
+    return out
+
+
 def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_context: Dict[str, Any]) -> Dict[str, Any]:
     constraints = _cap_constraints(cap)
     meta = _cap_meta(cap)
@@ -140,6 +195,7 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
     score = int(round(float(meta.get("confidence") or 0.0) * 100.0))
     reasons: List[str] = [f"confidence_base={score}"]
     hard_blockers: List[str] = []
+    missing_required_values: List[str] = []
     tie_break_score = 0
 
     if not bool(meta.get("fresh", True)):
@@ -249,6 +305,15 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
     requested_metric = str(canonical_metric(requested_metric_raw) or requested_metric_raw).strip().lower()
     metric_is_known = bool(str(known_metric(requested_metric_raw) or "").strip())
     cap_metrics = _cap_metrics(cap)
+    threshold_metric = str(spec_sem.get("threshold_metric") or "").strip().lower()
+    threshold_comparator = str(spec_sem.get("threshold_comparator") or "").strip().lower()
+    threshold_value_present = bool(spec_sem.get("threshold_value_present"))
+    contribution_metric = str(spec_sem.get("contribution_metric") or requested_metric or "").strip().lower()
+    exception_terms = {
+        str(x).strip().lower()
+        for x in list(spec_sem.get("exception_terms") or [])
+        if str(x).strip()
+    }
     if requested_metric and requested_metric not in {"unspecified", "none"}:
         if not metric_is_known:
             score -= 2
@@ -280,6 +345,77 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
             score -= 6
             reasons.append("metric_unknown(-6)")
 
+    if task_class == "threshold_exception_list":
+        threshold_metrics = _cap_threshold_metrics(cap)
+        supported_comparators = _cap_supported_comparators(cap)
+        status_dimensions = _cap_status_dimensions(cap)
+        if threshold_metric:
+            if threshold_metric in threshold_metrics:
+                score += 18
+                reasons.append("threshold_metric_supported(+18)")
+            else:
+                score -= 32
+                reasons.append("threshold_metric_not_supported(-32)")
+                hard_blockers.append("threshold_metric_not_supported")
+        else:
+            score -= 18
+            reasons.append("threshold_metric_missing(-18)")
+            if "threshold_metric" not in missing_required_values:
+                missing_required_values.append("threshold_metric")
+        if threshold_comparator:
+            if threshold_comparator in supported_comparators:
+                score += 8
+                reasons.append("threshold_comparator_supported(+8)")
+            else:
+                score -= 20
+                reasons.append("threshold_comparator_not_supported(-20)")
+                hard_blockers.append("threshold_comparator_not_supported")
+        else:
+            score -= 14
+            reasons.append("threshold_comparator_missing(-14)")
+            if "threshold_comparator" not in missing_required_values:
+                missing_required_values.append("threshold_comparator")
+        if threshold_value_present:
+            score += 4
+            reasons.append("threshold_value_present(+4)")
+        else:
+            score -= 18
+            reasons.append("threshold_value_missing(-18)")
+            if "threshold_value" not in missing_required_values:
+                missing_required_values.append("threshold_value")
+        if "overdue" in exception_terms:
+            if status_dimensions & {"status", "due_date"}:
+                score += 6
+                reasons.append("threshold_overdue_supported(+6)")
+            else:
+                score -= 18
+                reasons.append("threshold_overdue_not_supported(-18)")
+                hard_blockers.append("threshold_exception_term_not_supported")
+
+    if task_class == "contribution_share":
+        contribution_metrics = _cap_contribution_metrics(cap)
+        if requested_dims:
+            score += 6
+            reasons.append("contribution_dimension_present(+6)")
+        else:
+            score -= 18
+            reasons.append("contribution_dimension_missing(-18)")
+            if "contribution_dimension" not in missing_required_values:
+                missing_required_values.append("contribution_dimension")
+        if contribution_metric:
+            if contribution_metric in contribution_metrics:
+                score += 18
+                reasons.append("contribution_metric_supported(+18)")
+            else:
+                score -= 30
+                reasons.append("contribution_metric_not_supported(-30)")
+                hard_blockers.append("contribution_metric_not_supported")
+        else:
+            score -= 18
+            reasons.append("contribution_metric_missing(-18)")
+            if "contribution_metric" not in missing_required_values:
+                missing_required_values.append("contribution_metric")
+
     # Subject lexical signals are tie-break only (non-primary), never hard blockers.
     subject_tokens = {str(x or "").strip().lower() for x in list(spec_sem.get("subject_tokens") or []) if str(x or "").strip()}
     if subject_tokens:
@@ -287,6 +423,7 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
         report_family = str(cap.get("report_family") or cap.get("module") or "").strip().lower()
         cap_domains = _cap_domains(cap)
         cap_dims = _cap_dimensions(cap)
+        cap_subject_hints = _cap_subject_hints(cap)
         token_pool: Set[str] = set()
         token_pool |= _tokens(report_name)
         token_pool |= _tokens(report_family)
@@ -296,10 +433,22 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
             token_pool |= _tokens(d)
         for m in cap_metrics:
             token_pool |= _tokens(m)
+        for hint in cap_subject_hints:
+            token_pool |= _tokens(hint)
         overlap = sorted(list(subject_tokens & token_pool))
         if overlap:
-            tie_break_score = min(8, len(overlap) * 2)
-            reasons.append(f"subject_tiebreak(+{tie_break_score})")
+            lexical_score = min(8, len(overlap) * 2)
+            tie_break_score += lexical_score
+            reasons.append(f"subject_tiebreak(+{lexical_score})")
+        hint_tokens: Set[str] = set()
+        for hint in cap_subject_hints:
+            hint_tokens |= _tokens(hint)
+        hint_overlap = sorted(list(subject_tokens & hint_tokens))
+        if hint_overlap:
+            hint_score = min(10, len(hint_overlap) * 3)
+            tie_break_score += hint_score
+            score += hint_score
+            reasons.append(f"subject_hint_match(+{hint_score})")
 
     if task_type == "ranking" and output_mode == "top_n":
         supports_ranking = presentation.get("supports_ranking")
@@ -354,12 +503,12 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
             score += 4
             reasons.append("latest_records_primary_dimension(+4)")
 
-    missing_required_values: List[str] = []
     spec_filters = spec_sem.get("filters") if isinstance(spec_sem.get("filters"), dict) else {}
     for kind in sorted(cap_req_kinds):
         if _required_kind_satisfied(kind=kind, spec_sem=spec_sem, spec_filters=spec_filters):
             continue
-        missing_required_values.append(kind)
+        if kind not in missing_required_values:
+            missing_required_values.append(kind)
 
     if missing_required_values:
         score -= min(35, len(missing_required_values) * 12)

@@ -49,13 +49,13 @@ def load_last_result_payload(
     active_result_meta = latest_active_result_meta(session_doc=session_doc, safe_json_obj=safe_json_obj)
     active_report_name = str(active_result_meta.get("report_name") or "").strip()
 
-    def _assistant_report_payload(obj: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _assistant_report_payload(obj: Dict[str, Any], *, allow_empty: bool) -> Optional[Dict[str, Any]]:
         if str(obj.get("type") or "").strip().lower() != "report_table":
             return None
         table = obj.get("table") if isinstance(obj.get("table"), dict) else {}
         rows = table.get("rows") if isinstance(table.get("rows"), list) else []
         cols = table.get("columns") if isinstance(table.get("columns"), list) else []
-        if not rows or not cols:
+        if (not cols) or ((not allow_empty) and (not rows)):
             return None
         out = {
             "type": "report_table",
@@ -63,7 +63,20 @@ def load_last_result_payload(
             "title": str(obj.get("title") or obj.get("report_name") or "Previous Result").strip(),
             "table": {"columns": cols, "rows": rows},
         }
-        for key in ("_transform_last_applied", "_scaled_unit", "_output_mode", "_source_columns", "_source_table"):
+        for key in (
+            "_transform_last_applied",
+            "_scaled_unit",
+            "_output_mode",
+            "_source_columns",
+            "_source_table",
+            "_contribution_rule_applied",
+            "_contribution_rule",
+            "_contribution_metric",
+            "_contribution_metric_fieldname",
+            "_contribution_share_fieldname",
+            "_contribution_primary_dimension",
+            "_contribution_total_value",
+        ):
             if key in obj:
                 out[key] = obj.get(key)
         return apply_active_result_meta(out, active_result_meta=active_result_meta)
@@ -73,7 +86,7 @@ def load_last_result_payload(
             if str(message.role or "").strip().lower() != "assistant":
                 continue
             obj = safe_json_obj(message.content)
-            payload = _assistant_report_payload(obj)
+            payload = _assistant_report_payload(obj, allow_empty=False)
             if not isinstance(payload, dict):
                 continue
             if str(payload.get("report_name") or "").strip().lower() != active_report_name.lower():
@@ -84,7 +97,7 @@ def load_last_result_payload(
         if str(message.role or "").strip().lower() != "assistant":
             continue
         obj = safe_json_obj(message.content)
-        payload = _assistant_report_payload(obj)
+        payload = _assistant_report_payload(obj, allow_empty=False)
         if not isinstance(payload, dict):
             continue
         return payload
@@ -107,10 +120,91 @@ def load_last_result_payload(
             "title": report_name or "Previous Result",
             "table": {"columns": cols, "rows": rows},
         }
-        for key in ("_transform_last_applied", "_scaled_unit", "_output_mode"):
+        for key in (
+            "_transform_last_applied",
+            "_scaled_unit",
+            "_output_mode",
+            "_contribution_rule_applied",
+            "_contribution_rule",
+            "_contribution_metric",
+            "_contribution_metric_fieldname",
+            "_contribution_share_fieldname",
+            "_contribution_primary_dimension",
+            "_contribution_total_value",
+        ):
             if key in obj:
                 out[key] = obj.get(key)
         return apply_active_result_meta(out, active_result_meta=active_result_meta)
+    return None
+
+
+def load_latest_visible_report_payload(
+    *,
+    session_name: Optional[str],
+    frappe_module: Any,
+    safe_json_obj: Callable[[Any], Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if (not session_name) or (frappe_module is None):
+        return None
+    try:
+        session_doc = frappe_module.get_doc("AI Chat Session", session_name)
+    except Exception:
+        return None
+
+    active_result_meta = latest_active_result_meta(session_doc=session_doc, safe_json_obj=safe_json_obj)
+    active_report_name = str(active_result_meta.get("report_name") or "").strip()
+
+    def _assistant_report_payload(obj: Dict[str, Any], *, allow_empty: bool) -> Optional[Dict[str, Any]]:
+        if str(obj.get("type") or "").strip().lower() != "report_table":
+            return None
+        table = obj.get("table") if isinstance(obj.get("table"), dict) else {}
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        cols = table.get("columns") if isinstance(table.get("columns"), list) else []
+        if (not cols) or ((not allow_empty) and (not rows)):
+            return None
+        out = {
+            "type": "report_table",
+            "report_name": str(obj.get("report_name") or "").strip(),
+            "title": str(obj.get("title") or obj.get("report_name") or "Previous Result").strip(),
+            "table": {"columns": cols, "rows": rows},
+        }
+        for key in (
+            "_transform_last_applied",
+            "_scaled_unit",
+            "_output_mode",
+            "_source_columns",
+            "_source_table",
+            "_contribution_rule_applied",
+            "_contribution_rule",
+            "_contribution_metric",
+            "_contribution_metric_fieldname",
+            "_contribution_share_fieldname",
+            "_contribution_primary_dimension",
+            "_contribution_total_value",
+        ):
+            if key in obj:
+                out[key] = obj.get(key)
+        return apply_active_result_meta(out, active_result_meta=active_result_meta)
+
+    if active_report_name:
+        for message in reversed(session_doc.get("messages") or []):
+            if str(message.role or "").strip().lower() != "assistant":
+                continue
+            obj = safe_json_obj(message.content)
+            payload = _assistant_report_payload(obj, allow_empty=True)
+            if not isinstance(payload, dict):
+                continue
+            if str(payload.get("report_name") or "").strip().lower() != active_report_name.lower():
+                continue
+            return payload
+
+    for message in reversed(session_doc.get("messages") or []):
+        if str(message.role or "").strip().lower() != "assistant":
+            continue
+        obj = safe_json_obj(message.content)
+        payload = _assistant_report_payload(obj, allow_empty=True)
+        if isinstance(payload, dict):
+            return payload
     return None
 
 

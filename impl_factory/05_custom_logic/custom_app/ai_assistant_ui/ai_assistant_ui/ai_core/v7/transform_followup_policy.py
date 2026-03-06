@@ -4,9 +4,11 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai_assistant_ui.ai_core.ontology_normalization import (
+    canonical_dimension,
     canonical_metric,
     infer_filter_kinds,
     infer_transform_ambiguities,
+    known_dimension,
 )
 from ai_assistant_ui.ai_core.util_dates import extract_timeframe, today_date
 
@@ -62,6 +64,29 @@ def message_followup_semantic_strength(message: str) -> int:
     return score
 
 
+def _payload_dimensions(payload: Optional[Dict[str, Any]]) -> List[str]:
+    obj = payload if isinstance(payload, dict) else {}
+    out: List[str] = []
+    seen = set()
+
+    def _collect_dimension(value: Any) -> None:
+        dim = str(known_dimension(value) or canonical_dimension(value) or "").strip().lower()
+        if not dim or dim in seen:
+            return
+        seen.add(dim)
+        out.append(dim)
+
+    table = obj.get("table") if isinstance(obj.get("table"), dict) else {}
+    columns = table.get("columns") if isinstance(table.get("columns"), list) else []
+    source_columns = obj.get("_source_columns") if isinstance(obj.get("_source_columns"), list) else []
+    for col in list(columns) + list(source_columns):
+        if not isinstance(col, dict):
+            continue
+        _collect_dimension(col.get("fieldname"))
+        _collect_dimension(col.get("label"))
+    return out
+
+
 def should_promote_to_transform_followup(
     *,
     message: str,
@@ -85,6 +110,23 @@ def should_promote_to_transform_followup(
     aggregation = str(spec.get("aggregation") or "").strip().lower()
     wants_aggregate = bool(task_type == "kpi" or aggregation in {"sum", "avg", "average", "count", "min", "max"})
     prior_output_mode = str((last_result_payload or {}).get("_output_mode") or "").strip().lower()
+    explicit_dimension = str(known_dimension(message) or canonical_dimension(message) or "").strip().lower()
+    spec_dimensions = {
+        str(x).strip().lower()
+        for x in list(spec.get("dimensions") or []) + list(spec.get("group_by") or [])
+        if str(x or "").strip()
+    }
+    prior_dimensions = set(_payload_dimensions(last_result_payload))
+
+    # Explicit granularity refinement that introduces a new business dimension
+    # should trigger a fresh READ, not a transform of the previous result.
+    if (
+        explicit_dimension
+        and explicit_dimension not in spec_dimensions
+        and explicit_dimension not in prior_dimensions
+        and (not has_transform_hint)
+    ):
+        return False
 
     mm = memory_meta if isinstance(memory_meta, dict) else {}
     anchors_applied = [str(x).strip() for x in list(mm.get("anchors_applied") or []) if str(x or "").strip()]
@@ -115,6 +157,52 @@ def should_promote_to_transform_followup(
     if wants_projection_followup and (weak_current_turn or anchored_followup or (short_followup_message and contextual_followup)):
         return True
     return False
+
+
+def realign_transform_followup_to_read_refinement(
+    *,
+    message: str,
+    spec_obj: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    spec = dict(spec_obj or {})
+    intent = str(spec.get("intent") or "").strip().upper()
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    if intent != "TRANSFORM_LAST" and task_class != "transform_followup":
+        return spec
+
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+    if any(a.startswith("transform_") for a in ambiguities):
+        return spec
+
+    explicit_dimension = str(known_dimension(message) or canonical_dimension(message) or "").strip().lower()
+    if not explicit_dimension:
+        return spec
+
+    spec_dimensions = {
+        str(x).strip().lower()
+        for x in list(spec.get("dimensions") or []) + list(spec.get("group_by") or [])
+        if str(x or "").strip()
+    }
+    prior_dimensions = set(_payload_dimensions(last_result_payload))
+    if explicit_dimension in spec_dimensions or explicit_dimension in prior_dimensions:
+        return spec
+
+    out = dict(spec)
+    out["intent"] = "READ"
+    out["task_type"] = "detail"
+    out["task_class"] = "detail_projection"
+
+    dims = [str(x).strip().lower() for x in list(out.get("dimensions") or []) if str(x or "").strip()]
+    if explicit_dimension not in dims:
+        dims.append(explicit_dimension)
+    out["dimensions"] = dims[:6]
+
+    groups = [str(x).strip().lower() for x in list(out.get("group_by") or []) if str(x or "").strip()]
+    if explicit_dimension not in groups:
+        groups.append(explicit_dimension)
+    out["group_by"] = groups[:6]
+    return out
 
 
 def promote_spec_to_transform_followup(

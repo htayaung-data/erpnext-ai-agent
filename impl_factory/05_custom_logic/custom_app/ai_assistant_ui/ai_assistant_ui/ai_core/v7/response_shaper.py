@@ -627,6 +627,22 @@ def shape_response(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) ->
 
     wanted = _minimal_columns(spec)
     if wanted:
+        task_class = str(spec.get("task_class") or "").strip().lower()
+        if task_class == "list_latest_records":
+            table = out.get("table") if isinstance(out.get("table"), dict) else {}
+            cols = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+            temporal_fn = _detect_temporal_column(cols)
+            if temporal_fn:
+                temporal_label = ""
+                for c in cols:
+                    fn = str(c.get("fieldname") or "").strip()
+                    if fn == temporal_fn:
+                        temporal_label = str(c.get("label") or "").strip()
+                        break
+                wanted_norm = {_norm(x) for x in wanted if _norm(x)}
+                temporal_aliases = {_norm(temporal_fn), _norm(temporal_label)}
+                if not (wanted_norm & temporal_aliases):
+                    wanted.append(temporal_label or temporal_fn)
         out = _project_table(out, wanted, report_contract)
 
     if mode == "top_n":

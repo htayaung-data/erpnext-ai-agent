@@ -19,12 +19,29 @@
           "finance",
           "sales"
         ],
+        "subject_hints": [
+          "accounts receivable",
+          "receivable",
+          "customer receivable"
+        ],
         "dimension_hints": [
           "customer"
         ],
         "metric_hints": [
           "outstanding_amount",
           "revenue"
+        ],
+        "contribution_metrics": [
+          "revenue"
+        ],
+        "threshold_metrics": [
+          "outstanding_amount"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
         ],
         "primary_dimension": "customer"
       },
@@ -51,6 +68,18 @@
             ]
           }
         },
+        "exception_safe_columns": [
+          "party",
+          "customer",
+          "closing_balance"
+        ],
+        "contribution_safe_columns": [
+          "party",
+          "customer",
+          "invoiced_amount",
+          "amount",
+          "contribution_share"
+        ],
         "transform_safe_columns": [
           "party",
           "customer",
@@ -78,12 +107,30 @@
           "finance",
           "purchasing"
         ],
+        "subject_hints": [
+          "accounts payable",
+          "payable",
+          "supplier payable"
+        ],
         "dimension_hints": [
           "supplier"
         ],
         "metric_hints": [
           "outstanding_amount",
           "purchase_amount"
+        ],
+        "contribution_metrics": [
+          "purchase_amount"
+        ],
+        "threshold_metrics": [
+          "outstanding_amount",
+          "purchase_amount"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
         ],
         "primary_dimension": "supplier"
       },
@@ -111,6 +158,22 @@
             ]
           }
         },
+        "exception_safe_columns": [
+          "party",
+          "supplier",
+          "closing_balance",
+          "invoiced_amount",
+          "billed_amount",
+          "amount"
+        ],
+        "contribution_safe_columns": [
+          "party",
+          "supplier",
+          "invoiced_amount",
+          "billed_amount",
+          "amount",
+          "contribution_share"
+        ],
         "transform_safe_columns": [
           "party",
           "supplier",
@@ -147,6 +210,9 @@
           "revenue",
           "sold_quantity",
           "outstanding_amount"
+        ],
+        "contribution_metrics": [
+          "revenue"
         ],
         "primary_dimension": "item"
       },
@@ -185,7 +251,14 @@
           "amount",
           "qty",
           "sold_quantity",
-          "outstanding_amount"
+          "outstanding_amount",
+          "contribution_share"
+        ],
+        "contribution_safe_columns": [
+          "item_code",
+          "item_name",
+          "amount",
+          "contribution_share"
         ]
       }
     },
@@ -215,6 +288,16 @@
           "purchase_amount",
           "received_quantity",
           "outstanding_amount"
+        ],
+        "threshold_metrics": [
+          "purchase_amount",
+          "outstanding_amount"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
         ],
         "primary_dimension": "item"
       },
@@ -249,6 +332,14 @@
             ]
           }
         },
+        "exception_safe_columns": [
+          "item_code",
+          "item_name",
+          "supplier",
+          "purchase_amount",
+          "amount",
+          "outstanding_amount"
+        ],
         "transform_safe_columns": [
           "item_code",
           "item_name",
@@ -281,6 +372,15 @@
         "metric_hints": [
           "stock_balance"
         ],
+        "threshold_metrics": [
+          "stock_balance"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
+        ],
         "primary_dimension": "warehouse"
       },
       "presentation": {
@@ -293,7 +393,8 @@
         "column_roles": {
           "dimensions": {
             "warehouse": [
-              "warehouse"
+              "warehouse",
+              "name"
             ]
           },
           "metrics": {
@@ -304,11 +405,183 @@
             ]
           }
         },
-        "transform_safe_columns": [
+        "exception_safe_columns": [
+          "name",
           "warehouse",
           "stock_balance",
           "balance",
           "bal_qty"
+        ],
+        "transform_safe_columns": [
+          "name",
+          "warehouse",
+          "stock_balance",
+          "balance",
+          "bal_qty"
+        ]
+      }
+    },
+    "Stock Balance": {
+      "domain_tags": [
+        "inventory"
+      ],
+      "dimension_tags": [
+        "item",
+        "warehouse"
+      ],
+      "metric_tags": [
+        "stock_quantity"
+      ],
+      "primary_dimension": "item",
+      "semantics": {
+        "domain_hints": [
+          "inventory"
+        ],
+        "dimension_hints": [
+          "item",
+          "warehouse"
+        ],
+        "metric_hints": [
+          "stock_quantity"
+        ],
+        "threshold_metrics": [
+          "stock_quantity"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
+        ],
+        "primary_dimension": "item"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": false,
+        "column_roles": {
+          "dimensions": {
+            "item": [
+              "item",
+              "item_code",
+              "name",
+              "item_name"
+            ],
+            "warehouse": [
+              "warehouse"
+            ]
+          },
+          "metrics": {
+            "stock_quantity": [
+              "bal_qty",
+              "stock_qty",
+              "actual_qty",
+              "qty"
+            ]
+          }
+        },
+        "exception_safe_columns": [
+          "item",
+          "item_code",
+          "item_name",
+          "warehouse",
+          "bal_qty",
+          "stock_qty",
+          "actual_qty",
+          "qty"
+        ],
+        "transform_safe_columns": [
+          "item",
+          "item_code",
+          "item_name",
+          "warehouse",
+          "bal_qty",
+          "stock_qty",
+          "actual_qty",
+          "qty"
+        ]
+      }
+    },
+    "Warehouse wise Item Balance Age and Value": {
+      "domain_tags": [
+        "inventory"
+      ],
+      "dimension_tags": [
+        "item",
+        "warehouse"
+      ],
+      "metric_tags": [
+        "stock_balance",
+        "stock_quantity"
+      ],
+      "primary_dimension": "item",
+      "semantics": {
+        "domain_hints": [
+          "inventory"
+        ],
+        "dimension_hints": [
+          "item",
+          "warehouse"
+        ],
+        "metric_hints": [
+          "stock_balance",
+          "stock_quantity"
+        ],
+        "threshold_metrics": [],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
+        ],
+        "primary_dimension": "item"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": false,
+        "column_roles": {
+          "dimensions": {
+            "item": [
+              "item",
+              "item_code",
+              "name"
+            ],
+            "warehouse": [
+              "warehouse"
+            ]
+          },
+          "metrics": {
+            "stock_balance": [
+              "stock_balance",
+              "balance",
+              "bal_qty",
+              "qty"
+            ],
+            "stock_quantity": [
+              "qty"
+            ]
+          }
+        },
+        "exception_safe_columns": [
+          "item",
+          "item_code",
+          "item_name",
+          "name",
+          "warehouse",
+          "qty",
+          "stock_balance",
+          "balance",
+          "bal_qty"
+        ],
+        "transform_safe_columns": [
+          "item",
+          "item_code",
+          "item_name",
+          "name",
+          "warehouse",
+          "stock_balance",
+          "balance",
+          "bal_qty",
+          "qty"
         ]
       }
     },
@@ -321,7 +594,8 @@
         "warehouse"
       ],
       "metric_tags": [
-        "stock_balance"
+        "stock_balance",
+        "stock_quantity"
       ],
       "primary_dimension": "item",
       "semantics": {
@@ -333,7 +607,15 @@
           "warehouse"
         ],
         "metric_hints": [
-          "stock_balance"
+          "stock_balance",
+          "stock_quantity"
+        ],
+        "threshold_metrics": [],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
         ],
         "primary_dimension": "item"
       },
@@ -355,15 +637,205 @@
               "actual_qty",
               "stock_balance",
               "bundle_qty"
+            ],
+            "stock_quantity": [
+              "actual_qty"
             ]
           }
         },
+        "exception_safe_columns": [
+          "item",
+          "item_code",
+          "warehouse",
+          "actual_qty",
+          "bundle_qty"
+        ],
         "transform_safe_columns": [
           "item",
           "item_code",
           "warehouse",
           "actual_qty",
           "bundle_qty"
+        ]
+      }
+    },
+    "Latest Sales Invoice": {
+      "domain_tags": [
+        "sales",
+        "finance"
+      ],
+      "dimension_tags": [
+        "invoice",
+        "customer"
+      ],
+      "metric_tags": [
+        "invoice_amount",
+        "outstanding_amount"
+      ],
+      "primary_dimension": "invoice",
+      "semantics": {
+        "domain_hints": [
+          "sales",
+          "finance"
+        ],
+        "subject_hints": [
+          "sales invoice",
+          "overdue sales invoice"
+        ],
+        "dimension_hints": [
+          "invoice",
+          "customer"
+        ],
+        "metric_hints": [
+          "invoice_amount",
+          "outstanding_amount"
+        ],
+        "threshold_metrics": [
+          "invoice_amount",
+          "outstanding_amount"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
+        ],
+        "status_dimensions": [
+          "status",
+          "due_date"
+        ],
+        "primary_dimension": "invoice"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": false,
+        "column_roles": {
+          "dimensions": {
+            "invoice": [
+              "name",
+              "sales_invoice_number"
+            ],
+            "customer": [
+              "customer"
+            ]
+          },
+          "metrics": {
+            "invoice_amount": [
+              "grand_total",
+              "base_grand_total"
+            ],
+            "outstanding_amount": [
+              "outstanding_amount"
+            ]
+          }
+        },
+        "exception_safe_columns": [
+          "name",
+          "sales_invoice_number",
+          "posting_date",
+          "customer",
+          "grand_total",
+          "outstanding_amount",
+          "status"
+        ],
+        "transform_safe_columns": [
+          "name",
+          "sales_invoice_number",
+          "posting_date",
+          "customer",
+          "grand_total",
+          "outstanding_amount",
+          "status"
+        ]
+      }
+    },
+    "Latest Purchase Invoice": {
+      "domain_tags": [
+        "purchasing",
+        "finance"
+      ],
+      "dimension_tags": [
+        "invoice",
+        "supplier"
+      ],
+      "metric_tags": [
+        "invoice_amount",
+        "outstanding_amount"
+      ],
+      "primary_dimension": "invoice",
+      "semantics": {
+        "domain_hints": [
+          "purchasing",
+          "finance"
+        ],
+        "subject_hints": [
+          "purchase invoice",
+          "overdue purchase invoice"
+        ],
+        "dimension_hints": [
+          "invoice",
+          "supplier"
+        ],
+        "metric_hints": [
+          "invoice_amount",
+          "outstanding_amount"
+        ],
+        "threshold_metrics": [
+          "invoice_amount",
+          "outstanding_amount"
+        ],
+        "supported_comparators": [
+          "gt",
+          "gte",
+          "lt",
+          "lte"
+        ],
+        "status_dimensions": [
+          "status",
+          "due_date"
+        ],
+        "primary_dimension": "invoice"
+      },
+      "presentation": {
+        "result_grain": "detail",
+        "supports_ranking": false,
+        "column_roles": {
+          "dimensions": {
+            "invoice": [
+              "name",
+              "purchase_invoice_number"
+            ],
+            "supplier": [
+              "supplier"
+            ]
+          },
+          "metrics": {
+            "invoice_amount": [
+              "grand_total",
+              "base_grand_total"
+            ],
+            "outstanding_amount": [
+              "outstanding_amount"
+            ]
+          }
+        },
+        "exception_safe_columns": [
+          "name",
+          "purchase_invoice_number",
+          "posting_date",
+          "supplier",
+          "grand_total",
+          "outstanding_amount",
+          "status"
+        ],
+        "transform_safe_columns": [
+          "name",
+          "purchase_invoice_number",
+          "posting_date",
+          "supplier",
+          "grand_total",
+          "outstanding_amount",
+          "status"
         ]
       }
     }

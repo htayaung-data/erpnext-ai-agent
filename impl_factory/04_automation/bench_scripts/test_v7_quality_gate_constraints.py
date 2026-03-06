@@ -155,6 +155,119 @@ class V7QualityGateConstraintTests(unittest.TestCase):
         self.assertTrue(bool((by_name.get("requested_metric_present") or {}).get("ok")))
         self.assertEqual(str(out.get("verdict") or ""), "PASS")
 
+    def test_threshold_warehouse_dimension_can_use_name_field(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "subject": "warehouses",
+            "metric": "stock balance",
+            "dimensions": ["warehouse"],
+            "group_by": ["warehouse"],
+            "filters": {
+                "_threshold_rule": {
+                    "metric": "stock_balance",
+                    "comparator": "lt",
+                    "value": 50_000_000.0,
+                    "value_present": True,
+                }
+            },
+            "output_contract": {"mode": "detail", "minimal_columns": []},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Warehouse Wise Stock Balance",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Warehouse Wise Stock Balance",
+            "_threshold_rule_applied": True,
+            "_threshold_metric_fieldname": "stock_balance",
+            "table": {
+                "columns": [
+                    {"fieldname": "name", "label": "Warehouse", "fieldtype": "Link"},
+                    {"fieldname": "stock_balance", "label": "Stock Balance", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"name": "Stores - MMOB", "stock_balance": 0.0},
+                    {"name": "Finished Goods - MMOB", "stock_balance": 0.0},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        self.assertEqual(str(out.get("verdict") or ""), "PASS")
+
+    def test_contribution_share_requires_contribution_column_and_consistent_values(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "ranking",
+            "task_class": "contribution_share",
+            "subject": "customers",
+            "metric": "revenue",
+            "dimensions": ["customer"],
+            "group_by": ["customer"],
+            "filters": {
+                "_contribution_rule": {
+                    "metric": "revenue",
+                    "basis": "of_total",
+                    "contribution_terms": ["share_of_total"],
+                }
+            },
+            "top_n": 10,
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue", "contribution share"]},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Customer Ledger Summary",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_contribution_rule_applied": True,
+            "_contribution_metric_fieldname": "invoiced_amount",
+            "_contribution_share_fieldname": "contribution_share",
+            "_contribution_total_value": 100.0,
+            "table": {
+                "columns": [
+                    {"fieldname": "party", "label": "Customer", "fieldtype": "Link"},
+                    {"fieldname": "invoiced_amount", "label": "Revenue", "fieldtype": "Currency"},
+                    {"fieldname": "contribution_share", "label": "Contribution Share", "fieldtype": "Data"},
+                ],
+                "rows": [
+                    {"party": "A", "invoiced_amount": 60.0, "contribution_share": "60%"},
+                    {"party": "B", "invoiced_amount": 40.0, "contribution_share": "40%"},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        self.assertEqual(str(out.get("verdict") or ""), "PASS")
+
     def test_latest_records_requires_time_and_identifier_axes(self):
         mod = _load_module()
         spec = {
@@ -288,6 +401,185 @@ class V7QualityGateConstraintTests(unittest.TestCase):
         checks = [c for c in list(out.get("checks") or []) if isinstance(c, dict)]
         by_name = {str(c.get("check") or ""): c for c in checks}
         self.assertTrue(bool((by_name.get("latest_records_subject_alignment") or {}).get("ok")))
+
+    def test_threshold_exception_quality_checks_pass_for_valid_customer_outstanding_result(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "subject": "customers",
+            "metric": "outstanding amount",
+            "dimensions": ["customer"],
+            "group_by": ["customer"],
+            "filters": {
+                "_threshold_rule": {
+                    "metric": "outstanding_amount",
+                    "comparator": "gt",
+                    "value": 10_000_000.0,
+                    "value_present": True,
+                }
+            },
+            "output_contract": {"mode": "detail", "minimal_columns": ["customer", "outstanding amount"]},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Customer Ledger Summary",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_threshold_rule_applied": True,
+            "_threshold_metric_fieldname": "closing_balance",
+            "_threshold_comparator": "gt",
+            "table": {
+                "columns": [
+                    {"fieldname": "party", "label": "Customer", "fieldtype": "Link"},
+                    {"fieldname": "closing_balance", "label": "Outstanding Amount", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"party": "Shwe Li Road Mobile Wholesale", "closing_balance": 16218000.0},
+                    {"party": "Latha Mobile Wholesale", "closing_balance": 15830000.0},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        checks = [c for c in list(out.get("checks") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("check") or ""): c for c in checks}
+        self.assertTrue(bool((by_name.get("threshold_rule_applied") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("threshold_primary_dimension_alignment") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("threshold_comparator_respected") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("threshold_aggregate_rows_excluded") or {}).get("ok")))
+        self.assertEqual(str(out.get("verdict") or ""), "PASS")
+
+    def test_threshold_exception_quality_fails_when_comparator_not_respected(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "subject": "customers",
+            "metric": "outstanding amount",
+            "dimensions": ["customer"],
+            "group_by": ["customer"],
+            "filters": {
+                "_threshold_rule": {
+                    "metric": "outstanding_amount",
+                    "comparator": "gt",
+                    "value": 10_000_000.0,
+                    "value_present": True,
+                }
+            },
+            "output_contract": {"mode": "detail", "minimal_columns": ["customer", "outstanding amount"]},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Customer Ledger Summary",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_threshold_rule_applied": True,
+            "_threshold_metric_fieldname": "closing_balance",
+            "_threshold_comparator": "gt",
+            "table": {
+                "columns": [
+                    {"fieldname": "party", "label": "Customer", "fieldtype": "Link"},
+                    {"fieldname": "closing_balance", "label": "Outstanding Amount", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"party": "City Mobile Mart", "closing_balance": 1800000.0},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        checks = [c for c in list(out.get("checks") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("check") or ""): c for c in checks}
+        self.assertFalse(bool((by_name.get("threshold_comparator_respected") or {}).get("ok")))
+        self.assertEqual(str(out.get("verdict") or ""), "REPAIRABLE_FAIL")
+
+    def test_threshold_exception_quality_fails_when_aggregate_row_leaks(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "subject": "warehouses",
+            "metric": "stock balance",
+            "dimensions": ["warehouse"],
+            "group_by": ["warehouse"],
+            "filters": {
+                "_threshold_rule": {
+                    "metric": "stock_balance",
+                    "comparator": "lt",
+                    "value": 50_000_000.0,
+                    "value_present": True,
+                }
+            },
+            "output_contract": {"mode": "detail", "minimal_columns": ["warehouse", "stock balance"]},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Warehouse Wise Stock Balance",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Warehouse Wise Stock Balance",
+            "_threshold_rule_applied": True,
+            "_threshold_metric_fieldname": "stock_balance",
+            "_threshold_comparator": "lt",
+            "table": {
+                "columns": [
+                    {"fieldname": "warehouse", "label": "Warehouse", "fieldtype": "Link"},
+                    {"fieldname": "stock_balance", "label": "Stock Balance", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"warehouse": "All Warehouses - MMOB", "stock_balance": 0.0},
+                    {"warehouse": "Stores - MMOB", "stock_balance": 0.0},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        checks = [c for c in list(out.get("checks") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("check") or ""): c for c in checks}
+        self.assertFalse(bool((by_name.get("threshold_aggregate_rows_excluded") or {}).get("ok")))
+        self.assertEqual(str(out.get("verdict") or ""), "REPAIRABLE_FAIL")
 
 
 if __name__ == "__main__":

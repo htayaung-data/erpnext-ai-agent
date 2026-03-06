@@ -11,12 +11,16 @@ except Exception:  # pragma: no cover
     frappe = None
 
 from ai_assistant_ui.ai_core.ontology_normalization import (
+    canonical_dimension,
     canonical_metric,
+    infer_advisory_intents,
     infer_filter_kinds,
     infer_output_flags,
     infer_record_doctype_candidates,
     infer_transform_ambiguities,
     infer_write_request,
+    known_dimension,
+    known_metric,
     metric_domain,
 )
 try:
@@ -73,6 +77,7 @@ from ai_assistant_ui.ai_core.v7.session_result_state import (
     capture_source_columns as _state_capture_source_columns,
     latest_active_result_meta as _state_latest_active_result_meta,
     load_last_result_payload as _state_load_last_result_payload,
+    load_latest_visible_report_payload as _state_load_latest_visible_report_payload,
 )
 from ai_assistant_ui.ai_core.v7.shaping_policy import (
     enrich_minimal_columns_from_report_metadata as _shape_enrich_minimal_columns_from_report_metadata,
@@ -93,9 +98,12 @@ from ai_assistant_ui.ai_core.v7.shaping_policy import (
 from ai_assistant_ui.ai_core.v7.resolver_pipeline import make_resolver_tool_message, resolve_business_request
 from ai_assistant_ui.ai_core.v7.spec_pipeline import generate_business_request_spec, make_spec_tool_message
 from ai_assistant_ui.ai_core.v7.transform_last import apply_transform_last, make_transform_tool_message
+from ai_assistant_ui.ai_core.v7.contribution_share_policy import apply_contribution_share as _contribution_apply
+from ai_assistant_ui.ai_core.v7.threshold_exception_policy import apply_threshold_exception_filter as _threshold_apply_filter
 from ai_assistant_ui.ai_core.v7.transform_followup_policy import (
     merge_transform_ambiguities_into_spec as _policy_merge_transform_ambiguities_into_spec,
     promote_spec_to_transform_followup as _policy_promote_spec_to_transform_followup,
+    realign_transform_followup_to_read_refinement as _policy_realign_transform_followup_to_read_refinement,
     should_promote_to_transform_followup as _policy_should_promote_to_transform_followup,
 )
 from ai_assistant_ui.ai_core.v7.write_engine import (
@@ -103,7 +111,7 @@ from ai_assistant_ui.ai_core.v7.write_engine import (
     is_explicit_confirm,
     make_write_engine_tool_message,
 )
-from ai_assistant_ui.ai_core.v7.contract_registry import canonical_dimensions, default_clarification_question
+from ai_assistant_ui.ai_core.v7.contract_registry import canonical_dimensions, clarification_question_for_filter_kind, default_clarification_question
 try:
     from ai_assistant_ui.ai_core.tools.report_tools import run_fac_report
 except Exception:  # pragma: no cover
@@ -217,6 +225,14 @@ def _apply_requested_entity_row_filters(*, payload: Dict[str, Any], business_spe
     return out
 
 
+def _apply_threshold_exception_filter(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    return _threshold_apply_filter(payload=payload, business_spec=business_spec)
+
+
+def _apply_contribution_share(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    return _contribution_apply(payload=payload, business_spec=business_spec)
+
+
 def _latest_active_result_meta(session_doc: Any) -> Dict[str, Any]:
     return _state_latest_active_result_meta(session_doc=session_doc, safe_json_obj=_safe_json_obj)
 
@@ -232,9 +248,27 @@ def _merge_pinned_filters_into_spec(*, spec_obj: Dict[str, Any], plan_seed: Dict
     """
     spec = dict(spec_obj or {})
     plan = plan_seed if isinstance(plan_seed, dict) else {}
+    if "intent" in plan:
+        pinned_intent = str(plan.get("intent") or "").strip().upper()
+        if pinned_intent:
+            spec["intent"] = pinned_intent
+    if "task_type" in plan:
+        spec["task_type"] = str(plan.get("task_type") or "").strip().lower()
     pinned_task_class = str(plan.get("task_class") or "").strip().lower()
     if pinned_task_class:
         spec["task_class"] = pinned_task_class
+    if "subject" in plan:
+        spec["subject"] = str(plan.get("subject") or "").strip()
+    if "metric" in plan:
+        spec["metric"] = str(plan.get("metric") or "").strip()
+    if "domain" in plan:
+        spec["domain"] = str(plan.get("domain") or "").strip()
+    if "aggregation" in plan:
+        spec["aggregation"] = str(plan.get("aggregation") or "").strip()
+    if "dimensions" in plan and isinstance(plan.get("dimensions"), list):
+        spec["dimensions"] = [str(x).strip() for x in list(plan.get("dimensions") or []) if str(x or "").strip()]
+    if "group_by" in plan and isinstance(plan.get("group_by"), list):
+        spec["group_by"] = [str(x).strip() for x in list(plan.get("group_by") or []) if str(x or "").strip()]
 
     try:
         pinned_top_n = int(plan.get("top_n") or 0)
@@ -255,6 +289,21 @@ def _merge_pinned_filters_into_spec(*, spec_obj: Dict[str, Any], plan_seed: Dict
         spec["output_contract"] = oc2
 
     pinned_min_cols = [str(x).strip() for x in list(plan.get("minimal_columns") or []) if str(x or "").strip()]
+    pinned_task_class_for_cols = str(spec.get("task_class") or pinned_task_class or "").strip().lower()
+    if pinned_min_cols and pinned_task_class_for_cols == "list_latest_records":
+        filtered_min_cols: List[str] = []
+        for raw in pinned_min_cols:
+            tokens = {tok for tok in re.findall(r"[a-z0-9]+", str(raw or "").strip().lower()) if tok}
+            if not tokens:
+                continue
+            has_generic_detail = bool(tokens & {"detail", "details", "record", "records"})
+            has_identifier_or_time_axis = bool(tokens & {"id", "number", "code", "name", "date", "time"})
+            if has_generic_detail and (not has_identifier_or_time_axis):
+                # Resume seeds can carry placeholders like "invoice details";
+                # keep deterministic latest-record axes instead of re-applying generic projection hints.
+                continue
+            filtered_min_cols.append(str(raw).strip())
+        pinned_min_cols = filtered_min_cols
     if pinned_min_cols:
         oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
         oc2 = dict(oc)
@@ -282,12 +331,716 @@ def _merge_pinned_filters_into_spec(*, spec_obj: Dict[str, Any], plan_seed: Dict
     return spec
 
 
+def _threshold_unsupported_text(*, reason: str, business_spec: Dict[str, Any]) -> str:
+    reason_lc = str(reason or "").strip().lower()
+    if reason_lc == "advisory_analysis_not_supported":
+        return (
+            "I can list deterministic threshold exceptions, but I can't yet explain why they are risky in this mode. "
+            "Please ask for a concrete exception list instead."
+        )
+    if reason_lc == "range_threshold_not_supported":
+        return (
+            "I can't yet apply more than one threshold bound in a single exception request. "
+            "Please use one threshold condition at a time."
+        )
+    if reason_lc == "unsupported_grouping_not_supported":
+        return (
+            "I can't yet group threshold exceptions by a secondary dimension in this class. "
+            "Please ask for the exception list directly."
+        )
+    return _unsupported_message_from_spec(business_spec)
+
+
+def _threshold_error_payload(*, reason: str, business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    reason_lc = str(reason or "").strip().lower()
+    code_map = {
+        "advisory_analysis_not_supported": "THRESHOLD_ADVISORY_UNSUPPORTED",
+        "range_threshold_not_supported": "THRESHOLD_RANGE_UNSUPPORTED",
+        "unsupported_grouping_not_supported": "THRESHOLD_GROUPING_UNSUPPORTED",
+    }
+    code = code_map.get(reason_lc, "THRESHOLD_UNSUPPORTED")
+    text = _threshold_unsupported_text(reason=reason_lc, business_spec=business_spec)
+    err_env = {
+        "type": "error_envelope",
+        "code": code,
+        "stage": "threshold_precheck",
+        "trace_id": f"threshold_{reason_lc or 'unsupported'}",
+        "user_safe_message": text,
+    }
+    return {
+        "type": "error",
+        "text": text,
+        "_tool_messages": [json.dumps(err_env)],
+    }
+
+
+def _threshold_precheck(
+    *,
+    message: str,
+    business_spec: Dict[str, Any],
+    previous_topic_state: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    spec = business_spec if isinstance(business_spec, dict) else {}
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    active_topic = previous_topic_state.get("active_topic") if isinstance(previous_topic_state, dict) and isinstance(previous_topic_state.get("active_topic"), dict) else {}
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+
+    unsupported_reason = str(filters.get("_threshold_unsupported_reason") or "").strip().lower()
+    if (not unsupported_reason) and active_task_class == "threshold_exception_list":
+        if infer_advisory_intents(message):
+            unsupported_reason = "advisory_analysis_not_supported"
+    if unsupported_reason:
+        base_spec = spec if task_class == "threshold_exception_list" else (active_topic if active_task_class == "threshold_exception_list" else spec)
+        return {
+            "payload": _threshold_error_payload(
+                reason=unsupported_reason,
+                business_spec=base_spec if isinstance(base_spec, dict) else spec,
+            )
+        }
+
+    missing_filter_kind = str(filters.get("_threshold_missing_filter_kind") or "").strip().lower()
+    if task_class == "threshold_exception_list" and missing_filter_kind and not str(filters.get(missing_filter_kind) or "").strip():
+        question = clarification_question_for_filter_kind(missing_filter_kind)
+        return {
+            "clarify_decision": {
+                "should_clarify": True,
+                "reason": "missing_required_filter_value",
+                "question": question,
+                "options": [],
+                "target_filter_key": missing_filter_kind,
+                "raw_value": "",
+                "policy_version": "phase5_blocker_only_v1",
+            }
+        }
+    return {}
+
+
+def _contribution_unsupported_text(*, reason: str, business_spec: Dict[str, Any]) -> str:
+    reason_lc = str(reason or "").strip().lower()
+    if reason_lc == "advisory_analysis_not_supported":
+        return (
+            "I can show deterministic contribution share of total, but I can't yet interpret whether the concentration is risky in this mode. "
+            "Please ask for the contribution share table directly."
+        )
+    if reason_lc == "unsupported_grouping_not_supported":
+        return (
+            "I can't yet calculate contribution share for that grouping in this class. "
+            "Please use customer, supplier, or item in the approved first slice."
+        )
+    if reason_lc == "cumulative_share_not_supported":
+        return (
+            "I can't yet calculate cumulative or Pareto-style share in this class. "
+            "Please ask for the direct contribution share table instead."
+        )
+    if reason_lc == "comparison_not_supported":
+        return (
+            "I can't yet compare contribution share across time periods in this class. "
+            "Please ask for a single-period contribution share table."
+        )
+    return _unsupported_message_from_spec(business_spec)
+
+
+def _contribution_error_payload(*, reason: str, business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    reason_lc = str(reason or "").strip().lower()
+    code_map = {
+        "advisory_analysis_not_supported": "CONTRIBUTION_ADVISORY_UNSUPPORTED",
+        "unsupported_grouping_not_supported": "CONTRIBUTION_GROUPING_UNSUPPORTED",
+        "cumulative_share_not_supported": "CONTRIBUTION_CUMULATIVE_UNSUPPORTED",
+        "comparison_not_supported": "CONTRIBUTION_COMPARISON_UNSUPPORTED",
+    }
+    code = code_map.get(reason_lc, "CONTRIBUTION_UNSUPPORTED")
+    text = _contribution_unsupported_text(reason=reason_lc, business_spec=business_spec)
+    err_env = {
+        "type": "error_envelope",
+        "code": code,
+        "stage": "contribution_precheck",
+        "trace_id": f"contribution_{reason_lc or 'unsupported'}",
+        "user_safe_message": text,
+    }
+    return {
+        "type": "error",
+        "text": text,
+        "_tool_messages": [json.dumps(err_env)],
+    }
+
+
+def _contribution_precheck(
+    *,
+    message: str,
+    business_spec: Dict[str, Any],
+    previous_topic_state: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    spec = business_spec if isinstance(business_spec, dict) else {}
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    active_topic = previous_topic_state.get("active_topic") if isinstance(previous_topic_state, dict) and isinstance(previous_topic_state.get("active_topic"), dict) else {}
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+
+    unsupported_reason = str(filters.get("_contribution_unsupported_reason") or "").strip().lower()
+    if (not unsupported_reason) and active_task_class == "contribution_share":
+        if infer_advisory_intents(message):
+            unsupported_reason = "advisory_analysis_not_supported"
+    if unsupported_reason:
+        base_spec = spec if task_class == "contribution_share" else (active_topic if active_task_class == "contribution_share" else spec)
+        return {
+            "payload": _contribution_error_payload(
+                reason=unsupported_reason,
+                business_spec=base_spec if isinstance(base_spec, dict) else spec,
+            )
+        }
+
+    missing_filter_kind = str(filters.get("_contribution_missing_filter_kind") or "").strip().lower()
+    if task_class == "contribution_share" and missing_filter_kind:
+        question = clarification_question_for_filter_kind(missing_filter_kind)
+        return {
+            "clarify_decision": {
+                "should_clarify": True,
+                "reason": "missing_required_filter_value",
+                "question": question,
+                "options": [],
+                "target_filter_key": missing_filter_kind,
+                "raw_value": "",
+                "policy_version": "phase5_blocker_only_v1",
+            }
+        }
+    return {}
+
+
 def _load_last_result_payload(*, session_name: Optional[str]) -> Optional[Dict[str, Any]]:
     return _state_load_last_result_payload(
         session_name=session_name,
         frappe_module=frappe,
         safe_json_obj=_safe_json_obj,
     )
+
+
+def _load_latest_visible_report_payload(*, session_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    return _state_load_latest_visible_report_payload(
+        session_name=session_name,
+        frappe_module=frappe,
+        safe_json_obj=_safe_json_obj,
+    )
+
+
+def _preferred_subject_from_dimension(dim: str) -> str:
+    d = str(dim or "").strip().lower()
+    if d == "item":
+        return "products"
+    if not d:
+        return ""
+    return f"{d}s"
+
+
+def _message_has_explicit_dimension_signal(message: str) -> bool:
+    allowed = {"customer", "supplier", "item", "warehouse", "company", "territory"}
+    direct = str(canonical_dimension(message) or "").strip().lower()
+    if direct in allowed:
+        return True
+    for raw in list(infer_filter_kinds(message) or []):
+        dim = str(canonical_dimension(raw) or "").strip().lower()
+        if dim in allowed:
+            return True
+    return False
+
+
+def _infer_payload_ranking_semantics(last_result_payload: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    payload = last_result_payload if isinstance(last_result_payload, dict) else {}
+    source_columns = [c for c in list(payload.get("_source_columns") or []) if isinstance(c, dict)]
+    table = payload.get("table") if isinstance(payload.get("table"), dict) else {}
+    table_columns = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+    report_contract = report_semantics_contract(
+        str(payload.get("report_name") or payload.get("title") or "").strip()
+    )
+    presentation = report_contract.get("presentation") if isinstance(report_contract.get("presentation"), dict) else {}
+    column_roles = presentation.get("column_roles") if isinstance(presentation.get("column_roles"), dict) else {}
+    dimension_roles = column_roles.get("dimensions") if isinstance(column_roles.get("dimensions"), dict) else {}
+    metric_roles = column_roles.get("metrics") if isinstance(column_roles.get("metrics"), dict) else {}
+
+    def _norm_key(value: Any) -> str:
+        return str(value or "").strip().lower().replace(" ", "_")
+
+    present_keys = set()
+    for col in source_columns + table_columns:
+        for raw in (col.get("label"), col.get("fieldname")):
+            key = _norm_key(raw)
+            if key:
+                present_keys.add(key)
+
+    dimension = ""
+    for canonical, aliases in dimension_roles.items():
+        keys = {_norm_key(canonical)}
+        keys.update(_norm_key(x) for x in list(aliases or []) if str(x or "").strip())
+        if present_keys & keys:
+            dimension = str(canonical or "").strip().lower()
+            break
+
+    metric = ""
+    if not dimension:
+        for col in source_columns + table_columns:
+            for raw in (col.get("label"), col.get("fieldname")):
+                dim = str(known_dimension(raw) or "").strip().lower()
+                if dim and not dimension:
+                    dimension = dim
+                    break
+            if dimension:
+                break
+
+    for canonical, aliases in metric_roles.items():
+        keys = {_norm_key(canonical)}
+        keys.update(_norm_key(x) for x in list(aliases or []) if str(x or "").strip())
+        if not (present_keys & keys):
+            continue
+        metric_name = str(canonical or "").strip().lower()
+        metric_dim = str(canonical_dimension(metric_name.replace("_", " ")) or "").strip().lower()
+        if metric_dim and metric_dim == dimension:
+            continue
+        metric = metric_name.replace("_", " ")
+        break
+
+    if not metric:
+        for col in source_columns + table_columns:
+            for raw in (col.get("label"), col.get("fieldname")):
+                metric_name = str(known_metric(raw) or "").strip().lower()
+                if not metric_name:
+                    continue
+                metric_dim = str(canonical_dimension(metric_name.replace("_", " ")) or "").strip().lower()
+                if metric_dim and metric_dim == dimension:
+                    continue
+                metric = metric_name.replace("_", " ")
+                break
+            if metric:
+                break
+
+    if not metric:
+        metric_hints = [str(x).strip().lower() for x in list((report_contract.get("semantics") or {}).get("metric_hints") or []) if str(x or "").strip()]
+        if len(metric_hints) == 1:
+            metric_name = metric_hints[0]
+            metric_dim = str(canonical_dimension(metric_name.replace("_", " ")) or "").strip().lower()
+            if not metric_dim or metric_dim != dimension:
+                metric = metric_name.replace("_", " ")
+
+    return {"dimension": dimension, "metric": metric}
+
+
+def _realign_low_signal_ranking_followup_to_last_result(
+    *,
+    message: str,
+    spec_obj: Dict[str, Any],
+    memory_meta: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]],
+    latest_visible_result_payload: Optional[Dict[str, Any]] = None,
+    previous_topic_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    spec = dict(spec_obj or {})
+    prev_state = previous_topic_state if isinstance(previous_topic_state, dict) else {}
+    active_topic = prev_state.get("active_topic") if isinstance(prev_state.get("active_topic"), dict) else {}
+    latest_payload = latest_visible_result_payload if isinstance(latest_visible_result_payload, dict) else {}
+    payload = last_result_payload if isinstance(last_result_payload, dict) else {}
+    preferred_payload = latest_payload if str(latest_payload.get("_output_mode") or "").strip().lower() == "top_n" else payload
+    if not preferred_payload:
+        preferred_payload = payload or latest_payload
+    if not preferred_payload:
+        return spec
+
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+    if not any(a in {"transform_sort:asc", "transform_sort:desc"} for a in ambiguities):
+        return spec
+    if str(spec.get("intent") or "").strip().upper() != "READ":
+        return spec
+    try:
+        top_n = int(spec.get("top_n") or 0)
+    except Exception:
+        top_n = 0
+    if top_n <= 0:
+        return spec
+    if str(preferred_payload.get("_output_mode") or "").strip().lower() != "top_n":
+        return spec
+
+    # Do not let generic ranked-payload realignment override an active
+    # threshold-exception contract. Those follow-ups should stay anchored to
+    # the threshold class and its structured rule, not to unrelated ranked
+    # payloads lingering in session history.
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+    has_threshold_rule = bool(
+        isinstance(spec.get("filters"), dict)
+        and isinstance((spec.get("filters") or {}).get("_threshold_rule"), dict)
+    )
+    if active_task_class == "threshold_exception_list" or has_threshold_rule:
+        return spec
+
+    mm = memory_meta if isinstance(memory_meta, dict) else {}
+    try:
+        curr_strength = int(mm.get("curr_strength") or 9)
+    except Exception:
+        curr_strength = 9
+    normalized_message_key = _shape_normalized_message_text(message).replace(" ", "_")
+    msg_metric_canonical = str(canonical_metric(message) or "").strip().lower()
+    explicit_metric = bool(msg_metric_canonical and msg_metric_canonical != normalized_message_key)
+    explicit_dims = _message_has_explicit_dimension_signal(message)
+    if curr_strength > 4 or explicit_metric or explicit_dims:
+        return spec
+
+    semantics = _infer_payload_ranking_semantics(preferred_payload)
+    dimension = str(semantics.get("dimension") or "").strip().lower()
+    metric = str(semantics.get("metric") or "").strip()
+    if not dimension:
+        return spec
+
+    spec["subject"] = _preferred_subject_from_dimension(dimension) or str(spec.get("subject") or "").strip()
+    spec["group_by"] = [dimension]
+    if metric:
+        spec["metric"] = metric
+        inferred_domain = str(metric_domain(metric) or "").strip().lower()
+        if inferred_domain:
+            spec["domain"] = inferred_domain
+    spec["task_type"] = "ranking"
+    spec["task_class"] = "analytical_read"
+    output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    spec["output_contract"] = dict(output_contract)
+    spec["output_contract"]["mode"] = "top_n"
+    minimal_columns = [dimension]
+    if metric:
+        minimal_columns.append(metric)
+    spec["output_contract"]["minimal_columns"] = minimal_columns[:12]
+    return spec
+
+
+def _threshold_rule_metric_from_filters(filters: Dict[str, Any]) -> str:
+    filt = filters if isinstance(filters, dict) else {}
+    rule = filt.get("_threshold_rule") if isinstance(filt.get("_threshold_rule"), dict) else {}
+    raw = str(rule.get("metric") or "").strip()
+    metric = str(canonical_metric(raw) or known_metric(raw) or raw).strip()
+    return metric.replace("_", " ") if metric else ""
+
+
+def _threshold_primary_dimension(*, active_topic: Dict[str, Any], payload: Dict[str, Any]) -> str:
+    group_by = [str(x).strip() for x in list(active_topic.get("group_by") or []) if str(x).strip()]
+    if group_by:
+        return str(canonical_dimension(group_by[0]) or group_by[0]).strip().lower()
+    payload_primary = str(payload.get("_threshold_primary_dimension") or "").strip()
+    if payload_primary:
+        return str(canonical_dimension(payload_primary) or payload_primary).strip().lower()
+    report_name = str(payload.get("report_name") or active_topic.get("report_name") or "").strip()
+    contract = report_semantics_contract(report_name)
+    semantics = contract.get("semantics") if isinstance(contract.get("semantics"), dict) else {}
+    primary = str(canonical_dimension(semantics.get("primary_dimension")) or semantics.get("primary_dimension") or "").strip().lower()
+    return primary
+
+
+def _realign_threshold_followup_to_last_result(
+    *,
+    message: str,
+    spec_obj: Dict[str, Any],
+    memory_meta: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]],
+    previous_topic_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    spec = dict(spec_obj or {})
+    payload = last_result_payload if isinstance(last_result_payload, dict) else {}
+    if not payload:
+        return spec
+
+    prev_state = previous_topic_state if isinstance(previous_topic_state, dict) else {}
+    active_topic = prev_state.get("active_topic") if isinstance(prev_state.get("active_topic"), dict) else {}
+    active_result = prev_state.get("active_result") if isinstance(prev_state.get("active_result"), dict) else {}
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    has_threshold_rule = isinstance(filters.get("_threshold_rule"), dict)
+    has_payload_threshold = bool(
+        payload.get("_threshold_rule_applied")
+        or isinstance(payload.get("_threshold_rule"), dict)
+        or str(payload.get("_threshold_metric") or "").strip()
+        or str(payload.get("_threshold_primary_dimension") or "").strip()
+    )
+    if active_task_class != "threshold_exception_list" and not has_threshold_rule and not has_payload_threshold:
+        return spec
+
+    mm = memory_meta if isinstance(memory_meta, dict) else {}
+    try:
+        curr_strength = int(mm.get("curr_strength") or 9)
+    except Exception:
+        curr_strength = 9
+    corrections_applied = {
+        str(x or "").strip().lower()
+        for x in list(mm.get("corrections_applied") or [])
+        if str(x or "").strip()
+    }
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+    requested_top_n = _resume_first_int_in_text(message)
+    report_name = str(payload.get("report_name") or active_result.get("report_name") or active_topic.get("report_name") or "").strip()
+    explicit_projection = _shape_metadata_requested_columns(
+        message=message,
+        selected_report=report_name,
+        last_result_payload=payload,
+    )
+    is_followup_candidate = bool(
+        curr_strength <= 2
+        and (
+            requested_top_n > 0
+            or explicit_projection
+            or str(spec.get("intent") or "").strip().upper() == "TRANSFORM_LAST"
+            or str(spec.get("task_class") or "").strip().lower() == "transform_followup"
+            or bool(ambiguities)
+        )
+    )
+    if not is_followup_candidate:
+        return spec
+    threshold_rule = filters.get("_threshold_rule") if isinstance(filters.get("_threshold_rule"), dict) else {}
+    if (
+        "threshold_value_from_message_followup" in corrections_applied
+        or (
+            str(spec.get("intent") or "").strip().upper() == "READ"
+            and str(spec.get("task_class") or "").strip().lower() == "threshold_exception_list"
+            and bool(threshold_rule.get("value_present"))
+            and requested_top_n <= 0
+            and not explicit_projection
+            and not ambiguities
+        )
+    ):
+        return spec
+
+    dimension = _threshold_primary_dimension(active_topic=active_topic, payload=payload)
+    metric = (
+        _threshold_rule_metric_from_filters(active_topic.get("filters") if isinstance(active_topic.get("filters"), dict) else {})
+        or _threshold_rule_metric_from_filters(filters)
+        or str(canonical_metric(payload.get("_threshold_metric")) or known_metric(payload.get("_threshold_metric")) or payload.get("_threshold_metric") or "").strip()
+        or str(active_topic.get("metric") or "").strip()
+        or str(spec.get("metric") or "").strip()
+    )
+    metric = metric.replace("_", " ") if metric else ""
+    domain = str(active_topic.get("domain") or spec.get("domain") or "").strip().lower()
+    if (not domain) and metric:
+        domain = str(metric_domain(metric) or "").strip().lower()
+    prev_top_n = int(active_topic.get("top_n") or 0) if str(active_topic.get("top_n") or "0").strip().isdigit() else 0
+    output_mode = str(active_result.get("output_mode") or payload.get("_output_mode") or "detail").strip().lower() or "detail"
+
+    spec["intent"] = "TRANSFORM_LAST"
+    spec["task_class"] = "transform_followup"
+    spec["subject"] = str(active_topic.get("subject") or spec.get("subject") or "").strip()
+    if metric:
+        spec["metric"] = metric
+    if domain:
+        spec["domain"] = domain
+    spec["group_by"] = [dimension] if dimension else []
+    if isinstance(active_topic.get("filters"), dict) and active_topic.get("filters"):
+        spec["filters"] = dict(active_topic.get("filters") or {})
+    if isinstance(active_topic.get("time_scope"), dict) and active_topic.get("time_scope"):
+        spec["time_scope"] = dict(active_topic.get("time_scope") or {})
+    if requested_top_n > 0:
+        spec["top_n"] = max(1, min(requested_top_n, 200))
+        spec["task_type"] = "ranking"
+        output_mode = "top_n"
+    elif prev_top_n > 0 and output_mode == "top_n":
+        spec["top_n"] = prev_top_n
+    else:
+        spec["top_n"] = int(spec.get("top_n") or 0)
+
+    output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    spec["output_contract"] = dict(output_contract)
+    if requested_top_n > 0 and not explicit_projection:
+        ambiguities = [a for a in ambiguities if a != "transform_projection:only"]
+        spec["ambiguities"] = ambiguities[:12]
+    spec["output_contract"]["mode"] = output_mode
+    if explicit_projection:
+        spec["output_contract"]["minimal_columns"] = explicit_projection[:12]
+    else:
+        minimal_columns: List[str] = []
+        if dimension:
+            minimal_columns.append(dimension)
+        if metric:
+            minimal_columns.append(metric)
+        spec["output_contract"]["minimal_columns"] = list(dict.fromkeys([c for c in minimal_columns if str(c).strip()]))[:12]
+    return spec
+
+
+def _contribution_rule_metric_from_filters(filters: Dict[str, Any]) -> str:
+    filt = filters if isinstance(filters, dict) else {}
+    rule = filt.get("_contribution_rule") if isinstance(filt.get("_contribution_rule"), dict) else {}
+    raw = str(rule.get("metric") or "").strip()
+    metric = str(canonical_metric(raw) or known_metric(raw) or raw).strip()
+    return metric.replace("_", " ") if metric else ""
+
+
+def _contribution_primary_dimension(*, active_topic: Dict[str, Any], payload: Dict[str, Any]) -> str:
+    group_by = [str(x).strip() for x in list(active_topic.get("group_by") or []) if str(x).strip()]
+    if group_by:
+        return str(canonical_dimension(group_by[0]) or group_by[0]).strip().lower()
+    payload_primary = str(payload.get("_contribution_primary_dimension") or "").strip()
+    if payload_primary:
+        return str(canonical_dimension(payload_primary) or payload_primary).strip().lower()
+    report_name = str(payload.get("report_name") or active_topic.get("report_name") or "").strip()
+    contract = report_semantics_contract(report_name)
+    semantics = contract.get("semantics") if isinstance(contract.get("semantics"), dict) else {}
+    primary = str(canonical_dimension(semantics.get("primary_dimension")) or semantics.get("primary_dimension") or "").strip().lower()
+    return primary
+
+
+def _realign_contribution_followup_to_last_result(
+    *,
+    message: str,
+    spec_obj: Dict[str, Any],
+    memory_meta: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]],
+    previous_topic_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    spec = dict(spec_obj or {})
+    payload = last_result_payload if isinstance(last_result_payload, dict) else {}
+    if not payload:
+        return spec
+
+    prev_state = previous_topic_state if isinstance(previous_topic_state, dict) else {}
+    active_topic = prev_state.get("active_topic") if isinstance(prev_state.get("active_topic"), dict) else {}
+    active_result = prev_state.get("active_result") if isinstance(prev_state.get("active_result"), dict) else {}
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    has_contribution_rule = isinstance(filters.get("_contribution_rule"), dict)
+    has_payload_contribution = bool(
+        payload.get("_contribution_rule_applied")
+        or isinstance(payload.get("_contribution_rule"), dict)
+        or str(payload.get("_contribution_metric") or "").strip()
+        or str(payload.get("_contribution_primary_dimension") or "").strip()
+    )
+    if active_task_class != "contribution_share" and not has_contribution_rule and not has_payload_contribution:
+        return spec
+
+    mm = memory_meta if isinstance(memory_meta, dict) else {}
+    try:
+        curr_strength = int(mm.get("curr_strength") or 9)
+    except Exception:
+        curr_strength = 9
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+    requested_top_n = _resume_first_int_in_text(message)
+    report_name = str(payload.get("report_name") or active_result.get("report_name") or active_topic.get("report_name") or "").strip()
+    explicit_projection = _shape_metadata_requested_columns(
+        message=message,
+        selected_report=report_name,
+        last_result_payload=payload,
+    )
+    dimension = _contribution_primary_dimension(active_topic=active_topic, payload=payload)
+    metric = (
+        _contribution_rule_metric_from_filters(active_topic.get("filters") if isinstance(active_topic.get("filters"), dict) else {})
+        or _contribution_rule_metric_from_filters(filters)
+        or str(canonical_metric(payload.get("_contribution_metric")) or known_metric(payload.get("_contribution_metric")) or payload.get("_contribution_metric") or "").strip()
+        or str(active_topic.get("metric") or "").strip()
+        or str(spec.get("metric") or "").strip()
+    )
+    metric = metric.replace("_", " ") if metric else ""
+    current_dim = ""
+    current_group_by = [str(x).strip() for x in list(spec.get("group_by") or spec.get("dimensions") or []) if str(x).strip()]
+    if current_group_by:
+        current_dim = str(canonical_dimension(current_group_by[0]) or current_group_by[0]).strip().lower()
+    current_metric = str(canonical_metric(spec.get("metric")) or known_metric(spec.get("metric")) or spec.get("metric") or "").strip().lower().replace("_", " ")
+    parser_marked_transform = bool(
+        str(spec.get("intent") or "").strip().upper() == "TRANSFORM_LAST"
+        or str(spec.get("task_class") or "").strip().lower() == "transform_followup"
+    )
+    has_transform_ambiguity = bool(ambiguities)
+    active_contribution_context = bool(active_task_class == "contribution_share" or has_payload_contribution)
+    current_metric_is_share_alias = current_metric in {"contribution share", "share", "share of total"}
+    aligned_with_active = bool(
+        ((not current_dim) or (not dimension) or current_dim == dimension)
+        and ((not current_metric) or current_metric_is_share_alias or (not metric) or current_metric == metric.lower())
+    )
+    is_followup_candidate = bool(
+        (
+            curr_strength <= 2
+            and (
+                requested_top_n > 0
+                or explicit_projection
+                or parser_marked_transform
+                or bool(ambiguities)
+            )
+        )
+        or (
+            active_contribution_context
+            and (parser_marked_transform or has_transform_ambiguity)
+            and aligned_with_active
+            and (
+                requested_top_n > 0
+                or explicit_projection
+                or bool(ambiguities)
+            )
+        )
+    )
+    if not is_followup_candidate:
+        return spec
+
+    domain = str(active_topic.get("domain") or spec.get("domain") or "").strip().lower()
+    if (not domain) and metric:
+        domain = str(metric_domain(metric) or "").strip().lower()
+    prev_top_n = int(active_topic.get("top_n") or 0) if str(active_topic.get("top_n") or "0").strip().isdigit() else 0
+    output_mode = str(active_result.get("output_mode") or payload.get("_output_mode") or "detail").strip().lower() or "detail"
+
+    spec["intent"] = "TRANSFORM_LAST"
+    spec["task_class"] = "transform_followup"
+    spec["subject"] = str(active_topic.get("subject") or spec.get("subject") or "").strip()
+    if metric:
+        spec["metric"] = metric
+    if domain:
+        spec["domain"] = domain
+    spec["group_by"] = [dimension] if dimension else []
+    active_filters = active_topic.get("filters") if isinstance(active_topic.get("filters"), dict) else {}
+    if not active_filters:
+        active_filters = active_result.get("filters") if isinstance(active_result.get("filters"), dict) else {}
+    if active_filters:
+        spec["filters"] = dict(active_filters or {})
+    else:
+        payload_rule = payload.get("_contribution_rule") if isinstance(payload.get("_contribution_rule"), dict) else {}
+        if payload_rule:
+            fallback_filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            fallback_filters = dict(fallback_filters)
+            fallback_filters["_contribution_rule"] = dict(payload_rule)
+            spec["filters"] = fallback_filters
+
+    active_time_scope = active_topic.get("time_scope") if isinstance(active_topic.get("time_scope"), dict) else {}
+    if active_time_scope and (not _has_explicit_time_scope({"time_scope": active_time_scope})):
+        active_time_scope = {}
+    if not active_time_scope:
+        active_time_scope = active_result.get("time_scope") if isinstance(active_result.get("time_scope"), dict) else {}
+        if active_time_scope and (not _has_explicit_time_scope({"time_scope": active_time_scope})):
+            active_time_scope = {}
+    if active_time_scope:
+        spec["time_scope"] = dict(active_time_scope or {})
+    if requested_top_n > 0:
+        spec["top_n"] = max(1, min(requested_top_n, 200))
+        spec["task_type"] = "ranking"
+        output_mode = "top_n"
+    elif prev_top_n > 0 and output_mode == "top_n":
+        spec["top_n"] = prev_top_n
+    else:
+        spec["top_n"] = int(spec.get("top_n") or 0)
+
+    output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    spec["output_contract"] = dict(output_contract)
+    if requested_top_n > 0 and not explicit_projection:
+        ambiguities = [a for a in ambiguities if a != "transform_projection:only"]
+        spec["ambiguities"] = ambiguities[:12]
+    spec["output_contract"]["mode"] = output_mode
+    if explicit_projection:
+        msg_lc = str(message or "").strip().lower()
+        asks_for_share = bool(re.search(r"\bcontribution\s+share\b", msg_lc) or re.search(r"\bshare\b", msg_lc))
+        if active_contribution_context and asks_for_share:
+            merged_cols: List[str] = []
+            seen_cols = set()
+            for raw in list(explicit_projection) + ["contribution share"]:
+                s = str(raw or "").strip()
+                key = s.lower()
+                if (not s) or (key in seen_cols):
+                    continue
+                seen_cols.add(key)
+                merged_cols.append(s)
+            explicit_projection = merged_cols
+        spec["output_contract"]["minimal_columns"] = explicit_projection[:12]
+    else:
+        minimal_columns: List[str] = []
+        if dimension:
+            minimal_columns.append(dimension)
+        if metric:
+            minimal_columns.append(metric)
+        minimal_columns.append("contribution share")
+        spec["output_contract"]["minimal_columns"] = list(dict.fromkeys([c for c in minimal_columns if str(c).strip()]))[:12]
+    return spec
 
 
 def _legacy_path_unavailable_payload() -> Dict[str, Any]:
@@ -900,6 +1653,13 @@ def _resolve_record_doctype_candidates(*, message: str, spec: Dict[str, Any]) ->
     txt = str(message or "").strip()
     subj = str(spec.get("subject") or "").strip().lower()
     metric = str(spec.get("metric") or "").strip().lower()
+    message_metric = str(known_metric(txt) or canonical_metric(txt) or "").strip().lower()
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    if task_class == "list_latest_records":
+        # For latest-record doctype clarification, prefer the current follow-up's
+        # concrete metric signal over stale generic carryover like "invoice details".
+        if str(known_metric(message_metric) or "").strip():
+            metric = message_metric
     filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
 
     query_chunks: List[str] = [txt, subj, metric]
@@ -908,8 +1668,12 @@ def _resolve_record_doctype_candidates(*, message: str, spec: Dict[str, Any]) ->
         if any(t in fk_l for t in ("doctype", "record", "voucher")):
             query_chunks.append(str(fv or "").strip())
     domain = str(spec.get("domain") or "").strip().lower()
-    if domain in {"", "unknown", "cross_functional"}:
-        metric_hint = metric or str(canonical_metric(txt) or "").strip().lower()
+    if task_class == "list_latest_records" and str(known_metric(message_metric) or "").strip():
+        message_metric_domain = str(metric_domain(message_metric) or "").strip().lower()
+        if message_metric_domain:
+            domain = message_metric_domain
+    elif domain in {"", "unknown", "cross_functional"}:
+        metric_hint = metric or message_metric
         if metric_hint:
             domain = str(metric_domain(metric_hint) or "").strip().lower()
     return infer_record_doctype_candidates(
@@ -954,6 +1718,8 @@ def _pick_existing_field(field_names: List[str], candidates: List[str]) -> str:
 
 
 def _extract_record_limit(*, spec: Dict[str, Any], message: str) -> int:
+    if str(spec.get("task_class") or "").strip().lower() in {"threshold_exception_list", "contribution_share"}:
+        return 200
     try:
         top_n = int(spec.get("top_n") or 0)
     except Exception:
@@ -964,11 +1730,18 @@ def _extract_record_limit(*, spec: Dict[str, Any], message: str) -> int:
     return 20
 
 
+def _has_latest_record_cue(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return bool(re.search(r"\b(?:latest|recent|most recent|newest)\b", text))
+
+
 def _direct_latest_records_payload(spec: Dict[str, Any], *, message: str = "") -> Optional[Dict[str, Any]]:
     if frappe is None:
         return None
     task_class = str(spec.get("task_class") or "").strip().lower()
-    if task_class not in {"list_latest_records", "detail_projection"}:
+    if task_class not in {"list_latest_records", "detail_projection", "threshold_exception_list"}:
         return None
     if str(spec.get("intent") or "READ").strip().upper() != "READ":
         return None
@@ -982,6 +1755,13 @@ def _direct_latest_records_payload(spec: Dict[str, Any], *, message: str = "") -
             explicit_dt = str(v or "").strip()
             if explicit_dt:
                 break
+    if task_class == "detail_projection" and (not explicit_dt) and (not _has_latest_record_cue(message)):
+        return None
+    if task_class == "threshold_exception_list":
+        metric = str(known_metric(spec.get("metric")) or spec.get("metric") or "").strip().lower()
+        primary_dim = str(canonical_dimension(spec.get("subject") or message) or "").strip().lower()
+        if primary_dim != "invoice" and metric not in {"invoice_amount", "outstanding_amount"}:
+            return None
     if explicit_dt:
         doctype = _resolve_explicit_doctype_name(explicit_dt)
     if not doctype:
@@ -994,12 +1774,20 @@ def _direct_latest_records_payload(spec: Dict[str, Any], *, message: str = "") -
 
     field_names = _doctype_field_names(doctype)
     if not field_names:
-        return None
+        # Metadata lookup can be transiently unavailable; use deterministic
+        # fallback fields so latest-record requests still return a stable table.
+        field_names = ["name", "modified", "creation"]
 
     date_field = _pick_existing_field(
         field_names,
         ["posting_date", "transaction_date", "bill_date", "date", "modified", "creation"],
     )
+    if not date_field:
+        # Guarantee a stable time axis for latest-record quality checks even
+        # when doctype metadata is sparse.
+        date_field = "modified"
+        if "modified" not in field_names:
+            field_names.append("modified")
     amount_field = _pick_existing_field(
         field_names,
         ["grand_total", "base_grand_total", "rounded_total", "net_total", "base_net_total", "outstanding_amount", "paid_amount", "total"],
@@ -1091,7 +1879,11 @@ def _direct_latest_records_payload(spec: Dict[str, Any], *, message: str = "") -
         if fn in alias_sources:
             label = fn.replace("_", " ").title()
         if fn == date_field:
-            fieldtype = "Date"
+            if fn in {"modified", "creation"}:
+                label = "Modified Time" if fn == "modified" else "Created Time"
+                fieldtype = "Datetime"
+            else:
+                fieldtype = "Date"
         elif fn == amount_field:
             fieldtype = "Currency"
         elif fn in {"total_amount", "amount", "value"}:
@@ -1110,6 +1902,24 @@ def _direct_latest_records_payload(spec: Dict[str, Any], *, message: str = "") -
             "rows": data_rows,
         },
     }
+
+
+def _needs_latest_record_type_clarification(*, spec: Dict[str, Any], message: str, direct_latest_payload: Optional[Dict[str, Any]]) -> bool:
+    if isinstance(direct_latest_payload, dict):
+        return False
+    if str(spec.get("intent") or "READ").strip().upper() != "READ":
+        return False
+    if str(spec.get("task_class") or "").strip().lower() != "list_latest_records":
+        return False
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    for k, v in list(filters.items()):
+        key = str(k or "").strip().lower()
+        if key not in {"doctype", "document_type", "record_type", "voucher_type"}:
+            continue
+        if str(v or "").strip():
+            return False
+    candidates = _resolve_record_doctype_candidates(message=message, spec=spec)
+    return len([str(x).strip() for x in list(candidates or []) if str(x or "").strip()]) != 1
 
 
 def _doc_get(doc: Any, key: str, default: Any = None) -> Any:
@@ -1322,6 +2132,19 @@ def _promote_spec_to_transform_followup(
     )
 
 
+def _realign_transform_followup_to_read_refinement(
+    *,
+    message: str,
+    spec_obj: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    return _policy_realign_transform_followup_to_read_refinement(
+        message=message,
+        spec_obj=spec_obj,
+        last_result_payload=last_result_payload,
+    )
+
+
 def _sanitize_user_payload(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
     return _shape_sanitize_user_payload(payload=payload, business_spec=business_spec)
 
@@ -1466,7 +2289,56 @@ def execute_unified_read_turn(
     if isinstance(entity_resolution.get("filters"), dict):
         spec_obj["filters"] = dict(entity_resolution.get("filters") or {})
     _merge_transform_ambiguities_into_spec(spec_obj=spec_obj, message=message)
+    threshold_precheck = _threshold_precheck(
+        message=message,
+        business_spec=spec_obj,
+        previous_topic_state=previous_topic_state,
+    )
+    if isinstance(threshold_precheck.get("payload"), dict):
+        spec_envelope["spec"] = spec_obj
+        spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
+        return _append_tool_message(dict(threshold_precheck.get("payload") or {}), spec_tool_msg)
+    forced_clarify_decision = threshold_precheck.get("clarify_decision") if isinstance(threshold_precheck.get("clarify_decision"), dict) else {}
+    contribution_precheck = _contribution_precheck(
+        message=message,
+        business_spec=spec_obj,
+        previous_topic_state=previous_topic_state,
+    )
+    if isinstance(contribution_precheck.get("payload"), dict):
+        spec_envelope["spec"] = spec_obj
+        spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
+        return _append_tool_message(dict(contribution_precheck.get("payload") or {}), spec_tool_msg)
+    if (not forced_clarify_decision) and isinstance(contribution_precheck.get("clarify_decision"), dict):
+        forced_clarify_decision = dict(contribution_precheck.get("clarify_decision") or {})
     last_result_payload = _load_last_result_payload(session_name=session_name)
+    latest_visible_result_payload = _load_latest_visible_report_payload(session_name=session_name)
+    spec_obj = _realign_low_signal_ranking_followup_to_last_result(
+        message=message,
+        spec_obj=spec_obj,
+        memory_meta=memory_meta,
+        last_result_payload=last_result_payload,
+        latest_visible_result_payload=latest_visible_result_payload,
+        previous_topic_state=previous_topic_state,
+    )
+    spec_obj = _realign_threshold_followup_to_last_result(
+        message=message,
+        spec_obj=spec_obj,
+        memory_meta=memory_meta,
+        last_result_payload=last_result_payload,
+        previous_topic_state=previous_topic_state,
+    )
+    spec_obj = _realign_contribution_followup_to_last_result(
+        message=message,
+        spec_obj=spec_obj,
+        memory_meta=memory_meta,
+        last_result_payload=last_result_payload,
+        previous_topic_state=previous_topic_state,
+    )
+    spec_obj = _realign_transform_followup_to_read_refinement(
+        message=message,
+        spec_obj=spec_obj,
+        last_result_payload=last_result_payload,
+    )
     if _should_promote_to_transform_followup(
         message=message,
         spec_obj=spec_obj,
@@ -1498,6 +2370,8 @@ def execute_unified_read_turn(
         business_spec=spec_obj,
         resolved=resolved,
     )
+    if forced_clarify_decision:
+        clarify_decision = dict(forced_clarify_decision)
     if (mode == "start") and _is_low_signal_read_spec(raw_spec_obj):
         clarify_decision = {
             "should_clarify": True,
@@ -1559,6 +2433,14 @@ def execute_unified_read_turn(
             "question": "",
             "policy_version": "phase5_blocker_only_v1",
         }
+    elif _needs_latest_record_type_clarification(spec=spec_obj, message=message, direct_latest_payload=direct_latest_payload):
+        clarify_decision = {
+            "should_clarify": True,
+            "reason": "no_candidate",
+            "question": "Which record type should I list (for example Sales Invoice, Purchase Invoice, Sales Order)?",
+            "options": [],
+            "policy_version": "phase5_blocker_only_v1",
+        }
     clar_tool_msg = make_clarification_tool_message(tool=source, mode=mode, decision=clarify_decision)
 
     if bool(clarify_decision.get("should_clarify")):
@@ -1590,10 +2472,15 @@ def execute_unified_read_turn(
                 "raw_value": raw_value,
                 "clarification_reason": reason_lc,
                 "spec_so_far": {
+                    "intent": str(spec_obj.get("intent") or "").strip().upper(),
+                    "task_type": str(spec_obj.get("task_type") or "").strip().lower(),
                     "task_class": str(spec_obj.get("task_class") or "").strip().lower(),
                     "subject": str(spec_obj.get("subject") or "").strip(),
                     "metric": str(spec_obj.get("metric") or "").strip(),
                     "domain": str(spec_obj.get("domain") or "").strip(),
+                    "aggregation": str(spec_obj.get("aggregation") or "").strip(),
+                    "dimensions": [str(x).strip() for x in list(spec_obj.get("dimensions") or []) if str(x or "").strip()],
+                    "group_by": [str(x).strip() for x in list(spec_obj.get("group_by") or []) if str(x or "").strip()],
                     "top_n": int(spec_obj.get("top_n") or 0),
                     "output_contract": dict(spec_obj.get("output_contract") or {}) if isinstance(spec_obj.get("output_contract"), dict) else {},
                 },
@@ -1675,6 +2562,8 @@ def execute_unified_read_turn(
         load_last_result_payload_fn=_load_last_result_payload,
         extract_auto_switch_pending_fn=_extract_auto_switch_pending,
         capture_source_columns_fn=_capture_source_columns,
+        apply_threshold_exception_filter_fn=_apply_threshold_exception_filter,
+        apply_contribution_share_fn=_apply_contribution_share,
         as_payload_fn=_as_payload,
         apply_transform_last_fn=lambda payload, business_spec: apply_transform_last(payload=payload, business_spec=business_spec),
         looks_like_system_error_text_fn=_looks_like_system_error_text,

@@ -37,6 +37,18 @@
       "warehouse balance",
       "inventory balance"
     ],
+    "stock_quantity": [
+      "stock quantity",
+      "stock qty",
+      "qty on hand",
+      "quantity on hand",
+      "on hand quantity"
+    ],
+    "invoice_amount": [
+      "invoice amount",
+      "invoice total",
+      "grand total"
+    ],
     "outstanding_amount": [
       "outstanding amount",
       "total amount due",
@@ -99,6 +111,23 @@
       "quantity",
       "qty"
     ],
+    "stock_quantity": [
+      "stock quantity",
+      "stock qty",
+      "qty on hand",
+      "quantity on hand",
+      "on hand quantity",
+      "actual qty",
+      "balance qty",
+      "quantity",
+      "qty"
+    ],
+    "invoice_amount": [
+      "invoice amount",
+      "invoice total",
+      "grand total",
+      "base grand total"
+    ],
     "projected_quantity": [
       "projected quantity",
       "projected qty",
@@ -129,9 +158,14 @@
     "sold_quantity": "sales",
     "received_quantity": "purchasing",
     "stock_balance": "inventory",
+    "stock_quantity": "inventory",
+    "invoice_amount": "finance",
     "outstanding_amount": "finance",
     "open_requests": "operations"
   },
+  "detail_constraint_metrics": [
+    "open_requests"
+  ],
   "domain_aliases": {
     "sales": [
       "sales",
@@ -186,6 +220,9 @@
       "product",
       "sku"
     ],
+    "invoice": [
+      "invoice"
+    ],
     "warehouse": [
       "warehouse",
       "store"
@@ -194,6 +231,19 @@
       "territory",
       "region",
       "city"
+    ],
+    "customer_group": [
+      "customer group",
+      "customer segment"
+    ],
+    "item_group": [
+      "item group",
+      "product group",
+      "product category"
+    ],
+    "sales_person": [
+      "sales person",
+      "salesperson"
     ],
     "company": [
       "company",
@@ -220,6 +270,11 @@
       "item",
       "product",
       "sku"
+    ],
+    "invoice": [
+      "invoice-wise",
+      "invoice wise",
+      "invoice"
     ],
     "warehouse": [
       "warehouse-wise",
@@ -352,6 +407,101 @@
       "xlsx",
       "csv",
       "pdf"
+    ]
+  },
+  "comparator_aliases": {
+    "gt": [
+      "above",
+      "over",
+      "greater than",
+      "more than",
+      "higher than",
+      "exceeds"
+    ],
+    "gte": [
+      "at least",
+      "greater than or equal to",
+      "no less than",
+      "minimum of"
+    ],
+    "lt": [
+      "below",
+      "under",
+      "less than",
+      "lower than",
+      "fewer than"
+    ],
+    "lte": [
+      "at most",
+      "less than or equal to",
+      "no more than",
+      "maximum of"
+    ]
+  },
+  "exception_term_aliases": {
+    "overdue": [
+      "overdue",
+      "past due"
+    ],
+    "low_stock": [
+      "low stock",
+      "understock",
+      "under stock"
+    ],
+    "below_minimum_stock": [
+      "below minimum stock",
+      "below min stock",
+      "below reorder level"
+    ]
+  },
+  "contribution_term_aliases": {
+    "share_of_total": [
+      "share of total",
+      "percent of total",
+      "percentage of total",
+      "share"
+    ],
+    "contribution_share": [
+      "contribution share",
+      "contribution to total",
+      "contributes to total",
+      "percentage contribution"
+    ],
+    "comparison_request": [
+      "compare",
+      "comparison",
+      "vs",
+      "versus",
+      "month over month",
+      "month-over-month",
+      "mom",
+      "year over year",
+      "year-over-year",
+      "yoy"
+    ],
+    "cumulative_share": [
+      "pareto",
+      "cumulative",
+      "cumulative share",
+      "running share",
+      "running contribution"
+    ]
+  },
+  "advisory_intent_aliases": {
+    "causal_analysis": [
+      "why",
+      "reason",
+      "because",
+      "cause"
+    ],
+    "risk_assessment": [
+      "risky",
+      "risk",
+      "risky?",
+      "risky.",
+      "risk?",
+      "concentrated",
+      "concentration"
     ]
   },
   "reference_value_aliases": {

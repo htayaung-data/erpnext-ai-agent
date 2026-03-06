@@ -106,6 +106,42 @@ class V7OntologyNormalizationTests(unittest.TestCase):
         self.assertEqual(mod.known_metric("purchase amount"), "purchase_amount")
         self.assertEqual(mod.metric_domain("purchase amount"), "purchasing")
 
+    def test_open_requests_is_treated_as_detail_constraint_metric(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        self.assertTrue(mod.is_detail_constraint_metric("open requests"))
+        self.assertFalse(mod.is_detail_constraint_metric("revenue"))
+
+    def test_threshold_exception_ontology_keys_and_metrics_are_present(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        catalog = mod.get_ontology_catalog()
+        comparator_aliases = catalog.get("comparator_aliases") if isinstance(catalog.get("comparator_aliases"), dict) else {}
+        exception_aliases = catalog.get("exception_term_aliases") if isinstance(catalog.get("exception_term_aliases"), dict) else {}
+        contribution_aliases = catalog.get("contribution_term_aliases") if isinstance(catalog.get("contribution_term_aliases"), dict) else {}
+        self.assertIn("gt", comparator_aliases)
+        self.assertIn("lt", comparator_aliases)
+        self.assertIn("overdue", exception_aliases)
+        self.assertIn("share_of_total", contribution_aliases)
+        self.assertEqual(mod.canonical_metric("grand total"), "invoice_amount")
+        self.assertEqual(mod.metric_domain("invoice amount"), "finance")
+        self.assertEqual(mod.canonical_metric("qty on hand"), "stock_quantity")
+        self.assertEqual(mod.metric_domain("stock quantity"), "inventory")
+        self.assertEqual(mod.known_comparator("above 5,000,000"), "gt")
+        self.assertEqual(mod.known_comparator("at most 20"), "lte")
+        self.assertEqual(mod.infer_exception_terms("show overdue invoices above 5,000,000"), ["overdue"])
+        self.assertEqual(mod.infer_contribution_terms("show customers share of total revenue"), ["share_of_total"])
+        self.assertIn("contribution_share", mod.infer_contribution_terms("show supplier contribution share of total purchase amount"))
+        self.assertEqual(mod.infer_exception_terms("show low stock items"), ["low_stock"])
+        self.assertIn("causal_analysis", mod.infer_advisory_intents("Why are these overdue invoices risky?"))
+        self.assertIn("risk_assessment", mod.infer_advisory_intents("Why are these overdue invoices risky?"))
+
+    def test_sales_invoice_number_does_not_collapse_to_revenue_metric(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        self.assertNotEqual(mod.canonical_metric("sales invoice number"), "revenue")
+        self.assertEqual(mod.known_dimension("sales invoice number"), "invoice")
+
 
 if __name__ == "__main__":
     unittest.main()
