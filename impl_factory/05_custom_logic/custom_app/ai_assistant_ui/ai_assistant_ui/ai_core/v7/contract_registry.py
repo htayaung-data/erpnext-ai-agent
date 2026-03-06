@@ -26,6 +26,33 @@ _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
         "warehouse": "inventory",
         "company": "finance",
     },
+    "task_class_rules": {
+        "threshold_exception_list": {
+            "allowed_dimensions": ["customer", "supplier", "invoice", "item", "warehouse"],
+            "metric_defaults_by_dimension": {
+                "invoice": "invoice_amount",
+                "item": "stock_quantity",
+                "warehouse": "stock_quantity",
+            },
+            "dimension_metric_overrides": {
+                "invoice": {
+                    "": "invoice_amount",
+                    "revenue": "invoice_amount",
+                },
+                "item": {
+                    "": "stock_quantity",
+                    "stock_balance": "stock_quantity",
+                },
+                "warehouse": {
+                    "": "stock_quantity",
+                    "stock_balance": "stock_quantity",
+                },
+            },
+        },
+        "contribution_share": {
+            "allowed_dimensions": ["customer", "supplier", "item"],
+        },
+    },
 }
 
 _DEFAULT_CLARIFICATION_CONTRACT: Dict[str, Any] = {
@@ -137,6 +164,58 @@ def domain_from_dimension(dim: str) -> str:
     mapping = get_spec_contract().get("dimension_domain_map")
     mm = mapping if isinstance(mapping, dict) else {}
     return str(mm.get(str(dim or "").strip().lower()) or "").strip().lower()
+
+
+def task_class_rule(task_class: str) -> Dict[str, Any]:
+    key = str(task_class or "").strip().lower()
+    if not key:
+        return {}
+    rules = get_spec_contract().get("task_class_rules")
+    if not isinstance(rules, dict):
+        return {}
+    for raw_key, raw_rule in rules.items():
+        if str(raw_key or "").strip().lower() != key:
+            continue
+        return dict(raw_rule) if isinstance(raw_rule, dict) else {}
+    return {}
+
+
+def task_class_allowed_dimensions(task_class: str) -> Set[str]:
+    rule = task_class_rule(task_class)
+    vals = rule.get("allowed_dimensions") if isinstance(rule.get("allowed_dimensions"), list) else []
+    return {str(v).strip().lower() for v in vals if str(v).strip()}
+
+
+def threshold_metric_defaults_by_dimension() -> Dict[str, str]:
+    rule = task_class_rule("threshold_exception_list")
+    raw = rule.get("metric_defaults_by_dimension") if isinstance(rule.get("metric_defaults_by_dimension"), dict) else {}
+    out: Dict[str, str] = {}
+    for dim, metric in raw.items():
+        d = str(dim or "").strip().lower()
+        m = str(metric or "").strip().lower()
+        if d and m:
+            out[d] = m
+    return out
+
+
+def threshold_dimension_metric_overrides() -> Dict[str, Dict[str, str]]:
+    rule = task_class_rule("threshold_exception_list")
+    raw = rule.get("dimension_metric_overrides") if isinstance(rule.get("dimension_metric_overrides"), dict) else {}
+    out: Dict[str, Dict[str, str]] = {}
+    for dim, metric_map in raw.items():
+        d = str(dim or "").strip().lower()
+        mm = metric_map if isinstance(metric_map, dict) else {}
+        if not d:
+            continue
+        normalized: Dict[str, str] = {}
+        for source_metric, target_metric in mm.items():
+            src = str(source_metric or "").strip().lower()
+            dst = str(target_metric or "").strip().lower()
+            if dst:
+                normalized[src] = dst
+        if normalized:
+            out[d] = normalized
+    return out
 
 
 def allowed_blocker_reasons() -> Set[str]:

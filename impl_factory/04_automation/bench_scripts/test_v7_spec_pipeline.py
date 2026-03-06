@@ -526,6 +526,56 @@ class V7SpecPipelineTests(unittest.TestCase):
             mod.choose_business_request_spec = orig_choose
             mod._load_session_context = orig_load_session
 
+    def test_generate_business_request_spec_contribution_allowed_dimensions_are_contract_driven(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_allowed_dims = getattr(mod, "task_class_allowed_dimensions", None)
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "sales",
+                "subject": "",
+                "metric": "revenue",
+                "dimensions": [],
+                "aggregation": "none",
+                "group_by": [],
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": []},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.task_class_allowed_dimensions = (
+                lambda task_class: {"customer", "supplier", "item", "territory"}
+                if str(task_class or "").strip().lower() == "contribution_share"
+                else set()
+            )
+            env = mod.generate_business_request_spec(
+                message="Show revenue share by territory last month",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "contribution_share")
+            self.assertEqual(str(filters.get("_contribution_unsupported_reason") or ""), "")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            if orig_allowed_dims is not None:
+                mod.task_class_allowed_dimensions = orig_allowed_dims
+
     def test_generate_business_request_spec_marks_concentrated_advisory_as_unsupported(self):
         mod = _load_module()
         orig_choose = mod.choose_business_request_spec

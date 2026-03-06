@@ -24,6 +24,11 @@ from ai_assistant_ui.ai_core.ontology_normalization import (
     known_metric,
 )
 from ai_assistant_ui.ai_core.util_dates import extract_timeframe, last_month_range, last_week_range, this_month_range, this_week_range, today_date
+from ai_assistant_ui.ai_core.v7.contract_registry import (
+    task_class_allowed_dimensions,
+    threshold_dimension_metric_overrides,
+    threshold_metric_defaults_by_dimension,
+)
 from ai_assistant_ui.ai_core.v7.entity_resolution import extract_entity_filters_from_message
 from ai_assistant_ui.ai_core.v7.spec_schema import default_business_request_spec, normalize_business_request_spec
 
@@ -269,38 +274,36 @@ def _extract_threshold_signal(message: str, *, spec: Dict[str, Any]) -> Dict[str
         return {}
     comparator = str(known_comparator(text) or "").strip().lower()
     exception_terms = [str(x).strip().lower() for x in infer_exception_terms(text) if str(x).strip()]
-    has_threshold_word = bool(re.search(r"\bthreshold\b", text, re.IGNORECASE))
-    if (not comparator) and (not exception_terms) and (not has_threshold_word):
+    if (not comparator) and (not exception_terms):
         return {}
+    explicit_dimension = str(
+        known_dimension(text)
+        or known_dimension(spec.get("subject") or "")
+        or known_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
     metric = str(known_metric(spec.get("metric")) or "").strip().lower()
     if not metric:
         metric = str(known_metric(text) or "").strip().lower()
     if not metric:
         metric = str(known_metric(spec.get("subject")) or "").strip().lower()
-    subject_text = " ".join(
-        [
-            str(spec.get("subject") or "").strip().lower(),
-            text.lower(),
-        ]
-    ).strip()
-    if (not metric) and ("overdue" in exception_terms) and ("invoice" in subject_text):
-        metric = "invoice_amount"
-    if (not metric) and (set(exception_terms) & {"low_stock", "below_minimum_stock"}):
-        metric = "stock_quantity"
-    explicit_dimension = str(canonical_dimension(subject_text) or "").strip().lower()
-    if explicit_dimension == "invoice":
+    metric_defaults = threshold_metric_defaults_by_dimension()
+    if (not metric) and explicit_dimension:
+        metric = str(metric_defaults.get(explicit_dimension) or "").strip().lower()
+    override_rules = threshold_dimension_metric_overrides()
+    if explicit_dimension and metric:
         metric_text = str(known_metric(metric) or metric or "").strip().lower()
-        if metric_text in {"", "revenue"}:
-            metric = "invoice_amount"
-    if explicit_dimension in {"item", "warehouse"}:
-        metric_text = str(known_metric(metric) or metric or "").strip().lower()
-        if metric_text in {"", "stock_balance"}:
-            metric = "stock_quantity"
+        next_metric = str((override_rules.get(explicit_dimension) or {}).get(metric_text) or "").strip().lower()
+        if next_metric:
+            metric = next_metric
+    elif explicit_dimension and (not metric):
+        next_metric = str((override_rules.get(explicit_dimension) or {}).get("") or "").strip().lower()
+        if next_metric:
+            metric = next_metric
     return {
         "metric": metric,
         "comparator": comparator or "",
         "exception_terms": exception_terms,
-        "has_threshold_word": has_threshold_word,
     }
 
 
@@ -364,7 +367,9 @@ def _threshold_unsupported_reason(message: str, *, spec: Dict[str, Any], signal:
     matches = list(_THRESHOLD_VALUE_RE.finditer(str(message or "")))
     if len(matches) > 1:
         return "range_threshold_not_supported"
-    allowed_dims = {"customer", "supplier", "invoice", "item", "warehouse"}
+    allowed_dims = task_class_allowed_dimensions("threshold_exception_list")
+    if not allowed_dims:
+        allowed_dims = {"customer", "supplier", "invoice", "item", "warehouse"}
     requested_dims = set(_requested_dimensions_from_spec(spec))
     explicit_dimension = str(known_dimension(message) or "").strip().lower()
     if explicit_dimension:
@@ -448,7 +453,9 @@ def _contribution_unsupported_reason(message: str, *, spec: Dict[str, Any], cont
         return "comparison_not_supported"
     if "cumulative_share" in contribution_terms:
         return "cumulative_share_not_supported"
-    allowed_dims = {"customer", "supplier", "item"}
+    allowed_dims = task_class_allowed_dimensions("contribution_share")
+    if not allowed_dims:
+        allowed_dims = {"customer", "supplier", "item"}
     requested_dims = set(_requested_dimensions_from_spec(spec))
     explicit_dimension = str(known_dimension(message) or "").strip().lower()
     if explicit_dimension:
