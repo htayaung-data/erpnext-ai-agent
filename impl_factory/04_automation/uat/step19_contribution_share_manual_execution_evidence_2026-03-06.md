@@ -14,6 +14,10 @@ Status: complete for approved core slice (Phase 3 governance)
 5. `step17_contribution_share_approval_review_2026-03-04.md`
 6. `step18_contribution_share_implementation_plan_2026-03-04.md`
 
+Pack-version note:
+
+1. evidence is aligned to `step17` manual pack `v1.1` (2026-03-06 top-N parameterization clarification)
+
 ## Scope Boundary
 
 This evidence run is limited to the approved first slice:
@@ -114,28 +118,31 @@ Supplemental observed follow-up (not a mandatory MG case id):
 ### Pack B: Supplier Purchase
 
 1. `MG-CS-05`
-   - prompt: `Top 10 suppliers contribution share of total purchase amount last month`
+   - prompt template: `Top <N> suppliers contribution share of total purchase amount last month`
+   - executed prompt: `Top 3 suppliers contribution share of total purchase amount last month`
    - expected: supplier grain, purchase amount, contribution share
-   - observed: equivalent supplier contribution-share request executed with supplier-grain purchase metric + contribution-share column
-   - status: pass (2026-03-06, equivalent variant)
+   - observed: supplier-grain purchase metric with contribution-share column; top-N behavior preserved
+   - status: pass (2026-03-06)
 2. `MG-CS-06`
    - prompt: `Show suppliers percent of total purchase amount last month`
    - expected: supplier detail, no customer drift
    - observed: supplier-grain detail result retained supplier context and contribution-share semantics
    - status: pass (2026-03-06)
 3. `MG-CS-07` (same session as MG-CS-05)
-   - prompt: `Top 5 only`
-   - expected: same active result narrowed to top 5
+   - prompt template: `Top <M> only`
+   - executed prompt: `Top 2 only`
+   - expected: same active result narrowed to top `<M>`
    - observed: top-n follow-up narrowing preserved active supplier contribution context
-   - status: pass (2026-03-06, equivalent variant `Top 2 only`)
+   - status: pass (2026-03-06)
 
 ### Pack C: Item Sales
 
 1. `MG-CS-08`
-   - prompt: `Top 10 items contribution share of total sales last month`
+   - prompt template: `Top <N> items contribution share of total sales last month`
+   - executed prompt: `Top 5 items contribution share of total sales last month`
    - expected: item grain, sales metric, contribution share
-   - observed: equivalent item contribution-share request executed with item-grain sales metric + contribution-share column
-   - status: pass (2026-03-06, equivalent variant)
+   - observed: item-grain sales metric with contribution-share column; top-N behavior preserved
+   - status: pass (2026-03-06)
 2. `MG-CS-09` (same session as MG-CS-08)
    - prompt: `Show only item and contribution share`
    - expected: restrictive projection on same active result
@@ -164,7 +171,7 @@ Supplemental observed follow-up (not a mandatory MG case id):
 
 1. mandatory cases passed: `12 / 12`
 2. remaining mandatory cases pending: `0 / 12`
-3. contract status: manual core-slice evidence closed and aligned to `step20` class-freeze decision
+3. contract status: manual core-slice evidence closed and aligned to `step20` class-freeze decision under approved `step17` pack `v1.1`
 
 ## Closure Rule
 

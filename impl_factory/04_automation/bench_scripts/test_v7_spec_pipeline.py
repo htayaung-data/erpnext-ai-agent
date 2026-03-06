@@ -873,11 +873,62 @@ class V7SpecPipelineTests(unittest.TestCase):
             self.assertEqual(str(spec.get("task_class") or ""), "threshold_exception_list")
             self.assertEqual(str(spec.get("metric") or ""), "invoice_amount")
             self.assertEqual(list(spec.get("group_by") or []), ["invoice"])
+            self.assertEqual(str(spec.get("domain") or ""), "sales")
             rule = spec.get("filters", {}).get("_threshold_rule") if isinstance(spec.get("filters"), dict) else {}
             self.assertEqual(str(rule.get("metric") or ""), "invoice_amount")
         finally:
             mod.choose_business_request_spec = orig_choose
             mod._load_session_context = orig_load_session
+
+    def test_generate_business_request_spec_threshold_domain_uses_contract_mapping_without_sales_keyword(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_domain_from_dimension = getattr(mod, "domain_from_dimension", None)
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "",
+                "metric": "revenue",
+                "dimensions": [],
+                "aggregation": "none",
+                "group_by": [],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": []},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.domain_from_dimension = (
+                lambda dim: "finance"
+                if str(dim or "").strip().lower() == "invoice"
+                else ""
+            )
+            env = mod.generate_business_request_spec(
+                message="Show overdue invoices above 5000000",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "threshold_exception_list")
+            self.assertEqual(str(spec.get("metric") or ""), "invoice_amount")
+            self.assertEqual(str(spec.get("domain") or ""), "finance")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            if orig_domain_from_dimension is not None:
+                mod.domain_from_dimension = orig_domain_from_dimension
 
     def test_generate_business_request_spec_enriches_threshold_item_metric_and_warehouse_filter(self):
         mod = _load_module()

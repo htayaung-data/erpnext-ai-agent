@@ -23,6 +23,8 @@ _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
     "dimension_domain_map": {
         "customer": "sales",
         "supplier": "purchasing",
+        "item": "inventory",
+        "invoice": "sales",
         "warehouse": "inventory",
         "company": "finance",
     },

@@ -3,7 +3,7 @@
 Date: 2026-03-04  
 Owner: AI Runtime Engineering  
 Scope: curated browser/manual golden pack design for `contribution_share`  
-Status: design-preparation asset
+Status: active controlled manual pack (`v1.1`, updated 2026-03-06)
 
 ## Purpose
 This document defines the manual/browser golden pack that must exist before `contribution_share` is accepted as implemented.
@@ -47,13 +47,14 @@ Validate that contribution-share asks behave correctly in the real browser path 
 ### MG-CS-01
 Prompt:
 
-- `Top 10 customers contribution share of total revenue last month`
+- `Top <N> customers contribution share of total revenue last month`
 
 Expected:
 
 1. customer-grain result
 2. revenue shown
 3. contribution share shown
+4. `<N>` rows unless fewer records exist
 
 ### MG-CS-02
 Prompt:
@@ -92,13 +93,14 @@ Expected:
 ### MG-CS-05
 Prompt:
 
-- `Top 10 suppliers contribution share of total purchase amount last month`
+- `Top <N> suppliers contribution share of total purchase amount last month`
 
 Expected:
 
 1. supplier-grain result
 2. purchase amount shown
 3. contribution share shown
+4. `<N>` rows unless fewer records exist
 
 ### MG-CS-06
 Prompt:
@@ -113,25 +115,27 @@ Expected:
 ### MG-CS-07
 Same session as MG-CS-05:
 
-- `Top 5 only`
+- `Top <M> only`
 
 Expected:
 
 1. same active result
-2. restricted to top 5 suppliers only
+2. restricted to top `<M>` on the same supplier contribution result
+3. `<M>` must be less than or equal to prior `<N>`
 
 ## Pack C: Item Sales Contribution Share
 
 ### MG-CS-08
 Prompt:
 
-- `Top 10 items contribution share of total sales last month`
+- `Top <N> items contribution share of total sales last month`
 
 Expected:
 
 1. item-grain result
 2. sales metric shown
 3. contribution share shown
+4. `<N>` rows unless fewer records exist
 
 ### MG-CS-09
 Same session as MG-CS-08:
@@ -197,3 +201,10 @@ After implementation exists, the manual golden pack is acceptable only if:
 1. all mandatory customer and supplier cases pass
 2. no retry-to-succeed behavior remains
 3. no deferred grouping variants are silently accepted
+
+## Pack Clarification (2026-03-06)
+For contribution-share manual validation, top-N prompts are governed as parameterized templates:
+
+1. MG-CS-01 / MG-CS-05 / MG-CS-08 accept any positive integer `N`
+2. MG-CS-07 accepts any integer `M` where `M <= N` from the active prior result
+3. closure is judged on invariant behavior (grain, metric, contribution-share integrity, context preservation), not a fixed numeric literal

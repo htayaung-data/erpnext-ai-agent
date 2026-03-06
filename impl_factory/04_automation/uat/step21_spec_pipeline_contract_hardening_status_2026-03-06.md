@@ -60,9 +60,37 @@ Replay:
 
 ### Remaining Gate Items Before Closure
 
-1. push local `main` commits to `origin/main` (auth-required machine step)
+1. none (`main` pushed to `origin/main` on 2026-03-06 UTC)
 
 ### Current Decision
 
 Status: `green-for-hardening-slice-close`  
-Reason: targeted replay, broad reruns on `main`, and focused manual/browser checks are all green for this bounded hardening slice; only remote sync remains.
+Reason: targeted replay, broad reruns on `main`, focused manual/browser checks, and remote sync are complete for this bounded hardening slice.
+
+### Addendum: Post-Close Contract Cleanup (2026-03-06 UTC)
+
+Follow-up cleanup was applied to remove a remaining lexical fallback in threshold-domain inference:
+
+1. removed message-token fallback (`"sales" in message`) from `spec_pipeline.py`
+2. moved domain inference to contract/semantic path:
+   - `domain_from_dimension(...)` from contract registry
+   - metric fallback only (`stock_quantity -> inventory`, `invoice_amount -> sales`)
+3. added governed mappings for missing dimensions:
+   - `item -> inventory`
+   - `invoice -> sales`
+
+Validation evidence for this cleanup:
+
+1. unit:
+   - `python3 -m unittest impl_factory.04_automation.bench_scripts.test_v7_spec_pipeline` -> pass
+   - `python3 -m unittest impl_factory.04_automation.bench_scripts.test_v7_contract_registry` -> pass
+2. targeted replay probes:
+   - [20260306T173359Z_phase6_manifest_uat_raw_v3.json](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260306T173359Z_phase6_manifest_uat_raw_v3.json) (`CSC-01`, `TEI-01`) pass
+   - [20260306T173353Z_phase6_manifest_uat_raw_v3.json](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260306T173353Z_phase6_manifest_uat_raw_v3.json) (`CSU-05`) pass
+   - [20260306T173358Z_phase6_manifest_uat_raw_v3.json](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260306T173358Z_phase6_manifest_uat_raw_v3.json) (`TEU-01`) pass
+
+Decision for addendum cleanup:
+
+1. contract alignment improved
+2. no class-scope widening
+3. no replay regression observed in impacted probes

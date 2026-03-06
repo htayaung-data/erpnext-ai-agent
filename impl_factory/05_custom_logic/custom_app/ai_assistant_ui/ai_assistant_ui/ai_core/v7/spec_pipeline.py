@@ -25,6 +25,7 @@ from ai_assistant_ui.ai_core.ontology_normalization import (
 )
 from ai_assistant_ui.ai_core.util_dates import extract_timeframe, last_month_range, last_week_range, this_month_range, this_week_range, today_date
 from ai_assistant_ui.ai_core.v7.contract_registry import (
+    domain_from_dimension,
     task_class_allowed_dimensions,
     threshold_dimension_metric_overrides,
     threshold_metric_defaults_by_dimension,
@@ -603,11 +604,21 @@ def _normalize_threshold_exception_class(spec: Dict[str, Any], *, message: str) 
     out["top_n"] = 0
     out["metric"] = str((threshold_rule or {}).get("metric") or signal.get("metric") or out.get("metric") or "").strip()
     if str(out.get("domain") or "").strip().lower() in {"", "unknown"}:
+        inferred_domain = ""
+        requested_dims = list(_requested_dimensions_from_spec(out))
+        if explicit_dimension and explicit_dimension not in requested_dims:
+            requested_dims.insert(0, explicit_dimension)
+        for dim in requested_dims:
+            inferred_domain = str(domain_from_dimension(dim) or "").strip().lower()
+            if inferred_domain:
+                break
         metric = str(known_metric(out.get("metric")) or out.get("metric") or "").strip().lower()
-        if metric == "stock_quantity":
-            out["domain"] = "inventory"
-        elif metric == "invoice_amount":
-            out["domain"] = "sales" if "sales" in str(message or "").lower() else "unknown"
+        if (not inferred_domain) and metric == "stock_quantity":
+            inferred_domain = "inventory"
+        elif (not inferred_domain) and metric == "invoice_amount":
+            inferred_domain = "sales"
+        if inferred_domain:
+            out["domain"] = inferred_domain
     output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
     output_contract = dict(output_contract)
     output_contract["mode"] = "detail"
