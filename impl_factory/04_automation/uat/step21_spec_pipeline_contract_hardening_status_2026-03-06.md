@@ -54,15 +54,15 @@ Replay:
    - `Show contribution share of total revenue` -> clarification question shown
    - `Show revenue share by territory last month` -> safe unsupported response shown
    - `Show customers above threshold` (fresh chat) -> clarification question shown
+5. required broad reruns on `main` (Phase-3 checklist) pass:
+   - [20260306T152238Z_phase6_manifest_uat_raw_v3.json](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260306T152238Z_phase6_manifest_uat_raw_v3.json) (`core_read` `114/114`, first-run `1.0`)
+   - [20260306T165738Z_phase6_manifest_uat_raw_v3.json](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/logs/20260306T165738Z_phase6_manifest_uat_raw_v3.json) (`multiturn_context` `81/81`, first-run `1.0`)
 
 ### Remaining Gate Items Before Closure
 
-1. attach broad Phase-3 rerun evidence on `main` per rerun checklist:
-   - `core_read` full suite
-   - `multiturn_context` full suite
-2. sync this hardening merge to remote `main` after rerun evidence is attached
+1. push local `main` commits to `origin/main` (auth-required machine step)
 
 ### Current Decision
 
-Status: `provisionally-green-with-final-rerun-gate-open`  
-Reason: targeted replay + manual evidence are green, branch is pushed, and local `main` includes merge commit `52d196f`; final closure needs explicit broad rerun evidence on `main`.
+Status: `green-for-hardening-slice-close`  
+Reason: targeted replay, broad reruns on `main`, and focused manual/browser checks are all green for this bounded hardening slice; only remote sync remains.
