@@ -57,9 +57,12 @@ Replay:
 
 ### Remaining Gate Items Before Closure
 
-1. finalize commit/push for hardening branch
+1. attach broad Phase-3 rerun evidence on `main` per rerun checklist:
+   - `core_read` full suite
+   - `multiturn_context` full suite
+2. sync this hardening merge to remote `main` after rerun evidence is attached
 
 ### Current Decision
 
-Status: `green-for-hardening-slice-close`  
-Reason: replay, targeted threshold safety probes, and focused browser/manual smoke checks are all green for this bounded contract-hardening slice.
+Status: `provisionally-green-with-final-rerun-gate-open`  
+Reason: targeted replay + manual evidence are green, branch is pushed, and local `main` includes merge commit `52d196f`; final closure needs explicit broad rerun evidence on `main`.

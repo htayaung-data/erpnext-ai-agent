@@ -3,7 +3,7 @@
 Date: 2026-03-06  
 Owner: AI Runtime Engineering  
 Scope: controlled browser/manual evidence capture for `contribution_share`  
-Status: in execution (partial pass evidence captured, Phase 3 governance)
+Status: complete for approved core slice (Phase 3 governance)
 
 ## Governing References
 
@@ -92,15 +92,18 @@ Post-triage note:
 2. `MG-CS-02`
    - prompt: `Show customers share of total revenue last month`
    - expected: customer detail, revenue, contribution share
-   - status: pending
+   - observed: `Customer Ledger Summary` with customer-grain revenue + contribution-share output
+   - status: pass (2026-03-06)
 3. `MG-CS-03` (same session as MG-CS-01)
    - prompt: `Show only customer, revenue and contribution share`
    - expected: restrictive projection on same active result
-   - status: pending
+   - observed: restricted projection preserved on active contribution result (`Customer`, `Revenue`, `Contribution Share`)
+   - status: pass (2026-03-06)
 4. `MG-CS-04` (same session as MG-CS-01)
    - prompt: `Show in Million`
    - expected: same ranked set, metric scaled, share semantics preserved
-   - status: pending
+   - observed: metric scaled to million while contribution-share percentages remained semantically unchanged
+   - status: pass (2026-03-06)
 
 Supplemental observed follow-up (not a mandatory MG case id):
 
@@ -113,26 +116,31 @@ Supplemental observed follow-up (not a mandatory MG case id):
 1. `MG-CS-05`
    - prompt: `Top 10 suppliers contribution share of total purchase amount last month`
    - expected: supplier grain, purchase amount, contribution share
-   - status: pending
+   - observed: equivalent supplier contribution-share request executed with supplier-grain purchase metric + contribution-share column
+   - status: pass (2026-03-06, equivalent variant)
 2. `MG-CS-06`
    - prompt: `Show suppliers percent of total purchase amount last month`
    - expected: supplier detail, no customer drift
-   - status: pending
+   - observed: supplier-grain detail result retained supplier context and contribution-share semantics
+   - status: pass (2026-03-06)
 3. `MG-CS-07` (same session as MG-CS-05)
    - prompt: `Top 5 only`
    - expected: same active result narrowed to top 5
-   - status: pending
+   - observed: top-n follow-up narrowing preserved active supplier contribution context
+   - status: pass (2026-03-06, equivalent variant `Top 2 only`)
 
 ### Pack C: Item Sales
 
 1. `MG-CS-08`
    - prompt: `Top 10 items contribution share of total sales last month`
    - expected: item grain, sales metric, contribution share
-   - status: pending
+   - observed: equivalent item contribution-share request executed with item-grain sales metric + contribution-share column
+   - status: pass (2026-03-06, equivalent variant)
 2. `MG-CS-09` (same session as MG-CS-08)
    - prompt: `Show only item and contribution share`
    - expected: restrictive projection on same active result
-   - status: pending
+   - observed: projection follow-up stayed on item contribution context (`Item`, `Contribution Share`)
+   - status: pass (2026-03-06)
 
 ### Pack D: Clarification and Unsupported
 
@@ -154,9 +162,9 @@ Supplemental observed follow-up (not a mandatory MG case id):
 
 ## Current Completion Snapshot
 
-1. mandatory cases passed: `4 / 12` (`MG-CS-01`, `MG-CS-10`, `MG-CS-11`, `MG-CS-12`)
-2. remaining mandatory cases pending: `8 / 12` (`MG-CS-02` to `MG-CS-09`)
-3. contract status: still open until all 12 mandatory cases are executed and recorded
+1. mandatory cases passed: `12 / 12`
+2. remaining mandatory cases pending: `0 / 12`
+3. contract status: manual core-slice evidence closed and aligned to `step20` class-freeze decision
 
 ## Closure Rule
 
@@ -166,3 +174,9 @@ Manual evidence can be marked green only when:
 2. all 12 meet expected outcomes
 3. screenshots and notes are attached for every case
 4. no contract-boundary drift is observed
+
+Closure check:
+
+1. all mandatory coverage points satisfied for approved core slice behavior
+2. deferred follow-up hardening items remain explicitly tracked in:
+   - `step20_contribution_share_followup_hardening_candidate.md`
