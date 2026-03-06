@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from ai_assistant_ui.ai_core.v7.capability_registry import report_semantics_contract
+from ai_assistant_ui.ai_core.v7.contract_registry import get_response_style_contract
 
 
 def quality_has_repairable_failure_class(quality: Dict[str, Any], classes: List[str]) -> bool:
@@ -405,19 +406,72 @@ def has_report_table_rows(payload: Optional[Dict[str, Any]]) -> bool:
     return bool(rows and cols)
 
 
-def sanitize_user_payload(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
+def _is_write_flow_text(text: str) -> bool:
+    txt = str(text or "").strip().lower()
+    if not txt:
+        return False
+    markers = (
+        "write action",
+        "write-actions are disabled",
+        "confirm or cancel",
+        "reply **confirm**",
+        "no pending write draft found",
+        "confirmed. deleted",
+        "confirmed. cancelled",
+    )
+    return any(m in txt for m in markers)
+
+
+def _normalize_text_with_policy(text: str, normalization: Dict[str, Any]) -> str:
+    txt = str(text or "")
+    if bool(normalization.get("trim_whitespace", True)):
+        txt = txt.strip()
+
+    if bool(normalization.get("collapse_duplicate_lines", True)):
+        lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+        if len(lines) > 1 and len(set(lines)) == 1:
+            txt = lines[0]
+
+    if bool(normalization.get("collapse_internal_whitespace", False)):
+        txt = " ".join(str(txt).split())
+
+    return txt
+
+
+def apply_response_style_policy(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload or {})
     typ = str(out.get("type") or "").strip().lower()
-    if typ == "text":
-        txt = str(out.get("text") or "").strip()
-        if txt:
-            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-            if len(lines) > 1 and len(set(lines)) == 1:
-                txt = lines[0]
-            out["text"] = txt
-        if looks_like_system_error_text({"type": "text", "text": out.get("text")}):
-            out["text"] = unsupported_message_from_spec(business_spec)
-            out.pop("_pending_state", None)
-    elif typ == "error":
+    style_contract = get_response_style_contract()
+    safety = style_contract.get("safety") if isinstance(style_contract.get("safety"), dict) else {}
+    text_response = style_contract.get("text_response") if isinstance(style_contract.get("text_response"), dict) else {}
+    normalization = text_response.get("normalization") if isinstance(text_response.get("normalization"), dict) else {}
+
+    if typ == "report_table" and bool(safety.get("preserve_report_table_payload", True)):
+        return out
+
+    if typ == "error":
         out = {"type": "text", "text": unsupported_message_from_spec(business_spec)}
+        typ = "text"
+
+    if typ != "text":
+        return out
+
+    txt = str(out.get("text") or "")
+    if looks_like_system_error_text({"type": "text", "text": txt}):
+        out["text"] = unsupported_message_from_spec(business_spec)
+        out.pop("_pending_state", None)
+        return out
+
+    if bool(safety.get("preserve_write_confirmation_text", True)) and _is_write_flow_text(txt):
+        out["text"] = str(txt).strip()
+        return out
+
+    if bool(text_response.get("enabled", True)):
+        out["text"] = _normalize_text_with_policy(str(txt), normalization)
+    else:
+        out["text"] = str(txt)
     return out
+
+
+def sanitize_user_payload(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    return apply_response_style_policy(payload=payload, business_spec=business_spec)

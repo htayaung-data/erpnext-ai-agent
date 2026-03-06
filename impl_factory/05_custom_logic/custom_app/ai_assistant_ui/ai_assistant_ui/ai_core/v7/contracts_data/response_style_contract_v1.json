@@ -1,0 +1,19 @@
+{
+  "version": "v1",
+  "text_response": {
+    "enabled": true,
+    "normalization": {
+      "trim_whitespace": true,
+      "collapse_duplicate_lines": true,
+      "collapse_internal_whitespace": false
+    }
+  },
+  "tone": {
+    "persona": "professional_human",
+    "avoid_robotic_phrasing": true
+  },
+  "safety": {
+    "preserve_report_table_payload": true,
+    "preserve_write_confirmation_text": true
+  }
+}

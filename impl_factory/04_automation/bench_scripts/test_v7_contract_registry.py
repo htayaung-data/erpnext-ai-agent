@@ -51,6 +51,18 @@ class V7ContractRegistryTests(unittest.TestCase):
         unknown_kind_q = mod.clarification_question_for_filter_kind("cost_center")
         self.assertIn("cost center", str(unknown_kind_q).lower())
 
+    def test_response_style_contract_defaults(self):
+        mod = _load_module()
+        contract = mod.get_response_style_contract()
+        self.assertTrue(bool(str(contract.get("version") or "").strip()))
+        text_response = contract.get("text_response") if isinstance(contract.get("text_response"), dict) else {}
+        normalization = text_response.get("normalization") if isinstance(text_response.get("normalization"), dict) else {}
+        safety = contract.get("safety") if isinstance(contract.get("safety"), dict) else {}
+        self.assertTrue(bool(text_response.get("enabled")))
+        self.assertIn("trim_whitespace", normalization)
+        self.assertIn("collapse_duplicate_lines", normalization)
+        self.assertTrue(bool(safety.get("preserve_report_table_payload")))
+
     def test_contract_override_file_is_applied(self):
         mod = _load_module()
         override = {
@@ -60,6 +72,9 @@ class V7ContractRegistryTests(unittest.TestCase):
             },
             "clarification_contract": {
                 "questions_by_filter_kind": {"cost_center": "Which cost center should I use?"}
+            },
+            "response_style_contract": {
+                "tone": {"persona": "friendly_professional"},
             },
         }
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", encoding="utf-8", delete=False) as f:
@@ -72,6 +87,9 @@ class V7ContractRegistryTests(unittest.TestCase):
             self.assertIn("custom_domain", set(mod.allowed_spec_values("domains")))
             self.assertEqual(mod.domain_from_dimension("territory"), "sales_override")
             self.assertEqual(mod.clarification_question_for_filter_kind("cost_center"), "Which cost center should I use?")
+            style = mod.get_response_style_contract()
+            tone = style.get("tone") if isinstance(style.get("tone"), dict) else {}
+            self.assertEqual(str(tone.get("persona") or ""), "friendly_professional")
         finally:
             if prev is None:
                 os.environ.pop("AI_ASSISTANT_V7_CONTRACT_OVERRIDE", None)

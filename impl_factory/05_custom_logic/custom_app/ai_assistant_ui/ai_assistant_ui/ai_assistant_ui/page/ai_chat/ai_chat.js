@@ -16,6 +16,7 @@
         messages: [],
         renaming: null,
         menuOpenFor: null,
+        pendingRequests: 0,
       };
 
       const MENU_ID = "ai-chat-session-popover-menu";
@@ -134,12 +135,48 @@
         `);
       }
 
+      function ensureTypingStyle() {
+        if (document.getElementById("ai-chat-typing-style")) return;
+        const styleEl = document.createElement("style");
+        styleEl.id = "ai-chat-typing-style";
+        styleEl.textContent = `
+          @keyframes aiChatTypingPulse {
+            0%, 80%, 100% { opacity: .3; transform: translateY(0); }
+            40% { opacity: 1; transform: translateY(-2px); }
+          }
+          .ai-chat-typing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted, #8d99a6);
+            display: inline-block;
+            animation: aiChatTypingPulse 1.2s infinite ease-in-out;
+          }
+        `;
+        document.head.appendChild(styleEl);
+      }
+
+      function renderTypingIndicator() {
+        return $(`
+          <div style="display:flex; justify-content:flex-start; margin: 6px 0;">
+            <div style="background: var(--gray-50); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 12px;">
+              <span class="ai-chat-typing-dot" style="animation-delay:0s;"></span>
+              <span class="ai-chat-typing-dot" style="animation-delay:0.2s; margin-left:4px;"></span>
+              <span class="ai-chat-typing-dot" style="animation-delay:0.4s; margin-left:4px;"></span>
+            </div>
+          </div>
+        `);
+      }
+
       function redrawMessages() {
         $messages.empty();
         state.messages.forEach(m => {
           const $el = renderMessage(m);
           if ($el) $messages.append($el);
         });
+        if (state.pendingRequests > 0) {
+          $messages.append(renderTypingIndicator());
+        }
         $messages.scrollTop($messages.prop("scrollHeight"));
       }
 
@@ -388,16 +425,28 @@
         $input.val("");
         state.messages.push({ role: "user", content: text });
         redrawMessages();
+        state.pendingRequests += 1;
+        redrawMessages();
 
         frappe.call({
           method: "ai_assistant_ui.api.chat_send",
           args: { session_name: state.session, message: text },
           callback: async () => {
-            await loadMessages(state.session);
-            await loadSessions();
+            try {
+              await loadMessages(state.session);
+              await loadSessions();
+            } finally {
+              state.pendingRequests = Math.max(0, state.pendingRequests - 1);
+              redrawMessages();
+            }
           },
           error: async () => {
-            await loadMessages(state.session);
+            try {
+              await loadMessages(state.session);
+            } finally {
+              state.pendingRequests = Math.max(0, state.pendingRequests - 1);
+              redrawMessages();
+            }
           },
         });
       }
@@ -418,6 +467,7 @@
       });
 
       (async function init() {
+        ensureTypingStyle();
         await loadSessions();
         if (state.session && state.sessions.some(s => s.name === state.session)) {
           await loadMessages(state.session);

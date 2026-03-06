@@ -81,6 +81,26 @@ _DEFAULT_CLARIFICATION_CONTRACT: Dict[str, Any] = {
     "fallback_question": "Please provide one concrete missing detail so I can run the correct report.",
 }
 
+_DEFAULT_RESPONSE_STYLE_CONTRACT: Dict[str, Any] = {
+    "version": "fallback",
+    "text_response": {
+        "enabled": True,
+        "normalization": {
+            "trim_whitespace": True,
+            "collapse_duplicate_lines": True,
+            "collapse_internal_whitespace": False,
+        },
+    },
+    "tone": {
+        "persona": "professional_human",
+        "avoid_robotic_phrasing": True,
+    },
+    "safety": {
+        "preserve_report_table_payload": True,
+        "preserve_write_confirmation_text": True,
+    },
+}
+
 
 def _contracts_dir() -> Path:
     return Path(__file__).resolve().parent / "contracts_data"
@@ -149,6 +169,16 @@ def get_clarification_contract() -> Dict[str, Any]:
     overrides = get_contract_overrides()
     clar_override = overrides.get("clarification_contract") if isinstance(overrides.get("clarification_contract"), dict) else {}
     return _deep_merge(out, clar_override)
+
+
+@lru_cache(maxsize=1)
+def get_response_style_contract() -> Dict[str, Any]:
+    path = _contracts_dir() / "response_style_contract_v1.json"
+    loaded = _read_json(path)
+    out = _deep_merge(dict(_DEFAULT_RESPONSE_STYLE_CONTRACT), loaded if loaded else {})
+    overrides = get_contract_overrides()
+    style_override = overrides.get("response_style_contract") if isinstance(overrides.get("response_style_contract"), dict) else {}
+    return _deep_merge(out, style_override)
 
 
 def allowed_spec_values(key: str) -> Set[str]:
@@ -250,3 +280,4 @@ def clear_contract_cache() -> None:
     get_contract_overrides.cache_clear()
     get_spec_contract.cache_clear()
     get_clarification_contract.cache_clear()
+    get_response_style_contract.cache_clear()
