@@ -24,6 +24,149 @@ def _load_module():
 
 
 class V7SemanticResolverConstraintTests(unittest.TestCase):
+    def test_threshold_missing_value_triggers_missing_required_filter_clarification(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Customer Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "customer", "date"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["finance", "sales"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["outstanding_amount"],
+                        "threshold_metrics": ["outstanding_amount"],
+                        "supported_comparators": ["gt", "gte", "lt", "lte"],
+                        "primary_dimension": "customer",
+                    },
+                    "metadata": {"confidence": 0.91, "fresh": True},
+                    "presentation": {"result_grain": "summary", "supports_ranking": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                }
+            ]
+        }
+        spec = {
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "",
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "filters": {
+                "_threshold_rule": {
+                    "metric": "",
+                    "comparator": "gt",
+                    "value_present": False,
+                    "exception_terms": [],
+                }
+            },
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "time_scope": {"mode": "none", "value": ""},
+            "output_contract": {"mode": "detail", "minimal_columns": []},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "sales",
+            "metric": "",
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "output_mode": "detail",
+            "time_mode": "none",
+            "filters": spec["filters"],
+            "hard_filter_kinds": [],
+            "requested_dimensions": ["customer"],
+            "subject_tokens": ["customers", "threshold"],
+            "threshold_metric": "",
+            "threshold_comparator": "gt",
+            "threshold_value_present": False,
+            "threshold_value": None,
+            "exception_terms": [],
+            "followup_bindings": {},
+            "active_filter_context": {},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertTrue(bool(out.get("needs_clarification")))
+        self.assertEqual(str(out.get("clarification_reason") or ""), "missing_required_filter_value")
+        self.assertIn("threshold", str(out.get("clarification_question") or "").lower())
+
+    def test_contribution_missing_metric_triggers_missing_required_filter_clarification(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Customer Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales", "finance"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["revenue", "outstanding_amount"],
+                        "contribution_metrics": ["revenue"],
+                        "primary_dimension": "customer",
+                    },
+                    "metadata": {"confidence": 0.91, "fresh": True},
+                    "presentation": {"result_grain": "summary", "supports_ranking": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                }
+            ]
+        }
+        spec = {
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "",
+            "task_type": "detail",
+            "task_class": "contribution_share",
+            "filters": {
+                "_contribution_rule": {
+                    "metric": "",
+                    "basis": "of_total",
+                    "contribution_terms": ["share_of_total"],
+                }
+            },
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "detail", "minimal_columns": []},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "sales",
+            "metric": "",
+            "task_type": "detail",
+            "task_class": "contribution_share",
+            "output_mode": "detail",
+            "time_mode": "relative",
+            "filters": spec["filters"],
+            "hard_filter_kinds": [],
+            "requested_dimensions": ["customer"],
+            "subject_tokens": ["customers", "share"],
+            "contribution_requested": True,
+            "contribution_metric": "",
+            "contribution_basis": "of_total",
+            "contribution_terms": ["share_of_total"],
+            "followup_bindings": {},
+            "active_filter_context": {},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertTrue(bool(out.get("needs_clarification")))
+        self.assertEqual(str(out.get("clarification_reason") or ""), "missing_required_filter_value")
+        self.assertIn("contribution share", str(out.get("clarification_question") or "").lower())
+
     def test_missing_required_unknown_filter_kind_triggers_dynamic_clarification(self):
         mod = _load_module()
         capability_index = {
@@ -275,6 +418,109 @@ class V7SemanticResolverConstraintTests(unittest.TestCase):
         cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
         self.assertTrue(bool(cands))
         self.assertIn("unsupported_dimension", list(cands[0].get("hard_blockers") or []))
+
+    def test_threshold_exception_class_prefers_threshold_capable_report(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Customer Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["finance", "sales"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["outstanding_amount", "revenue"],
+                        "threshold_metrics": ["outstanding_amount"],
+                        "supported_comparators": ["gt", "gte", "lt", "lte"],
+                        "primary_dimension": "customer",
+                    },
+                    "presentation": {
+                        "result_grain": "summary",
+                        "supports_ranking": True,
+                    },
+                    "metadata": {"confidence": 0.92, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Customer Revenue Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "customer",
+                    },
+                    "presentation": {
+                        "result_grain": "summary",
+                        "supports_ranking": True,
+                    },
+                    "metadata": {"confidence": 0.95, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "finance",
+            "subject": "customers",
+            "metric": "outstanding amount",
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "filters": {
+                "company": "MMOB",
+                "_threshold_rule": {
+                    "metric": "outstanding_amount",
+                    "comparator": "gt",
+                    "value": 10000000,
+                    "raw_value": "10,000,000",
+                    "exception_terms": [],
+                },
+            },
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "time_scope": {"mode": "none", "value": ""},
+            "output_contract": {"mode": "detail", "minimal_columns": ["customer", "outstanding amount"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "finance",
+            "metric": "outstanding_amount",
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "output_mode": "detail",
+            "requested_limit": 0,
+            "sort_intent": "",
+            "threshold_metric": "outstanding_amount",
+            "threshold_comparator": "gt",
+            "threshold_value_present": True,
+            "threshold_value": 10000000,
+            "exception_terms": [],
+            "time_mode": "none",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["customer"],
+            "subject_tokens": ["customers", "outstanding", "amount"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
+        self.assertTrue(bool(cands))
+        by_name = {str(c.get("report_name") or ""): c for c in cands}
+        revenue_cand = by_name.get("Customer Revenue Summary") or {}
+        self.assertIn("threshold_metric_not_supported", list(revenue_cand.get("hard_blockers") or []))
+        self.assertEqual(str(out.get("selected_report") or ""), "Customer Ledger Summary")
 
     def test_metric_mismatch_is_blocker_for_detail_requests(self):
         mod = _load_module()
@@ -824,6 +1070,276 @@ class V7SemanticResolverConstraintTests(unittest.TestCase):
         by_name = {str(c.get("report_name") or ""): c for c in cands}
         self.assertIn("ranking_not_supported(-24)", list(by_name["Product Bundle Balance"].get("reasons") or []))
         self.assertIn("ranking_not_supported", list(by_name["Product Bundle Balance"].get("hard_blockers") or []))
+
+    def test_ranking_blocks_unfit_warehouse_detail_report_when_governed_not_ranking_capable(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Warehouse Wise Stock Balance",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "warehouse"],
+                        "required_filter_kinds": ["company"],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["inventory"],
+                        "dimension_hints": ["warehouse"],
+                        "metric_hints": ["stock_balance"],
+                        "primary_dimension": "warehouse",
+                    },
+                    "presentation": {
+                        "supports_ranking": True,
+                        "result_grain": "summary",
+                    },
+                    "metadata": {"confidence": 0.8, "fresh": True},
+                    "time_support": {"as_of": True, "range": False, "any": True},
+                },
+                {
+                    "report_name": "Warehouse wise Item Balance Age and Value",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "warehouse", "item"],
+                        "required_filter_kinds": ["company"],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["inventory"],
+                        "dimension_hints": ["item", "warehouse"],
+                        "metric_hints": ["stock_balance"],
+                        "primary_dimension": "item",
+                    },
+                    "presentation": {
+                        "supports_ranking": False,
+                        "result_grain": "detail",
+                    },
+                    "metadata": {"confidence": 0.92, "fresh": True},
+                    "time_support": {"as_of": True, "range": False, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "inventory",
+            "subject": "top warehouses by stock balance",
+            "metric": "stock balance",
+            "task_type": "ranking",
+            "filters": {"company": "MMOB"},
+            "group_by": ["warehouse"],
+            "dimensions": ["warehouse"],
+            "time_scope": {"mode": "as_of", "value": "today"},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["warehouse", "stock balance"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "inventory",
+            "metric": "stock_balance",
+            "task_type": "ranking",
+            "output_mode": "top_n",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["warehouse"],
+            "subject_tokens": ["top", "warehouses", "stock", "balance"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+            "time_mode": "as_of",
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Warehouse Wise Stock Balance")
+        cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("report_name") or ""): c for c in cands}
+        self.assertIn(
+            "ranking_not_supported(-24)",
+            list(by_name["Warehouse wise Item Balance Age and Value"].get("reasons") or []),
+        )
+        self.assertIn(
+            "ranking_not_supported",
+            list(by_name["Warehouse wise Item Balance Age and Value"].get("hard_blockers") or []),
+        )
+
+    def test_subject_hints_break_finance_party_ledger_tie_for_receivables(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Customer Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["finance", "sales"],
+                        "subject_hints": ["accounts receivable", "receivable", "customer receivable"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["outstanding_amount", "revenue"],
+                        "primary_dimension": "customer",
+                    },
+                    "presentation": {
+                        "supports_ranking": True,
+                        "result_grain": "summary",
+                    },
+                    "metadata": {"confidence": 0.8, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Supplier Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["finance", "purchasing"],
+                        "subject_hints": ["accounts payable", "payable", "supplier payable"],
+                        "dimension_hints": ["supplier"],
+                        "metric_hints": ["outstanding_amount", "purchase_amount"],
+                        "primary_dimension": "supplier",
+                    },
+                    "presentation": {
+                        "supports_ranking": True,
+                        "result_grain": "summary",
+                    },
+                    "metadata": {"confidence": 0.8, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "finance",
+            "subject": "accounts receivable",
+            "metric": "outstanding amount",
+            "task_type": "kpi",
+            "filters": {"company": "MMOB"},
+            "group_by": [],
+            "dimensions": [],
+            "time_scope": {"mode": "as_of", "value": "today"},
+            "output_contract": {"mode": "kpi", "minimal_columns": ["outstanding amount"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "finance",
+            "metric": "outstanding_amount",
+            "task_type": "kpi",
+            "output_mode": "kpi",
+            "time_mode": "as_of",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": [],
+            "subject_tokens": ["accounts", "receivable"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Customer Ledger Summary")
+        cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("report_name") or ""): c for c in cands}
+        self.assertIn("subject_hint_match(+6)", list(by_name["Customer Ledger Summary"].get("reasons") or []))
+
+    def test_threshold_item_stock_quantity_prefers_stock_balance_report(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Warehouse wise Item Balance Age and Value",
+                    "constraints": {
+                        "supported_filter_kinds": ["warehouse", "item", "company"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["inventory"],
+                        "dimension_hints": ["item", "warehouse"],
+                        "metric_hints": ["stock_balance", "stock_quantity"],
+                        "threshold_metrics": [],
+                        "supported_comparators": ["gt", "gte", "lt", "lte"],
+                        "primary_dimension": "item",
+                    },
+                    "presentation": {"result_grain": "detail", "supports_ranking": False},
+                    "metadata": {"confidence": 0.96, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Stock Balance",
+                    "constraints": {
+                        "supported_filter_kinds": ["warehouse", "item", "company"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["inventory"],
+                        "dimension_hints": ["item", "warehouse"],
+                        "metric_hints": ["stock_quantity"],
+                        "threshold_metrics": ["stock_quantity"],
+                        "supported_comparators": ["gt", "gte", "lt", "lte"],
+                        "primary_dimension": "item",
+                    },
+                    "presentation": {"result_grain": "detail", "supports_ranking": False},
+                    "metadata": {"confidence": 0.85, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "inventory",
+            "subject": "items",
+            "metric": "stock quantity",
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "filters": {
+                "warehouse": "Yangon Main Warehouse - MMOB",
+                "_threshold_rule": {
+                    "metric": "stock_quantity",
+                    "comparator": "lt",
+                    "value": 20,
+                    "raw_value": "20",
+                    "value_present": True,
+                    "exception_terms": ["low_stock"],
+                },
+            },
+            "group_by": ["item"],
+            "dimensions": ["item"],
+            "time_scope": {"mode": "none", "value": ""},
+            "output_contract": {"mode": "detail", "minimal_columns": ["item", "stock quantity"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "inventory",
+            "metric": "stock_quantity",
+            "task_type": "detail",
+            "task_class": "threshold_exception_list",
+            "output_mode": "detail",
+            "requested_limit": 0,
+            "sort_intent": "",
+            "threshold_metric": "stock_quantity",
+            "threshold_comparator": "lt",
+            "threshold_value_present": True,
+            "threshold_value": 20,
+            "exception_terms": ["low_stock"],
+            "time_mode": "none",
+            "filters": {"warehouse": "Yangon Main Warehouse - MMOB"},
+            "hard_filter_kinds": ["warehouse"],
+            "requested_dimensions": ["item"],
+            "subject_tokens": ["items", "stock", "below"],
+            "followup_bindings": {},
+            "active_filter_context": {"warehouse": "Yangon Main Warehouse - MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        cands = [c for c in list(out.get("candidate_reports") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("report_name") or ""): c for c in cands}
+        age_value = by_name.get("Warehouse wise Item Balance Age and Value") or {}
+        self.assertIn("threshold_metric_not_supported", list(age_value.get("hard_blockers") or []))
+        self.assertEqual(str(out.get("selected_report") or ""), "Stock Balance")
 
 
 if __name__ == "__main__":

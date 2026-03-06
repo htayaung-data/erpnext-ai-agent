@@ -76,6 +76,17 @@ def first_int_in_text(text: str) -> int:
         return 0
 
 
+def _looks_like_latest_record_base_question(text: str) -> bool:
+    source = str(text or "").strip().lower()
+    if not source:
+        return False
+    has_latest_cue = bool(re.search(r"\b(?:latest|recent|most recent|newest)\b", source))
+    if not has_latest_cue:
+        return False
+    has_record_noun = bool(re.search(r"\b(?:invoice|order|entry|receipt|request|payment|record|records)\b", source))
+    return has_record_noun
+
+
 def recover_latest_record_followup_spec(
     *,
     spec_obj: Dict[str, Any],
@@ -234,23 +245,26 @@ def prepare_resume_from_pending(
                 merged = f"{base_question}. {raw_input}".strip()
                 seed = _plan_seed_from_pending_spec(include_filters=False)
                 infer_spec: Dict[str, Any] = {
+                    "task_class": str(spec_so_far.get("task_class") or "").strip(),
                     "subject": str(spec_so_far.get("subject") or "").strip(),
                     "metric": str(spec_so_far.get("metric") or "").strip(),
                     "filters": dict(filters_so_far),
                     "domain": str(spec_so_far.get("domain") or "").strip(),
                 }
                 doctype_candidates = resolve_record_doctype_candidates(raw_input, infer_spec)
+                pending_task_class = str(spec_so_far.get("task_class") or "").strip().lower()
+                is_record_type_followup = pending_task_class == "list_latest_records" or _looks_like_latest_record_base_question(base_question)
+                if (not doctype_candidates) and is_record_type_followup:
+                    infer_spec_from_answer = dict(infer_spec)
+                    infer_spec_from_answer["metric"] = raw_input
+                    doctype_candidates = resolve_record_doctype_candidates(raw_input, infer_spec_from_answer)
                 explicit_doctype = resolve_explicit_doctype_name(raw_input)
-                if explicit_doctype:
+                if explicit_doctype and is_record_type_followup:
                     all_doctypes = load_submittable_doctypes()
-                    if explicit_doctype in all_doctypes:
+                    normalized = {str(x or "").strip().lower() for x in list(all_doctypes or []) if str(x or "").strip()}
+                    if (not normalized) or (str(explicit_doctype).strip().lower() in normalized):
                         doctype_candidates = [explicit_doctype]
                 if not doctype_candidates:
-                    pending_task_class = str(spec_so_far.get("task_class") or "").strip().lower()
-                    is_record_type_followup = (
-                        pending_task_class == "list_latest_records"
-                        or ("invoice" in str(base_question or "").strip().lower())
-                    )
                     if is_record_type_followup and explicit_doctype:
                         doctype_candidates = [explicit_doctype]
                 synthetic_query = merged

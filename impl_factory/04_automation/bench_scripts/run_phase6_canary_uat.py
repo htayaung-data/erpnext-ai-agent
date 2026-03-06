@@ -332,17 +332,25 @@ def send_and_capture(session_name: str, prompt: str) -> Dict[str, Any]:
     after_public: List[Dict[str, Any]] = []
     new_msgs: List[Dict[str, Any]] = []
     deadline = time.time() + 20.0
+    last_seen_idx = before_idx
+    last_change_ts = time.time()
+    settle_window_sec = 0.8
     while True:
         after_debug = get_messages(session_name, debug=1)
         after_public = get_messages(session_name, debug=0)
         new_msgs = _new_msgs(after_debug, before_idx)
+        now = time.time()
+        latest_idx = _max_idx(after_debug)
+        if latest_idx > last_seen_idx:
+            last_seen_idx = latest_idx
+            last_change_ts = now
 
         has_new_assistant = any(str(x.get("role") or "").lower() == "assistant" for x in new_msgs)
-        if has_new_assistant:
+        if has_new_assistant and ((now - last_change_ts) >= settle_window_sec):
             break
-        if time.time() >= deadline:
+        if now >= deadline:
             break
-        time.sleep(0.4)
+        time.sleep(0.25)
 
     actual = _extract_turn_actual(new_msgs, after_public)
     actual["send_ok"] = bool(send_out.get("ok"))
@@ -433,7 +441,10 @@ def pass_rule(
         else:
             ok = False
     elif case_id == "LST-01":
-        has_invoice_col = any(("invoice" in lb and "number" in lb) or (lb == "invoice") for lb in labels)
+        has_invoice_col = any(
+            ("invoice" in lb and ("number" in lb or "id" in lb)) or (lb == "invoice")
+            for lb in labels
+        )
         has_time_col = any(("date" in lb) or ("time" in lb) for lb in labels)
         ok = (t == "report_table" and pending is None and rows >= 1 and has_invoice_col and has_time_col)
     elif case_id == "CFG-01":
@@ -465,6 +476,61 @@ def pass_rule(
         ok = (t == "error" and bool(actual.get("error_env_present")))
     elif case_id == "EXP-01":
         ok = (t == "report_table" and dl == 0 and pending is None)
+    elif case_id.startswith("TEC-"):
+        has_customer_col = any("customer" in lb for lb in labels)
+        has_metric_col = any(("outstanding" in lb) or ("amount" in lb) or ("value" in lb) for lb in labels)
+        ok = (t == "report_table" and pending is None and rows >= 1 and has_customer_col and has_metric_col)
+    elif case_id.startswith("TES-"):
+        has_supplier_col = any("supplier" in lb for lb in labels)
+        has_metric_col = any(("purchase" in lb) or ("outstanding" in lb) or ("amount" in lb) or ("value" in lb) for lb in labels)
+        ok = (t == "report_table" and pending is None and rows >= 1 and has_supplier_col and has_metric_col)
+    elif case_id.startswith("TEI-"):
+        has_invoice_col = any(("invoice" in lb) for lb in labels)
+        has_metric_col = any(("grand total" in lb) or ("amount" in lb) or ("value" in lb) for lb in labels)
+        ok = (t == "report_table" and pending is None and rows >= 1 and has_invoice_col and has_metric_col)
+    elif case_id.startswith("TEK-"):
+        has_item_col = any("item" in lb for lb in labels)
+        has_stock_col = any(("stock" in lb) or ("quantity" in lb) or ("qty" in lb) for lb in labels)
+        if case_id == "TEK-08":
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_item_col)
+        else:
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_item_col and has_stock_col)
+    elif case_id.startswith("TEW-"):
+        has_warehouse_col = any("warehouse" in lb for lb in labels)
+        has_stock_col = any((("stock" in lb) and ("balance" in lb)) or (lb == "stock balance") for lb in labels)
+        ok = (t == "report_table" and pending is None and rows >= 1 and has_warehouse_col and has_stock_col)
+    elif case_id in {"TEU-01", "TEU-02", "TEU-03", "TEU-06"}:
+        ok = (t == "text" and pending in ("planner_clarify", "need_filters") and blocker_clar)
+    elif case_id in {"TEU-04", "TEU-05"}:
+        ok = (t == "error" and bool(actual.get("error_env_present")))
+    elif case_id.startswith("CSC-"):
+        has_customer_col = any("customer" in lb for lb in labels)
+        has_metric_col = any(("revenue" in lb) or ("sales" in lb) or ("amount" in lb) for lb in labels)
+        has_share_col = any(("contribution share" in lb) or ("share" in lb) for lb in labels)
+        if case_id == "CSC-09":
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_customer_col and has_share_col)
+        else:
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_customer_col and has_metric_col and has_share_col)
+    elif case_id.startswith("CSS-"):
+        has_supplier_col = any("supplier" in lb for lb in labels)
+        has_metric_col = any(("purchase" in lb) or ("amount" in lb) or ("value" in lb) for lb in labels)
+        has_share_col = any(("contribution share" in lb) or ("share" in lb) for lb in labels)
+        if case_id == "CSS-09":
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_supplier_col and has_share_col)
+        else:
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_supplier_col and has_metric_col and has_share_col)
+    elif case_id.startswith("CSI-"):
+        has_item_col = any("item" in lb or "product" in lb for lb in labels)
+        has_metric_col = any(("revenue" in lb) or ("sales" in lb) or ("amount" in lb) for lb in labels)
+        has_share_col = any(("contribution share" in lb) or ("share" in lb) for lb in labels)
+        if case_id == "CSI-08":
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_item_col and has_share_col)
+        else:
+            ok = (t == "report_table" and pending is None and rows >= 1 and has_item_col and has_metric_col and has_share_col)
+    elif case_id in {"CSU-01", "CSU-02", "CSU-03", "CSU-04"}:
+        ok = (t == "text" and pending in ("planner_clarify", "need_filters") and blocker_clar)
+    elif case_id in {"CSU-05", "CSU-06", "CSU-07", "CSU-08"}:
+        ok = (t == "error" and bool(actual.get("error_env_present")))
     else:
         return False, "unknown_case"
 

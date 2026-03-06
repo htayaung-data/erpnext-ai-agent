@@ -200,6 +200,79 @@ def metadata_requested_columns(
     return out
 
 
+def exception_safe_columns(
+    *,
+    selected_report: str,
+) -> List[str]:
+    report_name = str(selected_report or "").strip()
+    if not report_name:
+        return []
+
+    contract = report_semantics_contract(report_name)
+    presentation = contract.get("presentation") if isinstance(contract.get("presentation"), dict) else {}
+    exception_cols = presentation.get("exception_safe_columns") if isinstance(presentation.get("exception_safe_columns"), list) else []
+    if not exception_cols:
+        return []
+
+    column_roles = presentation.get("column_roles") if isinstance(presentation.get("column_roles"), dict) else {}
+    dimensions = column_roles.get("dimensions") if isinstance(column_roles.get("dimensions"), dict) else {}
+    metrics = column_roles.get("metrics") if isinstance(column_roles.get("metrics"), dict) else {}
+
+    dimension_by_field: Dict[str, str] = {}
+    for canonical_name, fieldnames in dimensions.items():
+        for raw in list(fieldnames or []):
+            key = str(raw or "").strip().lower()
+            if key and key not in dimension_by_field:
+                dimension_by_field[key] = str(canonical_name or "").strip()
+
+    metric_by_field: Dict[str, str] = {}
+    for canonical_name, fieldnames in metrics.items():
+        for raw in list(fieldnames or []):
+            key = str(raw or "").strip().lower()
+            if key and key not in metric_by_field:
+                metric_by_field[key] = str(canonical_name or "").strip()
+
+    out: List[str] = []
+    seen = set()
+    for raw in exception_cols:
+        key = str(raw or "").strip().lower()
+        if not key:
+            continue
+        desired = dimension_by_field.get(key) or metric_by_field.get(key) or key
+        desired = humanize_fieldname(desired)
+        desired_norm = humanize_fieldname(desired)
+        if not desired_norm or desired_norm in seen:
+            continue
+        seen.add(desired_norm)
+        out.append(desired)
+    return out
+
+
+def contribution_safe_columns(
+    *,
+    selected_report: str,
+) -> List[str]:
+    report_name = str(selected_report or "").strip()
+    if not report_name:
+        return []
+
+    contract = report_semantics_contract(report_name)
+    presentation = contract.get("presentation") if isinstance(contract.get("presentation"), dict) else {}
+    raw_cols = presentation.get("contribution_safe_columns") if isinstance(presentation.get("contribution_safe_columns"), list) else []
+    out: List[str] = []
+    seen = set()
+    for raw in raw_cols:
+        desired = humanize_fieldname(str(raw or ""))
+        if not desired:
+            continue
+        key = humanize_fieldname(desired)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(desired)
+    return out
+
+
 def enrich_minimal_columns_from_report_metadata(
     *,
     spec_obj: Dict[str, Any],
@@ -213,6 +286,77 @@ def enrich_minimal_columns_from_report_metadata(
         selected_report=selected_report,
         last_result_payload=last_result_payload,
     )
+    if str(spec.get("task_class") or "").strip().lower() == "threshold_exception_list":
+        output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        contract = report_semantics_contract(selected_report) if selected_report else {}
+        semantics = contract.get("semantics") if isinstance(contract.get("semantics"), dict) else {}
+        presentation = contract.get("presentation") if isinstance(contract.get("presentation"), dict) else {}
+        threshold_rule = (spec.get("filters") if isinstance(spec.get("filters"), dict) else {}).get("_threshold_rule")
+        threshold_rule = threshold_rule if isinstance(threshold_rule, dict) else {}
+        threshold_metric = humanize_fieldname(
+            str(
+                threshold_rule.get("metric")
+                or spec.get("metric")
+                or ""
+            ).replace("_", " ")
+        )
+        threshold_primary = humanize_fieldname(
+            str(semantics.get("primary_dimension") or "").replace("_", " ")
+        )
+        base_semantics = {
+            humanize_fieldname(x)
+            for x in (
+                list(spec.get("group_by") or [])
+                + list(spec.get("dimensions") or [])
+                + ([spec.get("metric")] if str(spec.get("metric") or "").strip() else [])
+            )
+            if str(x or "").strip()
+        }
+        explicit_projection = any(humanize_fieldname(x) not in base_semantics for x in requested)
+        if (not explicit_projection) and selected_report:
+            result_grain = str(presentation.get("result_grain") or "").strip().lower()
+            if result_grain == "summary":
+                defaults = [x for x in [threshold_primary, threshold_metric] if x]
+            else:
+                defaults = exception_safe_columns(selected_report=selected_report)
+            if defaults:
+                spec["output_contract"] = dict(output_contract)
+                spec["output_contract"]["minimal_columns"] = defaults[:12]
+                return spec
+    if str(spec.get("task_class") or "").strip().lower() == "contribution_share":
+        output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        contract = report_semantics_contract(selected_report) if selected_report else {}
+        semantics = contract.get("semantics") if isinstance(contract.get("semantics"), dict) else {}
+        contribution_rule = (spec.get("filters") if isinstance(spec.get("filters"), dict) else {}).get("_contribution_rule")
+        contribution_rule = contribution_rule if isinstance(contribution_rule, dict) else {}
+        contribution_metric = humanize_fieldname(
+            str(
+                contribution_rule.get("metric")
+                or spec.get("metric")
+                or ""
+            ).replace("_", " ")
+        )
+        contribution_primary = humanize_fieldname(
+            str(semantics.get("primary_dimension") or "").replace("_", " ")
+        )
+        base_semantics = {
+            humanize_fieldname(x)
+            for x in (
+                list(spec.get("group_by") or [])
+                + list(spec.get("dimensions") or [])
+                + ([spec.get("metric")] if str(spec.get("metric") or "").strip() else [])
+            )
+            if str(x or "").strip()
+        }
+        explicit_projection = any(humanize_fieldname(x) not in base_semantics for x in requested)
+        if (not explicit_projection) and selected_report:
+            defaults = contribution_safe_columns(selected_report=selected_report)
+            if not defaults:
+                defaults = [x for x in [contribution_primary, contribution_metric, "contribution share"] if x]
+            if defaults:
+                spec["output_contract"] = dict(output_contract)
+                spec["output_contract"]["minimal_columns"] = defaults[:12]
+                return spec
     if not requested:
         return spec
 

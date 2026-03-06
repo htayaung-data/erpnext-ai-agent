@@ -36,6 +36,8 @@ def execute_read_loop(
     load_last_result_payload_fn: Callable[..., Optional[Dict[str, Any]]],
     extract_auto_switch_pending_fn: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]],
     capture_source_columns_fn: Callable[[Dict[str, Any]], Dict[str, Any]],
+    apply_threshold_exception_filter_fn: Optional[Callable[..., Dict[str, Any]]] = None,
+    apply_contribution_share_fn: Optional[Callable[..., Dict[str, Any]]] = None,
     as_payload_fn: Callable[[Any], Dict[str, Any]],
     apply_transform_last_fn: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]],
     looks_like_system_error_text_fn: Callable[[Dict[str, Any]], bool],
@@ -68,6 +70,10 @@ def execute_read_loop(
     }
     shaper_tool_msg = ""
     transform_tool_msg = ""
+    if apply_threshold_exception_filter_fn is None:
+        apply_threshold_exception_filter_fn = lambda *, payload, business_spec: dict(payload or {})
+    if apply_contribution_share_fn is None:
+        apply_contribution_share_fn = lambda *, payload, business_spec: dict(payload or {})
 
     for step_no in range(1, max(1, int(max_steps)) + 1):
         sig = f"{mode}|{source}|{selected_report}|{str(message or '').strip().lower()}|{json.dumps(plan_seed, sort_keys=True, default=str)}"
@@ -195,6 +201,8 @@ def execute_read_loop(
         step_trace.append({"step": step_no, "action": action, "retry_requested": wants_retry})
         out.pop(internal_retry_key, None)
         payload = capture_source_columns_fn(as_payload_fn(out))
+        payload = apply_threshold_exception_filter_fn(payload=payload, business_spec=spec_obj)
+        payload = apply_contribution_share_fn(payload=payload, business_spec=spec_obj)
         payload = apply_transform_last_fn(payload, spec_obj)
         if looks_like_system_error_text_fn(payload):
             payload = {
@@ -205,6 +213,9 @@ def execute_read_loop(
         payload = shape_response_fn(payload, spec_obj)
         payload = sanitize_user_payload_fn(payload=payload, business_spec=spec_obj)
         payload = apply_requested_entity_row_filters_fn(payload=payload, business_spec=spec_obj)
+        # Recompute contribution share after shaping so ranked/aggregated views
+        # expose percentages aligned with the final displayed metric values.
+        payload = apply_contribution_share_fn(payload=payload, business_spec=spec_obj)
         shaper_tool_msg = make_response_shaper_tool_message_fn(tool=source, mode=mode, shaped_payload=payload)
 
         payload_report = str(payload.get("report_name") or "").strip()

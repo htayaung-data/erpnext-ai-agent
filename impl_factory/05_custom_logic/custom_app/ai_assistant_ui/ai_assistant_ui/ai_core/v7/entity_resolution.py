@@ -166,6 +166,48 @@ def _build_entity_clarification(
     }
 
 
+def extract_entity_filters_from_message(*, message: str, allowed_kinds: List[str]) -> Dict[str, Any]:
+    """
+    Best-effort deterministic extraction of explicit entity names mentioned in the
+    raw message. This is intentionally narrow: only return a filter when a master
+    candidate alias is directly present in the message.
+    """
+    text = _safe_str(message).lower()
+    if not text:
+        return {}
+
+    requested_kinds = [_safe_str(x).lower() for x in list(allowed_kinds or []) if _safe_str(x)]
+    out: Dict[str, Any] = {}
+
+    for kind in requested_kinds:
+        if kind not in _ENTITY_CONFIG:
+            continue
+        candidates = _list_candidates(kind)
+        if not candidates:
+            continue
+
+        best_name = ""
+        best_alias_len = 0
+        for cand in candidates:
+            canonical_name = _safe_str(cand.get("name"))
+            aliases = [_safe_str(x) for x in list(cand.get("aliases") or []) if _safe_str(x)]
+            for alias in aliases:
+                alias_lc = alias.lower()
+                if len(alias_lc) < 3:
+                    continue
+                if alias_lc == kind:
+                    continue
+                if alias_lc not in text:
+                    continue
+                if len(alias_lc) > best_alias_len:
+                    best_name = canonical_name
+                    best_alias_len = len(alias_lc)
+        if best_name:
+            out[kind] = best_name
+
+    return out
+
+
 def resolve_entity_filters(*, filters: Dict[str, Any]) -> Dict[str, Any]:
     """
     Deterministically validates entity-like filters against ERP master doctypes.

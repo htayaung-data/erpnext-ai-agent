@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 from typing import Any, Dict, List
 
 from ai_assistant_ui.ai_core.ontology_normalization import (
@@ -9,6 +10,7 @@ from ai_assistant_ui.ai_core.ontology_normalization import (
     known_metric,
     semantic_aliases,
 )
+from ai_assistant_ui.ai_core.v7.capability_registry import report_semantics_contract
 
 VERDICT_PASS = "PASS"
 VERDICT_REPAIRABLE_FAIL = "REPAIRABLE_FAIL"
@@ -34,6 +36,11 @@ _FAILURE_CLASS_BY_CHECK = {
     "latest_records_time_axis": "shape",
     "latest_records_identifier_axis": "shape",
     "latest_records_subject_alignment": "semantic",
+    "threshold_rule_applied": "constraint",
+    "threshold_primary_dimension_alignment": "semantic",
+    "threshold_comparator_respected": "constraint",
+    "threshold_aggregate_rows_excluded": "constraint",
+    "threshold_exception_terms_respected": "constraint",
 }
 
 
@@ -123,8 +130,18 @@ def _has_minimal_column(col_names: List[str], target: str) -> bool:
     if not names or not aliases:
         return False
     for n in names:
+        name_tokens = set(_token_set(n))
         for a in aliases:
-            if (a == n) or (a in n) or (n in a):
+            alias_tokens = set(_token_set(a))
+            if a == n:
+                return True
+            if a in n:
+                extra_tokens = name_tokens - alias_tokens
+                extra_dims = {t for t in extra_tokens if str(known_dimension(t) or "").strip()}
+                if extra_dims:
+                    continue
+                return True
+            if n in a:
                 return True
     return False
 
@@ -256,6 +273,128 @@ def _extract_document_id(filters: Dict[str, Any]) -> str:
         if s and re.search(r"\b[A-Z]{2,}-[A-Z0-9]+-\d{4}-\d+\b", s):
             return s
     return ""
+
+
+def _report_contract(payload: Dict[str, Any], resolved: Dict[str, Any]) -> Dict[str, Any]:
+    report_name = str(payload.get("report_name") or resolved.get("selected_report") or "").strip()
+    return report_semantics_contract(report_name) if report_name else {}
+
+
+def _threshold_rule(spec: Dict[str, Any]) -> Dict[str, Any]:
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    rule = filters.get("_threshold_rule") if isinstance(filters.get("_threshold_rule"), dict) else {}
+    return dict(rule or {})
+
+
+def _contribution_rule(spec: Dict[str, Any]) -> Dict[str, Any]:
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    rule = filters.get("_contribution_rule") if isinstance(filters.get("_contribution_rule"), dict) else {}
+    return dict(rule or {})
+
+
+def _requested_primary_dimension(spec: Dict[str, Any]) -> str:
+    for raw in list(spec.get("group_by") or []) + list(spec.get("dimensions") or []):
+        dim = str(known_dimension(raw) or raw or "").strip().lower()
+        if dim:
+            return dim
+    return ""
+
+
+def _find_dimension_fieldname(cols: List[Dict[str, Any]], report_contract: Dict[str, Any], dimension: str) -> str:
+    presentation = report_contract.get("presentation") if isinstance(report_contract.get("presentation"), dict) else {}
+    column_roles = presentation.get("column_roles") if isinstance(presentation.get("column_roles"), dict) else {}
+    dimensions = column_roles.get("dimensions") if isinstance(column_roles.get("dimensions"), dict) else {}
+    explicit = [str(x).strip().lower() for x in list(dimensions.get(dimension) or []) if str(x or "").strip()]
+    for c in cols:
+        fn = str(c.get("fieldname") or "").strip()
+        if explicit and fn.lower() in explicit:
+            return fn
+    return ""
+
+
+def _find_metric_fieldname(cols: List[Dict[str, Any]], report_contract: Dict[str, Any], metric: str) -> str:
+    presentation = report_contract.get("presentation") if isinstance(report_contract.get("presentation"), dict) else {}
+    column_roles = presentation.get("column_roles") if isinstance(presentation.get("column_roles"), dict) else {}
+    metrics = column_roles.get("metrics") if isinstance(column_roles.get("metrics"), dict) else {}
+    explicit = [str(x).strip().lower() for x in list(metrics.get(metric) or []) if str(x or "").strip()]
+    for c in cols:
+        fn = str(c.get("fieldname") or "").strip()
+        if explicit and fn.lower() in explicit:
+            return fn
+    payload_metric = str(metric or "").strip().lower()
+    for c in cols:
+        fn = str(c.get("fieldname") or "").strip().lower()
+        lb = str(c.get("label") or "").strip().lower().replace("_", " ")
+        if payload_metric and (payload_metric == fn or payload_metric == lb):
+            return str(c.get("fieldname") or "").strip()
+    return ""
+
+
+def _aggregate_dimension_values(report_contract: Dict[str, Any]) -> List[str]:
+    presentation = report_contract.get("presentation") if isinstance(report_contract.get("presentation"), dict) else {}
+    values = presentation.get("aggregate_dimension_values") if isinstance(presentation.get("aggregate_dimension_values"), list) else []
+    return [str(x).strip().lower() for x in values if str(x or "").strip()]
+
+
+def _to_float(value: Any) -> float:
+    try:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        s = str(value).replace(",", "").strip()
+        return float(s) if s else 0.0
+    except Exception:
+        return 0.0
+
+
+def _parse_percent(value: Any) -> float:
+    text = str(value or "").strip().replace("%", "").replace(",", "")
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except Exception:
+        return 0.0
+
+
+def _compare_threshold(actual: float, comparator: str, expected: float) -> bool:
+    comp = str(comparator or "").strip().lower()
+    if comp == "gt":
+        return actual > expected
+    if comp == "gte":
+        return actual >= expected
+    if comp == "lt":
+        return actual < expected
+    if comp == "lte":
+        return actual <= expected
+    return False
+
+
+def _row_is_overdue(row: Dict[str, Any], cols: List[Dict[str, Any]]) -> bool:
+    status_field = ""
+    due_field = ""
+    for c in cols:
+        fn = str(c.get("fieldname") or "").strip()
+        lb = str(c.get("label") or "").strip().lower().replace("_", " ")
+        fn_norm = fn.lower().replace("_", " ")
+        if not status_field and ("status" == fn_norm or "status" == lb):
+            status_field = fn
+        if not due_field and ("due date" == fn_norm or "due date" == lb or "due_date" == fn.lower()):
+            due_field = fn
+    if status_field:
+        status = str(row.get(status_field) or "").strip().lower()
+        if status == "overdue":
+            return True
+    if due_field:
+        due_raw = str(row.get(due_field) or "").strip()
+        if due_raw:
+            try:
+                due_dt = date.fromisoformat(due_raw[:10])
+                return due_dt < date.today()
+            except Exception:
+                return False
+    return False
 
 
 def _document_id_applied(doc_id: str, cols: List[Dict[str, Any]], rows: List[Dict[str, Any]]) -> bool:
@@ -547,6 +686,131 @@ def evaluate_quality_gate(
                 ok=subject_aligned,
                 severity="repairable",
                 detail=f"subject tokens should align with output columns: {subj_tokens}",
+            )
+
+        if task_class == "threshold_exception_list":
+            rule = _threshold_rule(spec)
+            report_contract = _report_contract(out, res)
+            requested_dim = _requested_primary_dimension(spec)
+            report_semantics = report_contract.get("semantics") if isinstance(report_contract.get("semantics"), dict) else {}
+            report_primary_dim = str(report_semantics.get("primary_dimension") or "").strip().lower()
+            metric_token = str(rule.get("metric") or requested_metric or "").strip().lower()
+            comparator = str(rule.get("comparator") or "").strip().lower()
+            threshold_value = _to_float(rule.get("value"))
+            exception_terms = [str(x).strip().lower() for x in list(rule.get("exception_terms") or []) if str(x or "").strip()]
+            dim_fieldname = _find_dimension_fieldname(cols, report_contract, requested_dim) if requested_dim else ""
+            metric_fieldname = str(out.get("_threshold_metric_fieldname") or "").strip() or (
+                _find_metric_fieldname(cols, report_contract, metric_token) if metric_token else ""
+            )
+            aggregate_values = set(_aggregate_dimension_values(report_contract))
+
+            add_check(
+                name="threshold_rule_applied",
+                ok=bool(out.get("_threshold_rule_applied")) and bool(metric_fieldname) and bool(comparator),
+                severity="repairable",
+                detail="threshold exception output must record applied threshold rule metadata",
+            )
+            add_check(
+                name="threshold_primary_dimension_alignment",
+                ok=(not requested_dim) or (requested_dim == report_primary_dim and bool(dim_fieldname)),
+                severity="repairable",
+                detail=f"requested threshold dimension should align with report primary dimension: requested={requested_dim}, report={report_primary_dim}",
+            )
+
+            comparator_ok = True
+            if rows and metric_fieldname and comparator and bool(rule.get("value_present")):
+                comparator_ok = all(
+                    _compare_threshold(_to_float(r.get(metric_fieldname)), comparator, threshold_value)
+                    for r in rows
+                    if isinstance(r, dict)
+                )
+            add_check(
+                name="threshold_comparator_respected",
+                ok=comparator_ok,
+                severity="repairable",
+                detail=f"all threshold rows should satisfy comparator {comparator} {threshold_value}",
+            )
+
+            aggregate_ok = True
+            if rows and dim_fieldname and aggregate_values:
+                aggregate_ok = all(
+                    str(r.get(dim_fieldname) or "").strip().lower() not in aggregate_values
+                    for r in rows
+                    if isinstance(r, dict)
+                )
+            add_check(
+                name="threshold_aggregate_rows_excluded",
+                ok=aggregate_ok,
+                severity="repairable",
+                detail="aggregate summary rows must not appear in threshold exception results",
+            )
+
+            exception_ok = True
+            if rows and ("overdue" in exception_terms):
+                exception_ok = all(_row_is_overdue(r, cols) for r in rows if isinstance(r, dict))
+            add_check(
+                name="threshold_exception_terms_respected",
+                ok=exception_ok,
+                severity="repairable",
+                detail=f"exception terms must be reflected in returned rows: {exception_terms}",
+            )
+
+        if task_class == "contribution_share":
+            rule = _contribution_rule(spec)
+            report_contract = _report_contract(out, res)
+            requested_dim = _requested_primary_dimension(spec)
+            report_semantics = report_contract.get("semantics") if isinstance(report_contract.get("semantics"), dict) else {}
+            report_primary_dim = str(report_semantics.get("primary_dimension") or "").strip().lower()
+            metric_token = str(rule.get("metric") or requested_metric or "").strip().lower()
+            contribution_fieldname = str(out.get("_contribution_share_fieldname") or "").strip() or "contribution_share"
+            metric_fieldname = str(out.get("_contribution_metric_fieldname") or "").strip() or (
+                _find_metric_fieldname(cols, report_contract, metric_token) if metric_token else ""
+            )
+            dim_fieldname = _find_dimension_fieldname(cols, report_contract, requested_dim) if requested_dim else ""
+            total_value = _to_float(out.get("_contribution_total_value"))
+
+            add_check(
+                name="contribution_rule_applied",
+                ok=bool(out.get("_contribution_rule_applied")),
+                severity="repairable",
+                detail="contribution-share output must record applied contribution metadata",
+            )
+            add_check(
+                name="contribution_primary_dimension_alignment",
+                ok=(not requested_dim) or (requested_dim == report_primary_dim and bool(dim_fieldname)),
+                severity="repairable",
+                detail=f"requested contribution dimension should align with report primary dimension: requested={requested_dim}, report={report_primary_dim}",
+            )
+
+            contribution_present = True
+            if rows:
+                contribution_present = all(
+                    str((r or {}).get(contribution_fieldname) or "").strip()
+                    for r in rows
+                    if isinstance(r, dict)
+                )
+            add_check(
+                name="contribution_share_present",
+                ok=contribution_present,
+                severity="repairable",
+                detail="every contribution-share row must expose the contribution-share value",
+            )
+
+            consistency_ok = True
+            if rows and metric_fieldname and total_value > 0.0:
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    expected_pct = (_to_float(row.get(metric_fieldname)) / total_value) * 100.0
+                    actual_pct = _parse_percent(row.get(contribution_fieldname))
+                    if abs(expected_pct - actual_pct) > 0.25:
+                        consistency_ok = False
+                        break
+            add_check(
+                name="contribution_share_consistent",
+                ok=consistency_ok,
+                severity="repairable",
+                detail="contribution-share values must align with the returned metric and total basis",
             )
 
     if hard_fail_ids:

@@ -13,7 +13,7 @@ _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
     "allowed": {
         "intents": ["READ", "TRANSFORM_LAST", "TUTOR", "WRITE_DRAFT", "WRITE_CONFIRM", "EXPORT"],
         "task_types": ["kpi", "ranking", "trend", "detail"],
-        "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup"],
+        "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup", "threshold_exception_list", "contribution_share"],
         "aggregations": ["sum", "count", "avg", "none"],
         "time_modes": ["as_of", "range", "relative", "none"],
         "output_modes": ["kpi", "top_n", "detail"],
@@ -25,6 +25,33 @@ _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
         "supplier": "purchasing",
         "warehouse": "inventory",
         "company": "finance",
+    },
+    "task_class_rules": {
+        "threshold_exception_list": {
+            "allowed_dimensions": ["customer", "supplier", "invoice", "item", "warehouse"],
+            "metric_defaults_by_dimension": {
+                "invoice": "invoice_amount",
+                "item": "stock_quantity",
+                "warehouse": "stock_quantity",
+            },
+            "dimension_metric_overrides": {
+                "invoice": {
+                    "": "invoice_amount",
+                    "revenue": "invoice_amount",
+                },
+                "item": {
+                    "": "stock_quantity",
+                    "stock_balance": "stock_quantity",
+                },
+                "warehouse": {
+                    "": "stock_quantity",
+                    "stock_balance": "stock_quantity",
+                },
+            },
+        },
+        "contribution_share": {
+            "allowed_dimensions": ["customer", "supplier", "item"],
+        },
     },
 }
 
@@ -44,6 +71,10 @@ _DEFAULT_CLARIFICATION_CONTRACT: Dict[str, Any] = {
         "hard_constraint_not_supported": "I couldn't satisfy all requested constraints in one report. Should I switch to a compatible report or keep current scope?",
         "entity_no_match": "I couldn't find a matching value for that filter. Which exact value should I use?",
         "entity_ambiguous": "I found multiple matches for that filter. Which one should I use?",
+    },
+    "questions_by_filter_kind": {
+        "contribution_metric": "Which business measure should I use for the contribution share (for example revenue or purchase amount)?",
+        "contribution_dimension": "Which business grouping should I use for the contribution share (for example customer, supplier, or item)?",
     },
     "fallback_question": "Please provide one concrete missing detail so I can run the correct report.",
 }
@@ -133,6 +164,58 @@ def domain_from_dimension(dim: str) -> str:
     mapping = get_spec_contract().get("dimension_domain_map")
     mm = mapping if isinstance(mapping, dict) else {}
     return str(mm.get(str(dim or "").strip().lower()) or "").strip().lower()
+
+
+def task_class_rule(task_class: str) -> Dict[str, Any]:
+    key = str(task_class or "").strip().lower()
+    if not key:
+        return {}
+    rules = get_spec_contract().get("task_class_rules")
+    if not isinstance(rules, dict):
+        return {}
+    for raw_key, raw_rule in rules.items():
+        if str(raw_key or "").strip().lower() != key:
+            continue
+        return dict(raw_rule) if isinstance(raw_rule, dict) else {}
+    return {}
+
+
+def task_class_allowed_dimensions(task_class: str) -> Set[str]:
+    rule = task_class_rule(task_class)
+    vals = rule.get("allowed_dimensions") if isinstance(rule.get("allowed_dimensions"), list) else []
+    return {str(v).strip().lower() for v in vals if str(v).strip()}
+
+
+def threshold_metric_defaults_by_dimension() -> Dict[str, str]:
+    rule = task_class_rule("threshold_exception_list")
+    raw = rule.get("metric_defaults_by_dimension") if isinstance(rule.get("metric_defaults_by_dimension"), dict) else {}
+    out: Dict[str, str] = {}
+    for dim, metric in raw.items():
+        d = str(dim or "").strip().lower()
+        m = str(metric or "").strip().lower()
+        if d and m:
+            out[d] = m
+    return out
+
+
+def threshold_dimension_metric_overrides() -> Dict[str, Dict[str, str]]:
+    rule = task_class_rule("threshold_exception_list")
+    raw = rule.get("dimension_metric_overrides") if isinstance(rule.get("dimension_metric_overrides"), dict) else {}
+    out: Dict[str, Dict[str, str]] = {}
+    for dim, metric_map in raw.items():
+        d = str(dim or "").strip().lower()
+        mm = metric_map if isinstance(metric_map, dict) else {}
+        if not d:
+            continue
+        normalized: Dict[str, str] = {}
+        for source_metric, target_metric in mm.items():
+            src = str(source_metric or "").strip().lower()
+            dst = str(target_metric or "").strip().lower()
+            if dst:
+                normalized[src] = dst
+        if normalized:
+            out[d] = normalized
+    return out
 
 
 def allowed_blocker_reasons() -> Set[str]:

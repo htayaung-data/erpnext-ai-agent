@@ -224,6 +224,127 @@ class V7ReadExecutionRunnerTests(unittest.TestCase):
         clarify = out.get("clarify_decision") if isinstance(out.get("clarify_decision"), dict) else {}
         self.assertEqual(str(clarify.get("reason") or ""), "hard_constraint_not_supported")
 
+    def test_contribution_share_is_recomputed_after_shaping(self):
+        mod = _load_module()
+        kwargs = _base_kwargs()
+        kwargs["spec_obj"] = {
+            "intent": "READ",
+            "task_class": "contribution_share",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "filters": {"_contribution_rule": {"metric": "revenue", "basis": "of_total", "contribution_terms": ["share_of_total"]}},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue", "contribution share"]},
+        }
+        kwargs["spec_envelope"] = {"spec": dict(kwargs["spec_obj"])}
+        kwargs["resolved"] = {
+            "selected_report": "Customer Revenue",
+            "selected_score": 1.0,
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {"catalog_available": False},
+        }
+        kwargs["selected_report"] = "Customer Revenue"
+
+        def _capture_source_columns(payload):
+            out = dict(payload)
+            table = out.get("table") if isinstance(out.get("table"), dict) else {}
+            out["_source_table"] = {
+                "columns": [dict(c) for c in list(table.get("columns") or []) if isinstance(c, dict)],
+                "rows": [dict(r) for r in list(table.get("rows") or []) if isinstance(r, dict)],
+            }
+            return out
+
+        call_count = {"count": 0}
+
+        def _apply_contribution_share(*, payload, business_spec):
+            out = dict(payload)
+            if str((business_spec or {}).get("task_class") or "").strip().lower() != "contribution_share":
+                return out
+            table = out.get("table") if isinstance(out.get("table"), dict) else {}
+            rows = [dict(r) for r in list(table.get("rows") or []) if isinstance(r, dict)]
+            cols = [dict(c) for c in list(table.get("columns") or []) if isinstance(c, dict)]
+            source_table = out.get("_source_table") if isinstance(out.get("_source_table"), dict) else {}
+            source_rows = [dict(r) for r in list(source_table.get("rows") or []) if isinstance(r, dict)] or rows
+            total = sum(float((r or {}).get("revenue") or 0.0) for r in source_rows)
+            call_count["count"] += 1
+            for row in rows:
+                pct = 0.0 if total <= 0.0 else (float(row.get("revenue") or 0.0) / total) * 100.0
+                row["contribution_share"] = f"{pct:.0f}%"
+            if not any(str(c.get("fieldname") or "") == "contribution_share" for c in cols):
+                cols.append({"fieldname": "contribution_share", "label": "Contribution Share", "fieldtype": "Data"})
+            out["table"] = {"columns": cols, "rows": rows}
+            out["_contribution_rule_applied"] = True
+            out["_contribution_metric_fieldname"] = "revenue"
+            out["_contribution_share_fieldname"] = "contribution_share"
+            out["_contribution_total_value"] = total
+            return out
+
+        def _shape_response(payload, business_spec):
+            out = dict(payload)
+            out["table"] = {
+                "columns": [
+                    {"fieldname": "customer", "label": "Customer", "fieldtype": "Data"},
+                    {"fieldname": "revenue", "label": "Revenue", "fieldtype": "Currency"},
+                    {"fieldname": "contribution_share", "label": "Contribution Share", "fieldtype": "Data"},
+                ],
+                "rows": [
+                    {"customer": "A", "revenue": 100.0, "contribution_share": "60%"},
+                    {"customer": "B", "revenue": 100.0, "contribution_share": "100%"},
+                ],
+            }
+            return out
+
+        def _evaluate_quality_gate(**kw):
+            payload = kw.get("payload") if isinstance(kw.get("payload"), dict) else {}
+            rows = [r for r in list(((payload.get("table") or {}).get("rows") or [])) if isinstance(r, dict)]
+            shares = [str(r.get("contribution_share") or "") for r in rows]
+            if shares == ["50%", "50%"]:
+                return {
+                    "verdict": "PASS",
+                    "failed_check_ids": [],
+                    "hard_fail_check_ids": [],
+                    "repairable_check_ids": [],
+                    "checks": [],
+                }
+            return {
+                "verdict": "REPAIRABLE_FAIL",
+                "failed_check_ids": ["QG16_contribution_share_consistent"],
+                "hard_fail_check_ids": [],
+                "repairable_check_ids": ["QG16_contribution_share_consistent"],
+                "checks": [],
+            }
+
+        kwargs["execute_selected_report_direct_fn"] = (
+            lambda **kw: {
+                "type": "report_table",
+                "report_name": "Customer Revenue",
+                "table": {
+                    "columns": [
+                        {"fieldname": "customer", "label": "Customer", "fieldtype": "Data"},
+                        {"fieldname": "revenue", "label": "Revenue", "fieldtype": "Currency"},
+                    ],
+                    "rows": [
+                        {"customer": "A", "revenue": 60.0},
+                        {"customer": "A", "revenue": 40.0},
+                        {"customer": "B", "revenue": 100.0},
+                    ],
+                },
+            }
+        )
+        kwargs["capture_source_columns_fn"] = _capture_source_columns
+        kwargs["apply_contribution_share_fn"] = _apply_contribution_share
+        kwargs["shape_response_fn"] = _shape_response
+        kwargs["evaluate_quality_gate_fn"] = _evaluate_quality_gate
+        kwargs.pop("_quality_calls")
+
+        out = mod.execute_read_loop(**kwargs)
+
+        payload = out.get("payload") if isinstance(out.get("payload"), dict) else {}
+        rows = [r for r in list(((payload.get("table") or {}).get("rows") or [])) if isinstance(r, dict)]
+        self.assertEqual([str(r.get("contribution_share") or "") for r in rows], ["50%", "50%"])
+        self.assertEqual(call_count["count"], 2)
+        self.assertEqual(str((out.get("quality") or {}).get("verdict") or ""), "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

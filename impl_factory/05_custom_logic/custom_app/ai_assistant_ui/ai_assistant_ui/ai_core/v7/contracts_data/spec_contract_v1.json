@@ -10,7 +10,7 @@
       "EXPORT"
     ],
     "task_types": ["kpi", "ranking", "trend", "detail"],
-    "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup"],
+    "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup", "threshold_exception_list", "contribution_share"],
     "aggregations": ["sum", "count", "avg", "none"],
     "time_modes": ["as_of", "range", "relative", "none"],
     "output_modes": ["kpi", "top_n", "detail"],
@@ -38,5 +38,42 @@
     "supplier": "purchasing",
     "warehouse": "inventory",
     "company": "finance"
+  },
+  "task_class_rules": {
+    "threshold_exception_list": {
+      "allowed_dimensions": [
+        "customer",
+        "supplier",
+        "invoice",
+        "item",
+        "warehouse"
+      ],
+      "metric_defaults_by_dimension": {
+        "invoice": "invoice_amount",
+        "item": "stock_quantity",
+        "warehouse": "stock_quantity"
+      },
+      "dimension_metric_overrides": {
+        "invoice": {
+          "": "invoice_amount",
+          "revenue": "invoice_amount"
+        },
+        "item": {
+          "": "stock_quantity",
+          "stock_balance": "stock_quantity"
+        },
+        "warehouse": {
+          "": "stock_quantity",
+          "stock_balance": "stock_quantity"
+        }
+      }
+    },
+    "contribution_share": {
+      "allowed_dimensions": [
+        "customer",
+        "supplier",
+        "item"
+      ]
+    }
   }
 }

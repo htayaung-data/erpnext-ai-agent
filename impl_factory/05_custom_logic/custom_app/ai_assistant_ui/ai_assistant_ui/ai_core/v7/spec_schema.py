@@ -83,6 +83,22 @@ def _default_task_class() -> str:
     return next(iter(ALLOWED_TASK_CLASSES or []), "analytical_read")
 
 
+def _has_threshold_rule(spec: Dict[str, Any]) -> bool:
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    rule = filters.get("_threshold_rule") if isinstance(filters.get("_threshold_rule"), dict) else {}
+    comparator = str(rule.get("comparator") or "").strip().lower()
+    metric = str(rule.get("metric") or "").strip().lower()
+    value_present = bool(str(rule.get("raw_value") or "").strip()) or (rule.get("value") not in (None, ""))
+    return bool(comparator and metric and value_present)
+
+
+def _has_contribution_rule(spec: Dict[str, Any]) -> bool:
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    rule = filters.get("_contribution_rule") if isinstance(filters.get("_contribution_rule"), dict) else {}
+    metric = str(rule.get("metric") or "").strip().lower()
+    return bool(metric)
+
+
 def _infer_task_class(*, spec: Dict[str, Any], raw_task_class: str) -> str:
     raw = str(raw_task_class or "").strip().lower()
 
@@ -114,6 +130,20 @@ def _infer_task_class(*, spec: Dict[str, Any], raw_task_class: str) -> str:
 
     if intent == "TRANSFORM_LAST" and ("transform_followup" in ALLOWED_TASK_CLASSES):
         inferred = "transform_followup"
+
+    elif (
+        (intent == "READ")
+        and _has_threshold_rule(spec)
+        and ("threshold_exception_list" in ALLOWED_TASK_CLASSES)
+    ):
+        inferred = "threshold_exception_list"
+
+    elif (
+        (intent == "READ")
+        and _has_contribution_rule(spec)
+        and ("contribution_share" in ALLOWED_TASK_CLASSES)
+    ):
+        inferred = "contribution_share"
 
     elif (
         (top_n > 0)

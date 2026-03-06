@@ -150,6 +150,85 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         self.assertIn("Show me the latest 7 Sales Invoice", str(out.get("resume_message") or ""))
         self.assertIn("Sales Invoice", str(out.get("resume_message") or ""))
 
+    def test_planner_clarify_no_candidate_metric_invoice_answer_resolves_latest_sales_invoice(self):
+        mod = _load_module()
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_all(doctype, **kwargs):
+                if doctype != "DocType":
+                    return []
+                return [
+                    {"name": "Sales Invoice"},
+                    {"name": "Purchase Invoice"},
+                    {"name": "Sales Order"},
+                ]
+
+        mod.frappe = _FakeFrappe()
+        mod._load_submittable_doctypes.cache_clear()
+        pending = {
+            "mode": "planner_clarify",
+            "base_question": "Show me the Latest 7 Invoice",
+            "clarification_reason": "no_candidate",
+            "spec_so_far": {
+                "task_class": "list_latest_records",
+                "subject": "invoices",
+                "metric": "invoice details",
+                "domain": "finance",
+                "top_n": 7,
+                "output_contract": {"mode": "top_n", "minimal_columns": []},
+            },
+            "options": ["Switch to compatible report", "Keep current scope"],
+            "option_actions": {
+                "Switch to compatible report": "switch_report",
+                "Keep current scope": "keep_current",
+            },
+            "clarification_round": 1,
+        }
+        out = mod._prepare_resume_from_pending(message="revenue Invoice", pending=pending)
+        self.assertTrue(bool(out.get("active")))
+        resumed = str(out.get("resume_message") or "")
+        self.assertIn("latest 7 Sales Invoice", resumed)
+
+    def test_planner_clarify_most_recent_variant_pins_explicit_doctype_even_when_task_class_drifted(self):
+        mod = _load_module()
+        orig_frappe = mod.frappe
+        mod.frappe = None
+        mod._load_submittable_doctypes.cache_clear()
+        pending = {
+            "mode": "planner_clarify",
+            "base_question": "Show me the most recent 7 Invoice",
+            "clarification_reason": "no_candidate",
+            "spec_so_far": {
+                "task_class": "detail_projection",
+                "subject": "invoices",
+                "metric": "invoice details",
+                "domain": "finance",
+                "top_n": 7,
+                "output_contract": {"mode": "top_n", "minimal_columns": []},
+            },
+            "options": ["Switch to compatible report", "Keep current scope"],
+            "option_actions": {
+                "Switch to compatible report": "switch_report",
+                "Keep current scope": "keep_current",
+            },
+            "clarification_round": 1,
+        }
+        try:
+            out = mod._prepare_resume_from_pending(message="Sales Invoice", pending=pending)
+        finally:
+            mod.frappe = orig_frappe
+            mod._load_submittable_doctypes.cache_clear()
+        self.assertTrue(bool(out.get("active")))
+        resumed = str(out.get("resume_message") or "")
+        self.assertIn("latest 7 Sales Invoice", resumed)
+        seed = out.get("plan_seed") if isinstance(out.get("plan_seed"), dict) else {}
+        self.assertEqual(str(seed.get("task_class") or ""), "list_latest_records")
+        self.assertEqual(str(seed.get("output_mode") or ""), "top_n")
+        self.assertEqual(int(seed.get("top_n") or 0), 7)
+        filters = seed.get("filters") if isinstance(seed.get("filters"), dict) else {}
+        self.assertEqual(str(filters.get("doctype") or ""), "Sales Invoice")
+
     def test_merge_pinned_filters_overrides_ambiguous_raw_filter(self):
         mod = _load_module()
         spec_obj = {"filters": {"warehouse": "MMOB", "company": "MMOB"}}
@@ -179,6 +258,26 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         oc = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
         self.assertEqual(str(oc.get("mode") or ""), "top_n")
         self.assertEqual(list(oc.get("minimal_columns") or []), ["invoice number"])
+
+    def test_merge_plan_seed_skips_generic_latest_record_projection_hints(self):
+        mod = _load_module()
+        spec_obj = {
+            "task_class": "analytical_read",
+            "top_n": 0,
+            "output_contract": {"mode": "detail", "minimal_columns": []},
+            "filters": {},
+        }
+        plan_seed = {
+            "task_class": "list_latest_records",
+            "top_n": 7,
+            "output_mode": "top_n",
+            "minimal_columns": ["invoice details"],
+        }
+        out = mod._merge_pinned_filters_into_spec(spec_obj=spec_obj, plan_seed=plan_seed)
+        oc = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(str(out.get("task_class") or ""), "list_latest_records")
+        self.assertEqual(str(oc.get("mode") or ""), "top_n")
+        self.assertEqual(list(oc.get("minimal_columns") or []), [])
 
     def test_load_last_result_preserves_visible_table_and_hidden_source_snapshot(self):
         mod = _load_module()
@@ -212,6 +311,17 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
                 ],
                 "rows": [{"item_code": "A", "item_name": "Alpha", "amount": 10}],
             },
+            "_contribution_rule_applied": True,
+            "_contribution_rule": {
+                "metric": "revenue",
+                "basis": "of_total",
+                "contribution_terms": ["share_of_total", "contribution_share"],
+            },
+            "_contribution_metric": "revenue",
+            "_contribution_metric_fieldname": "amount",
+            "_contribution_share_fieldname": "contribution_share",
+            "_contribution_primary_dimension": "item",
+            "_contribution_total_value": 10.0,
         }
         topic_state = {
             "type": "v7_topic_state",
@@ -250,6 +360,10 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         self.assertEqual(str(source_rows[0].get("item_name") or ""), "Alpha")
         self.assertEqual(str(out.get("_scaled_unit") or ""), "million")
         self.assertEqual(str(out.get("_output_mode") or ""), "top_n")
+        self.assertTrue(bool(out.get("_contribution_rule_applied")))
+        self.assertEqual(str(out.get("_contribution_metric") or ""), "revenue")
+        self.assertEqual(str(out.get("_contribution_primary_dimension") or ""), "item")
+        self.assertEqual(str(out.get("_contribution_metric_fieldname") or ""), "amount")
 
     def test_load_last_result_prefers_payload_matching_active_report(self):
         mod = _load_module()
@@ -664,6 +778,126 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         keys2 = [str(x).strip().lower() for x in list(rows2[0].keys())]
         self.assertIn("total_amount", keys2)
 
+    def test_direct_latest_records_payload_falls_back_when_doctype_meta_unavailable(self):
+        mod = _load_module()
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_all(doctype, **kwargs):
+                if doctype == "DocType":
+                    return [{"name": "Sales Invoice"}]
+                if doctype == "Sales Invoice":
+                    return [
+                        {
+                            "name": "ACC-SINV-2026-00013",
+                            "modified": "2026-02-21 10:05:00",
+                        }
+                    ]
+                return []
+
+            @staticmethod
+            def get_meta(doctype):
+                raise RuntimeError("meta unavailable")
+
+        mod.frappe = _FakeFrappe()
+        mod._load_submittable_doctypes.cache_clear()
+        mod._doctype_field_names.cache_clear()
+        spec = {
+            "intent": "READ",
+            "task_class": "list_latest_records",
+            "subject": "latest invoices",
+            "metric": "",
+            "domain": "sales",
+            "top_n": 7,
+            "filters": {"doctype": "Sales Invoice"},
+            "output_contract": {"mode": "top_n", "minimal_columns": []},
+        }
+        payload = mod._direct_latest_records_payload(spec, message="Show me the latest 7 Sales Invoice")
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(str(payload.get("type") or ""), "report_table")
+        table = payload.get("table") if isinstance(payload.get("table"), dict) else {}
+        cols = table.get("columns") if isinstance(table.get("columns"), list) else []
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        labels = [str(c.get("label") or "") for c in cols if isinstance(c, dict)]
+        self.assertIn("Sales Invoice Number", labels)
+        self.assertTrue(any("time" in str(lb).lower() or "date" in str(lb).lower() for lb in labels))
+        self.assertTrue(len(rows) >= 1)
+
+    def test_direct_latest_records_payload_adds_modified_time_when_meta_has_no_date_fields(self):
+        mod = _load_module()
+
+        class _Meta:
+            def __init__(self):
+                self.fields = []
+
+        class _FakeFrappe:
+            @staticmethod
+            def get_all(doctype, **kwargs):
+                if doctype == "DocType":
+                    return [{"name": "Sales Invoice"}]
+                if doctype == "Sales Invoice":
+                    return [
+                        {
+                            "name": "ACC-SINV-2026-00013",
+                            "modified": "2026-02-21 10:05:00",
+                        }
+                    ]
+                return []
+
+            @staticmethod
+            def get_meta(doctype):
+                return _Meta()
+
+        mod.frappe = _FakeFrappe()
+        mod._load_submittable_doctypes.cache_clear()
+        mod._doctype_field_names.cache_clear()
+        spec = {
+            "intent": "READ",
+            "task_class": "list_latest_records",
+            "subject": "latest invoices",
+            "metric": "",
+            "domain": "sales",
+            "top_n": 7,
+            "filters": {"doctype": "Sales Invoice"},
+            "output_contract": {"mode": "top_n", "minimal_columns": []},
+        }
+        payload = mod._direct_latest_records_payload(spec, message="Show me the latest 7 Sales Invoice")
+        self.assertIsInstance(payload, dict)
+        self.assertEqual(str(payload.get("type") or ""), "report_table")
+        table = payload.get("table") if isinstance(payload.get("table"), dict) else {}
+        cols = table.get("columns") if isinstance(table.get("columns"), list) else []
+        labels = [str(c.get("label") or "") for c in cols if isinstance(c, dict)]
+        self.assertIn("Modified Time", labels)
+
+    def test_shape_response_keeps_temporal_column_for_latest_records_projection(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "report_name": "Sales Invoice",
+            "table": {
+                "columns": [
+                    {"fieldname": "name", "label": "Invoice Id"},
+                    {"fieldname": "modified", "label": "Modified Time", "fieldtype": "Datetime"},
+                ],
+                "rows": [
+                    {"name": "ACC-SINV-2026-00013", "modified": "2026-02-21 10:05:00"},
+                    {"name": "ACC-SINV-2026-00012", "modified": "2026-02-20 09:05:00"},
+                ],
+            },
+        }
+        spec = {
+            "intent": "READ",
+            "task_class": "list_latest_records",
+            "top_n": 7,
+            "output_contract": {"mode": "top_n", "minimal_columns": ["invoice id"]},
+        }
+        out = mod.shape_response(payload=payload, business_spec=spec)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        cols = table.get("columns") if isinstance(table.get("columns"), list) else []
+        labels = [str(c.get("label") or "") for c in cols if isinstance(c, dict)]
+        self.assertIn("Invoice Id", labels)
+        self.assertIn("Modified Time", labels)
+
     def test_quality_repairable_class_detection(self):
         mod = _load_module()
         quality = {
@@ -846,6 +1080,84 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
             )
         )
 
+    def test_does_not_promote_transform_followup_for_explicit_new_granularity_refinement(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "detail_projection",
+            "task_type": "detail",
+            "aggregation": "none",
+            "domain": "inventory",
+            "subject": "stock balance",
+            "metric": "stock balance",
+            "dimensions": ["warehouse"],
+            "group_by": [],
+            "time_scope": {"mode": "none", "value": ""},
+            "output_contract": {"mode": "detail", "minimal_columns": ["stock balance", "warehouse", "item"]},
+            "ambiguities": [],
+        }
+        memory_meta = {
+            "curr_strength": 2,
+            "anchors_applied": ["topic_overlap"],
+            "overlap_ratio": 0.7,
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "warehouse", "label": "Warehouse"},
+                    {"fieldname": "stock_balance", "label": "Stock Balance"},
+                ],
+                "rows": [{"warehouse": "Yangon Main Warehouse - MMOB", "stock_balance": 399386000.0}],
+            },
+        }
+        self.assertFalse(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="I mean stock balance per item in Yangon Main Warehouse",
+                    spec_obj=spec,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+
+    def test_realign_transform_followup_to_read_refinement_for_new_dimension(self):
+        mod = _load_module()
+        spec = {
+            "intent": "TRANSFORM_LAST",
+            "task_class": "transform_followup",
+            "task_type": "detail",
+            "domain": "inventory",
+            "subject": "stock balance",
+            "metric": "stock balance",
+            "dimensions": ["warehouse"],
+            "group_by": [],
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {"warehouse": "Yangon Main Warehouse - MMOB"},
+            "output_contract": {"mode": "detail", "minimal_columns": ["stock balance", "warehouse", "item"]},
+            "ambiguities": [],
+        }
+        last_result = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "warehouse", "label": "Warehouse"},
+                    {"fieldname": "stock_balance", "label": "Stock Balance"},
+                ],
+                "rows": [{"warehouse": "Yangon Main Warehouse - MMOB", "stock_balance": 399386000.0}],
+            },
+        }
+        out = mod._realign_transform_followup_to_read_refinement(
+            message="I mean stock balance per item in Yangon Main Warehouse",
+            spec_obj=spec,
+            last_result_payload=last_result,
+        )
+        self.assertEqual(str(out.get("intent") or ""), "READ")
+        self.assertEqual(str(out.get("task_class") or ""), "detail_projection")
+        dims = [str(x).strip().lower() for x in list(out.get("dimensions") or []) if str(x).strip()]
+        self.assertIn("item", dims)
+
     def test_promote_transform_followup_for_short_transform_message_with_context_filled_spec(self):
         mod = _load_module()
         spec = {
@@ -972,6 +1284,383 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
                 )
             )
         )
+
+    def test_realign_contribution_followup_top_n_only_keeps_metric_and_contribution_share(self):
+        mod = _load_module()
+        spec = {
+            "intent": "TRANSFORM_LAST",
+            "task_class": "transform_followup",
+            "task_type": "ranking",
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "top_n": 10,
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "filters": {
+                "_contribution_rule": {
+                    "metric": "revenue",
+                    "basis": "of_total",
+                    "contribution_terms": ["share_of_total", "contribution_share"],
+                }
+            },
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "contribution share"]},
+            "ambiguities": ["transform_projection:only", "transform_sort:desc"],
+        }
+        memory_meta = {"curr_strength": 4}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_output_mode": "top_n",
+            "_contribution_rule_applied": True,
+            "_contribution_metric": "revenue",
+            "_contribution_primary_dimension": "customer",
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "contribution_share",
+                "subject": "customers",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["customer"],
+                "top_n": 10,
+                "report_name": "Customer Ledger Summary",
+                "filters": {
+                    "_contribution_rule": {
+                        "metric": "revenue",
+                        "basis": "of_total",
+                        "contribution_terms": ["share_of_total", "contribution_share"],
+                    }
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+            },
+            "active_result": {
+                "report_name": "Customer Ledger Summary",
+                "output_mode": "top_n",
+            },
+        }
+
+        out = mod._realign_contribution_followup_to_last_result(
+            message="Top 5 only",
+            spec_obj=spec,
+            memory_meta=memory_meta,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(str(out.get("task_class") or ""), "transform_followup")
+        self.assertEqual(int(out.get("top_n") or 0), 5)
+        self.assertEqual(str(output_contract.get("mode") or ""), "top_n")
+        self.assertEqual(
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["customer", "revenue", "contribution share"],
+        )
+        self.assertNotIn("transform_projection:only", [str(x).strip().lower() for x in list(out.get("ambiguities") or []) if str(x).strip()])
+
+    def test_realign_contribution_followup_scale_preserves_contribution_context(self):
+        mod = _load_module()
+        spec = {
+            "intent": "TRANSFORM_LAST",
+            "task_class": "transform_followup",
+            "task_type": "ranking",
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "top_n": 10,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {"curr_strength": 4}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_output_mode": "top_n",
+            "_contribution_rule_applied": True,
+            "_contribution_metric": "revenue",
+            "_contribution_primary_dimension": "customer",
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "contribution_share",
+                "subject": "customers",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["customer"],
+                "top_n": 10,
+                "report_name": "Customer Ledger Summary",
+                "filters": {
+                    "_contribution_rule": {
+                        "metric": "revenue",
+                        "basis": "of_total",
+                        "contribution_terms": ["share_of_total", "contribution_share"],
+                    }
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+            },
+            "active_result": {
+                "report_name": "Customer Ledger Summary",
+                "output_mode": "top_n",
+            },
+        }
+
+        out = mod._realign_contribution_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            memory_meta=memory_meta,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+
+        filters = out.get("filters") if isinstance(out.get("filters"), dict) else {}
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(str(out.get("task_class") or ""), "transform_followup")
+        self.assertEqual(str(out.get("domain") or ""), "sales")
+        self.assertEqual(out.get("time_scope"), {"mode": "relative", "value": "last_month"})
+        self.assertTrue(isinstance(filters.get("_contribution_rule"), dict))
+        self.assertEqual(
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["customer", "revenue", "contribution share"],
+        )
+        self.assertEqual(str(output_contract.get("mode") or ""), "top_n")
+
+    def test_realign_contribution_followup_scale_uses_active_result_fallback_context(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "top_n": 10,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {"curr_strength": 4}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_output_mode": "top_n",
+            "_contribution_rule_applied": True,
+            "_contribution_rule": {
+                "metric": "revenue",
+                "basis": "of_total",
+                "contribution_terms": ["share_of_total", "contribution_share"],
+            },
+            "_contribution_metric": "revenue",
+            "_contribution_primary_dimension": "customer",
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "transform_followup",
+                "subject": "customers",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["customer"],
+                "top_n": 10,
+                "report_name": "Customer Ledger Summary",
+                "filters": {},
+                "time_scope": {"mode": "none", "value": ""},
+            },
+            "active_result": {
+                "task_class": "contribution_share",
+                "report_name": "Customer Ledger Summary",
+                "output_mode": "top_n",
+                "filters": {
+                    "_contribution_rule": {
+                        "metric": "revenue",
+                        "basis": "of_total",
+                        "contribution_terms": ["share_of_total", "contribution_share"],
+                    }
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+            },
+        }
+
+        out = mod._realign_contribution_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            memory_meta=memory_meta,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+
+        filters = out.get("filters") if isinstance(out.get("filters"), dict) else {}
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(str(out.get("task_class") or ""), "transform_followup")
+        self.assertEqual(str(out.get("domain") or ""), "sales")
+        self.assertEqual(out.get("time_scope"), {"mode": "relative", "value": "last_month"})
+        self.assertTrue(isinstance(filters.get("_contribution_rule"), dict))
+        self.assertEqual(
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["customer", "revenue", "contribution share"],
+        )
+        self.assertEqual(str(output_contract.get("mode") or ""), "top_n")
+
+    def test_realign_contribution_followup_projection_keeps_share_column(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "domain": "sales",
+            "subject": "customers",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "top_n": 10,
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "filters": {},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["customer", "revenue"]},
+            "ambiguities": ["transform_projection:only"],
+        }
+        memory_meta = {"curr_strength": 4}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "_output_mode": "top_n",
+            "_contribution_rule_applied": True,
+            "_contribution_metric": "revenue",
+            "_contribution_primary_dimension": "customer",
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "contribution_share",
+                "subject": "customers",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["customer"],
+                "top_n": 10,
+                "report_name": "Customer Ledger Summary",
+                "filters": {
+                    "_contribution_rule": {
+                        "metric": "revenue",
+                        "basis": "of_total",
+                        "contribution_terms": ["share_of_total", "contribution_share"],
+                    }
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+            },
+            "active_result": {
+                "report_name": "Customer Ledger Summary",
+                "output_mode": "top_n",
+            },
+        }
+
+        out = mod._realign_contribution_followup_to_last_result(
+            message="Show only customer, revenue and contribution share",
+            spec_obj=spec,
+            memory_meta=memory_meta,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["customer", "revenue", "contribution share"],
+        )
+
+    def test_realign_contribution_followup_scale_rebinds_when_metric_is_share_alias(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "analytical_read",
+            "task_type": "ranking",
+            "domain": "unknown",
+            "subject": "items",
+            "metric": "contribution share",
+            "group_by": ["item"],
+            "dimensions": ["item"],
+            "top_n": 10,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {},
+            "output_contract": {"mode": "top_n", "minimal_columns": ["item", "contribution share"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {"curr_strength": 4}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Item-wise Sales Register",
+            "_output_mode": "top_n",
+            "_contribution_rule_applied": True,
+            "_contribution_rule": {
+                "metric": "revenue",
+                "basis": "of_total",
+                "contribution_terms": ["share_of_total", "contribution_share"],
+            },
+            "_contribution_metric": "revenue",
+            "_contribution_primary_dimension": "item",
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "contribution_share",
+                "subject": "items",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["item"],
+                "top_n": 10,
+                "report_name": "Item-wise Sales Register",
+                "filters": {
+                    "_contribution_rule": {
+                        "metric": "revenue",
+                        "basis": "of_total",
+                        "contribution_terms": ["share_of_total", "contribution_share"],
+                    }
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+            },
+            "active_result": {
+                "task_class": "contribution_share",
+                "report_name": "Item-wise Sales Register",
+                "output_mode": "top_n",
+                "filters": {
+                    "_contribution_rule": {
+                        "metric": "revenue",
+                        "basis": "of_total",
+                        "contribution_terms": ["share_of_total", "contribution_share"],
+                    }
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+            },
+        }
+
+        out = mod._realign_contribution_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            memory_meta=memory_meta,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        filters = out.get("filters") if isinstance(out.get("filters"), dict) else {}
+        self.assertEqual(str(out.get("task_class") or ""), "transform_followup")
+        self.assertEqual(str(out.get("metric") or ""), "revenue")
+        self.assertEqual(str(out.get("domain") or ""), "sales")
+        self.assertEqual(out.get("time_scope"), {"mode": "relative", "value": "last_month"})
+        self.assertTrue(isinstance(filters.get("_contribution_rule"), dict))
+        self.assertEqual(
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["item", "revenue", "contribution share"],
+        )
+
+    def test_threshold_precheck_does_not_reference_active_result(self):
+        mod = _load_module()
+        out = mod._threshold_precheck(
+            message="Top customers by revenue",
+            business_spec={"task_class": "contribution_share", "filters": {}},
+            previous_topic_state={"active_topic": {"task_class": "contribution_share"}},
+        )
+        self.assertTrue(isinstance(out, dict))
 
     def test_delete_draft_keeps_confirmation_stage_when_write_disabled(self):
         mod = _load_module()

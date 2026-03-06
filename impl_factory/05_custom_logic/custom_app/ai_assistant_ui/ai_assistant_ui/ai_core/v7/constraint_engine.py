@@ -6,7 +6,10 @@ from typing import Any, Dict, List, Set
 from ai_assistant_ui.ai_core.ontology_normalization import (
     canonical_dimension,
     canonical_domain,
+    infer_contribution_terms,
+    infer_exception_terms,
     infer_filter_kinds,
+    known_comparator,
     known_dimension,
     known_metric,
     metric_domain,
@@ -122,6 +125,45 @@ def _hard_filter_kinds(filters: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _threshold_rule(filters: Dict[str, Any]) -> Dict[str, Any]:
+    rule = filters.get("_threshold_rule") if isinstance(filters.get("_threshold_rule"), dict) else {}
+    if not rule:
+        return {}
+    comparator = str(known_comparator(rule.get("comparator")) or rule.get("comparator") or "").strip().lower()
+    metric = str(known_metric(rule.get("metric")) or rule.get("metric") or "").strip().lower()
+    exception_terms = [str(x).strip().lower() for x in infer_exception_terms(" ".join(list(rule.get("exception_terms") or []))) if str(x).strip()]
+    raw_value = str(rule.get("raw_value") or "").strip()
+    numeric_value = rule.get("value")
+    value_present = bool(raw_value) or (numeric_value not in (None, ""))
+    out: Dict[str, Any] = {
+        "comparator": comparator,
+        "metric": metric,
+        "exception_terms": exception_terms,
+        "raw_value": raw_value,
+        "value_present": bool(value_present),
+    }
+    if value_present:
+        out["value"] = numeric_value
+    return out
+
+
+def _contribution_rule(filters: Dict[str, Any]) -> Dict[str, Any]:
+    rule = filters.get("_contribution_rule") if isinstance(filters.get("_contribution_rule"), dict) else {}
+    if not rule:
+        return {}
+    metric = str(known_metric(rule.get("metric")) or rule.get("metric") or "").strip().lower()
+    contribution_terms = [
+        str(x).strip().lower()
+        for x in infer_contribution_terms(" ".join(list(rule.get("contribution_terms") or [])))
+        if str(x).strip()
+    ]
+    return {
+        "metric": metric,
+        "basis": str(rule.get("basis") or "of_total").strip().lower() or "of_total",
+        "contribution_terms": contribution_terms,
+    }
+
+
 def _active_filter_context(topic_state: Dict[str, Any]) -> Dict[str, Any]:
     state = topic_state if isinstance(topic_state, dict) else {}
     active_topic = state.get("active_topic") if isinstance(state.get("active_topic"), dict) else {}
@@ -168,6 +210,8 @@ def build_constraint_set(*, business_spec: Dict[str, Any], topic_state: Dict[str
     spec = business_spec if isinstance(business_spec, dict) else {}
     state = topic_state if isinstance(topic_state, dict) else {}
     filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    threshold_rule = _threshold_rule(filters)
+    contribution_rule = _contribution_rule(filters)
     req_dims = _requested_dimensions(spec)
     metric = _resolved_metric(spec)
     subject = str(spec.get("subject") or "").strip()
@@ -199,6 +243,15 @@ def build_constraint_set(*, business_spec: Dict[str, Any], topic_state: Dict[str
         "output_mode": output_mode,
         "requested_limit": requested_limit,
         "sort_intent": sort_intent,
+        "threshold_metric": str(threshold_rule.get("metric") or metric or "").strip().lower(),
+        "threshold_comparator": str(threshold_rule.get("comparator") or "").strip().lower(),
+        "threshold_value_present": bool(threshold_rule.get("value_present")),
+        "threshold_value": threshold_rule.get("value"),
+        "exception_terms": [str(x).strip().lower() for x in list(threshold_rule.get("exception_terms") or []) if str(x).strip()],
+        "contribution_requested": bool(task_class == "contribution_share" or contribution_rule),
+        "contribution_metric": str(contribution_rule.get("metric") or metric or "").strip().lower(),
+        "contribution_basis": str(contribution_rule.get("basis") or "of_total").strip().lower(),
+        "contribution_terms": [str(x).strip().lower() for x in list(contribution_rule.get("contribution_terms") or []) if str(x).strip()],
         "time_mode": time_mode,
         "filters": dict(filters),
         "hard_filter_kinds": _hard_filter_kinds(filters),

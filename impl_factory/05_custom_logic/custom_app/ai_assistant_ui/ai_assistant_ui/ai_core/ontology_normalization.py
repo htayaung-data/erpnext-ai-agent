@@ -37,6 +37,17 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
         "sold_quantity": ["sold quantity", "sold qty", "sales qty", "sales quantity", "qty sold", "quantity", "qty"],
         "received_quantity": ["received quantity", "received qty", "purchase qty", "qty received", "quantity", "qty"],
         "stock_balance": ["stock balance", "item balance", "balance qty", "warehouse balance", "inventory balance", "balance", "quantity", "qty"],
+        "stock_quantity": [
+            "stock quantity",
+            "stock qty",
+            "qty on hand",
+            "quantity on hand",
+            "on hand quantity",
+            "actual qty",
+            "balance qty",
+            "quantity",
+            "qty",
+        ],
         "projected_quantity": ["projected quantity", "projected qty", "quantity", "qty"],
         "outstanding_amount": [
             "outstanding amount",
@@ -51,7 +62,7 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
         ],
         "open_requests": ["open requests", "pending requests", "request count", "count"],
     },
-        "metric_domain_map": {
+    "metric_domain_map": {
         "revenue": "sales",
         "purchase_amount": "purchasing",
         "sold_quantity": "sales",
@@ -61,6 +72,9 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
         "outstanding_amount": "finance",
         "open_requests": "operations",
     },
+    "detail_constraint_metrics": [
+        "open_requests",
+    ],
     "domain_aliases": {
         "sales": ["sales"],
         "purchasing": ["purchasing"],
@@ -113,6 +127,25 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
     },
     "export_aliases": {
         "include_download": ["download"],
+    },
+    "comparator_aliases": {
+        "gt": ["above", "over", "greater than", "more than", "higher than", "exceeds"],
+        "gte": ["at least", "greater than or equal to", "no less than", "minimum of"],
+        "lt": ["below", "under", "less than", "lower than", "fewer than"],
+        "lte": ["at most", "less than or equal to", "no more than", "maximum of"],
+    },
+    "exception_term_aliases": {
+        "overdue": ["overdue", "past due"],
+        "low_stock": ["low stock", "understock", "under stock"],
+        "below_minimum_stock": ["below minimum stock", "below min stock", "below reorder level"],
+    },
+    "contribution_term_aliases": {
+        "share_of_total": ["share of total", "percent of total", "percentage of total"],
+        "contribution_share": ["contribution share", "contribution to total", "contributes to total", "percentage contribution"],
+    },
+    "advisory_intent_aliases": {
+        "causal_analysis": ["why", "reason", "because", "cause"],
+        "risk_assessment": ["risky", "risk", "risky?", "risky.", "risk?"],
     },
     "reference_value_aliases": {
         "same": [
@@ -265,6 +298,10 @@ def _merge_catalog(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
         "write_operation_aliases",
         "write_doctype_aliases",
         "export_aliases",
+        "comparator_aliases",
+        "exception_term_aliases",
+        "contribution_term_aliases",
+        "advisory_intent_aliases",
         "reference_value_aliases",
         "transform_ambiguity_aliases",
     ):
@@ -299,6 +336,7 @@ def _merge_catalog(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
 
     _merge_str_set("record_query_stop_tokens")
     _merge_str_set("generic_record_entity_tokens")
+    _merge_str_set("detail_constraint_metrics")
     return out
 
 
@@ -354,6 +392,22 @@ def _filter_kind_alias_map() -> Dict[str, List[str]]:
     return _as_alias_map(get_ontology_catalog().get("filter_kind_aliases"))
 
 
+def _comparator_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("comparator_aliases"))
+
+
+def _exception_term_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("exception_term_aliases"))
+
+
+def _contribution_term_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("contribution_term_aliases"))
+
+
+def _advisory_intent_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("advisory_intent_aliases"))
+
+
 def _write_operation_alias_map() -> Dict[str, List[str]]:
     return _as_alias_map(get_ontology_catalog().get("write_operation_aliases"))
 
@@ -386,6 +440,10 @@ def _generic_record_entity_tokens() -> Set[str]:
     return {str(x).strip().lower() for x in list(get_ontology_catalog().get("generic_record_entity_tokens") or []) if str(x).strip()}
 
 
+def _detail_constraint_metrics() -> Set[str]:
+    return {str(x).strip().lower() for x in list(get_ontology_catalog().get("detail_constraint_metrics") or []) if str(x).strip()}
+
+
 def _contains_any(text: str, aliases: Iterable[str]) -> bool:
     t = _norm(text)
     if not t:
@@ -412,9 +470,38 @@ def canonical_metric(value: Any) -> str:
     txt = _norm(value)
     if not txt:
         return ""
-    for canonical, aliases in _metric_alias_map().items():
-        if _contains_any(txt, aliases):
-            return canonical
+    alias_map = _metric_alias_map()
+    for canonical, aliases in alias_map.items():
+        for alias in aliases:
+            a_n = _norm(alias)
+            if not a_n:
+                continue
+            if txt == a_n or txt.replace(" ", "_") == a_n.replace(" ", "_"):
+                return canonical
+    semantic_tokens = set(_tokenize_semantic_text(txt))
+    generic_metric_terms = _generic_metric_terms()
+    allow_single_token_phrase_match = len(semantic_tokens) <= 2
+    identifier_tokens = {"number", "id", "code", "name"}
+    identifier_like_text = bool(semantic_tokens & identifier_tokens)
+    for canonical, aliases in alias_map.items():
+        for alias in sorted((_norm(a) for a in aliases if _norm(a)), key=len, reverse=True):
+            if " " not in alias:
+                if identifier_like_text and len(semantic_tokens) > 1:
+                    continue
+                if (not allow_single_token_phrase_match) and alias in generic_metric_terms:
+                    continue
+            pattern = r"(?<![a-z0-9_])" + re.escape(alias) + r"(?![a-z0-9_])"
+            if re.search(pattern, txt):
+                return canonical
+    if len(semantic_tokens) <= 2:
+        for canonical, aliases in alias_map.items():
+            for alias in aliases:
+                a_n = _norm(alias)
+                if not a_n or " " in a_n:
+                    continue
+                alias_tokens = [tok for tok in _tokenize_semantic_text(a_n) if tok]
+                if len(alias_tokens) == 1 and alias_tokens[0] in semantic_tokens:
+                    return canonical
     return txt.replace(" ", "_")
 
 
@@ -448,6 +535,61 @@ def known_metric(value: Any) -> str:
 def known_dimension(value: Any) -> str:
     canonical = canonical_dimension(value)
     return canonical if canonical in _dimension_alias_map() else ""
+
+
+def known_comparator(value: Any) -> str:
+    txt = _norm(value)
+    if not txt:
+        return ""
+    for canonical, aliases in _comparator_alias_map().items():
+        if _contains_any(txt, aliases):
+            return canonical
+    return ""
+
+
+def infer_exception_terms(value: Any) -> List[str]:
+    txt = _norm(value)
+    if not txt:
+        return []
+    out: List[str] = []
+    seen: Set[str] = set()
+    for canonical, aliases in _exception_term_alias_map().items():
+        if canonical in seen:
+            continue
+        if _contains_any(txt, aliases):
+            seen.add(canonical)
+            out.append(canonical)
+    return out
+
+
+def infer_contribution_terms(value: Any) -> List[str]:
+    txt = _norm(value)
+    if not txt:
+        return []
+    out: List[str] = []
+    seen: Set[str] = set()
+    for canonical, aliases in _contribution_term_alias_map().items():
+        if canonical in seen:
+            continue
+        if _contains_any(txt, aliases):
+            seen.add(canonical)
+            out.append(canonical)
+    return out
+
+
+def infer_advisory_intents(value: Any) -> List[str]:
+    txt = _norm(value)
+    if not txt:
+        return []
+    out: List[str] = []
+    seen: Set[str] = set()
+    for canonical, aliases in _advisory_intent_alias_map().items():
+        if canonical in seen:
+            continue
+        if _contains_any(txt, aliases):
+            seen.add(canonical)
+            out.append(canonical)
+    return out
 
 
 def semantic_aliases(value: Any, *, exclude_generic_metric_terms: bool = False) -> List[str]:
@@ -497,6 +639,11 @@ def metric_column_aliases(metric: Any) -> List[str]:
             seen.add(normalized)
             aliases.append(normalized)
     return aliases
+
+
+def is_detail_constraint_metric(metric: Any) -> bool:
+    canonical = canonical_metric(metric)
+    return canonical in _detail_constraint_metrics()
 
 
 def infer_filter_kinds(text: Any) -> List[str]:
