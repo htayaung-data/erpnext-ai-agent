@@ -168,6 +168,31 @@ def is_meta_clarification(text: str) -> bool:
 
 
 def required_assertions_for_case(case_id: str) -> List[str]:
+    return required_assertions_for_case_with_actual(case_id, {})
+
+
+def _expected_behavior_class(actual: Dict[str, Any]) -> str:
+    return str(actual.get("expected_behavior_class") or "").strip().lower()
+
+
+def required_assertions_for_case_with_actual(case_id: str, actual: Dict[str, Any]) -> List[str]:
+    behavior_class = _expected_behavior_class(actual)
+    if case_id.startswith("CMPC-") and behavior_class:
+        if behavior_class in {"comparison", "correction_rebind"}:
+            return list(ASSERTION_KEYS)
+        if behavior_class in {"transform_last_result", "clarification_blocker"}:
+            return [
+                "report_alignment_pass",
+                "output_shape_pass",
+                "clarification_policy_pass",
+                "loop_policy_pass",
+            ]
+        if behavior_class == "error_envelope":
+            return [
+                "output_shape_pass",
+                "clarification_policy_pass",
+                "loop_policy_pass",
+            ]
     if case_id in FULL_SEMANTIC_CASES:
         return list(ASSERTION_KEYS)
     if case_id in FILTER_CLAR_CASES:
@@ -198,6 +223,159 @@ def _failed_check_ids(actual: Dict[str, Any]) -> List[str]:
         if cid:
             out.append(cid)
     return out
+
+
+def _comparison_spec(actual: Dict[str, Any]) -> Dict[str, Any]:
+    spec = actual.get("business_request_spec")
+    return spec if isinstance(spec, dict) else {}
+
+
+def _comparison_contract(actual: Dict[str, Any]) -> Dict[str, Any]:
+    expected = actual.get("expected_manifest_expected")
+    if not isinstance(expected, dict):
+        return {}
+    contract = expected.get("comparison_contract")
+    return contract if isinstance(contract, dict) else {}
+
+
+def _comparison_expected_title(actual: Dict[str, Any]) -> str:
+    contract = _comparison_contract(actual)
+    return _lower_text(contract.get("expected_title"))
+
+
+def _comparison_shape_mode(actual: Dict[str, Any]) -> str:
+    contract = _comparison_contract(actual)
+    return _lower_text(contract.get("shape_mode"))
+
+
+def _comparison_entity_count(actual: Dict[str, Any]) -> int:
+    contract = _comparison_contract(actual)
+    try:
+        return int(contract.get("entity_count") or 0)
+    except Exception:
+        return 0
+
+
+def _comparison_minimum_rows(actual: Dict[str, Any]) -> int:
+    contract = _comparison_contract(actual)
+    try:
+        return int(contract.get("minimum_rows") or 0)
+    except Exception:
+        return 0
+
+
+def _comparison_allow_single_row_with_labels(actual: Dict[str, Any]) -> bool:
+    contract = _comparison_contract(actual)
+    return bool(contract.get("allow_single_row_with_labels"))
+
+
+def _comparison_required_label_groups(actual: Dict[str, Any]) -> List[List[str]]:
+    contract = _comparison_contract(actual)
+    groups = contract.get("required_label_groups")
+    if not isinstance(groups, list):
+        return []
+    out: List[List[str]] = []
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        cleaned = [_lower_text(x) for x in group if _lower_text(x)]
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def _comparison_forbidden_label_groups(actual: Dict[str, Any]) -> List[List[str]]:
+    contract = _comparison_contract(actual)
+    groups = contract.get("forbidden_label_groups")
+    if not isinstance(groups, list):
+        return []
+    out: List[List[str]] = []
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        cleaned = [_lower_text(x) for x in group if _lower_text(x)]
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
+def _label_groups_present(actual: Dict[str, Any], groups: List[List[str]]) -> bool:
+    if not groups:
+        return True
+    labels = [_lower_text(x) for x in list(actual.get("column_labels") or []) if _lower_text(x)]
+    if not labels:
+        return False
+    for group in groups:
+        if not any(any(option in label for option in group) for label in labels):
+            return False
+    return True
+
+
+def _label_groups_absent(actual: Dict[str, Any], groups: List[List[str]]) -> bool:
+    if not groups:
+        return True
+    labels = [_lower_text(x) for x in list(actual.get("column_labels") or []) if _lower_text(x)]
+    if not labels:
+        return True
+    for group in groups:
+        if any(any(option in label for option in group) for label in labels):
+            return False
+    return True
+
+
+def _comparison_report_alignment_ok(actual: Dict[str, Any]) -> bool:
+    contract = _comparison_contract(actual)
+    if not contract:
+        return False
+    expected_title = _comparison_expected_title(actual)
+    if not expected_title:
+        return True
+    return _lower_text(actual.get("assistant_title")) == expected_title
+
+
+def _comparison_output_shape_ok(actual: Dict[str, Any]) -> bool:
+    contract = _comparison_contract(actual)
+    if not contract:
+        return False
+    if _lower_text(actual.get("assistant_type")) != "report_table":
+        return False
+    try:
+        rows = int(actual.get("rows") or 0)
+    except Exception:
+        rows = 0
+    if rows <= 0:
+        return False
+
+    shape_mode = _comparison_shape_mode(actual)
+    required_label_groups = _comparison_required_label_groups(actual)
+    forbidden_label_groups = _comparison_forbidden_label_groups(actual)
+    labels_ok = _label_groups_present(actual, required_label_groups) and _label_groups_absent(actual, forbidden_label_groups)
+
+    if shape_mode == "row_count_equals_entity_count":
+        entity_count = _comparison_entity_count(actual)
+        if entity_count <= 0:
+            return False
+        return rows == entity_count and labels_ok
+
+    if shape_mode == "side_by_side_entities":
+        entity_count = _comparison_entity_count(actual)
+        if entity_count <= 0:
+            return False
+        try:
+            columns = int(actual.get("columns") or 0)
+        except Exception:
+            columns = 0
+        return rows == 1 and columns == (entity_count + 1) and labels_ok
+
+    if shape_mode == "period_comparison":
+        minimum_rows = _comparison_minimum_rows(actual)
+        if minimum_rows > 0 and rows >= minimum_rows and labels_ok:
+            return True
+        if rows == 1 and _comparison_allow_single_row_with_labels(actual) and labels_ok:
+            return True
+        return False
+
+    return labels_ok
 
 
 def _is_blocker_clarification(actual: Dict[str, Any]) -> bool:
@@ -242,6 +420,9 @@ def evaluate_case_assertions(case_id: str, actual: Dict[str, Any]) -> Dict[str, 
     clarification = bool(actual.get("clarification"))
     meta = is_meta_clarification(str(actual.get("assistant_text") or ""))
     blocker_clar = _is_blocker_clarification(actual)
+    expected_behavior_class = _expected_behavior_class(actual)
+    is_cmp_family = case_id.startswith("CMPC-") and bool(expected_behavior_class)
+    has_cmp_contract = bool(_comparison_contract(actual))
     assistant_type = str(actual.get("assistant_type") or "").strip().lower()
     pending_mode = str(actual.get("pending_mode") or "").strip().lower()
     rows = 0
@@ -259,7 +440,12 @@ def evaluate_case_assertions(case_id: str, actual: Dict[str, Any]) -> Dict[str, 
     filter_pass = "required_filter_missing" not in failed_ids
     output_pass = (len(failed_ids & OUTPUT_FAIL_IDS) == 0)
 
-    if case_id in FULL_SEMANTIC_CASES:
+    if is_cmp_family and expected_behavior_class in {"comparison", "correction_rebind"}:
+        assertions["dimension_alignment_pass"] = dim_pass
+        assertions["metric_alignment_pass"] = metric_pass
+        assertions["time_scope_alignment_pass"] = time_pass
+        assertions["filter_alignment_pass"] = filter_pass
+    elif case_id in FULL_SEMANTIC_CASES:
         assertions["dimension_alignment_pass"] = dim_pass
         assertions["metric_alignment_pass"] = metric_pass
         assertions["time_scope_alignment_pass"] = time_pass
@@ -276,11 +462,13 @@ def evaluate_case_assertions(case_id: str, actual: Dict[str, Any]) -> Dict[str, 
         assertions["filter_alignment_pass"] = None
 
     # Report alignment: either tabular execution succeeded, or clarification is a true blocker.
-    if case_id in SHAPE_ONLY_CASES:
+    if is_cmp_family and expected_behavior_class == "error_envelope":
+        assertions["report_alignment_pass"] = None
+    elif case_id in SHAPE_ONLY_CASES:
         assertions["report_alignment_pass"] = None
     else:
         report_pass = True
-        if case_id in READ_LIKE_CASES:
+        if case_id in READ_LIKE_CASES or is_cmp_family:
             if assistant_type == "report_table":
                 report_pass = True
             elif clarification and blocker_clar:
@@ -289,10 +477,12 @@ def evaluate_case_assertions(case_id: str, actual: Dict[str, Any]) -> Dict[str, 
                 report_pass = False
             if "unsupported_action_in_read_loop" in failed_ids or "blocked_report_selected_again" in failed_ids:
                 report_pass = False
+            if is_cmp_family and has_cmp_contract:
+                report_pass = report_pass and _comparison_report_alignment_ok(actual)
         assertions["report_alignment_pass"] = report_pass
 
     # Output shape: respect quality gate failures and basic type sanity.
-    if case_id in READ_LIKE_CASES:
+    if case_id in READ_LIKE_CASES or is_cmp_family:
         if assistant_type not in ("report_table", "text", "error"):
             output_pass = False
     else:
@@ -300,6 +490,11 @@ def evaluate_case_assertions(case_id: str, actual: Dict[str, Any]) -> Dict[str, 
             output_pass = False
     if case_id == "DOC-01" and assistant_type == "report_table" and rows <= 0:
         output_pass = False
+    if is_cmp_family and expected_behavior_class in {"comparison", "correction_rebind"} and (not has_cmp_contract):
+        assertions["report_alignment_pass"] = False
+        output_pass = False
+    elif is_cmp_family and has_cmp_contract:
+        output_pass = output_pass and _comparison_output_shape_ok(actual)
     assertions["output_shape_pass"] = output_pass
 
     # Clarification policy.
@@ -326,7 +521,7 @@ def evaluate_case_assertions(case_id: str, actual: Dict[str, Any]) -> Dict[str, 
     loop_pass = clar_round <= 1
     assertions["loop_policy_pass"] = loop_pass
 
-    required = required_assertions_for_case(case_id)
+    required = required_assertions_for_case_with_actual(case_id, actual)
     required_pass = True
     for key in required:
         val = assertions.get(key)

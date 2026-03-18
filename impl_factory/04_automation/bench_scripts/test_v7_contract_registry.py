@@ -30,6 +30,7 @@ class V7ContractRegistryTests(unittest.TestCase):
         self.assertIn("read", set(mod.allowed_spec_values("intents")))
         self.assertIn("kpi", set(mod.allowed_spec_values("task_types")))
         self.assertIn("list_latest_records", set(mod.allowed_spec_values("task_classes")))
+        self.assertIn("comparison", set(mod.allowed_spec_values("task_classes")))
         self.assertIn("finance", set(mod.allowed_spec_values("domains")))
 
     def test_dimension_to_domain_mapping(self):
@@ -46,10 +47,31 @@ class V7ContractRegistryTests(unittest.TestCase):
         self.assertTrue("multiple matches" in q.lower())
         kind_q = mod.clarification_question_for_filter_kind("warehouse")
         self.assertEqual(kind_q, "Which warehouse should I use?")
+        self.assertIn("comparison", str(mod.clarification_question_for_filter_kind("comparison_metric")).lower())
+        self.assertIn("month", str(mod.clarification_question_for_filter_kind("comparison_month_anchor")).lower())
         fallback = mod.default_clarification_question("non_existing_reason")
         self.assertTrue(bool(str(fallback or "").strip()))
         unknown_kind_q = mod.clarification_question_for_filter_kind("cost_center")
         self.assertIn("cost center", str(unknown_kind_q).lower())
+
+    def test_comparison_task_class_contract_helpers(self):
+        mod = _load_module()
+        self.assertEqual(
+            mod.task_class_allowed_dimensions("comparison"),
+            {"territory", "customer", "supplier", "item"},
+        )
+        self.assertEqual(
+            mod.task_class_allowed_metrics("comparison"),
+            {"revenue", "purchase_amount"},
+        )
+        self.assertEqual(
+            mod.task_class_allowed_time_structures("comparison"),
+            {"same_period", "monthly_period_vs_period", "month_over_month"},
+        )
+        self.assertEqual(
+            mod.task_class_month_anchor_required_for("comparison"),
+            {"monthly_period_vs_period", "month_over_month"},
+        )
 
     def test_response_style_contract_defaults(self):
         mod = _load_module()

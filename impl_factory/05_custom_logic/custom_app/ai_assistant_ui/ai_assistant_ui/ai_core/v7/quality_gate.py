@@ -532,6 +532,17 @@ def evaluate_quality_gate(
     output_mode = str(output_contract.get("mode") or "").strip().lower()
     top_n = int(spec.get("top_n") or 0) if str(spec.get("top_n") or "0").strip().isdigit() else 0
     filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    is_same_period_comparison_shape = (
+        task_class == "comparison"
+        and str(comparison_rule.get("time_structure") or "").strip().lower() == "same_period"
+        and bool(out.get("_same_period_comparison_shape_applied"))
+    )
+    is_period_comparison_shape = (
+        task_class == "comparison"
+        and str(comparison_rule.get("time_structure") or "").strip().lower() in {"monthly_period_vs_period", "month_over_month"}
+        and bool(out.get("_period_comparison_shape_applied"))
+    )
 
     if (output_mode in {"top_n", "detail", "kpi"}) and (not needs_clar):
         add_check(
@@ -602,6 +613,12 @@ def evaluate_quality_gate(
                 col_names.append(str(c.get("label") or "").strip())
             missing = [c for c in minimal_columns if not _has_minimal_column(col_names, c)]
             ok_minimal = len(missing) == 0
+            if is_same_period_comparison_shape:
+                has_requested_dimension = any(_has_minimal_column(col_names, d) for d in sorted(requested_dims))
+                has_numeric_compare_columns = sum(
+                    1 for c in cols if isinstance(c, dict) and _is_numeric_col(c, rows)
+                ) >= 1
+                ok_minimal = has_requested_dimension and has_numeric_compare_columns
             if not ok_minimal:
                 # Never relax if any missing minimal column is a requested semantic dimension.
                 missing_dim_cols = [
@@ -656,9 +673,18 @@ def evaluate_quality_gate(
                     detail=f"metric-column check skipped for empty result set: {requested_metric}",
                 )
             else:
+                metric_present_ok = _has_metric_column(cols, rows, requested_metric)
+                if is_same_period_comparison_shape and (not metric_present_ok):
+                    metric_present_ok = sum(
+                        1 for c in cols if isinstance(c, dict) and _is_numeric_col(c, rows)
+                    ) >= 1
+                if is_period_comparison_shape and (not metric_present_ok):
+                    metric_present_ok = sum(
+                        1 for c in cols if isinstance(c, dict) and _is_numeric_col(c, rows)
+                    ) >= 2
                 add_check(
                     name="requested_metric_present",
-                    ok=_has_metric_column(cols, rows, requested_metric),
+                    ok=metric_present_ok,
                     severity="repairable",
                     detail=f"requested metric missing in numeric columns: {requested_metric}",
                 )

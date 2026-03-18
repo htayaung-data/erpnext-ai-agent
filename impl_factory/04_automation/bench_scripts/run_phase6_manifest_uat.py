@@ -266,6 +266,9 @@ def _execute_case(
             if not sample_doc:
                 note = "sales_invoice_sample_missing_fallback=SINV-0001"
 
+        actual["expected_behavior_class"] = str(row.get("behavior_class") or "").strip().lower()
+        actual["expected_manifest_expected"] = row.get("expected") if isinstance(row.get("expected"), dict) else {}
+        actual["expected_manifest_tags"] = [str(x).strip().lower() for x in list(row.get("tags") or []) if str(x).strip()]
         actual["meta_clarification"] = bool(actual.get("meta_clarification")) or is_meta_clarification(str(actual.get("assistant_text") or ""))
         return actual, note
     finally:

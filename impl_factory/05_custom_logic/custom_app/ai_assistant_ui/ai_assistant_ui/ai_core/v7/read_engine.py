@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import calendar
 import json
 import re
 from functools import lru_cache
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 try:
@@ -117,7 +119,7 @@ try:
 except Exception:  # pragma: no cover
     def run_fac_report(*args, **kwargs):
         raise RuntimeError("report_tools backend unavailable")
-from ai_assistant_ui.ai_core.util_dates import extract_timeframe, today_date
+from ai_assistant_ui.ai_core.util_dates import extract_timeframe, last_month_range, this_month_range, today_date
 
 _INTERNAL_RETRY_KEY = "__v7_internal_retry__"
 _DOC_ID_PATTERNS = (
@@ -155,38 +157,335 @@ def _norm_text(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
 
 
-def _entity_filter_values_from_spec(spec_obj: Dict[str, Any]) -> Dict[str, str]:
+def _norm_entity_text(value: Any) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", _norm_text(value)))
+
+
+def _entity_filter_values_from_spec(spec_obj: Dict[str, Any]) -> Dict[str, List[str]]:
     spec = spec_obj if isinstance(spec_obj, dict) else {}
     filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
     entity_dims = {str(x).strip().lower() for x in list(canonical_dimensions() or set()) if str(x).strip()}
-    out: Dict[str, str] = {}
+    out: Dict[str, List[str]] = {}
     for k, v in filters.items():
         key_raw = str(k or "").strip()
         key = _norm_text(key_raw)
-        val = str(v or "").strip()
-        if not key or not val:
+        if not key:
+            continue
+        values: List[str] = []
+        if isinstance(v, list):
+            values = [str(x).strip() for x in list(v or []) if str(x or "").strip()]
+        else:
+            single = str(v or "").strip()
+            if single:
+                values = [single]
+        if not values:
             continue
         inferred_kinds = {
             str(x).strip().lower()
             for x in list(infer_filter_kinds(key_raw))
             if str(x).strip()
         }
-        if inferred_kinds & entity_dims:
-            out[key] = val
+        canonical_key = _norm_text(canonical_dimension(key_raw) or canonical_dimension(key) or "")
+        if canonical_key:
+            inferred_kinds.add(canonical_key)
+        if key in entity_dims:
+            inferred_kinds.add(key)
+        if canonical_key or (inferred_kinds & entity_dims):
+            out[canonical_key or key] = values
     return out
 
 
-def _row_matches_entity_value(row: Dict[str, Any], target_value: str) -> bool:
-    t = _norm_text(target_value)
-    if not t:
+def _row_matches_any_entity_value(row: Dict[str, Any], target_values: List[str]) -> bool:
+    targets = {_norm_entity_text(x) for x in list(target_values or []) if _norm_entity_text(x)}
+    if not targets:
         return False
     for _, cell in (row or {}).items():
-        c = _norm_text(cell)
+        c = _norm_entity_text(cell)
         if not c:
             continue
-        if t == c or t in c or c in t:
-            return True
+        for t in targets:
+            if t == c or t in c or c in t:
+                return True
     return False
+
+
+def _comparison_dimension_targets(spec_obj: Dict[str, Any]) -> tuple[str, List[str]]:
+    spec = spec_obj if isinstance(spec_obj, dict) else {}
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    dimension = str(
+        canonical_dimension(comparison_rule.get("dimension"))
+        or canonical_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    entity_filters = _entity_filter_values_from_spec(spec)
+    target_values = list(entity_filters.get(dimension) or [])
+    if (not target_values) and dimension:
+        target_values = [str(x).strip() for x in list(comparison_rule.get("compared_values") or []) if str(x or "").strip()]
+    return dimension, target_values
+
+
+def _comparison_same_period_metric_field(columns: List[Dict[str, Any]], metric: str) -> str:
+    metric_lc = str(canonical_metric(metric) or known_metric(metric) or metric or "").strip().lower()
+    if not metric_lc:
+        return ""
+    for col in columns:
+        if not isinstance(col, dict):
+            continue
+        for raw in (col.get("fieldname"), col.get("label")):
+            candidate = str(canonical_metric(raw) or known_metric(raw) or raw or "").strip().lower()
+            if candidate == metric_lc:
+                return str(col.get("fieldname") or "").strip()
+    return ""
+
+
+def _comparison_same_period_dimension_field(columns: List[Dict[str, Any]], dimension: str) -> str:
+    dim_lc = str(canonical_dimension(dimension) or known_dimension(dimension) or dimension or "").strip().lower()
+    if not dim_lc:
+        return ""
+    for col in columns:
+        if not isinstance(col, dict):
+            continue
+        for raw in (col.get("fieldname"), col.get("label")):
+            candidate = str(canonical_dimension(raw) or known_dimension(raw) or raw or "").strip().lower()
+            if candidate == dim_lc:
+                return str(col.get("fieldname") or "").strip()
+    return ""
+
+
+def _parse_numeric_value(value: Any) -> float:
+    try:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value or "").replace(",", "").strip()
+        return float(text) if text else 0.0
+    except Exception:
+        return 0.0
+
+
+def _comparison_field_label(columns: List[Dict[str, Any]], fieldname: str, fallback: str) -> str:
+    wanted = str(fieldname or "").strip()
+    for col in columns:
+        if not isinstance(col, dict):
+            continue
+        if str(col.get("fieldname") or "").strip() != wanted:
+            continue
+        label = str(col.get("label") or col.get("fieldname") or "").strip()
+        if label:
+            return label
+    fallback_text = str(fallback or "").strip()
+    if not fallback_text:
+        return ""
+    return fallback_text.replace("_", " ").strip().title()
+
+
+def _comparison_period_labels(comparison_rule: Dict[str, Any]) -> List[str]:
+    if not isinstance(comparison_rule, dict):
+        return []
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    month_refs = [x for x in list(comparison_rule.get("month_refs") or []) if isinstance(x, dict)]
+    labels: List[str] = []
+
+    def _append_variants(month_name: str, year: Any, explicit_label: str = "") -> None:
+        local_labels: List[str] = []
+        explicit = str(explicit_label or "").strip()
+        if explicit:
+            local_labels.append(explicit)
+        month_text = str(month_name or "").strip()
+        year_text = str(year or "").strip()
+        if month_text and year_text:
+            title_month = month_text.title()
+            local_labels.append(f"{title_month} {year_text}".strip())
+            try:
+                month_int = date.fromisoformat(_month_date_bounds(month_text, year)[0]).month  # type: ignore[index]
+                local_labels.append(f"{date(2000, month_int, 1).strftime('%b')} {year_text}".strip())
+            except Exception:
+                pass
+        for value in local_labels:
+            if value and value not in labels:
+                labels.append(value)
+
+    if time_structure == "monthly_period_vs_period":
+        for ref in month_refs:
+            _append_variants(ref.get("month_name"), ref.get("year"), str(ref.get("label") or "").strip())
+        return labels
+    if time_structure == "month_over_month" and month_refs:
+        anchor = month_refs[0]
+        anchor_label = str(anchor.get("label") or "").strip()
+        anchor_range = _month_date_bounds(str(anchor.get("month_name") or ""), anchor.get("year"))
+        prev_label = ""
+        prev_month_name = ""
+        prev_year = ""
+        if anchor_range:
+            anchor_start = date.fromisoformat(anchor_range[0])
+            if anchor_start.month == 1:
+                prev_year = str(anchor_start.year - 1)
+                prev_month = 12
+            else:
+                prev_year = str(anchor_start.year)
+                prev_month = anchor_start.month - 1
+            prev_month_name = date(int(prev_year), prev_month, 1).strftime("%B")
+            prev_label = f"{date(int(prev_year), prev_month, 1).strftime('%b')} {prev_year}"
+        _append_variants(prev_month_name, prev_year, prev_label)
+        _append_variants(anchor.get("month_name"), anchor.get("year"), anchor_label)
+        return labels
+    return []
+
+
+def _apply_period_comparison_shape(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload or {})
+    if str(out.get("type") or "").strip().lower() != "report_table":
+        return out
+    spec = business_spec if isinstance(business_spec, dict) else {}
+    if str(spec.get("task_class") or "").strip().lower() != "comparison":
+        return out
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    if time_structure not in {"monthly_period_vs_period", "month_over_month"}:
+        return out
+
+    table = out.get("table") if isinstance(out.get("table"), dict) else {}
+    columns = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+    rows = [r for r in list(table.get("rows") or []) if isinstance(r, dict)]
+    if not columns or not rows:
+        return out
+
+    dimension = (list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0]
+    dimension_field = _comparison_same_period_dimension_field(columns, dimension)
+    metric_field = _comparison_same_period_metric_field(columns, spec.get("metric"))
+    if not dimension_field or not metric_field:
+        return out
+
+    expected_period_labels = {_norm_entity_text(x) for x in _comparison_period_labels(comparison_rule) if _norm_entity_text(x)}
+    if not expected_period_labels:
+        return out
+
+    kept_columns: List[Dict[str, Any]] = []
+    period_fieldnames: List[str] = []
+    for col in columns:
+        fieldname = str(col.get("fieldname") or "").strip()
+        label_key = _norm_entity_text(col.get("label") or fieldname)
+        if fieldname == dimension_field:
+            kept_columns.append(dict(col))
+            continue
+        if label_key in expected_period_labels:
+            kept_columns.append(dict(col))
+            period_fieldnames.append(fieldname)
+
+    if len(period_fieldnames) < 2:
+        return out
+
+    trimmed_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        trimmed_row: Dict[str, Any] = {}
+        for col in kept_columns:
+            fieldname = str(col.get("fieldname") or "").strip()
+            trimmed_row[fieldname] = row.get(fieldname)
+        trimmed_rows.append(trimmed_row)
+
+    out_table = dict(table)
+    out_table["columns"] = kept_columns
+    out_table["rows"] = trimmed_rows
+    out["table"] = out_table
+    out["_source_columns"] = [dict(col) for col in kept_columns]
+    out["_period_comparison_shape_applied"] = True
+    return out
+
+
+def _apply_same_period_comparison_shape(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload or {})
+    if str(out.get("type") or "").strip().lower() != "report_table":
+        return out
+    spec = business_spec if isinstance(business_spec, dict) else {}
+    if str(spec.get("task_class") or "").strip().lower() != "comparison":
+        return out
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    if time_structure in {"monthly_period_vs_period", "month_over_month"}:
+        return _apply_period_comparison_shape(payload=out, business_spec=spec)
+    if time_structure != "same_period":
+        return out
+
+    dimension, target_values = _comparison_dimension_targets(spec)
+    if len(target_values) < 2:
+        return out
+
+    table = out.get("table") if isinstance(out.get("table"), dict) else {}
+    columns = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+    rows = [r for r in list(table.get("rows") or []) if isinstance(r, dict)]
+    if not columns or not rows:
+        return out
+
+    dimension_field = _comparison_same_period_dimension_field(columns, dimension)
+    metric_field = _comparison_same_period_metric_field(columns, spec.get("metric"))
+    if not dimension_field or not metric_field:
+        return out
+    dimension_label = _comparison_field_label(columns, dimension_field, dimension)
+    metric_label = _comparison_field_label(columns, metric_field, spec.get("metric"))
+    if not dimension_label or not metric_label:
+        return out
+
+    target_order = [_norm_entity_text(x) for x in target_values if _norm_entity_text(x)]
+    if len(target_order) < 2:
+        return out
+
+    buckets: Dict[str, Dict[str, Any]] = {}
+    display_by_key: Dict[str, str] = {}
+    target_by_key: Dict[str, str] = {}
+    for raw in target_values:
+        key = _norm_entity_text(raw)
+        if key and key not in target_by_key:
+            target_by_key[key] = str(raw).strip()
+
+    for row in rows:
+        entity_value = str(row.get(dimension_field) or "").strip()
+        entity_key = _norm_entity_text(entity_value)
+        if not entity_key or entity_key not in target_by_key:
+            continue
+        bucket = buckets.get(entity_key)
+        if bucket is None:
+            bucket = {dimension_field: entity_value or target_by_key.get(entity_key) or entity_value, metric_field: 0.0}
+            buckets[entity_key] = bucket
+            display_by_key[entity_key] = entity_value or target_by_key.get(entity_key) or entity_value
+        bucket[metric_field] = _parse_numeric_value(bucket.get(metric_field)) + _parse_numeric_value(row.get(metric_field))
+
+    ordered_rows: List[Dict[str, Any]] = []
+    for entity_key in target_order:
+        bucket = buckets.get(entity_key)
+        if not bucket:
+            continue
+        bucket[dimension_field] = display_by_key.get(entity_key) or target_by_key.get(entity_key) or bucket.get(dimension_field)
+        ordered_rows.append(bucket)
+
+    if len(ordered_rows) < 2:
+        return out
+
+    side_by_side_columns: List[Dict[str, Any]] = [
+        {"fieldname": dimension_field, "label": dimension_label, "fieldtype": "Data"}
+    ]
+    comparison_row: Dict[str, Any] = {dimension_field: metric_label}
+    for idx, entity_key in enumerate(target_order):
+        bucket = buckets.get(entity_key)
+        if not bucket:
+            return out
+        fieldname = f"compare_{idx + 1}"
+        entity_label = display_by_key.get(entity_key) or target_by_key.get(entity_key) or ""
+        if not entity_label:
+            return out
+        side_by_side_columns.append({"fieldname": fieldname, "label": entity_label, "fieldtype": "Float"})
+        comparison_row[fieldname] = _parse_numeric_value(bucket.get(metric_field))
+
+    out_table = dict(table)
+    out_table["columns"] = side_by_side_columns
+    out_table["rows"] = [comparison_row]
+    out["table"] = out_table
+    out["_source_columns"] = [dict(col) for col in side_by_side_columns]
+    out["_same_period_comparison_shape_applied"] = True
+    return out
 
 
 def _apply_requested_entity_row_filters(*, payload: Dict[str, Any], business_spec: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,8 +507,8 @@ def _apply_requested_entity_row_filters(*, payload: Dict[str, Any], business_spe
 
     filtered_rows = list(rows)
     applied_keys: List[str] = []
-    for k, target in entity_filters.items():
-        matches = [r for r in filtered_rows if isinstance(r, dict) and _row_matches_entity_value(r, target)]
+    for k, targets in entity_filters.items():
+        matches = [r for r in filtered_rows if isinstance(r, dict) and _row_matches_any_entity_value(r, targets)]
         if matches and len(matches) < len(filtered_rows):
             filtered_rows = matches
             applied_keys.append(k)
@@ -492,6 +791,109 @@ def _contribution_precheck(
 
     missing_filter_kind = str(filters.get("_contribution_missing_filter_kind") or "").strip().lower()
     if task_class == "contribution_share" and missing_filter_kind:
+        question = clarification_question_for_filter_kind(missing_filter_kind)
+        return {
+            "clarify_decision": {
+                "should_clarify": True,
+                "reason": "missing_required_filter_value",
+                "question": question,
+                "options": [],
+                "target_filter_key": missing_filter_kind,
+                "raw_value": "",
+                "policy_version": "phase5_blocker_only_v1",
+            }
+        }
+    return {}
+
+
+def _comparison_unsupported_text(*, reason: str, business_spec: Dict[str, Any]) -> str:
+    reason_lc = str(reason or "").strip().lower()
+    if reason_lc == "advisory_analysis_not_supported":
+        return (
+            "I can show deterministic numeric comparison in this class, but I can't yet explain why one side is better in this mode. "
+            "Please ask for the comparison table directly."
+        )
+    if reason_lc == "unsupported_grouping_not_supported":
+        return (
+            "I can't yet compare that grouping in this class. "
+            "Please use territory, customer, supplier, or item in the approved first slice."
+        )
+    if reason_lc == "unsupported_metric_not_supported":
+        return (
+            "I can't yet compare that metric in this class. "
+            "Please use revenue or purchase amount in the approved first slice."
+        )
+    if reason_lc == "weekly_period_comparison_not_supported":
+        return (
+            "I can't yet compare week over week in this class. "
+            "Please ask for same-period, month-vs-month, or month-over-month comparison."
+        )
+    if reason_lc == "quarterly_period_comparison_not_supported":
+        return (
+            "I can't yet compare quarter over quarter in this class. "
+            "Please use same-period, month-vs-month, or month-over-month comparison for now."
+        )
+    if reason_lc == "year_over_year_comparison_not_supported":
+        return (
+            "I can't yet compare year over year in this class. "
+            "Please use same-period, month-vs-month, or month-over-month comparison for now."
+        )
+    return _unsupported_message_from_spec(business_spec)
+
+
+def _comparison_error_payload(*, reason: str, business_spec: Dict[str, Any]) -> Dict[str, Any]:
+    reason_lc = str(reason or "").strip().lower()
+    code_map = {
+        "advisory_analysis_not_supported": "COMPARISON_ADVISORY_UNSUPPORTED",
+        "unsupported_grouping_not_supported": "COMPARISON_GROUPING_UNSUPPORTED",
+        "unsupported_metric_not_supported": "COMPARISON_METRIC_UNSUPPORTED",
+        "weekly_period_comparison_not_supported": "COMPARISON_WEEKLY_UNSUPPORTED",
+        "quarterly_period_comparison_not_supported": "COMPARISON_QUARTERLY_UNSUPPORTED",
+        "year_over_year_comparison_not_supported": "COMPARISON_YEAR_OVER_YEAR_UNSUPPORTED",
+    }
+    code = code_map.get(reason_lc, "COMPARISON_UNSUPPORTED")
+    text = _comparison_unsupported_text(reason=reason_lc, business_spec=business_spec)
+    err_env = {
+        "type": "error_envelope",
+        "code": code,
+        "stage": "comparison_precheck",
+        "trace_id": f"comparison_{reason_lc or 'unsupported'}",
+        "user_safe_message": text,
+    }
+    return {
+        "type": "error",
+        "text": text,
+        "_tool_messages": [json.dumps(err_env)],
+    }
+
+
+def _comparison_precheck(
+    *,
+    message: str,
+    business_spec: Dict[str, Any],
+    previous_topic_state: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    spec = business_spec if isinstance(business_spec, dict) else {}
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    active_topic = previous_topic_state.get("active_topic") if isinstance(previous_topic_state, dict) and isinstance(previous_topic_state.get("active_topic"), dict) else {}
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+
+    unsupported_reason = str(filters.get("_comparison_unsupported_reason") or "").strip().lower()
+    if (not unsupported_reason) and active_task_class == "comparison":
+        if infer_advisory_intents(message):
+            unsupported_reason = "advisory_analysis_not_supported"
+    if unsupported_reason:
+        base_spec = spec if task_class == "comparison" else (active_topic if active_task_class == "comparison" else spec)
+        return {
+            "payload": _comparison_error_payload(
+                reason=unsupported_reason,
+                business_spec=base_spec if isinstance(base_spec, dict) else spec,
+            )
+        }
+
+    missing_filter_kind = str(filters.get("_comparison_missing_filter_kind") or "").strip().lower()
+    if task_class == "comparison" and missing_filter_kind:
         question = clarification_question_for_filter_kind(missing_filter_kind)
         return {
             "clarify_decision": {
@@ -1043,6 +1445,143 @@ def _realign_contribution_followup_to_last_result(
     return spec
 
 
+def _realign_comparison_followup_to_last_result(
+    *,
+    message: str,
+    spec_obj: Dict[str, Any],
+    last_result_payload: Optional[Dict[str, Any]],
+    previous_topic_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    spec = dict(spec_obj or {})
+    payload = last_result_payload if isinstance(last_result_payload, dict) else {}
+    if not payload:
+        return spec
+
+    prev_state = previous_topic_state if isinstance(previous_topic_state, dict) else {}
+    active_topic = prev_state.get("active_topic") if isinstance(prev_state.get("active_topic"), dict) else {}
+    active_result = prev_state.get("active_result") if isinstance(prev_state.get("active_result"), dict) else {}
+    active_task_class = str(active_topic.get("task_class") or "").strip().lower()
+    active_filters = active_topic.get("filters") if isinstance(active_topic.get("filters"), dict) else {}
+    if not active_filters:
+        active_filters = active_result.get("filters") if isinstance(active_result.get("filters"), dict) else {}
+    comparison_rule = active_filters.get("_comparison_rule") if isinstance(active_filters.get("_comparison_rule"), dict) else {}
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    period_time_structures = {"monthly_period_vs_period", "month_over_month"}
+    has_same_period_context = bool(
+        (active_task_class == "comparison" and time_structure == "same_period")
+        or (bool(payload.get("_same_period_comparison_shape_applied")) and time_structure == "same_period")
+    )
+    has_period_context = bool(
+        (active_task_class == "comparison" and time_structure in period_time_structures)
+        or (bool(payload.get("_period_comparison_shape_applied")) and time_structure in period_time_structures)
+    )
+    if not (has_same_period_context or has_period_context):
+        return spec
+
+    spec_filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    spec_rule = spec_filters.get("_comparison_rule") if isinstance(spec_filters.get("_comparison_rule"), dict) else {}
+    spec_time_structure = str(spec_rule.get("time_structure") or "").strip().lower()
+    spec_compared_values = [
+        str(x).strip()
+        for x in list(spec_rule.get("compared_values") or [])
+        if str(x or "").strip()
+    ]
+    # If the current turn already resolved a concrete same-period comparison pair,
+    # keep that rebind intact instead of snapping back to the active result's
+    # existing column labels.
+    if (
+        str(spec.get("task_class") or "").strip().lower() == "comparison"
+        and str(spec.get("task_type") or "").strip().lower() == "comparison"
+        and spec_time_structure == "same_period"
+        and len(spec_compared_values) >= 2
+    ):
+        active_time_scope = active_topic.get("time_scope") if isinstance(active_topic.get("time_scope"), dict) else {}
+        spec_time_scope = spec.get("time_scope") if isinstance(spec.get("time_scope"), dict) else {}
+        spec_time_mode = str(spec_time_scope.get("mode") or "").strip().lower()
+        if spec_time_mode in {"", "none"} and active_time_scope:
+            spec["time_scope"] = dict(active_time_scope)
+        return spec
+    if (
+        str(spec.get("task_class") or "").strip().lower() == "comparison"
+        and str(spec.get("task_type") or "").strip().lower() == "comparison"
+        and spec_time_structure in period_time_structures
+    ):
+        active_time_scope = active_topic.get("time_scope") if isinstance(active_topic.get("time_scope"), dict) else {}
+        spec_time_scope = spec.get("time_scope") if isinstance(spec.get("time_scope"), dict) else {}
+        spec_time_mode = str(spec_time_scope.get("mode") or "").strip().lower()
+        if spec_time_mode in {"", "none"} and active_time_scope:
+            spec["time_scope"] = dict(active_time_scope)
+        return spec
+
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x or "").strip()]
+    explicit_projection = _shape_metadata_requested_columns(
+        message=message,
+        selected_report=str(payload.get("report_name") or active_result.get("report_name") or active_topic.get("report_name") or "").strip(),
+        last_result_payload=payload,
+    )
+    parser_marked_transform = bool(
+        str(spec.get("intent") or "").strip().upper() == "TRANSFORM_LAST"
+        or str(spec.get("task_class") or "").strip().lower() == "transform_followup"
+    )
+    if not (explicit_projection or ambiguities or parser_marked_transform):
+        return spec
+
+    dimension = str(
+        canonical_dimension(comparison_rule.get("dimension"))
+        or canonical_dimension((list(active_topic.get("group_by") or []) + list(active_topic.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    metric = str(
+        canonical_metric(comparison_rule.get("metric"))
+        or known_metric(comparison_rule.get("metric"))
+        or canonical_metric(active_topic.get("metric"))
+        or known_metric(active_topic.get("metric"))
+        or active_topic.get("metric")
+        or ""
+    ).strip().replace("_", " ")
+    domain = str(active_topic.get("domain") or metric_domain(metric) or spec.get("domain") or "").strip().lower()
+    subject = str(active_topic.get("subject") or spec.get("subject") or "").strip()
+    active_time_scope = active_topic.get("time_scope") if isinstance(active_topic.get("time_scope"), dict) else {}
+
+    spec["intent"] = "READ"
+    spec["task_type"] = "comparison"
+    spec["task_class"] = "comparison"
+    if domain:
+        spec["domain"] = domain
+    if subject:
+        spec["subject"] = subject
+    if metric:
+        spec["metric"] = metric
+    if dimension:
+        spec["dimensions"] = [dimension]
+        spec["group_by"] = [dimension]
+    if active_filters:
+        spec["filters"] = dict(active_filters)
+    if active_time_scope:
+        spec["time_scope"] = dict(active_time_scope)
+    spec["top_n"] = 0
+    period_columns: List[str] = []
+    if has_period_context:
+        table = payload.get("table") if isinstance(payload.get("table"), dict) else {}
+        visible_columns = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+        if not visible_columns:
+            visible_columns = [c for c in list(payload.get("_source_columns") or []) if isinstance(c, dict)]
+        seen_cols = set()
+        for col in visible_columns:
+            label = str(col.get("label") or col.get("fieldname") or "").strip()
+            key = label.lower()
+            if (not label) or (key in seen_cols):
+                continue
+            seen_cols.add(key)
+            period_columns.append(label)
+    spec["output_contract"] = {
+        "mode": "comparison",
+        # Keep comparison shape intact during follow-up transforms.
+        "minimal_columns": period_columns[:12] if has_period_context else [],
+    }
+    return spec
+
+
 def _legacy_path_unavailable_payload() -> Dict[str, Any]:
     return {
         "type": "text",
@@ -1219,6 +1758,11 @@ def _execute_selected_report_direct(
         req_obj = get_report_requirements(report_name, user=user)
     except Exception:
         req_obj = {}
+    filters = _apply_comparison_execution_defaults(
+        report_name=report_name,
+        filters=dict(filters),
+        business_spec=spec,
+    )
     filters = _apply_required_time_defaults(filters=dict(filters), req=req_obj, message=message)
     try:
         out = run_fac_report(
@@ -1233,6 +1777,146 @@ def _execute_selected_report_direct(
         return _as_payload(out)
     except Exception:
         return None
+
+
+def _month_date_bounds(month_name: str, year: Any) -> Optional[tuple[str, str]]:
+    month_names = {
+        "january": 1,
+        "february": 2,
+        "march": 3,
+        "april": 4,
+        "may": 5,
+        "june": 6,
+        "july": 7,
+        "august": 8,
+        "september": 9,
+        "october": 10,
+        "november": 11,
+        "december": 12,
+    }
+    month_lc = str(month_name or "").strip().lower()
+    try:
+        year_int = int(year)
+    except Exception:
+        return None
+    month_int = month_names.get(month_lc)
+    if not month_int:
+        return None
+    last_day = calendar.monthrange(year_int, month_int)[1]
+    return (
+        date(year_int, month_int, 1).isoformat(),
+        date(year_int, month_int, last_day).isoformat(),
+    )
+
+
+def _comparison_dimension_filter_keys(*, report_name: str, dimension: str) -> List[str]:
+    dim = str(canonical_dimension(dimension) or "").strip().lower()
+    if not dim:
+        return []
+    keys = {dim}
+    contract = report_semantics_contract(report_name)
+    presentation = contract.get("presentation") if isinstance(contract.get("presentation"), dict) else {}
+    column_roles = presentation.get("column_roles") if isinstance(presentation.get("column_roles"), dict) else {}
+    dimension_roles = column_roles.get("dimensions") if isinstance(column_roles.get("dimensions"), dict) else {}
+    aliases = dimension_roles.get(dim) if isinstance(dimension_roles.get(dim), list) else []
+    for raw in list(aliases or []):
+        key = str(raw or "").strip().lower()
+        if key:
+            keys.add(key)
+    return sorted(keys)
+
+
+def _apply_comparison_execution_defaults(
+    *,
+    report_name: str,
+    filters: Dict[str, Any],
+    business_spec: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = dict(filters or {})
+    spec = business_spec if isinstance(business_spec, dict) else {}
+    if str(spec.get("task_class") or "").strip().lower() != "comparison":
+        return out
+
+    comparison_rule = out.get("_comparison_rule") if isinstance(out.get("_comparison_rule"), dict) else {}
+    metric = str(
+        canonical_metric(comparison_rule.get("metric"))
+        or canonical_metric(spec.get("metric"))
+        or ""
+    ).strip().lower()
+    dimension = str(
+        canonical_dimension(comparison_rule.get("dimension"))
+        or canonical_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    compared_values = [str(x).strip() for x in list(comparison_rule.get("compared_values") or []) if str(x or "").strip()]
+    month_refs = [x for x in list(comparison_rule.get("month_refs") or []) if isinstance(x, dict)]
+
+    if report_name == "Sales Analytics" and metric == "revenue" and dimension == "territory":
+        out.setdefault("tree_type", "Territory")
+        out.setdefault("doc_type", "Sales Invoice")
+        out.setdefault("value_quantity", "Value")
+        out.setdefault("range", "Monthly")
+        out.setdefault("curves", "Billed Amount")
+
+    if report_name == "Customer Ledger Summary" and ("customer" in out) and ("party" not in out):
+        out["party"] = out.get("customer")
+    if report_name == "Supplier Ledger Summary" and ("supplier" in out) and ("party" not in out):
+        out["party"] = out.get("supplier")
+    if report_name == "Item-wise Sales Register" and ("item" in out) and ("item_code" not in out):
+        out["item_code"] = out.get("item")
+
+    # For same-period entity-vs-entity comparison, several reports return empty
+    # payloads when given multi-value entity filters. Let the report execute for
+    # the bounded time scope and rely on the existing post-shape row filter to
+    # narrow to the requested compared entities.
+    if time_structure == "same_period" and len(compared_values) >= 2:
+        for key in _comparison_dimension_filter_keys(report_name=report_name, dimension=dimension):
+            if isinstance(out.get(key), list):
+                out.pop(key, None)
+
+    if _empty_filter_value(out.get("from_date")) or _empty_filter_value(out.get("to_date")):
+        from_date = ""
+        to_date = ""
+        if time_structure == "monthly_period_vs_period" and len(month_refs) >= 2:
+            ranges = [
+                _month_date_bounds(str(x.get("month_name") or ""), x.get("year"))
+                for x in month_refs
+            ]
+            ranges = [x for x in ranges if x]
+            if ranges:
+                from_date = min(str(x[0]) for x in ranges)
+                to_date = max(str(x[1]) for x in ranges)
+        elif time_structure == "month_over_month" and month_refs:
+            anchor_range = _month_date_bounds(str(month_refs[0].get("month_name") or ""), month_refs[0].get("year"))
+            if anchor_range:
+                anchor_start = date.fromisoformat(anchor_range[0])
+                if anchor_start.month == 1:
+                    prev_year = anchor_start.year - 1
+                    prev_month = 12
+                else:
+                    prev_year = anchor_start.year
+                    prev_month = anchor_start.month - 1
+                prev_last_day = calendar.monthrange(prev_year, prev_month)[1]
+                from_date = date(prev_year, prev_month, 1).isoformat()
+                to_date = anchor_range[1]
+        else:
+            time_scope = spec.get("time_scope") if isinstance(spec.get("time_scope"), dict) else {}
+            mode = str(time_scope.get("mode") or "").strip().lower()
+            value = str(time_scope.get("value") or "").strip().lower()
+            if mode == "relative" and value == "last_month":
+                dr = last_month_range(today_date())
+                from_date, to_date = dr.start_str, dr.end_str
+            elif mode == "relative" and value == "this_month":
+                dr = this_month_range(today_date())
+                from_date, to_date = dr.start_str, dr.end_str
+
+        if from_date and _empty_filter_value(out.get("from_date")):
+            out["from_date"] = from_date
+        if to_date and _empty_filter_value(out.get("to_date")):
+            out["to_date"] = to_date
+
+    return out
 
 
 def _req_filters_def(req: Any) -> List[Dict[str, Any]]:
@@ -2310,6 +2994,17 @@ def execute_unified_read_turn(
         return _append_tool_message(dict(contribution_precheck.get("payload") or {}), spec_tool_msg)
     if (not forced_clarify_decision) and isinstance(contribution_precheck.get("clarify_decision"), dict):
         forced_clarify_decision = dict(contribution_precheck.get("clarify_decision") or {})
+    comparison_precheck = _comparison_precheck(
+        message=message,
+        business_spec=spec_obj,
+        previous_topic_state=previous_topic_state,
+    )
+    if isinstance(comparison_precheck.get("payload"), dict):
+        spec_envelope["spec"] = spec_obj
+        spec_tool_msg = make_spec_tool_message(tool=source, mode="v7", envelope=spec_envelope)
+        return _append_tool_message(dict(comparison_precheck.get("payload") or {}), spec_tool_msg)
+    if (not forced_clarify_decision) and isinstance(comparison_precheck.get("clarify_decision"), dict):
+        forced_clarify_decision = dict(comparison_precheck.get("clarify_decision") or {})
     last_result_payload = _load_last_result_payload(session_name=session_name)
     latest_visible_result_payload = _load_latest_visible_report_payload(session_name=session_name)
     spec_obj = _realign_low_signal_ranking_followup_to_last_result(
@@ -2331,6 +3026,12 @@ def execute_unified_read_turn(
         message=message,
         spec_obj=spec_obj,
         memory_meta=memory_meta,
+        last_result_payload=last_result_payload,
+        previous_topic_state=previous_topic_state,
+    )
+    spec_obj = _realign_comparison_followup_to_last_result(
+        message=message,
+        spec_obj=spec_obj,
         last_result_payload=last_result_payload,
         previous_topic_state=previous_topic_state,
     )
@@ -2571,6 +3272,7 @@ def execute_unified_read_turn(
         shape_response_fn=lambda payload, business_spec: shape_response(payload=payload, business_spec=business_spec),
         sanitize_user_payload_fn=_sanitize_user_payload,
         apply_requested_entity_row_filters_fn=_apply_requested_entity_row_filters,
+        apply_same_period_comparison_shape_fn=_apply_same_period_comparison_shape,
         make_response_shaper_tool_message_fn=make_response_shaper_tool_message,
         evaluate_quality_gate_fn=evaluate_quality_gate,
         should_switch_candidate_on_repairable_fn=_should_switch_candidate_on_repairable,

@@ -161,12 +161,20 @@ def _column_satisfies_wanted(col: Dict[str, Any], wanted: str) -> bool:
 
 def _needs_source_promotion(spec: Dict[str, Any], cols: List[Dict[str, Any]]) -> bool:
     output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    comparison_time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    is_comparison = str(output_contract.get("mode") or "").strip().lower() == "comparison"
+    is_period_comparison = bool(
+        str(output_contract.get("mode") or "").strip().lower() == "comparison"
+        and comparison_time_structure in {"monthly_period_vs_period", "month_over_month"}
+    )
     wanted: List[str] = []
     seen = set()
     for source in (
         list(spec.get("group_by") or []),
         list(spec.get("dimensions") or []),
-        [spec.get("metric")],
+        ([] if is_comparison else [spec.get("metric")]),
         list(output_contract.get("minimal_columns") or []),
     ):
         for value in source:
@@ -213,6 +221,13 @@ def apply_transform_last(*, payload: Dict[str, Any], business_spec: Dict[str, An
 
     output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
     mode = str(output_contract.get("mode") or "").strip().lower()
+    comparison_rule = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = comparison_rule.get("_comparison_rule") if isinstance(comparison_rule.get("_comparison_rule"), dict) else {}
+    comparison_time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    is_period_comparison = bool(
+        mode == "comparison"
+        and comparison_time_structure in {"monthly_period_vs_period", "month_over_month"}
+    )
     try:
         top_n = int(spec.get("top_n") or 0)
     except Exception:
@@ -273,7 +288,9 @@ def apply_transform_last(*, payload: Dict[str, Any], business_spec: Dict[str, An
         rows = _rows(out)
 
     # detail/default transform: keep only dimension+metric when both are known.
-    if (mode not in ("kpi", "top_n")) and dim_fn and metric_fn and dim_fn != metric_fn:
+    # Period-comparison follow-ups must preserve the visible period columns rather
+    # than collapsing back to a generic metric table.
+    if (mode not in ("kpi", "top_n", "comparison")) and dim_fn and metric_fn and dim_fn != metric_fn:
         picked_cols = []
         contribution_fn = ""
         if bool(out.get("_contribution_rule_applied")):
@@ -294,6 +311,8 @@ def apply_transform_last(*, payload: Dict[str, Any], business_spec: Dict[str, An
                 ],
             }
             out["_transform_last_applied"] = "detail_project"
+    elif is_period_comparison and scale_million:
+        out["_transform_last_applied"] = str(out.get("_transform_last_applied") or "scale_million")
 
     # Optional global sort on metric for transformed table.
     cols = _columns(out)

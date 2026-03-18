@@ -143,6 +143,45 @@ _DEFAULT_ONTOLOGY: Dict[str, Any] = {
         "share_of_total": ["share of total", "percent of total", "percentage of total"],
         "contribution_share": ["contribution share", "contribution to total", "contributes to total", "percentage contribution"],
     },
+    "comparison_term_aliases": {
+        "comparison_request": ["compare", "comparison", "versus", "vs", "against"],
+        "entity_vs_entity": ["versus", "vs", "against"],
+        "period_vs_period_monthly": [
+            "this month vs last month",
+            "this month compared to last month",
+            "compare this month to last month",
+            "compare current month to previous month",
+            "current month vs previous month",
+        ],
+        "month_over_month_request": [
+            "month over month",
+            "month-over-month",
+            "month on month",
+            "month-on-month",
+            "mom",
+            "versus previous month",
+            "vs previous month",
+            "compared to previous month",
+        ],
+        "week_over_week_request": ["week over week", "week-over-week", "week on week", "week-on-week", "wow"],
+        "quarter_over_quarter_request": [
+            "quarter over quarter",
+            "quarter-over-quarter",
+            "quarter on quarter",
+            "quarter-on-quarter",
+            "qoq",
+        ],
+        "year_over_year_request": ["year over year", "year-over-year", "year on year", "year-on-year", "yoy"],
+        "multi_point_time_series_request": [
+            "over time",
+            "month by month",
+            "monthly trend",
+            "trend over time",
+            "for the last 12 months",
+            "for 12 months",
+            "across months",
+        ],
+    },
     "advisory_intent_aliases": {
         "causal_analysis": ["why", "reason", "because", "cause"],
         "risk_assessment": ["risky", "risk", "risky?", "risky.", "risk?"],
@@ -301,6 +340,7 @@ def _merge_catalog(base: Dict[str, Any], extra: Dict[str, Any]) -> Dict[str, Any
         "comparator_aliases",
         "exception_term_aliases",
         "contribution_term_aliases",
+        "comparison_term_aliases",
         "advisory_intent_aliases",
         "reference_value_aliases",
         "transform_ambiguity_aliases",
@@ -406,6 +446,10 @@ def _contribution_term_alias_map() -> Dict[str, List[str]]:
 
 def _advisory_intent_alias_map() -> Dict[str, List[str]]:
     return _as_alias_map(get_ontology_catalog().get("advisory_intent_aliases"))
+
+
+def _comparison_term_alias_map() -> Dict[str, List[str]]:
+    return _as_alias_map(get_ontology_catalog().get("comparison_term_aliases"))
 
 
 def _write_operation_alias_map() -> Dict[str, List[str]]:
@@ -575,6 +619,54 @@ def infer_contribution_terms(value: Any) -> List[str]:
             seen.add(canonical)
             out.append(canonical)
     return out
+
+
+_MONTH_NAME_RE = re.compile(
+    r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{4}\b",
+    re.IGNORECASE,
+)
+
+
+def infer_comparison_terms(value: Any) -> List[str]:
+    txt = _norm(value)
+    if not txt:
+        return []
+    out: List[str] = []
+    seen: Set[str] = set()
+    for canonical, aliases in _comparison_term_alias_map().items():
+        if canonical in seen:
+            continue
+        if _contains_any(txt, aliases):
+            seen.add(canonical)
+            out.append(canonical)
+
+    month_refs = _MONTH_NAME_RE.findall(str(value or ""))
+    if len(month_refs) >= 2 and re.search(r"\b(?:compare|vs|versus|against)\b", txt):
+        if "period_vs_period_monthly" not in seen:
+            seen.add("period_vs_period_monthly")
+            out.append("period_vs_period_monthly")
+
+    if re.search(r"\bthis\s+month\b", txt) and re.search(r"\blast\s+month\b", txt) and re.search(r"\b(?:compare|vs|versus|against|compared)\b", txt):
+        if "period_vs_period_monthly" not in seen:
+            seen.add("period_vs_period_monthly")
+            out.append("period_vs_period_monthly")
+
+    return out
+
+
+def infer_comparison_time_structure(value: Any) -> str:
+    terms = set(infer_comparison_terms(value))
+    for code in (
+        "multi_point_time_series_request",
+        "year_over_year_request",
+        "quarter_over_quarter_request",
+        "week_over_week_request",
+        "month_over_month_request",
+        "period_vs_period_monthly",
+    ):
+        if code in terms:
+            return code
+    return ""
 
 
 def infer_advisory_intents(value: Any) -> List[str]:

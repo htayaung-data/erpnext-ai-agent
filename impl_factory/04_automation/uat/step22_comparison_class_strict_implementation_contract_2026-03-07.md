@@ -1,6 +1,7 @@
 # Comparison Class Strict Implementation Contract
 
 Date: 2026-03-07  
+Updated: 2026-03-17  
 Owner: AI Runtime Engineering  
 Scope: mandatory execution contract for the next behavioral-class expansion (`comparison`) in Phase 3  
 Status: active for next-class implementation
@@ -21,15 +22,19 @@ This contract is binding for design, coding, verification, and closure of the `c
 
 ### In Scope
 
-1. Same-period comparison only (single period such as `last month`).
-2. Entity-vs-entity comparison inside the same period.
-3. Deterministic comparison routing through ontology + metadata + class contract.
+1. Same-period entity-vs-entity comparison inside one explicit period.
+2. Monthly period-vs-period comparison across two explicit monthly periods.
+3. Bounded month-over-month (MoM) comparison using monthly current-period and previous-period numeric values plus deterministic delta semantics.
+4. Deterministic comparison routing through ontology + metadata + class contract.
 
 ### Out Of Scope (Must Return Clarification/Unsupported)
 
-1. Cross-period comparison (for example `this month vs last month`, `month-over-month`).
-2. Forecasting or trend decomposition.
-3. New follow-up style expansions not listed in approved variation matrix.
+1. Weekly comparison.
+2. Quarterly comparison.
+3. Year-over-year, rolling-window, or other non-month period comparisons.
+4. Forecasting or trend decomposition.
+5. Advisory interpretation or recommendation.
+6. New follow-up style expansions not listed in approved variation matrix.
 
 ## Non-Negotiable Boundaries
 
@@ -101,10 +106,12 @@ Runtime implementation cannot start until these are ready.
 2. `comparison` targeted replay probes.
 3. Manual golden prompts for:
    - base comparison ask
+   - monthly period-vs-period ask
+   - bounded MoM ask
    - phrasing variants
    - restrictive projection follow-up
    - correction follow-up
-   - unsupported cross-period ask
+   - unsupported weekly/quarterly ask
 
 ### Impacted Regression Verification
 
@@ -124,7 +131,7 @@ Rerun by touched surfaces:
 
 `comparison` first slice is complete only when all are true:
 
-1. Scope boundary respected (no cross-period support silently added).
+1. Scope boundary respected (no weekly/quarterly/YoY/multi-point time-series support silently added).
 2. Contract boundaries respected (no ad-hoc routing logic).
 3. Targeted replay and impacted reruns are green.
 4. Manual golden checks are green.
@@ -141,4 +148,3 @@ If any rule in this contract is at risk:
 1. Stop implementation immediately.
 2. Record the risk in writing.
 3. Request explicit approval before continuing.
-

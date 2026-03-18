@@ -15,6 +15,8 @@ from ai_assistant_ui.ai_core.ontology_normalization import (
     canonical_dimension,
     canonical_metric,
     infer_advisory_intents,
+    infer_comparison_terms,
+    infer_comparison_time_structure,
     infer_contribution_terms,
     infer_exception_terms,
     infer_record_doctype_candidates,
@@ -27,6 +29,9 @@ from ai_assistant_ui.ai_core.util_dates import extract_timeframe, last_month_ran
 from ai_assistant_ui.ai_core.v7.contract_registry import (
     domain_from_dimension,
     task_class_allowed_dimensions,
+    task_class_allowed_metrics,
+    task_class_allowed_time_structures,
+    task_class_month_anchor_required_for,
     threshold_dimension_metric_overrides,
     threshold_metric_defaults_by_dimension,
 )
@@ -267,6 +272,480 @@ _THRESHOLD_VALUE_RE = re.compile(
     r"\b(?P<number>(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?)|(?:\d+(?:\.\d+)?))\b(?:\s*(?P<scale>million|mn))?",
     re.IGNORECASE,
 )
+_COMPARISON_MONTH_REF_RE = re.compile(
+    r"\b("
+    r"january|february|march|april|may|june|july|august|september|october|november|december"
+    r")\s+(\d{4})\b",
+    re.IGNORECASE,
+)
+_COMPARISON_STOP_CUE_RE = re.compile(
+    r"\b(?:"
+    r"instead|"
+    r"last\s+month|this\s+month|previous\s+month|current\s+month|"
+    r"last\s+week|this\s+week|last\s+quarter|this\s+quarter|last\s+year|this\s+year|"
+    r"month\s+over\s+month|month-on-month|month\s+on\s+month|mom|"
+    r"week\s+over\s+week|week-on-week|wow|"
+    r"quarter\s+over\s+quarter|quarter-on-quarter|qoq|"
+    r"year\s+over\s+year|year-on-year|yoy|"
+    r"in\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}|"
+    r"revenue|sales|purchase\s+amount|purchase|stock\s+quantity|stock\s+balance|quantity|amount|"
+    r"by\s+(?:territory|customer|supplier|item)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _comparison_time_structure_key(message: str) -> str:
+    raw = str(infer_comparison_time_structure(message) or "").strip().lower()
+    if raw == "period_vs_period_monthly":
+        return "monthly_period_vs_period"
+    if raw == "month_over_month_request":
+        return "month_over_month"
+    if raw == "week_over_week_request":
+        return "weekly"
+    if raw == "quarter_over_quarter_request":
+        return "quarterly"
+    if raw == "year_over_year_request":
+        return "year_over_year"
+    if raw == "multi_point_time_series_request":
+        return "multi_point_time_series"
+    return "same_period"
+
+
+def _normalize_compared_value(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(value or "").strip())
+    cleaned = cleaned.strip(" ,.;:-")
+    return cleaned
+
+
+def _looks_like_item_code(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return bool(re.match(r"^[A-Z0-9]{2,}(?:[-/][A-Z0-9]{1,}){1,}$", text))
+
+
+def _truncate_comparison_operand(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = _COMPARISON_STOP_CUE_RE.search(text)
+    if match:
+        text = text[: match.start()]
+    return _normalize_compared_value(text)
+
+
+def _extract_compared_values(message: str) -> List[str]:
+    text = " ".join(str(message or "").strip().split())
+    if not text:
+        return []
+
+    values: List[str] = []
+    vs_match = re.search(r"(.+?)\s+\b(?:vs|versus|against)\b\s+(.+)", text, re.IGNORECASE)
+    if vs_match:
+        left = re.sub(r"^\s*compare\s+", "", str(vs_match.group(1) or ""), flags=re.IGNORECASE)
+        right = _truncate_comparison_operand(str(vs_match.group(2) or ""))
+        for raw in (left, right):
+            item = _normalize_compared_value(raw)
+            if item:
+                values.append(item)
+    else:
+        compare_match = re.search(r"\bcompare\s+(.+)", text, re.IGNORECASE)
+        if compare_match:
+            segment = _truncate_comparison_operand(str(compare_match.group(1) or ""))
+            parts = [x for x in re.split(r"\s+\band\b\s+", segment, maxsplit=1, flags=re.IGNORECASE) if str(x or "").strip()]
+            if len(parts) == 2:
+                values.extend([_normalize_compared_value(parts[0]), _normalize_compared_value(parts[1])])
+
+    out: List[str] = []
+    seen = set()
+    for value in values:
+        item = _normalize_compared_value(value)
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _extract_comparison_month_refs(message: str) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for match in _COMPARISON_MONTH_REF_RE.finditer(str(message or "")):
+        month_name = str(match.group(1) or "").strip().lower()
+        year_text = str(match.group(2) or "").strip()
+        if (not month_name) or (not year_text):
+            continue
+        key = (month_name, year_text)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "month_name": month_name,
+                "year": int(year_text),
+                "label": f"{month_name.title()} {year_text}",
+            }
+        )
+    return out
+
+
+def _comparison_month_number(month_name: str) -> int:
+    month_map = {
+        "january": 1,
+        "february": 2,
+        "march": 3,
+        "april": 4,
+        "may": 5,
+        "june": 6,
+        "july": 7,
+        "august": 8,
+        "september": 9,
+        "october": 10,
+        "november": 11,
+        "december": 12,
+    }
+    return int(month_map.get(str(month_name or "").strip().lower()) or 0)
+
+
+def _comparison_month_label_abbrev(month_name: str, year: Any) -> str:
+    month_num = _comparison_month_number(month_name)
+    try:
+        year_int = int(year)
+    except Exception:
+        return ""
+    if month_num <= 0:
+        return ""
+    month_abbr = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec",
+    }.get(month_num)
+    return f"{month_abbr} {year_int}" if month_abbr else ""
+
+
+def _comparison_previous_month_ref(month_ref: Dict[str, Any]) -> Dict[str, Any]:
+    month_num = _comparison_month_number(str(month_ref.get("month_name") or ""))
+    try:
+        year_int = int(month_ref.get("year"))
+    except Exception:
+        return {}
+    if month_num <= 0:
+        return {}
+    if month_num == 1:
+        prev_month_num = 12
+        prev_year = year_int - 1
+    else:
+        prev_month_num = month_num - 1
+        prev_year = year_int
+    month_names = {
+        1: "january",
+        2: "february",
+        3: "march",
+        4: "april",
+        5: "may",
+        6: "june",
+        7: "july",
+        8: "august",
+        9: "september",
+        10: "october",
+        11: "november",
+        12: "december",
+    }
+    prev_month_name = month_names.get(prev_month_num, "")
+    return {
+        "month_name": prev_month_name,
+        "year": prev_year,
+        "label": f"{prev_month_name.title()} {prev_year}" if prev_month_name else "",
+    }
+
+
+def _comparison_period_minimal_columns(
+    *,
+    explicit_dimension: str,
+    time_structure: str,
+    month_refs: List[Dict[str, Any]],
+) -> List[str]:
+    out: List[str] = []
+    seen = set()
+
+    def _append(value: str) -> None:
+        s = str(value or "").strip()
+        key = s.lower()
+        if (not s) or (key in seen):
+            return
+        seen.add(key)
+        out.append(s)
+
+    if explicit_dimension:
+        _append(explicit_dimension)
+
+    ordered_month_refs = [x for x in list(month_refs or []) if isinstance(x, dict)]
+    ordered_month_refs.sort(
+        key=lambda x: (
+            int(x.get("year") or 0),
+            _comparison_month_number(str(x.get("month_name") or "")),
+        )
+    )
+    if time_structure == "month_over_month" and len(ordered_month_refs) == 1:
+        prev_ref = _comparison_previous_month_ref(ordered_month_refs[0])
+        if prev_ref:
+            ordered_month_refs = [prev_ref, ordered_month_refs[0]]
+
+    for month_ref in ordered_month_refs:
+        _append(
+            _comparison_month_label_abbrev(
+                str(month_ref.get("month_name") or ""),
+                month_ref.get("year"),
+            )
+        )
+
+    return out[:12]
+
+
+def _comparison_dimension_guess(message: str, *, spec: Dict[str, Any]) -> str:
+    allowed_dims = {str(x).strip().lower() for x in list(task_class_allowed_dimensions("comparison") or []) if str(x).strip()}
+    explicit_dimension = str(
+        known_dimension(message)
+        or known_dimension(spec.get("subject") or "")
+        or known_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    if explicit_dimension and ((not allowed_dims) or explicit_dimension in allowed_dims):
+        return explicit_dimension
+    entity_filters = extract_entity_filters_from_message(
+        message=message,
+        allowed_kinds=["territory", "customer", "supplier", "item"],
+    )
+    for kind in ("territory", "customer", "supplier", "item"):
+        if str(entity_filters.get(kind) or "").strip():
+            return kind
+    return ""
+
+
+def _infer_relative_time_scope_from_message(message: str) -> Dict[str, str]:
+    text = str(message or "").strip().lower()
+    if not text:
+        return {"mode": "none", "value": ""}
+    if re.search(r"\blast\s+month\b", text) or re.search(r"\bprevious\s+month\b", text):
+        return {"mode": "relative", "value": "last_month"}
+    if re.search(r"\bthis\s+month\b", text) or re.search(r"\bcurrent\s+month\b", text):
+        return {"mode": "relative", "value": "this_month"}
+    if re.search(r"\blast\s+week\b", text) or re.search(r"\bprevious\s+week\b", text):
+        return {"mode": "relative", "value": "last_week"}
+    if re.search(r"\bthis\s+week\b", text) or re.search(r"\bcurrent\s+week\b", text):
+        return {"mode": "relative", "value": "this_week"}
+    return {"mode": "none", "value": ""}
+
+
+def _extract_comparison_signal(message: str, *, spec: Dict[str, Any]) -> Dict[str, Any]:
+    text = str(message or "").strip()
+    if not text:
+        return {}
+    comparison_terms = [str(x).strip().lower() for x in infer_comparison_terms(text) if str(x).strip()]
+    if not comparison_terms:
+        return {}
+    time_structure = _comparison_time_structure_key(text)
+    metric_from_message = str(known_metric(text) or "").strip().lower()
+    metric = metric_from_message
+    if not metric:
+        metric = str(known_metric(spec.get("metric")) or "").strip().lower()
+    if not metric:
+        metric = str(known_metric(spec.get("subject")) or "").strip().lower()
+    explicit_dimension = _comparison_dimension_guess(text, spec=spec)
+    compared_values = _extract_compared_values(text)
+    if time_structure != "same_period":
+        compared_values = []
+    month_refs = _extract_comparison_month_refs(text)
+    entity_filters = extract_entity_filters_from_message(
+        message=message,
+        allowed_kinds=["territory", "customer", "supplier", "item"],
+    )
+    single_entity_kind = ""
+    single_entity_value = ""
+    for kind in ("territory", "customer", "supplier", "item"):
+        candidate = str(entity_filters.get(kind) or "").strip()
+        if candidate:
+            single_entity_kind = kind
+            single_entity_value = candidate
+            break
+    if (not explicit_dimension) and single_entity_kind:
+        explicit_dimension = single_entity_kind
+    if (not explicit_dimension) and str(metric or "").strip().lower() == "purchase_amount":
+        explicit_dimension = "supplier"
+    if (not explicit_dimension) and compared_values and all(_looks_like_item_code(x) for x in compared_values):
+        explicit_dimension = "item"
+    return {
+        "metric": metric,
+        "metric_from_message": metric_from_message,
+        "explicit_dimension": explicit_dimension,
+        "comparison_terms": comparison_terms,
+        "time_structure": time_structure,
+        "compared_values": compared_values,
+        "month_refs": month_refs,
+        "single_entity_kind": single_entity_kind,
+        "single_entity_value": single_entity_value,
+    }
+
+
+def _extract_comparison_rule(message: str, *, spec: Dict[str, Any]) -> Dict[str, Any]:
+    signal = _extract_comparison_signal(message, spec=spec)
+    if not signal:
+        return {}
+    return {
+        "metric": str(signal.get("metric") or "").strip().lower(),
+        "dimension": str(signal.get("explicit_dimension") or "").strip().lower(),
+        "time_structure": str(signal.get("time_structure") or "").strip().lower(),
+        "comparison_terms": list(signal.get("comparison_terms") or []),
+        "compared_values": list(signal.get("compared_values") or []),
+        "month_refs": list(signal.get("month_refs") or []),
+        "single_entity_kind": str(signal.get("single_entity_kind") or "").strip().lower(),
+        "single_entity_value": str(signal.get("single_entity_value") or "").strip(),
+    }
+
+
+def _sanitize_comparison_filters(
+    *,
+    filters: Dict[str, Any],
+    explicit_dimension: str,
+    time_structure: str,
+    signal: Dict[str, Any],
+) -> Dict[str, Any]:
+    src = filters if isinstance(filters, dict) else {}
+    out: Dict[str, Any] = {}
+    stable_filter_keys = {
+        "company",
+        "from_date",
+        "to_date",
+        "date",
+        "report_date",
+        "start_year",
+        "end_year",
+        "year",
+        "fiscal_year",
+        "from_fiscal_year",
+        "to_fiscal_year",
+    }
+    allowed_dims = set(task_class_allowed_dimensions("comparison") or set())
+    for key_raw, value in src.items():
+        key_text = str(key_raw or "").strip()
+        if not key_text:
+            continue
+        if key_text.startswith("_"):
+            out[key_text] = value
+            continue
+        key_lc = key_text.lower()
+        if key_lc in stable_filter_keys:
+            out[key_lc] = value
+            continue
+        canonical_key = str(
+            canonical_dimension(key_text)
+            or known_dimension(key_text)
+            or ""
+        ).strip().lower()
+        if canonical_key and canonical_key in allowed_dims:
+            out[canonical_key] = value
+
+    single_entity_kind = str(signal.get("single_entity_kind") or "").strip().lower()
+    single_entity_value = str(signal.get("single_entity_value") or "").strip()
+    compared_values = [
+        str(x).strip()
+        for x in list(signal.get("compared_values") or [])
+        if str(x or "").strip()
+    ]
+    if (
+        time_structure in {"monthly_period_vs_period", "month_over_month"}
+        and single_entity_kind
+        and single_entity_value
+    ):
+        out[single_entity_kind] = single_entity_value
+    elif time_structure == "same_period" and explicit_dimension and len(compared_values) >= 2:
+        out[explicit_dimension] = compared_values[:2]
+    return out
+
+
+def _comparison_missing_filter_kind(*, spec: Dict[str, Any], comparison_rule: Dict[str, Any], signal: Optional[Dict[str, Any]] = None) -> str:
+    sig = signal if isinstance(signal, dict) else {}
+    metric = str(
+        known_metric((comparison_rule or {}).get("metric"))
+        or (comparison_rule or {}).get("metric")
+        or known_metric(sig.get("metric"))
+        or known_metric(spec.get("metric"))
+        or ""
+    ).strip().lower()
+    dimension = str(
+        known_dimension((comparison_rule or {}).get("dimension"))
+        or (comparison_rule or {}).get("dimension")
+        or known_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    time_structure = str((comparison_rule or {}).get("time_structure") or sig.get("time_structure") or "same_period").strip().lower()
+    month_refs = list((comparison_rule or {}).get("month_refs") or sig.get("month_refs") or [])
+    compared_values = [str(x).strip() for x in list((comparison_rule or {}).get("compared_values") or sig.get("compared_values") or []) if str(x or "").strip()]
+
+    if not metric:
+        return "comparison_metric"
+    if not dimension:
+        return "comparison_dimension"
+    if time_structure in set(task_class_month_anchor_required_for("comparison") or set()) and (not month_refs):
+        return "comparison_month_anchor"
+    if time_structure == "same_period" and len(compared_values) < 2:
+        return "comparison_entities"
+    return ""
+
+
+def _comparison_unsupported_reason(
+    message: str,
+    *,
+    spec: Dict[str, Any],
+    comparison_rule: Dict[str, Any],
+    signal: Optional[Dict[str, Any]] = None,
+) -> str:
+    sig = signal if isinstance(signal, dict) else {}
+    if infer_advisory_intents(message):
+        return "advisory_analysis_not_supported"
+    allowed_dims = task_class_allowed_dimensions("comparison")
+    allowed_metrics = task_class_allowed_metrics("comparison")
+    allowed_time_structures = task_class_allowed_time_structures("comparison")
+    requested_dims = set(_requested_dimensions_from_spec(spec))
+    explicit_dimension = str(known_dimension(message) or (comparison_rule or {}).get("dimension") or "").strip().lower()
+    if explicit_dimension:
+        requested_dims.add(explicit_dimension)
+    if requested_dims and any(d and d not in allowed_dims for d in requested_dims):
+        return "unsupported_grouping_not_supported"
+    metric = str(
+        known_metric((comparison_rule or {}).get("metric"))
+        or (comparison_rule or {}).get("metric")
+        or spec.get("metric")
+        or ""
+    ).strip().lower()
+    metric_from_message = str(sig.get("metric_from_message") or "").strip().lower()
+    if metric and metric_from_message and (metric not in allowed_metrics):
+        return "unsupported_metric_not_supported"
+    time_structure = str((comparison_rule or {}).get("time_structure") or "").strip().lower()
+    if time_structure in {"multi_point_time_series", ""}:
+        return ""
+    if time_structure in allowed_time_structures:
+        return ""
+    if time_structure == "weekly":
+        return "weekly_period_comparison_not_supported"
+    if time_structure == "quarterly":
+        return "quarterly_period_comparison_not_supported"
+    if time_structure == "year_over_year":
+        return "year_over_year_comparison_not_supported"
+    return "unsupported_period_structure_not_supported"
 
 
 def _extract_threshold_signal(message: str, *, spec: Dict[str, Any]) -> Dict[str, Any]:
@@ -275,6 +754,9 @@ def _extract_threshold_signal(message: str, *, spec: Dict[str, Any]) -> Dict[str
         return {}
     comparator = str(known_comparator(text) or "").strip().lower()
     exception_terms = [str(x).strip().lower() for x in infer_exception_terms(text) if str(x).strip()]
+    comparison_terms = [str(x).strip().lower() for x in infer_comparison_terms(text) if str(x).strip()]
+    if comparison_terms and (not exception_terms):
+        return {}
     if (not comparator) and (not exception_terms):
         return {}
     explicit_dimension = str(
@@ -541,6 +1023,129 @@ def _normalize_contribution_share_class(spec: Dict[str, Any], *, message: str) -
     output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
     output_contract = dict(output_contract)
     output_contract["mode"] = output_mode
+    out["output_contract"] = output_contract
+    return out
+
+
+def _normalize_comparison_class(spec: Dict[str, Any], *, message: str) -> Dict[str, Any]:
+    out = dict(spec or {})
+    if str(out.get("intent") or "").strip().upper() != "READ":
+        return out
+    if _message_has_latest_record_cue(message):
+        return out
+    if str(out.get("task_class") or "").strip().lower() in {"threshold_exception_list", "contribution_share"}:
+        return out
+
+    signal = _extract_comparison_signal(message, spec=out)
+    if not signal:
+        return out
+
+    time_structure = str(signal.get("time_structure") or "same_period").strip().lower()
+    if time_structure == "multi_point_time_series":
+        return out
+
+    explicit_dimension = str(signal.get("explicit_dimension") or "").strip().lower()
+    comparison_rule = _extract_comparison_rule(message, spec=out)
+    filters = _sanitize_comparison_filters(
+        filters=(out.get("filters") if isinstance(out.get("filters"), dict) else {}),
+        explicit_dimension=explicit_dimension,
+        time_structure=time_structure,
+        signal=signal,
+    )
+    filters["_comparison_rule"] = comparison_rule or {
+        "metric": str(signal.get("metric") or "").strip().lower(),
+        "dimension": explicit_dimension,
+        "time_structure": time_structure,
+        "comparison_terms": list(signal.get("comparison_terms") or []),
+        "compared_values": list(signal.get("compared_values") or []),
+        "month_refs": list(signal.get("month_refs") or []),
+        "single_entity_kind": str(signal.get("single_entity_kind") or "").strip().lower(),
+        "single_entity_value": str(signal.get("single_entity_value") or "").strip(),
+    }
+
+    if explicit_dimension == "territory":
+        out["subject"] = "territories"
+    elif explicit_dimension == "customer":
+        out["subject"] = "customers"
+    elif explicit_dimension == "supplier":
+        out["subject"] = "suppliers"
+    elif explicit_dimension == "item":
+        out["subject"] = "items"
+
+    if explicit_dimension:
+        out["dimensions"] = [explicit_dimension]
+        out["group_by"] = [explicit_dimension]
+
+    unsupported_reason = _comparison_unsupported_reason(
+        message,
+        spec=out,
+        comparison_rule=comparison_rule,
+        signal=signal,
+    )
+    if unsupported_reason:
+        filters["_comparison_unsupported_reason"] = unsupported_reason
+
+    missing_filter_kind = _comparison_missing_filter_kind(
+        spec=out,
+        comparison_rule=comparison_rule or filters.get("_comparison_rule") or {},
+        signal=signal,
+    )
+    if missing_filter_kind:
+        filters["_comparison_missing_filter_kind"] = missing_filter_kind
+
+    out["filters"] = filters
+    out["task_class"] = "comparison"
+    out["task_type"] = "comparison"
+    metric = str(
+        canonical_metric((comparison_rule or {}).get("metric"))
+        or canonical_metric(signal.get("metric"))
+        or ""
+    ).strip()
+    metric_lc = str(known_metric(metric) or metric or "").strip().lower()
+    current_aggregation = str(out.get("aggregation") or "").strip().lower()
+    if current_aggregation in {"", "none"} and metric_lc in {"revenue", "purchase_amount"}:
+        out["aggregation"] = "sum"
+    elif current_aggregation:
+        out["aggregation"] = current_aggregation
+    else:
+        out["aggregation"] = "none"
+    out["top_n"] = 0
+    out["metric"] = metric
+    time_scope = out.get("time_scope") if isinstance(out.get("time_scope"), dict) else {}
+    if str(time_scope.get("mode") or "none").strip().lower() in {"", "none"}:
+        inferred_time_scope = _infer_relative_time_scope_from_message(message)
+        if str(inferred_time_scope.get("mode") or "none").strip().lower() not in {"", "none"}:
+            out["time_scope"] = inferred_time_scope
+
+    inferred_domain = ""
+    if metric_lc == "revenue":
+        inferred_domain = "sales"
+    elif metric_lc == "purchase_amount":
+        inferred_domain = "purchasing"
+    elif explicit_dimension:
+        inferred_domain = str(domain_from_dimension(explicit_dimension) or "").strip().lower()
+    current_domain = str(out.get("domain") or "").strip().lower()
+    if inferred_domain and (current_domain in {"", "unknown"} or current_domain != inferred_domain):
+        out["domain"] = inferred_domain
+
+    output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+    output_contract = dict(output_contract)
+    output_contract["mode"] = "comparison"
+    month_refs = list(signal.get("month_refs") or [])
+    minimal_columns: List[str]
+    if time_structure in {"monthly_period_vs_period", "month_over_month"}:
+        minimal_columns = _comparison_period_minimal_columns(
+            explicit_dimension=explicit_dimension,
+            time_structure=time_structure,
+            month_refs=month_refs,
+        )
+    else:
+        minimal_columns = []
+        if explicit_dimension:
+            minimal_columns.append(explicit_dimension)
+        if metric_lc:
+            minimal_columns.append(metric_lc)
+    output_contract["minimal_columns"] = minimal_columns
     out["output_contract"] = output_contract
     return out
 
@@ -832,6 +1437,7 @@ def generate_business_request_spec(
         normalized, errs = normalize_business_request_spec(raw)
         normalized = _normalize_threshold_exception_class(normalized, message=message)
         normalized = _normalize_contribution_share_class(normalized, message=message)
+        normalized = _normalize_comparison_class(normalized, message=message)
         normalized = _normalize_task_class_for_explicit_ranking(normalized, message=message)
         normalized = _normalize_explicit_latest_record_doctype(normalized, message=message)
         normalized = _normalize_minimal_columns(normalized)

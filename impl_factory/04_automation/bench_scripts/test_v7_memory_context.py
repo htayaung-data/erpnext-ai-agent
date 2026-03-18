@@ -593,6 +593,340 @@ class V7MemoryContextTests(unittest.TestCase):
         minimal_cols = [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()]
         self.assertEqual(minimal_cols, ["item", "sold quantity", "item name"])
 
+    def test_fresh_explicit_comparison_read_preserves_comparison_output_mode(self):
+        spec = _base_spec()
+        spec.update(
+            {
+                "intent": "READ",
+                "task_type": "comparison",
+                "task_class": "comparison",
+                "domain": "sales",
+                "subject": "territories",
+                "metric": "revenue",
+                "aggregation": "sum",
+                "group_by": ["territory"],
+                "dimensions": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Mandalay"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "comparison_terms": ["comparison_request"],
+                        "compared_values": ["Yangon", "Mandalay"],
+                        "month_refs": [],
+                        "single_entity_kind": "",
+                        "single_entity_value": "",
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "revenue"]},
+            }
+        )
+        out = apply_memory_context(
+            business_spec=spec,
+            message="Compare Yangon and Mandalay sales last month by territory",
+            topic_state={},
+        )
+        merged = out.get("spec") if isinstance(out.get("spec"), dict) else {}
+        meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+        output_contract = merged.get("output_contract") if isinstance(merged.get("output_contract"), dict) else {}
+
+        self.assertEqual(str(merged.get("task_type") or ""), "comparison")
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["territory", "revenue"],
+        )
+        self.assertIn("fresh_read_contract_reset", list(meta.get("corrections_applied") or []))
+
+    def test_fresh_monthly_comparison_read_preserves_period_columns(self):
+        spec = _base_spec()
+        spec.update(
+            {
+                "intent": "READ",
+                "task_type": "comparison",
+                "task_class": "comparison",
+                "domain": "sales",
+                "subject": "territories",
+                "metric": "revenue",
+                "aggregation": "sum",
+                "group_by": ["territory"],
+                "dimensions": ["territory"],
+                "filters": {
+                    "territory": "Yangon",
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "monthly_period_vs_period",
+                        "comparison_terms": ["comparison_request", "period_vs_period_monthly"],
+                        "compared_values": [],
+                        "month_refs": [
+                            {"month_name": "march", "year": 2026, "label": "March 2026"},
+                            {"month_name": "february", "year": 2026, "label": "February 2026"},
+                        ],
+                        "single_entity_kind": "territory",
+                        "single_entity_value": "Yangon",
+                    },
+                },
+                "time_scope": {"mode": "none", "value": ""},
+                "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "Feb 2026", "Mar 2026"]},
+            }
+        )
+        out = apply_memory_context(
+            business_spec=spec,
+            message="Compare Yangon revenue in March 2026 vs February 2026",
+            topic_state={},
+        )
+        merged = out.get("spec") if isinstance(out.get("spec"), dict) else {}
+        meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+        output_contract = merged.get("output_contract") if isinstance(merged.get("output_contract"), dict) else {}
+
+        self.assertEqual(str(merged.get("task_type") or ""), "comparison")
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(
+            [str(x).strip() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["territory", "Feb 2026", "Mar 2026"],
+        )
+        self.assertIn("fresh_read_contract_reset", list(meta.get("corrections_applied") or []))
+
+    def test_comparison_correction_rebind_preserves_previous_time_scope(self):
+        spec = _base_spec()
+        spec.update(
+            {
+                "intent": "READ",
+                "task_type": "comparison",
+                "task_class": "comparison",
+                "domain": "sales",
+                "subject": "territories",
+                "metric": "revenue",
+                "aggregation": "sum",
+                "group_by": ["territory"],
+                "dimensions": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Bago"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "comparison_terms": ["comparison_request"],
+                        "compared_values": ["Yangon", "Mandalay"],
+                        "month_refs": [],
+                    },
+                },
+                "time_scope": {"mode": "none", "value": ""},
+                "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "revenue"]},
+            }
+        )
+        state = {
+            "active_topic": {
+                "domain": "sales",
+                "subject": "territories",
+                "metric": "revenue",
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Mandalay"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "compared_values": ["Yangon", "Mandalay"],
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "top_n": 0,
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+                "source_columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "Yangon", "fieldtype": "Float"},
+                    {"fieldname": "compare_2", "label": "Mandalay", "fieldtype": "Float"},
+                ],
+            },
+        }
+        out = apply_memory_context(
+            business_spec=spec,
+            message="Actually compare Yangon and Bago instead",
+            topic_state=state,
+        )
+        merged = out.get("spec") if isinstance(out.get("spec"), dict) else {}
+        meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+        filters = merged.get("filters") if isinstance(merged.get("filters"), dict) else {}
+        rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+        self.assertEqual((merged.get("time_scope") or {}).get("value"), "last_month")
+        self.assertIn("comparison_time_scope_from_active_topic", list(meta.get("corrections_applied") or []))
+        self.assertEqual(filters.get("territory"), ["Yangon", "Bago"])
+        self.assertEqual(list(rule.get("compared_values") or []), ["Yangon", "Bago"])
+        self.assertEqual(str(rule.get("single_entity_value") or ""), "")
+        self.assertIn("comparison_rule_synced_from_filters", list(meta.get("corrections_applied") or []))
+
+    def test_comparison_correction_rebind_materializes_current_entities_before_filter_anchor(self):
+        spec = _base_spec()
+        spec.update(
+            {
+                "intent": "READ",
+                "task_type": "comparison",
+                "task_class": "comparison",
+                "domain": "unknown",
+                "subject": "",
+                "metric": "",
+                "aggregation": "none",
+                "group_by": [],
+                "dimensions": [],
+                "filters": {
+                    "_comparison_rule": {
+                        "metric": "",
+                        "dimension": "",
+                        "time_structure": "same_period",
+                        "comparison_terms": ["comparison_request"],
+                        "compared_values": ["Yangon", "Bago"],
+                        "month_refs": [],
+                        "single_entity_kind": "",
+                        "single_entity_value": "",
+                    },
+                    "_comparison_missing_filter_kind": "comparison_metric",
+                },
+                "time_scope": {"mode": "none", "value": ""},
+                "output_contract": {"mode": "comparison", "minimal_columns": []},
+            }
+        )
+        state = {
+            "active_topic": {
+                "domain": "sales",
+                "subject": "territories",
+                "metric": "revenue",
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Mandalay"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "compared_values": ["Yangon", "Mandalay"],
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "top_n": 0,
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+            },
+        }
+        out = apply_memory_context(
+            business_spec=spec,
+            message="Actually compare Yangon and Bago instead",
+            topic_state=state,
+        )
+        merged = out.get("spec") if isinstance(out.get("spec"), dict) else {}
+        meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+        filters = merged.get("filters") if isinstance(merged.get("filters"), dict) else {}
+        rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+        self.assertEqual(str(merged.get("domain") or ""), "sales")
+        self.assertEqual(str(merged.get("metric") or ""), "revenue")
+        self.assertEqual(list(merged.get("group_by") or []), ["territory"])
+        self.assertEqual((merged.get("time_scope") or {}).get("value"), "last_month")
+        self.assertEqual(filters.get("territory"), ["Yangon", "Bago"])
+        self.assertEqual(list(rule.get("compared_values") or []), ["Yangon", "Bago"])
+        self.assertIn("comparison_filters_materialized_from_rule", list(meta.get("corrections_applied") or []))
+
+    def test_explicit_monthly_comparison_resets_prior_same_period_comparison_context(self):
+        spec = _base_spec()
+        spec.update(
+            {
+                "intent": "READ",
+                "task_type": "comparison",
+                "task_class": "comparison",
+                "domain": "sales",
+                "subject": "territories",
+                "metric": "revenue",
+                "aggregation": "sum",
+                "group_by": ["territory"],
+                "dimensions": ["territory"],
+                "filters": {
+                    "territory": "Yangon",
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "monthly_period_vs_period",
+                        "month_refs": [
+                            {"month_name": "march", "year": 2026, "label": "March 2026"},
+                            {"month_name": "february", "year": 2026, "label": "February 2026"},
+                        ],
+                        "single_entity_kind": "territory",
+                        "single_entity_value": "Yangon",
+                    },
+                },
+                "time_scope": {"mode": "none", "value": ""},
+                "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "Feb 2026", "Mar 2026", "revenue"]},
+            }
+        )
+        state = {
+            "active_topic": {
+                "domain": "sales",
+                "subject": "customers",
+                "metric": "revenue",
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "group_by": ["customer"],
+                "filters": {
+                    "customer": ["Shwe Li Road Mobile Wholesale", "Latha Mobile Wholesale"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "customer",
+                        "time_structure": "same_period",
+                        "compared_values": ["Shwe Li Road Mobile Wholesale", "Latha Mobile Wholesale"],
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "top_n": 0,
+                "report_name": "Customer Ledger Summary",
+            },
+            "active_result": {
+                "report_name": "Customer Ledger Summary",
+                "output_mode": "comparison",
+                "source_columns": [
+                    {"fieldname": "customer", "label": "Customer", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "Shwe Li Road Mobile Wholesale", "fieldtype": "Float"},
+                    {"fieldname": "compare_2", "label": "Latha Mobile Wholesale", "fieldtype": "Float"},
+                ],
+            },
+        }
+        out = apply_memory_context(
+            business_spec=spec,
+            message="Compare Yangon revenue in March 2026 vs February 2026",
+            topic_state=state,
+        )
+        merged = out.get("spec") if isinstance(out.get("spec"), dict) else {}
+        meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+        filters = merged.get("filters") if isinstance(merged.get("filters"), dict) else {}
+        rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+        self.assertEqual(list(merged.get("group_by") or []), ["territory"])
+        self.assertEqual(filters.get("territory"), "Yangon")
+        self.assertNotIn("customer", filters)
+        self.assertEqual(str(rule.get("time_structure") or ""), "monthly_period_vs_period")
+        self.assertEqual(str(rule.get("single_entity_value") or ""), "Yangon")
+        output_contract = merged.get("output_contract") if isinstance(merged.get("output_contract"), dict) else {}
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(
+            [str(x).strip() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["territory", "Feb 2026", "Mar 2026"],
+        )
+        self.assertNotIn(
+            "revenue",
+            [str(x).strip().lower() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+        )
+        self.assertIn("fresh_read_contract_reset", list(meta.get("corrections_applied") or []))
+        self.assertIn("comparison_period_output_contract_synced", list(meta.get("corrections_applied") or []))
+
     def test_fresh_latest_record_read_resets_stale_topic_carryover(self):
         spec = _base_spec()
         spec.update(

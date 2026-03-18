@@ -63,6 +63,44 @@ class V7ShapingPolicyTests(unittest.TestCase):
         self.assertEqual(str(out.get("type") or ""), "report_table")
         self.assertEqual(out.get("table"), payload.get("table"))
 
+    def test_enrich_minimal_columns_preserves_period_comparison_columns(self):
+        mod = _load_module()
+        spec_obj = {
+            "task_class": "comparison",
+            "task_type": "comparison",
+            "metric": "revenue",
+            "group_by": ["territory"],
+            "output_contract": {
+                "mode": "comparison",
+                "minimal_columns": ["territory", "Feb 2026", "Mar 2026"],
+            },
+            "filters": {
+                "territory": "Yangon",
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "territory",
+                    "time_structure": "monthly_period_vs_period",
+                    "month_refs": [
+                        {"month_name": "march", "year": 2026, "label": "March 2026"},
+                        {"month_name": "february", "year": 2026, "label": "February 2026"},
+                    ],
+                    "single_entity_kind": "territory",
+                    "single_entity_value": "Yangon",
+                },
+            },
+        }
+        out = mod.enrich_minimal_columns_from_report_metadata(
+            spec_obj=spec_obj,
+            message="Compare Yangon revenue in March 2026 vs February 2026",
+            selected_report="Sales Analytics",
+            last_result_payload=None,
+        )
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(
+            [str(x).strip() for x in list(output_contract.get("minimal_columns") or []) if str(x).strip()],
+            ["territory", "Feb 2026", "Mar 2026"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -124,6 +124,24 @@ class V7CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(item_semantics.get("contribution_metrics"), ["revenue"])
         self.assertIn("contribution_share", list(item_presentation.get("contribution_safe_columns") or []))
 
+    def test_comparison_support_is_declared_for_approved_first_slice_reports(self):
+        mod = _load_module()
+        mod.clear_registry_override_cache()
+
+        for report_name in [
+            "Customer Ledger Summary",
+            "Supplier Ledger Summary",
+            "Item-wise Sales Register",
+            "Sales Analytics",
+        ]:
+            contract = mod.report_semantics_contract(report_name)
+            presentation = contract.get("presentation") if isinstance(contract.get("presentation"), dict) else {}
+            self.assertIs(
+                presentation.get("supports_comparison"),
+                True,
+                msg=report_name,
+            )
+
     def test_unlisted_report_passes_through_unchanged(self):
         mod = _load_module()
         mod.clear_registry_override_cache()

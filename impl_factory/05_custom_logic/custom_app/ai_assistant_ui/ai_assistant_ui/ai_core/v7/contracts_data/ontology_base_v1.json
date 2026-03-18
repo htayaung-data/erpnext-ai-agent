@@ -487,6 +487,69 @@
       "running contribution"
     ]
   },
+  "comparison_term_aliases": {
+    "comparison_request": [
+      "compare",
+      "comparison",
+      "versus",
+      "vs",
+      "against",
+      "higher between",
+      "lower between"
+    ],
+    "entity_vs_entity": [
+      "versus",
+      "vs",
+      "against"
+    ],
+    "period_vs_period_monthly": [
+      "this month vs last month",
+      "this month compared to last month",
+      "compare this month to last month",
+      "compare current month to previous month",
+      "current month vs previous month"
+    ],
+    "month_over_month_request": [
+      "month over month",
+      "month-over-month",
+      "month on month",
+      "month-on-month",
+      "mom",
+      "versus previous month",
+      "vs previous month",
+      "compared to previous month"
+    ],
+    "week_over_week_request": [
+      "week over week",
+      "week-over-week",
+      "week on week",
+      "week-on-week",
+      "wow"
+    ],
+    "quarter_over_quarter_request": [
+      "quarter over quarter",
+      "quarter-over-quarter",
+      "quarter on quarter",
+      "quarter-on-quarter",
+      "qoq"
+    ],
+    "year_over_year_request": [
+      "year over year",
+      "year-over-year",
+      "year on year",
+      "year-on-year",
+      "yoy"
+    ],
+    "multi_point_time_series_request": [
+      "over time",
+      "month by month",
+      "monthly trend",
+      "trend over time",
+      "for the last 12 months",
+      "for 12 months",
+      "across months"
+    ]
+  },
   "advisory_intent_aliases": {
     "causal_analysis": [
       "why",

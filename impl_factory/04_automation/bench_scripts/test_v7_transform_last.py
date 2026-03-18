@@ -231,6 +231,118 @@ class V7TransformLastTests(unittest.TestCase):
         cols = [str(c.get("fieldname") or "") for c in list(table.get("columns") or []) if isinstance(c, dict)]
         self.assertIn("item_name", cols)
 
+    def test_period_comparison_scale_followup_preserves_period_columns(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "_output_mode": "comparison",
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "feb_2026", "label": "Feb 2026", "fieldtype": "Currency"},
+                    {"fieldname": "mar_2026", "label": "Mar 2026", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"territory": "Yangon", "feb_2026": 6_306_500.0, "mar_2026": 5_817_000.0},
+                ],
+            },
+            "_source_table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "total", "label": "Revenue", "fieldtype": "Currency"},
+                    {"fieldname": "feb_2026", "label": "Feb 2026", "fieldtype": "Currency"},
+                    {"fieldname": "mar_2026", "label": "Mar 2026", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"territory": "Yangon", "total": 12_123_500.0, "feb_2026": 6_306_500.0, "mar_2026": 5_817_000.0},
+                ],
+            },
+        }
+        spec = {
+            "intent": "TRANSFORM_LAST",
+            "task_type": "detail",
+            "task_class": "transform_followup",
+            "metric": "revenue",
+            "group_by": ["territory"],
+            "filters": {
+                "_comparison_rule": {
+                    "time_structure": "monthly_period_vs_period",
+                }
+            },
+            "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "Feb 2026", "Mar 2026"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        out = mod.apply_transform_last(payload=payload, business_spec=spec)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        cols = [str(c.get("label") or c.get("fieldname") or "") for c in list(table.get("columns") or []) if isinstance(c, dict)]
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        self.assertEqual(cols, ["Territory", "Feb 2026", "Mar 2026"])
+        self.assertEqual(str(out.get("_scaled_unit") or ""), "million")
+        self.assertEqual(float(rows[0].get("feb_2026") or 0.0), 6.3065)
+        self.assertEqual(float(rows[0].get("mar_2026") or 0.0), 5.817)
+        self.assertNotIn("total", rows[0])
+
+    def test_same_period_comparison_scale_followup_preserves_side_by_side_columns(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "_output_mode": "comparison",
+            "_same_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "item", "label": "Item", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "SPH-SAM-A15-6/128", "fieldtype": "Currency"},
+                    {"fieldname": "compare_2", "label": "SPH-XMI-RN13-8/256", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {
+                        "item": "Revenue",
+                        "compare_1": 4_975_000.0,
+                        "compare_2": 4_500_000.0,
+                    }
+                ],
+            },
+            "_source_table": {
+                "columns": [
+                    {"fieldname": "item_code", "label": "Item", "fieldtype": "Data"},
+                    {"fieldname": "amount", "label": "Revenue", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"item_code": "SPH-SAM-A15-6/128", "amount": 1_990_000.0},
+                    {"item_code": "SPH-XMI-RN13-8/256", "amount": 1_140_000.0},
+                    {"item_code": "SPH-SAM-A15-6/128", "amount": 2_985_000.0},
+                    {"item_code": "SPH-XMI-RN13-8/256", "amount": 3_360_000.0},
+                ],
+            },
+        }
+        spec = {
+            "intent": "TRANSFORM_LAST",
+            "task_type": "detail",
+            "task_class": "transform_followup",
+            "metric": "revenue",
+            "group_by": ["item"],
+            "dimensions": ["item"],
+            "filters": {
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "item",
+                    "time_structure": "same_period",
+                    "compared_values": ["SPH-SAM-A15-6/128", "SPH-XMI-RN13-8/256"],
+                }
+            },
+            "output_contract": {"mode": "comparison", "minimal_columns": []},
+            "ambiguities": ["transform_scale:million"],
+        }
+        out = mod.apply_transform_last(payload=payload, business_spec=spec)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        cols = [str(c.get("label") or c.get("fieldname") or "") for c in list(table.get("columns") or []) if isinstance(c, dict)]
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        self.assertEqual(cols, ["Item", "SPH-SAM-A15-6/128", "SPH-XMI-RN13-8/256"])
+        self.assertEqual(str(out.get("_scaled_unit") or ""), "million")
+        self.assertEqual(float(rows[0].get("compare_1") or 0.0), 4.975)
+        self.assertEqual(float(rows[0].get("compare_2") or 0.0), 4.5)
+        self.assertEqual(str(rows[0].get("item") or ""), "Revenue")
+
 
 if __name__ == "__main__":
     unittest.main()

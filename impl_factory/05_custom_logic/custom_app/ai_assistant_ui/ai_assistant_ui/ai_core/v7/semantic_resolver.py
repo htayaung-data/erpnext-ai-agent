@@ -480,6 +480,28 @@ def _score_candidate(spec_sem: Dict[str, Any], cap: Dict[str, Any], semantic_con
             score -= 10
             reasons.append("ranking_dimension_missing(-10)")
 
+    if task_type == "comparison" and output_mode == "comparison":
+        supports_comparison = presentation.get("supports_comparison")
+        if supports_comparison is True:
+            score += 18
+            reasons.append("comparison_supported(+18)")
+            if requested_dims and cap_primary_dim and cap_primary_dim in requested_dims:
+                score += 10
+                reasons.append("comparison_primary_dimension_match(+10)")
+        elif supports_comparison is False:
+            score -= 28
+            reasons.append("comparison_not_supported(-28)")
+            hard_blockers.append("comparison_not_supported")
+        else:
+            score -= 14
+            reasons.append("comparison_support_undeclared(-14)")
+        if requested_dims and (requested_dims & cap_dims):
+            score += 6
+            reasons.append("comparison_dimension_ready(+6)")
+        elif requested_dims:
+            score -= 8
+            reasons.append("comparison_dimension_missing(-8)")
+
     time_mode = str(spec_sem.get("time_mode") or "none").strip().lower()
     if time_mode in ("as_of", "relative", "range"):
         supports_range = bool(time_support.get("range"))

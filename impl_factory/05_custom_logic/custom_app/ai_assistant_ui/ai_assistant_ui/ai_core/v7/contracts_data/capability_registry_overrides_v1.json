@@ -20,6 +20,9 @@
           "sales"
         ],
         "subject_hints": [
+          "customers",
+          "customer revenue",
+          "customer sales",
           "accounts receivable",
           "receivable",
           "customer receivable"
@@ -48,6 +51,7 @@
       "presentation": {
         "result_grain": "summary",
         "supports_ranking": true,
+        "supports_comparison": true,
         "aggregate_dimension_values": [
           "All Customers"
         ],
@@ -108,6 +112,9 @@
           "purchasing"
         ],
         "subject_hints": [
+          "suppliers",
+          "supplier purchase amount",
+          "supplier spend",
           "accounts payable",
           "payable",
           "supplier payable"
@@ -137,6 +144,7 @@
       "presentation": {
         "result_grain": "summary",
         "supports_ranking": true,
+        "supports_comparison": true,
         "aggregate_dimension_values": [
           "All Suppliers"
         ],
@@ -202,6 +210,11 @@
         "domain_hints": [
           "sales"
         ],
+        "subject_hints": [
+          "items",
+          "item revenue",
+          "item sales"
+        ],
         "dimension_hints": [
           "item",
           "customer"
@@ -219,6 +232,7 @@
       "presentation": {
         "result_grain": "detail",
         "supports_ranking": true,
+        "supports_comparison": true,
         "column_roles": {
           "dimensions": {
             "item": [
@@ -836,6 +850,71 @@
           "grand_total",
           "outstanding_amount",
           "status"
+        ]
+      }
+    },
+    "Sales Analytics": {
+      "domain_tags": [
+        "sales"
+      ],
+      "dimension_tags": [
+        "territory"
+      ],
+      "metric_tags": [
+        "revenue"
+      ],
+      "primary_dimension": "territory",
+      "constraints": {
+        "required_filter_kinds": [
+          "company",
+          "from_date",
+          "to_date"
+        ],
+        "supported_filter_kinds": [
+          "company",
+          "from_date",
+          "to_date",
+          "territory"
+        ]
+      },
+      "semantics": {
+        "domain_hints": [
+          "sales"
+        ],
+        "subject_hints": [
+          "territories",
+          "territory revenue",
+          "territory sales"
+        ],
+        "dimension_hints": [
+          "territory"
+        ],
+        "metric_hints": [
+          "revenue"
+        ],
+        "primary_dimension": "territory"
+      },
+      "presentation": {
+        "result_grain": "summary",
+        "supports_ranking": true,
+        "supports_comparison": true,
+        "column_roles": {
+          "dimensions": {
+            "territory": [
+              "entity",
+              "territory"
+            ]
+          },
+          "metrics": {
+            "revenue": [
+              "billing_amount",
+              "total"
+            ]
+          }
+        },
+        "transform_safe_columns": [
+          "entity",
+          "total"
         ]
       }
     }

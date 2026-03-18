@@ -1,5 +1,5 @@
 {
-  "version": "v7_phase3_contribution_share_2026_03_04_expanded_465",
+  "version": "v7_phase3_comparison_2026_03_17_expanded_478",
   "source_manifest": "/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/replay_v7/manifest.json",
   "generation": {
     "seed": 23,
@@ -84,8 +84,14 @@
       "file": "contribution_share.jsonl",
       "case_count": 36,
       "description": "first-slice contribution-share analytical behavior"
+    },
+    {
+      "name": "comparison_class",
+      "file": "comparison_class.jsonl",
+      "case_count": 13,
+      "description": "first-slice comparison analytical behavior"
     }
   ],
-  "total_case_count": 465,
+  "total_case_count": 478,
   "first_run_only": true
 }

@@ -548,6 +548,604 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
         self.assertEqual(str(rows[0].get("name") or ""), "Yangon Main Warehouse - MMOB")
         self.assertTrue(bool(out.get("_entity_row_filter_applied")))
 
+    def test_apply_requested_entity_row_filters_supports_entity_lists(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "table": {
+                "columns": [{"fieldname": "territory", "label": "Territory"}, {"fieldname": "revenue", "label": "Revenue"}],
+                "rows": [
+                    {"territory": "Yangon", "revenue": 28754000},
+                    {"territory": "Mandalay", "revenue": 18060000},
+                    {"territory": "Bago", "revenue": 17168000},
+                ],
+            },
+        }
+        spec_obj = {"filters": {"territory": ["Yangon", "Mandalay"]}}
+        out = mod._apply_requested_entity_row_filters(payload=payload, business_spec=spec_obj)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        self.assertEqual(
+            [str(row.get("territory") or "") for row in rows if isinstance(row, dict)],
+            ["Yangon", "Mandalay"],
+        )
+        self.assertTrue(bool(out.get("_entity_row_filter_applied")))
+
+    def test_apply_requested_entity_row_filters_matches_supplier_names_with_punctuation_variants(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "table": {
+                "columns": [{"fieldname": "supplier", "label": "Supplier"}, {"fieldname": "purchase_amount", "label": "Purchase Amount"}],
+                "rows": [
+                    {"supplier": "Golden Dragon Trading Co. Ltd.", "purchase_amount": 172434600},
+                    {"supplier": "Sunflower Accessories Co.", "purchase_amount": 132960500},
+                    {"supplier": "Myanmar Tech Import Services", "purchase_amount": 108942300},
+                ],
+            },
+        }
+        spec_obj = {"filters": {"supplier": ["Sunflower Accessories Co", "Golden Dragon Trading Co. Ltd"]}}
+        out = mod._apply_requested_entity_row_filters(payload=payload, business_spec=spec_obj)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        self.assertEqual(
+            [str(row.get("supplier") or "") for row in rows if isinstance(row, dict)],
+            ["Golden Dragon Trading Co. Ltd.", "Sunflower Accessories Co."],
+        )
+        self.assertTrue(bool(out.get("_entity_row_filter_applied")))
+
+    def test_apply_same_period_comparison_shape_aggregates_duplicate_item_rows(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "table": {
+                "columns": [{"fieldname": "item", "label": "Item"}, {"fieldname": "revenue", "label": "Revenue"}],
+                "rows": [
+                    {"item": "SPH-SAM-A15-6/128", "revenue": 13600000},
+                    {"item": "SPH-SAM-A15-6/128", "revenue": 14960000},
+                    {"item": "SPH-XMI-RN13-8/256", "revenue": 18250000},
+                    {"item": "SPH-XMI-RN13-8/256", "revenue": 20810000},
+                    {"item": "SPH-OPP-A58-6/128", "revenue": 17360000},
+                ],
+            },
+        }
+        spec_obj = {
+            "task_class": "comparison",
+            "metric": "revenue",
+            "group_by": ["item"],
+            "dimensions": ["item"],
+            "filters": {
+                "item": ["SPH-SAM-A15-6/128", "SPH-XMI-RN13-8/256"],
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "item",
+                    "time_structure": "same_period",
+                    "compared_values": ["SPH-SAM-A15-6/128", "SPH-XMI-RN13-8/256"],
+                },
+            },
+        }
+        out = mod._apply_same_period_comparison_shape(payload=payload, business_spec=spec_obj)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        columns = table.get("columns") if isinstance(table.get("columns"), list) else []
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        self.assertEqual(
+            [str(col.get("label") or "") for col in columns if isinstance(col, dict)],
+            ["Item", "SPH-SAM-A15-6/128", "SPH-XMI-RN13-8/256"],
+        )
+        self.assertEqual(
+            rows,
+            [
+                {"item": "Revenue", "compare_1": 28560000.0, "compare_2": 39060000.0},
+            ],
+        )
+        self.assertEqual(out.get("_source_columns"), columns)
+        self.assertTrue(bool(out.get("_same_period_comparison_shape_applied")))
+
+    def test_apply_period_comparison_shape_drops_redundant_total_metric_column(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory"},
+                    {"fieldname": "revenue", "label": "Revenue"},
+                    {"fieldname": "feb_2026", "label": "Feb 2026"},
+                    {"fieldname": "mar_2026", "label": "Mar 2026"},
+                ],
+                "rows": [
+                    {"territory": "Yangon", "revenue": 12123500, "feb_2026": 6306500, "mar_2026": 5817000},
+                ],
+            },
+        }
+        spec_obj = {
+            "task_class": "comparison",
+            "metric": "revenue",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "filters": {
+                "territory": "Yangon",
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "territory",
+                    "time_structure": "monthly_period_vs_period",
+                    "month_refs": [
+                        {"month_name": "march", "year": 2026, "label": "Mar 2026"},
+                        {"month_name": "february", "year": 2026, "label": "Feb 2026"},
+                    ],
+                    "single_entity_kind": "territory",
+                    "single_entity_value": "Yangon",
+                },
+            },
+        }
+        out = mod._apply_same_period_comparison_shape(payload=payload, business_spec=spec_obj)
+        table = out.get("table") if isinstance(out.get("table"), dict) else {}
+        columns = table.get("columns") if isinstance(table.get("columns"), list) else []
+        rows = table.get("rows") if isinstance(table.get("rows"), list) else []
+        self.assertEqual(
+            [str(col.get("label") or "") for col in columns if isinstance(col, dict)],
+            ["Territory", "Feb 2026", "Mar 2026"],
+        )
+        self.assertEqual(
+            rows,
+            [{"territory": "Yangon", "feb_2026": 6306500, "mar_2026": 5817000}],
+        )
+        self.assertTrue(bool(out.get("_period_comparison_shape_applied")))
+
+    def test_apply_comparison_execution_defaults_sets_sales_analytics_filters(self):
+        mod = _load_module()
+        spec_obj = {
+            "task_class": "comparison",
+            "metric": "revenue",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "time_scope": {"mode": "none", "value": ""},
+        }
+        filters = {
+            "territory": "Yangon",
+            "_comparison_rule": {
+                "metric": "revenue",
+                "dimension": "territory",
+                "time_structure": "monthly_period_vs_period",
+                "month_refs": [
+                    {"month_name": "march", "year": 2026, "label": "March 2026"},
+                    {"month_name": "february", "year": 2026, "label": "February 2026"},
+                ],
+            },
+        }
+        out = mod._apply_comparison_execution_defaults(
+            report_name="Sales Analytics",
+            filters=filters,
+            business_spec=spec_obj,
+        )
+        self.assertEqual(str(out.get("tree_type") or ""), "Territory")
+        self.assertEqual(str(out.get("doc_type") or ""), "Sales Invoice")
+        self.assertEqual(str(out.get("value_quantity") or ""), "Value")
+        self.assertEqual(str(out.get("range") or ""), "Monthly")
+        self.assertEqual(str(out.get("curves") or ""), "Billed Amount")
+        self.assertEqual(str(out.get("from_date") or ""), "2026-02-01")
+        self.assertEqual(str(out.get("to_date") or ""), "2026-03-31")
+
+    def test_apply_comparison_execution_defaults_suppresses_multi_value_entity_filters_for_same_period(self):
+        mod = _load_module()
+        spec_obj = {
+            "task_class": "comparison",
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+        }
+        out = mod._apply_comparison_execution_defaults(
+            report_name="Customer Ledger Summary",
+            filters={
+                "customer": ["Shwe Li Road Mobile Wholesale", "Latha Mobile Wholesale"],
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "customer",
+                    "time_structure": "same_period",
+                    "compared_values": ["Shwe Li Road Mobile Wholesale", "Latha Mobile Wholesale"],
+                    "month_refs": [],
+                },
+            },
+            business_spec=spec_obj,
+        )
+        self.assertNotIn("customer", out)
+        self.assertNotIn("party", out)
+        self.assertEqual(str(out.get("from_date") or ""), "2026-02-01")
+        self.assertEqual(str(out.get("to_date") or ""), "2026-02-28")
+
+    def test_realign_comparison_followup_scale_preserves_same_period_context(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "detail_projection",
+            "task_type": "detail",
+            "domain": "unknown",
+            "subject": "sales",
+            "metric": "amount",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "top_n": 0,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {"locations": ["Yangon", "Mandalay"]},
+            "output_contract": {"mode": "detail", "minimal_columns": ["territory", "amount"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        last_result = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_output_mode": "comparison",
+            "_same_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "Yangon", "fieldtype": "Float"},
+                    {"fieldname": "compare_2", "label": "Mandalay", "fieldtype": "Float"},
+                ],
+                "rows": [{"territory": "Revenue", "compare_1": 6306500.0, "compare_2": 8680000.0}],
+            },
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Mandalay"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "compared_values": ["Yangon", "Mandalay"],
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+            },
+        }
+
+        out = mod._realign_comparison_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        self.assertEqual(str(out.get("intent") or ""), "READ")
+        self.assertEqual(str(out.get("task_class") or ""), "comparison")
+        self.assertEqual(str(out.get("task_type") or ""), "comparison")
+        self.assertEqual(str(out.get("domain") or ""), "sales")
+        self.assertEqual(str(out.get("metric") or ""), "revenue")
+        self.assertEqual(list(out.get("group_by") or []), ["territory"])
+        self.assertEqual(out.get("time_scope"), {"mode": "relative", "value": "last_month"})
+        self.assertEqual((out.get("filters") or {}).get("territory"), ["Yangon", "Mandalay"])
+        output_contract = out.get("output_contract") if isinstance(out.get("output_contract"), dict) else {}
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(list(output_contract.get("minimal_columns") or []), [])
+
+    def test_realign_comparison_followup_scale_promotes_to_transform_followup_without_losing_comparison_mode(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "detail_projection",
+            "task_type": "detail",
+            "domain": "unknown",
+            "subject": "sales",
+            "metric": "amount",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "top_n": 0,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {"locations": ["Yangon", "Mandalay"]},
+            "output_contract": {"mode": "detail", "minimal_columns": ["territory", "amount"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {"curr_strength": 1, "anchors_applied": ["followup_rebind_to_active_topic"], "overlap_ratio": 0.5}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_output_mode": "comparison",
+            "_same_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "Yangon", "fieldtype": "Float"},
+                    {"fieldname": "compare_2", "label": "Mandalay", "fieldtype": "Float"},
+                ],
+                "rows": [{"territory": "Revenue", "compare_1": 6306500.0, "compare_2": 8680000.0}],
+            },
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Mandalay"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "compared_values": ["Yangon", "Mandalay"],
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+            },
+        }
+
+        realigned = mod._realign_comparison_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        self.assertTrue(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Show in Million",
+                    spec_obj=realigned,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+        promoted = mod._promote_spec_to_transform_followup(spec_obj=realigned, last_result_payload=last_result)
+        output_contract = promoted.get("output_contract") if isinstance(promoted.get("output_contract"), dict) else {}
+        self.assertEqual(str(promoted.get("intent") or ""), "TRANSFORM_LAST")
+        self.assertEqual(str(promoted.get("task_class") or ""), "transform_followup")
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(list(output_contract.get("minimal_columns") or []), [])
+
+    def test_realign_period_comparison_followup_scale_preserves_period_columns(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "detail_projection",
+            "task_type": "detail",
+            "domain": "unknown",
+            "subject": "sales",
+            "metric": "amount",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "top_n": 0,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {"territory": "Yangon"},
+            "output_contract": {"mode": "detail", "minimal_columns": ["territory", "amount"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        last_result = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_output_mode": "comparison",
+            "_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "entity", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "feb_2026", "label": "Feb 2026", "fieldtype": "Float"},
+                    {"fieldname": "mar_2026", "label": "Mar 2026", "fieldtype": "Float"},
+                ],
+                "rows": [{"entity": "Yangon", "feb_2026": 6306500.0, "mar_2026": 5817000.0}],
+            },
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": "Yangon",
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "monthly_period_vs_period",
+                        "month_refs": [
+                            {"month_name": "february", "year": 2026, "label": "February 2026"},
+                            {"month_name": "march", "year": 2026, "label": "March 2026"},
+                        ],
+                        "single_entity_kind": "territory",
+                        "single_entity_value": "Yangon",
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+            },
+        }
+
+        realigned = mod._realign_comparison_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        self.assertEqual(str(realigned.get("intent") or ""), "READ")
+        self.assertEqual(str(realigned.get("task_class") or ""), "comparison")
+        self.assertEqual(str(realigned.get("task_type") or ""), "comparison")
+        output_contract = realigned.get("output_contract") if isinstance(realigned.get("output_contract"), dict) else {}
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(list(output_contract.get("minimal_columns") or []), ["Territory", "Feb 2026", "Mar 2026"])
+
+    def test_realign_period_comparison_followup_scale_promotes_without_losing_comparison_mode(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "detail_projection",
+            "task_type": "detail",
+            "domain": "unknown",
+            "subject": "sales",
+            "metric": "amount",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "top_n": 0,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {"territory": "Yangon"},
+            "output_contract": {"mode": "detail", "minimal_columns": ["territory", "amount"]},
+            "ambiguities": ["transform_scale:million"],
+        }
+        memory_meta = {"curr_strength": 1, "anchors_applied": ["followup_rebind_to_active_topic"], "overlap_ratio": 0.5}
+        last_result = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_output_mode": "comparison",
+            "_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "entity", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "feb_2026", "label": "Feb 2026", "fieldtype": "Float"},
+                    {"fieldname": "mar_2026", "label": "Mar 2026", "fieldtype": "Float"},
+                ],
+                "rows": [{"entity": "Yangon", "feb_2026": 6306500.0, "mar_2026": 5817000.0}],
+            },
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": "Yangon",
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "month_over_month",
+                        "month_refs": [
+                            {"month_name": "march", "year": 2026, "label": "March 2026"},
+                        ],
+                        "single_entity_kind": "territory",
+                        "single_entity_value": "Yangon",
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+            },
+        }
+
+        realigned = mod._realign_comparison_followup_to_last_result(
+            message="Show in Million",
+            spec_obj=spec,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        self.assertTrue(
+            bool(
+                mod._should_promote_to_transform_followup(
+                    message="Show in Million",
+                    spec_obj=realigned,
+                    memory_meta=memory_meta,
+                    last_result_payload=last_result,
+                )
+            )
+        )
+        promoted = mod._promote_spec_to_transform_followup(spec_obj=realigned, last_result_payload=last_result)
+        output_contract = promoted.get("output_contract") if isinstance(promoted.get("output_contract"), dict) else {}
+        self.assertEqual(str(promoted.get("intent") or ""), "TRANSFORM_LAST")
+        self.assertEqual(str(promoted.get("task_class") or ""), "transform_followup")
+        self.assertEqual(str(output_contract.get("mode") or ""), "comparison")
+        self.assertEqual(list(output_contract.get("minimal_columns") or []), ["Territory", "Feb 2026", "Mar 2026"])
+
+    def test_realign_comparison_followup_preserves_same_period_correction_rebind(self):
+        mod = _load_module()
+        spec = {
+            "intent": "READ",
+            "task_class": "comparison",
+            "task_type": "comparison",
+            "domain": "sales",
+            "subject": "territories",
+            "metric": "revenue",
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "top_n": 0,
+            "time_scope": {"mode": "none", "value": ""},
+            "filters": {
+                "territory": ["Yangon", "Bago"],
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "territory",
+                    "time_structure": "same_period",
+                    "compared_values": ["Yangon", "Bago"],
+                },
+            },
+            "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "revenue"]},
+            "ambiguities": [],
+        }
+        last_result = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_output_mode": "comparison",
+            "_same_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "Yangon", "fieldtype": "Float"},
+                    {"fieldname": "compare_2", "label": "Mandalay", "fieldtype": "Float"},
+                ],
+                "rows": [{"territory": "Revenue", "compare_1": 6306500.0, "compare_2": 8680000.0}],
+            },
+        }
+        previous_state = {
+            "active_topic": {
+                "task_class": "comparison",
+                "task_type": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "domain": "sales",
+                "group_by": ["territory"],
+                "filters": {
+                    "territory": ["Yangon", "Mandalay"],
+                    "_comparison_rule": {
+                        "metric": "revenue",
+                        "dimension": "territory",
+                        "time_structure": "same_period",
+                        "compared_values": ["Yangon", "Mandalay"],
+                    },
+                },
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "report_name": "Sales Analytics",
+            },
+            "active_result": {
+                "report_name": "Sales Analytics",
+                "output_mode": "comparison",
+            },
+        }
+
+        out = mod._realign_comparison_followup_to_last_result(
+            message="Actually compare Yangon and Bago instead",
+            spec_obj=spec,
+            last_result_payload=last_result,
+            previous_topic_state=previous_state,
+        )
+        filters = out.get("filters") if isinstance(out.get("filters"), dict) else {}
+        rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+        self.assertEqual(filters.get("territory"), ["Yangon", "Bago"])
+        self.assertEqual(list(rule.get("compared_values") or []), ["Yangon", "Bago"])
+        self.assertEqual(out.get("time_scope"), {"mode": "relative", "value": "last_month"})
+
     def test_resolve_record_doctype_candidates_ambiguous_invoice(self):
         mod = _load_module()
 
@@ -1661,6 +2259,66 @@ class V7ReadEngineClarificationTests(unittest.TestCase):
             previous_topic_state={"active_topic": {"task_class": "contribution_share"}},
         )
         self.assertTrue(isinstance(out, dict))
+
+    def test_comparison_precheck_clarifies_missing_month_anchor(self):
+        mod = _load_module()
+        out = mod._comparison_precheck(
+            message="Show Yangon revenue month over month",
+            business_spec={
+                "task_class": "comparison",
+                "filters": {
+                    "_comparison_missing_filter_kind": "comparison_month_anchor",
+                },
+            },
+            previous_topic_state={},
+        )
+        clarify = out.get("clarify_decision") if isinstance(out.get("clarify_decision"), dict) else {}
+        self.assertTrue(bool(clarify.get("should_clarify")))
+        self.assertEqual(str(clarify.get("target_filter_key") or ""), "comparison_month_anchor")
+        self.assertEqual(
+            str(clarify.get("question") or ""),
+            str(mod.clarification_question_for_filter_kind("comparison_month_anchor") or ""),
+        )
+
+    def test_comparison_precheck_returns_weekly_unsupported_payload(self):
+        mod = _load_module()
+        out = mod._comparison_precheck(
+            message="Compare Yangon revenue week over week",
+            business_spec={
+                "task_class": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "filters": {
+                    "_comparison_unsupported_reason": "weekly_period_comparison_not_supported",
+                },
+            },
+            previous_topic_state={},
+        )
+        payload = out.get("payload") if isinstance(out.get("payload"), dict) else {}
+        self.assertEqual(str(payload.get("type") or ""), "error")
+        self.assertIn("week over week", str(payload.get("text") or "").lower())
+        tool_messages = [str(x) for x in list(payload.get("_tool_messages") or []) if str(x or "").strip()]
+        self.assertTrue(any("COMPARISON_WEEKLY_UNSUPPORTED" in msg for msg in tool_messages))
+
+    def test_comparison_precheck_returns_quarterly_unsupported_payload(self):
+        mod = _load_module()
+        out = mod._comparison_precheck(
+            message="Compare Yangon revenue quarter over quarter",
+            business_spec={
+                "task_class": "comparison",
+                "subject": "territories",
+                "metric": "revenue",
+                "filters": {
+                    "_comparison_unsupported_reason": "quarterly_period_comparison_not_supported",
+                },
+            },
+            previous_topic_state={},
+        )
+        payload = out.get("payload") if isinstance(out.get("payload"), dict) else {}
+        self.assertEqual(str(payload.get("type") or ""), "error")
+        self.assertIn("quarter over quarter", str(payload.get("text") or "").lower())
+        tool_messages = [str(x) for x in list(payload.get("_tool_messages") or []) if str(x or "").strip()]
+        self.assertTrue(any("COMPARISON_QUARTERLY_UNSUPPORTED" in msg for msg in tool_messages))
 
     def test_delete_draft_keeps_confirmation_stage_when_write_disabled(self):
         mod = _load_module()

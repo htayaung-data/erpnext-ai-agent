@@ -395,6 +395,335 @@ def _filter_dimensions(filters: Dict[str, Any]) -> Set[str]:
     return out
 
 
+def _comparison_filter_values(filters: Dict[str, Any], dimension: str) -> List[str]:
+    dim = str(canonical_dimension(dimension) or known_dimension(dimension) or dimension or "").strip().lower()
+    if not dim:
+        return []
+    out: List[str] = []
+    seen: Set[str] = set()
+    for key, value in (filters or {}).items():
+        kinds = [str(x).strip().lower() for x in list(infer_filter_kinds(key) or []) if str(x).strip()]
+        if dim not in kinds and str(key or "").strip().lower() != dim:
+            continue
+        raw_values = value if isinstance(value, list) else [value]
+        for raw in raw_values:
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            norm = _norm_text(text)
+            if not norm or norm in seen:
+                continue
+            seen.add(norm)
+            out.append(text)
+    return out
+
+
+def _comparison_rule_signature(rule: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(rule, dict):
+        return {}
+    month_refs_out: List[tuple[str, str]] = []
+    for ref in list(rule.get("month_refs") or []):
+        if not isinstance(ref, dict):
+            continue
+        month_name = str(ref.get("month_name") or "").strip().lower()
+        year = str(ref.get("year") or "").strip()
+        if month_name and year:
+            month_refs_out.append((month_name, year))
+    return {
+        "metric": str(canonical_metric(rule.get("metric")) or known_metric(rule.get("metric")) or rule.get("metric") or "").strip().lower(),
+        "dimension": str(canonical_dimension(rule.get("dimension")) or known_dimension(rule.get("dimension")) or rule.get("dimension") or "").strip().lower(),
+        "time_structure": str(rule.get("time_structure") or "").strip().lower(),
+        "compared_values": [str(x).strip().lower() for x in list(rule.get("compared_values") or []) if str(x or "").strip()],
+        "single_entity_kind": str(canonical_dimension(rule.get("single_entity_kind")) or known_dimension(rule.get("single_entity_kind")) or rule.get("single_entity_kind") or "").strip().lower(),
+        "single_entity_value": str(rule.get("single_entity_value") or "").strip().lower(),
+        "month_refs": month_refs_out,
+    }
+
+
+def _comparison_rule_material_change(current_rule: Dict[str, Any], previous_rule: Dict[str, Any]) -> bool:
+    current_sig = _comparison_rule_signature(current_rule)
+    previous_sig = _comparison_rule_signature(previous_rule)
+    if not current_sig:
+        return False
+    if not previous_sig:
+        return True
+    return current_sig != previous_sig
+
+
+def _comparison_topic_requires_fresh_reset(current_rule: Dict[str, Any], previous_rule: Dict[str, Any]) -> bool:
+    current_sig = _comparison_rule_signature(current_rule)
+    previous_sig = _comparison_rule_signature(previous_rule)
+    if not current_sig:
+        return False
+    if not previous_sig:
+        return True
+    stable_keys = ["metric", "dimension", "time_structure", "single_entity_kind", "single_entity_value", "month_refs"]
+    for key in stable_keys:
+        if current_sig.get(key) != previous_sig.get(key):
+            return True
+    return False
+
+
+def _comparison_month_number(value: str) -> int:
+    key = str(value or "").strip().lower()
+    return {
+        "jan": 1,
+        "january": 1,
+        "feb": 2,
+        "february": 2,
+        "mar": 3,
+        "march": 3,
+        "apr": 4,
+        "april": 4,
+        "may": 5,
+        "jun": 6,
+        "june": 6,
+        "jul": 7,
+        "july": 7,
+        "aug": 8,
+        "august": 8,
+        "sep": 9,
+        "sept": 9,
+        "september": 9,
+        "oct": 10,
+        "october": 10,
+        "nov": 11,
+        "november": 11,
+        "dec": 12,
+        "december": 12,
+    }.get(key, 0)
+
+
+def _comparison_month_label_abbrev(month_name: str, year: Any) -> str:
+    month_num = _comparison_month_number(month_name)
+    try:
+        year_int = int(year)
+    except Exception:
+        return ""
+    month_abbr = {
+        1: "Jan",
+        2: "Feb",
+        3: "Mar",
+        4: "Apr",
+        5: "May",
+        6: "Jun",
+        7: "Jul",
+        8: "Aug",
+        9: "Sep",
+        10: "Oct",
+        11: "Nov",
+        12: "Dec",
+    }.get(month_num)
+    return f"{month_abbr} {year_int}" if month_abbr else ""
+
+
+def _comparison_previous_month_ref(month_ref: Dict[str, Any]) -> Dict[str, Any]:
+    month_num = _comparison_month_number(str(month_ref.get("month_name") or ""))
+    try:
+        year_int = int(month_ref.get("year"))
+    except Exception:
+        return {}
+    if month_num <= 0:
+        return {}
+    if month_num == 1:
+        prev_month_num = 12
+        prev_year = year_int - 1
+    else:
+        prev_month_num = month_num - 1
+        prev_year = year_int
+    month_names = {
+        1: "january",
+        2: "february",
+        3: "march",
+        4: "april",
+        5: "may",
+        6: "june",
+        7: "july",
+        8: "august",
+        9: "september",
+        10: "october",
+        11: "november",
+        12: "december",
+    }
+    prev_month_name = month_names.get(prev_month_num, "")
+    return {
+        "month_name": prev_month_name,
+        "year": prev_year,
+        "label": f"{prev_month_name.title()} {prev_year}" if prev_month_name else "",
+    }
+
+
+def _comparison_period_minimal_columns(*, explicit_dimension: str, time_structure: str, month_refs: List[Dict[str, Any]]) -> List[str]:
+    out: List[str] = []
+    seen: Set[str] = set()
+
+    def _append(value: str) -> None:
+        s = str(value or "").strip()
+        key = s.lower()
+        if (not s) or (key in seen):
+            return
+        seen.add(key)
+        out.append(s)
+
+    if explicit_dimension:
+        _append(explicit_dimension)
+
+    ordered_month_refs = [x for x in list(month_refs or []) if isinstance(x, dict)]
+    ordered_month_refs.sort(
+        key=lambda x: (
+            int(x.get("year") or 0),
+            _comparison_month_number(str(x.get("month_name") or "")),
+        )
+    )
+    if time_structure == "month_over_month" and len(ordered_month_refs) == 1:
+        prev_ref = _comparison_previous_month_ref(ordered_month_refs[0])
+        if prev_ref:
+            ordered_month_refs = [prev_ref, ordered_month_refs[0]]
+
+    for month_ref in ordered_month_refs:
+        _append(
+            _comparison_month_label_abbrev(
+                str(month_ref.get("month_name") or ""),
+                month_ref.get("year"),
+            )
+        )
+    return out[:12]
+
+
+def _sync_period_comparison_output_contract(spec: Dict[str, Any]) -> bool:
+    task_class = str(spec.get("task_class") or "").strip().lower()
+    if task_class != "comparison":
+        return False
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    if not comparison_rule:
+        return False
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    if time_structure not in {"monthly_period_vs_period", "month_over_month"}:
+        return False
+
+    explicit_dimension = str(
+        canonical_dimension(comparison_rule.get("single_entity_kind"))
+        or canonical_dimension(comparison_rule.get("dimension"))
+        or canonical_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    month_refs = [x for x in list(comparison_rule.get("month_refs") or []) if isinstance(x, dict)]
+    minimal_columns = _comparison_period_minimal_columns(
+        explicit_dimension=explicit_dimension,
+        time_structure=time_structure,
+        month_refs=month_refs,
+    )
+    if len(minimal_columns) < 2:
+        return False
+
+    oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+    current_columns = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
+    next_oc = dict(oc)
+    changed = False
+    if str(next_oc.get("mode") or "").strip().lower() != "comparison":
+        next_oc["mode"] = "comparison"
+        changed = True
+    if current_columns != minimal_columns:
+        next_oc["minimal_columns"] = minimal_columns
+        changed = True
+    if not changed:
+        return False
+    spec["output_contract"] = next_oc
+    return True
+
+
+def _materialize_comparison_filters_from_rule(spec: Dict[str, Any]) -> bool:
+    if str(spec.get("task_class") or "").strip().lower() != "comparison":
+        return False
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    if not comparison_rule:
+        return False
+
+    dimension = str(
+        canonical_dimension(comparison_rule.get("dimension"))
+        or canonical_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    next_filters = dict(filters)
+    changed = False
+
+    if time_structure == "same_period":
+        compared_values = [str(x).strip() for x in list(comparison_rule.get("compared_values") or []) if str(x or "").strip()]
+        existing_values = _comparison_filter_values(filters, dimension)
+        if dimension and len(compared_values) >= 2 and len(existing_values) < 2:
+            next_filters[dimension] = compared_values[:2]
+            changed = True
+    elif time_structure in {"monthly_period_vs_period", "month_over_month"}:
+        single_entity_kind = str(canonical_dimension(comparison_rule.get("single_entity_kind")) or "").strip().lower()
+        single_entity_value = str(comparison_rule.get("single_entity_value") or "").strip()
+        target_dimension = single_entity_kind or dimension
+        existing_values = _comparison_filter_values(filters, target_dimension)
+        if target_dimension and single_entity_value and not existing_values:
+            next_filters[target_dimension] = single_entity_value
+            changed = True
+
+    if not changed:
+        return False
+    spec["filters"] = next_filters
+    return True
+
+
+def _sync_comparison_rule_with_filters(spec: Dict[str, Any]) -> bool:
+    if str(spec.get("task_class") or "").strip().lower() != "comparison":
+        return False
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    if not comparison_rule:
+        return False
+
+    dimension = str(
+        canonical_dimension(comparison_rule.get("dimension"))
+        or canonical_dimension((list(spec.get("group_by") or []) + list(spec.get("dimensions") or []) + [""])[0])
+        or ""
+    ).strip().lower()
+    time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    next_rule = dict(comparison_rule)
+    changed = False
+
+    if dimension and next_rule.get("dimension") != dimension:
+        next_rule["dimension"] = dimension
+        changed = True
+
+    entity_values = _comparison_filter_values(filters, dimension)
+    if time_structure == "same_period" and len(entity_values) >= 2:
+        target_values = entity_values[:2]
+        if list(next_rule.get("compared_values") or []) != target_values:
+            next_rule["compared_values"] = target_values
+            changed = True
+        if str(next_rule.get("single_entity_kind") or "").strip():
+            next_rule["single_entity_kind"] = ""
+            changed = True
+        if str(next_rule.get("single_entity_value") or "").strip():
+            next_rule["single_entity_value"] = ""
+            changed = True
+    elif time_structure in {"monthly_period_vs_period", "month_over_month"} and len(entity_values) == 1:
+        single_value = entity_values[0]
+        if str(next_rule.get("single_entity_kind") or "").strip().lower() != dimension:
+            next_rule["single_entity_kind"] = dimension
+            changed = True
+        if str(next_rule.get("single_entity_value") or "").strip() != single_value:
+            next_rule["single_entity_value"] = single_value
+            changed = True
+        if list(next_rule.get("compared_values") or []):
+            next_rule["compared_values"] = []
+            changed = True
+
+    if not changed:
+        return False
+    next_filters = dict(filters)
+    next_filters["_comparison_rule"] = next_rule
+    spec["filters"] = next_filters
+    return True
+
+
 def _resolve_reference_filters(*, filters: Dict[str, Any], prev_filters: Dict[str, Any]) -> Dict[str, Any]:
     current = filters if isinstance(filters, dict) else {}
     previous = prev_filters if isinstance(prev_filters, dict) else {}
@@ -404,6 +733,8 @@ def _resolve_reference_filters(*, filters: Dict[str, Any], prev_filters: Dict[st
     out = dict(current)
     applied: List[str] = []
     for key, value in current.items():
+        if str(key or "").strip().startswith("_"):
+            continue
         prev_value = previous.get(key)
         if prev_value in (None, "", []):
             continue
@@ -593,12 +924,26 @@ def apply_memory_context(
         )
     )
 
+    seed_filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    seed_comparison_rule = seed_filters.get("_comparison_rule") if isinstance(seed_filters.get("_comparison_rule"), dict) else {}
+    prev_comparison_rule = prev_filters.get("_comparison_rule") if isinstance(prev_filters.get("_comparison_rule"), dict) else {}
+    explicit_new_comparison_topic = bool(
+        str(spec.get("intent") or "").strip().upper() == "READ"
+        and str(spec.get("task_class") or "").strip().lower() == "comparison"
+        and _comparison_topic_requires_fresh_reset(seed_comparison_rule, prev_comparison_rule)
+    )
+
     # Topic switch only if user provided a fresh explicit spec with low overlap.
     topic_switched = bool(
         prev_topic
         and prev_strength >= 2
-        and overlap_ratio < 0.10
-        and (curr_strength >= 3 or explicit_latest_read)
+        and (
+            explicit_new_comparison_topic
+            or (
+                overlap_ratio < 0.10
+                and (curr_strength >= 3 or explicit_latest_read)
+            )
+        )
     )
 
     anchors_applied: List[str] = []
@@ -657,6 +1002,9 @@ def apply_memory_context(
             spec["time_scope"] = dict(prev_time_scope)
             anchors_applied.append("time_scope")
 
+        if _materialize_comparison_filters_from_rule(spec):
+            corrections_applied.append("comparison_filters_materialized_from_rule")
+
         curr_filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
         if prev_filters:
             merged = dict(curr_filters)
@@ -707,6 +1055,18 @@ def apply_memory_context(
     explicit_metric = msg_metric_canonical if msg_metric_canonical and msg_metric_canonical != _norm_text(message).replace(" ", "_") else ""
     explicit_dims = [str(x).strip().lower() for x in _message_dimensions(message)]
     current_filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    current_comparison_rule = current_filters.get("_comparison_rule") if isinstance(current_filters.get("_comparison_rule"), dict) else {}
+    explicit_new_comparison_topic = bool(
+        str(spec.get("intent") or "").strip().upper() == "READ"
+        and str(spec.get("task_class") or "").strip().lower() == "comparison"
+        and bool(current_comparison_rule)
+        and _comparison_topic_requires_fresh_reset(current_comparison_rule, prev_comparison_rule)
+    )
+    is_same_period_comparison_rebind = bool(
+        str(spec.get("task_class") or "").strip().lower() == "comparison"
+        and str(current_comparison_rule.get("time_structure") or "").strip().lower() == "same_period"
+        and len([str(x).strip() for x in list(current_comparison_rule.get("compared_values") or []) if str(x or "").strip()]) >= 2
+    )
     current_threshold_rule = current_filters.get("_threshold_rule") if isinstance(current_filters.get("_threshold_rule"), dict) else {}
     explicit_threshold_read = bool(
         str(spec.get("intent") or "").strip().upper() == "READ"
@@ -734,9 +1094,16 @@ def apply_memory_context(
         and (requested_top_n > 0 or _message_has_explicit_time_words(message))
     )
 
-    strong_fresh_read = bool(strong_fresh_ranking_read or explicit_latest_read or explicit_threshold_read)
+    strong_fresh_read = bool(
+        strong_fresh_ranking_read
+        or explicit_latest_read
+        or explicit_threshold_read
+        or explicit_new_comparison_topic
+    )
 
     if strong_fresh_read:
+        wants_projection_from_active_report = False
+    if is_same_period_comparison_rebind:
         wants_projection_from_active_report = False
 
     explicit_read_rebind = bool(
@@ -774,9 +1141,18 @@ def apply_memory_context(
             spec["top_n"] = max(1, min(requested_top_n, 200))
             corrections_applied.append("top_n_from_message_semantics")
         oc_bind = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        current_bind_cols = [str(x).strip() for x in list(oc_bind.get("minimal_columns") or []) if str(x).strip()]
+        comparison_rule = current_filters.get("_comparison_rule") if isinstance(current_filters.get("_comparison_rule"), dict) else {}
+        comparison_time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
         base_cols = [str(x).strip() for x in list(spec.get("group_by") or []) if str(x).strip()]
         metric_text = str(spec.get("metric") or "").strip()
-        if metric_text:
+        if (
+            str(spec.get("task_class") or "").strip().lower() == "comparison"
+            and comparison_time_structure in {"monthly_period_vs_period", "month_over_month"}
+            and current_bind_cols
+        ):
+            base_cols = list(current_bind_cols)
+        elif metric_text:
             base_cols.append(metric_text)
         explicit_projection_cols = _explicit_message_projection_columns(
             message=message,
@@ -805,10 +1181,18 @@ def apply_memory_context(
                 semantic_cols.append(s)
         oc_reset = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
         metric = str(spec.get("metric") or "").strip()
+        comparison_rule = current_filters.get("_comparison_rule") if isinstance(current_filters.get("_comparison_rule"), dict) else {}
+        comparison_time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+        task_type_lc = str(spec.get("task_type") or "").strip().lower()
+        task_class_lc = str(spec.get("task_class") or "").strip().lower()
+        current_mode_lc = str(oc_reset.get("mode") or "").strip().lower()
         if _should_project_metric(
             metric=metric,
-            task_type=str(spec.get("task_type") or "").strip().lower(),
+            task_type=task_type_lc,
             output_mode=str((oc_reset.get("mode") if isinstance(oc_reset, dict) else "") or "detail").strip().lower(),
+        ) and not (
+            (task_type_lc == "comparison" or task_class_lc == "comparison" or current_mode_lc == "comparison")
+            and comparison_time_structure in {"monthly_period_vs_period", "month_over_month"}
         ):
             semantic_cols.append(metric)
 
@@ -818,9 +1202,15 @@ def apply_memory_context(
             requested_columns=current_cols,
             semantic_column_keys=_semantic_column_keys(group_by=list(spec.get("group_by") or []), metric=metric),
         )
+        preserved_comparison_cols: List[str] = []
+        if (
+            (task_type_lc == "comparison" or task_class_lc == "comparison" or current_mode_lc == "comparison")
+            and comparison_time_structure in {"monthly_period_vs_period", "month_over_month"}
+        ):
+            preserved_comparison_cols = list(current_cols)
         normalized_cols: List[str] = []
         seen_cols: Set[str] = set()
-        for raw in semantic_cols + explicit_projection_cols:
+        for raw in semantic_cols + preserved_comparison_cols + explicit_projection_cols:
             s = str(raw or "").strip()
             key = _norm_text(s)
             if (not s) or (not key) or (key in seen_cols):
@@ -830,11 +1220,21 @@ def apply_memory_context(
         spec["output_contract"] = dict(oc_reset)
         if int(spec.get("top_n") or 0) > 0:
             spec["output_contract"]["mode"] = "top_n"
-        elif str(spec.get("task_type") or "").strip().lower() == "kpi":
+        elif task_type_lc == "kpi":
             spec["output_contract"]["mode"] = "kpi"
+        elif task_type_lc == "comparison" or task_class_lc == "comparison" or current_mode_lc == "comparison":
+            spec["output_contract"]["mode"] = "comparison"
         else:
             spec["output_contract"]["mode"] = "detail"
         spec["output_contract"]["minimal_columns"] = normalized_cols[:12]
+        if (
+            (task_type_lc == "comparison" or task_class_lc == "comparison" or current_mode_lc == "comparison")
+            and _time_scope_missing(spec)
+            and prev_time_scope
+            and (not _message_has_explicit_time_words(message))
+        ):
+            spec["time_scope"] = dict(prev_time_scope)
+            corrections_applied.append("comparison_time_scope_from_active_topic")
         corrections_applied.append("fresh_read_contract_reset")
 
     if ranking_direction_followup:
@@ -998,6 +1398,7 @@ def apply_memory_context(
         and (not topic_switched)
         and (not ranking_direction_followup)
         and (not threshold_value_followup)
+        and (not is_same_period_comparison_rebind)
         and curr_strength <= 2
         and (current_transform_ambiguities or projection_columns or requested_top_n > 0)
     )
@@ -1186,6 +1587,9 @@ def apply_memory_context(
         spec["output_contract"]["mode"] = "top_n" if int(prev_top_n or 0) > 0 else "detail"
         corrections_applied.append("granularity_refinement_requires_read")
 
+    if _sync_period_comparison_output_contract(spec):
+        corrections_applied.append("comparison_period_output_contract_synced")
+
     # Keep output contract aligned with resolved semantic fields.
     oc = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
     wanted = [str(x).strip() for x in list(oc.get("minimal_columns") or []) if str(x).strip()]
@@ -1200,6 +1604,9 @@ def apply_memory_context(
         if wanted:
             spec["output_contract"] = dict(oc)
             spec["output_contract"]["minimal_columns"] = wanted[:12]
+
+    if _sync_comparison_rule_with_filters(spec):
+        corrections_applied.append("comparison_rule_synced_from_filters")
 
     # Update context strength after anchoring.
     anchored_strength = _spec_signal_strength(spec)

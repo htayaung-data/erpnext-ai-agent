@@ -45,6 +45,7 @@ def execute_read_loop(
     shape_response_fn: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]],
     sanitize_user_payload_fn: Callable[..., Dict[str, Any]],
     apply_requested_entity_row_filters_fn: Callable[..., Dict[str, Any]],
+    apply_same_period_comparison_shape_fn: Callable[..., Dict[str, Any]],
     make_response_shaper_tool_message_fn: Callable[..., str],
     evaluate_quality_gate_fn: Callable[..., Dict[str, Any]],
     should_switch_candidate_on_repairable_fn: Callable[..., bool],
@@ -213,6 +214,7 @@ def execute_read_loop(
         payload = shape_response_fn(payload, spec_obj)
         payload = sanitize_user_payload_fn(payload=payload, business_spec=spec_obj)
         payload = apply_requested_entity_row_filters_fn(payload=payload, business_spec=spec_obj)
+        payload = apply_same_period_comparison_shape_fn(payload=payload, business_spec=spec_obj)
         # Recompute contribution share after shaping so ranked/aggregated views
         # expose percentages aligned with the final displayed metric values.
         payload = apply_contribution_share_fn(payload=payload, business_spec=spec_obj)

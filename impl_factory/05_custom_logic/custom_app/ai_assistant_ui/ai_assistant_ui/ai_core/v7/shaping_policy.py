@@ -287,6 +287,19 @@ def enrich_minimal_columns_from_report_metadata(
         selected_report=selected_report,
         last_result_payload=last_result_payload,
     )
+    filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+    comparison_rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+    comparison_time_structure = str(comparison_rule.get("time_structure") or "").strip().lower()
+    if (
+        str(spec.get("task_class") or "").strip().lower() == "comparison"
+        and comparison_time_structure in {"monthly_period_vs_period", "month_over_month"}
+    ):
+        output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
+        current = [str(x).strip() for x in list(output_contract.get("minimal_columns") or []) if str(x or "").strip()]
+        if current:
+            spec["output_contract"] = dict(output_contract)
+            spec["output_contract"]["minimal_columns"] = current[:12]
+        return spec
     if str(spec.get("task_class") or "").strip().lower() == "threshold_exception_list":
         output_contract = spec.get("output_contract") if isinstance(spec.get("output_contract"), dict) else {}
         contract = report_semantics_contract(selected_report) if selected_report else {}

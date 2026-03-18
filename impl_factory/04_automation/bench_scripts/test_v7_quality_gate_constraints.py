@@ -268,6 +268,131 @@ class V7QualityGateConstraintTests(unittest.TestCase):
         )
         self.assertEqual(str(out.get("verdict") or ""), "PASS")
 
+    def test_same_period_comparison_side_by_side_shape_passes_quality_gate(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "subject": "territories",
+            "metric": "revenue",
+            "dimensions": ["territory"],
+            "group_by": ["territory"],
+            "filters": {
+                "territory": ["Yangon", "Mandalay"],
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "territory",
+                    "time_structure": "same_period",
+                    "compared_values": ["Yangon", "Mandalay"],
+                },
+            },
+            "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "revenue"]},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Sales Analytics",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_same_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "compare_1", "label": "Yangon", "fieldtype": "Currency"},
+                    {"fieldname": "compare_2", "label": "Mandalay", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"territory": "Revenue", "compare_1": 6306500.0, "compare_2": 8680000.0},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        checks = [c for c in list(out.get("checks") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("check") or ""): c for c in checks}
+        self.assertTrue(bool((by_name.get("minimal_columns_present") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("requested_dimensions_present") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("requested_metric_present") or {}).get("ok")))
+        self.assertEqual(str(out.get("verdict") or ""), "PASS")
+
+    def test_period_comparison_shape_passes_quality_gate_without_metric_total_column(self):
+        mod = _load_module()
+        spec = {
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "subject": "territories",
+            "metric": "revenue",
+            "dimensions": ["territory"],
+            "group_by": ["territory"],
+            "filters": {
+                "territory": "Yangon",
+                "_comparison_rule": {
+                    "metric": "revenue",
+                    "dimension": "territory",
+                    "time_structure": "monthly_period_vs_period",
+                    "month_refs": [
+                        {"month_name": "february", "year": 2026, "label": "February 2026"},
+                        {"month_name": "march", "year": 2026, "label": "March 2026"},
+                    ],
+                    "single_entity_kind": "territory",
+                    "single_entity_value": "Yangon",
+                },
+            },
+            "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "Feb 2026", "Mar 2026"]},
+        }
+        resolved = {
+            "needs_clarification": False,
+            "selected_report": "Sales Analytics",
+            "hard_constraints": {"schema_version": "constraint_set_v1"},
+            "semantic_context": {
+                "catalog_available": False,
+                "query_tokens": [],
+                "preferred_domains": [],
+                "preferred_dimensions": [],
+                "preferred_filter_kinds": [],
+            },
+        }
+        payload = {
+            "type": "report_table",
+            "report_name": "Sales Analytics",
+            "_period_comparison_shape_applied": True,
+            "table": {
+                "columns": [
+                    {"fieldname": "territory", "label": "Territory", "fieldtype": "Data"},
+                    {"fieldname": "feb_2026", "label": "Feb 2026", "fieldtype": "Currency"},
+                    {"fieldname": "mar_2026", "label": "Mar 2026", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {"territory": "Yangon", "feb_2026": 6306500.0, "mar_2026": 5817000.0},
+                ],
+            },
+        }
+        out = mod.evaluate_quality_gate(
+            business_spec=spec,
+            resolved=resolved,
+            payload=payload,
+            repeated_call_guard_triggered=False,
+        )
+        checks = [c for c in list(out.get("checks") or []) if isinstance(c, dict)]
+        by_name = {str(c.get("check") or ""): c for c in checks}
+        self.assertTrue(bool((by_name.get("minimal_columns_present") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("requested_dimensions_present") or {}).get("ok")))
+        self.assertTrue(bool((by_name.get("requested_metric_present") or {}).get("ok")))
+        self.assertEqual(str(out.get("verdict") or ""), "PASS")
+
     def test_latest_records_requires_time_and_identifier_axes(self):
         mod = _load_module()
         spec = {

@@ -10,15 +10,15 @@ from typing import Any, Dict, Set
 
 _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
     "version": "fallback",
-    "allowed": {
-        "intents": ["READ", "TRANSFORM_LAST", "TUTOR", "WRITE_DRAFT", "WRITE_CONFIRM", "EXPORT"],
-        "task_types": ["kpi", "ranking", "trend", "detail"],
-        "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup", "threshold_exception_list", "contribution_share"],
-        "aggregations": ["sum", "count", "avg", "none"],
-        "time_modes": ["as_of", "range", "relative", "none"],
-        "output_modes": ["kpi", "top_n", "detail"],
-        "domains": ["unknown", "sales", "finance", "inventory", "purchasing", "operations", "hr", "cross_functional"],
-    },
+        "allowed": {
+            "intents": ["READ", "TRANSFORM_LAST", "TUTOR", "WRITE_DRAFT", "WRITE_CONFIRM", "EXPORT"],
+            "task_types": ["kpi", "ranking", "trend", "detail", "comparison"],
+            "task_classes": ["analytical_read", "list_latest_records", "detail_projection", "transform_followup", "threshold_exception_list", "contribution_share", "comparison"],
+            "aggregations": ["sum", "count", "avg", "none"],
+            "time_modes": ["as_of", "range", "relative", "none"],
+            "output_modes": ["kpi", "top_n", "detail", "comparison"],
+            "domains": ["unknown", "sales", "finance", "inventory", "purchasing", "operations", "hr", "cross_functional"],
+        },
     "canonical_dimensions": ["customer", "supplier", "item", "warehouse", "company", "territory"],
     "dimension_domain_map": {
         "customer": "sales",
@@ -54,6 +54,13 @@ _DEFAULT_SPEC_CONTRACT: Dict[str, Any] = {
         "contribution_share": {
             "allowed_dimensions": ["customer", "supplier", "item"],
         },
+        "comparison": {
+            "allowed_dimensions": ["territory", "customer", "supplier", "item"],
+            "allowed_metrics": ["revenue", "purchase_amount"],
+            "allowed_time_structures": ["same_period", "monthly_period_vs_period", "month_over_month"],
+            "unsupported_time_structures": ["weekly", "quarterly", "year_over_year", "multi_point_time_series"],
+            "month_anchor_required_for": ["monthly_period_vs_period", "month_over_month"],
+        },
     },
 }
 
@@ -77,6 +84,10 @@ _DEFAULT_CLARIFICATION_CONTRACT: Dict[str, Any] = {
     "questions_by_filter_kind": {
         "contribution_metric": "Which business measure should I use for the contribution share (for example revenue or purchase amount)?",
         "contribution_dimension": "Which business grouping should I use for the contribution share (for example customer, supplier, or item)?",
+        "comparison_metric": "Which business measure should I use for the comparison (for example revenue or purchase amount)?",
+        "comparison_dimension": "Which business grouping should I use for the comparison (for example territory, customer, supplier, or item)?",
+        "comparison_entities": "Which two business entities should I compare?",
+        "comparison_month_anchor": "Which month should I use for the month-over-month or month-to-month comparison?",
     },
     "fallback_question": "Please provide one concrete missing detail so I can run the correct report.",
 }
@@ -215,6 +226,24 @@ def task_class_rule(task_class: str) -> Dict[str, Any]:
 def task_class_allowed_dimensions(task_class: str) -> Set[str]:
     rule = task_class_rule(task_class)
     vals = rule.get("allowed_dimensions") if isinstance(rule.get("allowed_dimensions"), list) else []
+    return {str(v).strip().lower() for v in vals if str(v).strip()}
+
+
+def task_class_allowed_metrics(task_class: str) -> Set[str]:
+    rule = task_class_rule(task_class)
+    vals = rule.get("allowed_metrics") if isinstance(rule.get("allowed_metrics"), list) else []
+    return {str(v).strip().lower() for v in vals if str(v).strip()}
+
+
+def task_class_allowed_time_structures(task_class: str) -> Set[str]:
+    rule = task_class_rule(task_class)
+    vals = rule.get("allowed_time_structures") if isinstance(rule.get("allowed_time_structures"), list) else []
+    return {str(v).strip().lower() for v in vals if str(v).strip()}
+
+
+def task_class_month_anchor_required_for(task_class: str) -> Set[str]:
+    rule = task_class_rule(task_class)
+    vals = rule.get("month_anchor_required_for") if isinstance(rule.get("month_anchor_required_for"), list) else []
     return {str(v).strip().lower() for v in vals if str(v).strip()}
 
 

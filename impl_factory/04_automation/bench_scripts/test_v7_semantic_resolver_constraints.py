@@ -1341,6 +1341,322 @@ class V7SemanticResolverConstraintTests(unittest.TestCase):
         self.assertIn("threshold_metric_not_supported", list(age_value.get("hard_blockers") or []))
         self.assertEqual(str(out.get("selected_report") or ""), "Stock Balance")
 
+    def test_comparison_prefers_customer_report_with_declared_comparison_support(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Payment Terms Status for Sales Order",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date", "customer"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "customer",
+                    },
+                    "presentation": {
+                        "result_grain": "detail",
+                    },
+                    "metadata": {"confidence": 0.97, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Customer Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date", "customer"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales", "finance"],
+                        "dimension_hints": ["customer"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "customer",
+                    },
+                    "presentation": {
+                        "result_grain": "summary",
+                        "supports_comparison": True,
+                    },
+                    "metadata": {"confidence": 0.91, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "sales",
+            "subject": "compare two customers by revenue",
+            "metric": "revenue",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "filters": {"company": "MMOB"},
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "comparison", "minimal_columns": ["customer", "revenue"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "sales",
+            "metric": "revenue",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "output_mode": "comparison",
+            "time_mode": "relative",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["customer"],
+            "subject_tokens": ["compare", "customers", "revenue"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Customer Ledger Summary")
+
+    def test_comparison_prefers_supplier_report_with_declared_comparison_support(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Accounts Payable",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date", "supplier"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["finance", "purchasing"],
+                        "dimension_hints": ["supplier"],
+                        "metric_hints": ["purchase_amount"],
+                        "primary_dimension": "supplier",
+                    },
+                    "presentation": {
+                        "result_grain": "detail",
+                    },
+                    "metadata": {"confidence": 0.98, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Supplier Ledger Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date", "supplier"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["finance", "purchasing"],
+                        "dimension_hints": ["supplier"],
+                        "metric_hints": ["purchase_amount"],
+                        "primary_dimension": "supplier",
+                    },
+                    "presentation": {
+                        "result_grain": "summary",
+                        "supports_comparison": True,
+                    },
+                    "metadata": {"confidence": 0.90, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "purchasing",
+            "subject": "compare suppliers by purchase amount",
+            "metric": "purchase amount",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "filters": {"company": "MMOB"},
+            "group_by": ["supplier"],
+            "dimensions": ["supplier"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "comparison", "minimal_columns": ["supplier", "purchase amount"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "purchasing",
+            "metric": "purchase_amount",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "output_mode": "comparison",
+            "time_mode": "relative",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["supplier"],
+            "subject_tokens": ["compare", "suppliers", "purchase", "amount"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Supplier Ledger Summary")
+
+    def test_comparison_prefers_item_report_with_declared_comparison_support(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Item-wise Sales History",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date", "item"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["item"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "item",
+                    },
+                    "presentation": {
+                        "result_grain": "detail",
+                    },
+                    "metadata": {"confidence": 0.98, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Item-wise Sales Register",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "date", "item"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["item"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "item",
+                    },
+                    "presentation": {
+                        "result_grain": "detail",
+                        "supports_comparison": True,
+                    },
+                    "metadata": {"confidence": 0.90, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "sales",
+            "subject": "compare items by sales",
+            "metric": "sales",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "filters": {"company": "MMOB"},
+            "group_by": ["item"],
+            "dimensions": ["item"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "comparison", "minimal_columns": ["item", "sales"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "sales",
+            "metric": "revenue",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "output_mode": "comparison",
+            "time_mode": "relative",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["item"],
+            "subject_tokens": ["compare", "items", "sales"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Item-wise Sales Register")
+
+    def test_comparison_prefers_territory_report_with_declared_comparison_support(self):
+        mod = _load_module()
+        capability_index = {
+            "reports": [
+                {
+                    "report_name": "Sales Payment Summary",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "from_date", "to_date", "territory"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["territory"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "territory",
+                    },
+                    "presentation": {
+                        "result_grain": "detail",
+                    },
+                    "metadata": {"confidence": 0.98, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+                {
+                    "report_name": "Sales Analytics",
+                    "constraints": {
+                        "supported_filter_kinds": ["company", "from_date", "to_date", "territory"],
+                        "required_filter_kinds": [],
+                        "requirements_unknown": False,
+                    },
+                    "semantics": {
+                        "domain_hints": ["sales"],
+                        "dimension_hints": ["territory"],
+                        "metric_hints": ["revenue"],
+                        "primary_dimension": "territory",
+                    },
+                    "presentation": {
+                        "result_grain": "summary",
+                        "supports_comparison": True,
+                    },
+                    "metadata": {"confidence": 0.90, "fresh": True},
+                    "time_support": {"as_of": True, "range": True, "any": True},
+                },
+            ]
+        }
+        spec = {
+            "domain": "sales",
+            "subject": "compare territories by revenue",
+            "metric": "revenue",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "filters": {"company": "MMOB"},
+            "group_by": ["territory"],
+            "dimensions": ["territory"],
+            "time_scope": {"mode": "relative", "value": "last_month"},
+            "output_contract": {"mode": "comparison", "minimal_columns": ["territory", "revenue"]},
+        }
+        constraint_set = {
+            "schema_version": "constraint_set_v1",
+            "domain": "sales",
+            "metric": "revenue",
+            "task_type": "comparison",
+            "task_class": "comparison",
+            "output_mode": "comparison",
+            "time_mode": "relative",
+            "filters": {"company": "MMOB"},
+            "hard_filter_kinds": ["company"],
+            "requested_dimensions": ["territory"],
+            "subject_tokens": ["compare", "territories", "revenue"],
+            "followup_bindings": {},
+            "active_filter_context": {"company": "MMOB"},
+        }
+        out = mod.resolve_semantics(
+            business_spec=spec,
+            capability_index=capability_index,
+            constraint_set=constraint_set,
+        )
+        self.assertEqual(str(out.get("selected_report") or ""), "Sales Analytics")
+
 
 if __name__ == "__main__":
     unittest.main()

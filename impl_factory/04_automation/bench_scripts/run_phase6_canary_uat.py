@@ -205,6 +205,8 @@ def _extract_turn_actual(new_debug_msgs: List[Dict[str, Any]], all_public_msgs: 
     assistant_idx = None
     audit_turn: Dict[str, Any] = {}
     last_result_tool: Dict[str, Any] = {}
+    direct_spec_tool: Dict[str, Any] = {}
+    direct_quality_gate_tool: Dict[str, Any] = {}
 
     for m in new_debug_msgs:
         role = str(m.get("role") or "").lower()
@@ -251,6 +253,10 @@ def _extract_turn_actual(new_debug_msgs: List[Dict[str, Any]], all_public_msgs: 
                 audit_turn = obj
             elif typ == "last_result":
                 last_result_tool = obj
+            elif typ == "v7_business_request_spec":
+                direct_spec_tool = obj
+            elif typ == "v7_quality_gate":
+                direct_quality_gate_tool = obj
 
     table = assistant_obj.get("table") if isinstance(assistant_obj.get("table"), dict) else {}
     rows = table.get("rows") if isinstance(table.get("rows"), list) else []
@@ -272,6 +278,17 @@ def _extract_turn_actual(new_debug_msgs: List[Dict[str, Any]], all_public_msgs: 
     business_spec = spec_wrap.get("spec") if isinstance(spec_wrap.get("spec"), dict) else {}
     gate_wrap = planner_output.get("result_quality_gate") if isinstance(planner_output.get("result_quality_gate"), dict) else {}
     gate = gate_wrap.get("gate") if isinstance(gate_wrap.get("gate"), dict) else {}
+    if (not business_spec) and isinstance(direct_spec_tool.get("spec"), dict):
+        business_spec = dict(direct_spec_tool.get("spec") or {})
+    if (not gate) and isinstance(direct_quality_gate_tool, dict):
+        gate = {
+            "verdict": str(direct_quality_gate_tool.get("verdict") or ""),
+            "failed_checks": [
+                {"id": str(cid).strip()}
+                for cid in list(direct_quality_gate_tool.get("failed_check_ids") or [])
+                if str(cid).strip()
+            ],
+        }
     result_meta = audit_turn.get("result_meta") if isinstance(audit_turn.get("result_meta"), dict) else {}
     duration_ms = None
     try:
@@ -377,6 +394,55 @@ def pass_rule(
     semantic_required_pass = bool(semantic.get("required_pass"))
 
     ok = False
+
+    if case_id.startswith("CMPC-"):
+        behavior_class = str(actual.get("expected_behavior_class") or "").strip().lower()
+        expected = actual.get("expected_manifest_expected") if isinstance(actual.get("expected_manifest_expected"), dict) else {}
+        comparison_contract = expected.get("comparison_contract") if isinstance(expected.get("comparison_contract"), dict) else {}
+        expected_group_by = [str(x).strip().lower() for x in list(expected.get("group_by") or []) if str(x).strip()]
+        expected_metric = str(expected.get("metric") or "").strip().lower()
+        expected_output_mode = str(expected.get("output_mode") or "").strip().lower()
+        business_spec = actual.get("business_request_spec") if isinstance(actual.get("business_request_spec"), dict) else {}
+        output_contract = business_spec.get("output_contract") if isinstance(business_spec.get("output_contract"), dict) else {}
+        spec_task_class = str(business_spec.get("task_class") or "").strip().lower()
+        spec_task_type = str(business_spec.get("task_type") or "").strip().lower()
+        spec_metric = str(business_spec.get("metric") or "").strip().lower()
+        spec_group_by = [str(x).strip().lower() for x in list(business_spec.get("group_by") or []) if str(x).strip()]
+        spec_output_mode = str(output_contract.get("mode") or "").strip().lower()
+        expected_minimal_columns = [str(x).strip().lower() for x in list(expected.get("minimal_columns") or []) if str(x).strip()]
+
+        if behavior_class in {"comparison", "correction_rebind"}:
+            ok = (
+                t == "report_table"
+                and pending is None
+                and rows >= 1
+                and spec_task_class == "comparison"
+                and spec_task_type == "comparison"
+                and (not expected_metric or spec_metric == expected_metric)
+                and (not expected_group_by or all(x in spec_group_by for x in expected_group_by))
+                and (not expected_output_mode or spec_output_mode == expected_output_mode)
+            )
+        elif behavior_class == "transform_last_result":
+            if comparison_contract:
+                ok = (t == "report_table" and pending is None and rows >= 1)
+            else:
+                labels_set = set(labels)
+                ok = (
+                    t == "report_table"
+                    and pending is None
+                    and rows >= 1
+                    and ((not expected_minimal_columns) or all(col in labels_set for col in expected_minimal_columns))
+                )
+        elif behavior_class == "clarification_blocker":
+            ok = (t == "text" and pending in ("planner_clarify", "need_filters") and blocker_clar)
+        elif behavior_class == "error_envelope":
+            ok = (t == "error" and bool(actual.get("error_env_present")))
+        else:
+            return False, "unknown_case"
+
+        if not semantic_required_pass:
+            return False, "semantic_assertions_failed"
+        return ok, ""
 
     if case_id == "FIN-01":
         ok = (t == "report_table" and pending is None and rows >= 1)

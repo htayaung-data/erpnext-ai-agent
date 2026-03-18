@@ -119,10 +119,12 @@ class V7OntologyNormalizationTests(unittest.TestCase):
         comparator_aliases = catalog.get("comparator_aliases") if isinstance(catalog.get("comparator_aliases"), dict) else {}
         exception_aliases = catalog.get("exception_term_aliases") if isinstance(catalog.get("exception_term_aliases"), dict) else {}
         contribution_aliases = catalog.get("contribution_term_aliases") if isinstance(catalog.get("contribution_term_aliases"), dict) else {}
+        comparison_aliases = catalog.get("comparison_term_aliases") if isinstance(catalog.get("comparison_term_aliases"), dict) else {}
         self.assertIn("gt", comparator_aliases)
         self.assertIn("lt", comparator_aliases)
         self.assertIn("overdue", exception_aliases)
         self.assertIn("share_of_total", contribution_aliases)
+        self.assertIn("comparison_request", comparison_aliases)
         self.assertEqual(mod.canonical_metric("grand total"), "invoice_amount")
         self.assertEqual(mod.metric_domain("invoice amount"), "finance")
         self.assertEqual(mod.canonical_metric("qty on hand"), "stock_quantity")
@@ -135,6 +137,26 @@ class V7OntologyNormalizationTests(unittest.TestCase):
         self.assertEqual(mod.infer_exception_terms("show low stock items"), ["low_stock"])
         self.assertIn("causal_analysis", mod.infer_advisory_intents("Why are these overdue invoices risky?"))
         self.assertIn("risk_assessment", mod.infer_advisory_intents("Why are these overdue invoices risky?"))
+
+    def test_infer_comparison_terms_detects_monthly_and_unsupported_time_structures(self):
+        mod = _load_module()
+        mod.clear_ontology_cache()
+        self.assertIn(
+            "period_vs_period_monthly",
+            mod.infer_comparison_terms("Compare Yangon revenue in March 2026 vs February 2026"),
+        )
+        self.assertIn(
+            "month_over_month_request",
+            mod.infer_comparison_terms("Show Yangon revenue month over month for March 2026"),
+        )
+        self.assertIn(
+            "week_over_week_request",
+            mod.infer_comparison_terms("Compare Yangon revenue week over week"),
+        )
+        self.assertEqual(
+            mod.infer_comparison_time_structure("Compare Yangon revenue quarter over quarter"),
+            "quarter_over_quarter_request",
+        )
 
     def test_sales_invoice_number_does_not_collapse_to_revenue_metric(self):
         mod = _load_module()

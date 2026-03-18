@@ -173,6 +173,55 @@ class V7ResponseShaperTests(unittest.TestCase):
         self.assertEqual(rows[0].get("party"), "Customer B")
         self.assertEqual(float(rows[0].get("closing_balance") or 0.0), 700.0)
 
+    def test_shape_response_prefers_invoiced_amount_for_customer_revenue(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "report_name": "Customer Ledger Summary",
+            "title": "Customer Ledger Summary",
+            "table": {
+                "columns": [
+                    {"fieldname": "party", "label": "Customer", "fieldtype": "Link"},
+                    {"fieldname": "invoiced_amount", "label": "Invoiced Amount", "fieldtype": "Currency"},
+                    {"fieldname": "amount", "label": "Amount", "fieldtype": "Currency"},
+                ],
+                "rows": [
+                    {
+                        "party": "Shwe Li Road Mobile Wholesale",
+                        "invoiced_amount": 27436000.0,
+                        "amount": 0.0,
+                    },
+                    {
+                        "party": "Latha Mobile Wholesale",
+                        "invoiced_amount": 25260000.0,
+                        "amount": 0.0,
+                    },
+                ],
+            },
+        }
+        spec = {
+            "metric": "revenue",
+            "group_by": ["customer"],
+            "dimensions": ["customer"],
+            "task_type": "comparison",
+            "output_contract": {"mode": "comparison", "minimal_columns": ["customer", "revenue"]},
+        }
+        shaped = mod.shape_response(payload=payload, business_spec=spec)
+        table = shaped.get("table") if isinstance(shaped.get("table"), dict) else {}
+        cols = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+        rows = [r for r in list(table.get("rows") or []) if isinstance(r, dict)]
+        self.assertEqual(
+            [str(c.get("fieldname") or "").strip().lower() for c in cols],
+            ["party", "invoiced_amount"],
+        )
+        self.assertEqual(
+            [(str(r.get("party") or ""), float(r.get("invoiced_amount") or 0.0)) for r in rows],
+            [
+                ("Shwe Li Road Mobile Wholesale", 27436000.0),
+                ("Latha Mobile Wholesale", 25260000.0),
+            ],
+        )
+
     def test_shape_response_uses_supplier_contract_roles_for_purchase_amount(self):
         mod = _load_module()
         payload = {

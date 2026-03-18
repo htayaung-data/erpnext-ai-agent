@@ -703,6 +703,476 @@ class V7SpecPipelineTests(unittest.TestCase):
             mod.choose_business_request_spec = orig_choose
             mod._load_session_context = orig_load_session
 
+    def test_generate_business_request_spec_normalizes_same_period_comparison_class(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "sales",
+                "metric": "",
+                "dimensions": [],
+                "aggregation": "sum",
+                "group_by": [],
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "filters": {"locations": ["Yangon", "Mandalay"]},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": ["locations", "revenue"]},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            env = mod.generate_business_request_spec(
+                message="Compare Yangon and Mandalay sales last month by territory",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(spec.get("task_type") or ""), "comparison")
+            self.assertEqual(str(spec.get("metric") or ""), "revenue")
+            self.assertEqual(str(spec.get("aggregation") or ""), "sum")
+            self.assertEqual(list(spec.get("group_by") or []), ["territory"])
+            self.assertEqual(list(spec.get("dimensions") or []), ["territory"])
+            self.assertEqual(spec.get("time_scope"), {"mode": "relative", "value": "last_month"})
+            self.assertEqual(str(spec.get("output_contract", {}).get("mode") or ""), "comparison")
+            self.assertEqual(list(spec.get("output_contract", {}).get("minimal_columns") or []), ["territory", "revenue"])
+            self.assertEqual(str(rule.get("time_structure") or ""), "same_period")
+            self.assertEqual(list(rule.get("compared_values") or []), ["Yangon", "Mandalay"])
+            self.assertEqual(list(filters.get("territory") or []), ["Yangon", "Mandalay"])
+            self.assertNotIn("locations", filters)
+            self.assertEqual(str(filters.get("_comparison_missing_filter_kind") or ""), "")
+            self.assertEqual(str(filters.get("_comparison_unsupported_reason") or ""), "")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+
+    def test_generate_business_request_spec_normalizes_monthly_period_comparison_class(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "sales",
+                "metric": "",
+                "dimensions": [],
+                "aggregation": "sum",
+                "group_by": ["city"],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {"location": "Yangon"},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": ["month", "revenue"]},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"territory": "Yangon"}
+            env = mod.generate_business_request_spec(
+                message="Compare Yangon revenue in March 2026 vs February 2026",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+            month_refs = list(rule.get("month_refs") or [])
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(spec.get("task_type") or ""), "comparison")
+            self.assertEqual(str(spec.get("metric") or ""), "revenue")
+            self.assertEqual(str(spec.get("aggregation") or ""), "sum")
+            self.assertEqual(list(spec.get("group_by") or []), ["territory"])
+            self.assertEqual(list(spec.get("dimensions") or []), ["territory"])
+            self.assertEqual(str(rule.get("time_structure") or ""), "monthly_period_vs_period")
+            self.assertEqual(str(filters.get("territory") or ""), "Yangon")
+            self.assertNotIn("location", filters)
+            self.assertEqual(
+                list(spec.get("output_contract", {}).get("minimal_columns") or []),
+                ["territory", "Feb 2026", "Mar 2026"],
+            )
+            self.assertEqual(
+                [str(x.get("label") or "") for x in month_refs if isinstance(x, dict)],
+                ["March 2026", "February 2026"],
+            )
+            self.assertEqual(str(filters.get("_comparison_missing_filter_kind") or ""), "")
+            self.assertEqual(str(filters.get("_comparison_unsupported_reason") or ""), "")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
+    def test_generate_business_request_spec_sets_month_over_month_period_columns(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "sales",
+                "metric": "",
+                "dimensions": [],
+                "aggregation": "sum",
+                "group_by": [],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": []},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"territory": "Yangon"}
+            env = mod.generate_business_request_spec(
+                message="Show Yangon revenue month over month for March 2026",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(rule.get("time_structure") or ""), "month_over_month")
+            self.assertEqual(str(filters.get("territory") or ""), "Yangon")
+            self.assertEqual(
+                list(spec.get("output_contract", {}).get("minimal_columns") or []),
+                ["territory", "Feb 2026", "Mar 2026"],
+            )
+            self.assertEqual(str(filters.get("_comparison_missing_filter_kind") or ""), "")
+            self.assertEqual(str(filters.get("_comparison_unsupported_reason") or ""), "")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
+    def test_generate_business_request_spec_marks_month_over_month_without_anchor_for_clarification(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "sales",
+                "metric": "",
+                "dimensions": [],
+                "aggregation": "sum",
+                "group_by": [],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": []},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"territory": "Yangon"}
+            env = mod.generate_business_request_spec(
+                message="Show Yangon revenue month over month",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(rule.get("time_structure") or ""), "month_over_month")
+            self.assertEqual(str(filters.get("territory") or ""), "Yangon")
+            self.assertEqual(str(spec.get("aggregation") or ""), "sum")
+            self.assertEqual(str(filters.get("_comparison_missing_filter_kind") or ""), "comparison_month_anchor")
+            self.assertEqual(str(filters.get("_comparison_unsupported_reason") or ""), "")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
+    def test_generate_business_request_spec_marks_weekly_comparison_as_unsupported(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "sales",
+                "metric": "",
+                "dimensions": [],
+                "aggregation": "sum",
+                "group_by": [],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": []},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"territory": "Yangon"}
+            env = mod.generate_business_request_spec(
+                message="Compare Yangon revenue week over week",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(rule.get("time_structure") or ""), "weekly")
+            self.assertEqual(
+                str(filters.get("_comparison_unsupported_reason") or ""),
+                "weekly_period_comparison_not_supported",
+            )
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
+    def test_generate_business_request_spec_marks_quarterly_comparison_as_unsupported(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "sales",
+                "metric": "",
+                "dimensions": [],
+                "aggregation": "sum",
+                "group_by": [],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": []},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"territory": "Yangon"}
+            env = mod.generate_business_request_spec(
+                message="Compare Yangon revenue quarter over quarter",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            rule = filters.get("_comparison_rule") if isinstance(filters.get("_comparison_rule"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(rule.get("time_structure") or ""), "quarterly")
+            self.assertEqual(
+                str(filters.get("_comparison_unsupported_reason") or ""),
+                "quarterly_period_comparison_not_supported",
+            )
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
+    def test_generate_business_request_spec_ignores_invalid_raw_company_dimension_for_comparison(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "finance",
+                "subject": "companies",
+                "metric": "purchase amount",
+                "dimensions": ["company"],
+                "aggregation": "sum",
+                "group_by": ["company"],
+                "time_scope": {"mode": "relative", "value": "last_month"},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": ["company", "purchase amount"]},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"supplier": "Sunflower Accessories Co"}
+            env = mod.generate_business_request_spec(
+                message="Compare Sunflower Accessories Co. and Golden Dragon Trading Co. Ltd. purchase amount last month",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(spec.get("task_type") or ""), "comparison")
+            self.assertEqual(str(spec.get("domain") or ""), "purchasing")
+            self.assertEqual(list(spec.get("group_by") or []), ["supplier"])
+            self.assertEqual(list(spec.get("dimensions") or []), ["supplier"])
+            self.assertEqual(str(spec.get("subject") or ""), "suppliers")
+            self.assertEqual(list(filters.get("supplier") or []), ["Sunflower Accessories Co", "Golden Dragon Trading Co. Ltd"])
+            self.assertNotIn("company", filters)
+            self.assertEqual(str(spec.get("output_contract", {}).get("mode") or ""), "comparison")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
+    def test_generate_business_request_spec_clears_noisy_metric_for_comparison_clarification(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "unknown",
+                "subject": "cities",
+                "metric": "attributes",
+                "dimensions": ["territory"],
+                "aggregation": "none",
+                "group_by": ["city"],
+                "time_scope": {"mode": "none", "value": ""},
+                "filters": {"cities": ["Yangon", "Mandalay"]},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": ["city", "attributes"]},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            env = mod.generate_business_request_spec(
+                message="Compare Yangon and Mandalay",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            self.assertEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(spec.get("metric") or ""), "")
+            self.assertEqual(str(spec.get("aggregation") or ""), "none")
+            self.assertEqual(list(spec.get("group_by") or []), ["territory"])
+            self.assertEqual(list(spec.get("dimensions") or []), ["territory"])
+            self.assertEqual(list(filters.get("territory") or []), ["Yangon", "Mandalay"])
+            self.assertNotIn("cities", filters)
+            self.assertEqual(list(spec.get("output_contract", {}).get("minimal_columns") or []), ["territory"])
+            self.assertEqual(str(filters.get("_comparison_missing_filter_kind") or ""), "comparison_metric")
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+
+    def test_generate_business_request_spec_does_not_hijack_multi_point_comparison_phrase(self):
+        mod = _load_module()
+        orig_choose = mod.choose_business_request_spec
+        orig_load_session = mod._load_session_context
+        orig_extract = mod.extract_entity_filters_from_message
+        try:
+            mod.choose_business_request_spec = lambda **kwargs: {
+                "intent": "READ",
+                "task_type": "detail",
+                "task_class": "analytical_read",
+                "domain": "sales",
+                "subject": "sales",
+                "metric": "revenue",
+                "dimensions": ["territory"],
+                "aggregation": "sum",
+                "group_by": ["territory"],
+                "time_scope": {"mode": "range", "value": {"from": "2025-01-01", "to": "2026-03-31"}},
+                "filters": {},
+                "top_n": 0,
+                "output_contract": {"mode": "detail", "minimal_columns": ["month", "revenue"]},
+                "ambiguities": [],
+                "needs_clarification": False,
+                "clarification_question": "",
+                "confidence": 0.7,
+            }
+            mod._load_session_context = lambda session_name: {
+                "recent_messages": [],
+                "last_result_meta": None,
+                "has_last_result": False,
+            }
+            mod.extract_entity_filters_from_message = lambda **kwargs: {"territory": "Yangon"}
+            env = mod.generate_business_request_spec(
+                message="Compare Yangon revenue month by month for the last 12 months",
+                session_name=None,
+                planner_plan=None,
+            )
+            spec = env.get("spec") if isinstance(env.get("spec"), dict) else {}
+            filters = spec.get("filters") if isinstance(spec.get("filters"), dict) else {}
+            self.assertNotEqual(str(spec.get("task_class") or ""), "comparison")
+            self.assertEqual(str(filters.get("_comparison_unsupported_reason") or ""), "")
+            self.assertEqual(filters.get("_comparison_rule"), None)
+        finally:
+            mod.choose_business_request_spec = orig_choose
+            mod._load_session_context = orig_load_session
+            mod.extract_entity_filters_from_message = orig_extract
+
     def test_generate_business_request_spec_normalizes_incomplete_threshold_prompt(self):
         mod = _load_module()
         orig_choose = mod.choose_business_request_spec

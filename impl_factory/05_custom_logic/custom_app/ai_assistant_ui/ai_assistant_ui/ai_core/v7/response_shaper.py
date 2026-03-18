@@ -144,10 +144,10 @@ def _match_column_indexes(
         column_aliases = [_norm(a) for a in metric_column_aliases(metric) if _norm(a)] if metric else []
         explicit_fieldnames = []
         if metric:
-            explicit_fieldnames = [str(x).strip().lower() for x in _contract_role_fieldnames(report_contract or {}, "metrics", metric)]
+            explicit_fieldnames = [_norm(x) for x in _contract_role_fieldnames(report_contract or {}, "metrics", metric) if _norm(x)]
         elif dim:
             if raw_wanted_norm == canonical_norm:
-                explicit_fieldnames = [str(x).strip().lower() for x in _contract_role_fieldnames(report_contract or {}, "dimensions", dim)]
+                explicit_fieldnames = [_norm(x) for x in _contract_role_fieldnames(report_contract or {}, "dimensions", dim) if _norm(x)]
         filtered_aliases: List[str] = []
         for alias in aliases:
             alias_norm = _norm(alias)
@@ -167,7 +167,11 @@ def _match_column_indexes(
             txt = f"{fn} {lb}".strip()
             score = -10**9
             if explicit_fieldnames and fn in explicit_fieldnames:
-                score = 140 if metric else 130
+                try:
+                    explicit_rank = explicit_fieldnames.index(fn)
+                except ValueError:
+                    explicit_rank = len(explicit_fieldnames)
+                score = (140 - explicit_rank) if metric else (130 - explicit_rank)
             for a in aliases:
                 if not a:
                     continue
