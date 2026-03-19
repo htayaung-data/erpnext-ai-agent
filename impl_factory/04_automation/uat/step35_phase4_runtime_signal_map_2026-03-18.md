@@ -554,21 +554,45 @@ The contract requires security policy outcomes.
 
 Current status:
 
-no dedicated operational runtime field has been confirmed in the traced v7 surfaces.
+this gap is now materially reduced.
+
+The canonical block `audit_turn.turn_audit_envelope.security_outcome` now emits:
+
+1. `status`
+2. `category`
+3. `requires_confirmation`
+4. `doctype`
+5. `operation`
+
+This gives Phase 4 a governed runtime field for:
+
+1. read-only / not-applicable turns
+2. confirmation-required write turns
+3. disabled write blocking
+4. safe cancel / execute outcomes
+5. idempotency and execution-error outcomes where observed
 
 Action needed:
 
-define and emit a canonical security outcome field for operational reporting.
+adopt this field in weekly operational reporting and define the threshold rules for security/safety exceptions.
 
 ### Gap 3. Canonical Fallback Flag
 
 Current status:
 
-fallback must be inferred from `repair_attempts`, `planner_clarify`, and repairable failure classes.
+this gap is now materially reduced.
+
+The canonical block `audit_turn.turn_audit_envelope.fallback_used` now emits:
+
+1. `plan`
+2. `spec`
+3. `any`
+
+This is sourced from already-governed planner/spec `llm_meta.fallback_used` metadata.
 
 Action needed:
 
-consider a first-class `fallback_used` or equivalent operational signal.
+use this field as the primary operational fallback signal, then decide whether downstream reports need more detailed fallback taxonomy.
 
 ### Gap 4. Live Wrong-Report Automation
 

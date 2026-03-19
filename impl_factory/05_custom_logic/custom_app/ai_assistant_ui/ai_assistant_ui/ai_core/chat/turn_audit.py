@@ -134,6 +134,88 @@ def _planner_quality(planner_output: Dict[str, Any]) -> Dict[str, Any]:
     return gate if isinstance(gate, dict) else {}
 
 
+def _write_context(
+    *,
+    spec: Dict[str, Any],
+    pending_state_to_set: Optional[Dict[str, Any]],
+    user_payload: Dict[str, Any],
+) -> Dict[str, str]:
+    pending = pending_state_to_set if isinstance(pending_state_to_set, dict) else {}
+    wd = pending.get("write_draft") if isinstance(pending.get("write_draft"), dict) else {}
+    if wd:
+        return {
+            "doctype": str(wd.get("doctype") or "").strip(),
+            "operation": str(wd.get("operation") or "").strip().lower(),
+        }
+
+    wr = user_payload.get("_write_result") if isinstance(user_payload.get("_write_result"), dict) else {}
+    payload = wr.get("payload") if isinstance(wr.get("payload"), dict) else {}
+    doctype = str(wr.get("doctype") or spec.get("subject") or "").strip()
+    operation = str(wr.get("operation") or "").strip().lower()
+    if payload and (not doctype):
+        doctype = str(payload.get("doctype") or "").strip()
+    return {"doctype": doctype, "operation": operation}
+
+
+def _security_outcome(
+    *,
+    spec: Dict[str, Any],
+    tool_objs: Dict[str, Dict[str, Any]],
+    user_payload: Dict[str, Any],
+    pending_state_to_set: Optional[Dict[str, Any]],
+    clear_pending: bool,
+) -> Dict[str, Any]:
+    intent = str(spec.get("intent") or "").strip().upper()
+    pending = pending_state_to_set if isinstance(pending_state_to_set, dict) else {}
+    pending_mode = str(pending.get("mode") or "").strip().lower()
+    write_tool = tool_objs.get("v7_write_engine") if isinstance(tool_objs.get("v7_write_engine"), dict) else {}
+    write_result = user_payload.get("_write_result") if isinstance(user_payload.get("_write_result"), dict) else {}
+    text = str(user_payload.get("text") or "").strip().lower()
+    ctx = _write_context(spec=spec, pending_state_to_set=pending, user_payload=user_payload)
+
+    if (
+        intent not in {"WRITE_DRAFT", "WRITE_CONFIRM"}
+        and pending_mode != "write_confirmation"
+        and not write_tool
+        and not write_result
+    ):
+        return {
+            "status": "not_applicable",
+            "category": "read_only",
+            "requires_confirmation": False,
+        }
+
+    base = {
+        "category": "write_safety",
+        "requires_confirmation": bool(pending_mode == "write_confirmation"),
+        "doctype": str(ctx.get("doctype") or "").strip(),
+        "operation": str(ctx.get("operation") or "").strip(),
+    }
+
+    if "disabled in this environment" in text:
+        return dict(base, status="blocked_disabled", requires_confirmation=False)
+    if pending_mode == "write_confirmation":
+        return dict(base, status="confirmation_required", requires_confirmation=True)
+
+    result_status = str(write_result.get("status") or "").strip().lower()
+    if result_status == "duplicate_blocked":
+        return dict(base, status="blocked_idempotency", requires_confirmation=False)
+    if result_status == "error":
+        return dict(base, status="execution_error", requires_confirmation=True)
+    if result_status == "success":
+        return dict(base, status="executed", requires_confirmation=False)
+
+    decision = str(write_tool.get("decision") or "").strip().lower()
+    if clear_pending and ("cancel" in decision or "canceled" in text or "cancelled" in text):
+        return dict(base, status="canceled", requires_confirmation=False)
+    if clear_pending and (text.startswith("confirmed.") or "executed" in text):
+        return dict(base, status="executed", requires_confirmation=False)
+    if "confirm or cancel" in text:
+        return dict(base, status="confirmation_required", requires_confirmation=True)
+
+    return dict(base, status="observed_unclassified", requires_confirmation=bool(pending_mode == "write_confirmation"))
+
+
 def build_turn_audit_envelope(
     *,
     turn_id: str,
@@ -142,8 +224,12 @@ def build_turn_audit_envelope(
     error_envelope: Optional[Dict[str, Any]],
     latency_ms: int,
     final_response_hash: str,
+    user_payload: Optional[Dict[str, Any]] = None,
+    pending_state_to_set: Optional[Dict[str, Any]] = None,
+    clear_pending: bool = False,
 ) -> Dict[str, Any]:
     planner = planner_output if isinstance(planner_output, dict) else {}
+    payload = user_payload if isinstance(user_payload, dict) else {}
     tool_objs = _tool_payloads(tool_messages or [])
     plan = _planner_plan(planner)
     planner_spec = _planner_spec(planner)
@@ -186,6 +272,8 @@ def build_turn_audit_envelope(
     spec_meta = spec.get("llm_meta") if isinstance(spec.get("llm_meta"), dict) else {}
     err = error_envelope if isinstance(error_envelope, dict) else {}
     trace_id = str(err.get("trace_id") or turn_id).strip() or str(turn_id or "").strip()
+    fallback_plan = bool(plan_meta.get("fallback_used"))
+    fallback_spec = bool(spec_meta.get("fallback_used"))
 
     return _json_safe(
         {
@@ -202,6 +290,18 @@ def build_turn_audit_envelope(
                 "spec": str(spec_meta.get("prompt_version") or "").strip(),
             },
             "capability_version": str(capability_registry_version() or "").strip(),
+            "fallback_used": {
+                "plan": fallback_plan,
+                "spec": fallback_spec,
+                "any": bool(fallback_plan or fallback_spec),
+            },
+            "security_outcome": _security_outcome(
+                spec=spec,
+                tool_objs=tool_objs,
+                user_payload=payload,
+                pending_state_to_set=pending_state_to_set,
+                clear_pending=bool(clear_pending),
+            ),
             "selected_candidate": {
                 "report_name": str(read_engine.get("selected_report") or "").strip(),
                 "score": read_engine.get("selected_score"),

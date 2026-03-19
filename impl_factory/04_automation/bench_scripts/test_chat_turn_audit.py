@@ -34,6 +34,7 @@ class ChatTurnAuditTests(unittest.TestCase):
                 "llm_meta": {
                     "prompt_version": "planner_prompt_v2026_02_19_now1",
                     "model_version": "gpt-5.4-mini",
+                    "fallback_used": False,
                 },
             },
             "business_request_spec": {
@@ -47,6 +48,7 @@ class ChatTurnAuditTests(unittest.TestCase):
                     "llm_meta": {
                         "prompt_version": "spec_prompt_v2026_02_19_now1",
                         "model_version": "gpt-5.4-mini",
+                        "fallback_used": False,
                     },
                 }
             },
@@ -89,6 +91,7 @@ class ChatTurnAuditTests(unittest.TestCase):
             error_envelope=None,
             latency_ms=184,
             final_response_hash="hash123",
+            user_payload={"type": "table", "table": {"columns": [], "rows": []}},
         )
 
         self.assertEqual(str(out.get("schema_version") or ""), "turn_audit_envelope_v1")
@@ -99,6 +102,8 @@ class ChatTurnAuditTests(unittest.TestCase):
         self.assertEqual(str(((out.get("prompt_version") or {}).get("spec") or "")), "spec_prompt_v2026_02_19_now1")
         self.assertEqual(str(((out.get("selected_candidate") or {}).get("report_name") or "")), "Item-wise Sales Register")
         self.assertEqual(str(((out.get("validation_result") or {}).get("quality_verdict") or "")), "PASS")
+        self.assertEqual(bool(((out.get("fallback_used") or {}).get("any"))), False)
+        self.assertEqual(str(((out.get("security_outcome") or {}).get("status") or "")), "not_applicable")
         self.assertEqual(int(out.get("latency_ms") or 0), 184)
         self.assertEqual(str(out.get("final_response_hash") or ""), "hash123")
 
@@ -111,9 +116,94 @@ class ChatTurnAuditTests(unittest.TestCase):
             error_envelope={"code": "TOOL_EXECUTION_FAILED", "trace_id": "err999"},
             latency_ms=42,
             final_response_hash="hash999",
+            user_payload={"type": "error", "text": "I couldn’t process that request right now. Please try again."},
         )
         self.assertEqual(str(out.get("trace_id") or ""), "err999")
         self.assertEqual(str(((out.get("validation_result") or {}).get("error_code") or "")), "TOOL_EXECUTION_FAILED")
+
+    def test_write_confirmation_sets_security_outcome(self):
+        mod = _load_module()
+        planner_output = {
+            "business_request_spec": {
+                "spec": {
+                    "intent": "WRITE_DRAFT",
+                    "subject": "ToDo",
+                    "llm_meta": {
+                        "prompt_version": "spec_prompt_v2026_02_19_now1",
+                        "model_version": "gpt-5.4-mini",
+                        "fallback_used": False,
+                    },
+                }
+            }
+        }
+        pending = {
+            "mode": "write_confirmation",
+            "write_draft": {
+                "doctype": "ToDo",
+                "operation": "delete",
+            },
+        }
+        out = mod.build_turn_audit_envelope(
+            turn_id="w1",
+            planner_output=planner_output,
+            tool_messages=[],
+            error_envelope=None,
+            latency_ms=25,
+            final_response_hash="hashw1",
+            user_payload={
+                "type": "text",
+                "text": "Delete ToDo with ID TEST-123? Reply **confirm** to execute or **cancel** to stop.",
+            },
+            pending_state_to_set=pending,
+            clear_pending=False,
+        )
+        sec = out.get("security_outcome") or {}
+        self.assertEqual(str(sec.get("status") or ""), "confirmation_required")
+        self.assertEqual(str(sec.get("doctype") or ""), "ToDo")
+        self.assertEqual(str(sec.get("operation") or ""), "delete")
+        self.assertEqual(bool(sec.get("requires_confirmation")), True)
+
+    def test_write_blocked_disabled_and_fallback_are_emitted(self):
+        mod = _load_module()
+        planner_output = {
+            "plan": {
+                "action": "write_draft",
+                "llm_meta": {
+                    "prompt_version": "planner_prompt_v2026_02_19_now1",
+                    "model_version": "gpt-5.4-mini",
+                    "fallback_used": True,
+                },
+            },
+            "business_request_spec": {
+                "spec": {
+                    "intent": "WRITE_DRAFT",
+                    "subject": "ToDo",
+                    "llm_meta": {
+                        "prompt_version": "spec_prompt_v2026_02_19_now1",
+                        "model_version": "gpt-5.4-mini",
+                        "fallback_used": True,
+                    },
+                }
+            },
+        }
+        out = mod.build_turn_audit_envelope(
+            turn_id="w2",
+            planner_output=planner_output,
+            tool_messages=[],
+            error_envelope=None,
+            latency_ms=19,
+            final_response_hash="hashw2",
+            user_payload={
+                "type": "text",
+                "text": "Write-actions are disabled in this environment. Please ask an administrator to enable them.",
+            },
+        )
+        sec = out.get("security_outcome") or {}
+        fallback = out.get("fallback_used") or {}
+        self.assertEqual(str(sec.get("status") or ""), "blocked_disabled")
+        self.assertEqual(bool(fallback.get("plan")), True)
+        self.assertEqual(bool(fallback.get("spec")), True)
+        self.assertEqual(bool(fallback.get("any")), True)
 
 
 if __name__ == "__main__":

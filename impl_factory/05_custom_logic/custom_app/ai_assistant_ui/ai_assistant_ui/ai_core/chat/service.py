@@ -232,6 +232,8 @@ def _audit_turn_message(
     user_payload: Dict[str, Any],
     error_envelope: Optional[Dict[str, Any]],
     tool_messages: Optional[List[str]] = None,
+    pending_state_to_set: Optional[Dict[str, Any]] = None,
+    clear_pending: bool = False,
 ) -> Dict[str, Any]:
     elapsed_ms = int(max(0.0, (time.time() - started_ts) * 1000.0))
     intent = _intent_from_turn(
@@ -248,6 +250,9 @@ def _audit_turn_message(
         error_envelope=error_envelope,
         latency_ms=elapsed_ms,
         final_response_hash=result_hash,
+        user_payload=user_payload,
+        pending_state_to_set=pending_state_to_set,
+        clear_pending=bool(clear_pending),
     )
     return {
         "type": "audit_turn",
@@ -385,6 +390,8 @@ def handle_user_message(
                 user_payload=user_payload,
                 error_envelope=err_env,
                 tool_messages=[],
+                pending_state_to_set=None,
+                clear_pending=False,
             )
         ),
     )
@@ -437,6 +444,8 @@ def handle_user_message(
                 user_payload=result if isinstance(result, dict) else {"type": "text", "text": str(result)},
                 error_envelope=None,
                 tool_messages=tool_msgs,
+                pending_state_to_set=pending_state_to_set if isinstance(pending_state_to_set, dict) else None,
+                clear_pending=bool(clear_pending),
             )
         ),
     )

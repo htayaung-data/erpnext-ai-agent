@@ -169,8 +169,8 @@ Decision:
 2. adopt the new canonical `audit_turn.turn_audit_envelope` as the primary operational audit surface
 3. decide whether standing browser packs need stronger replay-linked parity assets for projection-only follow-ups
 4. define the next telemetry slice:
-   - security outcome field
-   - fallback-used field
+   - operational reporting adoption for `security_outcome`
+   - operational reporting adoption for `fallback_used`
 
 ## 10. Review Outcome
 
