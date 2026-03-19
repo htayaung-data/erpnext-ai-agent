@@ -572,6 +572,51 @@ class V7ResponseShaperTests(unittest.TestCase):
             ["Item Name"],
         )
 
+    def test_projection_only_top_n_preserves_row_authority_without_regrouping_duplicates(self):
+        mod = _load_module()
+        payload = {
+            "type": "report_table",
+            "report_name": "Item-wise Sales Register",
+            "table": {
+                "columns": [
+                    {"fieldname": "item_code", "label": "Item", "fieldtype": "Link"},
+                    {"fieldname": "total_qty", "label": "Sold Quantity", "fieldtype": "Float"},
+                    {"fieldname": "item_name", "label": "Item Name", "fieldtype": "Data"},
+                ],
+                "rows": [
+                    {"item_code": "ACC-CBL-BAS-TC1M", "total_qty": 392.0, "item_name": "Type-C Cable 1m Fast Charge"},
+                    {"item_code": "ACC-CBL-UGR-TC1M", "total_qty": 222.0, "item_name": "Type-C Cable 1m Fast Charge"},
+                    {"item_code": "ACC-CHR-SAM-25W", "total_qty": 103.0, "item_name": "Samsung PD Charger 25W"},
+                ],
+            },
+        }
+        spec = {
+            "intent": "TRANSFORM_LAST",
+            "task_type": "ranking",
+            "task_class": "transform_followup",
+            "group_by": ["item"],
+            "metric": "sold quantity",
+            "top_n": 10,
+            "ambiguities": ["transform_projection:only"],
+            "output_contract": {"mode": "top_n", "minimal_columns": ["item name", "sold quantity"]},
+        }
+        shaped = mod.shape_response(payload=payload, business_spec=spec)
+        table = shaped.get("table") if isinstance(shaped.get("table"), dict) else {}
+        cols = [c for c in list(table.get("columns") or []) if isinstance(c, dict)]
+        rows = [r for r in list(table.get("rows") or []) if isinstance(r, dict)]
+        self.assertEqual(
+            [str(c.get("label") or "") for c in cols],
+            ["Item Name", "Sold Quantity"],
+        )
+        self.assertEqual(
+            [(str(r.get("item_name") or ""), float(r.get("total_qty") or 0.0)) for r in rows],
+            [
+                ("Type-C Cable 1m Fast Charge", 392.0),
+                ("Type-C Cable 1m Fast Charge", 222.0),
+                ("Samsung PD Charger 25W", 103.0),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,20 +30,22 @@ Primary references:
 ## 2. Incident Summary
 
 - New Tier 1 incidents this review window: `0`
-- New Tier 2 incidents this review window: `0`
+- New Tier 2 incidents this review window: `1`
 - Reopened incidents: `0`
-- Closed incidents in this review window: `0` as formal Phase 4 operations entries
+- Closed incidents in this review window: `1`
 
 Notes:
 
 1. Phase 3 implementation defects were resolved and absorbed into governed class-slice closure work before Phase 4 entry.
-2. No open P1 or P2 incident is being carried into Phase 4 baseline.
-3. Phase 4 incident operations begin from this baseline forward.
+2. No Phase 3 P1/P2 incident was carried into the starting baseline.
+3. The first Phase 4 standing browser smoke refresh opened one new P2 / Tier 2 incident on product projection drift.
+4. The incident was resolved on the same day with bounded shaper-layer remediation and fresh browser rerun evidence.
 
 Links:
 
 1. [step14_incident_register_template.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step14_incident_register_template.md)
 2. [step36_phase4_incident_operations_contract_2026-03-18.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step36_phase4_incident_operations_contract_2026-03-18.md)
+3. [step40_phase4_incident_open_product_projection_drift_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step40_phase4_incident_open_product_projection_drift_2026-03-19.md)
 
 ## 3. Replay Health
 
@@ -68,23 +70,25 @@ Additional class evidence:
 
 | Browser Pack | Tier | Latest Status | Evidence Path / Notes |
 |---|---|---|---|
-| Customer ranking + scale | Tier 1 | Carry-forward baseline | Full standing-pack refresh due in first Phase 4 cycle |
-| Supplier ranking + scale | Tier 1 | Carry-forward baseline | Full standing-pack refresh due in first Phase 4 cycle |
-| Product ranking + projection | Tier 2 | Carry-forward baseline | Standing-pack refresh due in first Phase 4 cycle |
-| Warehouse correction + scale | Tier 1 | Carry-forward baseline | Threshold core slice closed; standing-pack refresh due in first Phase 4 cycle |
-| Latest-record clarification | Tier 1 | Carry-forward baseline | `multiturn_context` replay green; browser refresh due in first Phase 4 cycle |
-| Finance parity | Tier 1 | Carry-forward baseline | Replay baseline valid; browser refresh due in first Phase 4 cycle |
-| Write confirm/cancel smoke | Tier 1 | Carry-forward baseline | Safe-block behavior preserved in Phase 3; dedicated standing-pack refresh due in first Phase 4 cycle |
+| Customer ranking + scale | Tier 1 | Green | Fresh browser refresh recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md) |
+| Supplier ranking + scale | Tier 1 | Green | Fresh browser refresh recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md) |
+| Product ranking + projection | Tier 2 | Green | Initial failure resolved and rerun recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md); incident record in [step40_phase4_incident_open_product_projection_drift_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step40_phase4_incident_open_product_projection_drift_2026-03-19.md) |
+| Warehouse correction + scale | Tier 1 | Green | Fresh browser refresh recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md) |
+| Latest-record clarification | Tier 1 | Green | Fresh browser refresh recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md) |
+| Finance parity | Tier 1 | Green | Fresh browser refresh recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md) |
+| Write confirm/cancel smoke | Tier 1 | Green | Fresh browser refresh recorded in [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md) |
 
 Additional manual closure evidence:
 
 1. [step30_comparison_manual_execution_evidence_2026-03-18.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step30_comparison_manual_execution_evidence_2026-03-18.md)
 2. [step19_contribution_share_manual_execution_evidence_2026-03-06.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step19_contribution_share_manual_execution_evidence_2026-03-06.md)
+3. [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md)
 
 Interpretation note:
 
 1. class-closure manual evidence is strong and green
-2. it is not a substitute for a fresh full standing browser smoke refresh in the Phase 4 review window
+2. fresh Phase 4 standing browser smoke evidence now exists
+3. the one Tier 2 browser failure was handled under the incident process and closed after rerun confirmation
 
 ## 5. Shared-Surface Risk Review
 
@@ -104,7 +108,7 @@ Notes:
 
 1. `comparison` closure required multiple constrained corrections across shared runtime surfaces.
 2. Browser/manual parity correctly blocked premature closure when replay alone was insufficient.
-3. No new shared-surface code work is part of the current Phase 4 baseline.
+3. One bounded shared-surface code fix was required in `response_shaper` during the first live Phase 4 incident path.
 
 ## 6. Rerun Discipline Review
 
@@ -162,17 +166,17 @@ Decision:
    - KPI/SLO spec
    - runtime signal map
    - incident operations contract
-2. run the first full Phase 4 standing browser smoke refresh and replace carry-forward baseline rows with fresh weekly evidence
-3. decide whether to normalize the contract-level turn audit envelope in runtime telemetry or govern an aggregation rule across existing audit surfaces
+2. decide whether to normalize the contract-level turn audit envelope in runtime telemetry or govern an aggregation rule across existing audit surfaces
+3. decide whether standing browser packs need stronger replay-linked parity assets for projection-only follow-ups
 
 ## 10. Review Outcome
 
-- Quality status this week: `Watch`
+- Quality status this week: `Stable`
 - Main reason:
   - Phase 3 closed cleanly
-  - no open P1/P2 carryover incident remains
+  - all refreshed Tier 1 standing browser packs are green
+  - refreshed Tier 2 standing browser pack is green after incident resolution
   - critical replay and class-closure browser evidence are green
-  - full standing browser smoke pack has not yet been refreshed in the Phase 4 review window
   - deferred items are documented and bounded
 - Approved by:
   - AI Runtime Engineering baseline entry

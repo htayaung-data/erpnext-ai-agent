@@ -444,6 +444,8 @@ def _apply_top_n(payload: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any
         n = 0
     if n <= 0:
         return out
+    ambiguities = [str(x).strip().lower() for x in list(spec.get("ambiguities") or []) if str(x).strip()]
+    projection_only_followup = "transform_projection:only" in ambiguities
 
     def _sorted_rows_for(columns: List[Dict[str, Any]], rows_in: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not columns or not rows_in:
@@ -459,7 +461,7 @@ def _apply_top_n(payload: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any
         metric_fn = _detect_metric_column(columns, rows_in, spec, report_contract)
         dimension_fn = _detect_requested_dimension_column(columns, rows_in, spec, report_contract)
         ranked_rows = list(rows_in)
-        if metric_fn and dimension_fn:
+        if metric_fn and dimension_fn and (not projection_only_followup):
             ranked_rows = _aggregate_rows_by_dimension(
                 columns=columns,
                 rows=ranked_rows,
