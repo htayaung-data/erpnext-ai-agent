@@ -16,6 +16,7 @@ LOG_DIR = Path("impl_factory/04_automation/logs")
 DEFAULT_OUT = LOG_DIR / "latest_phase4_audit_ops_report.json"
 ACTIONABLE_INTENTS = {"READ", "EXPORT", "TRANSFORM", "WRITE_DRAFT", "WRITE_CONFIRM"}
 PLANNER_BACKED_INTENTS = {"READ", "EXPORT", "TRANSFORM", "WRITE_DRAFT"}
+MIN_ACTIONABLE_TURNS_FOR_STABLE = 20
 
 
 def _run(cmd: List[str], timeout_sec: int = CMD_TIMEOUT_SEC) -> subprocess.CompletedProcess:
@@ -39,7 +40,13 @@ def _parse_last_json(stdout: str) -> Any:
     return None
 
 
-def _fetch_recent_audit_sessions(*, site: str, session_limit: int, owner: str = "") -> List[Dict[str, Any]]:
+def _fetch_recent_audit_sessions(
+    *,
+    site: str,
+    cutoff_sql_utc: str,
+    page_size: int,
+    owner: str = "",
+) -> List[Dict[str, Any]]:
     py = f"""
 import os, json
 os.chdir('/home/frappe/frappe-bench/sites')
@@ -47,39 +54,52 @@ import frappe
 frappe.init(site={site!r}, sites_path='.')
 frappe.connect()
 try:
-    rows = frappe.get_all(
-        'AI Chat Session',
-        fields=['name', 'title', 'modified', 'owner'],
-        order_by='modified desc',
-        limit_page_length={int(session_limit)},
-    )
     owner_filter = {owner!r}.strip()
+    filters = {{
+        'modified': ['>=', {cutoff_sql_utc!r}],
+    }}
+    if owner_filter:
+        filters['owner'] = owner_filter
+    page_size = max(1, int({int(page_size)}))
+    start = 0
     out = []
-    for row in rows:
-        if owner_filter and str(row.get('owner') or '').strip() != owner_filter:
-            continue
-        doc = frappe.get_doc('AI Chat Session', row['name'])
-        audits = []
-        for m in doc.get('messages') or []:
-            if str(getattr(m, 'role', '') or '').lower() != 'tool':
-                continue
-            raw = str(getattr(m, 'content', '') or '').strip()
-            if not raw.startswith('{{'):
-                continue
-            try:
-                obj = json.loads(raw)
-            except Exception:
-                continue
-            if not isinstance(obj, dict) or str(obj.get('type') or '') != 'audit_turn':
-                continue
-            audits.append({{'idx': getattr(m, 'idx', None), 'audit': obj}})
-        out.append({{
-            'name': row.get('name'),
-            'title': row.get('title'),
-            'modified': str(row.get('modified') or ''),
-            'owner': row.get('owner'),
-            'audit_turns': audits,
-        }})
+    while True:
+        rows = frappe.get_all(
+            'AI Chat Session',
+            fields=['name', 'title', 'modified', 'owner'],
+            filters=filters,
+            order_by='modified desc',
+            limit_start=start,
+            limit_page_length=page_size,
+        )
+        if not rows:
+            break
+        for row in rows:
+            doc = frappe.get_doc('AI Chat Session', row['name'])
+            audits = []
+            for m in doc.get('messages') or []:
+                if str(getattr(m, 'role', '') or '').lower() != 'tool':
+                    continue
+                raw = str(getattr(m, 'content', '') or '').strip()
+                if not raw.startswith('{{'):
+                    continue
+                try:
+                    obj = json.loads(raw)
+                except Exception:
+                    continue
+                if not isinstance(obj, dict) or str(obj.get('type') or '') != 'audit_turn':
+                    continue
+                audits.append({{'idx': getattr(m, 'idx', None), 'audit': obj}})
+            out.append({{
+                'name': row.get('name'),
+                'title': row.get('title'),
+                'modified': str(row.get('modified') or ''),
+                'owner': row.get('owner'),
+                'audit_turns': audits,
+            }})
+        if len(rows) < page_size:
+            break
+        start += page_size
     print(json.dumps(out, ensure_ascii=False, default=str))
 finally:
     frappe.destroy()
@@ -180,9 +200,12 @@ def build_phase4_audit_ops_report(
     *,
     session_rows: List[Dict[str, Any]],
     since_hours: int,
+    now_utc: Optional[datetime] = None,
+    min_actionable_turns_for_stable: int = MIN_ACTIONABLE_TURNS_FOR_STABLE,
 ) -> Dict[str, Any]:
-    now = datetime.now(timezone.utc)
+    now = now_utc.astimezone(timezone.utc) if isinstance(now_utc, datetime) else datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=max(0, int(since_hours)))
+    min_sample = max(1, int(min_actionable_turns_for_stable))
     missing_counter: Counter[str] = Counter()
     security_counter: Counter[str] = Counter()
 
@@ -244,6 +267,13 @@ def build_phase4_audit_ops_report(
 
     incomplete_actionable_turns = max(0, actionable_turns - complete_actionable_turns)
     completeness_rate = round((complete_actionable_turns / actionable_turns), 4) if actionable_turns else 1.0
+    low_volume = actionable_turns < min_sample
+    if incomplete_actionable_turns > 0:
+        review_status_hint = "At Risk"
+    elif low_volume:
+        review_status_hint = "Watch"
+    else:
+        review_status_hint = "Stable"
 
     return {
         "schema_version": "phase4_audit_ops_report_v1",
@@ -261,6 +291,9 @@ def build_phase4_audit_ops_report(
             "actionable_turns_incomplete": incomplete_actionable_turns,
             "audit_completeness_rate": completeness_rate,
             "audit_completeness_ok": incomplete_actionable_turns == 0,
+            "min_actionable_turns_for_stable": min_sample,
+            "low_volume": low_volume,
+            "review_status_hint": review_status_hint,
         },
         "fallback_summary": {
             "fallback_any_true": fallback_any_true,
@@ -276,20 +309,26 @@ def build_phase4_audit_ops_report(
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phase 4 operational report from canonical turn audit envelopes.")
     ap.add_argument("--site", default=SITE)
-    ap.add_argument("--session-limit", type=int, default=50)
+    ap.add_argument("--session-limit", type=int, default=50, help="Fetch page size for sessions in the review window.")
     ap.add_argument("--since-hours", type=int, default=24)
     ap.add_argument("--owner", default="")
     ap.add_argument("--out-json", default=str(DEFAULT_OUT))
     args = ap.parse_args()
+    now_utc = datetime.now(timezone.utc)
+    since_hours = max(0, int(args.since_hours))
+    cutoff_dt = now_utc - timedelta(hours=since_hours)
+    cutoff_sql_utc = cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     sessions = _fetch_recent_audit_sessions(
         site=str(args.site),
-        session_limit=max(1, int(args.session_limit)),
+        cutoff_sql_utc=cutoff_sql_utc,
+        page_size=max(1, int(args.session_limit)),
         owner=str(args.owner or "").strip(),
     )
     report = build_phase4_audit_ops_report(
         session_rows=sessions,
-        since_hours=max(0, int(args.since_hours)),
+        since_hours=since_hours,
+        now_utc=now_utc,
     )
 
     out_path = Path(str(args.out_json))

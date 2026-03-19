@@ -174,7 +174,7 @@ Decision:
 
 ## 10. Review Outcome
 
-- Quality status this week: `Stable`
+- Quality status this week: `Watch`
 - Main reason:
   - Phase 3 closed cleanly
   - all refreshed Tier 1 standing browser packs are green
@@ -182,5 +182,6 @@ Decision:
   - critical replay and class-closure browser evidence are green
   - deferred items are documented and bounded
   - official review-window boundary is now defined for post-rollout audit scoring
+  - low-volume transition windows remain `Watch` until sample strength improves
 - Approved by:
   - AI Runtime Engineering baseline entry

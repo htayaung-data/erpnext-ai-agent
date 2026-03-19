@@ -71,6 +71,7 @@ then:
 1. audit completeness should not be treated as failed
 2. the window should be marked `low volume`
 3. the review must be paired with at least one recent controlled fresh-turn proof and the current browser/incident evidence
+4. the weekly review status should remain `Watch`, not plain `Stable`
 
 This prevents two bad outcomes:
 

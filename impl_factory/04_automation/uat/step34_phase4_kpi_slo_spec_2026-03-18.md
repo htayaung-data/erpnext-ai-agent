@@ -663,9 +663,11 @@ Each weekly review should classify the system as one of:
 Suggested rule:
 
 1. `Stable`
-   all stop thresholds clear, no severe incident trend, no unresolved contradiction between replay and browser evidence
+   all stop thresholds clear, no severe incident trend, no unresolved contradiction between replay and browser evidence, and reviewed operational sample size is sufficient for the KPIs being judged
 2. `Watch`
    one or more alert thresholds breached, but no stop threshold breached
+   or
+   the current review window is low volume and therefore not strong enough for plain `Stable`
 3. `At Risk`
    any stop threshold breached, any write-safety violation, or repeated contradiction between browser and replay evidence
 
