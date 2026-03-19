@@ -1,0 +1,122 @@
+{
+  "contract_version": "1.0",
+  "concepts": [
+    {
+      "concept_id": "sales",
+      "aliases": {
+        "en": ["sales", "revenue", "monthly sales", "sales trend"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "stock",
+      "aliases": {
+        "en": ["stock", "inventory", "warehouse stock", "stock balance"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "payable",
+      "aliases": {
+        "en": ["payable", "accounts payable", "ap", "supplier payable"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "receivable",
+      "aliases": {
+        "en": ["receivable", "accounts receivable", "ar", "customer receivable"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "territory",
+      "aliases": {
+        "en": ["territory", "region", "yangon", "mandalay", "naypyitaw", "taunggyi"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "warehouse",
+      "aliases": {
+        "en": ["warehouse", "store", "stockroom"],
+        "my": []
+      }
+    }
+  ],
+  "follow_up_classes": [
+    {
+      "mode": "presentation_transform",
+      "aliases": {
+        "en": ["show in million", "display in million", "convert to million", "in million"],
+        "my": []
+      }
+    },
+    {
+      "mode": "column_projection",
+      "aliases": {
+        "en": ["only item name and qty", "only item name", "only qty", "only quantity"],
+        "my": []
+      }
+    },
+    {
+      "mode": "table_presentation",
+      "aliases": {
+        "en": ["as table", "as a table", "in table", "table format", "provide as table"],
+        "my": []
+      }
+    },
+    {
+      "mode": "dimension_breakdown",
+      "aliases": {
+        "en": ["show by", "group by", "breakdown by", "split by"],
+        "my": []
+      }
+    },
+    {
+      "mode": "sort_or_limit",
+      "aliases": {
+        "en": ["top 5", "top 10", "sort descending", "sort ascending", "latest only"],
+        "my": []
+      }
+    },
+    {
+      "mode": "aging_bucket_view",
+      "aliases": {
+        "en": [
+          "by period of due",
+          "by due period",
+          "period due",
+          "ageing",
+          "aging",
+          "ageing bucket",
+          "aging bucket",
+          "longer than one month",
+          "longer than two month",
+          "longer than two months",
+          "one month",
+          "two month",
+          "two months",
+          "31-60",
+          "61-90",
+          "91-120",
+          "121+"
+        ],
+        "my": []
+      }
+    },
+    {
+      "mode": "sibling_switch",
+      "aliases": {
+        "en": ["how about receivable", "how about payable", "what about receivable", "what about payable"],
+        "my": []
+      }
+    }
+  ],
+  "interaction_hints": {
+    "self_contained_prefixes": {
+      "en": ["show", "give", "list", "top", "stock", "sales", "outstanding", "compare", "how much"],
+      "my": []
+    }
+  }
+}

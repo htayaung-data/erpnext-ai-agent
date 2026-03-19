@@ -1,0 +1,137 @@
+{
+  "contract_version": "1.0",
+  "capabilities": [
+    {
+      "capability_id": "sales_read",
+      "label": "Sales Read",
+      "report_families": [
+        "sales_analytics"
+      ],
+      "report_names": [
+        "Sales Analytics"
+      ],
+      "ontology_concepts": [
+        "sales",
+        "revenue",
+        "trend",
+        "customer",
+        "territory",
+        "item"
+      ],
+      "dimensions": [
+        "Customer",
+        "Territory",
+        "Item"
+      ],
+      "metrics": [
+        "Value",
+        "Quantity"
+      ],
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
+      "capability_id": "stock_read",
+      "label": "Stock Read",
+      "report_families": [
+        "stock_balance",
+        "warehouse_wise_stock_balance"
+      ],
+      "report_names": [
+        "Stock Balance",
+        "Warehouse Wise Stock Balance"
+      ],
+      "ontology_concepts": [
+        "stock",
+        "inventory",
+        "warehouse"
+      ],
+      "dimensions": [
+        "Warehouse",
+        "Item"
+      ],
+      "metrics": [
+        "Balance Qty",
+        "Balance Value (MMK)"
+      ],
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
+      "capability_id": "accounts_payable_read",
+      "label": "Accounts Payable Read",
+      "report_families": [
+        "accounts_payable",
+        "accounts_payable_summary"
+      ],
+      "report_names": [
+        "Accounts Payable",
+        "Accounts Payable Summary"
+      ],
+      "ontology_concepts": [
+        "payable",
+        "supplier",
+        "outstanding"
+      ],
+      "dimensions": [
+        "Supplier"
+      ],
+      "metrics": [
+        "Outstanding",
+        "Total Due"
+      ],
+      "followup_report_switches": [
+        {
+          "followup_mode": "aging_bucket_view",
+          "from_reports": [
+            "Accounts Payable Summary",
+            "Accounts Payable"
+          ],
+          "target_report": "Accounts Payable",
+          "requery_prompt_hint": "Show amounts by ageing buckets <0, 0-30, 31-60, 61-90, 91-120, and 121-Above, including supplier-level values and totals."
+        }
+      ],
+      "sibling_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
+      "capability_id": "accounts_receivable_read",
+      "label": "Accounts Receivable Read",
+      "report_families": [
+        "accounts_receivable",
+        "accounts_receivable_summary"
+      ],
+      "report_names": [
+        "Accounts Receivable",
+        "Accounts Receivable Summary"
+      ],
+      "ontology_concepts": [
+        "receivable",
+        "customer",
+        "outstanding"
+      ],
+      "dimensions": [
+        "Customer"
+      ],
+      "metrics": [
+        "Outstanding",
+        "Total Due"
+      ],
+      "followup_report_switches": [
+        {
+          "followup_mode": "aging_bucket_view",
+          "from_reports": [
+            "Accounts Receivable Summary",
+            "Accounts Receivable"
+          ],
+          "target_report": "Accounts Receivable",
+          "requery_prompt_hint": "Show amounts by ageing buckets <0, 0-30, 31-60, 61-90, 91-120, and 121-Above, including customer-level values and totals."
+        }
+      ],
+      "sibling_capabilities": [
+        "accounts_payable_read"
+      ],
+      "default_validation_profile": "report_grounded_read"
+    }
+  ]
+}

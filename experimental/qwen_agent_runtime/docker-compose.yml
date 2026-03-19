@@ -1,0 +1,12 @@
+services:
+  qwen-agent-runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ../../impl_factory/03_config/qwen_enterprise_metadata:/app/metadata:ro
+    ports:
+      - "8010:8010"
+    restart: unless-stopped

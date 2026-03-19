@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "qwen-chat",
+  "page_name": "qwen-chat",
+  "title": "Qwen Chat",
+  "icon": "octicon octicon-zap",
+  "module": "AI Assistant UI",
+  "standard": "Yes"
+}

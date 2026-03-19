@@ -1,0 +1,335 @@
+{
+  "contract_version": "1.0",
+  "reports": [
+    {
+      "report_name": "Sales Analytics",
+      "module": "Selling",
+      "family": "sales_analytics",
+      "capability_ids": [
+        "sales_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "from_date",
+        "to_date",
+        "tree_type",
+        "value_quantity",
+        "doc_type"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "grouping_change",
+        "metric_change",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Sales Amount",
+        "Value",
+        "Quantity"
+      ]
+    },
+    {
+      "report_name": "Stock Balance",
+      "module": "Stock",
+      "family": "stock_balance",
+      "capability_ids": [
+        "stock_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "grouping_change",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Balance Qty",
+        "Balance Value (MMK)"
+      ]
+    },
+    {
+      "report_name": "Warehouse Wise Stock Balance",
+      "module": "Stock",
+      "family": "warehouse_wise_stock_balance",
+      "capability_ids": [
+        "stock_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "grouping_change",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Balance Qty",
+        "Balance Value (MMK)"
+      ]
+    },
+    {
+      "report_name": "Accounts Payable Summary",
+      "module": "Accounts",
+      "family": "accounts_payable_summary",
+      "capability_ids": [
+        "accounts_payable_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "report_date"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "dimension_breakdown",
+        "filter_refinement",
+        "aging_bucket_view",
+        "new_query",
+        "sibling_switch"
+      ],
+      "chartable_fields": [
+        "Outstanding",
+        "Total Due"
+      ],
+      "supplemental_fields": [
+        {
+          "fieldname": "future_amount",
+          "label": "Future Amount"
+        },
+        {
+          "fieldname": "total_due",
+          "label": "Total Amount Due"
+        }
+      ],
+      "local_followup_adapters": {
+        "dimension_breakdown": {
+          "title": "Accounts Payable by Supplier",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Supplier",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
+        "aging_bucket_view": {
+          "title": "Accounts Payable by Due Period",
+          "dimension_label": "Supplier",
+          "bucket_labels": [
+            "Future Amount",
+            "0-30",
+            "31-60",
+            "61-90",
+            "91-120",
+            "121-Above"
+          ],
+          "total_outstanding_field": "Outstanding Amount",
+          "total_due_field": "Total Amount Due"
+        }
+      }
+    },
+    {
+      "report_name": "Accounts Payable",
+      "module": "Accounts",
+      "family": "accounts_payable",
+      "capability_ids": [
+        "accounts_payable_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "report_date"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "dimension_breakdown",
+        "filter_refinement",
+        "aging_bucket_view",
+        "new_query",
+        "sibling_switch"
+      ],
+      "chartable_fields": [
+        "Outstanding",
+        "Total Due"
+      ],
+      "supplemental_fields": [
+        {
+          "fieldname": "future_amount",
+          "label": "Future Amount"
+        },
+        {
+          "fieldname": "total_due",
+          "label": "Total Amount Due"
+        }
+      ],
+      "local_followup_adapters": {
+        "dimension_breakdown": {
+          "title": "Accounts Payable by Supplier",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Supplier",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
+        "aging_bucket_view": {
+          "title": "Accounts Payable by Due Period",
+          "dimension_label": "Supplier",
+          "bucket_labels": [
+            "Future Amount",
+            "0-30",
+            "31-60",
+            "61-90",
+            "91-120",
+            "121-Above"
+          ],
+          "total_outstanding_field": "Outstanding Amount",
+          "total_due_field": "Total Amount Due"
+        }
+      }
+    },
+    {
+      "report_name": "Accounts Receivable",
+      "module": "Accounts",
+      "family": "accounts_receivable",
+      "capability_ids": [
+        "accounts_receivable_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "report_date"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "dimension_breakdown",
+        "filter_refinement",
+        "aging_bucket_view",
+        "new_query",
+        "sibling_switch"
+      ],
+      "chartable_fields": [
+        "Outstanding",
+        "Total Due"
+      ],
+      "supplemental_fields": [
+        {
+          "fieldname": "future_amount",
+          "label": "Future Amount"
+        },
+        {
+          "fieldname": "total_due",
+          "label": "Total Amount Due"
+        }
+      ],
+      "local_followup_adapters": {
+        "dimension_breakdown": {
+          "title": "Accounts Receivable by Customer",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Customer",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
+        "aging_bucket_view": {
+          "title": "Accounts Receivable by Due Period",
+          "dimension_label": "Customer",
+          "bucket_labels": [
+            "Future Amount",
+            "0-30",
+            "31-60",
+            "61-90",
+            "91-120",
+            "121-Above"
+          ],
+          "total_outstanding_field": "Outstanding Amount",
+          "total_due_field": "Total Amount Due"
+        }
+      }
+    },
+    {
+      "report_name": "Accounts Receivable Summary",
+      "module": "Accounts",
+      "family": "accounts_receivable_summary",
+      "capability_ids": [
+        "accounts_receivable_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "report_date"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "dimension_breakdown",
+        "filter_refinement",
+        "aging_bucket_view",
+        "new_query",
+        "sibling_switch"
+      ],
+      "chartable_fields": [
+        "Outstanding",
+        "Total Due"
+      ],
+      "supplemental_fields": [
+        {
+          "fieldname": "future_amount",
+          "label": "Future Amount"
+        },
+        {
+          "fieldname": "total_due",
+          "label": "Total Amount Due"
+        }
+      ],
+      "local_followup_adapters": {
+        "dimension_breakdown": {
+          "title": "Accounts Receivable by Customer",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Customer",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
+        "aging_bucket_view": {
+          "title": "Accounts Receivable by Due Period",
+          "dimension_label": "Customer",
+          "bucket_labels": [
+            "Future Amount",
+            "0-30",
+            "31-60",
+            "61-90",
+            "91-120",
+            "121-Above"
+          ],
+          "total_outstanding_field": "Outstanding Amount",
+          "total_due_field": "Total Amount Due"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "contract_version": "1.0",
+  "profiles": [
+    {
+      "profile_id": "report_grounded_read",
+      "requires_successful_grounding_tool": true,
+      "allowed_grounding_tools": [
+        "erp_fac-generate_report",
+        "erp_fac-get_document",
+        "erp_fac-list_documents",
+        "erp_fac-search_documents",
+        "erp_fac-fetch"
+      ],
+      "requires_approved_report": true,
+      "requires_required_filters": true
+    },
+    {
+      "profile_id": "local_transform",
+      "requires_grounded_parent": true
+    }
+  ]
+}
