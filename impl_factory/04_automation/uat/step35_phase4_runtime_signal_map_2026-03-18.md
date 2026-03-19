@@ -81,7 +81,7 @@ Operational value:
 
 Current limitation:
 
-this is useful, but it does not yet fully match the contract-level `TurnAuditEnvelope` fields such as `trace_id`, `engine_version`, `model_version`, `prompt_version`, `capability_version`, `validation_result`, and `final_response_hash` in a canonical single structure.
+the legacy top-level `audit_turn` fields remain useful for backward compatibility, but the canonical operational fields now live under `audit_turn.turn_audit_envelope`. Downstream tooling still needs to consume that unified block consistently.
 
 ### 3.2 `v7_business_request_spec`
 
@@ -525,11 +525,28 @@ The enterprise contract expects a canonical audit envelope with:
 
 Current status:
 
-this information is distributed across `audit_turn`, `planner_output`, `v7_business_request_spec`, `v7_quality_gate`, and other surfaces rather than unified in one consistent structure.
+this gap is now materially reduced.
+
+The runtime now emits `audit_turn.turn_audit_envelope` with the expected canonical fields:
+
+1. `trace_id`
+2. `engine_version`
+3. `model_version`
+4. `prompt_version`
+5. `capability_version`
+6. `selected_candidate`
+7. `execution_plan`
+8. `validation_result`
+9. `latency_ms`
+10. `final_response_hash`
+
+Implementation note:
+
+the envelope is assembled in the chat/service layer from existing governed v7 tool surfaces rather than from prompt-specific logic.
 
 Action needed:
 
-Phase 4 should decide whether to normalize this into one canonical emitted structure or to define a governed aggregation rule.
+use this canonical emitted structure as the primary operational source for audit-envelope completeness, then extend downstream consumers and reporting to read it consistently.
 
 ### Gap 2. Security Policy Outcome Field
 

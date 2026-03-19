@@ -10,7 +10,11 @@ from typing import Any, Dict, Optional, Tuple, List
 import frappe
 
 from ai_assistant_ui.ai_core.chat.pending_state import get_pending_state, make_pending_state_message
-from ai_assistant_ui.ai_core.chat.turn_audit import pop_last_planner_output, clear_last_planner_output
+from ai_assistant_ui.ai_core.chat.turn_audit import (
+    build_turn_audit_envelope,
+    clear_last_planner_output,
+    pop_last_planner_output,
+)
 from ai_assistant_ui.ai_core.llm.report_planner import choose_pending_mode
 from ai_assistant_ui.ai_core.tools.registry import ToolInvocation, run_tool
 
@@ -227,6 +231,7 @@ def _audit_turn_message(
     planner_output: Optional[Dict[str, Any]],
     user_payload: Dict[str, Any],
     error_envelope: Optional[Dict[str, Any]],
+    tool_messages: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     elapsed_ms = int(max(0.0, (time.time() - started_ts) * 1000.0))
     intent = _intent_from_turn(
@@ -236,6 +241,14 @@ def _audit_turn_message(
         user_payload=user_payload,
     )
     result_hash = _hash_payload(user_payload)
+    canonical_envelope = build_turn_audit_envelope(
+        turn_id=turn_id,
+        planner_output=planner_output,
+        tool_messages=tool_messages or [],
+        error_envelope=error_envelope,
+        latency_ms=elapsed_ms,
+        final_response_hash=result_hash,
+    )
     return {
         "type": "audit_turn",
         "version": "1.0",
@@ -256,6 +269,7 @@ def _audit_turn_message(
             "payload_hash_sha256": result_hash,
             "duration_ms": elapsed_ms,
         },
+        "turn_audit_envelope": canonical_envelope,
         "user_visible_response": _response_snapshot(user_payload),
         "error_envelope": error_envelope,
     }
@@ -367,12 +381,13 @@ def handle_user_message(
                     invocation=inv,
                     pending_mode=pending_mode,
                     pending_overridden=pending_overridden,
-                    planner_output=pop_last_planner_output(),
-                    user_payload=user_payload,
-                    error_envelope=err_env,
-                )
-            ),
-        )
+                planner_output=pop_last_planner_output(),
+                user_payload=user_payload,
+                error_envelope=err_env,
+                tool_messages=[],
+            )
+        ),
+    )
         _append_message(session_doc, "assistant", _safe_json_dumps(user_payload))
         session_doc.save()
         return False, _safe_user_error_text("TOOL_EXECUTION_FAILED")
@@ -421,6 +436,7 @@ def handle_user_message(
                 planner_output=planner_output,
                 user_payload=result if isinstance(result, dict) else {"type": "text", "text": str(result)},
                 error_envelope=None,
+                tool_messages=tool_msgs,
             )
         ),
     )

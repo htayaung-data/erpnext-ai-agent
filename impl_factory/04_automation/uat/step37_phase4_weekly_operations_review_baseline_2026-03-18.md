@@ -166,8 +166,11 @@ Decision:
    - KPI/SLO spec
    - runtime signal map
    - incident operations contract
-2. decide whether to normalize the contract-level turn audit envelope in runtime telemetry or govern an aggregation rule across existing audit surfaces
+2. adopt the new canonical `audit_turn.turn_audit_envelope` as the primary operational audit surface
 3. decide whether standing browser packs need stronger replay-linked parity assets for projection-only follow-ups
+4. define the next telemetry slice:
+   - security outcome field
+   - fallback-used field
 
 ## 10. Review Outcome
 

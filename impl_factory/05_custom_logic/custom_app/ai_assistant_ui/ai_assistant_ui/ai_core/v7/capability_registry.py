@@ -64,6 +64,11 @@ def clear_registry_override_cache() -> None:
     _load_registry_overrides.cache_clear()
 
 
+def registry_version() -> str:
+    overrides = _load_registry_overrides()
+    return str(overrides.get("version") or "").strip()
+
+
 def report_override_by_name(report_name: str) -> Dict[str, Any]:
     name = str(report_name or "").strip()
     if not name:

@@ -437,6 +437,7 @@ def choose_business_request_spec(
             model=_preferred_model("spec"),
         )
         spec["llm_meta"] = {
+            "model_version": str(_preferred_model("spec") or ""),
             "prompt_version": _SPEC_PROMPT_VERSION,
             "few_shot_version": f"{BUSINESS_REQUEST_SPEC_FEW_SHOTS_VERSION}+{selector_version()}",
             "few_shot_count": len(selected_few_shot),
@@ -451,6 +452,7 @@ def choose_business_request_spec(
             has_last_result=has_last_result,
         )
         fallback["llm_meta"] = {
+            "model_version": str(_preferred_model("spec") or ""),
             "prompt_version": _SPEC_PROMPT_VERSION,
             "few_shot_version": f"{BUSINESS_REQUEST_SPEC_FEW_SHOTS_VERSION}+{selector_version()}",
             "few_shot_count": len(selected_few_shot),
@@ -669,6 +671,7 @@ def choose_plan(
             model=_preferred_model("plan"),
         )
         plan["llm_meta"] = {
+            "model_version": str(_preferred_model("plan") or ""),
             "prompt_version": _PLAN_PROMPT_VERSION,
             "few_shot_version": f"{REPORT_PLANNER_FEW_SHOTS_VERSION}+{selector_version()}",
             "few_shot_count": len(few_shot),
@@ -679,6 +682,7 @@ def choose_plan(
     except Exception:
         fallback = _fallback_clarify_plan()
         fallback["llm_meta"] = {
+            "model_version": str(_preferred_model("plan") or ""),
             "prompt_version": _PLAN_PROMPT_VERSION,
             "few_shot_version": f"{REPORT_PLANNER_FEW_SHOTS_VERSION}+{selector_version()}",
             "few_shot_count": len(few_shot),
