@@ -3,9 +3,9 @@
 Date: 2026-03-18  
 Review Owner: AI Runtime Engineering  
 Participants: AI Runtime Engineering  
-Review Window Covered: Phase 3 closure baseline carry-forward into Phase 4  
+Review Window Covered: transition baseline plus first official post-rollout review window anchored at `2026-03-19T06:01:23Z`  
 Current Phase: `Phase 4`
-Status: first operational baseline review
+Status: first operational baseline review, updated after official post-rollout review-window definition
 
 ## 1. Current Baseline Status
 
@@ -84,6 +84,7 @@ Additional manual closure evidence:
 2. [step19_contribution_share_manual_execution_evidence_2026-03-06.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step19_contribution_share_manual_execution_evidence_2026-03-06.md)
 3. [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md)
 4. [step44_phase4_first_operational_audit_report_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step44_phase4_first_operational_audit_report_2026-03-19.md)
+5. [step45_phase4_official_weekly_review_window_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step45_phase4_official_weekly_review_window_2026-03-19.md)
 
 Interpretation note:
 
@@ -164,14 +165,12 @@ Decision:
 
 ## 9. Actions For Next Week
 
-1. adopt the first operational audit report consumer for weekly review:
+1. keep using the official post-rollout review boundary from [step45_phase4_official_weekly_review_window_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step45_phase4_official_weekly_review_window_2026-03-19.md) until a full natural post-rollout week exists
+2. continue the operational audit report consumer for weekly review:
    - [phase4_audit_ops_report.py](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/bench_scripts/phase4_audit_ops_report.py)
-2. define the official weekly review window boundary after telemetry rollout so pre-envelope historical turns do not distort the completeness KPI
 3. decide whether standing browser packs need stronger replay-linked parity assets for projection-only follow-ups
-4. run the next weekly review using:
-   - fresh browser refresh status
-   - open/closed incident summary
-   - operational audit report output
+4. use the first full weekly review note as the immediate pre-closure evidence package:
+   - [step46_phase4_first_full_weekly_operations_review_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step46_phase4_first_full_weekly_operations_review_2026-03-19.md)
 
 ## 10. Review Outcome
 
@@ -182,5 +181,6 @@ Decision:
   - refreshed Tier 2 standing browser pack is green after incident resolution
   - critical replay and class-closure browser evidence are green
   - deferred items are documented and bounded
+  - official review-window boundary is now defined for post-rollout audit scoring
 - Approved by:
   - AI Runtime Engineering baseline entry
