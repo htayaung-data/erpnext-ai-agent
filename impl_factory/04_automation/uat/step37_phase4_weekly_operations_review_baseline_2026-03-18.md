@@ -83,12 +83,14 @@ Additional manual closure evidence:
 1. [step30_comparison_manual_execution_evidence_2026-03-18.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step30_comparison_manual_execution_evidence_2026-03-18.md)
 2. [step19_contribution_share_manual_execution_evidence_2026-03-06.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step19_contribution_share_manual_execution_evidence_2026-03-06.md)
 3. [step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step39_phase4_standing_browser_smoke_refresh_results_2026-03-19.md)
+4. [step44_phase4_first_operational_audit_report_2026-03-19.md](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/uat/step44_phase4_first_operational_audit_report_2026-03-19.md)
 
 Interpretation note:
 
 1. class-closure manual evidence is strong and green
 2. fresh Phase 4 standing browser smoke evidence now exists
 3. the one Tier 2 browser failure was handled under the incident process and closed after rerun confirmation
+4. the first controlled operational audit report is now available and confirms fresh canonical-envelope turns can score complete under the Phase 4 rule
 
 ## 5. Shared-Surface Risk Review
 
@@ -162,15 +164,14 @@ Decision:
 
 ## 9. Actions For Next Week
 
-1. approve and freeze the first Phase 4 starter pack:
-   - KPI/SLO spec
-   - runtime signal map
-   - incident operations contract
-2. adopt the new canonical `audit_turn.turn_audit_envelope` as the primary operational audit surface
+1. adopt the first operational audit report consumer for weekly review:
+   - [phase4_audit_ops_report.py](/home/deploy/erp-projects/erpai_project1/impl_factory/04_automation/bench_scripts/phase4_audit_ops_report.py)
+2. define the official weekly review window boundary after telemetry rollout so pre-envelope historical turns do not distort the completeness KPI
 3. decide whether standing browser packs need stronger replay-linked parity assets for projection-only follow-ups
-4. define the next telemetry slice:
-   - operational reporting adoption for `security_outcome`
-   - operational reporting adoption for `fallback_used`
+4. run the next weekly review using:
+   - fresh browser refresh status
+   - open/closed incident summary
+   - operational audit report output
 
 ## 10. Review Outcome
 

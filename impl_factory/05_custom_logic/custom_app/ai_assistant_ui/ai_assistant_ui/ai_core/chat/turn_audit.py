@@ -269,7 +269,10 @@ def build_turn_audit_envelope(
         }
 
     plan_meta = plan.get("llm_meta") if isinstance(plan.get("llm_meta"), dict) else {}
+    spec_tool_meta = spec_tool.get("llm_meta") if isinstance(spec_tool.get("llm_meta"), dict) else {}
     spec_meta = spec.get("llm_meta") if isinstance(spec.get("llm_meta"), dict) else {}
+    if spec_tool_meta:
+        spec_meta = spec_tool_meta
     err = error_envelope if isinstance(error_envelope, dict) else {}
     trace_id = str(err.get("trace_id") or turn_id).strip() or str(turn_id or "").strip()
     fallback_plan = bool(plan_meta.get("fallback_used"))

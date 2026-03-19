@@ -94,6 +94,10 @@ This slice stays inside the contract boundary because:
 3. it derives telemetry from already-governed write and planner/spec surfaces
 4. it improves operational observability without widening user-facing capability
 
+Implementation refinement:
+
+effective model provenance now falls back to the deployment default `openai_model` when slot-specific strong-model config is unset, so `model_version` is still traceable in operational review.
+
 ## 8. Remaining Phase 4 Gaps
 
 This still does not complete all telemetry work.

@@ -1460,6 +1460,7 @@ def generate_business_request_spec(
         "schema_errors": schema_errors,
         "outer_attempt_count": len(attempts),
         "attempts": attempts,
+        "selected_llm_meta": dict((attempts[-1] or {}).get("llm_meta") or {}) if attempts else {},
     }
     return {"spec": last_spec, "meta": meta}
 
@@ -1473,6 +1474,7 @@ def make_spec_tool_message(*, tool: str, mode: str, envelope: Dict[str, Any]) ->
         "schema_valid": bool(((envelope.get("meta") or {}).get("schema_valid"))),
         "schema_errors": ((envelope.get("meta") or {}).get("schema_errors") or []),
         "outer_attempt_count": int(((envelope.get("meta") or {}).get("outer_attempt_count") or 0)),
+        "llm_meta": dict(((envelope.get("meta") or {}).get("selected_llm_meta") or {})),
         "spec": envelope.get("spec") if isinstance(envelope.get("spec"), dict) else default_business_request_spec(),
     }
     return json.dumps(payload, ensure_ascii=False, default=str)

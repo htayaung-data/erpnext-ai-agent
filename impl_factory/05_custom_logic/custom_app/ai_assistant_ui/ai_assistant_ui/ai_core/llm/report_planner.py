@@ -81,7 +81,8 @@ def _preferred_model(slot: str) -> Optional[str]:
         val = str(conf.get(key) or "").strip()
         if val:
             return val
-    return None
+    fallback = str(conf.get("openai_model") or "").strip()
+    return fallback or None
 
 
 def _call_validated_json_once_retry(
