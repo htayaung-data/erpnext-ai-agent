@@ -454,11 +454,19 @@ Outcome note:
 
 ### Slice 4B.8: Family Tool Surface for Qwen-Agent
 
+Status:
+
+- `completed`
+
 Deliver:
 
 1. reduced high-level tool surface for Qwen-Agent
 2. family tool routing instead of raw report selection where available
 3. explicit policy telling Qwen-Agent to prefer family tools over raw reports
+
+Outcome note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_slice8_family_tool_surface_note_2026-03-22.md`
 
 ### Slice 4B.9: Evaluation and Rollout
 
@@ -484,11 +492,12 @@ Phase 4B should close only when:
 
 The immediate next step after this note is:
 
-1. complete the enterprise checkpoint after Slice 4B.6
-2. implement Slice 4B.8 next:
-   - reduced family-level tool surface
-   - explicit policy to prefer family tools over raw report selection
-3. then move to Slice 4B.9 family-based evaluation and rollout
+1. move to Slice 4B.9 next:
+   - family-based evaluation datasets
+   - latency and semantic pass metrics by family
+   - family rollout tracking
+2. keep the compiled family path as the preferred enterprise execution route for richer families
+3. continue hardening legacy family routing where requirements-first behavior still needs tightening
 4. keep expanding by semantic family packages, not by isolated example questions
 5. continue latency hardening without relaxing compiler or validator governance
 

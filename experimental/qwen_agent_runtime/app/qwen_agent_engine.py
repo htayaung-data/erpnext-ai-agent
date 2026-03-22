@@ -26,6 +26,7 @@ class QwenAgentEngineError(RuntimeError):
 def _build_system_contract(
 	settings: Settings,
 	response_policy: Dict[str, Any] | None = None,
+	family_tool_context: Dict[str, Any] | None = None,
 	*,
 	mode: str = "read_only",
 	compiled_query: Dict[str, Any] | None = None,
@@ -71,6 +72,58 @@ After the tool returns, answer only from tool results.
 If you cannot ground the answer in tool results, say you could not complete a grounded ERP lookup.
 Keep answers concise and business-focused.
 {response_policy_line}"""
+	family_context = family_tool_context if isinstance(family_tool_context, dict) else {}
+	family_entries = family_context.get("family_entries") if isinstance(family_context.get("family_entries"), list) else []
+	allowed_report_names = family_context.get("allowed_report_names") if isinstance(family_context.get("allowed_report_names"), list) else []
+	report_discovery_allowed = bool(family_context.get("report_discovery_allowed", True))
+	family_policy_block = ""
+	preferred_order_block = (
+		"Prefer this order when answering report questions:\n"
+		"1. use report_list to identify the relevant report,\n"
+		"2. use report_requirements only if required,\n"
+		"3. use generate_report to fetch the answer.\n"
+	)
+	if family_entries:
+		lines: List[str] = []
+		for item in family_entries[:3]:
+			if not isinstance(item, dict):
+				continue
+			family_id = str(item.get("family_id") or "").strip()
+			tool_id = str(item.get("tool_id") or "").strip()
+			report_names = [
+				str(name or "").strip()
+				for name in list(item.get("report_names") or [])
+				if str(name or "").strip()
+			]
+			prompt_hint = str(item.get("prompt_hint") or "").strip()
+			label = tool_id or family_id or "governed_family_route"
+			detail = f"- {label}: approved reports = {', '.join(report_names[:6])}."
+			if prompt_hint:
+				detail = f"{detail} {prompt_hint}"
+			lines.append(detail)
+		allowed_line = ""
+		if allowed_report_names:
+			allowed_line = f"In this request, restrict report calls to these approved family reports: {', '.join(str(name or '').strip() for name in allowed_report_names if str(name or '').strip())}.\n"
+		discovery_line = (
+			"Do not call erp_fac-report_list when a governed family route is provided. "
+			"Prefer direct family routing: use erp_fac-report_requirements only if a required filter is missing; otherwise call erp_fac-generate_report directly.\n"
+			if not report_discovery_allowed
+			else "Prefer governed family routes first; use erp_fac-report_list only if the family route truly cannot answer the request.\n"
+		)
+		family_policy_block = (
+			"A governed family tool surface is active for this request.\n"
+			"Prefer these family routes over raw report discovery:\n"
+			f"{chr(10).join(lines)}\n"
+			f"{allowed_line}"
+			f"{discovery_line}"
+		)
+		if not report_discovery_allowed:
+			preferred_order_block = (
+				"Prefer this order when answering the request:\n"
+				"1. select one governed family route from the provided family entries,\n"
+				"2. use report_requirements only if a required filter is missing,\n"
+				"3. use generate_report to fetch the grounded result.\n"
+			)
 	return f"""You are an ERP assistant operating in read-only mode.
 Today's date is {today} UTC.
 Use only these approved tools: {tools}.
@@ -80,12 +133,8 @@ Only answer from tool results.
 If you cannot ground the answer in tool results, say you could not complete a grounded ERP lookup.
 Do not narrate your plan or say "let me" before the work is complete.
 Keep answers concise and business-focused.
-{response_policy_line}{default_company_line}For follow-up filters like territory, customer, warehouse, or date refinement, prefer continuing to a final grounded report instead of stopping after discovery steps.
-Prefer this order when answering report questions:
-1. use report_list to identify the relevant report,
-2. use report_requirements only if required,
-3. use generate_report to fetch the answer.
-Do not retry the same tool with the same inputs repeatedly.
+{response_policy_line}{default_company_line}{family_policy_block}For follow-up filters like territory, customer, warehouse, or date refinement, prefer continuing to a final grounded report instead of stopping after discovery steps.
+{preferred_order_block}Do not retry the same tool with the same inputs repeatedly.
 Use at most {max(1, settings.max_tool_calls)} tool/LLM turns and stop once you have enough grounded data to answer."""
 
 
@@ -386,6 +435,7 @@ def _wrap_fac_tool_calls(
 	settings: Settings,
 	*,
 	compiled_query: Dict[str, Any] | None = None,
+	family_tool_context: Dict[str, Any] | None = None,
 ) -> None:
 	for tool_name, tool in getattr(bot, "function_map", {}).items():
 		if not str(tool_name or "").startswith("erp_fac-"):
@@ -403,6 +453,7 @@ def _wrap_fac_tool_calls(
 					params,
 					settings,
 					compiled_query=compiled_query,
+					family_tool_context=family_tool_context,
 				)
 				result = fn(params, **kwargs)
 				if str(current_tool_name or "").strip() == "erp_fac-report_list":
@@ -438,17 +489,24 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 		"generate_cfg": _generate_cfg(settings),
 	}
 	compiled_query = request.compiled_query if isinstance(request.compiled_query, dict) else {}
+	family_tool_context = request.family_tool_context if isinstance(request.family_tool_context, dict) else {}
 	bot = Assistant(
 		llm=llm_cfg,
 		system_message=_build_system_contract(
 			settings,
 			request.response_policy,
+			family_tool_context,
 			mode=str(request.mode or "read_only").strip().lower(),
 			compiled_query=compiled_query,
 		),
 		function_list=[mcp_descriptor],
 	)
-	_wrap_fac_tool_calls(bot, settings, compiled_query=compiled_query)
+	_wrap_fac_tool_calls(
+		bot,
+		settings,
+		compiled_query=compiled_query,
+		family_tool_context=family_tool_context,
+	)
 
 	messages = _normalize_conversation_messages(request)
 
@@ -485,6 +543,13 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 			"engine": "qwen_agent",
 			"model": settings.qwen_model,
 			"tool_call_count": len(tool_trace),
+			"family_tool_surface_active": bool(family_tool_context),
+			"family_tool_report_discovery_allowed": bool(family_tool_context.get("report_discovery_allowed", True))
+			if isinstance(family_tool_context, dict)
+			else True,
+			"family_tool_candidate_count": len(family_tool_context.get("candidate_family_ids") or [])
+			if isinstance(family_tool_context, dict)
+			else 0,
 		},
 		error=error if answer_text else "No grounded answer returned.",
 	)

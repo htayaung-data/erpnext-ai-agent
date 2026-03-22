@@ -68,6 +68,15 @@ For development with Alibaba Cloud Model Studio, use the OpenAI-compatible endpo
 
 The runtime automatically disables thinking with the DashScope-compatible request shape when it detects a DashScope `compatible-mode` base URL.
 
+The `POST /chat` payload also supports an optional governed `family_tool_context`.
+When present, the runtime:
+
+- narrows the approved report set to the family-approved reports
+- can disable `erp_fac-report_list`
+- tells Qwen-Agent to prefer governed family routes over raw report discovery
+
+This is intended for enterprise family routing and does not replace compiled execution.
+
 For FAC MCP in this runtime, the recommended settings are:
 
 - `FAC_MCP_TRANSPORT=streamable-http`

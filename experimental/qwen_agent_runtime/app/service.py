@@ -23,16 +23,31 @@ from app.settings import Settings
 from app.validation import summarize_read_validation
 
 
-def _safe_response(*, error: str, engine: str, validation: dict | None = None) -> ChatResponse:
+def _safe_response(
+	*,
+	error: str,
+	engine: str,
+	validation: dict | None = None,
+	agent_meta: dict | None = None,
+	tool_trace: list | None = None,
+) -> ChatResponse:
+	meta = dict(agent_meta or {}) if isinstance(agent_meta, dict) else {}
+	meta.update(
+		{
+			"engine": str(meta.get("engine") or engine or "").strip() or engine,
+			"grounded": False,
+			"validation": validation or {"status": "fail", "errors": [str(error or "").strip()]},
+		}
+	)
 	return ChatResponse(
 		ok=False,
 		answer_text="I could not complete a grounded ERP lookup.",
-		tool_trace=[],
-		agent_meta={
-			"engine": engine,
-			"grounded": False,
-			"validation": validation or {"status": "fail", "errors": [str(error or "").strip()]},
-		},
+		tool_trace=[
+			item if isinstance(item, ToolTraceItem) else ToolTraceItem(**item)
+			for item in list(tool_trace or [])
+			if isinstance(item, (dict, ToolTraceItem))
+		],
+		agent_meta=meta,
 		error=str(error or "").strip(),
 	)
 
@@ -47,12 +62,16 @@ def _validate_response(response: ChatResponse, settings: Settings) -> ChatRespon
 		return _safe_response(
 			error="Qwen-Agent returned an ungrounded answer without tool usage.",
 			engine=settings.engine_mode,
+			agent_meta=response.agent_meta,
+			tool_trace=response.tool_trace,
 		)
 
 	if any(str(x.tool or "").strip().lower().startswith(("create", "update", "delete", "write")) for x in tool_trace):
 		return _safe_response(
 			error="Write-oriented tool usage is not allowed in read-only mode.",
 			engine=settings.engine_mode,
+			agent_meta=response.agent_meta,
+			tool_trace=response.tool_trace,
 		)
 
 	validation_ok, validation_summary = summarize_read_validation(tool_trace, answer_text)
@@ -61,6 +80,8 @@ def _validate_response(response: ChatResponse, settings: Settings) -> ChatRespon
 			error="Grounded read validation failed.",
 			engine=settings.engine_mode,
 			validation=validation_summary,
+			agent_meta=response.agent_meta,
+			tool_trace=response.tool_trace,
 		)
 
 	return ChatResponse(

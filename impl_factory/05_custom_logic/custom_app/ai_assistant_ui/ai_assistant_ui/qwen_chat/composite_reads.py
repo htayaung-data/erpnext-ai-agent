@@ -333,6 +333,7 @@ def _execute_composite_step(
 			message=message,
 			recent_messages=list(recent_messages or []),
 			response_policy=compiled_request.response_policy if isinstance(compiled_request.response_policy, dict) else {},
+			family_tool_context={},
 			mode="compiled_read_query",
 			compiled_query=compiled_request.to_payload(),
 			request_id=compiled_request.request_id,

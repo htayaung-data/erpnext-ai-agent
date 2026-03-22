@@ -571,6 +571,43 @@ class AuditEnvelope:
 
 
 @dataclass(frozen=True)
+class FamilyToolSurfaceContract:
+	request_id: str
+	session_id: str
+	candidate_family_ids: List[str]
+	preferred_tool_ids: List[str]
+	allowed_report_names: List[str]
+	report_discovery_allowed: bool
+	reason: str
+	family_entries: List[Dict[str, Any]]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_family_tool_surface_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"candidate_family_ids": list(self.candidate_family_ids),
+			"preferred_tool_ids": list(self.preferred_tool_ids),
+			"allowed_report_names": list(self.allowed_report_names),
+			"report_discovery_allowed": self.report_discovery_allowed,
+			"reason": self.reason,
+			"family_entries": [dict(item) for item in self.family_entries if isinstance(item, dict)],
+			"created_at": _utc_now(),
+		}
+
+	def to_runtime_payload(self) -> Dict[str, Any]:
+		return {
+			"candidate_family_ids": list(self.candidate_family_ids),
+			"preferred_tool_ids": list(self.preferred_tool_ids),
+			"allowed_report_names": list(self.allowed_report_names),
+			"report_discovery_allowed": self.report_discovery_allowed,
+			"reason": self.reason,
+			"family_entries": [dict(item) for item in self.family_entries if isinstance(item, dict)],
+		}
+
+
+@dataclass(frozen=True)
 class CompiledExecutionAuditContract:
 	request_id: str
 	session_id: str
@@ -928,6 +965,29 @@ def build_rendered_family_response_contract(
 		source_reports=[str(x or "").strip() for x in (source_reports or []) if str(x or "").strip()],
 		blocks=[dict(item) for item in (blocks or []) if isinstance(item, dict)],
 		warnings=[str(x or "").strip() for x in (warnings or []) if str(x or "").strip()],
+	)
+
+
+def build_family_tool_surface_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	candidate_family_ids: List[str] | None = None,
+	preferred_tool_ids: List[str] | None = None,
+	allowed_report_names: List[str] | None = None,
+	report_discovery_allowed: bool = True,
+	reason: str = "",
+	family_entries: List[Dict[str, Any]] | None = None,
+) -> FamilyToolSurfaceContract:
+	return FamilyToolSurfaceContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		candidate_family_ids=[str(x or "").strip() for x in (candidate_family_ids or []) if str(x or "").strip()],
+		preferred_tool_ids=[str(x or "").strip() for x in (preferred_tool_ids or []) if str(x or "").strip()],
+		allowed_report_names=[str(x or "").strip() for x in (allowed_report_names or []) if str(x or "").strip()],
+		report_discovery_allowed=bool(report_discovery_allowed),
+		reason=str(reason or "").strip(),
+		family_entries=[dict(item) for item in (family_entries or []) if isinstance(item, dict)],
 	)
 
 

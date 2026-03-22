@@ -20,6 +20,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_response_policy_contract,
 	is_self_contained_business_request,
 )
+from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.followup_interpreter import is_safe_local_compatibility_intent
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import resolve_followup_report_switch
@@ -1210,6 +1211,15 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				result=compiled_result,
 			)
 	start = time.perf_counter()
+	family_tool_surface = build_family_tool_surface_for_message(
+		request_id=request_id,
+		session_id=session_name,
+		message=msg,
+	)
+	family_tool_context_payload = {}
+	if family_tool_surface is not None:
+		family_tool_context_payload = family_tool_surface.to_runtime_payload()
+		_append_tool_payload(session_doc, family_tool_surface.to_payload())
 	try:
 		runtime_payload = call_qwen_runtime_chat(
 			session_id=session_name,
@@ -1218,6 +1228,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			message=runtime_message,
 			recent_messages=recent_messages,
 			response_policy=response_policy_contract.to_runtime_payload(),
+			family_tool_context=family_tool_context_payload,
 			mode="read_only",
 			request_id=request_id,
 		)
@@ -1847,3 +1858,158 @@ def run_first_turn_regression_suite(messages: List[str] | None = None) -> Dict[s
 					conf.pop(key, None)
 				except Exception:
 					pass
+
+
+def run_phase4b_family_tool_surface_smoke(messages: List[str] | None = None) -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	default_messages = [
+		"Top 5 customers by revenue",
+	]
+	test_messages = [
+		str(item or "").strip()
+		for item in (messages or default_messages)
+		if str(item or "").strip()
+	]
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = False
+		conf[percent_key] = 0
+		conf[users_key] = []
+		results: List[Dict[str, Any]] = []
+		for message in test_messages:
+			expected_surface = build_family_tool_surface_for_message(
+				request_id=f"phase4b-family-tool-{uuid.uuid4().hex[:8]}",
+				session_id="phase4b-family-tool-surface",
+				message=message,
+			)
+			if expected_surface is None:
+				raise RuntimeError(
+					f"Phase 4B family tool surface smoke failed: no governed family tool surface was built for `{message}`."
+				)
+			doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+			doc.title = "Phase 4B Family Tool Surface Smoke"
+			doc.insert(ignore_permissions=False)
+			try:
+				ok, payload = handle_qwen_user_message(
+					session_name=doc.name,
+					message=message,
+					user="Administrator",
+				)
+				session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+				tool_payloads = []
+				for row in session_doc.get("messages") or []:
+					if str(row.role or "").strip().lower() != "tool":
+						continue
+					payload_obj = _parse_payload(str(row.content or ""))
+					if payload_obj:
+						tool_payloads.append(payload_obj)
+				family_tool_payload = next(
+					(
+						item
+						for item in reversed(tool_payloads)
+						if str(item.get("type") or "").strip() == "qwen_family_tool_surface_contract"
+					),
+					{},
+				)
+				if not family_tool_payload:
+					raise RuntimeError(
+						f"Phase 4B family tool surface smoke failed: family tool contract was not persisted for `{message}`."
+					)
+				runtime_trace = next(
+					(
+						item
+						for item in reversed(tool_payloads)
+						if str(item.get("type") or "").strip() == "qwen_runtime_trace"
+					),
+					{},
+				)
+				tool_trace = runtime_trace.get("tool_trace") if isinstance(runtime_trace.get("tool_trace"), list) else []
+				tool_names = [str(item.get("tool") or "").strip() for item in tool_trace if isinstance(item, dict)]
+				if "erp_fac-report_list" in tool_names:
+					raise RuntimeError(
+						f"Phase 4B family tool surface smoke failed: runtime used report discovery for `{message}`."
+					)
+				agent_meta = runtime_trace.get("agent_meta") if isinstance(runtime_trace.get("agent_meta"), dict) else {}
+				if not bool(agent_meta.get("family_tool_surface_active")):
+					raise RuntimeError(
+						f"Phase 4B family tool surface smoke failed: runtime agent meta did not mark family tool routing active for `{message}`."
+					)
+				if not bool(ok):
+					raise RuntimeError(
+						f"Phase 4B family tool surface smoke failed: live service did not return ok for `{message}`."
+					)
+				results.append(
+					{
+						"message": message,
+						"ok": bool(ok),
+						"mode": str((payload or {}).get("mode") or "").strip(),
+						"candidate_family_ids": list(family_tool_payload.get("candidate_family_ids") or []),
+						"preferred_tool_ids": list(family_tool_payload.get("preferred_tool_ids") or []),
+						"report_discovery_allowed": bool(family_tool_payload.get("report_discovery_allowed", True)),
+						"tool_names": tool_names,
+						"agent_meta": agent_meta,
+					}
+				)
+			finally:
+				frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+		return {"ok": True, "results": results}
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_family_tool_surface_probe() -> Dict[str, Any]:
+	checks = [
+		("financial_statement", "Show me P & L statement"),
+		("aging", "How much payable amount do we have as of now"),
+		("ranking_analytics", "Top 5 customers by revenue"),
+		("trend_analytics", "Show monthly sales trend"),
+		("product_profitability", "which products are performing well last month"),
+	]
+	results: List[Dict[str, Any]] = []
+	for expected_family_id, message in checks:
+		contract = build_family_tool_surface_for_message(
+			request_id=f"phase4b-family-probe-{uuid.uuid4().hex[:8]}",
+			session_id="phase4b-family-tool-probe",
+			message=message,
+		)
+		if contract is None:
+			raise RuntimeError(
+				f"Phase 4B family tool surface probe failed: no family tool contract was produced for `{message}`."
+			)
+		candidate_family_ids = list(contract.candidate_family_ids or [])
+		if expected_family_id not in candidate_family_ids:
+			raise RuntimeError(
+				f"Phase 4B family tool surface probe failed: expected family `{expected_family_id}` was not present for `{message}`."
+			)
+		if contract.report_discovery_allowed:
+			raise RuntimeError(
+				f"Phase 4B family tool surface probe failed: report discovery remained enabled for `{message}`."
+			)
+		results.append(
+			{
+				"message": message,
+				"candidate_family_ids": candidate_family_ids,
+				"preferred_tool_ids": list(contract.preferred_tool_ids or []),
+				"allowed_report_names": list(contract.allowed_report_names or []),
+			}
+		)
+	return {"ok": True, "results": results}

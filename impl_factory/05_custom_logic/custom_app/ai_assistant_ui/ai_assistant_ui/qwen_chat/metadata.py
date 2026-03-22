@@ -387,6 +387,14 @@ def report_family_adapter_id(family_id: str) -> str:
 	return str(get_report_family_spec(family_id).get("adapter_id") or "").strip()
 
 
+def report_family_agent_tool_id(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("agent_tool_id") or "").strip()
+
+
+def report_family_agent_prompt_hint(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("agent_prompt_hint") or "").strip()
+
+
 def report_family_renderer_id(family_id: str) -> str:
 	return str(get_report_family_spec(family_id).get("renderer_id") or "").strip()
 
@@ -418,6 +426,11 @@ def report_family_capability_ids(family_id: str) -> List[str]:
 	if not isinstance(values, list):
 		return []
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_routing_hints(family_id: str) -> Dict[str, Any]:
+	value = get_report_family_spec(family_id).get("routing_hints")
+	return dict(value) if isinstance(value, dict) else {}
 
 
 def report_family_ids_for_intent_class(intent_class_id: str) -> List[str]:
