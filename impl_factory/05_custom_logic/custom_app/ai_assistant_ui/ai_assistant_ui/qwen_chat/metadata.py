@@ -45,6 +45,34 @@ def load_report_registry() -> Dict[str, Any]:
 	return _load_json("report_registry.json")
 
 
+def load_report_family_registry() -> Dict[str, Any]:
+	return _load_json("report_family_registry.json")
+
+
+def load_validation_rules() -> Dict[str, Any]:
+	return _load_json("validation_rules.json")
+
+
+def get_capability_spec(capability_id: str) -> Dict[str, Any]:
+	capabilities = load_capability_registry().get("capabilities")
+	if not isinstance(capabilities, list):
+		return {}
+	target = str(capability_id or "").strip()
+	for item in capabilities:
+		if not isinstance(item, dict):
+			continue
+		if str(item.get("capability_id") or "").strip() == target:
+			return dict(item)
+	return {}
+
+
+def list_capability_specs() -> List[Dict[str, Any]]:
+	values = load_capability_registry().get("capabilities")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
 def get_report_spec(report_name: str) -> Dict[str, Any]:
 	reports = load_report_registry().get("reports")
 	if not isinstance(reports, list):
@@ -55,6 +83,36 @@ def get_report_spec(report_name: str) -> Dict[str, Any]:
 			continue
 		if str(item.get("report_name") or "").strip().lower() == name:
 			return dict(item)
+	return {}
+
+
+def list_report_family_specs() -> List[Dict[str, Any]]:
+	values = load_report_family_registry().get("families")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_report_family_spec(family_id: str) -> Dict[str, Any]:
+	target = str(family_id or "").strip()
+	for item in list_report_family_specs():
+		if str(item.get("family_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_intent_class_specs() -> List[Dict[str, Any]]:
+	values = load_capability_registry().get("intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_intent_class_spec(intent_class_id: str) -> Dict[str, Any]:
+	target = str(intent_class_id or "").strip()
+	for item in list_intent_class_specs():
+		if str(item.get("intent_class_id") or "").strip() == target:
+			return item
 	return {}
 
 
@@ -141,6 +199,205 @@ def report_capability_ids(report_name: str) -> List[str]:
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
 
 
+def capability_intent_classes(capability_id: str) -> List[str]:
+	values = get_capability_spec(capability_id).get("intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def capability_semantic_tags(capability_id: str) -> List[str]:
+	values = get_capability_spec(capability_id).get("semantic_tags")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def capability_report_names(capability_id: str) -> List[str]:
+	values = get_capability_spec(capability_id).get("report_names")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def capability_default_report_name(capability_id: str) -> str:
+	return str(get_capability_spec(capability_id).get("default_report_name") or "").strip()
+
+
+def capability_business_family_ids(capability_id: str) -> List[str]:
+	target = str(capability_id or "").strip()
+	if not target:
+		return []
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		values = spec.get("capability_ids")
+		if not isinstance(values, list):
+			continue
+		if target in {str(x or "").strip() for x in values if str(x or "").strip()}:
+			family_id = str(spec.get("family_id") or "").strip()
+			if family_id:
+				out.append(family_id)
+	return list(dict.fromkeys(out))
+
+
+def report_supported_intent_classes(report_name: str) -> List[str]:
+	values = get_report_spec(report_name).get("supported_intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_semantic_tags(report_name: str) -> List[str]:
+	values = get_report_spec(report_name).get("semantic_tags")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_supported_dimensions(report_name: str) -> List[str]:
+	values = get_report_spec(report_name).get("supported_dimensions")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_supported_metrics(report_name: str) -> List[str]:
+	values = get_report_spec(report_name).get("supported_metrics")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_defaultable_filters(report_name: str) -> List[Dict[str, Any]]:
+	values = get_report_spec(report_name).get("defaultable_filters")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def report_validation_profile(report_name: str) -> str:
+	return str(get_report_spec(report_name).get("validation_profile") or "").strip()
+
+
+def report_business_family_ids(report_name: str) -> List[str]:
+	target = str(report_name or "").strip().lower()
+	if not target:
+		return []
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		values = spec.get("report_names")
+		if not isinstance(values, list):
+			continue
+		report_names = {str(x or "").strip().lower() for x in values if str(x or "").strip()}
+		if target in report_names:
+			family_id = str(spec.get("family_id") or "").strip()
+			if family_id:
+				out.append(family_id)
+	return list(dict.fromkeys(out))
+
+
+def report_family_supported_intent_classes(family_id: str) -> List[str]:
+	values = get_report_family_spec(family_id).get("supported_intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_canonical_metrics(family_id: str) -> List[str]:
+	values = get_report_family_spec(family_id).get("canonical_metrics")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_canonical_dimensions(family_id: str) -> List[str]:
+	values = get_report_family_spec(family_id).get("canonical_dimensions")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_adapter_id(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("adapter_id") or "").strip()
+
+
+def report_family_validation_profile(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("validation_profile") or "").strip()
+
+
+def report_family_semantic_tags(family_id: str) -> List[str]:
+	values = get_report_family_spec(family_id).get("semantic_tags")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_composite_allowed(family_id: str) -> bool:
+	return bool(get_report_family_spec(family_id).get("composite_allowed"))
+
+
+def report_family_report_names(family_id: str) -> List[str]:
+	values = get_report_family_spec(family_id).get("report_names")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_capability_ids(family_id: str) -> List[str]:
+	values = get_report_family_spec(family_id).get("capability_ids")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_ids_for_intent_class(intent_class_id: str) -> List[str]:
+	target = str(intent_class_id or "").strip()
+	if not target:
+		return []
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		values = spec.get("supported_intent_classes")
+		if not isinstance(values, list):
+			continue
+		if target in {str(x or "").strip() for x in values if str(x or "").strip()}:
+			family_id = str(spec.get("family_id") or "").strip()
+			if family_id:
+				out.append(family_id)
+	return list(dict.fromkeys(out))
+
+
+def get_validation_profile(profile_id: str) -> Dict[str, Any]:
+	rules = load_validation_rules().get("profiles")
+	if not isinstance(rules, list):
+		return {}
+	target = str(profile_id or "").strip()
+	for item in rules:
+		if not isinstance(item, dict):
+			continue
+		if str(item.get("profile_id") or "").strip() == target:
+			return dict(item)
+	return {}
+
+
+def semantic_validation_policy() -> Dict[str, Any]:
+	value = load_validation_rules().get("semantic_validation")
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def ambiguity_rules() -> List[Dict[str, Any]]:
+	values = load_validation_rules().get("ambiguity_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def report_approved_followup_modes(report_name: str) -> List[str]:
+	values = get_report_spec(report_name).get("approved_follow_up_modes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
 def capability_dimensions_for_report(report_name: str) -> List[str]:
 	capability_ids = set(report_capability_ids(report_name))
 	if not capability_ids:
@@ -159,6 +416,60 @@ def capability_dimensions_for_report(report_name: str) -> List[str]:
 			continue
 		out.extend(str(x or "").strip() for x in values if str(x or "").strip())
 	return list(dict.fromkeys(out))
+
+
+def capability_metrics_for_report(report_name: str) -> List[str]:
+	capability_ids = set(report_capability_ids(report_name))
+	if not capability_ids:
+		return []
+	capabilities = load_capability_registry().get("capabilities")
+	if not isinstance(capabilities, list):
+		return []
+	out: List[str] = []
+	for item in capabilities:
+		if not isinstance(item, dict):
+			continue
+		if str(item.get("capability_id") or "").strip() not in capability_ids:
+			continue
+		values = item.get("metrics")
+		if not isinstance(values, list):
+			continue
+		out.extend(str(x or "").strip() for x in values if str(x or "").strip())
+	return list(dict.fromkeys(out))
+
+
+def report_sibling_capability_specs(report_name: str) -> List[Dict[str, Any]]:
+	out: List[Dict[str, Any]] = []
+	seen: set[str] = set()
+	for capability_id in report_capability_ids(report_name):
+		source_spec = get_capability_spec(capability_id)
+		sibling_ids = source_spec.get("sibling_capabilities")
+		if not isinstance(sibling_ids, list):
+			continue
+		for sibling_id in sibling_ids:
+			sibling = get_capability_spec(str(sibling_id or "").strip())
+			clean_id = str(sibling.get("capability_id") or "").strip()
+			if not clean_id or clean_id in seen:
+				continue
+			out.append(sibling)
+			seen.add(clean_id)
+	return out
+
+
+def resolve_target_report_for_capability(source_report_name: str, target_capability_id: str) -> str:
+	target = get_capability_spec(target_capability_id)
+	if not target:
+		return ""
+	source_name = str(source_report_name or "").strip().lower()
+	if "summary" in source_name:
+		value = str(target.get("summary_report_name") or "").strip()
+		if value:
+			return value
+	if source_name and "summary" not in source_name:
+		value = str(target.get("detail_report_name") or "").strip()
+		if value:
+			return value
+	return str(target.get("default_report_name") or "").strip()
 
 
 def report_supplemental_fields(report_name: str) -> List[Dict[str, str]]:

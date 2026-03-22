@@ -31,6 +31,8 @@ class FollowUpIntent:
 	requested_modes: List[str]
 	matched_aliases: Dict[str, List[str]]
 	target_dimension: str = ""
+	target_limit: int = 0
+	sort_direction: str = ""
 
 
 def _normalized_dimension_candidates(grounded_turn: Dict[str, object] | None) -> Dict[str, str]:
@@ -74,13 +76,35 @@ def _detect_dimension_breakdown_target(text: str, grounded_turn: Dict[str, objec
 	return str(candidates.get(target) or "")
 
 
+def _detect_sort_limit_spec(text: str) -> tuple[int, str]:
+	limit = 0
+	direction = ""
+
+	top_match = re.search(r"\btop\s+(\d+)\b", text)
+	if top_match:
+		limit = int(top_match.group(1))
+		direction = "desc"
+
+	bottom_match = re.search(r"\b(?:bottom|lowest)\s+(\d+)\b", text)
+	if bottom_match:
+		limit = int(bottom_match.group(1))
+		direction = "asc"
+
+	if re.search(r"\b(?:highest|largest|biggest|descending|desc)\b", text):
+		direction = "desc"
+	if re.search(r"\b(?:lowest|smallest|ascending|asc)\b", text):
+		direction = "asc"
+
+	return max(0, int(limit)), direction
+
+
 def detect_followup_intent(message: str, language: str = "en", grounded_turn: Dict[str, object] | None = None) -> FollowUpIntent:
 	text = _normalize_text(message)
 	if not text:
-		return FollowUpIntent(requested_modes=[], matched_aliases={}, target_dimension="")
+		return FollowUpIntent(requested_modes=[], matched_aliases={}, target_dimension="", target_limit=0, sort_direction="")
 	entries = load_business_ontology().get("follow_up_classes")
 	if not isinstance(entries, list):
-		return FollowUpIntent(requested_modes=[], matched_aliases={}, target_dimension="")
+		return FollowUpIntent(requested_modes=[], matched_aliases={}, target_dimension="", target_limit=0, sort_direction="")
 
 	requested_modes: List[str] = []
 	matched_aliases: Dict[str, List[str]] = {}
@@ -112,10 +136,22 @@ def detect_followup_intent(message: str, language: str = "en", grounded_turn: Di
 		requested_modes.append("dimension_breakdown")
 		matched_aliases.setdefault("dimension_breakdown", []).append(target_dimension)
 
+	target_limit, sort_direction = _detect_sort_limit_spec(text)
+	if target_limit or sort_direction:
+		requested_modes.append("sort_or_limit")
+		sort_matches: List[str] = []
+		if target_limit:
+			sort_matches.append(f"top {target_limit}" if sort_direction != "asc" else f"bottom {target_limit}")
+		if sort_direction and not target_limit:
+			sort_matches.append(sort_direction)
+		matched_aliases.setdefault("sort_or_limit", []).extend(sort_matches or ["sort"])
+
 	return FollowUpIntent(
 		requested_modes=list(dict.fromkeys(requested_modes)),
 		matched_aliases=matched_aliases,
 		target_dimension=target_dimension,
+		target_limit=target_limit,
+		sort_direction=sort_direction,
 	)
 
 
@@ -134,9 +170,26 @@ def is_self_contained_business_request(
 	if len(text.split()) < 4:
 		return False
 	parsed = intent or detect_followup_intent(text, language=language, grounded_turn=grounded_turn)
-	if {"presentation_transform", "dimension_breakdown"}.intersection(parsed.requested_modes):
+	has_grounded_turn = bool(isinstance(grounded_turn, dict) and grounded_turn.get("grounded"))
+	if has_grounded_turn and {"presentation_transform", "dimension_breakdown", "sort_or_limit"}.intersection(parsed.requested_modes):
 		return False
 	prefixes = ontology_self_contained_prefixes(language)
 	if not any(text.startswith(f"{prefix} ") or text == prefix for prefix in prefixes):
 		return False
 	return any(_contains_alias(text, token) for token in ontology_business_terms(language))
+
+
+def is_safe_local_compatibility_intent(
+	message: str,
+	language: str = "en",
+	grounded_turn: Dict[str, object] | None = None,
+) -> bool:
+	parsed = detect_followup_intent(message, language=language, grounded_turn=grounded_turn)
+	modes = set(parsed.requested_modes)
+	if not modes:
+		return False
+	if not modes.issubset({"presentation_transform", "table_presentation", "sort_or_limit"}):
+		return False
+	if "sort_or_limit" in modes and not (parsed.target_limit or parsed.sort_direction):
+		return False
+	return True

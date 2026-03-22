@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import datetime as dt
+import re
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
+
+from ai_assistant_ui.qwen_chat.contracts import (
+	NormalizedFamilyArtifactContract,
+	build_family_validation_contract,
+)
+
+
+def _today_iso() -> str:
+	return dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+
+def _clean_list(values: Any) -> List[str]:
+	if not isinstance(values, list):
+		return []
+	return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+
+def _normalize_key(value: Any) -> str:
+	text = str(value or "").strip().lower()
+	text = re.sub(r"[^a-z0-9]+", "_", text)
+	return text.strip("_")
+
+
+def _statement_type_required_metrics(statement_type: str) -> List[str]:
+	if statement_type == "profit_and_loss":
+		return ["total_income", "total_expense", "net_profit"]
+	if statement_type == "balance_sheet":
+		return ["total_asset", "total_liability", "total_equity"]
+	if statement_type == "cash_flow":
+		return [
+			"net_cash_from_operations",
+			"net_cash_from_investing",
+			"net_cash_from_financing",
+			"net_change_in_cash",
+		]
+	return []
+
+
+def _canonical_metric(requested_metric: str) -> str:
+	key = _normalize_key(requested_metric)
+	mapping = {
+		"total_income": "total_income",
+		"income": "total_income",
+		"total_expense": "total_expense",
+		"expense": "total_expense",
+		"net_profit": "net_profit",
+		"profit": "net_profit",
+		"loss": "net_profit",
+		"profit_for_the_year": "net_profit",
+		"total_asset": "total_asset",
+		"total_assets": "total_asset",
+		"asset": "total_asset",
+		"total_liability": "total_liability",
+		"total_liabilities": "total_liability",
+		"liability": "total_liability",
+		"total_equity": "total_equity",
+		"equity": "total_equity",
+		"provisional_profit_loss": "provisional_profit_or_loss",
+		"provisional_profit_or_loss": "provisional_profit_or_loss",
+		"net_cash_from_operations": "net_cash_from_operations",
+		"net_cash_from_investing": "net_cash_from_investing",
+		"net_cash_from_financing": "net_cash_from_financing",
+		"net_change_in_cash": "net_change_in_cash",
+	}
+	return mapping.get(key, "")
+
+
+def _time_scope_matches(requested_time_scope: str, period: Dict[str, Any]) -> bool:
+	scope = str(requested_time_scope or "").strip()
+	if not scope:
+		return True
+	from_date = str(period.get("from_date") or "").strip()
+	to_date = str(period.get("to_date") or "").strip()
+	today = _today_iso()
+	if scope in {"as_of_today", "current_date_utc"}:
+		return to_date == today
+	if scope == "current_fiscal_year_to_date":
+		return bool(from_date and to_date == today)
+	if scope == "last_month":
+		if not from_date or not to_date:
+			return False
+		end_date = dt.date.fromisoformat(to_date)
+		first_day_current_month = _today_date().replace(day=1)
+		last_day_previous_month = first_day_current_month - dt.timedelta(days=1)
+		first_day_previous_month = last_day_previous_month.replace(day=1)
+		return (
+			from_date == first_day_previous_month.isoformat()
+			and end_date.isoformat() == last_day_previous_month.isoformat()
+		)
+	return True
+
+
+def _today_date() -> dt.date:
+	return dt.datetime.now(dt.timezone.utc).date()
+
+
+@dataclass(frozen=True)
+class FamilyValidationOutcome:
+	status: str
+	contract: Any
+	family_id: str
+	errors: List[str] = field(default_factory=list)
+	warnings: List[str] = field(default_factory=list)
+	observed_metrics: List[str] = field(default_factory=list)
+	time_scope_match: bool = False
+	family_schema_match: bool = False
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_family_validation_outcome",
+			"contract_version": "1.0",
+			"status": self.status,
+			"family_id": self.family_id,
+			"errors": list(self.errors),
+			"warnings": list(self.warnings),
+			"observed_metrics": list(self.observed_metrics),
+			"time_scope_match": self.time_scope_match,
+			"family_schema_match": self.family_schema_match,
+			"contract": self.contract.to_payload() if self.contract else {},
+		}
+
+
+def _validate_financial_statement_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="financial_statement",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Financial statement adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="financial_statement",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	statement_type = str(dimensions.get("statement_type") or "").strip()
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and key != "statement_type" and value not in (None, "")
+	]
+	required_metrics = requested_metrics or _statement_type_required_metrics(statement_type)
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized financial metrics: {', '.join(missing_metrics)}")
+
+	required_sections = {
+		"profit_and_loss": {"income", "expense", "summary"},
+		"balance_sheet": {"assets", "liabilities", "equity", "summary"},
+		"cash_flow": {"operations", "investing", "financing", "summary"},
+	}.get(statement_type, set())
+	missing_sections = [section for section in required_sections if section not in sections]
+	if missing_sections:
+		errors.append(f"Missing normalized statement sections: {', '.join(sorted(missing_sections))}")
+
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match:
+		warnings.append("Normalized financial statement period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(statement_type and not missing_sections)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif not time_scope_match:
+		decision = "clarify"
+
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="financial_statement",
+		requested_metrics=required_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="financial_statement",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
+def validate_normalized_family_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	family_id: str,
+	adapter_errors: List[str] | None = None,
+	adapter_warnings: List[str] | None = None,
+) -> FamilyValidationOutcome | None:
+	target = str(family_id or "").strip()
+	if target != "financial_statement":
+		return None
+	return _validate_financial_statement_artifact(
+		request_id=request_id,
+		compiler_contract=compiler_contract,
+		artifact_contract=artifact_contract,
+		adapter_errors=_clean_list(adapter_errors),
+		adapter_warnings=_clean_list(adapter_warnings),
+	)

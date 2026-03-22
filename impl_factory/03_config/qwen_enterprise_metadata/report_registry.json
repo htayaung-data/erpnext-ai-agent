@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "reports": [
     {
       "report_name": "Sales Analytics",
@@ -17,6 +17,45 @@
         "tree_type",
         "value_quantity",
         "doc_type"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "from_date",
+          "strategy": "fiscal_year_start_date"
+        },
+        {
+          "fieldname": "to_date",
+          "strategy": "current_date"
+        },
+        {
+          "fieldname": "doc_type",
+          "strategy": "compiler_default",
+          "value": "Sales Invoice"
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "trend_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "sales",
+        "revenue"
+      ],
+      "supported_dimensions": [
+        "Customer",
+        "Territory",
+        "Item"
+      ],
+      "supported_metrics": [
+        "Value",
+        "Sales Amount",
+        "Quantity"
       ],
       "approved_follow_up_modes": [
         "presentation_transform",
@@ -45,6 +84,28 @@
       "required_filters": [
         "company"
       ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "inventory_summary",
+        "ranked_entities"
+      ],
+      "semantic_tags": [
+        "inventory",
+        "stock",
+        "balance"
+      ],
+      "supported_dimensions": [
+        "Item"
+      ],
+      "supported_metrics": [
+        "Balance Qty",
+        "Balance Value (MMK)"
+      ],
       "approved_follow_up_modes": [
         "presentation_transform",
         "column_projection",
@@ -69,6 +130,30 @@
       "validation_profile": "report_grounded_read",
       "required_filters": [
         "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "inventory_summary",
+        "ranked_entities"
+      ],
+      "semantic_tags": [
+        "inventory",
+        "stock",
+        "warehouse",
+        "balance"
+      ],
+      "supported_dimensions": [
+        "Warehouse",
+        "Item"
+      ],
+      "supported_metrics": [
+        "Balance Qty",
+        "Balance Value (MMK)"
       ],
       "approved_follow_up_modes": [
         "presentation_transform",
@@ -96,6 +181,38 @@
         "company",
         "report_date"
       ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "report_date",
+          "strategy": "current_date"
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "aging_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "payable",
+        "outstanding",
+        "supplier",
+        "aging"
+      ],
+      "supported_dimensions": [
+        "Supplier",
+        "Party"
+      ],
+      "supported_metrics": [
+        "Outstanding",
+        "Outstanding Amount",
+        "Total Due",
+        "Total Amount Due"
+      ],
       "approved_follow_up_modes": [
         "presentation_transform",
         "column_projection",
@@ -121,6 +238,14 @@
         }
       ],
       "local_followup_adapters": {
+        "sort_or_limit": {
+          "title": "Top Suppliers by Outstanding Amount",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Supplier",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
         "dimension_breakdown": {
           "title": "Accounts Payable by Supplier",
           "source_dimension_header": "Party",
@@ -158,6 +283,38 @@
         "company",
         "report_date"
       ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "report_date",
+          "strategy": "current_date"
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "aging_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "payable",
+        "outstanding",
+        "supplier",
+        "aging"
+      ],
+      "supported_dimensions": [
+        "Supplier",
+        "Party"
+      ],
+      "supported_metrics": [
+        "Outstanding",
+        "Outstanding Amount",
+        "Total Due",
+        "Total Amount Due"
+      ],
       "approved_follow_up_modes": [
         "presentation_transform",
         "column_projection",
@@ -183,6 +340,14 @@
         }
       ],
       "local_followup_adapters": {
+        "sort_or_limit": {
+          "title": "Top Suppliers by Outstanding Amount",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Supplier",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
         "dimension_breakdown": {
           "title": "Accounts Payable by Supplier",
           "source_dimension_header": "Party",
@@ -220,6 +385,38 @@
         "company",
         "report_date"
       ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "report_date",
+          "strategy": "current_date"
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "aging_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "receivable",
+        "outstanding",
+        "customer",
+        "aging"
+      ],
+      "supported_dimensions": [
+        "Customer",
+        "Party"
+      ],
+      "supported_metrics": [
+        "Outstanding",
+        "Outstanding Amount",
+        "Total Due",
+        "Total Amount Due"
+      ],
       "approved_follow_up_modes": [
         "presentation_transform",
         "column_projection",
@@ -245,6 +442,14 @@
         }
       ],
       "local_followup_adapters": {
+        "sort_or_limit": {
+          "title": "Top Customers by Outstanding Amount",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Customer",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
         "dimension_breakdown": {
           "title": "Accounts Receivable by Customer",
           "source_dimension_header": "Party",
@@ -282,6 +487,38 @@
         "company",
         "report_date"
       ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "report_date",
+          "strategy": "current_date"
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "aging_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "receivable",
+        "outstanding",
+        "customer",
+        "aging"
+      ],
+      "supported_dimensions": [
+        "Customer",
+        "Party"
+      ],
+      "supported_metrics": [
+        "Outstanding",
+        "Outstanding Amount",
+        "Total Due",
+        "Total Amount Due"
+      ],
       "approved_follow_up_modes": [
         "presentation_transform",
         "column_projection",
@@ -307,6 +544,14 @@
         }
       ],
       "local_followup_adapters": {
+        "sort_or_limit": {
+          "title": "Top Customers by Outstanding Amount",
+          "source_dimension_header": "Party",
+          "display_dimension_label": "Customer",
+          "metric_headers": [
+            "Outstanding Amount"
+          ]
+        },
         "dimension_breakdown": {
           "title": "Accounts Receivable by Customer",
           "source_dimension_header": "Party",
@@ -330,6 +575,405 @@
           "total_due_field": "Total Amount Due"
         }
       }
+    },
+    {
+      "report_name": "Profit and Loss Statement",
+      "module": "Accounts",
+      "family": "profit_and_loss_statement",
+      "capability_ids": [
+        "financial_statement_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "selected_view",
+        "filter_based_on",
+        "period_start_date",
+        "period_end_date",
+        "periodicity"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "selected_view",
+          "strategy": "compiler_default",
+          "value": "Report"
+        },
+        {
+          "fieldname": "filter_based_on",
+          "strategy": "compiler_default",
+          "value": "Date Range"
+        },
+        {
+          "fieldname": "period_start_date",
+          "strategy": "fiscal_year_start_date"
+        },
+        {
+          "fieldname": "period_end_date",
+          "strategy": "current_date"
+        },
+        {
+          "fieldname": "periodicity",
+          "strategy": "compiler_default",
+          "value": "Yearly"
+        },
+        {
+          "fieldname": "show_account_details",
+          "strategy": "compiler_default",
+          "value": "Summary"
+        },
+        {
+          "fieldname": "accumulated_values",
+          "strategy": "compiler_default",
+          "value": 1
+        },
+        {
+          "fieldname": "include_default_book_entries",
+          "strategy": "compiler_default",
+          "value": 1
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_statement",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "financial",
+        "statement",
+        "profitability",
+        "income",
+        "expense",
+        "net_profit"
+      ],
+      "supported_dimensions": [
+        "Account"
+      ],
+      "supported_metrics": [
+        "Total Income",
+        "Total Expense",
+        "Net Profit",
+        "Profit",
+        "Loss"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Total Income",
+        "Total Expense",
+        "Net Profit"
+      ]
+    },
+    {
+      "report_name": "Balance Sheet",
+      "module": "Accounts",
+      "family": "balance_sheet",
+      "capability_ids": [
+        "financial_statement_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "selected_view",
+        "filter_based_on",
+        "period_start_date",
+        "period_end_date",
+        "periodicity"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "selected_view",
+          "strategy": "compiler_default",
+          "value": "Report"
+        },
+        {
+          "fieldname": "filter_based_on",
+          "strategy": "compiler_default",
+          "value": "Date Range"
+        },
+        {
+          "fieldname": "period_start_date",
+          "strategy": "fiscal_year_start_date"
+        },
+        {
+          "fieldname": "period_end_date",
+          "strategy": "current_date"
+        },
+        {
+          "fieldname": "periodicity",
+          "strategy": "compiler_default",
+          "value": "Yearly"
+        },
+        {
+          "fieldname": "show_account_details",
+          "strategy": "compiler_default",
+          "value": "Summary"
+        },
+        {
+          "fieldname": "accumulated_values",
+          "strategy": "compiler_default",
+          "value": 1
+        },
+        {
+          "fieldname": "include_default_book_entries",
+          "strategy": "compiler_default",
+          "value": 1
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_statement",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "financial",
+        "statement",
+        "balance_sheet",
+        "asset",
+        "liability",
+        "equity"
+      ],
+      "supported_dimensions": [
+        "Account",
+        "Section"
+      ],
+      "supported_metrics": [
+        "Total Asset",
+        "Total Liability",
+        "Total Equity",
+        "Provisional Profit / Loss"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Total Asset",
+        "Total Liability",
+        "Total Equity"
+      ]
+    },
+    {
+      "report_name": "Cash Flow",
+      "module": "Accounts",
+      "family": "cash_flow",
+      "capability_ids": [
+        "financial_statement_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "from_fiscal_year",
+        "to_fiscal_year",
+        "period_start_date",
+        "period_end_date",
+        "periodicity"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "from_fiscal_year",
+          "strategy": "current_fiscal_year_name"
+        },
+        {
+          "fieldname": "to_fiscal_year",
+          "strategy": "current_fiscal_year_name"
+        },
+        {
+          "fieldname": "period_start_date",
+          "strategy": "fiscal_year_start_date"
+        },
+        {
+          "fieldname": "period_end_date",
+          "strategy": "current_date"
+        },
+        {
+          "fieldname": "periodicity",
+          "strategy": "compiler_default",
+          "value": "Yearly"
+        },
+        {
+          "fieldname": "accumulated_values",
+          "strategy": "compiler_default",
+          "value": 1
+        }
+      ],
+      "supported_intent_classes": [
+        "financial_statement",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "financial",
+        "statement",
+        "cash_flow",
+        "liquidity",
+        "cash"
+      ],
+      "supported_dimensions": [
+        "Section"
+      ],
+      "supported_metrics": [
+        "Net Cash from Operations",
+        "Net Cash from Investing",
+        "Net Cash from Financing",
+        "Net Change in Cash"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Net Cash from Operations",
+        "Net Cash from Investing",
+        "Net Cash from Financing",
+        "Net Change in Cash"
+      ]
+    },
+    {
+      "report_name": "Gross Profit",
+      "module": "Accounts",
+      "family": "gross_profit",
+      "capability_ids": [
+        "product_performance_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "from_date",
+        "to_date",
+        "group_by"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "group_by",
+          "strategy": "compiler_default",
+          "value": "Item Code"
+        },
+        {
+          "fieldname": "include_returned_invoices",
+          "strategy": "compiler_default",
+          "value": 1
+        }
+      ],
+      "supported_intent_classes": [
+        "product_performance",
+        "ranked_entities",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "sales",
+        "product",
+        "profitability",
+        "gross_profit"
+      ],
+      "supported_dimensions": [
+        "Item Code",
+        "Item Group",
+        "Brand",
+        "Warehouse",
+        "Customer",
+        "Territory",
+        "Sales Person",
+        "Project",
+        "Cost Center",
+        "Monthly"
+      ],
+      "supported_metrics": [
+        "Qty",
+        "Selling Amount",
+        "Buying Amount",
+        "Gross Profit",
+        "Gross Profit Percent"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "grouping_change",
+        "metric_change",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Selling Amount",
+        "Gross Profit",
+        "Gross Profit Percent"
+      ]
+    },
+    {
+      "report_name": "Item-wise Sales History",
+      "module": "Selling",
+      "family": "item_sales_history",
+      "capability_ids": [
+        "product_performance_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "from_date",
+        "to_date"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "product_performance",
+        "ranked_entities",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "sales",
+        "product",
+        "history"
+      ],
+      "supported_dimensions": [
+        "Item",
+        "Item Group",
+        "Customer"
+      ],
+      "supported_metrics": [
+        "Delivered Quantity",
+        "Billed Amount"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": [
+        "Delivered Quantity",
+        "Billed Amount"
+      ]
     }
   ]
 }

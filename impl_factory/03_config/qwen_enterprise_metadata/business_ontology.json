@@ -30,6 +30,20 @@
       }
     },
     {
+      "concept_id": "profit_and_loss",
+      "aliases": {
+        "en": ["profit and loss", "p&l", "p & l", "p and l", "income statement", "net profit", "profitability"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "product",
+      "aliases": {
+        "en": ["product", "products", "item", "items", "sku", "product performance", "best product", "top product"],
+        "my": []
+      }
+    },
+    {
       "concept_id": "territory",
       "aliases": {
         "en": ["territory", "region", "yangon", "mandalay", "naypyitaw", "taunggyi"],
@@ -115,7 +129,7 @@
   ],
   "interaction_hints": {
     "self_contained_prefixes": {
-      "en": ["show", "give", "list", "top", "stock", "sales", "outstanding", "compare", "how much"],
+      "en": ["show", "show me", "give", "list", "top", "which", "stock", "sales", "outstanding", "compare", "how much", "profit", "products", "analyze", "evaluate"],
       "my": []
     }
   }

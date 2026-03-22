@@ -26,6 +26,16 @@ class Settings:
 	chat_timeout_seconds: int
 	response_char_limit: int
 	max_tool_calls: int
+	semantic_fresh_query_timeout_seconds: int
+	semantic_fresh_query_max_attempts: int
+	semantic_fresh_query_backoff_ms: int
+	semantic_fresh_query_model: str
+	semantic_fresh_query_max_tokens: int
+	semantic_fresh_query_cache_ttl_seconds: int
+	semantic_fresh_query_cache_max_entries: int
+	semantic_followup_model: str
+	semantic_followup_max_attempts: int
+	semantic_followup_backoff_ms: int
 	qwen_base_url: str
 	qwen_model: str
 	qwen_api_key: str
@@ -42,6 +52,18 @@ class Settings:
 	@property
 	def fac_allowed_tools_set(self) -> set[str]:
 		return {x for x in self.fac_allowed_tools if x}
+
+	def effective_semantic_fresh_query_model(self) -> str:
+		return str(self.semantic_fresh_query_model or self.qwen_model or "").strip()
+
+	def semantic_fresh_query_override_active(self) -> bool:
+		return bool(str(self.semantic_fresh_query_model or "").strip())
+
+	def effective_semantic_followup_model(self) -> str:
+		return str(self.semantic_followup_model or self.qwen_model or "").strip()
+
+	def semantic_followup_override_active(self) -> bool:
+		return bool(str(self.semantic_followup_model or "").strip())
 
 	def fac_mcp_config(self) -> Dict[str, Any]:
 		if self.fac_mcp_config_json:
@@ -76,6 +98,16 @@ def load_settings() -> Settings:
 		chat_timeout_seconds=max(5, _env_int("CHAT_TIMEOUT_SECONDS", 45)),
 		response_char_limit=max(256, _env_int("RESPONSE_CHAR_LIMIT", 4000)),
 		max_tool_calls=max(1, _env_int("MAX_TOOL_CALLS", 6)),
+		semantic_fresh_query_timeout_seconds=max(15, _env_int("SEMANTIC_FRESH_QUERY_TIMEOUT_SECONDS", max(90, _env_int("CHAT_TIMEOUT_SECONDS", 45)))) ,
+		semantic_fresh_query_max_attempts=max(1, _env_int("SEMANTIC_FRESH_QUERY_MAX_ATTEMPTS", 2)),
+		semantic_fresh_query_backoff_ms=max(50, _env_int("SEMANTIC_FRESH_QUERY_BACKOFF_MS", 350)),
+		semantic_fresh_query_model=_env("SEMANTIC_FRESH_QUERY_MODEL"),
+		semantic_fresh_query_max_tokens=max(64, _env_int("SEMANTIC_FRESH_QUERY_MAX_TOKENS", 320)),
+		semantic_fresh_query_cache_ttl_seconds=max(0, _env_int("SEMANTIC_FRESH_QUERY_CACHE_TTL_SECONDS", 300)),
+		semantic_fresh_query_cache_max_entries=max(0, _env_int("SEMANTIC_FRESH_QUERY_CACHE_MAX_ENTRIES", 256)),
+		semantic_followup_model=_env("SEMANTIC_FOLLOWUP_MODEL"),
+		semantic_followup_max_attempts=max(1, _env_int("SEMANTIC_FOLLOWUP_MAX_ATTEMPTS", 2)),
+		semantic_followup_backoff_ms=max(50, _env_int("SEMANTIC_FOLLOWUP_BACKOFF_MS", 350)),
 		qwen_base_url=_env("QWEN_BASE_URL"),
 		qwen_model=_env("QWEN_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507"),
 		qwen_api_key=_env("QWEN_API_KEY", "EMPTY"),

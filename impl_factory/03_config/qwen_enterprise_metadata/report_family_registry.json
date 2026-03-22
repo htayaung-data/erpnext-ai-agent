@@ -1,0 +1,268 @@
+{
+  "contract_version": "1.0",
+  "families": [
+    {
+      "family_id": "financial_statement",
+      "family_label": "Financial Statement",
+      "description": "Canonical financial statement family for governed income statement, balance sheet, and cash flow views.",
+      "supported_intent_classes": [
+        "financial_statement",
+        "financial_summary"
+      ],
+      "canonical_metrics": [
+        "total_asset",
+        "total_liability",
+        "total_equity",
+        "total_income",
+        "total_expense",
+        "net_profit",
+        "provisional_profit_or_loss",
+        "net_cash_from_operations",
+        "net_cash_from_investing",
+        "net_cash_from_financing",
+        "net_change_in_cash"
+      ],
+      "canonical_dimensions": [
+        "account",
+        "period",
+        "section",
+        "statement"
+      ],
+      "adapter_id": "financial_statement_adapter",
+      "composite_allowed": true,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "financial_statement_read"
+      ],
+      "report_names": [
+        "Profit and Loss Statement",
+        "Balance Sheet",
+        "Cash Flow"
+      ],
+      "source_report_families": [
+        "profit_and_loss_statement",
+        "balance_sheet",
+        "cash_flow"
+      ],
+      "semantic_tags": [
+        "financial",
+        "statement",
+        "profitability"
+      ],
+      "coverage_status": "active"
+    },
+    {
+      "family_id": "aging",
+      "family_label": "Aging",
+      "description": "Canonical aging family for governed receivable and payable overdue analysis.",
+      "supported_intent_classes": [
+        "aging_analysis",
+        "financial_summary",
+        "ranked_entities"
+      ],
+      "canonical_metrics": [
+        "outstanding_total",
+        "current_bucket_total",
+        "overdue_total",
+        "overdue_ratio"
+      ],
+      "canonical_dimensions": [
+        "party",
+        "bucket",
+        "period"
+      ],
+      "adapter_id": "aging_adapter",
+      "composite_allowed": true,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "accounts_receivable_read",
+        "accounts_payable_read"
+      ],
+      "report_names": [
+        "Accounts Receivable Summary",
+        "Accounts Receivable",
+        "Accounts Payable Summary",
+        "Accounts Payable"
+      ],
+      "source_report_families": [
+        "accounts_receivable_summary",
+        "accounts_receivable",
+        "accounts_payable_summary",
+        "accounts_payable"
+      ],
+      "semantic_tags": [
+        "aging",
+        "overdue",
+        "outstanding"
+      ],
+      "coverage_status": "active"
+    },
+    {
+      "family_id": "ranking_analytics",
+      "family_label": "Ranking Analytics",
+      "description": "Canonical ranking family for top and bottom business entity questions across governed ERP read paths.",
+      "supported_intent_classes": [
+        "ranked_entities"
+      ],
+      "canonical_metrics": [
+        "primary_metric",
+        "secondary_metric"
+      ],
+      "canonical_dimensions": [
+        "entity",
+        "rank",
+        "period"
+      ],
+      "adapter_id": "ranking_analytics_adapter",
+      "composite_allowed": true,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "sales_read",
+        "stock_read",
+        "accounts_receivable_read",
+        "accounts_payable_read",
+        "product_performance_read"
+      ],
+      "report_names": [
+        "Sales Analytics",
+        "Stock Balance",
+        "Warehouse Wise Stock Balance",
+        "Accounts Receivable Summary",
+        "Accounts Payable Summary",
+        "Gross Profit",
+        "Item-wise Sales History"
+      ],
+      "source_report_families": [
+        "sales_analytics",
+        "stock_balance",
+        "warehouse_wise_stock_balance",
+        "accounts_receivable_summary",
+        "accounts_payable_summary",
+        "gross_profit",
+        "item_sales_history"
+      ],
+      "semantic_tags": [
+        "ranking",
+        "analytics"
+      ],
+      "coverage_status": "active"
+    },
+    {
+      "family_id": "trend_analytics",
+      "family_label": "Trend Analytics",
+      "description": "Canonical time-series analytics family for governed business trends over explicit periods.",
+      "supported_intent_classes": [
+        "trend_analysis"
+      ],
+      "canonical_metrics": [
+        "period_value",
+        "period_quantity"
+      ],
+      "canonical_dimensions": [
+        "period",
+        "series"
+      ],
+      "adapter_id": "trend_analytics_adapter",
+      "composite_allowed": true,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "sales_read",
+        "product_performance_read"
+      ],
+      "report_names": [
+        "Sales Analytics",
+        "Item-wise Sales History"
+      ],
+      "source_report_families": [
+        "sales_analytics",
+        "item_sales_history"
+      ],
+      "semantic_tags": [
+        "trend",
+        "time_series",
+        "analytics"
+      ],
+      "coverage_status": "active"
+    },
+    {
+      "family_id": "inventory_snapshot",
+      "family_label": "Inventory Snapshot",
+      "description": "Canonical inventory posture family for current stock, value, warehouse, and item views.",
+      "supported_intent_classes": [
+        "inventory_summary",
+        "financial_summary"
+      ],
+      "canonical_metrics": [
+        "balance_qty",
+        "balance_value"
+      ],
+      "canonical_dimensions": [
+        "warehouse",
+        "item"
+      ],
+      "adapter_id": "inventory_snapshot_adapter",
+      "composite_allowed": true,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "stock_read"
+      ],
+      "report_names": [
+        "Stock Balance",
+        "Warehouse Wise Stock Balance"
+      ],
+      "source_report_families": [
+        "stock_balance",
+        "warehouse_wise_stock_balance"
+      ],
+      "semantic_tags": [
+        "inventory",
+        "stock",
+        "balance"
+      ],
+      "coverage_status": "active"
+    },
+    {
+      "family_id": "product_profitability",
+      "family_label": "Product Profitability",
+      "description": "Canonical product performance and profitability family for governed item-level business analysis.",
+      "supported_intent_classes": [
+        "product_performance",
+        "financial_summary",
+        "ranked_entities",
+        "trend_analysis"
+      ],
+      "canonical_metrics": [
+        "gross_profit",
+        "gross_profit_percent",
+        "sales_amount",
+        "quantity"
+      ],
+      "canonical_dimensions": [
+        "item",
+        "item_group",
+        "brand",
+        "period"
+      ],
+      "adapter_id": "product_profitability_adapter",
+      "composite_allowed": true,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "product_performance_read"
+      ],
+      "report_names": [
+        "Gross Profit",
+        "Item-wise Sales History"
+      ],
+      "source_report_families": [
+        "gross_profit",
+        "item_sales_history"
+      ],
+      "semantic_tags": [
+        "product",
+        "performance",
+        "profitability"
+      ],
+      "coverage_status": "active"
+    }
+  ]
+}

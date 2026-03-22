@@ -10,6 +10,20 @@
 7. Qwen ERP enterprise metadata foundation note (2026-03-19): `impl_factory/00_governance/qwen_erp_enterprise_metadata_foundation_note_2026-03-19.md`
 8. Qwen ERP Phase 3 follow-up system note (2026-03-19, in progress): `impl_factory/00_governance/qwen_erp_phase3_followup_system_note_2026-03-19.md`
 9. Qwen ERP enterprise boundary cleanup note (2026-03-19): `impl_factory/00_governance/qwen_erp_enterprise_boundary_cleanup_note_2026-03-19.md`
+10. Qwen ERP enterprise phase plan (2026-03-22): `impl_factory/00_governance/qwen_erp_enterprise_phase_plan_2026-03-22.md`
+11. Qwen-Agent consultation brief (2026-03-22): `impl_factory/00_governance/qwen_agent_consultation_brief_2026-03-22.md`
+12. Qwen-Agent consultation assessment note (2026-03-22): `impl_factory/00_governance/qwen_agent_consultation_assessment_note_2026-03-22.md`
+13. Qwen ERP Phase 4 fresh query compiler plan (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_fresh_query_compiler_plan_2026-03-22.md`
+14. Qwen ERP Phase 4 consultation assessment note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_consultation_assessment_note_2026-03-22.md`
+15. Qwen ERP Phase 4 Slice 1 contract and metadata foundation note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_slice1_contract_metadata_note_2026-03-22.md`
+16. Qwen ERP Phase 4 Slice 2 compiler core note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_slice2_compiler_core_note_2026-03-22.md`
+17. Qwen ERP Phase 4 Slice 3 model proposal integration note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_slice3_model_proposal_integration_note_2026-03-22.md`
+18. Qwen ERP Phase 4 Slice 4 compiled execution note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_slice4_compiled_execution_note_2026-03-22.md`
+19. Qwen ERP Phase 4 Slice 5 semantic validation note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_slice5_semantic_validation_note_2026-03-22.md`
+20. Qwen ERP Phase 4 Slice 6 audit and observability note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4_slice6_audit_observability_note_2026-03-22.md`
+21. Qwen ERP Phase 4B semantic family layer plan (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_semantic_family_layer_plan_2026-03-22.md`
+22. Qwen ERP Phase 4B Slice 1 family registry and contracts note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice1_family_registry_contracts_note_2026-03-22.md`
+23. Qwen ERP Phase 4B Slice 2 financial statement adapter note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice2_financial_statement_adapter_note_2026-03-22.md`
 
 ## Existing Governance
 1. Roles and permissions: `impl_factory/00_governance/roles_permissions.md`

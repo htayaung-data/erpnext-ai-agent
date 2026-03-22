@@ -2,7 +2,23 @@ from __future__ import annotations
 
 from app.mock_engine import run_mock_engine
 from app.qwen_agent_engine import QwenAgentEngineError, run_qwen_agent_engine
-from app.schemas import ChatRequest, ChatResponse, ToolTraceItem
+from app.schemas import (
+	ChatRequest,
+	ChatResponse,
+	FreshQueryInterpretRequest,
+	FreshQueryInterpretResponse,
+	FollowUpInterpretRequest,
+	FollowUpInterpretResponse,
+	ToolTraceItem,
+)
+from app.semantic_fresh_query_engine import (
+	SemanticFreshQueryEngineError,
+	run_semantic_fresh_query_engine,
+)
+from app.semantic_followup_engine import (
+	SemanticFollowUpEngineError,
+	run_semantic_followup_engine,
+)
 from app.settings import Settings
 from app.validation import summarize_read_validation
 
@@ -63,8 +79,9 @@ def _validate_response(response: ChatResponse, settings: Settings) -> ChatRespon
 
 
 def handle_chat(request: ChatRequest, settings: Settings) -> ChatResponse:
-	if str(request.mode or "").strip().lower() != "read_only":
-		return _safe_response(error="Only read_only mode is supported in MVP.", engine=settings.engine_mode)
+	mode = str(request.mode or "").strip().lower()
+	if mode not in {"read_only", "compiled_read_query"}:
+		return _safe_response(error="Unsupported runtime mode.", engine=settings.engine_mode)
 
 	if settings.engine_mode == "mock":
 		return _validate_response(run_mock_engine(request), settings)
@@ -74,8 +91,51 @@ def handle_chat(request: ChatRequest, settings: Settings) -> ChatResponse:
 			return _validate_response(run_qwen_agent_engine(request, settings), settings)
 		except QwenAgentEngineError as exc:
 			return _safe_response(error=str(exc), engine=settings.engine_mode)
+		except Exception as exc:  # pragma: no cover - defensive runtime hardening
+			return _safe_response(error=f"Unexpected qwen runtime error: {exc}", engine=settings.engine_mode)
 
 	return _safe_response(
 		error=f"Unsupported engine mode: {settings.engine_mode}",
 		engine=settings.engine_mode,
 	)
+
+
+def handle_followup_interpretation(request: FollowUpInterpretRequest, settings: Settings) -> FollowUpInterpretResponse:
+	try:
+		return run_semantic_followup_engine(request, settings)
+	except SemanticFollowUpEngineError as exc:
+		return FollowUpInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_followup"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return FollowUpInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_followup"},
+			error=f"Unexpected semantic follow-up error: {exc}",
+		)
+
+
+def handle_fresh_query_interpretation(
+	request: FreshQueryInterpretRequest,
+	settings: Settings,
+) -> FreshQueryInterpretResponse:
+	try:
+		return run_semantic_fresh_query_engine(request, settings)
+	except SemanticFreshQueryEngineError as exc:
+		return FreshQueryInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_fresh_query"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return FreshQueryInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_fresh_query"},
+			error=f"Unexpected semantic fresh-query error: {exc}",
+		)

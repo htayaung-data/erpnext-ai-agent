@@ -18,5 +18,6 @@ Current files:
 
 1. `capability_registry.json`
 2. `report_registry.json`
-3. `business_ontology.json`
-4. `validation_rules.json`
+3. `report_family_registry.json`
+4. `business_ontology.json`
+5. `validation_rules.json`

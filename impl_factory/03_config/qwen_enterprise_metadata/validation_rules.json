@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "profiles": [
     {
       "profile_id": "report_grounded_read",
@@ -12,11 +12,54 @@
         "erp_fac-fetch"
       ],
       "requires_approved_report": true,
-      "requires_required_filters": true
+      "requires_required_filters": true,
+      "requires_semantic_validation": true,
+      "requires_field_presence_validation": true,
+      "requires_time_scope_consistency": true,
+      "zero_result_policy": "clarify_when_unexpected"
     },
     {
       "profile_id": "local_transform",
       "requires_grounded_parent": true
+    }
+  ],
+  "semantic_validation": {
+    "deterministic_order": [
+      "schema_check",
+      "field_presence_check",
+      "semantic_tag_check",
+      "time_scope_check",
+      "dimension_metric_check"
+    ],
+    "inconclusive_policy": "clarify",
+    "zero_result_clarify_intent_classes": [
+      "ranked_entities",
+      "trend_analysis",
+      "product_performance"
+    ]
+  },
+  "ambiguity_rules": [
+    {
+      "intent_class": "trend_analysis",
+      "requires": [
+        "requested_time_scope"
+      ],
+      "decision": "clarify"
+    },
+    {
+      "intent_class": "ranked_entities",
+      "requires_any": [
+        "requested_metrics",
+        "requested_dimensions"
+      ],
+      "decision": "clarify"
+    },
+    {
+      "intent_class": "product_performance",
+      "requires": [
+        "requested_time_scope"
+      ],
+      "decision": "clarify"
     }
   ]
 }

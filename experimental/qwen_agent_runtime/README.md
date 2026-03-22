@@ -1,6 +1,6 @@
-# Qwen Agent Runtime Prototype
+# Qwen Agent Runtime
 
-This directory contains the external runtime for the `Qwen Chat` ERPNext prototype.
+This directory contains the external runtime for the `Qwen Chat` ERPNext path.
 
 Enterprise target architecture is defined in:
 
@@ -9,13 +9,15 @@ Enterprise target architecture is defined in:
 ## Purpose
 
 - accept synchronous chat requests from the ERPNext app
-- return deterministic mock responses first
-- provide a clear upgrade path to `Qwen-Agent + Qwen/vLLM + FAC MCP`
+- support governed `Qwen-Agent + FAC MCP` execution
+- provide a clear upgrade path to self-hosted `Qwen/vLLM`
 
 ## Endpoints
 
 - `GET /health`
 - `POST /chat`
+- `POST /interpret-fresh-query`
+- `POST /interpret-followup`
 
 ## Modes
 
@@ -55,25 +57,75 @@ If ERPNext is calling this runtime from inside Docker, do not use `http://localh
 
 ## Qwen-Agent Mode Notes
 
-`qwen-agent[mcp]` is included in `requirements.txt` for this prototype runtime.
+`qwen-agent[mcp]` is included in `requirements.txt` for this runtime.
 
 For development with Alibaba Cloud Model Studio, use the OpenAI-compatible endpoint:
 
 - `QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
-- `QWEN_MODEL=qwen3.5-plus`
+- `QWEN_MODEL=qwen-plus`
 - `QWEN_API_KEY=<your_dashscope_key>`
 - `ENGINE_MODE=qwen_agent`
 
 The runtime automatically disables thinking with the DashScope-compatible request shape when it detects a DashScope `compatible-mode` base URL.
 
-For FAC MCP in this prototype, the recommended runtime settings are:
+For FAC MCP in this runtime, the recommended settings are:
 
 - `FAC_MCP_TRANSPORT=streamable-http`
 - `FAC_AUTH_HEADER_NAME=Authorization`
 - `FAC_AUTH_HEADER_VALUE=token <api_key>:<api_secret>`
 - `FAC_ALLOWED_TOOLS` set to a read-only subset only
 
-The current prototype intentionally blocks write-oriented FAC tools and uses a small tool budget to reduce agent looping.
+The current runtime intentionally blocks write-oriented FAC tools and uses a bounded tool budget to reduce agent looping.
+
+Additional follow-up interpretation controls:
+
+- `SEMANTIC_FRESH_QUERY_TIMEOUT_SECONDS=90`
+- `SEMANTIC_FRESH_QUERY_MAX_ATTEMPTS=2`
+- `SEMANTIC_FRESH_QUERY_BACKOFF_MS=350`
+- `SEMANTIC_FRESH_QUERY_MODEL=...` optional model override for first-turn proposal generation
+- `SEMANTIC_FRESH_QUERY_MAX_TOKENS=320`
+- `SEMANTIC_FRESH_QUERY_CACHE_TTL_SECONDS=300`
+- `SEMANTIC_FRESH_QUERY_CACHE_MAX_ENTRIES=256`
+- `SEMANTIC_FOLLOWUP_MODEL=...` optional model override for governed follow-up interpretation
+- `SEMANTIC_FOLLOWUP_MAX_ATTEMPTS=2`
+- `SEMANTIC_FOLLOWUP_BACKOFF_MS=350`
+
+These control retry/backoff behavior for the semantic fresh-query and semantic follow-up interpreters.
+The fresh-query cache is an in-memory runtime cache for repeated governed proposal requests with the same message and interpretation context. It does not bypass compiler enforcement.
+If cold-path proposal latency remains too high, prefer setting `SEMANTIC_FRESH_QUERY_MODEL` and `SEMANTIC_FOLLOWUP_MODEL` to a faster Qwen model for semantic interpretation before changing the governed compiler boundary.
+
+## Development Split
+
+The current recommended development split on the hosted Qwen API is:
+
+- `QWEN_MODEL=qwen-plus` for grounded runtime/tool use
+- `SEMANTIC_FRESH_QUERY_MODEL=qwen-turbo` for first-turn proposal generation
+- `SEMANTIC_FOLLOWUP_MODEL=qwen-turbo` for governed follow-up interpretation
+
+This keeps the governed compiler boundary intact while reducing latency on semantic classification and slot extraction.
+
+## Single-Model Default
+
+The recommended production default is still:
+
+- one hosted Qwen model for both proposal generation and grounded runtime/tool use
+
+That means:
+
+- set `QWEN_MODEL` normally
+- leave `SEMANTIC_FRESH_QUERY_MODEL` empty
+
+In that posture:
+
+- the fresh-query proposal step and the grounded runtime both use the same hosted model
+- the architecture still keeps proposal and runtime logically separate
+- a second proposal model is only an optional later latency optimization
+
+If the ERP site is using the fresh-query advisory compiler path, it may also set:
+
+- `qwen_agent_runtime_fresh_query_timeout`
+
+This timeout is intentionally allowed to be higher than the normal chat timeout because first-turn semantic proposal generation can be slower than grounded follow-up interpretation.
 
 If your MCP transport needs additional packages or settings, install them in the runtime environment and provide the matching env config.
 

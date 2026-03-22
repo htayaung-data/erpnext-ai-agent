@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, List
 
 from app.fac_mcp import build_fac_mcp_descriptor
+from app.report_registry import approved_report_names
 from app.schemas import ChatRequest, ChatResponse, ToolTraceItem
 from app.settings import Settings
 from app.tool_gateway_policy import ToolGatewayPolicyError, enforce_tool_gateway_policy
@@ -22,7 +23,13 @@ class QwenAgentEngineError(RuntimeError):
 	pass
 
 
-def _build_system_contract(settings: Settings) -> str:
+def _build_system_contract(
+	settings: Settings,
+	response_policy: Dict[str, Any] | None = None,
+	*,
+	mode: str = "read_only",
+	compiled_query: Dict[str, Any] | None = None,
+) -> str:
 	today = datetime.now(timezone.utc).date().isoformat()
 	tools = ", ".join(sorted(settings.fac_allowed_tools_set)) if settings.fac_allowed_tools_set else "approved MCP tools"
 	default_company_line = ""
@@ -30,6 +37,40 @@ def _build_system_contract(settings: Settings) -> str:
 		default_company_line = (
 			f'If a report requires company and the user did not specify one, use this exact company value: "{settings.erp_default_company}".\n'
 		)
+	policy = response_policy if isinstance(response_policy, dict) else {}
+	if bool(policy.get("analysis_requested")):
+		response_policy_line = (
+			"Response policy: the user explicitly requested analysis, so deeper business interpretation is allowed, "
+			"but any insight or recommendation must be clearly grounded in ERP facts or explicit derived calculations.\n"
+		)
+	else:
+		response_policy_line = (
+			"Response policy: for default factual answers, present grounded facts first and include a supporting table "
+			"or numeric breakdown when relevant. Brief business interpretation is allowed only when clearly useful and grounded. "
+			"Do not include recommendations unless the user explicitly asks for analysis, interpretation, comparison, or recommendation.\n"
+		)
+	if mode == "compiled_read_query":
+		compiled = compiled_query if isinstance(compiled_query, dict) else {}
+		selected_report = str(compiled.get("selected_report") or "").strip()
+		filters = compiled.get("filters") if isinstance(compiled.get("filters"), dict) else {}
+		requested_dimensions = compiled.get("requested_dimensions") if isinstance(compiled.get("requested_dimensions"), list) else []
+		requested_metrics = compiled.get("requested_metrics") if isinstance(compiled.get("requested_metrics"), list) else []
+		return f"""You are an ERP assistant operating in compiled read-only mode.
+Today's date is {today} UTC.
+Use only the tool erp_fac-generate_report.
+Never call report_list or report_requirements in this mode.
+Never fabricate ERP facts, totals, IDs, dates, or statuses.
+You have already been given the exact governed report and filters.
+You must call erp_fac-generate_report exactly once using this exact report name and exact filters:
+report_name = {selected_report}
+filters = {json.dumps(filters, ensure_ascii=False, sort_keys=True)}
+Requested dimensions = {json.dumps(requested_dimensions, ensure_ascii=False)}
+Requested metrics = {json.dumps(requested_metrics, ensure_ascii=False)}
+Do not add, remove, or modify filters.
+After the tool returns, answer only from tool results.
+If you cannot ground the answer in tool results, say you could not complete a grounded ERP lookup.
+Keep answers concise and business-focused.
+{response_policy_line}"""
 	return f"""You are an ERP assistant operating in read-only mode.
 Today's date is {today} UTC.
 Use only these approved tools: {tools}.
@@ -39,7 +80,7 @@ Only answer from tool results.
 If you cannot ground the answer in tool results, say you could not complete a grounded ERP lookup.
 Do not narrate your plan or say "let me" before the work is complete.
 Keep answers concise and business-focused.
-{default_company_line}For follow-up filters like territory, customer, warehouse, or date refinement, prefer continuing to a final grounded report instead of stopping after discovery steps.
+{response_policy_line}{default_company_line}For follow-up filters like territory, customer, warehouse, or date refinement, prefer continuing to a final grounded report instead of stopping after discovery steps.
 Prefer this order when answering report questions:
 1. use report_list to identify the relevant report,
 2. use report_requirements only if required,
@@ -180,6 +221,83 @@ def _parse_json_like(value: Any) -> Any:
 		return None
 
 
+def _serialize_result_like_original(original: Any, payload: Dict[str, Any]) -> Any:
+	if isinstance(original, str):
+		return json.dumps(payload, ensure_ascii=False)
+	return payload
+
+
+def _filter_report_list_result(result: Any) -> Any:
+	approved = {str(name or "").strip().lower() for name in approved_report_names() if str(name or "").strip()}
+	if not approved:
+		return result
+	parsed = _parse_json_like(result)
+	if not isinstance(parsed, dict):
+		return result
+
+	def _item_name(item: Any) -> str:
+		if not isinstance(item, dict):
+			return ""
+		return str(item.get("report_name") or item.get("name") or "").strip().lower()
+
+	def _filter_items(items: Any) -> List[Dict[str, Any]]:
+		if not isinstance(items, list):
+			return []
+		return [
+			dict(item)
+			for item in items
+			if isinstance(item, dict) and _item_name(item) in approved
+		]
+
+	updated = json.loads(json.dumps(parsed))
+	changed = False
+	if isinstance(updated.get("reports"), list):
+		updated["reports"] = _filter_items(updated.get("reports"))
+		changed = True
+	result_obj = updated.get("result")
+	if isinstance(result_obj, dict) and isinstance(result_obj.get("reports"), list):
+		result_obj["reports"] = _filter_items(result_obj.get("reports"))
+		updated["result"] = result_obj
+		changed = True
+	elif isinstance(result_obj, list):
+		updated["result"] = _filter_items(result_obj)
+		changed = True
+	return _serialize_result_like_original(result, updated) if changed else result
+
+
+def _normalize_conversation_messages(request: ChatRequest) -> List[Dict[str, Any]]:
+	raw_messages: List[Dict[str, Any]] = []
+	for item in request.recent_messages:
+		role = str(item.role or "").strip()
+		content = str(item.content or "").strip()
+		if role not in {"user", "assistant"} or not content:
+			continue
+		raw_messages.append({"role": role, "content": content})
+	current_message = str(request.message or "").strip()
+	if current_message:
+		raw_messages.append({"role": "user", "content": current_message})
+
+	normalized: List[Dict[str, Any]] = []
+	for item in raw_messages:
+		role = str(item.get("role") or "").strip()
+		content = str(item.get("content") or "").strip()
+		if role not in {"user", "assistant"} or not content:
+			continue
+		if not normalized:
+			if role != "user":
+				continue
+			normalized.append({"role": role, "content": content})
+			continue
+		if str(normalized[-1].get("role") or "").strip() == role:
+			normalized[-1]["content"] = f"{normalized[-1]['content']}\n\n{content}".strip()
+			continue
+		normalized.append({"role": role, "content": content})
+
+	if not normalized and current_message:
+		return [{"role": "user", "content": current_message}]
+	return normalized
+
+
 def _tool_output_status(content: str) -> str:
 	text = str(content or "").strip()
 	if "An error occurred when calling tool" in text:
@@ -263,7 +381,12 @@ def _maybe_retry_generate_report(fn: Any, original_params: Any, initial_result: 
 	return retry_result if retry_result is not None else initial_result
 
 
-def _wrap_fac_tool_calls(bot: Assistant, settings: Settings) -> None:
+def _wrap_fac_tool_calls(
+	bot: Assistant,
+	settings: Settings,
+	*,
+	compiled_query: Dict[str, Any] | None = None,
+) -> None:
 	for tool_name, tool in getattr(bot, "function_map", {}).items():
 		if not str(tool_name or "").startswith("erp_fac-"):
 			continue
@@ -275,9 +398,16 @@ def _wrap_fac_tool_calls(bot: Assistant, settings: Settings) -> None:
 			def wrapped_call(params: Any, **kwargs: Any) -> Any:
 				if isinstance(params, str):
 					params = _repair_json_argument_string(params)
-				params = enforce_tool_gateway_policy(current_tool_name, params, settings)
+				params = enforce_tool_gateway_policy(
+					current_tool_name,
+					params,
+					settings,
+					compiled_query=compiled_query,
+				)
 				result = fn(params, **kwargs)
-				if str(current_tool_name or "").strip() == "erp_fac-generate_report":
+				if str(current_tool_name or "").strip() == "erp_fac-report_list":
+					result = _filter_report_list_result(result)
+				if str(current_tool_name or "").strip() == "erp_fac-generate_report" and not compiled_query:
 					result = _maybe_retry_generate_report(fn, params, result, **kwargs)
 				return result
 
@@ -307,19 +437,20 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 		"api_key": settings.qwen_api_key or "EMPTY",
 		"generate_cfg": _generate_cfg(settings),
 	}
+	compiled_query = request.compiled_query if isinstance(request.compiled_query, dict) else {}
 	bot = Assistant(
 		llm=llm_cfg,
-		system_message=_build_system_contract(settings),
+		system_message=_build_system_contract(
+			settings,
+			request.response_policy,
+			mode=str(request.mode or "read_only").strip().lower(),
+			compiled_query=compiled_query,
+		),
 		function_list=[mcp_descriptor],
 	)
-	_wrap_fac_tool_calls(bot, settings)
+	_wrap_fac_tool_calls(bot, settings, compiled_query=compiled_query)
 
-	messages: List[Dict[str, Any]] = [
-		{"role": m.role, "content": m.content}
-		for m in request.recent_messages
-		if str(m.role or "").strip() in {"user", "assistant"}
-	]
-	messages.append({"role": "user", "content": request.message})
+	messages = _normalize_conversation_messages(request)
 
 	final_response: List[Dict[str, Any]] = []
 	try:
@@ -327,6 +458,8 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 			final_response = _flatten_responses([chunk])
 	except ToolGatewayPolicyError as exc:
 		raise QwenAgentEngineError(str(exc)) from exc
+	except Exception as exc:
+		raise QwenAgentEngineError(f"Qwen-Agent execution failed: {exc}") from exc
 
 	tool_trace = _extract_tool_trace(final_response)
 	answer_text = _extract_answer_text(final_response)

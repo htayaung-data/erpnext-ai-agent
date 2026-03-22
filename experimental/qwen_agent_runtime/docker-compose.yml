@@ -10,3 +10,13 @@ services:
     ports:
       - "8010:8010"
     restart: unless-stopped
+    networks:
+      default:
+      erpai_shared:
+        aliases:
+          - qwen-agent-runtime
+
+networks:
+  erpai_shared:
+    external: true
+    name: erpai_project1_default

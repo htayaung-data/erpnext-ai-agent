@@ -1,9 +1,76 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
+  "intent_classes": [
+    {
+      "intent_class_id": "financial_summary",
+      "label": "Financial Summary",
+      "description": "Summary or current-state questions about balances, totals, and outstanding amounts.",
+      "semantic_tags": [
+        "financial",
+        "summary"
+      ]
+    },
+    {
+      "intent_class_id": "ranked_entities",
+      "label": "Ranked Entities",
+      "description": "Ranking questions such as top customers, top suppliers, or top products by a metric.",
+      "semantic_tags": [
+        "ranking"
+      ]
+    },
+    {
+      "intent_class_id": "trend_analysis",
+      "label": "Trend Analysis",
+      "description": "Time-series questions grouped over periods such as monthly trends.",
+      "semantic_tags": [
+        "trend",
+        "time_series"
+      ]
+    },
+    {
+      "intent_class_id": "inventory_summary",
+      "label": "Inventory Summary",
+      "description": "Questions about current stock balances, warehouses, and inventory value.",
+      "semantic_tags": [
+        "inventory",
+        "stock"
+      ]
+    },
+    {
+      "intent_class_id": "aging_analysis",
+      "label": "Aging Analysis",
+      "description": "Questions about due buckets, overdue balances, and ageing distributions.",
+      "semantic_tags": [
+        "aging",
+        "due_period"
+      ]
+    },
+    {
+      "intent_class_id": "financial_statement",
+      "label": "Financial Statement",
+      "description": "Questions asking for governed financial statements such as profit and loss or income statement views.",
+      "semantic_tags": [
+        "financial",
+        "statement",
+        "profitability"
+      ]
+    },
+    {
+      "intent_class_id": "product_performance",
+      "label": "Product Performance",
+      "description": "Questions about which products or items are performing well over a business time period.",
+      "semantic_tags": [
+        "product",
+        "performance",
+        "profitability"
+      ]
+    }
+  ],
   "capabilities": [
     {
       "capability_id": "sales_read",
       "label": "Sales Read",
+      "default_report_name": "Sales Analytics",
       "report_families": [
         "sales_analytics"
       ],
@@ -17,6 +84,16 @@
         "customer",
         "territory",
         "item"
+      ],
+      "intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "trend_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "sales",
+        "revenue"
       ],
       "dimensions": [
         "Customer",
@@ -32,6 +109,7 @@
     {
       "capability_id": "stock_read",
       "label": "Stock Read",
+      "default_report_name": "Warehouse Wise Stock Balance",
       "report_families": [
         "stock_balance",
         "warehouse_wise_stock_balance"
@@ -44,6 +122,15 @@
         "stock",
         "inventory",
         "warehouse"
+      ],
+      "intent_classes": [
+        "inventory_summary",
+        "ranked_entities"
+      ],
+      "semantic_tags": [
+        "inventory",
+        "stock",
+        "balance"
       ],
       "dimensions": [
         "Warehouse",
@@ -58,6 +145,9 @@
     {
       "capability_id": "accounts_payable_read",
       "label": "Accounts Payable Read",
+      "default_report_name": "Accounts Payable Summary",
+      "summary_report_name": "Accounts Payable Summary",
+      "detail_report_name": "Accounts Payable",
       "report_families": [
         "accounts_payable",
         "accounts_payable_summary"
@@ -69,6 +159,16 @@
       "ontology_concepts": [
         "payable",
         "supplier",
+        "outstanding"
+      ],
+      "intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "aging_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "payable",
         "outstanding"
       ],
       "dimensions": [
@@ -97,6 +197,9 @@
     {
       "capability_id": "accounts_receivable_read",
       "label": "Accounts Receivable Read",
+      "default_report_name": "Accounts Receivable Summary",
+      "summary_report_name": "Accounts Receivable Summary",
+      "detail_report_name": "Accounts Receivable",
       "report_families": [
         "accounts_receivable",
         "accounts_receivable_summary"
@@ -108,6 +211,16 @@
       "ontology_concepts": [
         "receivable",
         "customer",
+        "outstanding"
+      ],
+      "intent_classes": [
+        "financial_summary",
+        "ranked_entities",
+        "aging_analysis"
+      ],
+      "semantic_tags": [
+        "financial",
+        "receivable",
         "outstanding"
       ],
       "dimensions": [
@@ -130,6 +243,113 @@
       ],
       "sibling_capabilities": [
         "accounts_payable_read"
+      ],
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
+      "capability_id": "financial_statement_read",
+      "label": "Financial Statement Read",
+      "default_report_name": "Profit and Loss Statement",
+      "report_families": [
+        "profit_and_loss_statement",
+        "balance_sheet",
+        "cash_flow"
+      ],
+      "report_names": [
+        "Profit and Loss Statement",
+        "Balance Sheet",
+        "Cash Flow"
+      ],
+      "ontology_concepts": [
+        "profit and loss",
+        "p&l",
+        "p and l",
+        "income statement",
+        "balance sheet",
+        "statement of financial position",
+        "cash flow",
+        "cash flow statement",
+        "liquidity",
+        "net profit",
+        "profitability",
+        "statement"
+      ],
+      "intent_classes": [
+        "financial_statement",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "financial",
+        "statement",
+        "profitability"
+      ],
+      "dimensions": [
+        "Account",
+        "Section"
+      ],
+      "metrics": [
+        "Total Income",
+        "Total Expense",
+        "Net Profit",
+        "Profit",
+        "Loss",
+        "Total Asset",
+        "Total Liability",
+        "Total Equity",
+        "Provisional Profit / Loss",
+        "Net Cash from Operations",
+        "Net Cash from Investing",
+        "Net Cash from Financing",
+        "Net Change in Cash"
+      ],
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
+      "capability_id": "product_performance_read",
+      "label": "Product Performance Read",
+      "default_report_name": "Gross Profit",
+      "report_families": [
+        "gross_profit",
+        "item_sales_history"
+      ],
+      "report_names": [
+        "Gross Profit",
+        "Item-wise Sales History"
+      ],
+      "ontology_concepts": [
+        "product",
+        "products",
+        "item",
+        "items",
+        "sku",
+        "product performance",
+        "gross profit",
+        "item sales",
+        "best selling"
+      ],
+      "intent_classes": [
+        "product_performance",
+        "ranked_entities",
+        "financial_summary"
+      ],
+      "semantic_tags": [
+        "sales",
+        "product",
+        "profitability"
+      ],
+      "dimensions": [
+        "Item Code",
+        "Item Group",
+        "Brand",
+        "Monthly"
+      ],
+      "metrics": [
+        "Gross Profit",
+        "Gross Profit Percent",
+        "Selling Amount",
+        "Qty",
+        "Billed Amount",
+        "Delivered Quantity"
       ],
       "default_validation_profile": "report_grounded_read"
     }

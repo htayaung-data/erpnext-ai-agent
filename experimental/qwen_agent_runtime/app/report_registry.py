@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Set
 
 _METADATA_DIR = Path(os.getenv("QWEN_ENTERPRISE_METADATA_DIR", "/app/metadata"))
 _REPORT_REGISTRY_PATH = _METADATA_DIR / "report_registry.json"
+_REPORT_FAMILY_REGISTRY_PATH = _METADATA_DIR / "report_family_registry.json"
 _CAPABILITY_REGISTRY_PATH = _METADATA_DIR / "capability_registry.json"
 _VALIDATION_RULES_PATH = _METADATA_DIR / "validation_rules.json"
 
@@ -26,6 +27,11 @@ def load_report_registry() -> Dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
+def load_report_family_registry() -> Dict[str, Any]:
+	return _load_json(_REPORT_FAMILY_REGISTRY_PATH)
+
+
+@lru_cache(maxsize=1)
 def load_capability_registry() -> Dict[str, Any]:
 	return _load_json(_CAPABILITY_REGISTRY_PATH)
 
@@ -33,6 +39,36 @@ def load_capability_registry() -> Dict[str, Any]:
 @lru_cache(maxsize=1)
 def load_validation_rules() -> Dict[str, Any]:
 	return _load_json(_VALIDATION_RULES_PATH)
+
+
+def list_intent_class_specs() -> List[Dict[str, Any]]:
+	values = load_capability_registry().get("intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_intent_class_spec(intent_class_id: str) -> Dict[str, Any]:
+	target = str(intent_class_id or "").strip()
+	for item in list_intent_class_specs():
+		if str(item.get("intent_class_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_report_family_specs() -> List[Dict[str, Any]]:
+	values = load_report_family_registry().get("families")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_report_family_spec(family_id: str) -> Dict[str, Any]:
+	target = str(family_id or "").strip()
+	for item in list_report_family_specs():
+		if str(item.get("family_id") or "").strip() == target:
+			return item
+	return {}
 
 
 def _reports_by_name() -> Dict[str, Dict[str, Any]]:
@@ -78,8 +114,125 @@ def report_capability_ids(report_name: str) -> List[str]:
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
 
 
+def report_supported_intent_classes(report_name: str) -> List[str]:
+	spec = get_report_spec(report_name)
+	values = spec.get("supported_intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_semantic_tags(report_name: str) -> List[str]:
+	spec = get_report_spec(report_name)
+	values = spec.get("semantic_tags")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_defaultable_filters(report_name: str) -> List[Dict[str, Any]]:
+	spec = get_report_spec(report_name)
+	values = spec.get("defaultable_filters")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
 def report_validation_profile(report_name: str) -> str:
 	return str(get_report_spec(report_name).get("validation_profile") or "").strip()
+
+
+def report_business_family_ids(report_name: str) -> List[str]:
+	target = str(report_name or "").strip().lower()
+	if not target:
+		return []
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		values = spec.get("report_names")
+		if not isinstance(values, list):
+			continue
+		report_names = {str(x or "").strip().lower() for x in values if str(x or "").strip()}
+		if target in report_names:
+			family_id = str(spec.get("family_id") or "").strip()
+			if family_id:
+				out.append(family_id)
+	return list(dict.fromkeys(out))
+
+
+def capability_business_family_ids(capability_id: str) -> List[str]:
+	target = str(capability_id or "").strip()
+	if not target:
+		return []
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		values = spec.get("capability_ids")
+		if not isinstance(values, list):
+			continue
+		if target in {str(x or "").strip() for x in values if str(x or "").strip()}:
+			family_id = str(spec.get("family_id") or "").strip()
+			if family_id:
+				out.append(family_id)
+	return list(dict.fromkeys(out))
+
+
+def report_family_supported_intent_classes(family_id: str) -> List[str]:
+	spec = get_report_family_spec(family_id)
+	values = spec.get("supported_intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_canonical_metrics(family_id: str) -> List[str]:
+	spec = get_report_family_spec(family_id)
+	values = spec.get("canonical_metrics")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_canonical_dimensions(family_id: str) -> List[str]:
+	spec = get_report_family_spec(family_id)
+	values = spec.get("canonical_dimensions")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_adapter_id(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("adapter_id") or "").strip()
+
+
+def report_family_validation_profile(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("validation_profile") or "").strip()
+
+
+def report_family_semantic_tags(family_id: str) -> List[str]:
+	spec = get_report_family_spec(family_id)
+	values = spec.get("semantic_tags")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_composite_allowed(family_id: str) -> bool:
+	return bool(get_report_family_spec(family_id).get("composite_allowed"))
+
+
+def report_family_report_names(family_id: str) -> List[str]:
+	spec = get_report_family_spec(family_id)
+	values = spec.get("report_names")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def report_family_capability_ids(family_id: str) -> List[str]:
+	spec = get_report_family_spec(family_id)
+	values = spec.get("capability_ids")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
 
 
 def get_validation_profile(profile_id: str) -> Dict[str, Any]:

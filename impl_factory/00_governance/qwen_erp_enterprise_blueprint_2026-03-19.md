@@ -28,6 +28,9 @@ This blueprint treats `Qwen-Agent` as a bounded reasoning component, not as the 
 5. Charts, reports, and dashboards must be generated from grounded structured data, not freeform markdown alone.
 6. Security, audit, and release governance are first-class architecture layers, not later hardening work.
 7. Burmese and English are product requirements, not a prompt trick.
+8. User-facing answers must follow a governed response policy: grounded facts first, concise business interpretation second, recommendations only when clearly supported by the data.
+9. `Qwen-Agent` may propose intent and slots, but deterministic compiler and policy layers must own report selection, invariant injection, and execution decisions.
+10. In this ERP deployment, `company` is a governed invariant and must be injected centrally rather than delegated to user wording or model discretion.
 
 ## 3. Product Modes
 
@@ -81,6 +84,31 @@ Purpose:
 
 - separate transport/UI concerns from reasoning concerns
 - create a stable envelope for audit and downstream layers
+
+### 4.2A Fresh Query Compiler Layer
+
+This layer owns first-turn business request compilation before runtime execution.
+
+Responsibilities:
+
+- resolve business request to capability family
+- accept model-proposed intent and slots
+- deterministically select allowed report family / report id
+- inject invariants such as single-company context
+- complete defaults such as report date or date range when policy allows
+- decide `execute`, `clarify`, or `reject`
+- produce a typed `FreshQueryCompilerContract`
+
+Must not own:
+
+- direct user-facing rendering
+- final answer generation
+- ERP truth
+
+The governing pattern is:
+
+- `Qwen-Agent proposes`
+- `compiler enforces`
 
 ### 4.3 GroundedTurnContext Layer
 
@@ -221,6 +249,27 @@ Checks include:
 - language rendering does not alter business facts
 - artifact output is derived from grounded schema
 
+### 4.9A Semantic Intent Validation Layer
+
+Grounding validation alone is not enough for enterprise correctness.
+
+This layer checks whether the grounded result actually matches the requested business intent.
+
+Checks include:
+
+- requested capability vs returned report family
+- expected semantic tags vs returned schema
+- requested metric family vs returned metric family
+- requested time scope vs actual time scope
+- requested dimensional breakdown vs actual dimensional breakdown
+- suspicious grounded-but-empty or grounded-but-zero responses when the intent suggests a non-empty business result should be available
+
+This layer may:
+
+- allow answer display
+- force clarification
+- reject semantically inconsistent grounded results
+
 ### 4.10 Artifact Engine Layer
 
 Charts, downloadable reports, and dashboards must come from structured data.
@@ -249,6 +298,27 @@ Rules:
 - if user asks in Burmese, reply in Burmese
 - if user asks in English, reply in English
 - business facts remain unchanged across language rendering
+
+### 4.11A Response Policy Layer
+
+This layer owns the final answer shape shown to business users.
+
+Required structure:
+
+1. grounded answer summary first
+2. supporting table or list second when relevant
+3. concise business interpretation after the facts
+4. recommendations only when supported by grounded data or explicit derived calculations
+
+Rules:
+
+- insights must be clearly derived from ERP-grounded facts
+- advisory interpretation must not be mixed indistinguishably with source facts
+- answers should be concise and management-friendly, not verbose or generic
+- default factual answers must not automatically include recommendations
+- brief interpretation may be included only when it is clearly relevant and supported by grounded or explicitly derived data
+- fuller business insight and recommendations are allowed only when the user explicitly asks for analysis, interpretation, recommendation, comparison, or evaluation
+- this response pattern is a product behavior requirement, not optional prompt styling
 
 ### 4.12 Write Safety Layer
 
@@ -311,6 +381,29 @@ Minimum fields:
   "raw_message": "string",
   "detected_language": "en|my|mixed",
   "received_at": "iso-datetime"
+}
+```
+
+## 5.1A FreshQueryCompilerContract
+
+Purpose:
+
+- govern the first-turn transition from user business language into an executable, validated ERP request
+
+Minimum fields:
+
+```json
+{
+  "intent_class": "accounts_payable_summary",
+  "capability_id": "accounts_payable_read",
+  "selected_report": "Accounts Payable Summary",
+  "proposed_slots": {},
+  "completed_filters": {
+    "company": "Mingalar Mobile Distribution Co., Ltd.",
+    "report_date": "2026-03-22"
+  },
+  "decision": "execute",
+  "clarification_required": false
 }
 ```
 
@@ -443,6 +536,35 @@ Minimum fields:
 - confirmation events
 - validation outcome
 
+## 5.8A ResponsePolicyContract
+
+Purpose:
+
+- preserve consistent enterprise answer structure across grounded reads, follow-ups, and analysis turns
+
+Minimum fields:
+
+```json
+{
+  "primary_section": "grounded_facts",
+  "table_included": true,
+  "analysis_level": "none",
+  "insight_included": false,
+  "recommendations_included": false,
+  "insight_trigger": "explicit_user_request",
+  "insight_basis": "derived_from_grounded_data"
+}
+```
+
+Policy interpretation:
+
+- `analysis_level = none`
+  default factual answer with no added interpretation beyond grounded facts
+- `analysis_level = brief_relevant`
+  short grounded interpretation allowed because it is clearly relevant to the answer
+- `analysis_level = full_analysis_requested`
+  fuller interpretation and recommendations allowed because the user explicitly requested analysis
+
 ## 6. Feature Blueprint
 
 ## 6.1 Create/Delete with Confirmation
@@ -547,10 +669,12 @@ Deliver:
 - column projection path
 - filter refinement path
 - sibling-switch path from registry metadata
+- governed response policy for grounded reads and local follow-ups
 
 Exit criteria:
 
 - follow-ups no longer depend on prompt hacks
+- enterprise answer shape is consistent across fresh queries and follow-ups
 
 ## Phase C: Artifact System
 
@@ -611,10 +735,11 @@ In order:
 1. implement `GroundedTurnContext` persistence from successful read turns
 2. implement typed `FollowUpResolution`
 3. route follow-ups through `ExecutionPath`
-4. add structured `ArtifactContract`
-5. replace Administrator with dedicated service user
-6. introduce `ActionProposalContract` for writes
-7. add Burmese language layer
+4. formalize governed response policy for facts, insights, and recommendations
+5. add structured `ArtifactContract`
+6. replace Administrator with dedicated service user
+7. introduce `ActionProposalContract` for writes
+8. add Burmese language layer
 
 ## 11. Target Outcome
 
@@ -624,6 +749,7 @@ The enterprise product should behave like this:
 - FAC and ERP remain the factual authority
 - contracts and policy control correctness
 - follow-ups are typed and reproducible
+- business users receive concise grounded facts plus meaningful, clearly derived insight
 - writes are safe and confirmable
 - charts and dashboards are structured artifacts
 - Burmese and English both work as first-class languages
