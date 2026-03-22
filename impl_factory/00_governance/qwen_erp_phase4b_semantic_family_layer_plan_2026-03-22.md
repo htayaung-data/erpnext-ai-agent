@@ -387,7 +387,7 @@ Deliver:
 
 Status:
 
-- `next`
+- `completed`
 
 Deliver:
 
@@ -396,6 +396,10 @@ Deliver:
 3. governed inventory/product summary metrics
 
 ### Slice 4B.6: Composite Read Planning
+
+Status:
+
+- `next`
 
 Deliver:
 

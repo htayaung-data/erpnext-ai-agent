@@ -409,11 +409,17 @@ Current Phase 4B note:
   - `ranking_analytics`
   - `trend_analytics`
   - family-hinted routing when one governed report supports more than one business family
+- Slice 4B.5 inventory/product profitability adapters are now implemented for:
+  - `inventory_snapshot`
+  - `product_profitability`
+  - item-level stock snapshots and warehouse-tree stock snapshots
+  - gross-profit and item-sales-history product normalization
 - normalized aging artifacts now pass through family validation inside the compiled execution path
 - normalized financial statement artifacts now pass through family validation inside the compiled execution path
 - normalized ranking and trend artifacts now pass through family validation inside the compiled execution path
+- normalized inventory and product profitability artifacts now pass through family validation inside the compiled execution path
 - the next architecture gap is no longer first-turn governance foundation
-- the next active implementation step is inventory/product profitability normalization and adapter governance
+- the next active implementation step is composite read planning and governed multi-family execution
 - common business families are now explicitly registered as first-class governed execution units:
   - financial statements
   - aging
@@ -422,6 +428,7 @@ Current Phase 4B note:
   - product profitability
 - composite business analysis should become compiler-approved multi-family execution, not free-form model synthesis
 - multi-family routing is now explicitly tightened for shared governed reports such as `Sales Analytics` and AR/AP summaries
+- stock and product metadata are now aligned so capability intent coverage matches governed family coverage
 - one important remaining boundary is that runtime answer rendering is still not fully constrained to normalized family artifacts
 - the Phase 4B implementation reference is:
   - `impl_factory/00_governance/qwen_erp_phase4b_semantic_family_layer_plan_2026-03-22.md`

@@ -114,6 +114,14 @@ def _canonical_metric(requested_metric: str) -> str:
 	return mapping.get(key, "")
 
 
+def _inventory_time_scope_matches(requested_time_scope: str, period: Dict[str, Any]) -> bool:
+	scope = str(requested_time_scope or "").strip()
+	if scope in {"as_of_today", "current_date_utc"}:
+		to_date = str(period.get("to_date") or "").strip()
+		return not to_date or to_date == _today_iso()
+	return _time_scope_matches(scope, period)
+
+
 def _time_scope_matches(requested_time_scope: str, period: Dict[str, Any]) -> bool:
 	scope = str(requested_time_scope or "").strip()
 	if not scope:
@@ -576,6 +584,209 @@ def _validate_trend_artifact(
 	)
 
 
+def _validate_inventory_snapshot_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="inventory_snapshot",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Inventory snapshot adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="inventory_snapshot",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and value not in (None, "")
+	]
+	required_metrics = requested_metrics or ["balance_qty", "balance_value"]
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized inventory metrics: {', '.join(missing_metrics)}")
+
+	snapshot_rows = sections.get("snapshot_rows")
+	if not isinstance(snapshot_rows, list) or not snapshot_rows:
+		errors.append("Normalized inventory artifact contains no snapshot rows.")
+
+	required_sections = {"snapshot_rows", "summary"}
+	missing_sections = [section for section in required_sections if section not in sections]
+	if missing_sections:
+		errors.append(f"Missing normalized inventory sections: {', '.join(sorted(missing_sections))}")
+
+	if not str(dimensions.get("snapshot_dimension") or "").strip():
+		errors.append("Normalized inventory artifact is missing the governed snapshot dimension.")
+
+	time_scope_match = _inventory_time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match:
+		warnings.append("Normalized inventory snapshot period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(str(dimensions.get("snapshot_dimension") or "").strip() and isinstance(snapshot_rows, list) and snapshot_rows)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif not time_scope_match:
+		decision = "clarify"
+
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="inventory_snapshot",
+		requested_metrics=required_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="inventory_snapshot",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
+def _validate_product_profitability_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="product_profitability",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Product profitability adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="product_profitability",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and value not in (None, "")
+	]
+	default_metrics = [metric for metric in ("gross_profit", "sales_amount", "quantity") if metric in observed_metrics]
+	required_metrics = requested_metrics or default_metrics or observed_metrics[:1]
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized product profitability metrics: {', '.join(missing_metrics)}")
+
+	product_rows = sections.get("product_rows")
+	if not isinstance(product_rows, list) or not product_rows:
+		errors.append("Normalized product profitability artifact contains no product rows.")
+	else:
+		first_row = product_rows[0] if isinstance(product_rows[0], dict) else {}
+		if not str(first_row.get("item_name") or first_row.get("item") or first_row.get("item_code") or "").strip():
+			errors.append("Normalized product profitability artifact top row is missing the product label.")
+
+	required_sections = {"product_rows", "summary"}
+	missing_sections = [section for section in required_sections if section not in sections]
+	if missing_sections:
+		errors.append(f"Missing normalized product profitability sections: {', '.join(sorted(missing_sections))}")
+
+	if not str(dimensions.get("product_dimension") or "").strip():
+		errors.append("Normalized product profitability artifact is missing the governed product dimension.")
+
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match:
+		warnings.append("Normalized product profitability period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(str(dimensions.get("product_dimension") or "").strip() and isinstance(product_rows, list) and product_rows)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif not time_scope_match:
+		decision = "clarify"
+
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="product_profitability",
+		requested_metrics=required_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="product_profitability",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
 def validate_normalized_family_artifact(
 	*,
 	request_id: str,
@@ -605,6 +816,22 @@ def validate_normalized_family_artifact(
 			)
 		if target == "trend_analytics":
 			return _validate_trend_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		if target == "inventory_snapshot":
+			return _validate_inventory_snapshot_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		if target == "product_profitability":
+			return _validate_product_profitability_artifact(
 				request_id=request_id,
 				compiler_contract=compiler_contract,
 				artifact_contract=artifact_contract,

@@ -125,6 +125,7 @@
       ],
       "intent_classes": [
         "inventory_summary",
+        "financial_summary",
         "ranked_entities"
       ],
       "semantic_tags": [
@@ -330,7 +331,8 @@
       "intent_classes": [
         "product_performance",
         "ranked_entities",
-        "financial_summary"
+        "financial_summary",
+        "trend_analysis"
       ],
       "semantic_tags": [
         "sales",

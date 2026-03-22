@@ -94,7 +94,23 @@ def _report_result(report_tool: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _report_rows(result: Dict[str, Any]) -> List[Dict[str, Any]]:
-	return _clean_rows(result.get("data"))
+	rows = _clean_rows(result.get("data"))
+	if rows:
+		return rows
+	columns = _report_columns(result)
+	data = _raw_report_data(result)
+	if not columns or not data:
+		return []
+	out: List[Dict[str, Any]] = []
+	for item in data:
+		if not isinstance(item, list):
+			continue
+		mapped: Dict[str, Any] = {}
+		for index, column in enumerate(columns):
+			fieldname = str(column.get("fieldname") or "").strip() or f"col_{index}"
+			mapped[fieldname] = item[index] if index < len(item) else None
+		out.append(mapped)
+	return out
 
 
 def _report_filters(report_tool: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
@@ -235,6 +251,85 @@ def _format_period_label(period_key: str) -> str:
 		except Exception:
 			return period_key
 	return period_key
+
+
+def _first_text(row: Dict[str, Any], *fieldnames: str) -> str:
+	for fieldname in fieldnames:
+		value = str(row.get(fieldname) or "").strip()
+		if value:
+			return value
+	return ""
+
+
+def _stock_balance_qty(row: Dict[str, Any]) -> float:
+	for fieldname in ("balance_qty", "bal_qty", "qty_after_transaction"):
+		if fieldname in row:
+			return _numeric_value(row.get(fieldname))
+	return 0.0
+
+
+def _stock_balance_value(row: Dict[str, Any]) -> float:
+	for fieldname in ("balance_value", "bal_val", "stock_value"):
+		if fieldname in row:
+			return _numeric_value(row.get(fieldname))
+	return 0.0
+
+
+def _snapshot_period(filters: Dict[str, Any]) -> Dict[str, Any]:
+	period = _period_from_filters(filters)
+	if not str(period.get("to_date") or "").strip():
+		period["to_date"] = dt.datetime.now(dt.timezone.utc).date().isoformat()
+	return period
+
+
+def _stock_snapshot_row_entry(row: Dict[str, Any]) -> Dict[str, Any]:
+	return {
+		"item": _first_text(row, "item_name", "item_code", "item"),
+		"item_code": _first_text(row, "item_code", "item"),
+		"item_name": _first_text(row, "item_name", "item_code", "item"),
+		"warehouse": _first_text(row, "warehouse"),
+		"item_group": _first_text(row, "item_group"),
+		"brand": _first_text(row, "brand"),
+		"stock_uom": _first_text(row, "stock_uom"),
+		"balance_qty": _stock_balance_qty(row),
+		"balance_value": _stock_balance_value(row),
+	}
+
+
+def _sort_metric_rows(rows: List[Dict[str, Any]], metric_key: str) -> List[Dict[str, Any]]:
+	return sorted(
+		[dict(item) for item in rows if isinstance(item, dict)],
+		key=lambda item: _numeric_value(item.get(metric_key)),
+		reverse=True,
+	)
+
+
+def _aggregate_snapshot_dimension(
+	rows: List[Dict[str, Any]],
+	*,
+	label_key: str,
+	label_fieldnames: Tuple[str, ...],
+) -> List[Dict[str, Any]]:
+	aggregated: Dict[str, Dict[str, Any]] = {}
+	for row in rows:
+		label = ""
+		for fieldname in label_fieldnames:
+			label = str(row.get(fieldname) or "").strip()
+			if label:
+				break
+		if not label:
+			continue
+		entry = aggregated.setdefault(
+			label,
+			{
+				label_key: label,
+				"balance_qty": 0.0,
+				"balance_value": 0.0,
+			},
+		)
+		entry["balance_qty"] = float(entry.get("balance_qty") or 0.0) + _numeric_value(row.get("balance_qty"))
+		entry["balance_value"] = float(entry.get("balance_value") or 0.0) + _numeric_value(row.get("balance_value"))
+	return _sort_metric_rows(list(aggregated.values()), "balance_value")
 
 
 def _row_label(row: Dict[str, Any]) -> str:
@@ -1288,6 +1383,358 @@ def _build_trend_artifact(
 	)
 
 
+def _build_inventory_snapshot_artifact(
+	*,
+	request_id: str,
+	report_name: str,
+	report_tool: Dict[str, Any],
+	compiler_contract: Dict[str, Any],
+) -> FamilyArtifactOutcome:
+	result = _report_result(report_tool)
+	all_rows = [row for row in _report_rows(result) if isinstance(row, dict)]
+	if not all_rows:
+		return FamilyArtifactOutcome(
+			status="adapter_error",
+			family_id="inventory_snapshot",
+			report_name=report_name,
+			errors=[f"Inventory snapshot adapter received no rows for `{report_name}`."],
+		)
+	report_key = _normalize_key(report_name)
+	rows = [
+		row
+		for row in all_rows
+		if not (
+			_is_total_label(row.get("item_code"))
+			or _is_total_label(row.get("item_name"))
+			or _is_total_label(row.get("warehouse"))
+		)
+	]
+	if not rows:
+		rows = all_rows
+	filters = _report_filters(report_tool, result)
+	period = _snapshot_period(filters)
+	requested_dimensions = _requested_dimension_keys(compiler_contract)
+	if report_key == "warehouse_wise_stock_balance" and any("stock_balance" in row for row in all_rows):
+		snapshot_rows = [
+			{
+				"warehouse": _first_text(row, "warehouse", "name"),
+				"parent_warehouse": _first_text(row, "parent_warehouse"),
+				"balance_qty": _stock_balance_qty(row),
+				"balance_value": _numeric_value(row.get("stock_balance")),
+				"is_group": bool(row.get("is_group")),
+				"indent": int(_numeric_value(row.get("indent"))),
+			}
+			for row in all_rows
+			if _first_text(row, "warehouse", "name")
+		]
+		if not snapshot_rows:
+			return FamilyArtifactOutcome(
+				status="adapter_error",
+				family_id="inventory_snapshot",
+				report_name=report_name,
+				errors=[f"Inventory snapshot adapter could not normalize any warehouse rows for `{report_name}`."],
+			)
+		total_row = next(
+			(
+				row for row in snapshot_rows
+				if bool(row.get("is_group")) and int(row.get("indent") or 0) == 0
+			),
+			{},
+		)
+		warehouse_totals = [
+			row for row in snapshot_rows
+			if str(row.get("warehouse") or "").strip()
+		]
+		total_balance_value = _numeric_value(total_row.get("balance_value"))
+		if total_balance_value == 0.0:
+			total_balance_value = sum(
+				_numeric_value(row.get("balance_value"))
+				for row in warehouse_totals
+				if not bool(row.get("is_group"))
+			)
+		total_balance_qty = sum(
+			_numeric_value(row.get("balance_qty"))
+			for row in warehouse_totals
+			if not bool(row.get("is_group"))
+		)
+		artifact = build_normalized_family_artifact_contract(
+			request_id=request_id,
+			family_id="inventory_snapshot",
+			source_reports=[report_name],
+			period=period,
+			filters=filters,
+			dimensions={
+				"snapshot_dimension": "Warehouse",
+				"source_grain": "warehouse_tree_snapshot",
+			},
+			metrics={
+				"balance_qty": total_balance_qty,
+				"balance_value": total_balance_value,
+				"item_count": 0,
+				"warehouse_count": len([row for row in warehouse_totals if not bool(row.get("is_group"))]),
+				"row_count": len(snapshot_rows),
+			},
+			sections={
+				"snapshot_rows": snapshot_rows,
+				"item_totals": [],
+				"warehouse_totals": warehouse_totals,
+				"summary": [
+					{"label": "Total Balance Qty", "metric_key": "balance_qty", "amount": total_balance_qty},
+					{"label": "Total Balance Value", "metric_key": "balance_value", "amount": total_balance_value},
+					{"label": "Warehouse Count", "metric_key": "warehouse_count", "value": len([row for row in warehouse_totals if not bool(row.get("is_group"))])},
+				],
+			},
+		)
+		return FamilyArtifactOutcome(
+			status="adapted",
+			family_id="inventory_snapshot",
+			report_name=report_name,
+			artifact_contract=artifact,
+		)
+	snapshot_dimension = "Warehouse" if ("warehouse" in requested_dimensions or "warehouse_wise" in _normalize_key(report_name)) else "Item"
+	snapshot_rows = [_stock_snapshot_row_entry(row) for row in rows]
+	snapshot_rows = [
+		row
+		for row in snapshot_rows
+		if str(row.get("item_code") or row.get("item") or row.get("warehouse") or "").strip()
+	]
+	if not snapshot_rows:
+		return FamilyArtifactOutcome(
+			status="adapter_error",
+			family_id="inventory_snapshot",
+			report_name=report_name,
+			errors=[f"Inventory snapshot adapter could not normalize any stock rows for `{report_name}`."],
+		)
+	total_balance_qty = sum(_numeric_value(row.get("balance_qty")) for row in snapshot_rows)
+	total_balance_value = sum(_numeric_value(row.get("balance_value")) for row in snapshot_rows)
+	item_totals = _aggregate_snapshot_dimension(
+		snapshot_rows,
+		label_key="item",
+		label_fieldnames=("item_code", "item_name", "item"),
+	)
+	warehouse_totals = _aggregate_snapshot_dimension(
+		snapshot_rows,
+		label_key="warehouse",
+		label_fieldnames=("warehouse",),
+	)
+	artifact = build_normalized_family_artifact_contract(
+		request_id=request_id,
+		family_id="inventory_snapshot",
+		source_reports=[report_name],
+		period=period,
+		filters=filters,
+		dimensions={
+			"snapshot_dimension": snapshot_dimension,
+			"source_grain": "warehouse_item_snapshot" if _normalize_key(report_name) == "warehouse_wise_stock_balance" else "item_snapshot",
+		},
+		metrics={
+			"balance_qty": total_balance_qty,
+			"balance_value": total_balance_value,
+			"item_count": len([row for row in item_totals if str(row.get("item") or "").strip()]),
+			"warehouse_count": len([row for row in warehouse_totals if str(row.get("warehouse") or "").strip()]),
+			"row_count": len(snapshot_rows),
+		},
+		sections={
+			"snapshot_rows": snapshot_rows,
+			"item_totals": item_totals,
+			"warehouse_totals": warehouse_totals,
+			"summary": [
+				{"label": "Total Balance Qty", "metric_key": "balance_qty", "amount": total_balance_qty},
+				{"label": "Total Balance Value", "metric_key": "balance_value", "amount": total_balance_value},
+				{"label": "Item Count", "metric_key": "item_count", "value": len(item_totals)},
+				{"label": "Warehouse Count", "metric_key": "warehouse_count", "value": len(warehouse_totals)},
+			],
+		},
+	)
+	return FamilyArtifactOutcome(
+		status="adapted",
+		family_id="inventory_snapshot",
+		report_name=report_name,
+		artifact_contract=artifact,
+	)
+
+
+def _product_primary_metric_key(
+	compiler_contract: Dict[str, Any],
+	available_metrics: List[str],
+) -> Tuple[str, str]:
+	options = [
+		({"gross_profit_percent", "gross_profit_percentage"}, ("gross_profit_percent", "Gross Profit Percent")),
+		({"gross_profit"}, ("gross_profit", "Gross Profit")),
+		({"sales_amount", "selling_amount", "billed_amount", "revenue", "value"}, ("sales_amount", "Sales Amount")),
+		({"quantity", "qty", "delivered_quantity"}, ("quantity", "Quantity")),
+	]
+	requested = _requested_metric_keys(compiler_contract)
+	for aliases, metric in options:
+		if metric[0] in available_metrics and requested & aliases:
+			return metric
+	if "gross_profit" in available_metrics:
+		return "gross_profit", "Gross Profit"
+	if "sales_amount" in available_metrics:
+		return "sales_amount", "Sales Amount"
+	return "quantity", "Quantity"
+
+
+def _gross_profit_product_rows(rows: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+	total_row = next(
+		(
+			row
+			for row in rows
+			if _is_total_label(row.get("item_code")) or _is_total_label(row.get("item_name"))
+		),
+		{},
+	)
+	product_rows = [
+		{
+			"item": _first_text(row, "item_name", "item_code"),
+			"item_code": _first_text(row, "item_code"),
+			"item_name": _first_text(row, "item_name", "item_code"),
+			"item_group": _first_text(row, "item_group"),
+			"brand": _first_text(row, "brand"),
+			"warehouse": _first_text(row, "warehouse"),
+			"sales_amount": _numeric_value(row.get("selling_amount")),
+			"buying_amount": _numeric_value(row.get("buying_amount")),
+			"gross_profit": _numeric_value(row.get("gross_profit")),
+			"gross_profit_percent": _numeric_value(row.get("gross_profit_%")),
+			"quantity": _numeric_value(row.get("qty")),
+		}
+		for row in rows
+		if not (_is_total_label(row.get("item_code")) or _is_total_label(row.get("item_name")))
+	]
+	return product_rows, total_row if isinstance(total_row, dict) else {}
+
+
+def _item_history_product_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+	aggregated: Dict[str, Dict[str, Any]] = {}
+	for row in rows:
+		item_code = _first_text(row, "item_code", "item")
+		item_name = _first_text(row, "item_name", "item_code", "item")
+		item_key = item_code or item_name
+		if not item_key:
+			continue
+		entry = aggregated.setdefault(
+			item_key,
+			{
+				"item": item_name or item_code,
+				"item_code": item_code,
+				"item_name": item_name or item_code,
+				"item_group": _first_text(row, "item_group"),
+				"sales_amount": 0.0,
+				"quantity": 0.0,
+			},
+		)
+		entry["sales_amount"] = float(entry.get("sales_amount") or 0.0) + _numeric_value(row.get("billed_amount") or row.get("amount"))
+		entry["quantity"] = float(entry.get("quantity") or 0.0) + _numeric_value(row.get("delivered_quantity") or row.get("quantity"))
+	return list(aggregated.values())
+
+
+def _build_product_profitability_artifact(
+	*,
+	request_id: str,
+	report_name: str,
+	report_tool: Dict[str, Any],
+	compiler_contract: Dict[str, Any],
+) -> FamilyArtifactOutcome:
+	result = _report_result(report_tool)
+	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
+	if not rows:
+		return FamilyArtifactOutcome(
+			status="adapter_error",
+			family_id="product_profitability",
+			report_name=report_name,
+			errors=[f"Product profitability adapter received no rows for `{report_name}`."],
+		)
+	report_key = _normalize_key(report_name)
+	filters = _report_filters(report_tool, result)
+	period = _period_from_filters(filters)
+	product_rows: List[Dict[str, Any]] = []
+	metrics: Dict[str, Any] = {}
+	dimensions: Dict[str, Any] = {}
+	if report_key == "gross_profit":
+		product_rows, total_row = _gross_profit_product_rows(rows)
+		if not product_rows:
+			product_rows = _gross_profit_product_rows(rows + [total_row])[0]
+		total_sales_amount = _numeric_value(total_row.get("selling_amount")) or sum(_numeric_value(row.get("sales_amount")) for row in product_rows)
+		total_buying_amount = _numeric_value(total_row.get("buying_amount")) or sum(_numeric_value(row.get("buying_amount")) for row in product_rows)
+		total_gross_profit = _numeric_value(total_row.get("gross_profit")) or sum(_numeric_value(row.get("gross_profit")) for row in product_rows)
+		total_quantity = _numeric_value(total_row.get("qty")) or sum(_numeric_value(row.get("quantity")) for row in product_rows)
+		total_gross_profit_percent = (
+			(total_gross_profit / total_sales_amount) * 100.0
+			if total_sales_amount > 0
+			else _numeric_value(total_row.get("gross_profit_%"))
+		)
+		metrics = {
+			"sales_amount": total_sales_amount,
+			"buying_amount": total_buying_amount,
+			"gross_profit": total_gross_profit,
+			"gross_profit_percent": total_gross_profit_percent,
+			"quantity": total_quantity,
+			"product_count": len(product_rows),
+		}
+		dimensions = {
+			"product_dimension": str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+			"source_grain": "grouped_profitability",
+		}
+	elif report_key == "item_wise_sales_history":
+		product_rows = _item_history_product_rows(rows)
+		total_sales_amount = sum(_numeric_value(row.get("sales_amount")) for row in product_rows)
+		total_quantity = sum(_numeric_value(row.get("quantity")) for row in product_rows)
+		metrics = {
+			"sales_amount": total_sales_amount,
+			"quantity": total_quantity,
+			"product_count": len(product_rows),
+		}
+		dimensions = {
+			"product_dimension": "Item",
+			"source_grain": "aggregated_sales_history",
+		}
+	else:
+		return FamilyArtifactOutcome(
+			status="unsupported_family_report",
+			family_id="product_profitability",
+			report_name=report_name,
+			errors=[f"Unsupported product profitability report: `{report_name}`."],
+		)
+	product_rows = [row for row in product_rows if str(row.get("item_code") or row.get("item_name") or row.get("item") or "").strip()]
+	if not product_rows:
+		return FamilyArtifactOutcome(
+			status="adapter_error",
+			family_id="product_profitability",
+			report_name=report_name,
+			errors=[f"Product profitability adapter could not normalize any product rows for `{report_name}`."],
+		)
+	available_metrics = [str(key or "").strip() for key in metrics.keys() if str(key or "").strip()]
+	primary_metric_key, primary_metric_label = _product_primary_metric_key(compiler_contract, available_metrics)
+	product_rows = _sort_metric_rows(product_rows, primary_metric_key)
+	top_row = product_rows[0] if product_rows else {}
+	dimensions["primary_metric_key"] = primary_metric_key
+	dimensions["primary_metric_label"] = primary_metric_label
+	artifact = build_normalized_family_artifact_contract(
+		request_id=request_id,
+		family_id="product_profitability",
+		source_reports=[report_name],
+		period=period,
+		filters=filters,
+		dimensions=dimensions,
+		metrics=metrics,
+		sections={
+			"product_rows": product_rows,
+			"summary": [
+				{"label": f"Total {primary_metric_label}", "metric_key": primary_metric_key, "amount": _numeric_value(metrics.get(primary_metric_key))},
+				{"label": "Product Count", "metric_key": "product_count", "value": len(product_rows)},
+				{"label": "Top Product", "metric_key": "top_product", "value": str(top_row.get("item_name") or top_row.get("item") or "").strip()},
+				{"label": f"Top {primary_metric_label}", "metric_key": "top_value", "amount": _numeric_value(top_row.get(primary_metric_key))},
+			],
+		},
+	)
+	return FamilyArtifactOutcome(
+		status="adapted",
+		family_id="product_profitability",
+		report_name=report_name,
+		artifact_contract=artifact,
+	)
+
+
 def _family_preference_order(intent_class: str) -> List[str]:
 	return {
 		"financial_statement": ["financial_statement"],
@@ -1497,6 +1944,20 @@ def build_normalized_family_artifact(
 		)
 	if target_family_id == "trend_analytics":
 		return _build_trend_artifact(
+			request_id=request_id,
+			report_name=report_name,
+			report_tool=report_tool,
+			compiler_contract=compiler_contract,
+		)
+	if target_family_id == "inventory_snapshot":
+		return _build_inventory_snapshot_artifact(
+			request_id=request_id,
+			report_name=report_name,
+			report_tool=report_tool,
+			compiler_contract=compiler_contract,
+		)
+	if target_family_id == "product_profitability":
+		return _build_product_profitability_artifact(
 			request_id=request_id,
 			report_name=report_name,
 			report_tool=report_tool,

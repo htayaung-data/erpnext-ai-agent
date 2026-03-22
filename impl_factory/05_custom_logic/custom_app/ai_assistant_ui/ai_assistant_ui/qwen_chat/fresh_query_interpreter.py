@@ -1346,6 +1346,222 @@ def run_phase4b_ranking_trend_family_smoke() -> Dict[str, Any]:
 	return {"ok": True, "results": results}
 
 
+def _phase4b_inventory_product_case_result(
+	*,
+	request_id: str,
+	session_id: str,
+	site_name: str,
+	message: str,
+	intent_class: str,
+	candidate_capability_id: str,
+	candidate_report: str,
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+	requested_time_scope: str,
+) -> Dict[str, Any]:
+	response_policy = {"analysis_level": "none"}
+	interaction_contract = build_interaction_contract(
+		request_id=request_id,
+		session_id=session_id,
+		user_id="Administrator",
+		site_name=site_name,
+		raw_message=message,
+	)
+	interpretation = build_fresh_query_interpretation_contract(
+		request_id=interaction_contract.request_id,
+		session_id=session_id,
+		intent_class=intent_class,
+		candidate_capability_ids=[candidate_capability_id],
+		candidate_reports=[candidate_report],
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+		requested_time_scope=requested_time_scope,
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=0.95,
+	)
+	compiler_outcome = compile_fresh_query(
+		request_id=interaction_contract.request_id,
+		session_id=session_id,
+		interpretation=interpretation,
+		response_policy=response_policy,
+	)
+	runtime_payload: Dict[str, Any] = {}
+	if compiler_outcome.compiled_request_contract is not None:
+		runtime_payload = call_qwen_runtime_chat(
+			session_id=session_id,
+			user_id="Administrator",
+			site_name=site_name,
+			message=message,
+			recent_messages=[],
+			response_policy=response_policy,
+			mode="compiled_read_query",
+			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
+			request_id=interaction_contract.request_id,
+		)
+	adapter_outcome = build_normalized_family_artifact(
+		request_id=interaction_contract.request_id,
+		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
+		runtime_payload=runtime_payload,
+		intent_class=intent_class,
+	)
+	family_validation = validate_normalized_family_artifact(
+		request_id=interaction_contract.request_id,
+		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
+		artifact_contract=adapter_outcome.artifact_contract,
+		family_id=adapter_outcome.family_id,
+		adapter_errors=adapter_outcome.errors,
+		adapter_warnings=adapter_outcome.warnings,
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"message": message,
+		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
+		"compiled_query_request": (
+			compiler_outcome.compiled_request_contract.to_payload()
+			if compiler_outcome.compiled_request_contract is not None
+			else {}
+		),
+		"runtime_ok": bool(runtime_payload.get("ok")),
+		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
+		"normalized_family_artifact": (
+			adapter_outcome.artifact_contract.to_payload()
+			if adapter_outcome.artifact_contract is not None
+			else {}
+		),
+		"family_adapter_status": adapter_outcome.status,
+		"family_adapter_errors": list(adapter_outcome.errors),
+		"family_validation": family_validation.to_payload() if family_validation else {},
+	}
+
+
+def run_phase4b_inventory_product_family_probe() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	return {
+		"inventory_by_warehouse": _phase4b_inventory_product_case_result(
+			request_id="phase4b-probe-inventory-warehouse",
+			session_id="phase4b-inventory-product-family-probe",
+			site_name=site_name,
+			message="Show current inventory value by warehouse",
+			intent_class="inventory_summary",
+			candidate_capability_id="stock_read",
+			candidate_report="Warehouse Wise Stock Balance",
+			requested_dimensions=["Warehouse"],
+			requested_metrics=["Balance Value (MMK)"],
+			requested_time_scope="as_of_today",
+		),
+		"inventory_by_item": _phase4b_inventory_product_case_result(
+			request_id="phase4b-probe-inventory-item",
+			session_id="phase4b-inventory-product-family-probe",
+			site_name=site_name,
+			message="Show stock balance by item",
+			intent_class="inventory_summary",
+			candidate_capability_id="stock_read",
+			candidate_report="Stock Balance",
+			requested_dimensions=["Item"],
+			requested_metrics=["Balance Qty"],
+			requested_time_scope="as_of_today",
+		),
+		"product_profitability": _phase4b_inventory_product_case_result(
+			request_id="phase4b-probe-product-profitability",
+			session_id="phase4b-inventory-product-family-probe",
+			site_name=site_name,
+			message="Which products are performing well last month",
+			intent_class="product_performance",
+			candidate_capability_id="product_performance_read",
+			candidate_report="Gross Profit",
+			requested_dimensions=["Item Code"],
+			requested_metrics=["Gross Profit", "Gross Profit Percent"],
+			requested_time_scope="last_month",
+		),
+		"product_sales_history": _phase4b_inventory_product_case_result(
+			request_id="phase4b-probe-product-history",
+			session_id="phase4b-inventory-product-family-probe",
+			site_name=site_name,
+			message="Show item sales history this fiscal year",
+			intent_class="product_performance",
+			candidate_capability_id="product_performance_read",
+			candidate_report="Item-wise Sales History",
+			requested_dimensions=["Item"],
+			requested_metrics=["Billed Amount", "Delivered Quantity"],
+			requested_time_scope="current_fiscal_year_to_date",
+		),
+	}
+
+
+def run_phase4b_inventory_product_family_smoke() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	cases = [
+		{
+			"request_id": "phase4b-inventory-warehouse",
+			"message": "Show current inventory value by warehouse",
+			"intent_class": "inventory_summary",
+			"candidate_capability_id": "stock_read",
+			"candidate_report": "Warehouse Wise Stock Balance",
+			"requested_dimensions": ["Warehouse"],
+			"requested_metrics": ["Balance Value (MMK)"],
+			"requested_time_scope": "as_of_today",
+		},
+		{
+			"request_id": "phase4b-inventory-item",
+			"message": "Show stock balance by item",
+			"intent_class": "inventory_summary",
+			"candidate_capability_id": "stock_read",
+			"candidate_report": "Stock Balance",
+			"requested_dimensions": ["Item"],
+			"requested_metrics": ["Balance Qty"],
+			"requested_time_scope": "as_of_today",
+		},
+		{
+			"request_id": "phase4b-product-profitability",
+			"message": "Which products are performing well last month",
+			"intent_class": "product_performance",
+			"candidate_capability_id": "product_performance_read",
+			"candidate_report": "Gross Profit",
+			"requested_dimensions": ["Item Code"],
+			"requested_metrics": ["Gross Profit", "Gross Profit Percent"],
+			"requested_time_scope": "last_month",
+		},
+		{
+			"request_id": "phase4b-product-history",
+			"message": "Show item sales history this fiscal year",
+			"intent_class": "product_performance",
+			"candidate_capability_id": "product_performance_read",
+			"candidate_report": "Item-wise Sales History",
+			"requested_dimensions": ["Item"],
+			"requested_metrics": ["Billed Amount", "Delivered Quantity"],
+			"requested_time_scope": "current_fiscal_year_to_date",
+		},
+	]
+	results: List[Dict[str, Any]] = []
+	for item in cases:
+		case_result = _phase4b_inventory_product_case_result(
+			request_id=str(item.get("request_id") or uuid.uuid4().hex),
+			session_id="phase4b-inventory-product-family-smoke",
+			site_name=site_name,
+			message=str(item.get("message") or "").strip(),
+			intent_class=str(item.get("intent_class") or "").strip(),
+			candidate_capability_id=str(item.get("candidate_capability_id") or "").strip(),
+			candidate_report=str(item.get("candidate_report") or "").strip(),
+			requested_dimensions=list(item.get("requested_dimensions") or []),
+			requested_metrics=list(item.get("requested_metrics") or []),
+			requested_time_scope=str(item.get("requested_time_scope") or "").strip(),
+		)
+		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
+		if str(family_validation.get("status") or "").strip() != "pass":
+			raise RuntimeError(
+				f"Phase 4B inventory/product family smoke failed: family validation did not pass for `{item.get('message')}`."
+			)
+		results.append(case_result)
+	return {"ok": True, "results": results}
+
+
 def execute_compiled_fresh_query_message(
 	*,
 	session_id: str,
