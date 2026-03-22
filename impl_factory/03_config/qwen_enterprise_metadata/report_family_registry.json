@@ -29,6 +29,7 @@
         "statement"
       ],
       "adapter_id": "financial_statement_adapter",
+      "renderer_id": "financial_statement_renderer",
       "composite_allowed": true,
       "validation_profile": "report_grounded_read",
       "capability_ids": [
@@ -83,6 +84,7 @@
         "aging_type"
       ],
       "adapter_id": "aging_adapter",
+      "renderer_id": "aging_renderer",
       "composite_allowed": true,
       "validation_profile": "report_grounded_read",
       "capability_ids": [
@@ -125,6 +127,7 @@
         "period"
       ],
       "adapter_id": "ranking_analytics_adapter",
+      "renderer_id": "ranking_renderer",
       "composite_allowed": true,
       "validation_profile": "report_grounded_read",
       "capability_ids": [
@@ -174,6 +177,7 @@
         "series"
       ],
       "adapter_id": "trend_analytics_adapter",
+      "renderer_id": "trend_renderer",
       "composite_allowed": true,
       "validation_profile": "report_grounded_read",
       "capability_ids": [
@@ -212,6 +216,7 @@
         "item"
       ],
       "adapter_id": "inventory_snapshot_adapter",
+      "renderer_id": "inventory_snapshot_renderer",
       "composite_allowed": true,
       "validation_profile": "report_grounded_read",
       "capability_ids": [
@@ -255,6 +260,7 @@
         "period"
       ],
       "adapter_id": "product_profitability_adapter",
+      "renderer_id": "product_profitability_renderer",
       "composite_allowed": true,
       "validation_profile": "report_grounded_read",
       "capability_ids": [

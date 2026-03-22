@@ -312,8 +312,8 @@ The next implementation order is now:
    - Slice 4B.5 inventory/product profitability adapters: completed
    - Slice 4B.6 composite read planning: completed
    - enterprise checkpoint after Slice 4B.6: completed
-   - Slice 4B.7 family-level validation and rendering: next
-   - Slice 4B.8 family tool surface for Qwen-Agent
+   - Slice 4B.7 family-level validation and rendering: completed
+   - Slice 4B.8 family tool surface for Qwen-Agent: next
    - Slice 4B.9 family-based evaluation and rollout
 4. return to the remaining Phase 3 convenience expansions after Phase 4B establishes the broad governed read path:
    - column projection
@@ -425,6 +425,12 @@ Current Phase 4B note:
   - persisted composite plan and composite audit artifacts
   - deterministic composite AR/AP working-capital health execution
   - sequential execution as the current safe runtime posture because Frappe runtime configuration is thread-local in worker child threads
+- Slice 4B.7 family-level validation and rendering is now implemented with:
+  - governed rendered family response contracts
+  - governed composite validation contracts
+  - renderer metadata per family
+  - deterministic answer rendering from normalized family/composite artifacts
+  - service-path preference for canonical rendered answers over runtime prose
 - enterprise checkpoint after Slice 4B.6 confirms:
   - the architecture remains aligned with enterprise governance boundaries
   - the project is not drifting into phrase-specific hacks
@@ -446,7 +452,7 @@ Current Phase 4B note:
 - composite business analysis should become compiler-approved multi-family execution, not free-form model synthesis
 - multi-family routing is now explicitly tightened for shared governed reports such as `Sales Analytics` and AR/AP summaries
 - stock and product metadata are now aligned so capability intent coverage matches governed family coverage
-- one important remaining boundary is that runtime answer rendering is still not fully constrained to normalized family artifacts
+- runtime answer rendering is now materially tightened around normalized family/composite artifacts, but family-tool reduction and broader rollout governance are still open
 - composite execution is intentionally serialized for correctness in the current Frappe worker/runtime model because configuration is thread-local in child threads
 - the Phase 4B implementation reference is:
   - `impl_factory/00_governance/qwen_erp_phase4b_semantic_family_layer_plan_2026-03-22.md`

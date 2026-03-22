@@ -27,6 +27,14 @@ def _normalize_key(value: Any) -> str:
 	return text.strip("_")
 
 
+def _has_source_reports(artifact_contract: NormalizedFamilyArtifactContract | None) -> bool:
+	return bool(
+		artifact_contract is not None
+		and isinstance(artifact_contract.source_reports, list)
+		and any(str(item or "").strip() for item in artifact_contract.source_reports)
+	)
+
+
 def _statement_type_required_metrics(statement_type: str) -> List[str]:
 	if statement_type == "profit_and_loss":
 		return ["total_income", "total_expense", "net_profit"]
@@ -236,6 +244,8 @@ def _validate_financial_statement_artifact(
 	missing_sections = [section for section in required_sections if section not in sections]
 	if missing_sections:
 		errors.append(f"Missing normalized statement sections: {', '.join(sorted(missing_sections))}")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized financial statement artifact did not preserve governed source reports.")
 
 	time_scope_match = _time_scope_matches(
 		str(compiler_contract.get("requested_time_scope") or "").strip(),
@@ -335,6 +345,8 @@ def _validate_aging_artifact(
 	missing_sections = [section for section in required_sections if section not in sections]
 	if missing_sections:
 		errors.append(f"Missing normalized aging sections: {', '.join(sorted(missing_sections))}")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized aging artifact did not preserve governed source reports.")
 
 	parties = sections.get("parties")
 	if not isinstance(parties, list) or not parties:
@@ -430,7 +442,7 @@ def _validate_ranking_artifact(
 		for key, value in metrics.items()
 		if str(key or "").strip() and value not in (None, "")
 	]
-	required_metrics = requested_metrics or ([primary_metric_key] if primary_metric_key else [])
+	required_metrics = [primary_metric_key] if primary_metric_key else (requested_metrics[:1] if requested_metrics else [])
 	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
 	if missing_metrics:
 		errors.append(f"Missing normalized ranking metrics: {', '.join(missing_metrics)}")
@@ -444,6 +456,10 @@ def _validate_ranking_artifact(
 			errors.append("Normalized ranking artifact top row is missing the ranked entity label.")
 		if primary_metric_key and primary_metric_key not in first_row:
 			errors.append("Normalized ranking artifact top row is missing the primary metric value.")
+	if not isinstance(sections.get("summary"), list) or not sections.get("summary"):
+		errors.append("Normalized ranking artifact is missing its governed summary section.")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized ranking artifact did not preserve governed source reports.")
 
 	time_scope_match = _time_scope_matches(
 		str(compiler_contract.get("requested_time_scope") or "").strip(),
@@ -529,7 +545,7 @@ def _validate_trend_artifact(
 		for key, value in metrics.items()
 		if str(key or "").strip() and value not in (None, "")
 	]
-	required_metrics = requested_metrics or ([primary_metric_key] if primary_metric_key else [])
+	required_metrics = [primary_metric_key] if primary_metric_key else (requested_metrics[:1] if requested_metrics else [])
 	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
 	if missing_metrics:
 		errors.append(f"Missing normalized trend metrics: {', '.join(missing_metrics)}")
@@ -546,6 +562,10 @@ def _validate_trend_artifact(
 
 	if not time_grain:
 		errors.append("Normalized trend artifact is missing governed time grain metadata.")
+	if not isinstance(sections.get("summary"), list) or not sections.get("summary"):
+		errors.append("Normalized trend artifact is missing its governed summary section.")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized trend artifact did not preserve governed source reports.")
 
 	time_scope_match = _time_scope_matches(
 		str(compiler_contract.get("requested_time_scope") or "").strip(),
@@ -642,6 +662,8 @@ def _validate_inventory_snapshot_artifact(
 	missing_sections = [section for section in required_sections if section not in sections]
 	if missing_sections:
 		errors.append(f"Missing normalized inventory sections: {', '.join(sorted(missing_sections))}")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized inventory artifact did not preserve governed source reports.")
 
 	if not str(dimensions.get("snapshot_dimension") or "").strip():
 		errors.append("Normalized inventory artifact is missing the governed snapshot dimension.")
@@ -746,6 +768,8 @@ def _validate_product_profitability_artifact(
 	missing_sections = [section for section in required_sections if section not in sections]
 	if missing_sections:
 		errors.append(f"Missing normalized product profitability sections: {', '.join(sorted(missing_sections))}")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized product profitability artifact did not preserve governed source reports.")
 
 	if not str(dimensions.get("product_dimension") or "").strip():
 		errors.append("Normalized product profitability artifact is missing the governed product dimension.")

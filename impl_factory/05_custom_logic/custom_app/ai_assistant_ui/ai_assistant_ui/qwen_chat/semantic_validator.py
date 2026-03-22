@@ -146,9 +146,18 @@ def _requested_metric_present(
 		return True, []
 	allowed = report_supported_metrics(report_name)
 	value_quantity = str(actual_filters.get("value_quantity") or "").strip()
+	effective_requested_metrics = list(requested_metrics)
+	if value_quantity:
+		matching_selected_metric = [
+			requested
+			for requested in requested_metrics
+			if _matches_requested_value(requested, value_quantity)
+		]
+		if matching_selected_metric:
+			effective_requested_metrics = matching_selected_metric
 	row_values = _row_text_values(rows)
 	errors: List[str] = []
-	for requested in requested_metrics:
+	for requested in effective_requested_metrics:
 		if allowed and not any(_matches_requested_value(requested, candidate) for candidate in allowed):
 			errors.append(f"Requested metric `{requested}` is not governed for report `{report_name}`.")
 			continue

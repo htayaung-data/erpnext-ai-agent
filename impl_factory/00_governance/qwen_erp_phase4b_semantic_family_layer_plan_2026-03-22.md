@@ -439,7 +439,7 @@ Operational note:
 
 Status:
 
-- `next`
+- `completed`
 
 Deliver:
 
@@ -447,6 +447,10 @@ Deliver:
 2. composite completeness validation
 3. family-specific rendering policies
 4. canonical response structure by family
+
+Outcome note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_slice7_family_validation_rendering_note_2026-03-22.md`
 
 ### Slice 4B.8: Family Tool Surface for Qwen-Agent
 
@@ -481,12 +485,11 @@ Phase 4B should close only when:
 The immediate next step after this note is:
 
 1. complete the enterprise checkpoint after Slice 4B.6
-2. implement Slice 4B.7 next:
-   - family-level validation tightening
-   - composite completeness validation tightening
-   - canonical rendering by family and composite type
-3. only after that reduce the Qwen-Agent tool surface to family-level tools in Slice 4B.8
-4. then move to Slice 4B.9 family-based evaluation and rollout
-5. keep expanding by semantic family packages, not by isolated example questions
+2. implement Slice 4B.8 next:
+   - reduced family-level tool surface
+   - explicit policy to prefer family tools over raw report selection
+3. then move to Slice 4B.9 family-based evaluation and rollout
+4. keep expanding by semantic family packages, not by isolated example questions
+5. continue latency hardening without relaxing compiler or validator governance
 
 This keeps the architecture broadening by semantic family packages, not by isolated example questions.

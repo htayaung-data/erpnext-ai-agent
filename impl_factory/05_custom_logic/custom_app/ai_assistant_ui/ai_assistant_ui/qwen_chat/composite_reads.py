@@ -13,11 +13,13 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	FreshQueryCompilerContract,
 	FreshQueryInterpretationContract,
 	build_compiled_execution_audit_contract,
+	build_composite_read_validation_contract,
 	build_composite_read_plan_contract,
 	build_fresh_query_compiler_contract,
 	build_fresh_query_interpretation_contract,
 )
 from ai_assistant_ui.qwen_chat.family_adapters import FamilyArtifactOutcome, build_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.family_rendering import render_composite_family_response
 from ai_assistant_ui.qwen_chat.family_validator import FamilyValidationOutcome, validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.metadata import (
 	list_composite_read_specs,
@@ -454,6 +456,7 @@ def _working_capital_health_summary(
 		"family_id": "composite_working_capital_health",
 		"artifact_type": "normalized_composite_family_artifact",
 		"period": {"to_date": report_date},
+		"dimensions": {"currency": currency},
 		"metrics": {
 			"accounts_receivable_outstanding_total": receivable_total,
 			"accounts_payable_outstanding_total": payable_total,
@@ -497,34 +500,31 @@ def _composite_validation_payload(
 		to_date = str(period.get("to_date") or "").strip()
 		if to_date:
 			periods.append(to_date)
+	if completed_steps != len(plan_contract.steps):
+		errors.append("Composite execution did not complete every governed plan step.")
 	if len(set(periods)) > 1:
 		warnings.append("Composite family artifacts did not align to one report date cleanly.")
+	metrics = composite_artifact.get("metrics") if isinstance(composite_artifact.get("metrics"), dict) else {}
+	if not metrics:
+		errors.append("Composite artifact did not expose governed composite metrics.")
+	sections = composite_artifact.get("sections") if isinstance(composite_artifact.get("sections"), dict) else {}
+	if not isinstance(sections.get("summary"), list) or not sections.get("summary"):
+		errors.append("Composite artifact did not expose governed summary observations.")
 	decision = "pass"
 	if errors:
 		decision = "reject_composite_incomplete"
 	elif len(set(periods)) > 1:
 		decision = "clarify"
-	return {
-		"type": "qwen_composite_read_validation",
-		"contract_version": "1.0",
-		"request_id": request_id,
-		"plan_id": str(plan_contract.plan_id or "").strip(),
-		"decision": decision,
-		"step_count": len(plan_contract.steps),
-		"completed_steps": completed_steps,
-		"errors": errors,
-		"warnings": warnings,
-		"observed_metrics": sorted(
-			str(key or "").strip()
-			for key in (
-				(composite_artifact.get("metrics") or {}).keys()
-				if isinstance(composite_artifact.get("metrics"), dict)
-				else []
-			)
-			if str(key or "").strip()
-		),
-		"created_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
-	}
+	return build_composite_read_validation_contract(
+		request_id=request_id,
+		plan_id=str(plan_contract.plan_id or "").strip(),
+		status=decision,
+		step_count=len(plan_contract.steps),
+		completed_steps=completed_steps,
+		observed_metrics=sorted(str(key or "").strip() for key in metrics.keys() if str(key or "").strip()),
+		validation_errors=errors,
+		validation_warnings=warnings,
+	).to_payload()
 
 
 def _composite_semantic_payload(
@@ -533,7 +533,7 @@ def _composite_semantic_payload(
 	plan_contract: CompositeReadPlanContract,
 	validation_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-	decision = str(validation_payload.get("decision") or "").strip()
+	decision = str(validation_payload.get("status") or "").strip()
 	status = "pass"
 	if decision == "clarify":
 		status = "clarify"
@@ -623,6 +623,19 @@ def execute_composite_read_plan(
 		plan_contract=plan_contract,
 		validation_payload=validation_payload,
 	)
+	source_reports = [
+		str(item.get("selected_report") or "").strip()
+		for item in plan_contract.steps
+		if isinstance(item, dict) and str(item.get("selected_report") or "").strip()
+	]
+	render_outcome = render_composite_family_response(
+		request_id=request_id,
+		plan_id=str(plan_contract.plan_id or "").strip(),
+		composite_artifact=composite_artifact,
+		source_reports=source_reports,
+		warnings=list(validation_payload.get("validation_warnings") or []),
+	)
+	rendered_response_payload = render_outcome.contract.to_payload() if render_outcome.contract is not None else {}
 	tool_trace: List[Dict[str, Any]] = []
 	tool_names: List[str] = []
 	runtime_models: List[str] = []
@@ -650,7 +663,7 @@ def execute_composite_read_plan(
 		if status:
 			grounded_statuses.append(status)
 
-	runtime_ok = str(validation_payload.get("decision") or "").strip() == "pass"
+	runtime_ok = str(validation_payload.get("status") or "").strip() == "pass"
 	overall_grounded_status = "pass" if grounded_statuses and all(item == "pass" for item in grounded_statuses) else "fail"
 	total_pipeline_latency_ms = int((time.perf_counter() - total_started) * 1000) if total_started else 0
 	overall_audit: CompiledExecutionAuditContract = build_compiled_execution_audit_contract(
@@ -703,20 +716,24 @@ def execute_composite_read_plan(
 	return {
 		"pipeline": pipeline,
 		"composite_read_plan": plan_contract.to_payload(),
+		"composite_validation": validation_payload,
 		"composite_step_runtime_payloads": [item.runtime_payload for item in step_results if isinstance(item.runtime_payload, dict)],
 		"composite_family_artifacts": [item.artifact_payload for item in step_results if item.artifact_payload],
 		"composite_step_validations": [item.family_validation_payload for item in step_results if item.family_validation_payload],
 		"normalized_family_artifact": composite_artifact,
+		"rendered_response": rendered_response_payload,
 		"family_validation": {
-			"status": str(validation_payload.get("decision") or "").strip(),
-			"errors": list(validation_payload.get("errors") or []),
-			"warnings": list(validation_payload.get("warnings") or []),
+			"status": str(validation_payload.get("status") or "").strip(),
+			"errors": list(validation_payload.get("validation_errors") or []),
+			"warnings": list(validation_payload.get("validation_warnings") or []),
 			"plan_id": str(plan_contract.plan_id or "").strip(),
 		},
 		"semantic_intent_validation": semantic_payload,
 		"runtime_payload": {
 			"ok": runtime_ok,
-			"answer_text": str(composite_artifact.get("answer_text") or "").strip(),
+			"answer_text": str(
+				(rendered_response_payload.get("answer_text") or composite_artifact.get("answer_text") or "")
+			).strip(),
 			"tool_trace": tool_trace,
 			"agent_meta": {
 				"engine": "composite_compiler",

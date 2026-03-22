@@ -22,6 +22,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_response_policy_contract,
 )
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.metadata import list_capability_specs, list_intent_class_specs
 from ai_assistant_ui.qwen_chat.runtime_client import (
@@ -1853,6 +1854,7 @@ def execute_compiled_fresh_query_message(
 	semantic_validation_latency_ms = 0
 	normalized_family_artifact_payload: Dict[str, Any] = {}
 	family_validation_payload: Dict[str, Any] = {}
+	rendered_response_payload: Dict[str, Any] = {}
 	if composite_plan_outcome is not None and str(composite_plan_outcome.status or "").strip() == "execute":
 		return execute_composite_read_plan(
 			session_id=session_id,
@@ -1900,6 +1902,7 @@ def execute_compiled_fresh_query_message(
 			"pipeline": pipeline,
 			"runtime_payload": {},
 			"normalized_family_artifact": {},
+			"rendered_response": {},
 			"family_validation": {},
 			"semantic_intent_validation": {},
 			"compiled_execution_audit": audit_contract.to_payload(),
@@ -1959,6 +1962,12 @@ def execute_compiled_fresh_query_message(
 	)
 	if family_validation is not None:
 		family_validation_payload = family_validation.to_payload()
+	render_outcome = render_normalized_family_response(
+		request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
+		artifact_contract=adapter_outcome.artifact_contract,
+	)
+	if render_outcome.contract is not None:
+		rendered_response_payload = render_outcome.contract.to_payload()
 	semantic_validation_payload: Dict[str, Any] = {}
 	if isinstance(runtime_payload, dict) and isinstance(runtime_payload.get("tool_trace"), list) and runtime_payload.get("tool_trace"):
 		semantic_started = time.perf_counter()
@@ -2026,6 +2035,7 @@ def execute_compiled_fresh_query_message(
 		"pipeline": pipeline,
 		"runtime_payload": runtime_payload,
 		"normalized_family_artifact": normalized_family_artifact_payload,
+		"rendered_response": rendered_response_payload,
 		"family_validation": family_validation_payload,
 		"semantic_intent_validation": semantic_validation_payload,
 		"compiled_execution_audit": audit_contract.to_payload(),
@@ -2117,3 +2127,55 @@ def run_phase4_audit_observability_smoke() -> Dict[str, Any]:
 	if int(audit.get("tool_count") or 0) < 1:
 		raise RuntimeError("Slice 6 audit smoke failed: expected at least one grounded tool call.")
 	return result
+
+
+def run_phase4b_family_rendering_smoke() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	checks = [
+		("financial_statement", "Show me P & L statement"),
+		("aging", "How much payable amount do we have as of now"),
+		("ranking_analytics", "Top 5 customers by revenue"),
+		("trend_analytics", "Show monthly sales trend"),
+		("product_profitability", "which products are performing well last month"),
+		("composite_working_capital_health", "Analyze AR / AP amount and evaluate the company health"),
+	]
+	results: List[Dict[str, Any]] = []
+	for expected_family, message in checks:
+		result = execute_compiled_fresh_query_message(
+			session_id=f"phase4b-rendering-{_normalize_message_key(message)}",
+			user_id="Administrator",
+			site_name=site_name,
+			message=message,
+			recent_messages=[],
+		)
+		rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
+		answer_text = str(rendered_response.get("answer_text") or "").strip()
+		if not answer_text:
+			raise RuntimeError(f"Phase 4B rendering smoke failed: missing rendered response for `{message}`.")
+		family_id = str(rendered_response.get("family_id") or "").strip()
+		if family_id != expected_family:
+			raise RuntimeError(
+				f"Phase 4B rendering smoke failed: expected family `{expected_family}`, got `{family_id or 'unknown'}` for `{message}`."
+			)
+		family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+		if str(family_validation.get("status") or "").strip() != "pass":
+			raise RuntimeError(
+				f"Phase 4B rendering smoke failed: family validation did not pass for `{message}`."
+			)
+		results.append(
+			{
+				"message": message,
+				"family_id": family_id,
+				"title": str(rendered_response.get("title") or "").strip(),
+				"answer_text": answer_text,
+				"phase4_latency_breakdown": result.get("phase4_latency_breakdown"),
+			}
+		)
+	return {"renders": results}
+
+
+def _normalize_message_key(value: str) -> str:
+	text = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower())
+	return text.strip("-") or "message"

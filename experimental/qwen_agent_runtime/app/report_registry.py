@@ -203,6 +203,10 @@ def report_family_adapter_id(family_id: str) -> str:
 	return str(get_report_family_spec(family_id).get("adapter_id") or "").strip()
 
 
+def report_family_renderer_id(family_id: str) -> str:
+	return str(get_report_family_spec(family_id).get("renderer_id") or "").strip()
+
+
 def report_family_validation_profile(family_id: str) -> str:
 	return str(get_report_family_spec(family_id).get("validation_profile") or "").strip()
 

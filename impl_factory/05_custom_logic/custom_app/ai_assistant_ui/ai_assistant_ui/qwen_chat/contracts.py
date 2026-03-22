@@ -269,6 +269,7 @@ class ReportFamilyContract:
 	canonical_metrics: List[str]
 	canonical_dimensions: List[str]
 	adapter_id: str
+	renderer_id: str
 	composite_allowed: bool
 	capability_ids: List[str]
 	report_names: List[str]
@@ -286,6 +287,7 @@ class ReportFamilyContract:
 			"canonical_metrics": list(self.canonical_metrics),
 			"canonical_dimensions": list(self.canonical_dimensions),
 			"adapter_id": self.adapter_id,
+			"renderer_id": self.renderer_id,
 			"composite_allowed": self.composite_allowed,
 			"capability_ids": list(self.capability_ids),
 			"report_names": list(self.report_names),
@@ -372,6 +374,60 @@ class FamilyValidationContract:
 			"decision": self.decision,
 			"validation_errors": list(self.validation_errors),
 			"validation_warnings": list(self.validation_warnings),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class CompositeReadValidationContract:
+	request_id: str
+	plan_id: str
+	status: str
+	step_count: int
+	completed_steps: int
+	observed_metrics: List[str]
+	validation_errors: List[str]
+	validation_warnings: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_composite_read_validation_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"plan_id": self.plan_id,
+			"status": self.status,
+			"step_count": int(max(0, self.step_count)),
+			"completed_steps": int(max(0, self.completed_steps)),
+			"observed_metrics": list(self.observed_metrics),
+			"validation_errors": list(self.validation_errors),
+			"validation_warnings": list(self.validation_warnings),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class RenderedFamilyResponseContract:
+	request_id: str
+	family_id: str
+	renderer_id: str
+	title: str
+	answer_text: str
+	source_reports: List[str]
+	blocks: List[Dict[str, Any]]
+	warnings: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_rendered_family_response_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"family_id": self.family_id,
+			"renderer_id": self.renderer_id,
+			"title": self.title,
+			"answer_text": self.answer_text,
+			"source_reports": list(self.source_reports),
+			"blocks": [dict(item) for item in self.blocks if isinstance(item, dict)],
+			"warnings": list(self.warnings),
 			"created_at": _utc_now(),
 		}
 
@@ -736,6 +792,7 @@ def build_report_family_contract(
 	canonical_metrics: List[str] | None = None,
 	canonical_dimensions: List[str] | None = None,
 	adapter_id: str = "",
+	renderer_id: str = "",
 	composite_allowed: bool = False,
 	capability_ids: List[str] | None = None,
 	report_names: List[str] | None = None,
@@ -750,6 +807,7 @@ def build_report_family_contract(
 		canonical_metrics=[str(x or "").strip() for x in (canonical_metrics or []) if str(x or "").strip()],
 		canonical_dimensions=[str(x or "").strip() for x in (canonical_dimensions or []) if str(x or "").strip()],
 		adapter_id=str(adapter_id or "").strip(),
+		renderer_id=str(renderer_id or "").strip(),
 		composite_allowed=bool(composite_allowed),
 		capability_ids=[str(x or "").strip() for x in (capability_ids or []) if str(x or "").strip()],
 		report_names=[str(x or "").strip() for x in (report_names or []) if str(x or "").strip()],
@@ -824,6 +882,52 @@ def build_family_validation_contract(
 		decision=str(decision or "clarify").strip(),
 		validation_errors=[str(x or "").strip() for x in (validation_errors or []) if str(x or "").strip()],
 		validation_warnings=[str(x or "").strip() for x in (validation_warnings or []) if str(x or "").strip()],
+	)
+
+
+def build_composite_read_validation_contract(
+	*,
+	request_id: str,
+	plan_id: str,
+	status: str = "clarify",
+	step_count: int = 0,
+	completed_steps: int = 0,
+	observed_metrics: List[str] | None = None,
+	validation_errors: List[str] | None = None,
+	validation_warnings: List[str] | None = None,
+) -> CompositeReadValidationContract:
+	return CompositeReadValidationContract(
+		request_id=str(request_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		status=str(status or "clarify").strip(),
+		step_count=int(max(0, step_count or 0)),
+		completed_steps=int(max(0, completed_steps or 0)),
+		observed_metrics=[str(x or "").strip() for x in (observed_metrics or []) if str(x or "").strip()],
+		validation_errors=[str(x or "").strip() for x in (validation_errors or []) if str(x or "").strip()],
+		validation_warnings=[str(x or "").strip() for x in (validation_warnings or []) if str(x or "").strip()],
+	)
+
+
+def build_rendered_family_response_contract(
+	*,
+	request_id: str,
+	family_id: str,
+	renderer_id: str = "",
+	title: str = "",
+	answer_text: str = "",
+	source_reports: List[str] | None = None,
+	blocks: List[Dict[str, Any]] | None = None,
+	warnings: List[str] | None = None,
+) -> RenderedFamilyResponseContract:
+	return RenderedFamilyResponseContract(
+		request_id=str(request_id or "").strip(),
+		family_id=str(family_id or "").strip(),
+		renderer_id=str(renderer_id or "").strip(),
+		title=str(title or "").strip(),
+		answer_text=str(answer_text or "").strip(),
+		source_reports=[str(x or "").strip() for x in (source_reports or []) if str(x or "").strip()],
+		blocks=[dict(item) for item in (blocks or []) if isinstance(item, dict)],
+		warnings=[str(x or "").strip() for x in (warnings or []) if str(x or "").strip()],
 	)
 
 

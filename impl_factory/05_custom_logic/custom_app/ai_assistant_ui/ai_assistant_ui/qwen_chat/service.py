@@ -159,6 +159,7 @@ def _compiled_decision_message(result: Dict[str, Any]) -> str:
 	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
 	decision = str(compiler.get("decision") or "").strip()
 	reason = str(compiler.get("compiler_reason") or "").strip()
+	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
 	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
 	family_status = str(family_validation.get("status") or "").strip()
 	family_errors = family_validation.get("errors") if isinstance(family_validation.get("errors"), list) else []
@@ -191,6 +192,9 @@ def _compiled_decision_message(result: Dict[str, Any]) -> str:
 	if semantic_status == "reject_semantically_inconsistent":
 		detail = str((semantic_errors or ["The grounded result did not match the requested business intent."])[0] or "").strip()
 		return f"I could not complete a semantically consistent grounded ERP answer.\n\n{detail}".strip()
+	rendered_answer = str(rendered_response.get("answer_text") or "").strip()
+	if rendered_answer:
+		return rendered_answer
 	if runtime_answer:
 		return runtime_answer
 	if runtime_error:
@@ -281,8 +285,10 @@ def _handle_compiled_first_turn_result(
 def _append_compiled_attempt_artifacts(session_doc, result: Dict[str, Any]) -> None:
 	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
 	normalized_family_artifact = result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {}
+	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
 	composite_family_artifacts = result.get("composite_family_artifacts") if isinstance(result.get("composite_family_artifacts"), list) else []
 	composite_step_validations = result.get("composite_step_validations") if isinstance(result.get("composite_step_validations"), list) else []
+	composite_validation = result.get("composite_validation") if isinstance(result.get("composite_validation"), dict) else {}
 	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
 	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
 	compiled_audit = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
@@ -293,13 +299,17 @@ def _append_compiled_attempt_artifacts(session_doc, result: Dict[str, Any]) -> N
 			_append_tool_payload(session_doc, payload)
 	if normalized_family_artifact:
 		_append_tool_payload(session_doc, normalized_family_artifact)
+	if rendered_response:
+		_append_tool_payload(session_doc, rendered_response)
 	for payload in composite_family_artifacts:
 		if isinstance(payload, dict) and payload:
 			_append_tool_payload(session_doc, payload)
 	for payload in composite_step_validations:
 		if isinstance(payload, dict) and payload:
 			_append_tool_payload(session_doc, payload)
-	if family_validation:
+	if composite_validation:
+		_append_tool_payload(session_doc, composite_validation)
+	if family_validation and str(family_validation.get("type") or "").strip():
 		_append_tool_payload(session_doc, family_validation)
 	if semantic_payload:
 		_append_tool_payload(session_doc, semantic_payload)
