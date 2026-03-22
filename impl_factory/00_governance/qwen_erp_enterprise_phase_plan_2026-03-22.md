@@ -307,7 +307,7 @@ The next implementation order is now:
 3. begin Phase 4B as the next scaling track after the Phase 4 foundation:
    - Slice 4B.1 family registry and contracts: completed
    - Slice 4B.2 financial statement adapter: completed
-   - Slice 4B.3 aging adapter
+   - Slice 4B.3 aging adapter: completed
    - Slice 4B.4 ranking/trend adapters
    - Slice 4B.5 inventory/product profitability adapters
    - Slice 4B.6 composite read planning
@@ -400,9 +400,15 @@ Current Phase 4B note:
   - Profit and Loss Statement
   - Balance Sheet
   - Cash Flow
+- Slice 4B.3 aging adapters are now implemented for:
+  - Accounts Receivable Summary
+  - Accounts Receivable
+  - Accounts Payable Summary
+  - Accounts Payable
+- normalized aging artifacts now pass through family validation inside the compiled execution path
 - normalized financial statement artifacts now pass through family validation inside the compiled execution path
 - the next architecture gap is no longer first-turn governance foundation
-- the next active implementation step is aging normalization and adapter governance
+- the next active implementation step is ranking/trend normalization and adapter governance
 - common business families are now explicitly registered as first-class governed execution units:
   - financial statements
   - aging
@@ -410,6 +416,7 @@ Current Phase 4B note:
   - inventory snapshot
   - product profitability
 - composite business analysis should become compiler-approved multi-family execution, not free-form model synthesis
+- multi-family routing still needs to tighten when one approved report can support more than one business family
 - the Phase 4B implementation reference is:
   - `impl_factory/00_governance/qwen_erp_phase4b_semantic_family_layer_plan_2026-03-22.md`
 

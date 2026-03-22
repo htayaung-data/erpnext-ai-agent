@@ -359,6 +359,10 @@ Deliver:
 
 ### Slice 4B.3: Aging Adapter
 
+Status:
+
+- `completed`
+
 Deliver:
 
 1. AR aging family artifact
@@ -433,10 +437,10 @@ Phase 4B should close only when:
 
 The immediate next step after this note is:
 
-1. implement the aging family next
-2. then implement ranking/trend
-3. then implement inventory/product profitability
-4. only after that introduce governed composite analysis
-5. keep expanding by semantic family packages, not by isolated example questions
+1. implement ranking and trend adapters next
+2. then implement inventory/product profitability
+3. only after that introduce governed composite analysis
+4. keep expanding by semantic family packages, not by isolated example questions
+5. tighten multi-family routing where one governed report can support more than one business family
 
 This keeps the architecture broadening by semantic family packages, not by isolated example questions.

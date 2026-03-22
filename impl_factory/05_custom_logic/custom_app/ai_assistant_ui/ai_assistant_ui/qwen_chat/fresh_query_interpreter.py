@@ -997,6 +997,159 @@ def run_phase4b_financial_statement_family_smoke() -> Dict[str, Any]:
 	return {"ok": True, "results": results}
 
 
+def _phase4b_aging_case_result(
+	*,
+	request_id: str,
+	session_id: str,
+	site_name: str,
+	message: str,
+	candidate_capability_id: str,
+	candidate_report: str,
+	requested_metrics: List[str],
+) -> Dict[str, Any]:
+	response_policy = {"analysis_level": "none"}
+	interaction_contract = build_interaction_contract(
+		request_id=request_id,
+		session_id=session_id,
+		user_id="Administrator",
+		site_name=site_name,
+		raw_message=message,
+	)
+	interpretation = build_fresh_query_interpretation_contract(
+		request_id=interaction_contract.request_id,
+		session_id=session_id,
+		intent_class="aging_analysis",
+		candidate_capability_ids=[candidate_capability_id],
+		candidate_reports=[candidate_report],
+		requested_dimensions=[],
+		requested_metrics=requested_metrics,
+		requested_time_scope="as_of_today",
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=0.95,
+	)
+	compiler_outcome = compile_fresh_query(
+		request_id=interaction_contract.request_id,
+		session_id=session_id,
+		interpretation=interpretation,
+		response_policy=response_policy,
+	)
+	runtime_payload: Dict[str, Any] = {}
+	if compiler_outcome.compiled_request_contract is not None:
+		runtime_payload = call_qwen_runtime_chat(
+			session_id=session_id,
+			user_id="Administrator",
+			site_name=site_name,
+			message=message,
+			recent_messages=[],
+			response_policy=response_policy,
+			mode="compiled_read_query",
+			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
+			request_id=interaction_contract.request_id,
+		)
+	adapter_outcome = build_normalized_family_artifact(
+		request_id=interaction_contract.request_id,
+		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
+		runtime_payload=runtime_payload,
+	)
+	family_validation = validate_normalized_family_artifact(
+		request_id=interaction_contract.request_id,
+		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
+		artifact_contract=adapter_outcome.artifact_contract,
+		family_id=adapter_outcome.family_id,
+		adapter_errors=adapter_outcome.errors,
+		adapter_warnings=adapter_outcome.warnings,
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"message": message,
+		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
+		"compiled_query_request": (
+			compiler_outcome.compiled_request_contract.to_payload()
+			if compiler_outcome.compiled_request_contract is not None
+			else {}
+		),
+		"runtime_ok": bool(runtime_payload.get("ok")),
+		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
+		"normalized_family_artifact": (
+			adapter_outcome.artifact_contract.to_payload()
+			if adapter_outcome.artifact_contract is not None
+			else {}
+		),
+		"family_adapter_status": adapter_outcome.status,
+		"family_adapter_errors": list(adapter_outcome.errors),
+		"family_validation": family_validation.to_payload() if family_validation else {},
+	}
+
+
+def run_phase4b_aging_family_probe() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	return {
+		"accounts_payable": _phase4b_aging_case_result(
+			request_id="phase4b-probe-aging-payable",
+			session_id="phase4b-aging-family-probe",
+			site_name=site_name,
+			message="Analyze payable aging as of today",
+			candidate_capability_id="accounts_payable_read",
+			candidate_report="Accounts Payable Summary",
+			requested_metrics=["Outstanding Amount", "Total Amount Due"],
+		),
+		"accounts_receivable": _phase4b_aging_case_result(
+			request_id="phase4b-probe-aging-receivable",
+			session_id="phase4b-aging-family-probe",
+			site_name=site_name,
+			message="Analyze receivable aging as of today",
+			candidate_capability_id="accounts_receivable_read",
+			candidate_report="Accounts Receivable Summary",
+			requested_metrics=["Outstanding Amount", "Total Amount Due"],
+		),
+	}
+
+
+def run_phase4b_aging_family_smoke() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	cases = [
+		{
+			"request_id": "phase4b-aging-payable",
+			"message": "Analyze payable aging as of today",
+			"candidate_capability_id": "accounts_payable_read",
+			"candidate_report": "Accounts Payable Summary",
+			"requested_metrics": ["Outstanding Amount", "Total Amount Due"],
+		},
+		{
+			"request_id": "phase4b-aging-receivable",
+			"message": "Analyze receivable aging as of today",
+			"candidate_capability_id": "accounts_receivable_read",
+			"candidate_report": "Accounts Receivable Summary",
+			"requested_metrics": ["Outstanding Amount", "Total Amount Due"],
+		},
+	]
+	results: List[Dict[str, Any]] = []
+	for item in cases:
+		case_result = _phase4b_aging_case_result(
+			request_id=str(item.get("request_id") or uuid.uuid4().hex),
+			session_id="phase4b-aging-family-smoke",
+			site_name=site_name,
+			message=str(item.get("message") or "").strip(),
+			candidate_capability_id=str(item.get("candidate_capability_id") or "").strip(),
+			candidate_report=str(item.get("candidate_report") or "").strip(),
+			requested_metrics=list(item.get("requested_metrics") or []),
+		)
+		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
+		if str(family_validation.get("status") or "").strip() != "pass":
+			raise RuntimeError(
+				f"Phase 4B aging family smoke failed: family validation did not pass for `{item.get('message')}`."
+			)
+		results.append(case_result)
+	return {"ok": True, "results": results}
+
+
 def execute_compiled_fresh_query_message(
 	*,
 	session_id: str,

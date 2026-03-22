@@ -139,6 +139,15 @@ def _value_fieldname(columns: List[Dict[str, Any]]) -> str:
 	return ""
 
 
+def _sum_field(rows: List[Dict[str, Any]], fieldname: str) -> float:
+	total = 0.0
+	for row in rows:
+		if not isinstance(row, dict):
+			continue
+		total += _numeric_value(row.get(fieldname))
+	return total
+
+
 def _row_label(row: Dict[str, Any]) -> str:
 	for key in ("account_name", "section_name", "section", "account", "acc_name"):
 		text = _strip_quotes(row.get(key))
@@ -308,6 +317,186 @@ def _financial_statement_metrics(statement_type: str, rows: List[Dict[str, Any]]
 	return {"statement_type": statement_type}
 
 
+def _aging_type_for_report(report_name: str) -> str:
+	key = _normalize_key(report_name)
+	if "accounts_payable" in key:
+		return "accounts_payable"
+	if "accounts_receivable" in key:
+		return "accounts_receivable"
+	return ""
+
+
+def _aging_party_dimension_label(aging_type: str) -> str:
+	if aging_type == "accounts_payable":
+		return "Supplier"
+	if aging_type == "accounts_receivable":
+		return "Customer"
+	return "Party"
+
+
+def _aging_group_field(aging_type: str) -> str:
+	if aging_type == "accounts_payable":
+		return "supplier_group"
+	if aging_type == "accounts_receivable":
+		return "customer_group"
+	return ""
+
+
+def _aging_extra_dimension_field(aging_type: str) -> str:
+	if aging_type == "accounts_receivable":
+		return "territory"
+	return ""
+
+
+def _aging_bucket_specs() -> List[Tuple[str, str, Tuple[str, ...]]]:
+	return [
+		("future_bucket_total", "<0", ("future_amount", "range0")),
+		("current_bucket_total", "0-30", ("range1",)),
+		("bucket_31_60_total", "31-60", ("range2",)),
+		("bucket_61_90_total", "61-90", ("range3",)),
+		("bucket_91_120_total", "91-120", ("range4",)),
+		("bucket_121_above_total", "121-Above", ("range5",)),
+	]
+
+
+def _aging_bucket_value(row: Dict[str, Any], field_candidates: Tuple[str, ...]) -> float:
+	for fieldname in field_candidates:
+		if fieldname in row:
+			return _numeric_value(row.get(fieldname))
+	return 0.0
+
+
+def _aging_party_entry(row: Dict[str, Any], aging_type: str) -> Dict[str, Any]:
+	group_field = _aging_group_field(aging_type)
+	extra_field = _aging_extra_dimension_field(aging_type)
+	entry: Dict[str, Any] = {
+		"party": str(row.get("party") or "").strip(),
+		"party_type": str(row.get("party_type") or _aging_party_dimension_label(aging_type)).strip(),
+		"currency": str(row.get("currency") or "").strip(),
+		"invoiced": _numeric_value(row.get("invoiced")),
+		"paid": _numeric_value(row.get("paid")),
+		"credit_note": _numeric_value(row.get("credit_note")),
+		"outstanding": _numeric_value(row.get("outstanding")),
+		"total_due": _numeric_value(row.get("total_due")),
+		"future_amount": _aging_bucket_value(row, ("future_amount", "range0")),
+		"bucket_0_30": _aging_bucket_value(row, ("range1",)),
+		"bucket_31_60": _aging_bucket_value(row, ("range2",)),
+		"bucket_61_90": _aging_bucket_value(row, ("range3",)),
+		"bucket_91_120": _aging_bucket_value(row, ("range4",)),
+		"bucket_121_above": _aging_bucket_value(row, ("range5",)),
+	}
+	if row.get("age") not in (None, ""):
+		entry["age_days"] = int(_numeric_value(row.get("age")))
+	for fieldname in (
+		"posting_date",
+		"due_date",
+		"voucher_type",
+		"voucher_no",
+		"bill_no",
+		"bill_date",
+		"remarks",
+		"party_account",
+	):
+		value = row.get(fieldname)
+		if value not in (None, ""):
+			entry[fieldname] = value
+	if group_field:
+		value = row.get(group_field)
+		if value not in (None, ""):
+			entry[group_field] = value
+	if extra_field:
+		value = row.get(extra_field)
+		if value not in (None, ""):
+			entry[extra_field] = value
+	return entry
+
+
+def _aging_sections(rows: List[Dict[str, Any]], aging_type: str, currency: str) -> Dict[str, Any]:
+	parties = [
+		_aging_party_entry(row, aging_type)
+		for row in rows
+		if isinstance(row, dict) and str(row.get("party") or "").strip()
+	]
+	bucket_totals: List[Dict[str, Any]] = []
+	for metric_key, label, field_candidates in _aging_bucket_specs():
+		amount = 0.0
+		for row in rows:
+			if not isinstance(row, dict):
+				continue
+			amount += _aging_bucket_value(row, field_candidates)
+		bucket_totals.append(
+			{
+				"bucket_key": metric_key,
+				"label": label,
+				"amount": amount,
+				"currency": currency,
+			}
+		)
+	outstanding_total = _sum_field(rows, "outstanding")
+	total_due_total = _sum_field(rows, "total_due")
+	current_bucket_total = next(
+		(item["amount"] for item in bucket_totals if item.get("bucket_key") == "current_bucket_total"),
+		0.0,
+	)
+	overdue_total = sum(
+		float(item.get("amount") or 0.0)
+		for item in bucket_totals
+		if item.get("bucket_key") in {"bucket_31_60_total", "bucket_61_90_total", "bucket_91_120_total", "bucket_121_above_total"}
+	)
+	overdue_ratio = (overdue_total / outstanding_total) if outstanding_total > 0 else 0.0
+	summary = [
+		{"label": "Outstanding Total", "metric_key": "outstanding_total", "amount": outstanding_total, "currency": currency},
+		{"label": "Total Amount Due", "metric_key": "total_due", "amount": total_due_total, "currency": currency},
+		{"label": "Current Bucket (0-30)", "metric_key": "current_bucket_total", "amount": current_bucket_total, "currency": currency},
+		{"label": "Overdue Total (31+)", "metric_key": "overdue_total", "amount": overdue_total, "currency": currency},
+		{"label": "Overdue Ratio", "metric_key": "overdue_ratio", "value": overdue_ratio},
+	]
+	return {
+		"parties": parties,
+		"bucket_totals": bucket_totals,
+		"summary": summary,
+	}
+
+
+def _aging_metrics(rows: List[Dict[str, Any]], aging_type: str) -> Dict[str, Any]:
+	future_bucket_total = 0.0
+	current_bucket_total = 0.0
+	bucket_31_60_total = 0.0
+	bucket_61_90_total = 0.0
+	bucket_91_120_total = 0.0
+	bucket_121_above_total = 0.0
+	for row in rows:
+		if not isinstance(row, dict):
+			continue
+		future_bucket_total += _aging_bucket_value(row, ("future_amount", "range0"))
+		current_bucket_total += _aging_bucket_value(row, ("range1",))
+		bucket_31_60_total += _aging_bucket_value(row, ("range2",))
+		bucket_61_90_total += _aging_bucket_value(row, ("range3",))
+		bucket_91_120_total += _aging_bucket_value(row, ("range4",))
+		bucket_121_above_total += _aging_bucket_value(row, ("range5",))
+	outstanding_total = _sum_field(rows, "outstanding")
+	total_due_total = _sum_field(rows, "total_due")
+	overdue_total = bucket_31_60_total + bucket_61_90_total + bucket_91_120_total + bucket_121_above_total
+	overdue_ratio = (overdue_total / outstanding_total) if outstanding_total > 0 else 0.0
+	return {
+		"aging_type": aging_type,
+		"outstanding_total": outstanding_total,
+		"total_due": total_due_total,
+		"invoiced_total": _sum_field(rows, "invoiced"),
+		"paid_total": _sum_field(rows, "paid"),
+		"credit_note_total": _sum_field(rows, "credit_note"),
+		"future_bucket_total": future_bucket_total,
+		"current_bucket_total": current_bucket_total,
+		"bucket_31_60_total": bucket_31_60_total,
+		"bucket_61_90_total": bucket_61_90_total,
+		"bucket_91_120_total": bucket_91_120_total,
+		"bucket_121_above_total": bucket_121_above_total,
+		"overdue_total": overdue_total,
+		"overdue_ratio": overdue_ratio,
+		"party_count": len([row for row in rows if isinstance(row, dict) and str(row.get("party") or "").strip()]),
+	}
+
+
 @dataclass(frozen=True)
 class FamilyArtifactOutcome:
 	status: str
@@ -384,6 +573,60 @@ def _build_financial_statement_artifact(
 	)
 
 
+def _build_aging_artifact(
+	*,
+	request_id: str,
+	report_name: str,
+	report_tool: Dict[str, Any],
+) -> FamilyArtifactOutcome:
+	result = _report_result(report_tool)
+	rows = _report_rows(result)
+	if not rows:
+		return FamilyArtifactOutcome(
+			status="adapter_error",
+			family_id="aging",
+			report_name=report_name,
+			errors=[f"Aging adapter received no report rows for `{report_name}`."],
+		)
+	aging_type = _aging_type_for_report(report_name)
+	if not aging_type:
+		return FamilyArtifactOutcome(
+			status="unsupported_family_report",
+			family_id="aging",
+			report_name=report_name,
+			errors=[f"Unsupported aging report: `{report_name}`."],
+		)
+	filters = _report_filters(report_tool, result)
+	period = _period_from_filters(filters)
+	currency = ""
+	for row in rows:
+		currency = str(row.get("currency") or "").strip()
+		if currency:
+			break
+	artifact = build_normalized_family_artifact_contract(
+		request_id=request_id,
+		family_id="aging",
+		source_reports=[report_name],
+		period=period,
+		filters=filters,
+		dimensions={
+			"aging_type": aging_type,
+			"currency": currency,
+			"party_dimension_label": _aging_party_dimension_label(aging_type),
+			"source_grain": "summary" if "summary" in _normalize_key(report_name) else "detail",
+			"bucket_labels": [label for _, label, _ in _aging_bucket_specs()],
+		},
+		metrics=_aging_metrics(rows, aging_type),
+		sections=_aging_sections(rows, aging_type, currency),
+	)
+	return FamilyArtifactOutcome(
+		status="adapted",
+		family_id="aging",
+		report_name=report_name,
+		artifact_contract=artifact,
+	)
+
+
 def build_normalized_family_artifact(
 	*,
 	request_id: str,
@@ -405,6 +648,12 @@ def build_normalized_family_artifact(
 	family_ids = report_business_family_ids(report_name)
 	if "financial_statement" in family_ids:
 		return _build_financial_statement_artifact(
+			request_id=request_id,
+			report_name=report_name,
+			report_tool=report_tool,
+		)
+	if "aging" in family_ids:
+		return _build_aging_artifact(
 			request_id=request_id,
 			report_name=report_name,
 			report_tool=report_tool,

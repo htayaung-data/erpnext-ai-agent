@@ -62,14 +62,25 @@
       ],
       "canonical_metrics": [
         "outstanding_total",
+        "total_due",
+        "invoiced_total",
+        "paid_total",
+        "credit_note_total",
+        "future_bucket_total",
         "current_bucket_total",
+        "bucket_31_60_total",
+        "bucket_61_90_total",
+        "bucket_91_120_total",
+        "bucket_121_above_total",
         "overdue_total",
-        "overdue_ratio"
+        "overdue_ratio",
+        "party_count"
       ],
       "canonical_dimensions": [
         "party",
         "bucket",
-        "period"
+        "period",
+        "aging_type"
       ],
       "adapter_id": "aging_adapter",
       "composite_allowed": true,

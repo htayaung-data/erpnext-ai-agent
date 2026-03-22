@@ -67,6 +67,33 @@ def _canonical_metric(requested_metric: str) -> str:
 		"net_cash_from_investing": "net_cash_from_investing",
 		"net_cash_from_financing": "net_cash_from_financing",
 		"net_change_in_cash": "net_change_in_cash",
+		"outstanding": "outstanding_total",
+		"outstanding_amount": "outstanding_total",
+		"outstanding_total": "outstanding_total",
+		"total_due": "total_due",
+		"total_amount_due": "total_due",
+		"invoiced": "invoiced_total",
+		"invoiced_amount": "invoiced_total",
+		"paid": "paid_total",
+		"paid_amount": "paid_total",
+		"credit_note": "credit_note_total",
+		"future_amount": "future_bucket_total",
+		"future_bucket_total": "future_bucket_total",
+		"current_bucket_total": "current_bucket_total",
+		"current_amount": "current_bucket_total",
+		"bucket_0_30": "current_bucket_total",
+		"0_30": "current_bucket_total",
+		"31_60": "bucket_31_60_total",
+		"bucket_31_60": "bucket_31_60_total",
+		"61_90": "bucket_61_90_total",
+		"bucket_61_90": "bucket_61_90_total",
+		"91_120": "bucket_91_120_total",
+		"bucket_91_120": "bucket_91_120_total",
+		"121_above": "bucket_121_above_total",
+		"bucket_121_above": "bucket_121_above_total",
+		"overdue": "overdue_total",
+		"overdue_total": "overdue_total",
+		"overdue_ratio": "overdue_ratio",
 	}
 	return mapping.get(key, "")
 
@@ -223,6 +250,116 @@ def _validate_financial_statement_artifact(
 	)
 
 
+def _validate_aging_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="aging",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Aging adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="aging",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	aging_type = str(dimensions.get("aging_type") or "").strip()
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and key != "aging_type" and value not in (None, "")
+	]
+	required_metrics = requested_metrics or [
+		"outstanding_total",
+		"total_due",
+		"current_bucket_total",
+		"overdue_total",
+		"overdue_ratio",
+	]
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized aging metrics: {', '.join(missing_metrics)}")
+
+	required_sections = {"parties", "bucket_totals", "summary"}
+	missing_sections = [section for section in required_sections if section not in sections]
+	if missing_sections:
+		errors.append(f"Missing normalized aging sections: {', '.join(sorted(missing_sections))}")
+
+	parties = sections.get("parties")
+	if not isinstance(parties, list) or not parties:
+		errors.append("Normalized aging artifact contains no party rows.")
+
+	bucket_totals = sections.get("bucket_totals")
+	if isinstance(bucket_totals, list):
+		if len(bucket_totals) < 6:
+			errors.append("Normalized aging artifact did not expose the full governed bucket set.")
+	else:
+		errors.append("Normalized aging artifact missing bucket total rows.")
+
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match:
+		warnings.append("Normalized aging period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(aging_type and not missing_sections)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif not time_scope_match:
+		decision = "clarify"
+
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="aging",
+		requested_metrics=required_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="aging",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
 def validate_normalized_family_artifact(
 	*,
 	request_id: str,
@@ -234,7 +371,15 @@ def validate_normalized_family_artifact(
 ) -> FamilyValidationOutcome | None:
 	target = str(family_id or "").strip()
 	if target != "financial_statement":
-		return None
+		if target != "aging":
+			return None
+		return _validate_aging_artifact(
+			request_id=request_id,
+			compiler_contract=compiler_contract,
+			artifact_contract=artifact_contract,
+			adapter_errors=_clean_list(adapter_errors),
+			adapter_warnings=_clean_list(adapter_warnings),
+		)
 	return _validate_financial_statement_artifact(
 		request_id=request_id,
 		compiler_contract=compiler_contract,
