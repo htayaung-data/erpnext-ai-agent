@@ -16,7 +16,8 @@
         "to_date",
         "tree_type",
         "value_quantity",
-        "doc_type"
+        "doc_type",
+        "range"
       ],
       "defaultable_filters": [
         {
@@ -35,6 +36,21 @@
           "fieldname": "doc_type",
           "strategy": "compiler_default",
           "value": "Sales Invoice"
+        },
+        {
+          "fieldname": "tree_type",
+          "strategy": "compiler_default",
+          "value": "Customer"
+        },
+        {
+          "fieldname": "value_quantity",
+          "strategy": "compiler_default",
+          "value": "Value"
+        },
+        {
+          "fieldname": "range",
+          "strategy": "compiler_default",
+          "value": "Monthly"
         }
       ],
       "supported_intent_classes": [

@@ -94,6 +94,22 @@ def _canonical_metric(requested_metric: str) -> str:
 		"overdue": "overdue_total",
 		"overdue_total": "overdue_total",
 		"overdue_ratio": "overdue_ratio",
+		"sales_amount": "sales_amount",
+		"selling_amount": "sales_amount",
+		"billed_amount": "sales_amount",
+		"revenue": "sales_amount",
+		"value": "sales_amount",
+		"quantity": "quantity",
+		"qty": "quantity",
+		"delivered_quantity": "quantity",
+		"period_value": "sales_amount",
+		"period_quantity": "quantity",
+		"gross_profit": "gross_profit",
+		"gross_profit_percent": "gross_profit_percent",
+		"gross_profit_percentage": "gross_profit_percent",
+		"balance_qty": "balance_qty",
+		"balance_value": "balance_value",
+		"balance_value_mmk": "balance_value",
 	}
 	return mapping.get(key, "")
 
@@ -360,6 +376,206 @@ def _validate_aging_artifact(
 	)
 
 
+def _validate_ranking_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="ranking_analytics",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Ranking adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="ranking_analytics",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	primary_metric_key = str(dimensions.get("primary_metric_key") or "").strip()
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and value not in (None, "")
+	]
+	required_metrics = requested_metrics or ([primary_metric_key] if primary_metric_key else [])
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized ranking metrics: {', '.join(missing_metrics)}")
+
+	ranked_rows = sections.get("ranked_rows")
+	if not isinstance(ranked_rows, list) or not ranked_rows:
+		errors.append("Normalized ranking artifact contains no ranked rows.")
+	else:
+		first_row = ranked_rows[0] if isinstance(ranked_rows[0], dict) else {}
+		if not str(first_row.get("entity") or "").strip():
+			errors.append("Normalized ranking artifact top row is missing the ranked entity label.")
+		if primary_metric_key and primary_metric_key not in first_row:
+			errors.append("Normalized ranking artifact top row is missing the primary metric value.")
+
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match:
+		warnings.append("Normalized ranking period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(primary_metric_key and isinstance(ranked_rows, list) and ranked_rows)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif not time_scope_match:
+		decision = "clarify"
+
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="ranking_analytics",
+		requested_metrics=required_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="ranking_analytics",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
+def _validate_trend_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="trend_analytics",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Trend adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="trend_analytics",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	primary_metric_key = str(dimensions.get("primary_metric_key") or "").strip()
+	time_grain = str(dimensions.get("time_grain") or "").strip()
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and value not in (None, "")
+	]
+	required_metrics = requested_metrics or ([primary_metric_key] if primary_metric_key else [])
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized trend metrics: {', '.join(missing_metrics)}")
+
+	period_series = sections.get("period_series")
+	if not isinstance(period_series, list) or not period_series:
+		errors.append("Normalized trend artifact contains no period series.")
+	else:
+		first_period = period_series[0] if isinstance(period_series[0], dict) else {}
+		if not str(first_period.get("period_key") or "").strip():
+			errors.append("Normalized trend artifact is missing period keys.")
+		if "value" not in first_period:
+			errors.append("Normalized trend artifact is missing period values.")
+
+	if not time_grain:
+		errors.append("Normalized trend artifact is missing governed time grain metadata.")
+
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match:
+		warnings.append("Normalized trend period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(primary_metric_key and time_grain and isinstance(period_series, list) and period_series)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif not time_scope_match:
+		decision = "clarify"
+
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="trend_analytics",
+		requested_metrics=required_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="trend_analytics",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
 def validate_normalized_family_artifact(
 	*,
 	request_id: str,
@@ -371,15 +587,31 @@ def validate_normalized_family_artifact(
 ) -> FamilyValidationOutcome | None:
 	target = str(family_id or "").strip()
 	if target != "financial_statement":
-		if target != "aging":
-			return None
-		return _validate_aging_artifact(
-			request_id=request_id,
-			compiler_contract=compiler_contract,
-			artifact_contract=artifact_contract,
-			adapter_errors=_clean_list(adapter_errors),
-			adapter_warnings=_clean_list(adapter_warnings),
-		)
+		if target == "aging":
+			return _validate_aging_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		if target == "ranking_analytics":
+			return _validate_ranking_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		if target == "trend_analytics":
+			return _validate_trend_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		return None
 	return _validate_financial_statement_artifact(
 		request_id=request_id,
 		compiler_contract=compiler_contract,

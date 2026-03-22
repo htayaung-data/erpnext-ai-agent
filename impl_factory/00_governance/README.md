@@ -25,6 +25,7 @@
 22. Qwen ERP Phase 4B Slice 1 family registry and contracts note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice1_family_registry_contracts_note_2026-03-22.md`
 23. Qwen ERP Phase 4B Slice 2 financial statement adapter note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice2_financial_statement_adapter_note_2026-03-22.md`
 24. Qwen ERP Phase 4B Slice 3 aging adapter note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice3_aging_adapter_note_2026-03-22.md`
+25. Qwen ERP Phase 4B Slice 4 ranking and trend adapter note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice4_ranking_trend_adapter_note_2026-03-22.md`
 
 ## Existing Governance
 1. Roles and permissions: `impl_factory/00_governance/roles_permissions.md`

@@ -888,6 +888,7 @@ def _phase4b_financial_statement_case_result(
 		request_id=interaction_contract.request_id,
 		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
 		runtime_payload=runtime_payload,
+		intent_class="financial_statement",
 	)
 	family_validation = validate_normalized_family_artifact(
 		request_id=interaction_contract.request_id,
@@ -1053,6 +1054,7 @@ def _phase4b_aging_case_result(
 		request_id=interaction_contract.request_id,
 		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
 		runtime_payload=runtime_payload,
+		intent_class="aging_analysis",
 	)
 	family_validation = validate_normalized_family_artifact(
 		request_id=interaction_contract.request_id,
@@ -1145,6 +1147,200 @@ def run_phase4b_aging_family_smoke() -> Dict[str, Any]:
 		if str(family_validation.get("status") or "").strip() != "pass":
 			raise RuntimeError(
 				f"Phase 4B aging family smoke failed: family validation did not pass for `{item.get('message')}`."
+			)
+		results.append(case_result)
+	return {"ok": True, "results": results}
+
+
+def _phase4b_ranking_trend_case_result(
+	*,
+	request_id: str,
+	session_id: str,
+	site_name: str,
+	message: str,
+	intent_class: str,
+	candidate_capability_id: str,
+	candidate_report: str,
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+	requested_time_scope: str,
+) -> Dict[str, Any]:
+	response_policy = {"analysis_level": "none"}
+	interaction_contract = build_interaction_contract(
+		request_id=request_id,
+		session_id=session_id,
+		user_id="Administrator",
+		site_name=site_name,
+		raw_message=message,
+	)
+	interpretation = build_fresh_query_interpretation_contract(
+		request_id=interaction_contract.request_id,
+		session_id=session_id,
+		intent_class=intent_class,
+		candidate_capability_ids=[candidate_capability_id],
+		candidate_reports=[candidate_report],
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+		requested_time_scope=requested_time_scope,
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=0.95,
+	)
+	compiler_outcome = compile_fresh_query(
+		request_id=interaction_contract.request_id,
+		session_id=session_id,
+		interpretation=interpretation,
+		response_policy=response_policy,
+	)
+	runtime_payload: Dict[str, Any] = {}
+	if compiler_outcome.compiled_request_contract is not None:
+		runtime_payload = call_qwen_runtime_chat(
+			session_id=session_id,
+			user_id="Administrator",
+			site_name=site_name,
+			message=message,
+			recent_messages=[],
+			response_policy=response_policy,
+			mode="compiled_read_query",
+			compiled_query=compiler_outcome.compiled_request_contract.to_payload(),
+			request_id=interaction_contract.request_id,
+		)
+	adapter_outcome = build_normalized_family_artifact(
+		request_id=interaction_contract.request_id,
+		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
+		runtime_payload=runtime_payload,
+		intent_class=intent_class,
+	)
+	family_validation = validate_normalized_family_artifact(
+		request_id=interaction_contract.request_id,
+		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
+		artifact_contract=adapter_outcome.artifact_contract,
+		family_id=adapter_outcome.family_id,
+		adapter_errors=adapter_outcome.errors,
+		adapter_warnings=adapter_outcome.warnings,
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"message": message,
+		"compiler_contract": compiler_outcome.compiler_contract.to_payload(),
+		"compiled_query_request": (
+			compiler_outcome.compiled_request_contract.to_payload()
+			if compiler_outcome.compiled_request_contract is not None
+			else {}
+		),
+		"runtime_ok": bool(runtime_payload.get("ok")),
+		"runtime_answer": str(runtime_payload.get("answer_text") or "").strip(),
+		"normalized_family_artifact": (
+			adapter_outcome.artifact_contract.to_payload()
+			if adapter_outcome.artifact_contract is not None
+			else {}
+		),
+		"family_adapter_status": adapter_outcome.status,
+		"family_adapter_errors": list(adapter_outcome.errors),
+		"family_validation": family_validation.to_payload() if family_validation else {},
+	}
+
+
+def run_phase4b_ranking_trend_family_probe() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	return {
+		"top_customers_revenue": _phase4b_ranking_trend_case_result(
+			request_id="phase4b-probe-ranking-customers",
+			session_id="phase4b-ranking-trend-family-probe",
+			site_name=site_name,
+			message="Top 5 customers by revenue",
+			intent_class="ranked_entities",
+			candidate_capability_id="sales_read",
+			candidate_report="Sales Analytics",
+			requested_dimensions=["Customer"],
+			requested_metrics=["Revenue"],
+			requested_time_scope="current_fiscal_year_to_date",
+		),
+		"monthly_sales_trend": _phase4b_ranking_trend_case_result(
+			request_id="phase4b-probe-trend-sales",
+			session_id="phase4b-ranking-trend-family-probe",
+			site_name=site_name,
+			message="Show monthly sales trend",
+			intent_class="trend_analysis",
+			candidate_capability_id="sales_read",
+			candidate_report="Sales Analytics",
+			requested_dimensions=[],
+			requested_metrics=["Revenue"],
+			requested_time_scope="current_fiscal_year_to_date",
+		),
+		"top_products_gross_profit": _phase4b_ranking_trend_case_result(
+			request_id="phase4b-probe-ranking-products",
+			session_id="phase4b-ranking-trend-family-probe",
+			site_name=site_name,
+			message="Top products by gross profit last month",
+			intent_class="ranked_entities",
+			candidate_capability_id="product_performance_read",
+			candidate_report="Gross Profit",
+			requested_dimensions=["Item Code"],
+			requested_metrics=["Gross Profit"],
+			requested_time_scope="last_month",
+		),
+	}
+
+
+def run_phase4b_ranking_trend_family_smoke() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	cases = [
+		{
+			"request_id": "phase4b-ranking-customers",
+			"message": "Top 5 customers by revenue",
+			"intent_class": "ranked_entities",
+			"candidate_capability_id": "sales_read",
+			"candidate_report": "Sales Analytics",
+			"requested_dimensions": ["Customer"],
+			"requested_metrics": ["Revenue"],
+			"requested_time_scope": "current_fiscal_year_to_date",
+		},
+		{
+			"request_id": "phase4b-trend-sales",
+			"message": "Show monthly sales trend",
+			"intent_class": "trend_analysis",
+			"candidate_capability_id": "sales_read",
+			"candidate_report": "Sales Analytics",
+			"requested_dimensions": [],
+			"requested_metrics": ["Revenue"],
+			"requested_time_scope": "current_fiscal_year_to_date",
+		},
+		{
+			"request_id": "phase4b-ranking-products",
+			"message": "Top products by gross profit last month",
+			"intent_class": "ranked_entities",
+			"candidate_capability_id": "product_performance_read",
+			"candidate_report": "Gross Profit",
+			"requested_dimensions": ["Item Code"],
+			"requested_metrics": ["Gross Profit"],
+			"requested_time_scope": "last_month",
+		},
+	]
+	results: List[Dict[str, Any]] = []
+	for item in cases:
+		case_result = _phase4b_ranking_trend_case_result(
+			request_id=str(item.get("request_id") or uuid.uuid4().hex),
+			session_id="phase4b-ranking-trend-family-smoke",
+			site_name=site_name,
+			message=str(item.get("message") or "").strip(),
+			intent_class=str(item.get("intent_class") or "").strip(),
+			candidate_capability_id=str(item.get("candidate_capability_id") or "").strip(),
+			candidate_report=str(item.get("candidate_report") or "").strip(),
+			requested_dimensions=list(item.get("requested_dimensions") or []),
+			requested_metrics=list(item.get("requested_metrics") or []),
+			requested_time_scope=str(item.get("requested_time_scope") or "").strip(),
+		)
+		family_validation = case_result.get("family_validation") if isinstance(case_result.get("family_validation"), dict) else {}
+		if str(family_validation.get("status") or "").strip() != "pass":
+			raise RuntimeError(
+				f"Phase 4B ranking/trend family smoke failed: family validation did not pass for `{item.get('message')}`."
 			)
 		results.append(case_result)
 	return {"ok": True, "results": results}
@@ -1252,6 +1448,11 @@ def execute_compiled_fresh_query_message(
 		request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
 		compiler_contract=compiler_contract,
 		runtime_payload=runtime_payload if isinstance(runtime_payload, dict) else {},
+		intent_class=str(
+			(((pipeline.get("fresh_query_interpretation") or {}).get("interpretation") or {}).get("intent_class"))
+			if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+			else ""
+		),
 	)
 	if adapter_outcome.artifact_contract is not None:
 		normalized_family_artifact_payload = adapter_outcome.artifact_contract.to_payload()

@@ -372,6 +372,10 @@ Deliver:
 
 ### Slice 4B.4: Ranking and Trend Adapters
 
+Status:
+
+- `completed`
+
 Deliver:
 
 1. ranking family artifact
@@ -380,6 +384,10 @@ Deliver:
 4. canonical dimension/metric normalization
 
 ### Slice 4B.5: Inventory and Product Profitability Adapters
+
+Status:
+
+- `next`
 
 Deliver:
 

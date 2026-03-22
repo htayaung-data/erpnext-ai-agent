@@ -53,6 +53,36 @@ def _normalize_key(value: Any) -> str:
 	return "".join(ch if ch.isalnum() else "_" for ch in text).strip("_")
 
 
+def _semantic_alias_keys(value: Any) -> set[str]:
+	key = _normalize_key(value)
+	if not key:
+		return set()
+	aliases: Dict[str, set[str]] = {
+		"revenue": {"sales_amount", "selling_amount", "value", "billed_amount", "invoiced_amount"},
+		"sales": {"sales_amount", "selling_amount", "value", "billed_amount"},
+		"sales_amount": {"revenue", "selling_amount", "value", "billed_amount"},
+		"selling_amount": {"sales_amount", "revenue", "value", "billed_amount"},
+		"value": {"sales_amount", "revenue", "selling_amount", "billed_amount"},
+		"billed_amount": {"sales_amount", "revenue", "value"},
+		"invoiced_amount": {"sales_amount", "revenue", "value"},
+		"outstanding_amount": {"outstanding"},
+		"total_amount_due": {"total_due"},
+		"gross_profit_percentage": {"gross_profit_percent", "gross_profit"},
+		"gross_profit_percent": {"gross_profit_percentage", "gross_profit"},
+		"qty": {"quantity", "delivered_quantity", "balance_qty"},
+		"quantity": {"qty", "delivered_quantity", "balance_qty"},
+		"delivered_quantity": {"quantity", "qty"},
+		"balance_qty": {"quantity", "qty"},
+		"balance_value_mmk": {"balance_value"},
+		"item": {"item_code", "item_name"},
+		"customer": {"party"},
+		"supplier": {"party"},
+	}
+	out = {key}
+	out.update(aliases.get(key, set()))
+	return out
+
+
 def _tokenize(value: Any) -> set[str]:
 	text = str(value or "").strip().lower()
 	clean = "".join(ch if ch.isalnum() else " " for ch in text)
@@ -64,6 +94,10 @@ def _requested_value_matches_supported(requested: str, supported: str) -> bool:
 	right = _normalize_key(supported)
 	if not left or not right:
 		return False
+	left_aliases = _semantic_alias_keys(requested)
+	right_aliases = _semantic_alias_keys(supported)
+	if left_aliases & right_aliases:
+		return True
 	if left == right or left.startswith(right) or right.startswith(left):
 		return True
 	left_tokens = _tokenize(requested)
@@ -84,6 +118,14 @@ def _prune_requested_values(requested_values: List[str], supported_values: List[
 		if any(_requested_value_matches_supported(value, candidate) for candidate in supported)
 	]
 	return list(dict.fromkeys(pruned)) or requested
+
+
+def _first_supported_value_match(requested_values: List[str], supported_values: List[str]) -> str:
+	for requested in _clean_list(requested_values):
+		for candidate in _clean_list(supported_values):
+			if _requested_value_matches_supported(requested, candidate):
+				return candidate
+	return ""
 
 
 def _single_company_name() -> str:
@@ -322,16 +364,19 @@ def _extract_candidate_filters(
 			filters["report_date"] = _today_iso()
 	if "tree_type" in required_filters and not filters.get("tree_type"):
 		dimensions = _clean_list(interpretation.requested_dimensions)
-		if len(dimensions) == 1:
-			filters["tree_type"] = dimensions[0]
+		match = _first_supported_value_match(dimensions, report_supported_dimensions(report_name))
+		if match:
+			filters["tree_type"] = match
 	if "value_quantity" in required_filters and not filters.get("value_quantity"):
 		metrics = _clean_list(interpretation.requested_metrics)
-		if len(metrics) == 1:
-			filters["value_quantity"] = metrics[0]
+		match = _first_supported_value_match(metrics, report_supported_metrics(report_name))
+		if match:
+			filters["value_quantity"] = match
 	if "group_by" in required_filters and not filters.get("group_by"):
 		dimensions = _clean_list(interpretation.requested_dimensions)
-		if len(dimensions) == 1:
-			filters["group_by"] = dimensions[0]
+		match = _first_supported_value_match(dimensions, report_supported_dimensions(report_name))
+		if match:
+			filters["group_by"] = match
 	return filters
 
 
