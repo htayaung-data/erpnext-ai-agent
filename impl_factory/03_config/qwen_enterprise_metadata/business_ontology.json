@@ -37,6 +37,13 @@
       }
     },
     {
+      "concept_id": "working_capital",
+      "aliases": {
+        "en": ["working capital", "liquidity", "company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],
+        "my": []
+      }
+    },
+    {
       "concept_id": "product",
       "aliases": {
         "en": ["product", "products", "item", "items", "sku", "product performance", "best product", "top product"],

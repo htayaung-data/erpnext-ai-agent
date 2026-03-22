@@ -75,6 +75,28 @@ to:
 
 - governed business families
 
+### 2.4 Enterprise checkpoint after Slice 4B.6
+
+After implementing:
+
+1. family registry
+2. financial statement adapters
+3. aging adapters
+4. ranking/trend adapters
+5. inventory/product profitability adapters
+6. compiler-approved composite read planning
+
+the enterprise review result is:
+
+1. the architecture is still aligned with `Qwen-Agent proposes, compiler enforces, validator confirms`
+2. the project is not primarily drifting into keyword or phrase-specific fixes
+3. the semantic family layer is the correct enterprise extension of Phase 4
+4. the most important remaining gap is now canonical rendering discipline, not architectural direction
+
+Checkpoint note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_enterprise_checkpoint_note_2026-03-22.md`
+
 ## 3. Governing Rule for Phase 4B
 
 Phase 4B keeps the same core rule:
@@ -399,7 +421,7 @@ Deliver:
 
 Status:
 
-- `next`
+- `completed`
 
 Deliver:
 
@@ -408,7 +430,16 @@ Deliver:
 3. company health / working capital class of composite reads
 4. composite audit envelope
 
+Operational note:
+
+- composite execution is currently serialized intentionally because Frappe runtime configuration is thread-local in the current worker model
+- metadata can still declare parallel eligibility, but execution remains sequential until the runtime boundary is made thread-safe for parallel step calls
+
 ### Slice 4B.7: Family-Level Validation and Rendering
+
+Status:
+
+- `next`
 
 Deliver:
 
@@ -449,10 +480,13 @@ Phase 4B should close only when:
 
 The immediate next step after this note is:
 
-1. implement ranking and trend adapters next
-2. then implement inventory/product profitability
-3. only after that introduce governed composite analysis
-4. keep expanding by semantic family packages, not by isolated example questions
-5. tighten multi-family routing where one governed report can support more than one business family
+1. complete the enterprise checkpoint after Slice 4B.6
+2. implement Slice 4B.7 next:
+   - family-level validation tightening
+   - composite completeness validation tightening
+   - canonical rendering by family and composite type
+3. only after that reduce the Qwen-Agent tool surface to family-level tools in Slice 4B.8
+4. then move to Slice 4B.9 family-based evaluation and rollout
+5. keep expanding by semantic family packages, not by isolated example questions
 
 This keeps the architecture broadening by semantic family packages, not by isolated example questions.

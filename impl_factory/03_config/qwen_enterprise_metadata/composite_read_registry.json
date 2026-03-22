@@ -1,0 +1,50 @@
+{
+  "contract_version": "1.0",
+  "composite_profiles": [
+    {
+      "plan_id": "working_capital_health",
+      "plan_label": "Working Capital Health",
+      "description": "Governed composite read for receivable/payable posture, liquidity pressure, and company-health style AR/AP analysis.",
+      "supported_intent_classes": [
+        "financial_summary",
+        "aging_analysis"
+      ],
+      "required_concepts_all": [
+        "receivable",
+        "payable"
+      ],
+      "preferred_concepts_any": [
+        "working_capital"
+      ],
+      "parallel_execution_allowed": true,
+      "renderer_id": "working_capital_health_renderer",
+      "validation_profile": "working_capital_health",
+      "steps": [
+        {
+          "step_id": "receivable_aging",
+          "family_id": "aging",
+          "capability_id": "accounts_receivable_read",
+          "selected_report": "Accounts Receivable Summary",
+          "requested_dimensions": [],
+          "requested_metrics": [
+            "Outstanding",
+            "Total Due"
+          ],
+          "requested_time_scope_strategy": "inherit_or_as_of_today"
+        },
+        {
+          "step_id": "payable_aging",
+          "family_id": "aging",
+          "capability_id": "accounts_payable_read",
+          "selected_report": "Accounts Payable Summary",
+          "requested_dimensions": [],
+          "requested_metrics": [
+            "Outstanding",
+            "Total Due"
+          ],
+          "requested_time_scope_strategy": "inherit_or_as_of_today"
+        }
+      ]
+    }
+  ]
+}

@@ -182,7 +182,7 @@ def _compiled_decision_message(result: Dict[str, Any]) -> str:
 	if family_status == "clarify":
 		detail = str((family_warnings or family_errors or ["The normalized business artifact needs clarification before display."])[0] or "").strip()
 		return f"I need clarification before I can present a governed business artifact confidently.\n\n{detail}".strip()
-	if family_status == "reject_family_inconsistent":
+	if family_status.startswith("reject"):
 		detail = str((family_errors or ["The normalized business artifact did not pass governed validation."])[0] or "").strip()
 		return f"I could not complete a governed business artifact confidently.\n\n{detail}".strip()
 	if semantic_status == "clarify":
@@ -281,21 +281,32 @@ def _handle_compiled_first_turn_result(
 def _append_compiled_attempt_artifacts(session_doc, result: Dict[str, Any]) -> None:
 	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
 	normalized_family_artifact = result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {}
+	composite_family_artifacts = result.get("composite_family_artifacts") if isinstance(result.get("composite_family_artifacts"), list) else []
+	composite_step_validations = result.get("composite_step_validations") if isinstance(result.get("composite_step_validations"), list) else []
 	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
 	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
 	compiled_audit = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
-	for key in ("fresh_query_interpretation", "fresh_query_compiler", "compiled_query_request"):
+	composite_execution_audit = result.get("composite_execution_audit") if isinstance(result.get("composite_execution_audit"), dict) else {}
+	for key in ("fresh_query_interpretation", "fresh_query_compiler", "compiled_query_request", "composite_read_plan"):
 		payload = pipeline.get(key)
 		if isinstance(payload, dict) and payload:
 			_append_tool_payload(session_doc, payload)
 	if normalized_family_artifact:
 		_append_tool_payload(session_doc, normalized_family_artifact)
+	for payload in composite_family_artifacts:
+		if isinstance(payload, dict) and payload:
+			_append_tool_payload(session_doc, payload)
+	for payload in composite_step_validations:
+		if isinstance(payload, dict) and payload:
+			_append_tool_payload(session_doc, payload)
 	if family_validation:
 		_append_tool_payload(session_doc, family_validation)
 	if semantic_payload:
 		_append_tool_payload(session_doc, semantic_payload)
 	if compiled_audit:
 		_append_tool_payload(session_doc, compiled_audit)
+	if composite_execution_audit:
+		_append_tool_payload(session_doc, composite_execution_audit)
 
 
 def _compiled_rollout_fallback_reason(result: Dict[str, Any]) -> str:

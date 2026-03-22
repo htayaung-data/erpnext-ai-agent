@@ -49,6 +49,10 @@ def load_report_family_registry() -> Dict[str, Any]:
 	return _load_json("report_family_registry.json")
 
 
+def load_composite_read_registry() -> Dict[str, Any]:
+	return _load_json("composite_read_registry.json")
+
+
 def load_validation_rules() -> Dict[str, Any]:
 	return _load_json("validation_rules.json")
 
@@ -97,6 +101,21 @@ def get_report_family_spec(family_id: str) -> Dict[str, Any]:
 	target = str(family_id or "").strip()
 	for item in list_report_family_specs():
 		if str(item.get("family_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_composite_read_specs() -> List[Dict[str, Any]]:
+	values = load_composite_read_registry().get("composite_profiles")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_composite_read_spec(plan_id: str) -> Dict[str, Any]:
+	target = str(plan_id or "").strip()
+	for item in list_composite_read_specs():
+		if str(item.get("plan_id") or "").strip() == target:
 			return item
 	return {}
 
@@ -175,6 +194,53 @@ def ontology_business_terms(language: str = "en") -> List[str]:
 		if not isinstance(values, list):
 			continue
 		out.extend(str(x or "").strip().lower() for x in values if str(x or "").strip())
+	return list(dict.fromkeys(out))
+
+
+def ontology_concept_aliases(concept_id: str, language: str = "en") -> List[str]:
+	target = str(concept_id or "").strip()
+	if not target:
+		return []
+	entries = load_business_ontology().get("concepts")
+	if not isinstance(entries, list):
+		return []
+	for item in entries:
+		if not isinstance(item, dict):
+			continue
+		if str(item.get("concept_id") or "").strip() != target:
+			continue
+		aliases = item.get("aliases")
+		if not isinstance(aliases, dict):
+			return []
+		values = aliases.get(language)
+		if not isinstance(values, list):
+			return []
+		return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+	return []
+
+
+def ontology_detect_concepts(message: str, language: str = "en") -> List[str]:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return []
+	entries = load_business_ontology().get("concepts")
+	if not isinstance(entries, list):
+		return []
+	out: List[str] = []
+	for item in entries:
+		if not isinstance(item, dict):
+			continue
+		concept_id = str(item.get("concept_id") or "").strip()
+		if not concept_id:
+			continue
+		aliases = item.get("aliases")
+		if not isinstance(aliases, dict):
+			continue
+		values = aliases.get(language)
+		if not isinstance(values, list):
+			continue
+		if any(str(alias or "").strip().lower() in text for alias in values if str(alias or "").strip()):
+			out.append(concept_id)
 	return list(dict.fromkeys(out))
 
 

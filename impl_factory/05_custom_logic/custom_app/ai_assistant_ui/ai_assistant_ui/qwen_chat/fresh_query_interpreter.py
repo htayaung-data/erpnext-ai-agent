@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 import requests
 
 from ai_assistant_ui.qwen_chat.compiler import CompilerOutcome, compile_fresh_query
+from ai_assistant_ui.qwen_chat.composite_reads import execute_composite_read_plan, plan_composite_read
 from ai_assistant_ui.qwen_chat.contracts import (
 	FreshQueryInterpretationContract,
 	build_compiled_execution_audit_contract,
@@ -589,6 +590,36 @@ def _proposal_shared_inflight_hit_from_pipeline(pipeline: Dict[str, Any]) -> boo
 	)
 	telemetry = agent_meta.get("telemetry") if isinstance(agent_meta.get("telemetry"), dict) else {}
 	return bool(telemetry.get("shared_inflight_hit"))
+
+
+def _interpretation_contract_from_pipeline(pipeline: Dict[str, Any]) -> FreshQueryInterpretationContract | None:
+	fresh_query_payload = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	interpretation = (
+		fresh_query_payload.get("interpretation")
+		if isinstance(fresh_query_payload.get("interpretation"), dict)
+		else {}
+	)
+	if not interpretation:
+		return None
+	return build_fresh_query_interpretation_contract(
+		request_id=str(interpretation.get("request_id") or pipeline.get("request_id") or "").strip(),
+		session_id=str(interpretation.get("session_id") or pipeline.get("session_id") or "").strip(),
+		intent_class=str(interpretation.get("intent_class") or "").strip(),
+		candidate_capability_ids=_clean_list(interpretation.get("candidate_capability_ids")),
+		candidate_reports=_clean_list(interpretation.get("candidate_reports")),
+		requested_dimensions=_clean_list(interpretation.get("requested_dimensions")),
+		requested_metrics=_clean_list(interpretation.get("requested_metrics")),
+		requested_time_scope=str(interpretation.get("requested_time_scope") or "").strip(),
+		requested_presentation=_clean_list(interpretation.get("requested_presentation")),
+		extracted_slots=interpretation.get("extracted_slots") if isinstance(interpretation.get("extracted_slots"), dict) else {},
+		ambiguity_flags=_clean_list(interpretation.get("ambiguity_flags")),
+		ambiguity_reason=str(interpretation.get("ambiguity_reason") or "").strip(),
+		confidence=float(interpretation.get("confidence") or 0.0),
+	)
 
 
 def run_phase4_fresh_query_pipeline_smokes() -> Dict[str, Any]:
@@ -1562,6 +1593,202 @@ def run_phase4b_inventory_product_family_smoke() -> Dict[str, Any]:
 	return {"ok": True, "results": results}
 
 
+def run_phase4b_composite_read_probe() -> Dict[str, Any]:
+	request_id = "phase4b-composite-probe"
+	session_id = "phase4b-composite-probe"
+	interpretation = build_fresh_query_interpretation_contract(
+		request_id=request_id,
+		session_id=session_id,
+		intent_class="financial_summary",
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		requested_dimensions=[],
+		requested_metrics=["Outstanding"],
+		requested_time_scope="as_of_today",
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=1.0,
+	)
+	plan_outcome = plan_composite_read(
+		request_id=request_id,
+		session_id=session_id,
+		message="Analyze AR / AP amount and evaluate the company health",
+		interpretation=interpretation,
+		response_policy={
+			"analysis_requested": True,
+			"policy_mode": "grounded_analysis",
+			"insight_allowed": True,
+			"recommendation_allowed": False,
+			"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
+			"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
+		},
+	)
+	if str(plan_outcome.status or "").strip() != "execute":
+		raise RuntimeError("Phase 4B composite probe failed: composite plan did not execute.")
+	return {
+		"ok": True,
+		"plan": plan_outcome.plan_contract.to_payload() if plan_outcome.plan_contract else {},
+		"compiler_contract": (
+			plan_outcome.compiler_contract.to_payload()
+			if plan_outcome.compiler_contract is not None
+			else {}
+		),
+		"step_compiler_contracts": [
+			item.to_payload()
+			for item in plan_outcome.step_compiler_contracts
+		],
+	}
+
+
+def run_phase4b_composite_read_smoke() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	request_id = "phase4b-composite-smoke"
+	session_id = "phase4b-composite-smoke"
+	interpretation = build_fresh_query_interpretation_contract(
+		request_id=request_id,
+		session_id=session_id,
+		intent_class="financial_summary",
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		requested_dimensions=[],
+		requested_metrics=["Outstanding"],
+		requested_time_scope="as_of_today",
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=1.0,
+	)
+	response_policy_payload = {
+		"analysis_requested": True,
+		"policy_mode": "grounded_analysis",
+		"insight_allowed": True,
+		"recommendation_allowed": False,
+		"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
+		"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
+	}
+	plan_outcome = plan_composite_read(
+		request_id=request_id,
+		session_id=session_id,
+		message="Analyze AR / AP amount and evaluate the company health",
+		interpretation=interpretation,
+		response_policy=response_policy_payload,
+	)
+	if str(plan_outcome.status or "").strip() != "execute":
+		raise RuntimeError("Phase 4B composite smoke failed: composite plan did not execute.")
+	pipeline = {
+		"request_id": request_id,
+		"response_policy_contract": {
+			"analysis_requested": True,
+			"policy_mode": "grounded_analysis",
+			"insight_allowed": True,
+			"recommendation_allowed": False,
+			"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
+			"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
+		},
+		"fresh_query_interpretation": {
+			"status": "accepted",
+			"interpretation": interpretation.to_payload(),
+			"agent_meta": {},
+		},
+		"fresh_query_compiler": plan_outcome.compiler_contract.to_payload() if plan_outcome.compiler_contract else {},
+		"composite_read_plan": plan_outcome.plan_contract.to_payload() if plan_outcome.plan_contract else {},
+	}
+	result = execute_composite_read_plan(
+		session_id=session_id,
+		user_id="Administrator",
+		site_name=site_name,
+		message="Analyze AR / AP amount and evaluate the company health",
+		recent_messages=[],
+		pipeline=pipeline,
+		plan_outcome=plan_outcome,
+		proposal_generation_latency_ms=0,
+		compilation_latency_ms=0,
+		total_started=time.perf_counter(),
+	)
+	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+	semantic_validation = (
+		result.get("semantic_intent_validation")
+		if isinstance(result.get("semantic_intent_validation"), dict)
+		else {}
+	)
+	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
+	if str(family_validation.get("status") or "").strip() != "pass":
+		raise RuntimeError("Phase 4B composite smoke failed: composite validation did not pass.")
+	if str(semantic_validation.get("status") or "").strip() != "pass":
+		raise RuntimeError("Phase 4B composite smoke failed: composite semantic validation did not pass.")
+	if not bool(runtime_payload.get("ok")):
+		raise RuntimeError("Phase 4B composite smoke failed: composite runtime payload was not ok.")
+	return {
+		"ok": True,
+		"result": result,
+	}
+
+
+def run_phase4b_composite_read_debug() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	request_id = "phase4b-composite-debug"
+	session_id = "phase4b-composite-debug"
+	interpretation = build_fresh_query_interpretation_contract(
+		request_id=request_id,
+		session_id=session_id,
+		intent_class="financial_summary",
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		requested_dimensions=[],
+		requested_metrics=["Outstanding"],
+		requested_time_scope="as_of_today",
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=1.0,
+	)
+	response_policy_payload = {
+		"analysis_requested": True,
+		"policy_mode": "grounded_analysis",
+		"insight_allowed": True,
+		"recommendation_allowed": False,
+		"grounding_rule": "Composite analysis must stay grounded in normalized governed family artifacts.",
+		"structure": ["grounded_facts_first", "concise_interpretation_only_when_grounded"],
+	}
+	plan_outcome = plan_composite_read(
+		request_id=request_id,
+		session_id=session_id,
+		message="Analyze AR / AP amount and evaluate the company health",
+		interpretation=interpretation,
+		response_policy=response_policy_payload,
+	)
+	pipeline = {
+		"request_id": request_id,
+		"fresh_query_interpretation": {
+			"status": "accepted",
+			"interpretation": interpretation.to_payload(),
+			"agent_meta": {},
+		},
+		"fresh_query_compiler": plan_outcome.compiler_contract.to_payload() if plan_outcome.compiler_contract else {},
+		"composite_read_plan": plan_outcome.plan_contract.to_payload() if plan_outcome.plan_contract else {},
+	}
+	return execute_composite_read_plan(
+		session_id=session_id,
+		user_id="Administrator",
+		site_name=site_name,
+		message="Analyze AR / AP amount and evaluate the company health",
+		recent_messages=[],
+		pipeline=pipeline,
+		plan_outcome=plan_outcome,
+		proposal_generation_latency_ms=0,
+		compilation_latency_ms=0,
+		total_started=time.perf_counter(),
+	)
+
+
 def execute_compiled_fresh_query_message(
 	*,
 	session_id: str,
@@ -1585,10 +1812,60 @@ def execute_compiled_fresh_query_message(
 	)
 	proposal_generation_latency_ms = int(max(0, latency_breakdown.get("proposal_generation_latency_ms") or 0))
 	compilation_latency_ms = int(max(0, latency_breakdown.get("compilation_latency_ms") or 0))
+	composite_plan_started = time.perf_counter()
+	interpretation_contract = _interpretation_contract_from_pipeline(pipeline)
+	composite_plan_outcome = None
+	if interpretation_contract is not None:
+		response_policy_contract = (
+			pipeline.get("response_policy_contract")
+			if isinstance(pipeline.get("response_policy_contract"), dict)
+			else {}
+		)
+		response_policy_payload = {}
+		if response_policy_contract:
+			response_policy_payload = {
+				"analysis_requested": bool(response_policy_contract.get("analysis_requested")),
+				"policy_mode": str(response_policy_contract.get("policy_mode") or "").strip(),
+				"insight_allowed": bool(response_policy_contract.get("insight_allowed")),
+				"recommendation_allowed": bool(response_policy_contract.get("recommendation_allowed")),
+				"grounding_rule": str(response_policy_contract.get("grounding_rule") or "").strip(),
+				"structure": list(response_policy_contract.get("structure") or []),
+			}
+		composite_plan_outcome = plan_composite_read(
+			request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
+			session_id=session_id,
+			message=message,
+			interpretation=interpretation_contract,
+			response_policy=response_policy_payload if isinstance(response_policy_payload, dict) else {},
+		)
+		if composite_plan_outcome.plan_contract is not None:
+			pipeline["composite_read_plan"] = composite_plan_outcome.plan_contract.to_payload()
+		if (
+			composite_plan_outcome is not None
+			and composite_plan_outcome.compiler_contract is not None
+			and str(composite_plan_outcome.status or "").strip() in {"execute", "clarify", "reject"}
+		):
+			pipeline["fresh_query_compiler"] = composite_plan_outcome.compiler_contract.to_payload()
+			if str(composite_plan_outcome.status or "").strip() in {"clarify", "reject"}:
+				pipeline.pop("compiled_query_request", None)
+	compilation_latency_ms += int((time.perf_counter() - composite_plan_started) * 1000)
 	runtime_execution_latency_ms = 0
 	semantic_validation_latency_ms = 0
 	normalized_family_artifact_payload: Dict[str, Any] = {}
 	family_validation_payload: Dict[str, Any] = {}
+	if composite_plan_outcome is not None and str(composite_plan_outcome.status or "").strip() == "execute":
+		return execute_composite_read_plan(
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			recent_messages=list(recent_messages or []),
+			pipeline=pipeline,
+			plan_outcome=composite_plan_outcome,
+			proposal_generation_latency_ms=proposal_generation_latency_ms,
+			compilation_latency_ms=compilation_latency_ms,
+			total_started=total_started,
+		)
 	compiled_query = pipeline.get("compiled_query_request")
 	compiler_contract = (
 		pipeline.get("fresh_query_compiler")
