@@ -55,6 +55,17 @@ def _auth_headers() -> Dict[str, str]:
 	return headers
 
 
+def build_qwen_runtime_chat_request_config() -> Dict[str, Any]:
+	base_url = _base_url()
+	if not base_url:
+		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
+	return {
+		"base_url": base_url,
+		"headers": _auth_headers(),
+		"timeout_seconds": _timeout_seconds(),
+	}
+
+
 def call_qwen_runtime_chat(
 	*,
 	session_id: str,
@@ -67,10 +78,18 @@ def call_qwen_runtime_chat(
 	mode: str,
 	compiled_query: Dict[str, Any] | None = None,
 	request_id: str,
+	request_config: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-	base_url = _base_url()
+	config = request_config if isinstance(request_config, dict) else {}
+	base_url = str(config.get("base_url") or "").strip().rstrip("/") or _base_url()
 	if not base_url:
 		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
+	headers = config.get("headers") if isinstance(config.get("headers"), dict) else _auth_headers()
+	timeout_seconds = config.get("timeout_seconds")
+	try:
+		timeout = max(3.0, float(timeout_seconds))
+	except Exception:
+		timeout = _timeout_seconds()
 
 	payload = {
 		"session_id": str(session_id or "").strip(),
@@ -89,9 +108,9 @@ def call_qwen_runtime_chat(
 	try:
 		resp = requests.post(
 			url,
-			headers=_auth_headers(),
+			headers=headers,
 			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
+			timeout=timeout,
 		)
 	except requests.RequestException as exc:
 		raise QwenRuntimeClientError(f"Qwen runtime request failed: {exc}") from exc

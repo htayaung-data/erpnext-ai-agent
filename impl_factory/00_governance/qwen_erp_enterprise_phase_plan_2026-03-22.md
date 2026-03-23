@@ -317,7 +317,9 @@ The next implementation order is now:
    - Slice 4B.9 family-based evaluation and rollout: completed
    - current governed family baseline after post-4B.9 hardening: 7 of 7 core family cases passing
    - legacy family tool routing now uses governed family narrowing, with compiled execution still preferred for richer families
-   - next work has moved from one remaining family gap into post-4B operational hardening and broader family-package expansion
+   - post-4B composite latency hardening: completed
+   - latest governed evidence shows `working_capital_health` composite runtime reduced to about 15.6s with compiler-approved parallel child execution
+   - next work has moved from one remaining family gap into broader post-4B operational hardening and family-package expansion
 4. return to the remaining Phase 3 convenience expansions after Phase 4B establishes the broad governed read path:
    - column projection
    - filter refinement

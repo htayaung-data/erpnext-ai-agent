@@ -503,7 +503,7 @@ The immediate next step after this note is:
 1. treat the planned Phase 4B slice set as implemented, with the current core governed family baseline passing `7/7`
 2. keep the compiled family path as the preferred enterprise execution route for richer families
 3. move into post-4B operational hardening:
-   - reduce composite and other heavy-family latency
+   - continue reducing composite and other heavy-family latency
    - expand family evaluation datasets beyond the core set
    - continue hardening legacy family routing where requirements-first behavior still needs tightening
 4. keep expanding by semantic family packages, not by isolated example questions

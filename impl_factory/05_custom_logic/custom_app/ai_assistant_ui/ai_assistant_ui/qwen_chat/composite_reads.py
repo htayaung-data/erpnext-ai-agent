@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -25,7 +26,11 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_composite_read_specs,
 	ontology_detect_concepts,
 )
-from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
+from ai_assistant_ui.qwen_chat.runtime_client import (
+	QwenRuntimeClientError,
+	build_qwen_runtime_chat_request_config,
+	call_qwen_runtime_chat,
+)
 
 
 def _clean_list(values: Any) -> List[str]:
@@ -323,6 +328,7 @@ def _execute_composite_step(
 	compiler_contract: FreshQueryCompilerContract,
 	step_family_id: str,
 	recent_messages: List[Dict[str, str]],
+	runtime_request_config: Dict[str, Any] | None = None,
 ) -> CompositeStepExecution:
 	runtime_started = time.perf_counter()
 	try:
@@ -337,6 +343,7 @@ def _execute_composite_step(
 			mode="compiled_read_query",
 			compiled_query=compiled_request.to_payload(),
 			request_id=compiled_request.request_id,
+			request_config=runtime_request_config if isinstance(runtime_request_config, dict) else None,
 		)
 	except QwenRuntimeClientError as exc:
 		runtime_payload = {
@@ -575,9 +582,11 @@ def execute_composite_read_plan(
 			parallel_allowed = bool(spec.get("parallel_execution_allowed"))
 			break
 	parallel_execution_used = False
+	parallel_execution_error = ""
 
 	steps = list(zip(plan_outcome.step_compiler_contracts, plan_outcome.step_compiled_requests))
 	step_results: List[CompositeStepExecution] = []
+	runtime_request_config = build_qwen_runtime_chat_request_config()
 
 	def _run_step(pair: tuple[FreshQueryCompilerContract, CompiledQueryRequestContract]) -> CompositeStepExecution:
 		compiler_contract, compiled_request = pair
@@ -598,14 +607,21 @@ def execute_composite_read_plan(
 			compiler_contract=compiler_contract,
 			step_family_id=family_id,
 			recent_messages=recent_messages,
+			runtime_request_config=runtime_request_config,
 		)
 
 	runtime_started = time.perf_counter()
-	# Keep composite execution on the current worker thread for now.
-	# Frappe configuration is thread-local in this runtime, so parallel child
-	# threads can lose access to runtime base URL/auth state and fail before
-	# governed report execution starts.
-	step_results = [_run_step(item) for item in steps]
+	if parallel_allowed and len(steps) > 1:
+		try:
+			with ThreadPoolExecutor(max_workers=min(4, len(steps))) as executor:
+				futures = [executor.submit(_run_step, item) for item in steps]
+				step_results = [future.result() for future in futures]
+			parallel_execution_used = True
+		except Exception as exc:
+			parallel_execution_error = str(exc)
+			step_results = [_run_step(item) for item in steps]
+	else:
+		step_results = [_run_step(item) for item in steps]
 	runtime_execution_latency_ms = int((time.perf_counter() - runtime_started) * 1000)
 
 	composite_artifact = _working_capital_health_summary(
@@ -710,6 +726,7 @@ def execute_composite_read_plan(
 		"completed_steps": int(validation_payload.get("completed_steps") or 0),
 		"parallel_execution_allowed": parallel_allowed,
 		"parallel_execution_used": parallel_execution_used,
+		"parallel_execution_error": parallel_execution_error,
 		"runtime_execution_latency_ms": runtime_execution_latency_ms,
 		"step_runtime_latency_ms": {
 			item.step_id: item.runtime_latency_ms
