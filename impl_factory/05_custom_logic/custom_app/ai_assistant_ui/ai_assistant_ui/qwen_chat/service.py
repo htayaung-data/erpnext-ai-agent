@@ -25,6 +25,7 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import is_safe_local_compati
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_family_evaluation_case_set,
+	get_family_latency_budget_spec,
 	list_family_evaluation_case_sets,
 	resolve_followup_report_switch,
 )
@@ -1521,6 +1522,166 @@ def _audit_latency_summary(values: List[int]) -> Dict[str, int]:
 	}
 
 
+def _family_latency_budget_payload(family_id: str) -> Dict[str, Any]:
+	spec = get_family_latency_budget_spec(family_id)
+	if not spec:
+		return {}
+	return {
+		"family_id": str(spec.get("family_id") or "").strip(),
+		"proposal_generation_development_budget_ms": int(
+			max(0, spec.get("proposal_generation_development_budget_ms") or 0)
+		),
+		"runtime_execution_development_budget_ms": int(
+			max(0, spec.get("runtime_execution_development_budget_ms") or 0)
+		),
+		"total_pipeline_development_budget_ms": int(
+			max(0, spec.get("total_pipeline_development_budget_ms") or 0)
+		),
+		"total_pipeline_enterprise_target_ms": int(
+			max(0, spec.get("total_pipeline_enterprise_target_ms") or 0)
+		),
+		"notes": str(spec.get("notes") or "").strip(),
+	}
+
+
+def _case_latency_budget_assessment(
+	*,
+	family_id: str,
+	proposal_generation_latency_ms: int,
+	runtime_execution_latency_ms: int,
+	total_pipeline_latency_ms: int,
+) -> Dict[str, Any]:
+	budget = _family_latency_budget_payload(family_id)
+	if not budget:
+		return {}
+
+	proposal_budget_ms = int(budget.get("proposal_generation_development_budget_ms") or 0)
+	runtime_budget_ms = int(budget.get("runtime_execution_development_budget_ms") or 0)
+	total_development_budget_ms = int(budget.get("total_pipeline_development_budget_ms") or 0)
+	total_enterprise_target_ms = int(budget.get("total_pipeline_enterprise_target_ms") or 0)
+	within_proposal_budget = proposal_budget_ms <= 0 or proposal_generation_latency_ms <= proposal_budget_ms
+	within_runtime_budget = runtime_budget_ms <= 0 or runtime_execution_latency_ms <= runtime_budget_ms
+	within_development_budget = total_development_budget_ms <= 0 or total_pipeline_latency_ms <= total_development_budget_ms
+	within_enterprise_target = total_enterprise_target_ms > 0 and total_pipeline_latency_ms <= total_enterprise_target_ms
+
+	status = "not_configured"
+	if budget:
+		if within_enterprise_target:
+			status = "enterprise_green"
+		elif within_development_budget and within_proposal_budget and within_runtime_budget:
+			status = "development_green_enterprise_open"
+		elif within_development_budget:
+			status = "development_green_with_stage_overage"
+		else:
+			status = "over_development_budget"
+
+	return {
+		"budget": budget,
+		"observed": {
+			"proposal_generation_latency_ms": int(max(0, proposal_generation_latency_ms)),
+			"runtime_execution_latency_ms": int(max(0, runtime_execution_latency_ms)),
+			"total_pipeline_latency_ms": int(max(0, total_pipeline_latency_ms)),
+		},
+		"within_proposal_budget": bool(within_proposal_budget),
+		"within_runtime_budget": bool(within_runtime_budget),
+		"within_development_budget": bool(within_development_budget),
+		"within_enterprise_target": bool(within_enterprise_target),
+		"development_budget_overage_ms": int(
+			max(0, total_pipeline_latency_ms - total_development_budget_ms)
+		)
+		if total_development_budget_ms > 0
+		else 0,
+		"enterprise_target_overage_ms": int(
+			max(0, total_pipeline_latency_ms - total_enterprise_target_ms)
+		)
+		if total_enterprise_target_ms > 0
+		else 0,
+		"status": status,
+	}
+
+
+def _family_latency_budget_summary(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+	grouped: Dict[str, List[Dict[str, Any]]] = {}
+	for item in results:
+		if not isinstance(item, dict):
+			continue
+		if not bool(item.get("case_ok")):
+			continue
+		family_id = str(item.get("observed_family_id") or item.get("expected_family_id") or "").strip()
+		if not family_id:
+			continue
+		grouped.setdefault(family_id, []).append(item)
+
+	families: Dict[str, Any] = {}
+	development_green_count = 0
+	enterprise_green_count = 0
+	for family_id, items in grouped.items():
+		budget = _family_latency_budget_payload(family_id)
+		proposal_summary = _audit_latency_summary(
+			[int(item.get("proposal_generation_latency_ms") or 0) for item in items]
+		)
+		runtime_summary = _audit_latency_summary(
+			[int(item.get("runtime_execution_latency_ms") or 0) for item in items]
+		)
+		total_summary = _audit_latency_summary(
+			[int(item.get("total_pipeline_latency_ms") or 0) for item in items]
+		)
+		proposal_budget_ms = int(budget.get("proposal_generation_development_budget_ms") or 0)
+		runtime_budget_ms = int(budget.get("runtime_execution_development_budget_ms") or 0)
+		total_development_budget_ms = int(budget.get("total_pipeline_development_budget_ms") or 0)
+		total_enterprise_target_ms = int(budget.get("total_pipeline_enterprise_target_ms") or 0)
+		proposal_p95_ms = int(proposal_summary.get("p95_ms") or 0)
+		runtime_p95_ms = int(runtime_summary.get("p95_ms") or 0)
+		total_p95_ms = int(total_summary.get("p95_ms") or 0)
+		within_proposal_budget = proposal_budget_ms <= 0 or proposal_p95_ms <= proposal_budget_ms
+		within_runtime_budget = runtime_budget_ms <= 0 or runtime_p95_ms <= runtime_budget_ms
+		within_development_budget = total_development_budget_ms <= 0 or total_p95_ms <= total_development_budget_ms
+		within_enterprise_target = total_enterprise_target_ms > 0 and total_p95_ms <= total_enterprise_target_ms
+		status = "not_configured"
+		if budget:
+			if within_enterprise_target:
+				status = "enterprise_green"
+			elif within_development_budget and within_proposal_budget and within_runtime_budget:
+				status = "development_green_enterprise_open"
+			elif within_development_budget:
+				status = "development_green_with_stage_overage"
+			else:
+				status = "over_development_budget"
+		if status in {"enterprise_green"}:
+			enterprise_green_count += 1
+		if status in {"enterprise_green", "development_green_enterprise_open", "development_green_with_stage_overage"}:
+			development_green_count += 1
+		families[family_id] = {
+			"case_count": len(items),
+			"budget": budget,
+			"proposal_generation_latency": proposal_summary,
+			"runtime_execution_latency": runtime_summary,
+			"total_pipeline_latency": total_summary,
+			"within_proposal_budget": bool(within_proposal_budget),
+			"within_runtime_budget": bool(within_runtime_budget),
+			"within_development_budget": bool(within_development_budget),
+			"within_enterprise_target": bool(within_enterprise_target),
+			"development_budget_overage_ms": int(max(0, total_p95_ms - total_development_budget_ms))
+			if total_development_budget_ms > 0
+			else 0,
+			"enterprise_target_overage_ms": int(max(0, total_p95_ms - total_enterprise_target_ms))
+			if total_enterprise_target_ms > 0
+			else 0,
+			"status": status,
+			"case_ids": [str(item.get("case_id") or "").strip() for item in items if str(item.get("case_id") or "").strip()],
+		}
+
+	family_count = len(families)
+	return {
+		"family_count": family_count,
+		"development_green_family_count": development_green_count,
+		"enterprise_green_family_count": enterprise_green_count,
+		"development_green_rate": 0.0 if family_count == 0 else round(development_green_count / float(family_count), 4),
+		"enterprise_green_rate": 0.0 if family_count == 0 else round(enterprise_green_count / float(family_count), 4),
+		"families": families,
+	}
+
+
 def _family_metrics_summary(records: List[Dict[str, Any]], rollout_fallbacks: List[Dict[str, Any]]) -> Dict[str, Any]:
 	fallback_keys = {
 		(
@@ -2021,6 +2182,13 @@ def _run_family_evaluation_case(*, case: Dict[str, Any], user: str = "Administra
 			mismatches.append(
 				f"semantic status expected `{expected_semantic_status}` but observed `{observed_semantic_status or 'missing'}`"
 			)
+		resolved_family_id = observed_family_id or expected_family_id
+		latency_assessment = _case_latency_budget_assessment(
+			family_id=resolved_family_id,
+			proposal_generation_latency_ms=int(max(0, (compiled_audit or {}).get("proposal_generation_latency_ms") or 0)),
+			runtime_execution_latency_ms=int(max(0, (compiled_audit or {}).get("runtime_execution_latency_ms") or 0)),
+			total_pipeline_latency_ms=int(max(0, (compiled_audit or {}).get("total_pipeline_latency_ms") or 0)),
+		)
 
 		return {
 			"case_id": case_id,
@@ -2051,6 +2219,7 @@ def _run_family_evaluation_case(*, case: Dict[str, Any], user: str = "Administra
 			"total_pipeline_latency_ms": int(
 				max(0, (compiled_audit or {}).get("total_pipeline_latency_ms") or 0)
 			),
+			"latency_assessment": latency_assessment,
 			"persisted_tool_payload_types": type_names,
 			"fallback_payload": fallback_payload,
 			"case_ok": bool(ok) and not mismatches,
@@ -2126,6 +2295,7 @@ def run_phase4b_family_evaluation_suite(set_id: str = "core_governed_families") 
 					"proposal_generation_latency_ms": 0,
 					"runtime_execution_latency_ms": 0,
 					"total_pipeline_latency_ms": 0,
+					"latency_assessment": {},
 					"persisted_tool_payload_types": [],
 					"fallback_payload": {},
 					"case_ok": False,
@@ -2152,6 +2322,7 @@ def run_phase4b_family_evaluation_suite(set_id: str = "core_governed_families") 
 			"failed_case_count": len(failed_cases),
 			"failed_cases": failed_cases,
 			"results": results,
+			"latency_budget_summary": _family_latency_budget_summary(results),
 			"family_metrics": summary.get("family_metrics") if isinstance(summary.get("family_metrics"), dict) else {},
 			"audit_summary": summary,
 			"rollout_status": get_compiled_first_turn_rollout_status(),
@@ -2220,6 +2391,7 @@ def run_phase4b_full_family_evaluation_suite() -> Dict[str, Any]:
 		"passed_case_count": len(all_results) - len(failed_cases),
 		"failed_case_count": len(failed_cases),
 		"failed_cases": failed_cases,
+		"latency_budget_summary": _family_latency_budget_summary(all_results),
 		"suite_results": suite_results,
 	}
 
@@ -2232,6 +2404,57 @@ def run_phase4b_full_family_evaluation_smoke() -> Dict[str, Any]:
 		**result,
 		"smoke_ok": True,
 		"baseline_ok": bool(result.get("ok")),
+	}
+
+
+def run_phase4b_family_latency_budget_report(set_id: str = "") -> Dict[str, Any]:
+	if str(set_id or "").strip():
+		result = run_phase4b_family_evaluation_suite(set_id=str(set_id or "").strip())
+	else:
+		result = run_phase4b_full_family_evaluation_suite()
+	latency_budget_summary = (
+		result.get("latency_budget_summary")
+		if isinstance(result.get("latency_budget_summary"), dict)
+		else {}
+	)
+	families = latency_budget_summary.get("families") if isinstance(latency_budget_summary.get("families"), dict) else {}
+	return {
+		**result,
+		"latency_budget_summary": latency_budget_summary,
+		"development_budget_ok": bool(
+			families
+		)
+		and all(
+			bool(item.get("within_development_budget"))
+			for item in families.values()
+			if isinstance(item, dict)
+		),
+		"enterprise_target_ok": bool(
+			families
+		)
+		and all(
+			bool(item.get("within_enterprise_target"))
+			for item in families.values()
+			if isinstance(item, dict)
+		),
+	}
+
+
+def run_phase4b_family_latency_budget_smoke() -> Dict[str, Any]:
+	result = run_phase4b_family_latency_budget_report()
+	latency_budget_summary = (
+		result.get("latency_budget_summary")
+		if isinstance(result.get("latency_budget_summary"), dict)
+		else {}
+	)
+	families = latency_budget_summary.get("families") if isinstance(latency_budget_summary.get("families"), dict) else {}
+	if not families:
+		raise RuntimeError("Phase 4B family latency budget smoke failed: no family latency budget summary was produced.")
+	if not bool(result.get("development_budget_ok")):
+		raise RuntimeError("Phase 4B family latency budget smoke failed: one or more families exceeded the current development latency budget.")
+	return {
+		**result,
+		"smoke_ok": True,
 	}
 
 

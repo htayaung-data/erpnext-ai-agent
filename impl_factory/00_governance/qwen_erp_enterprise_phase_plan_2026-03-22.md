@@ -323,6 +323,9 @@ The next implementation order is now:
    - deterministic family-level request defaults now protect ranking, trend, aging, inventory, and product families when proposal output is underspecified
    - deterministic family-surface fallback now preserves governed compilation when runtime semantic proposal is unavailable or invalid
    - latest full governed family evaluation suite now passes `11/11`
+   - family latency budgets and broader family evaluation sets: implemented
+   - current measured latency posture is broadly development-acceptable but not yet uniformly enterprise-fast across heavier families
+   - latency governance now reports development-green vs enterprise-green family rates explicitly
    - next work has moved from one remaining family gap into broader post-4B operational hardening and family-package expansion
 4. return to the remaining Phase 3 convenience expansions after Phase 4B establishes the broad governed read path:
    - column projection
@@ -464,6 +467,7 @@ Current Phase 4B note:
 - runtime answer rendering is now materially tightened around normalized family/composite artifacts, but family-tool reduction and broader rollout governance are still open
 - composite execution is intentionally serialized for correctness in the current Frappe worker/runtime model because configuration is thread-local in child threads
 - post-family resilience hardening now closes the last evaluated family miss through family-level deterministic defaults rather than report-specific patches
+- family-level latency governance is now explicit, which lets heavier families be hardened against measured budgets instead of anecdotal response times
 - the Phase 4B implementation reference is:
   - `impl_factory/00_governance/qwen_erp_phase4b_semantic_family_layer_plan_2026-03-22.md`
 

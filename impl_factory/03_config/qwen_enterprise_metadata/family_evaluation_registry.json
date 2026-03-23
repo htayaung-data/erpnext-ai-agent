@@ -1,5 +1,63 @@
 {
   "contract_version": "1.0",
+  "family_latency_budgets": [
+    {
+      "family_id": "financial_statement",
+      "proposal_generation_development_budget_ms": 4000,
+      "runtime_execution_development_budget_ms": 11000,
+      "total_pipeline_development_budget_ms": 15000,
+      "total_pipeline_enterprise_target_ms": 10000,
+      "notes": "Canonical statements are acceptable for current development when they stay under 15s total, but enterprise target should move closer to 10s."
+    },
+    {
+      "family_id": "aging",
+      "proposal_generation_development_budget_ms": 3500,
+      "runtime_execution_development_budget_ms": 9000,
+      "total_pipeline_development_budget_ms": 12000,
+      "total_pipeline_enterprise_target_ms": 8000,
+      "notes": "Aging summary should be one of the faster governed family paths."
+    },
+    {
+      "family_id": "ranking_analytics",
+      "proposal_generation_development_budget_ms": 4000,
+      "runtime_execution_development_budget_ms": 10000,
+      "total_pipeline_development_budget_ms": 14000,
+      "total_pipeline_enterprise_target_ms": 8000,
+      "notes": "Ranking analytics are acceptable for current development under about 14s total, but should approach 8s for stronger enterprise responsiveness."
+    },
+    {
+      "family_id": "trend_analytics",
+      "proposal_generation_development_budget_ms": 9000,
+      "runtime_execution_development_budget_ms": 13000,
+      "total_pipeline_development_budget_ms": 22000,
+      "total_pipeline_enterprise_target_ms": 12000,
+      "notes": "Trend analytics are currently one of the heavier governed families and remain above enterprise target."
+    },
+    {
+      "family_id": "inventory_snapshot",
+      "proposal_generation_development_budget_ms": 3500,
+      "runtime_execution_development_budget_ms": 12000,
+      "total_pipeline_development_budget_ms": 15000,
+      "total_pipeline_enterprise_target_ms": 10000,
+      "notes": "Inventory reads are development-acceptable under 15s total, but still need runtime tightening to feel enterprise-fast."
+    },
+    {
+      "family_id": "product_profitability",
+      "proposal_generation_development_budget_ms": 4000,
+      "runtime_execution_development_budget_ms": 12000,
+      "total_pipeline_development_budget_ms": 16000,
+      "total_pipeline_enterprise_target_ms": 10000,
+      "notes": "Product profitability is currently acceptable for development but not yet at enterprise target."
+    },
+    {
+      "family_id": "working_capital_health",
+      "proposal_generation_development_budget_ms": 9000,
+      "runtime_execution_development_budget_ms": 18000,
+      "total_pipeline_development_budget_ms": 28000,
+      "total_pipeline_enterprise_target_ms": 12000,
+      "notes": "Composite health analysis is materially improved, but still needs more runtime reduction before enterprise target is met."
+    }
+  ],
   "case_sets": [
     {
       "set_id": "core_governed_families",
@@ -115,6 +173,68 @@
           "case_id": "inventory_stock_balance_item",
           "family_id": "inventory_snapshot",
           "message": "Show stock balance by item",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "ranking_top_products_gross_profit",
+          "family_id": "ranking_analytics",
+          "message": "Top products by gross profit last month",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "financial_statement_income_statement_alias",
+          "family_id": "financial_statement",
+          "message": "Show income statement",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        }
+      ]
+    },
+    {
+      "set_id": "latency_focus_families",
+      "set_label": "Latency Focus Families",
+      "description": "Heavier governed families used for ongoing latency hardening against development and enterprise targets.",
+      "cases": [
+        {
+          "case_id": "latency_statement_pnl",
+          "family_id": "financial_statement",
+          "message": "Show me P & L statement",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "latency_trend_monthly_sales",
+          "family_id": "trend_analytics",
+          "message": "Show monthly sales trend",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "latency_inventory_warehouse_value",
+          "family_id": "inventory_snapshot",
+          "message": "Show current inventory value by warehouse",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "latency_working_capital_health",
+          "family_id": "working_capital_health",
+          "composite_plan_id": "working_capital_health",
+          "message": "Analyze AR / AP amount and evaluate the company health",
           "expected_mode": "compiled_first_turn",
           "expected_compiler_decision": "execute",
           "expected_family_validation_status": "pass",

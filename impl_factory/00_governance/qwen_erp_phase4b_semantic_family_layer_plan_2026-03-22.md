@@ -110,6 +110,21 @@ Resilience note:
 
 - `impl_factory/00_governance/qwen_erp_phase4b_post_family_proposal_resilience_note_2026-03-23.md`
 
+### 2.6 Family latency budget checkpoint (2026-03-23)
+
+Post-4B latency governance now exists at the family level.
+
+Current state:
+
+1. family latency budgets are defined in governed metadata
+2. broader family evaluation sets now include latency-focused heavier families
+3. the evaluation layer reports development-budget posture separately from tighter enterprise targets
+4. the latest report shows the governed family layer is broadly development-acceptable, but not yet uniformly enterprise-fast
+
+Latency note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_family_latency_budget_note_2026-03-23.md`
+
 ## 3. Governing Rule for Phase 4B
 
 Phase 4B keeps the same core rule:

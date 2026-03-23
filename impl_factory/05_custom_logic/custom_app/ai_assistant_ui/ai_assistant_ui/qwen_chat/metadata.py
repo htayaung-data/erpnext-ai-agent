@@ -139,6 +139,21 @@ def get_family_evaluation_case_set(set_id: str) -> Dict[str, Any]:
 	return {}
 
 
+def list_family_latency_budget_specs() -> List[Dict[str, Any]]:
+	values = load_family_evaluation_registry().get("family_latency_budgets")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_family_latency_budget_spec(family_id: str) -> Dict[str, Any]:
+	target = str(family_id or "").strip()
+	for item in list_family_latency_budget_specs():
+		if str(item.get("family_id") or "").strip() == target:
+			return item
+	return {}
+
+
 def list_intent_class_specs() -> List[Dict[str, Any]]:
 	values = load_capability_registry().get("intent_classes")
 	if not isinstance(values, list):
