@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
 	family_tool_context: Dict[str, Any] = Field(default_factory=dict)
 	mode: str = "read_only"
 	compiled_query: Dict[str, Any] = Field(default_factory=dict)
+	artifact_context: Dict[str, Any] = Field(default_factory=dict)
 	request_id: str
 
 

@@ -17,6 +17,12 @@ def _clean_rows(values: Any) -> List[Dict[str, Any]]:
 	return [dict(item) for item in values if isinstance(item, dict)]
 
 
+def _clean_list(values: Any) -> List[str]:
+	if not isinstance(values, list):
+		return []
+	return [str(item or "").strip() for item in values if str(item or "").strip()]
+
+
 def _clean_text(value: Any) -> str:
 	return str(value or "").strip()
 
@@ -48,6 +54,119 @@ def _amount_text(value: Any, currency: str = "") -> str:
 		formatted = f"{number:,.2f}"
 	clean_currency = _clean_text(currency)
 	return f"{formatted} {clean_currency}".strip()
+
+
+def _metric_label(metric_key: str, fallback: str = "Value") -> str:
+	key = _clean_text(metric_key).lower()
+	return {
+		"sales_amount": "Sales Amount",
+		"gross_profit": "Gross Profit",
+		"gross_profit_percent": "Gross Profit %",
+		"buying_amount": "Buying Amount",
+		"quantity": "Quantity",
+		"outstanding_total": "Outstanding Amount",
+		"outstanding_amount": "Outstanding Amount",
+		"total_due": "Total Amount Due",
+		"total_amount": "Total Amount",
+		"balance_value": "Balance Value",
+		"balance_qty": "Balance Qty",
+		"contribution_percent": "Contribution %",
+	}.get(key, fallback or "Value")
+
+
+def _row_has_metric(rows: List[Dict[str, Any]], metric_key: str) -> bool:
+	clean_key = _clean_text(metric_key)
+	if not clean_key:
+		return False
+	return any(clean_key in row for row in rows if isinstance(row, dict))
+
+
+def _resolve_metric_key(rows: List[Dict[str, Any]], preferred_key: str, fallback_key: str) -> str:
+	clean_preferred = _clean_text(preferred_key)
+	if clean_preferred == "amount":
+		for candidate in ("sales_amount", "gross_profit", "buying_amount", "outstanding_total", "total_due", "balance_value"):
+			if _row_has_metric(rows, candidate):
+				return candidate
+	if clean_preferred and _row_has_metric(rows, clean_preferred):
+		return clean_preferred
+	if _row_has_metric(rows, fallback_key):
+		return fallback_key
+	return clean_preferred or fallback_key
+
+
+def _requested_top_n(dimensions: Dict[str, Any], response_overrides: Dict[str, Any] | None, default: int = 10) -> int:
+	override_value = (response_overrides or {}).get("top_n")
+	if override_value not in (None, ""):
+		try:
+			return max(1, min(50, int(override_value)))
+		except Exception:
+			pass
+	stored_value = dimensions.get("requested_top_n")
+	if stored_value not in (None, ""):
+		try:
+			return max(1, min(50, int(stored_value)))
+		except Exception:
+			pass
+	return default
+
+
+def _requested_columns(dimensions: Dict[str, Any], response_overrides: Dict[str, Any] | None) -> List[str]:
+	override_values = _clean_list((response_overrides or {}).get("requested_columns"))
+	if override_values:
+		return override_values
+	return _clean_list(dimensions.get("requested_columns"))
+
+
+def _preferred_metric_key(
+	rows: List[Dict[str, Any]],
+	dimensions: Dict[str, Any],
+	response_overrides: Dict[str, Any] | None,
+) -> str:
+	override_key = _clean_text((response_overrides or {}).get("metric_key"))
+	stored_key = _clean_text(dimensions.get("requested_metric_key"))
+	fallback_key = _clean_text(dimensions.get("primary_metric_key"))
+	return _resolve_metric_key(rows, override_key or stored_key, fallback_key)
+
+
+def _ranking_table_spec(
+	*,
+	rows: List[Dict[str, Any]],
+	entity_label: str,
+	metric_key: str,
+	metric_label: str,
+	requested_columns: List[str],
+) -> tuple[List[str], List[List[str]]]:
+	column_specs: List[tuple[str, str]] = [("Rank", "rank")]
+	selected = list(requested_columns or [])
+	if not selected:
+		selected = ["entity", metric_key]
+	if "entity" not in selected and "entity_code" not in selected:
+		selected = ["entity"] + selected
+	for key in selected:
+		if key == "entity":
+			column_specs.append((entity_label, "entity"))
+		elif key == "entity_code":
+			column_specs.append(("Code", "entity_code"))
+		elif key == "contribution_percent":
+			column_specs.append(("Contribution %", "contribution_percent"))
+		else:
+			column_specs.append((_metric_label(key, metric_label if key == metric_key else key), key))
+	table_rows: List[List[str]] = []
+	for index, item in enumerate(rows, start=1):
+		out: List[str] = []
+		for label, key in column_specs:
+			if key == "rank":
+				out.append(str(int(_float_value(item.get("rank")) or index)))
+			elif key == "entity":
+				out.append(_clean_text(item.get("entity_name") or item.get("item_name") or item.get("item") or item.get("entity")))
+			elif key == "entity_code":
+				out.append(_clean_text(item.get("entity_code") or item.get("item_code")))
+			elif key in {"gross_profit_percent", "contribution_percent"}:
+				out.append(_ratio_text(item.get(key)))
+			else:
+				out.append(_amount_text(item.get(key)))
+		table_rows.append(out)
+	return [label for label, _ in column_specs], table_rows
 
 
 def _title_with_period(title: str, period: Dict[str, Any]) -> str:
@@ -269,14 +388,29 @@ def _aging_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List
 	return title, blocks
 
 
-def _ranking_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
+def _ranking_blocks(
+	artifact: NormalizedFamilyArtifactContract,
+	response_overrides: Dict[str, Any] | None = None,
+) -> tuple[str, List[Dict[str, Any]]]:
 	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
 	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
-	metric_label = _clean_text(dimensions.get("primary_metric_label")) or "Primary Metric"
 	entity_label = _clean_text(dimensions.get("entity_dimension")) or "Entity"
-	title = _title_with_period(f"Top {entity_label}s by {metric_label}", artifact.period)
-	ranked_rows = _clean_rows(sections.get("ranked_rows"))[:10]
+	all_ranked_rows = _clean_rows(sections.get("ranked_rows"))
+	metric_key = _preferred_metric_key(all_ranked_rows, dimensions, response_overrides)
+	metric_label = _metric_label(metric_key, _clean_text(dimensions.get("primary_metric_label")) or "Primary Metric")
+	top_n = _requested_top_n(dimensions, response_overrides, default=10)
+	ranked_rows = all_ranked_rows[:top_n]
+	title = _title_with_period(f"Top {top_n} {entity_label}s by {metric_label}", artifact.period)
 	summary = _clean_rows(sections.get("summary"))
+	requested_columns = _requested_columns(dimensions, response_overrides)
+	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
+	table_headers, table_rows = _ranking_table_spec(
+		rows=ranked_rows,
+		entity_label=entity_label,
+		metric_key=metric_key,
+		metric_label=metric_label,
+		requested_columns=requested_columns,
+	)
 	blocks = [
 		{
 			"block_type": "summary_table",
@@ -296,15 +430,8 @@ def _ranking_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, Li
 			{
 				"block_type": "data_table",
 				"title": "Top Ranked Rows",
-				"columns": ["Rank", entity_label, metric_label],
-				"rows": [
-					[
-						str(int(_float_value(item.get("rank")) or (index + 1))),
-						_clean_text(item.get("entity_name") or item.get("entity")),
-						_amount_text(item.get(dimensions.get("primary_metric_key"))),
-					]
-					for index, item in enumerate(ranked_rows)
-				],
+				"columns": table_headers,
+				"rows": table_rows,
 			}
 		)
 	return title, blocks
@@ -393,14 +520,21 @@ def _inventory_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, 
 	return title, blocks
 
 
-def _product_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
+def _product_blocks(
+	artifact: NormalizedFamilyArtifactContract,
+	response_overrides: Dict[str, Any] | None = None,
+) -> tuple[str, List[Dict[str, Any]]]:
 	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
 	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
-	metric_key = _clean_text(dimensions.get("primary_metric_key"))
-	metric_label = _clean_text(dimensions.get("primary_metric_label")) or "Primary Metric"
-	title = _title_with_period("Product Performance and Profitability", artifact.period)
+	product_rows_all = _clean_rows(sections.get("product_rows"))
+	metric_key = _preferred_metric_key(product_rows_all, dimensions, response_overrides)
+	metric_label = _metric_label(metric_key, _clean_text(dimensions.get("primary_metric_label")) or "Primary Metric")
+	top_n = _requested_top_n(dimensions, response_overrides, default=10)
+	title = _title_with_period(f"Top {top_n} Products by {metric_label}", artifact.period)
 	summary = _clean_rows(sections.get("summary"))
-	product_rows = _clean_rows(sections.get("product_rows"))[:10]
+	product_rows = product_rows_all[:top_n]
+	requested_columns = _requested_columns(dimensions, response_overrides)
+	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
 	blocks = [
 		{
 			"block_type": "summary_table",
@@ -416,20 +550,97 @@ def _product_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, Li
 		}
 	]
 	if product_rows:
+		if requested_columns:
+			table_headers, table_rows = _ranking_table_spec(
+				rows=product_rows,
+				entity_label="Product",
+				metric_key=metric_key,
+				metric_label=metric_label,
+				requested_columns=requested_columns,
+			)
+		else:
+			table_headers = ["Product", metric_label, "Sales Amount", "Gross Profit %"]
+			table_rows = [
+				[
+					_clean_text(item.get("item_name") or item.get("item") or item.get("item_code")),
+					_ratio_text(item.get(metric_key)) if metric_key == "gross_profit_percent" else _amount_text(item.get(metric_key)),
+					_amount_text(item.get("sales_amount")),
+					_ratio_text(item.get("gross_profit_percent")) if item.get("gross_profit_percent") not in (None, "") else "",
+				]
+				for item in product_rows
+			]
 		blocks.append(
 			{
 				"block_type": "data_table",
 				"title": "Top Products",
-				"columns": ["Product", metric_label, "Sales Amount", "Gross Profit %"],
-				"rows": [
-					[
-						_clean_text(item.get("item_name") or item.get("item") or item.get("item_code")),
-						_ratio_text(item.get(metric_key)) if metric_key == "gross_profit_percent" else _amount_text(item.get(metric_key)),
-						_amount_text(item.get("sales_amount")),
-						_ratio_text(item.get("gross_profit_percent")) if item.get("gross_profit_percent") not in (None, "") else "",
-					]
-					for item in product_rows
-				],
+				"columns": table_headers,
+				"rows": table_rows,
+			}
+		)
+	return title, blocks
+
+
+def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
+	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
+	metrics = artifact.metrics if isinstance(artifact.metrics, dict) else {}
+	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
+	document_rows = _clean_rows(sections.get("transaction_rows"))
+	summary = _clean_rows(sections.get("summary"))
+	top_n = _requested_top_n(dimensions, None, default=len(document_rows) or 10)
+	document_label = _clean_text(dimensions.get("document_label")) or "Transactions"
+	title = _title_with_period(f"Last {top_n} {document_label}s", artifact.period)
+	requested_columns = _requested_columns(dimensions, None)
+	column_map = {
+		"document_name": "Invoice",
+		"posting_date": "Posting Date",
+		"customer": "Customer",
+		"grand_total": "Grand Total",
+		"outstanding_amount": "Outstanding Amount",
+		"status": "Status",
+	}
+	selected_columns = requested_columns or ["document_name", "posting_date", "customer", "grand_total", "outstanding_amount", "status"]
+	selected_columns = [value for value in selected_columns if value in column_map]
+	base_columns = ["document_name", "posting_date", "customer"]
+	for key in reversed(base_columns):
+		if key not in selected_columns:
+			selected_columns.insert(0, key)
+	blocks = [
+		{
+			"block_type": "summary_table",
+			"title": "Summary",
+			"columns": ["Metric", "Value"],
+			"rows": [
+				[
+					_clean_text(item.get("label")),
+					_amount_text(item.get("amount")) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
+				]
+				for item in summary
+			],
+		}
+	]
+	if document_rows:
+		limited_rows = document_rows[:top_n]
+		table_rows: List[List[str]] = []
+		for row in limited_rows:
+			out: List[str] = []
+			for key in selected_columns:
+				if key == "posting_date":
+					out.append(_clean_text(row.get(key)))
+				elif key == "status":
+					out.append(_clean_text(row.get(key)))
+				elif key == "customer":
+					out.append(_clean_text(row.get(key)))
+				elif key == "document_name":
+					out.append(_clean_text(row.get(key)))
+				else:
+					out.append(_amount_text(row.get(key)))
+			table_rows.append(out)
+		blocks.append(
+			{
+				"block_type": "data_table",
+				"title": "Documents",
+				"columns": [column_map[key] for key in selected_columns],
+				"rows": table_rows,
 			}
 		)
 	return title, blocks
@@ -490,6 +701,7 @@ def render_normalized_family_response(
 	*,
 	request_id: str,
 	artifact_contract: NormalizedFamilyArtifactContract | None,
+	response_overrides: Dict[str, Any] | None = None,
 ) -> FamilyRenderOutcome:
 	if artifact_contract is None:
 		return FamilyRenderOutcome(
@@ -505,13 +717,15 @@ def render_normalized_family_response(
 	elif family_id == "aging":
 		title, blocks = _aging_blocks(artifact_contract)
 	elif family_id == "ranking_analytics":
-		title, blocks = _ranking_blocks(artifact_contract)
+		title, blocks = _ranking_blocks(artifact_contract, response_overrides=response_overrides)
 	elif family_id == "trend_analytics":
 		title, blocks = _trend_blocks(artifact_contract)
 	elif family_id == "inventory_snapshot":
 		title, blocks = _inventory_blocks(artifact_contract)
 	elif family_id == "product_profitability":
-		title, blocks = _product_blocks(artifact_contract)
+		title, blocks = _product_blocks(artifact_contract, response_overrides=response_overrides)
+	elif family_id == "transaction_listing":
+		title, blocks = _transaction_listing_blocks(artifact_contract)
 	else:
 		return FamilyRenderOutcome(
 			status="render_not_available",

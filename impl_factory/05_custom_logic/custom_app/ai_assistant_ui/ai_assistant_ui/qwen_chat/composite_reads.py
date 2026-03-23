@@ -7,6 +7,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.compiler import compile_fresh_query
+from ai_assistant_ui.qwen_chat.artifact_narrative import (
+	build_artifact_narrative_context,
+	build_artifact_narrative_contract,
+	narrate_governed_artifact,
+)
 from ai_assistant_ui.qwen_chat.contracts import (
 	CompiledExecutionAuditContract,
 	CompiledQueryRequestContract,
@@ -22,6 +27,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 from ai_assistant_ui.qwen_chat.family_adapters import FamilyArtifactOutcome, build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_composite_family_response
 from ai_assistant_ui.qwen_chat.family_validator import FamilyValidationOutcome, validate_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
 from ai_assistant_ui.qwen_chat.metadata import (
 	list_composite_read_specs,
 	ontology_detect_concepts,
@@ -331,27 +337,35 @@ def _execute_composite_step(
 	runtime_request_config: Dict[str, Any] | None = None,
 ) -> CompositeStepExecution:
 	runtime_started = time.perf_counter()
-	try:
-		runtime_payload = call_qwen_runtime_chat(
-			session_id=f"{session_id}:{compiled_request.request_id}",
-			user_id=user_id,
-			site_name=site_name,
-			message=message,
-			recent_messages=list(recent_messages or []),
-			response_policy=compiled_request.response_policy if isinstance(compiled_request.response_policy, dict) else {},
-			family_tool_context={},
-			mode="compiled_read_query",
-			compiled_query=compiled_request.to_payload(),
-			request_id=compiled_request.request_id,
-			request_config=runtime_request_config if isinstance(runtime_request_config, dict) else None,
-		)
-	except QwenRuntimeClientError as exc:
-		runtime_payload = {
-			"ok": False,
-			"tool_trace": [],
-			"agent_meta": {"engine": "unavailable", "mode": "compiled_read_query"},
-			"error": str(exc),
-		}
+	runtime_payload = execute_governed_report(
+		report_name=str(compiled_request.selected_report or "").strip(),
+		filters=compiled_request.filters if isinstance(compiled_request.filters, dict) else {},
+		user=user_id,
+		mode="compiled_composite_step",
+		request_message=message,
+	)
+	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
+		try:
+			runtime_payload = call_qwen_runtime_chat(
+				session_id=f"{session_id}:{compiled_request.request_id}",
+				user_id=user_id,
+				site_name=site_name,
+				message=message,
+				recent_messages=list(recent_messages or []),
+				response_policy=compiled_request.response_policy if isinstance(compiled_request.response_policy, dict) else {},
+				family_tool_context={},
+				mode="compiled_read_query",
+				compiled_query=compiled_request.to_payload(),
+				request_id=compiled_request.request_id,
+				request_config=runtime_request_config if isinstance(runtime_request_config, dict) else None,
+			)
+		except QwenRuntimeClientError as exc:
+			runtime_payload = {
+				"ok": False,
+				"tool_trace": [],
+				"agent_meta": {"engine": "unavailable", "mode": "compiled_read_query"},
+				"error": str(exc),
+			}
 	runtime_latency_ms = int((time.perf_counter() - runtime_started) * 1000)
 	adapter_outcome: FamilyArtifactOutcome = build_normalized_family_artifact(
 		request_id=compiled_request.request_id,
@@ -581,6 +595,7 @@ def execute_composite_read_plan(
 		if str(spec.get("plan_id") or "").strip() == str(plan_contract.plan_id or "").strip():
 			parallel_allowed = bool(spec.get("parallel_execution_allowed"))
 			break
+	direct_execution_preferred = True
 	parallel_execution_used = False
 	parallel_execution_error = ""
 
@@ -611,7 +626,7 @@ def execute_composite_read_plan(
 		)
 
 	runtime_started = time.perf_counter()
-	if parallel_allowed and len(steps) > 1:
+	if parallel_allowed and not direct_execution_preferred and len(steps) > 1:
 		try:
 			with ThreadPoolExecutor(max_workers=min(4, len(steps))) as executor:
 				futures = [executor.submit(_run_step, item) for item in steps]
@@ -653,6 +668,13 @@ def execute_composite_read_plan(
 		warnings=list(validation_payload.get("validation_warnings") or []),
 	)
 	rendered_response_payload = render_outcome.contract.to_payload() if render_outcome.contract is not None else {}
+	response_policy_payload = (
+		plan_outcome.step_compiled_requests[0].response_policy
+		if plan_outcome.step_compiled_requests
+		and isinstance(plan_outcome.step_compiled_requests[0].response_policy, dict)
+		else {}
+	)
+	narrative_response_payload: Dict[str, Any] = {}
 	tool_trace: List[Dict[str, Any]] = []
 	tool_names: List[str] = []
 	runtime_models: List[str] = []
@@ -682,6 +704,35 @@ def execute_composite_read_plan(
 
 	runtime_ok = str(validation_payload.get("status") or "").strip() == "pass"
 	overall_grounded_status = "pass" if grounded_statuses and all(item == "pass" for item in grounded_statuses) else "fail"
+	if (
+		composite_artifact
+		and rendered_response_payload
+		and str(validation_payload.get("status") or "").strip() == "pass"
+		and str(semantic_payload.get("status") or "").strip() == "pass"
+	):
+		artifact_context = build_artifact_narrative_context(
+			request_id=request_id,
+			artifact_payload=composite_artifact,
+			rendered_response_payload=rendered_response_payload,
+			response_policy=response_policy_payload,
+			validation_payload=validation_payload,
+		)
+		narrative_runtime_payload = narrate_governed_artifact(
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			request_id=request_id,
+			artifact_context=artifact_context,
+			response_policy=response_policy_payload,
+		)
+		narrative_contract = build_artifact_narrative_contract(
+			request_id=request_id,
+			artifact_context=artifact_context,
+			runtime_payload=narrative_runtime_payload,
+		)
+		if narrative_contract is not None:
+			narrative_response_payload = narrative_contract.to_payload()
 	total_pipeline_latency_ms = int((time.perf_counter() - total_started) * 1000) if total_started else 0
 	overall_audit: CompiledExecutionAuditContract = build_compiled_execution_audit_contract(
 		request_id=request_id,
@@ -743,6 +794,7 @@ def execute_composite_read_plan(
 		"composite_step_validations": [item.family_validation_payload for item in step_results if item.family_validation_payload],
 		"normalized_family_artifact": composite_artifact,
 		"rendered_response": rendered_response_payload,
+		"narrative_response": narrative_response_payload,
 		"family_validation": {
 			"status": str(validation_payload.get("status") or "").strip(),
 			"errors": list(validation_payload.get("validation_errors") or []),
@@ -753,7 +805,7 @@ def execute_composite_read_plan(
 		"runtime_payload": {
 			"ok": runtime_ok,
 			"answer_text": str(
-				(rendered_response_payload.get("answer_text") or composite_artifact.get("answer_text") or "")
+				(narrative_response_payload.get("answer_text") or rendered_response_payload.get("answer_text") or composite_artifact.get("answer_text") or "")
 			).strip(),
 			"tool_trace": tool_trace,
 			"agent_meta": {

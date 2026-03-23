@@ -1,2 +1,0 @@
-[Step11] Command: python -m compileall -q apps/ai_assistant_ui/ai_assistant_ui
-[Step11] Compile check: PASS

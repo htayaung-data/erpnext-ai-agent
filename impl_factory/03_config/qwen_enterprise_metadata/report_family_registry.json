@@ -266,6 +266,61 @@
       "coverage_status": "active"
     },
     {
+      "family_id": "transaction_listing",
+      "family_label": "Transaction Listing",
+      "description": "Canonical governed family for recent or filtered business document lists such as sales invoices.",
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "canonical_metrics": [
+        "document_count",
+        "total_amount",
+        "outstanding_amount"
+      ],
+      "canonical_dimensions": [
+        "document",
+        "party",
+        "posting_date",
+        "status"
+      ],
+      "adapter_id": "transaction_listing_adapter",
+      "agent_tool_id": "get_transaction_listing",
+      "agent_prompt_hint": "Use the governed transaction-listing route for recent invoices, latest business documents, and transaction list questions.",
+      "renderer_id": "transaction_listing_renderer",
+      "composite_allowed": false,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "sales_read"
+      ],
+      "report_names": [
+        "Sales Invoice List"
+      ],
+      "source_report_families": [
+        "sales_invoice_list"
+      ],
+      "semantic_tags": [
+        "transaction",
+        "invoice",
+        "document"
+      ],
+      "routing_hints": {
+        "ontology_concepts": [
+          "sales",
+          "sales_invoice"
+        ],
+        "intent_markers": [
+          "sales invoice",
+          "sales invoices",
+          "invoice list",
+          "recent invoices",
+          "latest invoices",
+          "last invoice",
+          "last invoices"
+        ]
+      },
+      "coverage_status": "active"
+    },
+    {
       "family_id": "inventory_snapshot",
       "family_label": "Inventory Snapshot",
       "description": "Canonical inventory posture family for current stock, value, warehouse, and item views.",

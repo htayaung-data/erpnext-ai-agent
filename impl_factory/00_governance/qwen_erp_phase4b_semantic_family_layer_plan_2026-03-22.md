@@ -1,6 +1,6 @@
 # Qwen ERP Phase 4B Semantic Family Layer Plan (2026-03-22)
 
-Status: core semantic family layer implemented; governed family baseline green; operational hardening continues  
+Status: core semantic family layer implemented; governed family scope enterprise-stable; business-user closure hardening remains  
 Scope: extend Phase 4 from fresh-query compilation into governed report-family abstraction, normalized business artifacts, and broad read-path expansion  
 Phase goal: support broad ERP business questions through governed family routing, deterministic adapters, and composite multi-report analysis without drifting into report-by-report hacks.
 
@@ -124,6 +124,38 @@ Current state:
 Latency note:
 
 - `impl_factory/00_governance/qwen_erp_phase4b_family_latency_budget_note_2026-03-23.md`
+
+### 2.7 Business-user closure checkpoint (2026-03-23)
+
+Recent browser validation shows that the remaining gap is no longer mainly governed family execution quality.
+
+The remaining gap is now concentrated in:
+
+1. follow-up correction fidelity
+2. ranking / metric / column fidelity
+3. missing transaction-list coverage
+4. broader company-health composite coverage
+5. human clarification quality
+6. consultant-style business insight rendering
+
+Closure note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_closure_hardening_plan_2026-03-23.md`
+
+### 2.8 User-facing reset checkpoint (2026-03-23)
+
+After Qwen consultation and browser feedback review, the next step is now explicitly defined as a user-facing reset above the governed core.
+
+Current decision:
+
+1. keep the governed compiler / adapter / validator core
+2. move clarification wording and final narrative back toward Qwen-Agent behavior
+3. treat response policy by intent as a first-class contract
+4. add richer follow-up context and generic entity drilldown before adding broader new family scope
+
+Reset note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_user_facing_reset_plan_2026-03-23.md`
 
 ## 3. Governing Rule for Phase 4B
 
@@ -524,17 +556,45 @@ Phase 4B should close only when:
 5. unseen business phrasing can map into governed family execution without report-by-report hacks
 6. latency remains controlled through reduced tool choice and normalized artifacts
 
+Current closure status:
+
+- `closed for the current governed family scope`
+- `still open for business-user closure hardening`
+
+Enterprise checkpoint result:
+
+1. full governed family suite is now passing `17/17`
+2. governed family enterprise-green rate is now `7/7`
+3. current governed family scope is now considered enterprise-stable for:
+   - financial statements
+   - aging
+   - ranking analytics
+   - trend analytics
+   - inventory snapshot
+   - product profitability
+   - working-capital composite health
+
+Checkpoint note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_enterprise_performance_stability_note_2026-03-23.md`
+
 ## 11. Immediate Next Step
 
 The immediate next step after this note is:
 
-1. treat the planned Phase 4B slice set as implemented, with the current core governed family baseline passing `7/7`
-2. keep the compiled family path as the preferred enterprise execution route for richer families
-3. move into post-4B operational hardening:
-   - continue reducing composite and other heavy-family latency
-   - expand family evaluation datasets beyond the core set
-   - continue hardening legacy family routing where requirements-first behavior still needs tightening
-4. keep expanding by semantic family packages, not by isolated example questions
-5. continue latency hardening without relaxing compiler or validator governance
+1. keep Phase 4B closed for the current governed family scope at the core architecture level
+2. reopen Phase 4B only for closure hardening at the business-user layer
+3. implement the closure plan in this order:
+   - follow-up contract hardening
+   - ranking / metric / column fidelity
+   - transaction-list family
+   - broader company-health composite
+   - human clarification layer
+   - business-insight response renderer
+   - closure evaluation and browser acceptance
+4. keep expanding by contracts and families, not by isolated query patches
+5. preserve deterministic execution, family normalization, and validator-first rendering as the default enterprise read boundary
 
-This keeps the architecture broadening by semantic family packages, not by isolated example questions.
+Closure plan note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_closure_hardening_plan_2026-03-23.md`

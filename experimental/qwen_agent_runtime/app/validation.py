@@ -74,3 +74,30 @@ def summarize_read_validation(tool_trace: List[ToolTraceItem], answer_text: str)
 			"approved_reports": sorted({x for x in approved_reports if x}),
 		},
 	)
+
+
+def summarize_artifact_narrative_validation(
+	artifact_context: Dict[str, Any],
+	answer_text: str,
+) -> Tuple[bool, Dict[str, Any]]:
+	errors: List[str] = []
+	context = artifact_context if isinstance(artifact_context, dict) else {}
+	artifact_payload = context.get("artifact_payload") if isinstance(context.get("artifact_payload"), dict) else {}
+	source_reports = [
+		str(item or "").strip()
+		for item in list(context.get("source_reports") or [])
+		if str(item or "").strip()
+	]
+	if not str(answer_text or "").strip():
+		errors.append("Artifact narrative mode returned an empty answer.")
+	if not artifact_payload:
+		errors.append("Artifact narrative mode requires a governed artifact payload.")
+	return (
+		not errors,
+		{
+			"status": "pass" if not errors else "fail",
+			"errors": errors,
+			"grounding_tools": ["governed_artifact"] if not errors else [],
+			"approved_reports": sorted({x for x in source_reports if x}),
+		},
+	)

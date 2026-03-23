@@ -10,8 +10,16 @@ from typing import Any, Dict, List, Tuple
 
 import frappe
 
+from ai_assistant_ui.qwen_chat.artifact_narrative import (
+	build_artifact_narrative_context,
+	build_artifact_narrative_contract,
+	narrate_governed_artifact,
+)
 from ai_assistant_ui.qwen_chat.capability_adapters import render_local_followup
+from ai_assistant_ui.qwen_chat.clarification_translation import translate_clarification_signal
 from ai_assistant_ui.qwen_chat.contracts import (
+	ExecutionPath,
+	FollowUpResolution,
 	build_audit_envelope,
 	build_execution_path,
 	build_followup_resolution,
@@ -20,8 +28,18 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_response_policy_contract,
 	is_self_contained_business_request,
 )
+from ai_assistant_ui.qwen_chat.entity_detail import (
+	detect_entity_drilldown_request,
+	execute_entity_drilldown,
+)
+from ai_assistant_ui.qwen_chat.family_followup import (
+	render_local_family_followup,
+	supports_local_family_followup,
+)
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.followup_interpreter import is_safe_local_compatibility_intent
+from ai_assistant_ui.qwen_chat.followup_interpreter import detect_followup_intent
+from ai_assistant_ui.qwen_chat.followup_interpreter import assess_context_isolation
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_family_evaluation_case_set,
@@ -160,12 +178,13 @@ def get_compiled_first_turn_rollout_status(
 	}
 
 
-def _compiled_decision_message(result: Dict[str, Any]) -> str:
+def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
 	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
 	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
 	decision = str(compiler.get("decision") or "").strip()
 	reason = str(compiler.get("compiler_reason") or "").strip()
 	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
+	narrative_response = result.get("narrative_response") if isinstance(result.get("narrative_response"), dict) else {}
 	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
 	family_status = str(family_validation.get("status") or "").strip()
 	family_errors = family_validation.get("errors") if isinstance(family_validation.get("errors"), list) else []
@@ -179,33 +198,49 @@ def _compiled_decision_message(result: Dict[str, Any]) -> str:
 	runtime_answer = str(runtime_payload.get("answer_text") or "").strip()
 
 	if decision == "clarify":
-		if reason:
-			return f"I need one more detail before I can run a governed ERP query.\n\n{reason}"
-		return "I need one more detail before I can run a governed ERP query."
+		signal = translate_clarification_signal(
+			request_id=request_id,
+			raw_message=raw_message,
+			compiler_reason=reason,
+		)
+		return str(signal.user_question or "").strip(), signal.to_payload()
 	if decision == "reject":
 		if reason:
-			return f"I can't execute this request within the approved ERP read path.\n\n{reason}"
-		return "I can't execute this request within the approved ERP read path."
+			return f"I can't complete that safely within the approved ERP read path yet.\n\n{reason}", {}
+		return "I can't complete that safely within the approved ERP read path yet.", {}
 	if family_status == "clarify":
 		detail = str((family_warnings or family_errors or ["The normalized business artifact needs clarification before display."])[0] or "").strip()
-		return f"I need clarification before I can present a governed business artifact confidently.\n\n{detail}".strip()
+		signal = translate_clarification_signal(
+			request_id=request_id,
+			raw_message=raw_message,
+			family_detail=detail,
+		)
+		return str(signal.user_question or "").strip(), signal.to_payload()
 	if family_status.startswith("reject"):
 		detail = str((family_errors or ["The normalized business artifact did not pass governed validation."])[0] or "").strip()
-		return f"I could not complete a governed business artifact confidently.\n\n{detail}".strip()
+		return f"I couldn't complete that result confidently from governed ERP data.\n\n{detail}".strip(), {}
 	if semantic_status == "clarify":
 		detail = str((semantic_warnings or semantic_errors or ["The grounded result needs clarification before display."])[0] or "").strip()
-		return f"I need clarification before I can present a governed result confidently.\n\n{detail}".strip()
+		signal = translate_clarification_signal(
+			request_id=request_id,
+			raw_message=raw_message,
+			semantic_detail=detail,
+		)
+		return str(signal.user_question or "").strip(), signal.to_payload()
 	if semantic_status == "reject_semantically_inconsistent":
 		detail = str((semantic_errors or ["The grounded result did not match the requested business intent."])[0] or "").strip()
-		return f"I could not complete a semantically consistent grounded ERP answer.\n\n{detail}".strip()
+		return f"I couldn't complete a grounded answer that matched the requested business intent.\n\n{detail}".strip(), {}
+	narrative_answer = str(narrative_response.get("answer_text") or "").strip()
+	if narrative_answer:
+		return narrative_answer, {}
 	rendered_answer = str(rendered_response.get("answer_text") or "").strip()
 	if rendered_answer:
-		return rendered_answer
+		return rendered_answer, {}
 	if runtime_answer:
-		return runtime_answer
+		return runtime_answer, {}
 	if runtime_error:
-		return _safe_runtime_failure_message(RuntimeError(runtime_error))
-	return "I could not complete a governed ERP lookup."
+		return _safe_runtime_failure_message(RuntimeError(runtime_error)), {}
+	return "I could not complete a governed ERP lookup.", {}
 
 
 def _handle_compiled_first_turn_result(
@@ -225,8 +260,14 @@ def _handle_compiled_first_turn_result(
 
 	_append_compiled_attempt_artifacts(session_doc, result)
 
-	answer_text = _compiled_decision_message(result)
+	answer_text, clarification_signal_payload = _compiled_decision_message(
+		request_id=request_id,
+		raw_message=str(interaction_contract.raw_message or "").strip(),
+		result=result,
+	)
 	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+	if clarification_signal_payload:
+		_append_tool_payload(session_doc, clarification_signal_payload)
 
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
 	agent_meta = runtime_payload.get("agent_meta") if isinstance(runtime_payload.get("agent_meta"), dict) else {}
@@ -257,6 +298,7 @@ def _handle_compiled_first_turn_result(
 				**runtime_trace_payload,
 				"request_id": request_id,
 			},
+			artifact_payload=result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {},
 		)
 		if grounded_turn_context and grounded_turn_context.grounded:
 			grounded_turn_payload = grounded_turn_context.to_payload()
@@ -292,6 +334,7 @@ def _append_compiled_attempt_artifacts(session_doc, result: Dict[str, Any]) -> N
 	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
 	normalized_family_artifact = result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {}
 	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
+	narrative_response = result.get("narrative_response") if isinstance(result.get("narrative_response"), dict) else {}
 	composite_family_artifacts = result.get("composite_family_artifacts") if isinstance(result.get("composite_family_artifacts"), list) else []
 	composite_step_validations = result.get("composite_step_validations") if isinstance(result.get("composite_step_validations"), list) else []
 	composite_validation = result.get("composite_validation") if isinstance(result.get("composite_validation"), dict) else {}
@@ -307,6 +350,8 @@ def _append_compiled_attempt_artifacts(session_doc, result: Dict[str, Any]) -> N
 		_append_tool_payload(session_doc, normalized_family_artifact)
 	if rendered_response:
 		_append_tool_payload(session_doc, rendered_response)
+	if narrative_response:
+		_append_tool_payload(session_doc, narrative_response)
 	for payload in composite_family_artifacts:
 		if isinstance(payload, dict) and payload:
 			_append_tool_payload(session_doc, payload)
@@ -730,6 +775,7 @@ def _latest_display_preferences(session_doc, requested_modes: List[str] | None =
 	return {
 		"million": "presentation_transform" in requested or "million mmk" in text,
 		"table": "table_presentation" in requested or has_tables,
+		"bullet": "bullet_presentation" in requested or "•" in text or "\n- " in text,
 	}
 
 
@@ -754,16 +800,33 @@ def _compile_capability_requery_message(
 	report_date = str(date_range.get("report_date") or filters.get("report_date") or "").strip()
 	from_date = str(date_range.get("from_date") or filters.get("from_date") or "").strip()
 	to_date = str(date_range.get("to_date") or filters.get("to_date") or "").strip()
+	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
+	requested_columns = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_columns", []) or [])
+		if str(value or "").strip()
+	]
 	prefs = _latest_display_preferences(session_doc, getattr(followup_resolution, "requested_modes", []) or [])
 	hint = str(switch.get("requery_prompt_hint") or "").strip()
 
 	parts = [f"Use the report `{target_report}`."]
 	if company:
 		parts.append(f'Use company "{company}".')
-	if report_date:
+	if requested_time_scope == "last_month":
+		parts.append("Use the last month date range.")
+	elif requested_time_scope == "current_period":
+		parts.append("Use the current month to date.")
+	elif requested_time_scope == "all_period":
+		parts.append("Use the full available time range.")
+	elif report_date:
 		parts.append(f"Use report_date {report_date}.")
 	elif from_date and to_date:
 		parts.append(f"Use the date range from {from_date} to {to_date}.")
+	if target_metric:
+		parts.append(f"Prioritize the metric `{target_metric}`.")
+	if requested_columns:
+		parts.append("Return these columns if available: " + ", ".join(requested_columns) + ".")
 	if hint:
 		parts.append(hint)
 	if prefs.get("million"):
@@ -821,6 +884,17 @@ def _latest_grounded_turn_contract(session_doc) -> Dict[str, Any]:
 	return {}
 
 
+def _latest_normalized_family_artifact(session_doc) -> Dict[str, Any]:
+	for m in reversed(session_doc.get("messages") or []):
+		if str(m.role or "").strip().lower() != "tool":
+			continue
+		payload = _parse_payload(str(m.content or ""))
+		payload_type = str(payload.get("type") or "").strip().lower()
+		if payload_type in {"qwen_normalized_family_artifact_contract", "qwen_composite_family_artifact", "qwen_entity_detail_artifact"}:
+			return payload
+	return {}
+
+
 def _format_million_value(raw: str) -> str:
 	negative = raw.startswith("-")
 	numeric = raw[1:] if negative else raw
@@ -842,16 +916,16 @@ def _convert_summary_line_to_million(line: str) -> str:
 		return text
 	if not any(token in lower for token in ("sales", "revenue", "amount", "outstanding", "value", "mmk")):
 		return text
-	match = re.search(
+	pattern = re.compile(
 		r"(\*{0,2})(?:MMK\s+)?(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?)(?:\s+MMK)?(\*{0,2})",
-		text,
 		flags=re.IGNORECASE,
 	)
-	if not match:
-		return text
-	scaled = _format_million_value(match.group(2))
-	replacement = f"{match.group(1)}{scaled} Million MMK{match.group(3)}"
-	return text[: match.start()] + replacement + text[match.end() :]
+
+	def _replace(match: re.Match[str]) -> str:
+		scaled = _format_million_value(match.group(2))
+		return f"{match.group(1)}{scaled} Million MMK{match.group(3)}"
+
+	return pattern.sub(_replace, text)
 
 
 def _transform_markdown_to_million(text: str) -> str:
@@ -919,7 +993,10 @@ def _try_local_followup_transform(
 	session_doc,
 	*,
 	request_id: str,
+	raw_message: str,
 	followup_resolution,
+	interaction_contract,
+	response_policy_contract,
 ) -> Tuple[bool, Dict[str, Any]] | None:
 	requested_modes = {
 		str(mode or "").strip()
@@ -929,10 +1006,43 @@ def _try_local_followup_transform(
 	target_dimension = str(getattr(followup_resolution, "target_dimension", "") or "").strip()
 	target_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
 	sort_direction = str(getattr(followup_resolution, "sort_direction", "") or "").strip()
-	if not requested_modes.intersection({"presentation_transform", "table_presentation", "aging_bucket_view", "dimension_breakdown", "sort_or_limit"}):
+	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
+	requested_columns = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_columns", []) or [])
+		if str(value or "").strip()
+	]
+	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+	if not requested_modes.intersection({
+		"presentation_transform",
+		"table_presentation",
+		"bullet_presentation",
+		"aging_bucket_view",
+		"dimension_breakdown",
+		"sort_or_limit",
+		"metric_refinement",
+		"column_refinement",
+	}):
 		return None
 	assistant_payload, trace = _latest_grounded_assistant_context(session_doc)
 	grounded_turn = _latest_grounded_turn_contract(session_doc)
+	family_artifact_payload = _latest_normalized_family_artifact(session_doc)
+	heuristic_intent = detect_followup_intent(
+		str(raw_message or "").strip(),
+		grounded_turn=grounded_turn,
+	)
+	if not target_metric:
+		target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
+	if not requested_columns:
+		requested_columns = [
+			str(value or "").strip()
+			for value in (getattr(heuristic_intent, "requested_columns", []) or [])
+			if str(value or "").strip()
+		]
+	for mode in getattr(heuristic_intent, "requested_modes", []) or []:
+		clean_mode = str(mode or "").strip()
+		if clean_mode and clean_mode not in requested_modes:
+			requested_modes.add(clean_mode)
 	if not assistant_payload or not trace:
 		return None
 	text = str(assistant_payload.get("text") or "").strip()
@@ -940,18 +1050,41 @@ def _try_local_followup_transform(
 		return None
 	transformed = text
 	applied_transforms: List[str] = []
+	family_followup_payload: Dict[str, Any] = {}
 	display_preferences = _latest_display_preferences(
 		session_doc,
 		getattr(followup_resolution, "requested_modes", []) or [],
 	)
 
-	if "aging_bucket_view" in requested_modes:
+	if supports_local_family_followup(
+		family_artifact_payload,
+		target_limit=target_limit,
+		target_metric=target_metric,
+		requested_columns=requested_columns,
+		requested_time_scope=requested_time_scope,
+		requested_modes=list(requested_modes),
+	):
+		family_render = render_local_family_followup(
+			request_id=request_id,
+			artifact_payload=family_artifact_payload,
+			target_limit=target_limit,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_modes=list(requested_modes),
+		)
+		family_text = str(family_render.get("answer_text") or "").strip()
+		if family_text:
+			transformed = family_text
+			family_followup_payload = family_render
+			applied_transforms.append("family_followup_render")
+
+	if "aging_bucket_view" in requested_modes and "family_followup_render" not in applied_transforms:
 		aging_view = render_local_followup("aging_bucket_view", grounded_turn, display_preferences)
 		if aging_view:
 			transformed = aging_view
 			applied_transforms.append("aging_bucket_view")
 
-	if "dimension_breakdown" in requested_modes:
+	if "dimension_breakdown" in requested_modes and "family_followup_render" not in applied_transforms:
 		breakdown_view = render_local_followup(
 			"dimension_breakdown",
 			grounded_turn,
@@ -963,7 +1096,7 @@ def _try_local_followup_transform(
 			transformed = breakdown_view
 			applied_transforms.append("dimension_breakdown")
 
-	if "sort_or_limit" in requested_modes:
+	if "sort_or_limit" in requested_modes and "family_followup_render" not in applied_transforms:
 		sorted_view = render_local_followup(
 			"sort_or_limit",
 			grounded_turn,
@@ -992,7 +1125,66 @@ def _try_local_followup_transform(
 	if not transformed or not applied_transforms:
 		return None
 
+	def _session_tool_payloads() -> List[Dict[str, Any]]:
+		out: List[Dict[str, Any]] = []
+		for row in session_doc.get("messages") or []:
+			if str(row.role or "").strip().lower() != "tool":
+				continue
+			payload = _parse_payload(str(row.content or ""))
+			if payload:
+				out.append(payload)
+		return out
+
+	narrative_payload: Dict[str, Any] = {}
+	narrative_contract_payload: Dict[str, Any] = {}
+	rendered_payload = family_followup_payload
+	if not rendered_payload:
+		rendered_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(),
+			"qwen_rendered_family_response_contract",
+		)
+	if not rendered_payload:
+		rendered_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(),
+			"qwen_entity_detail_rendered_response",
+		)
+	if family_artifact_payload and (
+		family_followup_payload
+		or requested_modes.intersection({"table_presentation", "bullet_presentation", "metric_refinement", "column_refinement", "sort_or_limit"})
+	):
+		artifact_context = build_artifact_narrative_context(
+			request_id=request_id,
+			artifact_payload=family_artifact_payload,
+			rendered_response_payload=rendered_payload,
+			response_policy=response_policy_contract.to_runtime_payload(),
+			validation_payload={},
+		)
+		narrative_payload = narrate_governed_artifact(
+			session_id=session_doc.name,
+			user_id=str(interaction_contract.user_id or "").strip(),
+			site_name=str(interaction_contract.site_name or "").strip(),
+			message=str(raw_message or "").strip(),
+			request_id=request_id,
+			artifact_context=artifact_context,
+			response_policy=response_policy_contract.to_runtime_payload(),
+		)
+		narrative_contract = build_artifact_narrative_contract(
+			request_id=request_id,
+			artifact_context=artifact_context,
+			runtime_payload=narrative_payload,
+		)
+		if narrative_contract is not None:
+			narrative_contract_payload = narrative_contract.to_payload()
+			narrative_text = str(narrative_contract_payload.get("answer_text") or "").strip()
+			if narrative_text:
+				transformed = narrative_text
+				applied_transforms.append("artifact_narrative_followup")
+
 	_append_message(session_doc, "assistant", _assistant_text_payload(transformed))
+	if family_followup_payload:
+		_append_tool_payload(session_doc, family_followup_payload)
+	if narrative_contract_payload:
+		_append_tool_payload(session_doc, narrative_contract_payload)
 	_append_message(
 		session_doc,
 		"tool",
@@ -1055,12 +1247,129 @@ def _safe_runtime_failure_message(exc: Exception) -> str:
 	return "Qwen runtime is unavailable right now. Please try again."
 
 
+def _context_isolation_payload(*, request_id: str, decision: Dict[str, Any]) -> Dict[str, Any]:
+	return {
+		"type": "qwen_context_isolation_decision",
+		"request_id": str(request_id or "").strip(),
+		"force_new_query": bool(decision.get("force_new_query")),
+		"out_of_scope": bool(decision.get("out_of_scope")),
+		"reason": str(decision.get("reason") or "").strip(),
+		"requested_domains": list(decision.get("requested_domains") or []),
+		"context_domains": list(decision.get("context_domains") or []),
+		"primary_domain": str(decision.get("primary_domain") or "").strip(),
+		"created_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
+	}
+
+
+def _out_of_scope_answer(message: str, decision: Dict[str, Any]) -> str:
+	primary_domain = str(decision.get("primary_domain") or "").strip()
+	if primary_domain == "hr":
+		return (
+			"I can help with finance, sales, inventory, product performance, invoices, and governed ERP drilldowns.\n\n"
+			"I don't have governed HR or headcount coverage yet, so I can't answer staff-count questions confidently from ERP data in this assistant."
+		)
+	return (
+		"I can help with finance, sales, inventory, product performance, invoices, and governed ERP drilldowns.\n\n"
+		"This question falls outside the current governed Qwen ERP coverage, so I can't answer it confidently from ERP data yet."
+	)
+
+
+def _try_entity_detail_followup(
+	session_doc,
+	*,
+	request_id: str,
+	raw_message: str,
+	entity_reference: Dict[str, Any],
+	interaction_contract,
+	response_policy_contract,
+	latest_grounded_turn: Dict[str, Any],
+) -> Tuple[bool, Dict[str, Any]] | None:
+	try:
+		outcome = execute_entity_drilldown(
+			request_id=request_id,
+			session_id=session_doc.name,
+			user_id=str(interaction_contract.user_id or "").strip(),
+			site_name=str(interaction_contract.site_name or "").strip(),
+			message=str(raw_message or "").strip(),
+			entity_reference=entity_reference,
+			response_policy=response_policy_contract.to_runtime_payload(),
+			grounded_turn=latest_grounded_turn,
+		)
+	except Exception as exc:
+		frappe.log_error(frappe.get_traceback(), "Qwen Assistant: entity drilldown failed")
+		_append_message(session_doc, "assistant", _assistant_text_payload(f"I couldn't complete a grounded entity drilldown confidently.\n\n{str(exc or '').strip()}"))
+		_append_message(
+			session_doc,
+			"tool",
+			_tool_trace_message(
+				request_id=request_id,
+				ok=False,
+				tool_trace=[
+					{
+						"tool": "entity_detail_lookup",
+						"status": "error",
+						"detail": str(exc or "").strip(),
+						"detail_obj": {
+							"entity_type": str(entity_reference.get("entity_type") or "").strip(),
+							"entity_key": str(entity_reference.get("entity_key") or "").strip(),
+						},
+					}
+				],
+				agent_meta={"engine": "entity_detail", "mode": "entity_drilldown"},
+				error=str(exc or "").strip(),
+				runtime_latency_ms=0,
+			),
+		)
+		session_doc.save(ignore_permissions=False)
+		return True, {"ok": False, "request_id": request_id, "error": str(exc or "").strip(), "agent_meta": {"engine": "entity_detail"}}
+
+	if not bool(outcome.get("ok")):
+		return None
+
+	answer_text = str(outcome.get("answer_text") or "").strip()
+	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+	artifact_payload = outcome.get("artifact_payload") if isinstance(outcome.get("artifact_payload"), dict) else {}
+	rendered_payload = outcome.get("rendered_response_payload") if isinstance(outcome.get("rendered_response_payload"), dict) else {}
+	narrative_contract_payload = outcome.get("narrative_contract_payload") if isinstance(outcome.get("narrative_contract_payload"), dict) else {}
+	grounded_turn_payload = outcome.get("grounded_turn_payload") if isinstance(outcome.get("grounded_turn_payload"), dict) else {}
+	if artifact_payload:
+		_append_tool_payload(session_doc, artifact_payload)
+	if rendered_payload:
+		_append_tool_payload(session_doc, rendered_payload)
+	if narrative_contract_payload:
+		_append_tool_payload(session_doc, narrative_contract_payload)
+	if grounded_turn_payload:
+		_append_tool_payload(session_doc, grounded_turn_payload)
+	trace_payload = _tool_trace_message(
+		request_id=request_id,
+		ok=True,
+		tool_trace=[
+			{
+				"tool": "entity_detail_lookup",
+				"status": "ok",
+				"detail": str(outcome.get("answer_text") or "").strip()[:240],
+				"detail_obj": {
+					"entity_type": str((outcome.get("entity_reference") or {}).get("entity_type") or "").strip(),
+					"entity_key": str((outcome.get("entity_reference") or {}).get("entity_key") or "").strip(),
+				},
+			}
+		],
+		agent_meta={"engine": "entity_detail", "mode": "entity_drilldown"},
+		error="",
+		runtime_latency_ms=0,
+	)
+	_append_message(session_doc, "tool", trace_payload)
+	session_doc.save(ignore_permissions=False)
+	return True, {"ok": True, "request_id": request_id, "agent_meta": {"engine": "entity_detail", "mode": "entity_drilldown"}}
+
+
 def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> Tuple[bool, Dict[str, Any]]:
 	session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, session_name)
 	site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
 	request_id = uuid.uuid4().hex
 	msg = str(message or "").strip()
 	latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
+	latest_family_artifact = _latest_normalized_family_artifact(session_doc)
 	latest_assistant_payload = _latest_assistant_payload(session_doc)
 	latest_grounded_turn_available = bool(latest_grounded_turn.get("grounded")) or bool(
 		_latest_grounded_assistant_context(session_doc)[0]
@@ -1072,14 +1381,33 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		site_name=site_name,
 		raw_message=msg,
 	)
-	response_policy_contract = build_response_policy_contract(
-		interaction_contract=interaction_contract,
-	)
+	entity_drilldown = None
+	context_isolation = {
+		"force_new_query": False,
+		"out_of_scope": False,
+		"reason": "",
+		"requested_domains": [],
+		"context_domains": [],
+	}
+	if latest_grounded_turn_available:
+		entity_drilldown = detect_entity_drilldown_request(
+			message=msg,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+		)
+		if entity_drilldown is None:
+			context_isolation = assess_context_isolation(
+				msg,
+				language=interaction_contract.detected_language,
+				grounded_turn=latest_grounded_turn,
+			)
+
 	semantic_intent = None
 	allow_heuristic_fallback = True
 	degraded_reason = ""
 	semantic_payload = None
-	if latest_grounded_turn_available and latest_grounded_turn:
+	followup_context_available = bool(latest_grounded_turn_available and not context_isolation.get("force_new_query") and entity_drilldown is None)
+	if followup_context_available and latest_grounded_turn:
 		semantic_result = interpret_followup_semantically(
 			request_id=request_id,
 			session_id=session_name,
@@ -1107,14 +1435,37 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				else "No heuristic fallback permitted; degraded follow-up handling remains explicit and auditable."
 			),
 		)
-	followup_resolution = build_followup_resolution(
-		request_id=request_id,
-		message=msg,
-		latest_grounded_turn_available=latest_grounded_turn_available,
-		latest_grounded_turn=latest_grounded_turn,
-		semantic_intent=semantic_intent,
-		allow_heuristic_fallback=allow_heuristic_fallback,
-		degraded_reason=degraded_reason,
+	if entity_drilldown is not None:
+		followup_resolution = FollowUpResolution(
+			request_id=request_id,
+			mode="entity_drilldown",
+			requested_modes=["entity_drilldown"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			reason="The request drills into a governed entity from the latest grounded artifact.",
+		)
+	else:
+		followup_resolution = build_followup_resolution(
+			request_id=request_id,
+			message=msg,
+			latest_grounded_turn_available=followup_context_available,
+			latest_grounded_turn=latest_grounded_turn if followup_context_available else {},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=allow_heuristic_fallback if followup_context_available else True,
+			degraded_reason=str(context_isolation.get("reason") or degraded_reason or "").strip(),
+		)
+	response_policy_contract = build_response_policy_contract(
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
 	)
 	recent_messages = (
 		[]
@@ -1139,14 +1490,44 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	_append_tool_payload(session_doc, response_policy_contract.to_payload())
 	if isinstance(semantic_payload, dict):
 		_append_tool_payload(session_doc, semantic_payload)
+	if bool(context_isolation.get("force_new_query")):
+		_append_tool_payload(session_doc, _context_isolation_payload(request_id=request_id, decision=context_isolation))
 	_append_tool_payload(session_doc, followup_resolution.to_payload())
+
+	if bool(context_isolation.get("out_of_scope")) and entity_drilldown is None:
+		answer_text = _out_of_scope_answer(msg, context_isolation)
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="unsupported_domain",
+			reason=str(context_isolation.get("reason") or "").strip() or "The request is outside the current governed ERP scope.",
+			requires_runtime=False,
+			grounded_required=False,
+		)
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+		_append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=followup_resolution,
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context={},
+				answer_text=answer_text,
+			).to_payload(),
+		)
+		session_doc.save(ignore_permissions=False)
+		return True, {"ok": True, "request_id": request_id, "mode": "out_of_scope_domain", "agent_meta": {"engine": "local_governed_scope_guard"}}
 
 	local_transform = None
 	if followup_resolution.mode == "local_grounded_transform":
 		local_transform = _try_local_followup_transform(
 			session_doc,
 			request_id=request_id,
+			raw_message=msg,
 			followup_resolution=followup_resolution,
+			interaction_contract=interaction_contract,
+			response_policy_contract=response_policy_contract,
 		)
 	if local_transform:
 		execution_path = build_execution_path(
@@ -1171,6 +1552,39 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		session_doc.save(ignore_permissions=False)
 		return local_transform
+
+	if followup_resolution.mode == "entity_drilldown" and entity_drilldown is not None:
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="entity_drilldown",
+			reason="The request was resolved through a governed entity drilldown over the latest artifact.",
+			requires_runtime=True,
+			grounded_required=True,
+		)
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		entity_result = _try_entity_detail_followup(
+			session_doc,
+			request_id=request_id,
+			raw_message=msg,
+			entity_reference=entity_drilldown,
+			interaction_contract=interaction_contract,
+			response_policy_contract=response_policy_contract,
+			latest_grounded_turn=latest_grounded_turn,
+		)
+		if entity_result:
+			_append_tool_payload(
+				session_doc,
+				build_audit_envelope(
+					interaction_contract=interaction_contract,
+					followup_resolution=followup_resolution,
+					execution_path=execution_path,
+					runtime_trace_payload=_latest_qwen_trace_payload(session_doc),
+					grounded_turn_context=_latest_grounded_turn_contract(session_doc),
+					answer_text=str(_latest_assistant_payload(session_doc).get("text") or ""),
+				).to_payload(),
+			)
+			session_doc.save(ignore_permissions=False)
+			return entity_result
 
 	execution_path = build_execution_path(
 		request_id=request_id,
@@ -1306,6 +1720,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			**runtime_trace_payload,
 			"request_id": request_id,
 		},
+		artifact_payload=_latest_normalized_family_artifact(session_doc),
 	)
 	grounded_turn_payload: Dict[str, Any] = {}
 	if grounded_turn_context and grounded_turn_context.grounded:
@@ -2103,6 +2518,342 @@ def run_first_turn_regression_suite(messages: List[str] | None = None) -> Dict[s
 					pass
 
 
+def run_same_session_fresh_query_regression_smoke(messages: List[str] | None = None) -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	default_messages = [
+		"How much payable amount do we have as of now",
+		"Top 5 customers by revenue",
+		"Show monthly sales trend",
+		"Show me P & L statement",
+		"Which products are performing well last month",
+		"Analyze AR / AP amount and evaluate the company health",
+		"Show current inventory value by warehouse",
+	]
+	test_messages = [
+		str(item or "").strip()
+		for item in (messages or default_messages)
+		if str(item or "").strip()
+	]
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 100
+		conf[users_key] = []
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Same Session Fresh Query Regression"
+		doc.insert(ignore_permissions=False)
+		results: List[Dict[str, Any]] = []
+		try:
+			for message in test_messages:
+				start = time.perf_counter()
+				ok, payload = handle_qwen_user_message(
+					session_name=doc.name,
+					message=message,
+					user="Administrator",
+				)
+				elapsed_ms = int((time.perf_counter() - start) * 1000)
+				payload = payload if isinstance(payload, dict) else {}
+				mode = str(payload.get("mode") or "").strip()
+				semantic_status = str(payload.get("semantic_validation_status") or "").strip()
+				results.append(
+					{
+						"message": message,
+						"ok": bool(ok),
+						"mode": mode,
+						"semantic_validation_status": semantic_status,
+						"elapsed_ms": elapsed_ms,
+					}
+				)
+				if not bool(ok):
+					raise RuntimeError(
+						f"Same-session fresh-query smoke failed: service returned not-ok for `{message}`."
+					)
+				if mode != "compiled_first_turn":
+					raise RuntimeError(
+						f"Same-session fresh-query smoke failed: `{message}` did not use compiled first-turn mode."
+					)
+				if semantic_status and semantic_status != "pass":
+					raise RuntimeError(
+						f"Same-session fresh-query smoke failed: `{message}` semantic status was `{semantic_status}`."
+					)
+			return {
+				"ok": True,
+				"session_name": doc.name,
+				"results": results,
+				"rollout_status": get_compiled_first_turn_rollout_status(),
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_followup_fidelity_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+
+	def _session_tool_payloads(session_doc) -> List[Dict[str, Any]]:
+		out: List[Dict[str, Any]] = []
+		for row in session_doc.get("messages") or []:
+			if str(row.role or "").strip().lower() != "tool":
+				continue
+			payload = _parse_payload(str(row.content or ""))
+			if payload:
+				out.append(payload)
+		return out
+
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 100
+		conf[users_key] = []
+
+		results: Dict[str, Any] = {}
+
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase4B Followup Fidelity Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Top 10 customers by revenue",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Follow-up fidelity smoke failed on initial top-10 ranking request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			initial_tool_payloads = _session_tool_payloads(session_doc)
+			initial_artifact = _latest_tool_payload_by_type(initial_tool_payloads, "qwen_normalized_family_artifact_contract")
+			results["top_n_followup_initial"] = {
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"family_id": str(initial_artifact.get("family_id") or "").strip(),
+				"has_artifact": bool(initial_artifact),
+			}
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="I mean top 5",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Follow-up fidelity smoke failed on top-5 correction.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			rendered = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+			rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+			results["top_n_followup"] = {
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": str(rendered.get("title") or "").strip(),
+				"row_count": len(rows),
+				"columns": data_table.get("columns") if isinstance(data_table.get("columns"), list) else [],
+			}
+			if len(rows) != 5:
+				raise RuntimeError(
+					f"Follow-up fidelity smoke failed: expected 5 ranking rows after correction, observed {len(rows)}. "
+					f"mode={str((payload or {}).get('mode') or '').strip()!r} "
+					f"initial={results.get('top_n_followup_initial')!r} "
+					f"title={str(rendered.get('title') or '').strip()!r}"
+				)
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase4B Metric Fidelity Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Which products are performing best last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Metric fidelity smoke failed on initial product-performance request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			initial_tool_payloads = _session_tool_payloads(session_doc)
+			initial_artifact = _latest_tool_payload_by_type(initial_tool_payloads, "qwen_normalized_family_artifact_contract")
+			results["amount_followup_initial"] = {
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"family_id": str(initial_artifact.get("family_id") or "").strip(),
+				"has_artifact": bool(initial_artifact),
+			}
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me with their amount",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Metric fidelity smoke failed on amount refinement.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			rendered = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+			columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
+			results["amount_followup"] = {
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": str(rendered.get("title") or "").strip(),
+				"columns": columns,
+			}
+			if not any("Amount" in str(col or "") for col in columns):
+				raise RuntimeError(
+					f"Metric fidelity smoke failed: amount refinement did not render an amount column. "
+					f"mode={str((payload or {}).get('mode') or '').strip()!r} "
+					f"initial={results.get('amount_followup_initial')!r} "
+					f"title={str(rendered.get('title') or '').strip()!r} columns={columns!r}"
+				)
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase4B Column Fidelity Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me top 10 products last month by revenue with item name, revenue, and contribution percent",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Column fidelity smoke failed on explicit revenue/contribution request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			rendered = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+			rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+			columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
+			results["explicit_columns"] = {
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": str(rendered.get("title") or "").strip(),
+				"row_count": len(rows),
+				"columns": columns,
+			}
+			if len(rows) != 10:
+				raise RuntimeError(f"Column fidelity smoke failed: expected 10 rows, observed {len(rows)}.")
+			if not any("Sales Amount" in str(col or "") for col in columns):
+				raise RuntimeError(f"Column fidelity smoke failed: explicit revenue request did not render Sales Amount. Observed columns={columns!r}")
+			if not any("Contribution" in str(col or "") for col in columns):
+				raise RuntimeError(f"Column fidelity smoke failed: explicit contribution request did not render Contribution %. Observed columns={columns!r}")
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+
+		return {"ok": True, "results": results}
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_transaction_listing_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+
+	def _session_tool_payloads(session_doc) -> List[Dict[str, Any]]:
+		out: List[Dict[str, Any]] = []
+		for row in session_doc.get("messages") or []:
+			if str(row.role or "").strip().lower() != "tool":
+				continue
+			payload = _parse_payload(str(row.content or ""))
+			if payload:
+				out.append(payload)
+		return out
+
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 100
+		conf[users_key] = []
+
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase4B Transaction Listing Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me the last 7 sale invoices",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Transaction listing smoke failed on invoice-list request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			rendered = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+			rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+			columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
+			if len(rows) != 7:
+				raise RuntimeError(
+					f"Transaction listing smoke failed: expected 7 invoice rows, observed {len(rows)}. "
+					f"mode={str((payload or {}).get('mode') or '').strip()!r} title={str(rendered.get('title') or '').strip()!r} columns={columns!r}"
+				)
+			if not any("Invoice" in str(col or "") for col in columns):
+				raise RuntimeError(f"Transaction listing smoke failed: invoice column missing. Observed columns={columns!r}")
+			if not any("Customer" in str(col or "") for col in columns):
+				raise RuntimeError(f"Transaction listing smoke failed: customer column missing. Observed columns={columns!r}")
+			return {
+				"ok": True,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": str(rendered.get("title") or "").strip(),
+				"row_count": len(rows),
+				"columns": columns,
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
 def _latest_tool_payload_by_type(tool_payloads: List[Dict[str, Any]], payload_type: str) -> Dict[str, Any]:
 	for item in reversed(tool_payloads):
 		if str(item.get("type") or "").strip() == str(payload_type or "").strip():
@@ -2611,3 +3362,494 @@ def run_phase4b_family_tool_surface_probe() -> Dict[str, Any]:
 			}
 		)
 	return {"ok": True, "results": results}
+
+
+def run_phase4b_clarification_translation_probe() -> Dict[str, Any]:
+	cases = [
+		{
+			"message": "Analyze company health and suggest area to improve",
+			"compiler_reason": "Ambiguous capability candidates: financial_statement_read, sales_read, accounts_receivable_read, accounts_payable_read, stock_read, product_performance_read",
+			"reason_type": "capability_ambiguity",
+		},
+		{
+			"message": "Show me top 10 products last month by revenue",
+			"compiler_reason": "Missing or unresolved required filters: from_date",
+			"reason_type": "time_scope_missing",
+		},
+	]
+	results: List[Dict[str, Any]] = []
+	for index, case in enumerate(cases, start=1):
+		signal = translate_clarification_signal(
+			request_id=f"phase4b-clarify-{index}",
+			raw_message=str(case.get("message") or "").strip(),
+			compiler_reason=str(case.get("compiler_reason") or "").strip(),
+		)
+		question = str(signal.user_question or "").strip()
+		if not question:
+			raise RuntimeError("Phase 4B clarification probe failed: translated question was empty.")
+		if "Ambiguous capability candidates" in question:
+			raise RuntimeError("Phase 4B clarification probe failed: compiler ambiguity leaked into user question.")
+		if str(signal.reason_type or "").strip() != str(case.get("reason_type") or "").strip():
+			raise RuntimeError("Phase 4B clarification probe failed: clarification reason type did not match expected mapping.")
+		results.append(
+			{
+				"message": str(case.get("message") or "").strip(),
+				"reason_type": str(signal.reason_type or "").strip(),
+				"user_question": question,
+				"suggested_options": list(signal.suggested_options or []),
+			}
+		)
+	return {"ok": True, "results": results}
+
+
+def run_phase4b_response_policy_probe() -> Dict[str, Any]:
+	class _DummyFollowupResolution:
+		def __init__(self, mode: str, self_contained: bool) -> None:
+			self.mode = mode
+			self.self_contained = self_contained
+
+	cases = [
+		{
+			"message": "How much payable do we have as of now",
+			"expected_style": "simple_factual",
+		},
+		{
+			"message": "Analyze AR / AP and evaluate company health",
+			"expected_style": "analysis_question",
+		},
+		{
+			"message": "Show me P & L statement",
+			"expected_style": "statement_question",
+		},
+		{
+			"message": "show me the latest 7 sale invoices",
+			"expected_style": "operational_list",
+		},
+		{
+			"message": "how about all the time",
+			"expected_style": "followup_refinement",
+			"followup_resolution": _DummyFollowupResolution("local_grounded_transform", False),
+		},
+	]
+	results: List[Dict[str, Any]] = []
+	for index, case in enumerate(cases, start=1):
+		interaction_contract = build_interaction_contract(
+			request_id=f"phase4b-policy-{index}",
+			session_id="phase4b-policy-probe",
+			user_id="Administrator",
+			site_name="erpai_prj1",
+			raw_message=str(case.get("message") or "").strip(),
+		)
+		policy = build_response_policy_contract(
+			interaction_contract=interaction_contract,
+			followup_resolution=case.get("followup_resolution"),
+		)
+		if str(policy.answer_style or "").strip() != str(case.get("expected_style") or "").strip():
+			raise RuntimeError(
+				f"Phase 4B response policy probe failed: `{case.get('message')}` mapped to `{policy.answer_style}` instead of `{case.get('expected_style')}`."
+			)
+		results.append(policy.to_payload())
+	return {"ok": True, "results": results}
+
+
+def run_phase4b_clarification_policy_smoke() -> Dict[str, Any]:
+	clarification = run_phase4b_clarification_translation_probe()
+	policy = run_phase4b_response_policy_probe()
+	return {
+		"ok": True,
+		"clarification": clarification,
+		"response_policy": policy,
+	}
+
+
+def run_phase4b_natural_narrative_smoke(messages: List[str] | None = None) -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	default_messages = [
+		"How much payable amount do we have as of now",
+		"Analyze AR / AP and evaluate company health",
+	]
+	test_messages = [
+		str(item or "").strip()
+		for item in (messages or default_messages)
+		if str(item or "").strip()
+	]
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		results: List[Dict[str, Any]] = []
+		for message in test_messages:
+			doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+			doc.title = "Phase 4B Natural Narrative Smoke"
+			doc.insert(ignore_permissions=False)
+			try:
+				ok, payload = handle_qwen_user_message(
+					session_name=doc.name,
+					message=message,
+					user="Administrator",
+				)
+				if not ok:
+					raise RuntimeError(
+						f"Phase 4B natural narrative smoke failed: service returned not-ok for `{message}`."
+					)
+				session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+				tool_payloads = []
+				for row in session_doc.get("messages") or []:
+					if str(row.role or "").strip().lower() != "tool":
+						continue
+					payload_obj = _parse_payload(str(row.content or ""))
+					if payload_obj:
+						tool_payloads.append(payload_obj)
+				narrative_payload = _latest_tool_payload_by_type(
+					tool_payloads,
+					"qwen_artifact_narrative_response_contract",
+				)
+				if not narrative_payload:
+					raise RuntimeError(
+						f"Phase 4B natural narrative smoke failed: no narrative response contract was persisted for `{message}`."
+					)
+				assistant_payload = _latest_assistant_payload(session_doc)
+				answer_text = str(assistant_payload.get("text") or "").strip()
+				narrative_text = str(narrative_payload.get("answer_text") or "").strip()
+				expected_text = _normalize_markdown_units(narrative_text)
+				if not narrative_text or answer_text != expected_text:
+					raise RuntimeError(
+						f"Phase 4B natural narrative smoke failed: assistant answer did not come from the narrative contract for `{message}`."
+					)
+				results.append(
+					{
+						"message": message,
+						"mode": str((payload or {}).get("mode") or "").strip(),
+						"answer_text": answer_text,
+						"narrative_engine": str(narrative_payload.get("narrative_engine") or "").strip(),
+						"answer_style": str(narrative_payload.get("answer_style") or "").strip(),
+					}
+				)
+			finally:
+				frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+		return {"ok": True, "results": results}
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_structured_presentation_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase 4B Structured Presentation Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Analyze AR / AP, and evaluate company health",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Structured presentation smoke failed on initial analysis request.")
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Show me the numbers with table, and your facts as bullet points, so that we can see clearly",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Structured presentation smoke failed on presentation follow-up.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			assistant_payload = _latest_assistant_payload(session_doc)
+			answer_text = str(assistant_payload.get("text") or "").strip()
+			tables = assistant_payload.get("tables") if isinstance(assistant_payload.get("tables"), list) else []
+			has_bullets = bool(re.search(r"(^|\n)([-*] |\d+\.\s)", answer_text))
+			if not tables:
+				raise RuntimeError("Structured presentation smoke failed: expected a markdown table in the final assistant answer.")
+			if not has_bullets:
+				raise RuntimeError("Structured presentation smoke failed: expected bullet or numbered facts in the final assistant answer.")
+			return {
+				"ok": True,
+				"answer_text": answer_text,
+				"table_count": len(tables),
+				"has_bullets": has_bullets,
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_context_isolation_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase 4B Context Isolation Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Show me P & L Statement",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Context isolation smoke failed on initial statement request.")
+			ok, trend_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="please perform Monthly Sale Trend by Revenue",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Context isolation smoke failed on same-session monthly trend request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			trend_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((trend_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+				raise RuntimeError("Context isolation smoke failed: monthly trend was not treated as a fresh compiled query.")
+			if "could not complete a grounded erp lookup" in trend_text.lower():
+				raise RuntimeError("Context isolation smoke failed: monthly trend degraded inside the same chat session.")
+			ok, staff_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="total number of staff in our company",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Context isolation smoke failed on staff-count request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			staff_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "profit and loss statement artifact" in staff_text.lower():
+				raise RuntimeError("Context isolation smoke failed: unsupported staff query leaked prior P&L artifact context.")
+			if "governed hr" not in staff_text.lower() and "headcount" not in staff_text.lower():
+				raise RuntimeError("Context isolation smoke failed: unsupported staff query did not return the governed out-of-scope guidance.")
+			return {
+				"ok": True,
+				"trend_mode": str((trend_payload or {}).get("mode") or "").strip(),
+				"trend_text": trend_text,
+				"staff_mode": str((staff_payload or {}).get("mode") or "").strip(),
+				"staff_text": staff_text,
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_entity_drilldown_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase 4B Entity Drilldown Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me 7 latest sale invoice",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Entity drilldown smoke failed on invoice listing request.")
+			ok, invoice_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me details of ACC-SINV-2026-00121",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Entity drilldown smoke failed on invoice detail request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			invoice_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "acc-sinv-2026-00121" not in invoice_text.lower():
+				raise RuntimeError("Entity drilldown smoke failed: invoice detail answer did not switch to the requested invoice.")
+			if str((invoice_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError("Entity drilldown smoke failed: invoice detail did not use the governed entity-detail engine.")
+
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Top 7 customers by revenue last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Entity drilldown smoke failed on ranking request.")
+			ok, customer_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Tell me more about the 35th Street Mobile Wholesale",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Entity drilldown smoke failed on customer detail request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			customer_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "35th street mobile wholesale" not in customer_text.lower():
+				raise RuntimeError("Entity drilldown smoke failed: customer detail answer did not switch to the requested customer.")
+			if str((customer_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError("Entity drilldown smoke failed: customer detail did not use the governed entity-detail engine.")
+			return {
+				"ok": True,
+				"invoice_mode": str((invoice_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"invoice_text": invoice_text,
+				"customer_mode": str((customer_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"customer_text": customer_text,
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_entity_drilldown_probe() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase 4B Entity Drilldown Probe"
+		doc.insert(ignore_permissions=False)
+		try:
+			first = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me 7 latest sale invoice",
+				user="Administrator",
+			)
+			second = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me details of ACC-SINV-2026-00121",
+				user="Administrator",
+			)
+			third = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Top 7 customers by revenue last month",
+				user="Administrator",
+			)
+			fourth = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Tell me more about the 35th Street Mobile Wholesale",
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			assistant_payload = _latest_assistant_payload(session_doc)
+			tool_payloads = []
+			for row in session_doc.get("messages") or []:
+				if str(row.role or "").strip().lower() != "tool":
+					continue
+				payload_obj = _parse_payload(str(row.content or ""))
+				if payload_obj:
+					tool_payloads.append(payload_obj)
+			return {
+				"ok": True,
+				"first": first,
+				"second": second,
+				"third": third,
+				"fourth": fourth,
+				"assistant_text": str(assistant_payload.get("text") or "").strip(),
+				"assistant_payload": assistant_payload,
+				"recent_tool_types": [str(item.get("type") or "").strip() for item in tool_payloads[-12:]],
+				"recent_trace": _latest_qwen_trace_payload(session_doc),
+				"latest_grounded_turn": _latest_grounded_turn_contract(session_doc),
+				"latest_artifact": _latest_normalized_family_artifact(session_doc),
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass

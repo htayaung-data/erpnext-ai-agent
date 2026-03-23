@@ -2,6 +2,12 @@
 
 Chat Panel for ERP
 
+### Active Surface
+
+- `qwen-chat` is the active governed enterprise assistant surface.
+- Legacy OpenAI/manual runtime code has been removed.
+- A minimal FAC bridge is retained under `qwen_chat` for `frappe_assistant_core` report execution.
+
 ### Installation
 
 You can install this app using the [bench](https://github.com/frappe/bench) CLI:

@@ -118,6 +118,11 @@ def _canonical_metric(requested_metric: str) -> str:
 		"balance_qty": "balance_qty",
 		"balance_value": "balance_value",
 		"balance_value_mmk": "balance_value",
+		"grand_total": "total_amount",
+		"invoice_amount": "total_amount",
+		"total_amount": "total_amount",
+		"outstanding_amount": "outstanding_amount",
+		"document_count": "document_count",
 	}
 	return mapping.get(key, "")
 
@@ -813,6 +818,104 @@ def _validate_product_profitability_artifact(
 	)
 
 
+def _validate_transaction_listing_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
+	requested_metrics = [value for value in requested_metrics if value]
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="transaction_listing",
+			requested_metrics=requested_metrics,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Transaction listing adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="transaction_listing",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	rows = _clean_list([])
+	transaction_rows = sections.get("transaction_rows") if isinstance(sections.get("transaction_rows"), list) else []
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and value not in (None, "")
+	]
+	required_metrics = requested_metrics or ["document_count", "total_amount", "outstanding_amount"]
+	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if missing_metrics:
+		errors.append(f"Missing normalized transaction metrics: {', '.join(missing_metrics)}")
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized transaction listing artifact did not preserve governed source reports.")
+	if not transaction_rows:
+		errors.append("Normalized transaction listing artifact contains no document rows.")
+	else:
+		first_row = transaction_rows[0] if isinstance(transaction_rows[0], dict) else {}
+		if not str(first_row.get("document_name") or "").strip():
+			errors.append("Normalized transaction listing artifact did not preserve a document identifier.")
+		if not str(first_row.get("posting_date") or "").strip():
+			warnings.append("Normalized transaction listing artifact did not preserve posting dates.")
+
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	if not time_scope_match and str(compiler_contract.get("requested_time_scope") or "").strip():
+		warnings.append("Normalized transaction listing period did not match the requested time scope cleanly.")
+
+	family_schema_match = bool(str(dimensions.get("transaction_type") or "").strip() and transaction_rows)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	elif warnings:
+		decision = "pass"
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="transaction_listing",
+		requested_metrics=requested_metrics,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="transaction_listing",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
 def validate_normalized_family_artifact(
 	*,
 	request_id: str,
@@ -858,6 +961,14 @@ def validate_normalized_family_artifact(
 			)
 		if target == "product_profitability":
 			return _validate_product_profitability_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		if target == "transaction_listing":
+			return _validate_transaction_listing_artifact(
 				request_id=request_id,
 				compiler_contract=compiler_contract,
 				artifact_contract=artifact_contract,

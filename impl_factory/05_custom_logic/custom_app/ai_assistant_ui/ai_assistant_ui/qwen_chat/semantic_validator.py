@@ -206,6 +206,8 @@ def _requested_dimension_present(
 
 def _expected_semantic_tags(capability_id: str, intent_class: str) -> List[str]:
 	intent_tags = _clean_list(get_intent_class_spec(intent_class).get("semantic_tags"))
+	if str(intent_class or "").strip() == "transaction_listing":
+		return _dedupe(intent_tags)
 	return _dedupe(capability_semantic_tags(capability_id) + intent_tags)
 
 
@@ -353,13 +355,14 @@ def validate_compiled_semantic_result(
 			semantic_errors.append(
 				f"Returned report `{report_name}` does not support intent class `{intent_class}`."
 			)
-		missing_capability_tags = [
-			tag for tag in capability_semantic_tags(capability_id) if tag not in observed_tags
-		]
-		if missing_capability_tags:
-			semantic_errors.append(
-				f"Returned report `{report_name}` is missing capability semantic tags: {', '.join(missing_capability_tags)}."
-			)
+		if intent_class != "transaction_listing":
+			missing_capability_tags = [
+				tag for tag in capability_semantic_tags(capability_id) if tag not in observed_tags
+			]
+			if missing_capability_tags:
+				semantic_errors.append(
+					f"Returned report `{report_name}` is missing capability semantic tags: {', '.join(missing_capability_tags)}."
+				)
 
 	time_scope_errors: List[str] = []
 	for fieldname, expected_value in completed_filters.items():

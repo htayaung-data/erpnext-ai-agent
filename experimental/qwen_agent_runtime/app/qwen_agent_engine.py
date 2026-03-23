@@ -39,17 +39,70 @@ def _build_system_contract(
 			f'If a report requires company and the user did not specify one, use this exact company value: "{settings.erp_default_company}".\n'
 		)
 	policy = response_policy if isinstance(response_policy, dict) else {}
-	if bool(policy.get("analysis_requested")):
-		response_policy_line = (
-			"Response policy: the user explicitly requested analysis, so deeper business interpretation is allowed, "
-			"but any insight or recommendation must be clearly grounded in ERP facts or explicit derived calculations.\n"
+	answer_style = str(policy.get("answer_style") or "").strip()
+	table_preference = str(policy.get("supporting_table_preference") or "").strip()
+	preferred_formats = [
+		str(item or "").strip()
+		for item in list(policy.get("preferred_formats") or [])
+		if str(item or "").strip()
+	]
+	max_paragraph_sentences = int(max(1, policy.get("max_paragraph_sentences") or 2))
+	structure = [
+		str(item or "").strip()
+		for item in list(policy.get("structure") or [])
+		if str(item or "").strip()
+	]
+	response_policy_lines: List[str] = []
+	if answer_style == "analysis_question":
+		response_policy_lines.append(
+			"Response policy: answer with a direct grounded answer first, then 1-2 grounded insights, and only give recommendations when they are explicitly supported by the data."
+		)
+	elif answer_style == "statement_question":
+		response_policy_lines.append(
+			"Response policy: summarize the statement first, highlight notable line items, and explain the business implication briefly."
+		)
+	elif answer_style == "followup_refinement":
+		response_policy_lines.append(
+			"Response policy: this is a conversational follow-up. Preserve the existing grounded context and answer naturally without re-dumping the full result unless the user asks for it."
+		)
+	elif answer_style == "operational_list":
+		response_policy_lines.append(
+			"Response policy: answer directly, then provide a compact document summary and list only the most relevant rows."
+		)
+	elif answer_style == "ranking_or_trend":
+		response_policy_lines.append(
+			"Response policy: answer directly, include one concise highlight, and use a compact supporting ranking or trend breakdown when helpful."
+		)
+	elif bool(policy.get("analysis_requested")):
+		response_policy_lines.append(
+			"Response policy: the user explicitly requested analysis, so deeper business interpretation is allowed, but any insight or recommendation must be clearly grounded in ERP facts or explicit derived calculations."
 		)
 	else:
-		response_policy_line = (
-			"Response policy: for default factual answers, present grounded facts first and include a supporting table "
-			"or numeric breakdown when relevant. Brief business interpretation is allowed only when clearly useful and grounded. "
-			"Do not include recommendations unless the user explicitly asks for analysis, interpretation, comparison, or recommendation.\n"
+		response_policy_lines.append(
+			"Response policy: for default factual answers, present grounded facts first and include a supporting table or numeric breakdown only when it materially helps."
 		)
+	if table_preference == "avoid_full_redump":
+		response_policy_lines.append("Do not restate the full report unless the user explicitly asks for it.")
+	elif table_preference == "compact_table_preferred":
+		response_policy_lines.append("Prefer a compact table over a long dump when structured data is useful.")
+	elif table_preference == "compact_table_when_requested":
+		response_policy_lines.append("If the user asks for clearer numbers, details, or a table, prefer a compact markdown table instead of a long prose explanation.")
+	elif table_preference == "compact_when_helpful":
+		response_policy_lines.append("Use a compact supporting table only when it adds clarity.")
+	elif table_preference == "support_with_grounded_breakdown":
+		response_policy_lines.append("Support analytical answers with a grounded numeric breakdown when it strengthens the explanation.")
+	if "bullet_points" in preferred_formats:
+		response_policy_lines.append("Prefer bullet points for facts, insights, and recommendations instead of long paragraphs.")
+	if "table" in preferred_formats:
+		response_policy_lines.append("Prefer one compact markdown table when the governed data already contains structured rows.")
+	if structure:
+		response_policy_lines.append(
+			f"Preferred answer shape: {', '.join(structure)}."
+		)
+	response_policy_lines.append(
+		f"Keep prose sections short; each paragraph should be no longer than {max_paragraph_sentences} sentences."
+	)
+	response_policy_line = " ".join(line.strip() for line in response_policy_lines if line.strip()) + "\n"
 	if mode == "compiled_read_query":
 		compiled = compiled_query if isinstance(compiled_query, dict) else {}
 		selected_report = str(compiled.get("selected_report") or "").strip()
@@ -71,6 +124,18 @@ Do not add, remove, or modify filters.
 After the tool returns, answer only from tool results.
 If you cannot ground the answer in tool results, say you could not complete a grounded ERP lookup.
 Keep answers concise and business-focused.
+{response_policy_line}"""
+	if mode == "artifact_narrative":
+		return f"""You are an ERP business assistant operating in governed artifact narrative mode.
+Today's date is {today} UTC.
+You will receive a user question and a governed ERP artifact payload.
+Do not call tools.
+Do not invent metrics, numbers, dates, entities, recommendations, or trends beyond the artifact.
+Answer only from the governed artifact payload and any provided support blocks.
+If the artifact does not support the requested answer, say you could not answer confidently from governed ERP data.
+Keep the answer natural, business-focused, concise, and easy to scan.
+When support blocks already contain tables or bullet lists, reuse that structure instead of rewriting everything as prose.
+Prefer this visible pattern when possible: direct answer first, then bullets for key facts or insights, then one compact markdown table if the artifact supports it.
 {response_policy_line}"""
 	family_context = family_tool_context if isinstance(family_tool_context, dict) else {}
 	family_entries = family_context.get("family_entries") if isinstance(family_context.get("family_entries"), list) else []
@@ -347,6 +412,24 @@ def _normalize_conversation_messages(request: ChatRequest) -> List[Dict[str, Any
 	return normalized
 
 
+def _artifact_narrative_messages(request: ChatRequest) -> List[Dict[str, Any]]:
+	artifact_context = request.artifact_context if isinstance(request.artifact_context, dict) else {}
+	payload = {
+		"user_question": str(request.message or "").strip(),
+		"response_policy": request.response_policy if isinstance(request.response_policy, dict) else {},
+		"presentation_hints": artifact_context.get("presentation_hints") if isinstance(artifact_context.get("presentation_hints"), dict) else {},
+		"artifact_payload": artifact_context.get("artifact_payload") if isinstance(artifact_context.get("artifact_payload"), dict) else {},
+		"support_block_markdown": artifact_context.get("support_block_markdown") if isinstance(artifact_context.get("support_block_markdown"), list) else [],
+		"source_reports": artifact_context.get("source_reports") if isinstance(artifact_context.get("source_reports"), list) else [],
+	}
+	return [
+		{
+			"role": "user",
+			"content": json.dumps(payload, ensure_ascii=False),
+		}
+	]
+
+
 def _tool_output_status(content: str) -> str:
 	text = str(content or "").strip()
 	if "An error occurred when calling tool" in text:
@@ -478,8 +561,10 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 	if fncall_agent is not None:
 		fncall_agent.MAX_LLM_CALL_PER_RUN = max(2, settings.max_tool_calls + 1)
 
-	mcp_descriptor = build_fac_mcp_descriptor(settings)
-	if not mcp_descriptor:
+	mode = str(request.mode or "read_only").strip().lower()
+	use_tools = mode != "artifact_narrative"
+	mcp_descriptor = build_fac_mcp_descriptor(settings) if use_tools else None
+	if use_tools and not mcp_descriptor:
 		raise QwenAgentEngineError("FAC MCP is not configured.")
 
 	llm_cfg = {
@@ -490,25 +575,30 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 	}
 	compiled_query = request.compiled_query if isinstance(request.compiled_query, dict) else {}
 	family_tool_context = request.family_tool_context if isinstance(request.family_tool_context, dict) else {}
-	bot = Assistant(
-		llm=llm_cfg,
-		system_message=_build_system_contract(
+	assistant_kwargs = {
+		"llm": llm_cfg,
+		"system_message": _build_system_contract(
 			settings,
 			request.response_policy,
 			family_tool_context,
-			mode=str(request.mode or "read_only").strip().lower(),
+			mode=mode,
 			compiled_query=compiled_query,
 		),
-		function_list=[mcp_descriptor],
+	}
+	if use_tools:
+		assistant_kwargs["function_list"] = [mcp_descriptor]
+	bot = Assistant(
+		**assistant_kwargs,
 	)
-	_wrap_fac_tool_calls(
-		bot,
-		settings,
-		compiled_query=compiled_query,
-		family_tool_context=family_tool_context,
-	)
+	if use_tools:
+		_wrap_fac_tool_calls(
+			bot,
+			settings,
+			compiled_query=compiled_query,
+			family_tool_context=family_tool_context,
+		)
 
-	messages = _normalize_conversation_messages(request)
+	messages = _artifact_narrative_messages(request) if mode == "artifact_narrative" else _normalize_conversation_messages(request)
 
 	final_response: List[Dict[str, Any]] = []
 	try:
@@ -543,6 +633,8 @@ def run_qwen_agent_engine(request: ChatRequest, settings: Settings) -> ChatRespo
 			"engine": "qwen_agent",
 			"model": settings.qwen_model,
 			"tool_call_count": len(tool_trace),
+			"mode": mode,
+			"artifact_narrative": mode == "artifact_narrative",
 			"family_tool_surface_active": bool(family_tool_context),
 			"family_tool_report_discovery_allowed": bool(family_tool_context.get("report_discovery_allowed", True))
 			if isinstance(family_tool_context, dict)

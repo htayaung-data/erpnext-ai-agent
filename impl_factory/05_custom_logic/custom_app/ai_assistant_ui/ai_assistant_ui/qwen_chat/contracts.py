@@ -19,6 +19,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	resolve_followup_report_switch,
 	resolve_target_report_for_capability,
 )
+from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
 
 
 def _utc_now() -> str:
@@ -103,10 +104,19 @@ class ResponsePolicyContract:
 	session_id: str
 	analysis_requested: bool
 	policy_mode: str
+	answer_style: str
+	direct_answer_first: bool
+	highlight_allowed: bool
+	implication_allowed: bool
 	insight_allowed: bool
 	recommendation_allowed: bool
+	supporting_table_preference: str
+	followup_conversational: bool
 	grounding_rule: str
 	structure: List[str]
+	user_sections: List[str]
+	preferred_formats: List[str]
+	max_paragraph_sentences: int
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -116,10 +126,19 @@ class ResponsePolicyContract:
 			"session_id": self.session_id,
 			"analysis_requested": self.analysis_requested,
 			"policy_mode": self.policy_mode,
+			"answer_style": self.answer_style,
+			"direct_answer_first": self.direct_answer_first,
+			"highlight_allowed": self.highlight_allowed,
+			"implication_allowed": self.implication_allowed,
 			"insight_allowed": self.insight_allowed,
 			"recommendation_allowed": self.recommendation_allowed,
+			"supporting_table_preference": self.supporting_table_preference,
+			"followup_conversational": self.followup_conversational,
 			"grounding_rule": self.grounding_rule,
 			"structure": self.structure,
+			"user_sections": list(self.user_sections),
+			"preferred_formats": list(self.preferred_formats),
+			"max_paragraph_sentences": int(max(1, self.max_paragraph_sentences)),
 			"created_at": _utc_now(),
 		}
 
@@ -127,10 +146,44 @@ class ResponsePolicyContract:
 		return {
 			"analysis_requested": self.analysis_requested,
 			"policy_mode": self.policy_mode,
+			"answer_style": self.answer_style,
+			"direct_answer_first": self.direct_answer_first,
+			"highlight_allowed": self.highlight_allowed,
+			"implication_allowed": self.implication_allowed,
 			"insight_allowed": self.insight_allowed,
 			"recommendation_allowed": self.recommendation_allowed,
+			"supporting_table_preference": self.supporting_table_preference,
+			"followup_conversational": self.followup_conversational,
 			"grounding_rule": self.grounding_rule,
 			"structure": list(self.structure),
+			"user_sections": list(self.user_sections),
+			"preferred_formats": list(self.preferred_formats),
+			"max_paragraph_sentences": int(max(1, self.max_paragraph_sentences)),
+		}
+
+
+@dataclass(frozen=True)
+class ClarificationSignalContract:
+	request_id: str
+	stage: str
+	reason_type: str
+	user_question: str
+	suggested_options: List[str]
+	internal_reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_clarification_signal_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"stage": self.stage,
+			"reason_type": self.reason_type,
+			"user_question": self.user_question,
+			"suggested_options": list(self.suggested_options),
+			"internal_reason": self.internal_reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
 		}
 
 
@@ -433,6 +486,33 @@ class RenderedFamilyResponseContract:
 
 
 @dataclass(frozen=True)
+class ArtifactNarrativeResponseContract:
+	request_id: str
+	family_id: str
+	narrative_engine: str
+	answer_style: str
+	answer_text: str
+	source_reports: List[str]
+	support_block_count: int
+	warnings: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_artifact_narrative_response_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"family_id": self.family_id,
+			"narrative_engine": self.narrative_engine,
+			"answer_style": self.answer_style,
+			"answer_text": self.answer_text,
+			"source_reports": list(self.source_reports),
+			"support_block_count": int(max(0, self.support_block_count)),
+			"warnings": list(self.warnings),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class FollowUpResolution:
 	request_id: str
 	mode: str
@@ -440,6 +520,9 @@ class FollowUpResolution:
 	target_dimension: str
 	target_limit: int
 	sort_direction: str
+	target_metric: str
+	requested_columns: List[str]
+	requested_time_scope: str
 	target_capability_id: str
 	target_report: str
 	depends_on_grounded_turn: bool
@@ -457,6 +540,9 @@ class FollowUpResolution:
 			"target_dimension": self.target_dimension,
 			"target_limit": self.target_limit,
 			"sort_direction": self.sort_direction,
+			"target_metric": self.target_metric,
+			"requested_columns": list(self.requested_columns),
+			"requested_time_scope": self.requested_time_scope,
 			"target_capability_id": self.target_capability_id,
 			"target_report": self.target_report,
 			"depends_on_grounded_turn": self.depends_on_grounded_turn,
@@ -505,6 +591,11 @@ class GroundedTurnContext:
 	row_count: int
 	base_language: str
 	transform_chain: List[str]
+	artifact_family_id: str = ""
+	artifact_type: str = ""
+	artifact_source_reports: List[str] = None
+	known_entities: List[Dict[str, Any]] = None
+	known_documents: List[str] = None
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -525,6 +616,11 @@ class GroundedTurnContext:
 			"row_count": self.row_count,
 			"base_language": self.base_language,
 			"transform_chain": self.transform_chain,
+			"artifact_family_id": self.artifact_family_id,
+			"artifact_type": self.artifact_type,
+			"artifact_source_reports": list(self.artifact_source_reports or []),
+			"known_entities": [dict(item) for item in (self.known_entities or []) if isinstance(item, dict)],
+			"known_documents": [str(item or "").strip() for item in (self.known_documents or []) if str(item or "").strip()],
 			"created_at": _utc_now(),
 		}
 
@@ -699,22 +795,62 @@ def build_interaction_contract(
 def build_response_policy_contract(
 	*,
 	interaction_contract: InteractionContract,
+	followup_resolution: "FollowUpResolution | None" = None,
 ) -> ResponsePolicyContract:
 	analysis_requested = bool(interaction_contract.analysis_requested)
+	followup_mode = ""
+	self_contained = True
+	if followup_resolution is not None:
+		followup_mode = str(getattr(followup_resolution, "mode", "") or "").strip()
+		self_contained = bool(getattr(followup_resolution, "self_contained", True))
+	policy = derive_response_policy(
+		raw_message=interaction_contract.raw_message,
+		analysis_requested=analysis_requested,
+		followup_mode=followup_mode,
+		self_contained=self_contained,
+	)
 	return ResponsePolicyContract(
 		request_id=interaction_contract.request_id,
 		session_id=interaction_contract.session_id,
 		analysis_requested=analysis_requested,
-		policy_mode="explicit_analysis" if analysis_requested else "factual_default",
-		insight_allowed=True,
-		recommendation_allowed=analysis_requested,
-		grounding_rule="Business interpretation and recommendations must be grounded in ERP facts or explicit derived calculations.",
-		structure=[
-			"grounded_facts_first",
-			"supporting_table_or_breakdown_when_relevant",
-			"concise_interpretation_only_when_grounded",
-			"recommendations_only_on_explicit_request",
-		],
+		policy_mode=str(policy.get("policy_mode") or "factual_default").strip(),
+		answer_style=str(policy.get("answer_style") or "simple_factual").strip(),
+		direct_answer_first=bool(policy.get("direct_answer_first", True)),
+		highlight_allowed=bool(policy.get("highlight_allowed", True)),
+		implication_allowed=bool(policy.get("implication_allowed", False)),
+		insight_allowed=bool(policy.get("insight_allowed", True)),
+		recommendation_allowed=bool(policy.get("recommendation_allowed", analysis_requested)),
+		supporting_table_preference=str(policy.get("supporting_table_preference") or "when_helpful").strip(),
+		followup_conversational=bool(policy.get("followup_conversational", False)),
+		grounding_rule=str(
+			policy.get("grounding_rule")
+			or "Business interpretation and recommendations must be grounded in ERP facts or explicit derived calculations."
+		).strip(),
+		structure=[str(x or "").strip() for x in (policy.get("structure") or []) if str(x or "").strip()],
+		user_sections=[str(x or "").strip() for x in (policy.get("user_sections") or []) if str(x or "").strip()],
+		preferred_formats=[str(x or "").strip() for x in (policy.get("preferred_formats") or []) if str(x or "").strip()],
+		max_paragraph_sentences=int(max(1, policy.get("max_paragraph_sentences") or 2)),
+	)
+
+
+def build_clarification_signal_contract(
+	*,
+	request_id: str,
+	stage: str,
+	reason_type: str,
+	user_question: str,
+	suggested_options: List[str] | None = None,
+	internal_reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> ClarificationSignalContract:
+	return ClarificationSignalContract(
+		request_id=str(request_id or "").strip(),
+		stage=str(stage or "").strip(),
+		reason_type=str(reason_type or "").strip(),
+		user_question=str(user_question or "").strip(),
+		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
+		internal_reason=str(internal_reason or "").strip(),
+		internal_details=dict(internal_details or {}),
 	)
 
 
@@ -974,6 +1110,29 @@ def build_rendered_family_response_contract(
 	)
 
 
+def build_artifact_narrative_response_contract(
+	*,
+	request_id: str,
+	family_id: str,
+	narrative_engine: str = "",
+	answer_style: str = "",
+	answer_text: str = "",
+	source_reports: List[str] | None = None,
+	support_block_count: int = 0,
+	warnings: List[str] | None = None,
+) -> ArtifactNarrativeResponseContract:
+	return ArtifactNarrativeResponseContract(
+		request_id=str(request_id or "").strip(),
+		family_id=str(family_id or "").strip(),
+		narrative_engine=str(narrative_engine or "").strip(),
+		answer_style=str(answer_style or "").strip(),
+		answer_text=str(answer_text or "").strip(),
+		source_reports=[str(x or "").strip() for x in (source_reports or []) if str(x or "").strip()],
+		support_block_count=int(max(0, support_block_count or 0)),
+		warnings=[str(x or "").strip() for x in (warnings or []) if str(x or "").strip()],
+	)
+
+
 def build_family_tool_surface_contract(
 	*,
 	request_id: str,
@@ -1075,6 +1234,13 @@ def build_followup_resolution(
 		target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
 		target_limit = int(max(0, getattr(semantic_intent, "target_limit", 0) or 0))
 		sort_direction = str(getattr(semantic_intent, "sort_direction", "") or "").strip()
+		target_metric = str(getattr(semantic_intent, "target_metric", "") or "").strip()
+		requested_columns = [
+			str(value or "").strip()
+			for value in (getattr(semantic_intent, "requested_columns", []) or [])
+			if str(value or "").strip()
+		]
+		requested_time_scope = str(getattr(semantic_intent, "requested_time_scope", "") or "").strip()
 		target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
 		self_contained = bool(getattr(semantic_intent, "self_contained", False))
 		semantic_reason = str(getattr(semantic_intent, "reason", "") or "").strip()
@@ -1084,6 +1250,9 @@ def build_followup_resolution(
 		target_dimension = intent.target_dimension
 		target_limit = intent.target_limit
 		sort_direction = intent.sort_direction
+		target_metric = intent.target_metric
+		requested_columns = list(intent.requested_columns or [])
+		requested_time_scope = intent.requested_time_scope
 		target_capability_id = ""
 		self_contained = _is_self_contained_business_request(message, grounded_turn=latest_grounded_turn, intent=intent)
 		semantic_reason = ""
@@ -1092,11 +1261,50 @@ def build_followup_resolution(
 		target_dimension = ""
 		target_limit = 0
 		sort_direction = ""
+		target_metric = ""
+		requested_columns = []
+		requested_time_scope = ""
 		target_capability_id = ""
 		self_contained = False
 		semantic_reason = ""
+	heuristic_intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
+	heuristic_self_contained = _is_self_contained_business_request(
+		message,
+		grounded_turn=latest_grounded_turn,
+		intent=heuristic_intent,
+	)
+	heuristic_local_refinement = bool(
+		set(getattr(heuristic_intent, "requested_modes", []) or []).intersection(
+			{
+				"presentation_transform",
+				"table_presentation",
+				"sort_or_limit",
+				"metric_refinement",
+				"column_refinement",
+				"time_scope_restatement",
+			}
+		)
+	)
+	if heuristic_local_refinement and not heuristic_self_contained:
+		self_contained = False
+		requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "new_query"]
+	self_contained = bool(self_contained or heuristic_self_contained)
+	if not target_metric:
+		target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
+	if not requested_columns:
+		requested_columns = [
+			str(value or "").strip()
+			for value in (getattr(heuristic_intent, "requested_columns", []) or [])
+			if str(value or "").strip()
+		]
+	if not requested_time_scope:
+		requested_time_scope = str(getattr(heuristic_intent, "requested_time_scope", "") or "").strip()
+	for mode in getattr(heuristic_intent, "requested_modes", []) or []:
+		clean_mode = str(mode or "").strip()
+		if clean_mode and clean_mode not in requested_modes and clean_mode in {"metric_refinement", "column_refinement", "time_scope_restatement"}:
+			requested_modes.append(clean_mode)
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
-	local_grounded_modes = {"presentation_transform", "table_presentation"}
+	local_grounded_modes = {"presentation_transform", "table_presentation", "bullet_presentation", "metric_refinement", "column_refinement"}
 	if supports_local_followup_mode(grounded_turn, "aging_bucket_view"):
 		local_grounded_modes.add("aging_bucket_view")
 	if supports_local_followup_mode(grounded_turn, "dimension_breakdown", target_dimension=target_dimension):
@@ -1108,8 +1316,10 @@ def build_followup_resolution(
 	target_report = ""
 	if latest_grounded_turn_available and target_capability_id:
 		target_report = resolve_target_report_for_capability(source_report, target_capability_id)
+	if latest_grounded_turn_available and not target_report and requested_time_scope:
+		target_report = source_report
 
-	if latest_grounded_turn_available and requested_modes and set(requested_modes).issubset(local_grounded_modes):
+	if latest_grounded_turn_available and not self_contained and requested_modes and set(requested_modes).issubset(local_grounded_modes):
 		return FollowUpResolution(
 			request_id=request_id,
 			mode="local_grounded_transform",
@@ -1117,6 +1327,9 @@ def build_followup_resolution(
 			target_dimension=target_dimension,
 			target_limit=target_limit,
 			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
 			target_capability_id="",
 			target_report="",
 			depends_on_grounded_turn=True,
@@ -1124,7 +1337,7 @@ def build_followup_resolution(
 			latest_grounded_turn_available=True,
 			reason="The request can be resolved deterministically from the latest grounded answer using local capability adapters.",
 		)
-	if latest_grounded_turn_available and (target_report or switch):
+	if latest_grounded_turn_available and not self_contained and (target_report or switch):
 		return FollowUpResolution(
 			request_id=request_id,
 			mode="capability_requery",
@@ -1132,6 +1345,9 @@ def build_followup_resolution(
 			target_dimension=target_dimension,
 			target_limit=target_limit,
 			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
 			target_capability_id=target_capability_id or str(switch.get("capability_id") or "").strip(),
 			target_report=target_report or str(switch.get("target_report") or "").strip(),
 			depends_on_grounded_turn=True,
@@ -1147,6 +1363,9 @@ def build_followup_resolution(
 			target_dimension=target_dimension,
 			target_limit=target_limit,
 			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
 			target_capability_id="",
 			target_report="",
 			depends_on_grounded_turn=True,
@@ -1161,6 +1380,9 @@ def build_followup_resolution(
 		target_dimension=target_dimension,
 		target_limit=target_limit,
 		sort_direction=sort_direction,
+		target_metric=target_metric,
+		requested_columns=requested_columns,
+		requested_time_scope=requested_time_scope,
 		target_capability_id="",
 		target_report="",
 		depends_on_grounded_turn=False,
@@ -1187,8 +1409,86 @@ def build_execution_path(
 		request_id=request_id,
 		path="erp_requery",
 		reason="The assistant must use FAC/ERP tools to produce or refresh a grounded answer.",
-		requires_runtime=True,
-	)
+			requires_runtime=True,
+		)
+
+
+def _entity_type_from_dimension(value: str) -> str:
+	text = str(value or "").strip().lower()
+	if "supplier" in text or "vendor" in text:
+		return "supplier"
+	if "customer" in text or "party" in text:
+		return "customer"
+	if "item" in text or "product" in text:
+		return "item"
+	if "invoice" in text or "document" in text:
+		return "sales_invoice"
+	return ""
+
+
+def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple[List[Dict[str, Any]], List[str]]:
+	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
+	sections = dict(artifact.get("sections") or {}) if isinstance(artifact.get("sections"), dict) else {}
+	dimensions = dict(artifact.get("dimensions") or {}) if isinstance(artifact.get("dimensions"), dict) else {}
+	family_id = str(artifact.get("family_id") or "").strip()
+	known_entities: List[Dict[str, Any]] = []
+	known_documents: List[str] = []
+
+	def _append_entity(entity_type: str, label: Any, code: Any = "") -> None:
+		name = str(label or "").strip()
+		if not name:
+			return
+		payload = {
+			"entity_type": str(entity_type or "").strip(),
+			"name": name,
+		}
+		code_value = str(code or "").strip()
+		if code_value:
+			payload["code"] = code_value
+		if payload not in known_entities:
+			known_entities.append(payload)
+
+	if family_id == "transaction_listing":
+		for row in sections.get("transaction_rows") or []:
+			if not isinstance(row, dict):
+				continue
+			document_name = str(row.get("document_name") or "").strip()
+			customer = str(row.get("customer") or "").strip()
+			if document_name:
+				known_documents.append(document_name)
+				_append_entity("sales_invoice", document_name)
+			if customer:
+				_append_entity("customer", customer)
+	elif family_id == "aging":
+		entity_type = "supplier" if str(dimensions.get("aging_type") or "").strip() == "accounts_payable" else "customer"
+		for row in sections.get("parties") or []:
+			if not isinstance(row, dict):
+				continue
+			_append_entity(entity_type, row.get("party"))
+			voucher_no = str(row.get("voucher_no") or "").strip()
+			if voucher_no:
+				known_documents.append(voucher_no)
+	elif family_id in {"ranking_analytics", "inventory_snapshot"}:
+		entity_type = _entity_type_from_dimension(str(dimensions.get("entity_dimension") or "").strip())
+		for row in sections.get("ranked_rows") or []:
+			if not isinstance(row, dict):
+				continue
+			_append_entity(entity_type, row.get("entity_name") or row.get("entity"), row.get("entity_code"))
+	elif family_id == "product_profitability":
+		for row in sections.get("product_rows") or []:
+			if not isinstance(row, dict):
+				continue
+			_append_entity("item", row.get("item_name") or row.get("item_code"), row.get("item_code"))
+	elif family_id == "entity_detail":
+		entity_type = str(dimensions.get("entity_type") or "").strip()
+		entity_label = str(dimensions.get("entity_label") or "").strip()
+		entity_key = str(dimensions.get("entity_key") or "").strip()
+		if entity_label:
+			_append_entity(entity_type, entity_label, entity_key)
+		if entity_type in {"sales_invoice", "purchase_invoice"} and entity_key:
+			known_documents.append(entity_key)
+
+	return known_entities[:25], list(dict.fromkeys(known_documents))[:25]
 
 
 def build_grounded_turn_context(
@@ -1197,6 +1497,7 @@ def build_grounded_turn_context(
 	interaction_contract: InteractionContract,
 	assistant_payload: Dict[str, Any],
 	runtime_payload: Dict[str, Any],
+	artifact_payload: Dict[str, Any] | None = None,
 ) -> GroundedTurnContext | None:
 	tool_trace = runtime_payload.get("tool_trace")
 	if not isinstance(tool_trace, list) or not tool_trace:
@@ -1264,6 +1565,8 @@ def build_grounded_turn_context(
 			metrics.append(header_text)
 
 	trace_request_id = str(runtime_payload.get("request_id") or request_id).strip()
+	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
+	known_entities, known_documents = _artifact_known_references(artifact)
 	return GroundedTurnContext(
 		request_id=request_id,
 		trace_request_id=trace_request_id,
@@ -1280,6 +1583,15 @@ def build_grounded_turn_context(
 		row_count=len(rows),
 		base_language=interaction_contract.detected_language,
 		transform_chain=[],
+		artifact_family_id=str(artifact.get("family_id") or "").strip(),
+		artifact_type=str(artifact.get("artifact_type") or artifact.get("type") or "").strip(),
+		artifact_source_reports=[
+			str(item or "").strip()
+			for item in (artifact.get("source_reports") or [])
+			if str(item or "").strip()
+		],
+		known_entities=known_entities,
+		known_documents=known_documents,
 	)
 
 

@@ -89,6 +89,69 @@
       ]
     },
     {
+      "report_name": "Sales Invoice List",
+      "module": "Selling",
+      "family": "sales_invoice_list",
+      "capability_ids": [
+        "sales_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Sales Invoice",
+        "fields": [
+          "name",
+          "posting_date",
+          "customer",
+          "grand_total",
+          "outstanding_amount",
+          "status",
+          "docstatus"
+        ],
+        "order_by": "posting_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "date_field": "posting_date",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "sales",
+        "invoice",
+        "transaction",
+        "document"
+      ],
+      "supported_dimensions": [
+        "Invoice",
+        "Customer",
+        "Posting Date"
+      ],
+      "supported_metrics": [
+        "Grand Total",
+        "Outstanding Amount"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Stock Balance",
       "module": "Stock",
       "family": "stock_balance",

@@ -65,6 +65,34 @@
       }
     },
     {
+      "concept_id": "sales_invoice",
+      "aliases": {
+        "en": ["sales invoice", "sales invoices", "invoice", "invoices", "recent invoice", "recent invoices", "latest invoice", "latest invoices"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "customer",
+      "aliases": {
+        "en": ["customer", "customers", "buyer", "buyers", "client", "clients", "purchase pattern", "buying pattern"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "supplier",
+      "aliases": {
+        "en": ["supplier", "suppliers", "vendor", "vendors", "creditor", "creditors"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "employee",
+      "aliases": {
+        "en": ["staff", "staffs", "employee", "employees", "headcount", "workforce", "team size"],
+        "my": []
+      }
+    },
+    {
       "concept_id": "territory",
       "aliases": {
         "en": ["territory", "region", "yangon", "mandalay", "naypyitaw", "taunggyi"],
@@ -150,7 +178,7 @@
   ],
   "interaction_hints": {
     "self_contained_prefixes": {
-      "en": ["show", "show me", "give", "list", "top", "which", "stock", "sales", "outstanding", "compare", "how much", "profit", "products", "analyze", "evaluate"],
+      "en": ["show", "show me", "show the", "give", "tell me", "list", "top", "which", "what is", "what are", "who are", "stock", "sales", "outstanding", "compare", "how much", "profit", "products", "analyze", "evaluate", "perform", "please perform", "last", "latest", "recent", "number of", "total number of", "count", "total"],
       "my": []
     }
   }

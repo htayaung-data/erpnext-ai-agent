@@ -21,10 +21,16 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_interaction_contract,
 	build_response_policy_contract,
 )
+from ai_assistant_ui.qwen_chat.artifact_narrative import (
+	build_artifact_narrative_context,
+	build_artifact_narrative_contract,
+	narrate_governed_artifact,
+)
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
 from ai_assistant_ui.qwen_chat.metadata import list_capability_specs, list_intent_class_specs
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
@@ -155,6 +161,36 @@ def _current_date_iso() -> str:
 	return dt.datetime.now(dt.timezone.utc).date().isoformat()
 
 
+def _clean_iso_date(value: Any) -> str:
+	text = str(value or "").strip()
+	if not text:
+		return ""
+	try:
+		return dt.date.fromisoformat(text).isoformat()
+	except Exception:
+		return ""
+
+
+def _sanitize_extracted_slots(
+	extracted_slots: Dict[str, Any],
+) -> Dict[str, Any]:
+	clean_slots: Dict[str, Any] = {}
+	for key in ("report_date", "from_date", "to_date"):
+		normalized = _clean_iso_date(extracted_slots.get(key))
+		if normalized:
+			clean_slots[key] = normalized
+	slot_filters = extracted_slots.get("filters")
+	if isinstance(slot_filters, dict):
+		filters = {
+			str(key or "").strip(): value
+			for key, value in slot_filters.items()
+			if str(key or "").strip() and str(key or "").strip().lower() != "company"
+		}
+		if filters:
+			clean_slots["filters"] = filters
+	return clean_slots
+
+
 def _build_interpretation_context() -> Dict[str, Any]:
 	intent_classes = [
 		{
@@ -228,12 +264,17 @@ def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
 	ranking_terms = {"top", "bottom", "highest", "lowest", "rank", "ranking", "best", "worst"}
 	sales_terms = {"sale", "sales", "revenue"}
 	trend_terms = {"trend", "monthly", "weekly", "daily", "history"}
+	transaction_terms = {"invoice", "invoices", "recent", "latest", "last"}
 	if {"balance", "sheet"}.issubset(tokens):
 		return "financial_statement"
 	if {"cash", "flow"}.issubset(tokens):
 		return "financial_statement"
 	if {"income", "statement"}.issubset(tokens) or {"profit", "loss"}.issubset(tokens) or {"p", "l"}.issubset(tokens):
 		return "financial_statement"
+	if ("invoice" in tokens or "invoices" in tokens) and (tokens & transaction_terms):
+		return "transaction_listing"
+	if (tokens & product_terms) and (tokens & ranking_terms):
+		return "ranked_entities"
 	if (tokens & sales_terms) and (tokens & trend_terms) and not (tokens & product_terms):
 		return "trend_analysis"
 	if (tokens & product_terms) and (tokens & performance_terms) and not (tokens & ranking_terms):
@@ -259,6 +300,13 @@ def _apply_governed_interpretation_biases(
 			return ["financial_statement_read"], ["Cash Flow"]
 		if {"income", "statement"}.issubset(tokens) or {"profit", "loss"}.issubset(tokens) or {"p", "l"}.issubset(tokens):
 			return ["financial_statement_read"], ["Profit and Loss Statement"]
+	if intent_key == "transaction_listing":
+		if "invoice" in tokens or "invoices" in tokens:
+			return ["sales_read"], ["Sales Invoice List"]
+	if intent_key == "ranked_entities" and (tokens & {"product", "products", "item", "items", "sku", "brand"}):
+		return ["product_performance_read"], ["Gross Profit"]
+	if intent_key == "product_performance":
+		return ["product_performance_read"], ["Gross Profit"]
 	if intent_key != "trend_analysis":
 		return candidate_capability_ids, candidate_reports
 	if not tokens:
@@ -342,6 +390,12 @@ def _apply_governed_request_defaults(
 			metrics = ["Gross Profit"]
 		if not time_scope:
 			time_scope = "current_fiscal_year_to_date"
+
+	if str(intent_class or "").strip() == "transaction_listing":
+		if not dimensions:
+			dimensions = ["Invoice"]
+		if not metrics:
+			metrics = ["Grand Total"]
 
 	if str(intent_class or "").strip() == "financial_summary":
 		if not metrics:
@@ -523,20 +577,7 @@ def _validate_semantic_payload(
 	extracted_slots = payload.get("extracted_slots")
 	if not isinstance(extracted_slots, dict):
 		extracted_slots = {}
-	clean_slots: Dict[str, Any] = {}
-	for key in ("report_date", "from_date", "to_date"):
-		value = extracted_slots.get(key)
-		if isinstance(value, str) and value.strip():
-			clean_slots[key] = value.strip()
-	slot_filters = extracted_slots.get("filters")
-	if isinstance(slot_filters, dict):
-		filters = {
-			str(key or "").strip(): value
-			for key, value in slot_filters.items()
-			if str(key or "").strip() and str(key or "").strip().lower() != "company"
-		}
-		if filters:
-			clean_slots["filters"] = filters
+	clean_slots = _sanitize_extracted_slots(extracted_slots)
 
 	try:
 		confidence = float(payload.get("confidence") or 0.0)
@@ -804,6 +845,10 @@ def _deterministic_family_surface_interpretation(
 		candidate_reports = ["Gross Profit"]
 		if not requested_time_scope:
 			requested_time_scope = "current_fiscal_year_to_date"
+	elif family_id == "transaction_listing":
+		intent_class = "transaction_listing"
+		candidate_capability_ids = ["sales_read"]
+		candidate_reports = ["Sales Invoice List"]
 	else:
 		return None
 
@@ -930,8 +975,48 @@ def compile_from_fresh_query_message(
 		interpretation=semantic_result.interpretation,
 		response_policy=response_policy.to_runtime_payload(),
 	)
+	compiler_decision = str(compiler_outcome.compiler_contract.decision or "").strip()
+	if compiler_decision == "clarify":
+		confidence_threshold = float(semantic_result.confidence_threshold or _confidence_threshold())
+		deterministic_interpretation = _deterministic_family_surface_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			message=message,
+			confidence_threshold=confidence_threshold,
+		)
+		if deterministic_interpretation is not None:
+			deterministic_outcome = compile_fresh_query(
+				request_id=request_id,
+				session_id=session_id,
+				interpretation=deterministic_interpretation,
+				response_policy=response_policy.to_runtime_payload(),
+			)
+			if str(deterministic_outcome.compiler_contract.decision or "").strip() == "execute":
+				semantic_result = SemanticFreshQueryResult(
+					status="deterministic_family_override",
+					interpretation=deterministic_interpretation,
+					confidence_threshold=confidence_threshold,
+					agent_meta={
+						"engine": "deterministic_family_surface",
+						"model": "none",
+						"telemetry": {
+							"fallback_attempted": True,
+							"fallback_used": True,
+							"fallback_type": "family_tool_surface_after_clarify",
+							"primary_status": str(semantic_result.status or "").strip(),
+							"primary_model": str((semantic_result.agent_meta or {}).get("model") or "").strip(),
+							"cache_hit": bool(
+								(((semantic_result.agent_meta or {}).get("telemetry") or {}).get("cache_hit"))
+								if isinstance((semantic_result.agent_meta or {}).get("telemetry"), dict)
+								else False
+							),
+						},
+					},
+				)
+				compiler_outcome = deterministic_outcome
 	compilation_latency_ms = int((time.perf_counter() - compilation_started) * 1000)
 	out["fresh_query_compiler"] = compiler_outcome.compiler_contract.to_payload()
+	out["fresh_query_interpretation"] = semantic_result.to_payload()
 	if compiler_outcome.compiled_request_contract is not None:
 		out["compiled_query_request"] = compiler_outcome.compiled_request_contract.to_payload()
 	out["phase4_latency_breakdown"] = {
@@ -1299,6 +1384,7 @@ def _phase4b_financial_statement_case_result(
 		request_id=interaction_contract.request_id,
 		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
 		runtime_payload=runtime_payload,
+		request_message=message,
 		intent_class="financial_statement",
 		preferred_family_id=_preferred_family_id_for_message(
 			message=message,
@@ -2257,6 +2343,7 @@ def execute_compiled_fresh_query_message(
 	normalized_family_artifact_payload: Dict[str, Any] = {}
 	family_validation_payload: Dict[str, Any] = {}
 	rendered_response_payload: Dict[str, Any] = {}
+	narrative_response_payload: Dict[str, Any] = {}
 	if composite_plan_outcome is not None and str(composite_plan_outcome.status or "").strip() == "execute":
 		return execute_composite_read_plan(
 			session_id=session_id,
@@ -2325,31 +2412,40 @@ def execute_compiled_fresh_query_message(
 		else {}
 	)
 	runtime_started = time.perf_counter()
-	try:
-		runtime_payload = call_qwen_runtime_chat(
-			session_id=session_id,
-			user_id=user_id,
-			site_name=site_name,
-			message=message,
-			recent_messages=list(recent_messages or []),
-			response_policy=response_policy,
-			family_tool_context={},
-			mode="compiled_read_query",
-			compiled_query=compiled_query,
-			request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
-		)
-	except QwenRuntimeClientError as exc:
-		runtime_payload = {
-			"ok": False,
-			"tool_trace": [],
-			"agent_meta": {"engine": "unavailable", "mode": "compiled_read_query"},
-			"error": str(exc),
-		}
+	runtime_payload = execute_governed_report(
+		report_name=str(compiled_query.get("selected_report") or "").strip(),
+		filters=compiled_query.get("filters") if isinstance(compiled_query.get("filters"), dict) else {},
+		user=user_id,
+		mode="compiled_read_query",
+		request_message=message,
+	)
+	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
+		try:
+			runtime_payload = call_qwen_runtime_chat(
+				session_id=session_id,
+				user_id=user_id,
+				site_name=site_name,
+				message=message,
+				recent_messages=list(recent_messages or []),
+				response_policy=response_policy,
+				family_tool_context={},
+				mode="compiled_read_query",
+				compiled_query=compiled_query,
+				request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
+			)
+		except QwenRuntimeClientError as exc:
+			runtime_payload = {
+				"ok": False,
+				"tool_trace": [],
+				"agent_meta": {"engine": "unavailable", "mode": "compiled_read_query"},
+				"error": str(exc),
+			}
 	runtime_execution_latency_ms = int((time.perf_counter() - runtime_started) * 1000)
 	adapter_outcome = build_normalized_family_artifact(
 		request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
 		compiler_contract=compiler_contract,
 		runtime_payload=runtime_payload if isinstance(runtime_payload, dict) else {},
+		request_message=message,
 		intent_class=str(
 			(((pipeline.get("fresh_query_interpretation") or {}).get("interpretation") or {}).get("intent_class"))
 			if isinstance(pipeline.get("fresh_query_interpretation"), dict)
@@ -2406,6 +2502,35 @@ def execute_compiled_fresh_query_message(
 		)
 		semantic_validation_latency_ms = int((time.perf_counter() - semantic_started) * 1000)
 		semantic_validation_payload = semantic_validation.to_payload()
+	if (
+		normalized_family_artifact_payload
+		and rendered_response_payload
+		and str(family_validation_payload.get("status") or "").strip() == "pass"
+		and str(semantic_validation_payload.get("status") or "").strip() == "pass"
+	):
+		artifact_context = build_artifact_narrative_context(
+			request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
+			artifact_payload=normalized_family_artifact_payload,
+			rendered_response_payload=rendered_response_payload,
+			response_policy=response_policy,
+			validation_payload=family_validation_payload,
+		)
+		narrative_runtime_payload = narrate_governed_artifact(
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
+			artifact_context=artifact_context,
+			response_policy=response_policy,
+		)
+		narrative_contract = build_artifact_narrative_contract(
+			request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
+			artifact_context=artifact_context,
+			runtime_payload=narrative_runtime_payload,
+		)
+		if narrative_contract is not None:
+			narrative_response_payload = narrative_contract.to_payload()
 	total_pipeline_latency_ms = int((time.perf_counter() - total_started) * 1000)
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
 	tool_names = [
@@ -2457,6 +2582,7 @@ def execute_compiled_fresh_query_message(
 		"runtime_payload": runtime_payload,
 		"normalized_family_artifact": normalized_family_artifact_payload,
 		"rendered_response": rendered_response_payload,
+		"narrative_response": narrative_response_payload,
 		"family_validation": family_validation_payload,
 		"semantic_intent_validation": semantic_validation_payload,
 		"compiled_execution_audit": audit_contract.to_payload(),

@@ -63,6 +63,16 @@
         "performance",
         "profitability"
       ]
+    },
+    {
+      "intent_class_id": "transaction_listing",
+      "label": "Transaction Listing",
+      "description": "Questions asking for recent or filtered business documents such as sales invoices.",
+      "semantic_tags": [
+        "transaction",
+        "document",
+        "listing"
+      ]
     }
   ],
   "capabilities": [
@@ -71,10 +81,12 @@
       "label": "Sales Read",
       "default_report_name": "Sales Analytics",
       "report_families": [
-        "sales_analytics"
+        "sales_analytics",
+        "sales_invoice_list"
       ],
       "report_names": [
-        "Sales Analytics"
+        "Sales Analytics",
+        "Sales Invoice List"
       ],
       "ontology_concepts": [
         "sales",
@@ -82,12 +94,15 @@
         "trend",
         "customer",
         "territory",
-        "item"
+        "item",
+        "invoice",
+        "sales_invoice"
       ],
       "intent_classes": [
         "financial_summary",
         "ranked_entities",
-        "trend_analysis"
+        "trend_analysis",
+        "transaction_listing"
       ],
       "semantic_tags": [
         "financial",
@@ -97,11 +112,15 @@
       "dimensions": [
         "Customer",
         "Territory",
-        "Item"
+        "Item",
+        "Invoice",
+        "Posting Date"
       ],
       "metrics": [
         "Value",
-        "Quantity"
+        "Quantity",
+        "Grand Total",
+        "Outstanding Amount"
       ],
       "default_validation_profile": "report_grounded_read"
     },

@@ -28,6 +28,9 @@ class SemanticFollowUpIntent:
 	target_dimension: str = ""
 	target_limit: int = 0
 	sort_direction: str = ""
+	target_metric: str = ""
+	requested_columns: List[str] = field(default_factory=list)
+	requested_time_scope: str = ""
 	target_capability_id: str = ""
 	self_contained: bool = False
 	confidence: float = 0.0
@@ -53,6 +56,9 @@ class SemanticFollowUpResult:
 				"target_dimension": self.intent.target_dimension,
 				"target_limit": self.intent.target_limit,
 				"sort_direction": self.intent.sort_direction,
+				"target_metric": self.intent.target_metric,
+				"requested_columns": list(self.intent.requested_columns),
+				"requested_time_scope": self.intent.requested_time_scope,
 				"target_capability_id": self.intent.target_capability_id,
 				"self_contained": self.intent.self_contained,
 				"confidence": self.intent.confidence,
@@ -152,7 +158,7 @@ def _validate_semantic_payload(
 	requested_modes = [
 		mode
 		for mode in _clean_list(payload.get("requested_modes"))
-		if mode in allowed_modes
+		if mode in allowed_modes and mode != "new_query"
 	]
 	available_dimensions = {
 		str(x or "").strip().lower(): str(x or "").strip()
@@ -163,6 +169,13 @@ def _validate_semantic_payload(
 	target_dimension = available_dimensions.get(target_dimension_raw.lower(), "")
 	target_limit = max(0, min(50, int(payload.get("target_limit") or 0)))
 	sort_direction = _normalize_direction(payload.get("sort_direction"))
+	target_metric = str(payload.get("target_metric") or "").strip().lower()
+	requested_columns = [
+		str(value or "").strip().lower()
+		for value in _clean_list(payload.get("requested_columns"))
+		if str(value or "").strip()
+	]
+	requested_time_scope = str(payload.get("requested_time_scope") or "").strip()
 	sibling_capabilities = {
 		str(item.get("capability_id") or "").strip()
 		for item in (context.get("available_sibling_capabilities") or [])
@@ -195,6 +208,9 @@ def _validate_semantic_payload(
 		target_dimension=target_dimension,
 		target_limit=target_limit,
 		sort_direction=sort_direction,
+		target_metric=target_metric,
+		requested_columns=requested_columns,
+		requested_time_scope=requested_time_scope,
 		target_capability_id=target_capability_id,
 		self_contained=self_contained,
 		confidence=confidence,

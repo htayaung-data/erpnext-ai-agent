@@ -77,6 +77,7 @@ def call_qwen_runtime_chat(
 	family_tool_context: Dict[str, Any] | None,
 	mode: str,
 	compiled_query: Dict[str, Any] | None = None,
+	artifact_context: Dict[str, Any] | None = None,
 	request_id: str,
 	request_config: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
@@ -101,6 +102,7 @@ def call_qwen_runtime_chat(
 		"family_tool_context": family_tool_context if isinstance(family_tool_context, dict) else {},
 		"mode": str(mode or "read_only").strip() or "read_only",
 		"compiled_query": compiled_query if isinstance(compiled_query, dict) else {},
+		"artifact_context": artifact_context if isinstance(artifact_context, dict) else {},
 		"request_id": str(request_id or "").strip(),
 	}
 

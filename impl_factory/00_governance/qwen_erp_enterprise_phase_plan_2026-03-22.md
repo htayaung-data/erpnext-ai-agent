@@ -141,6 +141,16 @@ Why this phase is needed:
 - composite questions such as company health require governed multi-family execution rather than raw model synthesis
 - enterprise breadth now depends on semantic family abstraction, not just more report additions
 
+Current closure direction:
+
+- core family governance is implemented
+- current remaining work is user-facing reset and closure hardening:
+  - natural narrative from governed artifacts
+  - human clarification generation
+  - response policy by intent
+  - richer follow-up context
+  - generic entity detail / drilldown
+
 ### Phase 5: Artifact System
 
 Deliver:
@@ -468,8 +478,25 @@ Current Phase 4B note:
 - composite execution is intentionally serialized for correctness in the current Frappe worker/runtime model because configuration is thread-local in child threads
 - post-family resilience hardening now closes the last evaluated family miss through family-level deterministic defaults rather than report-specific patches
 - family-level latency governance is now explicit, which lets heavier families be hardened against measured budgets instead of anecdotal response times
+- deterministic governed report execution now sits on the compiled family path, which removes unnecessary runtime-model work from exact compiler-selected reads
+- direct governed execution now has retry hardening for transient execute/empty-result failures without widening model freedom
+- the current governed family scope now verifies enterprise-green on the full family suite:
+  - `17/17` passing cases
+  - `7/7` enterprise-green governed families
+- Phase 4B is now considered closed for the current governed family scope
+- recent browser validation confirms the next remaining work is not core family governance, but business-user closure hardening:
+  - follow-up correction fidelity
+  - ranking / metric / column fidelity
+  - transaction-list family coverage
+  - broader company-health composite coverage
+  - human clarification style
+  - consultant-style business insight rendering
+- the Phase 4B closure-hardening plan is:
+  - `impl_factory/00_governance/qwen_erp_phase4b_closure_hardening_plan_2026-03-23.md`
 - the Phase 4B implementation reference is:
   - `impl_factory/00_governance/qwen_erp_phase4b_semantic_family_layer_plan_2026-03-22.md`
+- the enterprise performance and stability checkpoint is:
+  - `impl_factory/00_governance/qwen_erp_phase4b_enterprise_performance_stability_note_2026-03-23.md`
 
 ## Summary
 
@@ -478,10 +505,12 @@ The plan is now:
 - Phase 1 and Phase 2 are done
 - Phase 3 is active but intentionally bounded
 - Phase 4 foundation is implemented and remains the reliability gate
-- Phase 4B is the next breadth and scaling gate for the governed read path
+- Phase 4B is implemented and enterprise-stable for the current governed family scope
+- the immediate next Phase 4B work is closure hardening at the business-user layer
+- the next broader track after closure hardening is governed family expansion and maintainability hardening
 - the architecture direction is now explicitly:
   - Qwen proposes
   - compiler enforces
   - validator confirms
 
-So the project is in the middle of the enterprise read-path build, not at the beginning and not yet at production hardening.
+So the project has completed the first enterprise-governed family layer and should now expand breadth without reopening the core compiler/family/validator boundary.
