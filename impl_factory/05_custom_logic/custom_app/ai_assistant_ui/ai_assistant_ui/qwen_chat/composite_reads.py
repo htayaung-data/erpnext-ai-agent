@@ -679,6 +679,8 @@ def execute_composite_read_plan(
 			for item in plan_contract.steps
 			if isinstance(item, dict) and str(item.get("selected_report") or "").strip()
 		),
+		governed_family_id=str(plan_contract.plan_id or "").strip(),
+		composite_plan_id=str(plan_contract.plan_id or "").strip(),
 		proposal_cache_hit=False,
 		proposal_shared_inflight_hit=False,
 		compiled_query_available=True,
@@ -687,6 +689,7 @@ def execute_composite_read_plan(
 		runtime_engine="composite_compiler",
 		runtime_model=", ".join(sorted(set(runtime_models))),
 		grounded_validation_status=overall_grounded_status,
+		family_validation_status=str(validation_payload.get("status") or "not_run").strip(),
 		semantic_validation_status=str(semantic_payload.get("status") or "").strip(),
 		semantic_validation_errors=list(semantic_payload.get("errors") or []),
 		semantic_validation_warnings=list(semantic_payload.get("warnings") or []),

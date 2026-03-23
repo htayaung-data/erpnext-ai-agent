@@ -1,0 +1,119 @@
+{
+  "contract_version": "1.0",
+  "case_sets": [
+    {
+      "set_id": "core_governed_families",
+      "set_label": "Core Governed Families",
+      "description": "One stable compiled first-turn execute case for each major governed family and the working-capital composite profile.",
+      "cases": [
+        {
+          "case_id": "financial_statement_pnl",
+          "family_id": "financial_statement",
+          "message": "Show me P & L statement",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "aging_payable_summary",
+          "family_id": "aging",
+          "message": "How much payable amount do we have as of now",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "ranking_top_customers",
+          "family_id": "ranking_analytics",
+          "message": "Top 5 customers by revenue",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "trend_monthly_sales",
+          "family_id": "trend_analytics",
+          "message": "Show monthly sales trend",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "inventory_warehouse_value",
+          "family_id": "inventory_snapshot",
+          "message": "Show current inventory value by warehouse",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "product_profitability_last_month",
+          "family_id": "product_profitability",
+          "message": "Which products are performing well last month",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "working_capital_health",
+          "family_id": "working_capital_health",
+          "composite_plan_id": "working_capital_health",
+          "message": "Analyze AR / AP amount and evaluate the company health",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        }
+      ]
+    },
+    {
+      "set_id": "extended_financial_statements",
+      "set_label": "Extended Financial Statements",
+      "description": "Additional canonical statement-family execute cases.",
+      "cases": [
+        {
+          "case_id": "financial_statement_balance_sheet",
+          "family_id": "financial_statement",
+          "message": "Show balance sheet",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "financial_statement_cash_flow",
+          "family_id": "financial_statement",
+          "message": "Show cash flow statement",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "inventory_item_balance",
+          "family_id": "inventory_snapshot",
+          "message": "Show stock balance by item",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        },
+        {
+          "case_id": "product_history_fiscal_year",
+          "family_id": "product_profitability",
+          "message": "Show item sales history this fiscal year",
+          "expected_mode": "compiled_first_turn",
+          "expected_compiler_decision": "execute",
+          "expected_family_validation_status": "pass",
+          "expected_semantic_status": "pass"
+        }
+      ]
+    }
+  ]
+}

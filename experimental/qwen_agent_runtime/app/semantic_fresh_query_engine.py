@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from collections import OrderedDict
@@ -124,6 +125,48 @@ def _capability_scope(
 			if intent_class in _clean_list(item.get("intent_classes"))
 		]
 	return capabilities
+
+
+def _message_tokens(value: str) -> set[str]:
+	text = str(value or "").strip().lower()
+	text = re.sub(r"[^a-z0-9]+", " ", text)
+	return {token for token in text.split() if token}
+
+
+def _apply_governed_interpretation_biases(
+	*,
+	intent_class: str,
+	message: str,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+) -> tuple[List[str], List[str]]:
+	if str(intent_class or "").strip() != "trend_analysis":
+		return candidate_capability_ids, candidate_reports
+	tokens = _message_tokens(message)
+	if not tokens:
+		return candidate_capability_ids, candidate_reports
+	product_terms = {"product", "products", "item", "items", "sku", "brand", "gross", "margin"}
+	sales_terms = {"sale", "sales", "revenue", "customer", "territory", "trend", "monthly", "weekly", "daily"}
+	dimension_keys = {_normalize_key(value) for value in requested_dimensions if str(value or "").strip()}
+	metric_keys = {_normalize_key(value) for value in requested_metrics if str(value or "").strip()}
+	report_keys = {_normalize_key(value) for value in candidate_reports if str(value or "").strip()}
+	product_specific_dimensions = {"item", "item_code", "item_group", "brand"}
+	product_specific_metrics = {"gross_profit", "gross_profit_percent", "selling_amount"}
+	if tokens & product_terms:
+		return candidate_capability_ids, candidate_reports
+	if dimension_keys & product_specific_dimensions:
+		return candidate_capability_ids, candidate_reports
+	if metric_keys & product_specific_metrics:
+		return candidate_capability_ids, candidate_reports
+	if not (tokens & sales_terms):
+		return candidate_capability_ids, candidate_reports
+	if "item_wise_sales_history" in report_keys and "sales_analytics" not in report_keys:
+		return ["sales_read"], ["Sales Analytics"]
+	if not candidate_capability_ids or candidate_capability_ids == ["product_performance_read"]:
+		return ["sales_read"], ["Sales Analytics"]
+	return candidate_capability_ids, candidate_reports
 
 
 def _canonicalize_interpretation_obj(
@@ -284,6 +327,15 @@ def _canonicalize_interpretation_obj(
 		]
 	):
 		return None
+
+	candidate_capability_ids, candidate_reports = _apply_governed_interpretation_biases(
+		intent_class=intent_class,
+		message=str(request.message or "").strip(),
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+	)
 
 	return {
 		"intent_class": intent_class,

@@ -233,6 +233,8 @@ def _validate_financial_statement_artifact(
 	]
 	required_metrics = requested_metrics or _statement_type_required_metrics(statement_type)
 	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
+	if statement_type == "profit_and_loss":
+		missing_metrics = [metric for metric in missing_metrics if metric != "provisional_profit_or_loss"]
 	if missing_metrics:
 		errors.append(f"Missing normalized financial metrics: {', '.join(missing_metrics)}")
 

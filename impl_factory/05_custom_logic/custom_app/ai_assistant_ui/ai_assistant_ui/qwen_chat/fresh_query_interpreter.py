@@ -189,12 +189,55 @@ def _capability_scope(
 	return capabilities
 
 
+def _message_tokens(value: str) -> set[str]:
+	text = str(value or "").strip().lower()
+	text = re.sub(r"[^a-z0-9]+", " ", text)
+	return {token for token in text.split() if token}
+
+
+def _apply_governed_interpretation_biases(
+	*,
+	intent_class: str,
+	message: str,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+) -> tuple[List[str], List[str]]:
+	if str(intent_class or "").strip() != "trend_analysis":
+		return candidate_capability_ids, candidate_reports
+	tokens = _message_tokens(message)
+	if not tokens:
+		return candidate_capability_ids, candidate_reports
+	product_terms = {"product", "products", "item", "items", "sku", "brand", "gross", "margin"}
+	sales_terms = {"sale", "sales", "revenue", "customer", "territory", "trend", "monthly", "weekly", "daily"}
+	dimension_keys = {_normalize_key(value) for value in requested_dimensions if str(value or "").strip()}
+	metric_keys = {_normalize_key(value) for value in requested_metrics if str(value or "").strip()}
+	report_keys = {_normalize_key(value) for value in candidate_reports if str(value or "").strip()}
+	product_specific_dimensions = {"item", "item_code", "item_group", "brand"}
+	product_specific_metrics = {"gross_profit", "gross_profit_percent", "selling_amount"}
+	if tokens & product_terms:
+		return candidate_capability_ids, candidate_reports
+	if dimension_keys & product_specific_dimensions:
+		return candidate_capability_ids, candidate_reports
+	if metric_keys & product_specific_metrics:
+		return candidate_capability_ids, candidate_reports
+	if not (tokens & sales_terms):
+		return candidate_capability_ids, candidate_reports
+	if "item_wise_sales_history" in report_keys and "sales_analytics" not in report_keys:
+		return ["sales_read"], ["Sales Analytics"]
+	if not candidate_capability_ids or candidate_capability_ids == ["product_performance_read"]:
+		return ["sales_read"], ["Sales Analytics"]
+	return candidate_capability_ids, candidate_reports
+
+
 def _validate_semantic_payload(
 	*,
 	request_id: str,
 	session_id: str,
 	payload: Dict[str, Any],
 	context: Dict[str, Any],
+	message: str = "",
 ) -> FreshQueryInterpretationContract | None:
 	if not isinstance(payload, dict):
 		return None
@@ -350,6 +393,15 @@ def _validate_semantic_payload(
 	):
 		return None
 
+	candidate_capability_ids, candidate_reports = _apply_governed_interpretation_biases(
+		intent_class=intent_class,
+		message=message,
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+	)
+
 	return build_fresh_query_interpretation_contract(
 		request_id=request_id,
 		session_id=session_id,
@@ -419,6 +471,7 @@ def interpret_fresh_query_semantically(
 		session_id=session_id,
 		payload=interpretation,
 		context=context,
+		message=message,
 	)
 	if contract is None:
 		return SemanticFreshQueryResult(
@@ -1887,12 +1940,15 @@ def execute_compiled_fresh_query_message(
 			compiler_reason=str(compiler_contract.get("compiler_reason") or "").strip(),
 			capability_id=str(compiler_contract.get("capability_id") or "").strip(),
 			selected_report=str(compiler_contract.get("selected_report") or "").strip(),
+			governed_family_id=str(compiler_contract.get("selected_report_family") or "").strip(),
+			composite_plan_id="",
 			proposal_cache_hit=_proposal_cache_hit_from_pipeline(pipeline),
 			proposal_shared_inflight_hit=_proposal_shared_inflight_hit_from_pipeline(pipeline),
 			compiled_query_available=False,
 			runtime_invoked=False,
 			runtime_ok=False,
 			grounded_validation_status="not_run",
+			family_validation_status="not_run",
 			semantic_validation_status="not_run",
 			proposal_generation_latency_ms=proposal_generation_latency_ms,
 			compilation_latency_ms=compilation_latency_ms,
@@ -1990,6 +2046,8 @@ def execute_compiled_fresh_query_message(
 			),
 			compiler_contract=compiler_contract,
 			runtime_payload=runtime_payload if isinstance(runtime_payload, dict) else {},
+			normalized_family_artifact=normalized_family_artifact_payload,
+			family_validation_payload=family_validation_payload,
 		)
 		semantic_validation_latency_ms = int((time.perf_counter() - semantic_started) * 1000)
 		semantic_validation_payload = semantic_validation.to_payload()
@@ -2009,6 +2067,8 @@ def execute_compiled_fresh_query_message(
 		compiler_reason=str(compiler_contract.get("compiler_reason") or "").strip(),
 		capability_id=str(compiler_contract.get("capability_id") or "").strip(),
 		selected_report=str(compiler_contract.get("selected_report") or "").strip(),
+		governed_family_id=str(adapter_outcome.family_id or compiler_contract.get("selected_report_family") or "").strip(),
+		composite_plan_id="",
 		proposal_cache_hit=_proposal_cache_hit_from_pipeline(pipeline),
 		proposal_shared_inflight_hit=_proposal_shared_inflight_hit_from_pipeline(pipeline),
 		compiled_query_available=True,
@@ -2017,6 +2077,7 @@ def execute_compiled_fresh_query_message(
 		runtime_engine=str(agent_meta.get("engine") or "").strip(),
 		runtime_model=str(agent_meta.get("model") or "").strip(),
 		grounded_validation_status=str(runtime_validation.get("status") or "unknown").strip(),
+		family_validation_status=str(family_validation_payload.get("status") or "not_run").strip(),
 		semantic_validation_status=str(semantic_validation_payload.get("status") or "not_run").strip(),
 		semantic_validation_errors=(
 			semantic_validation_payload.get("errors")
@@ -2082,6 +2143,8 @@ def run_phase4_slice6_selftests() -> Dict[str, Any]:
 		compiler_reason="governed compiler path",
 		capability_id="accounts_payable_read",
 		selected_report="Accounts Payable Summary",
+		governed_family_id="aging",
+		composite_plan_id="",
 		proposal_cache_hit=False,
 		proposal_shared_inflight_hit=False,
 		compiled_query_available=True,
@@ -2090,6 +2153,7 @@ def run_phase4_slice6_selftests() -> Dict[str, Any]:
 		runtime_engine="qwen_agent",
 		runtime_model="qwen3.5-plus",
 		grounded_validation_status="pass",
+		family_validation_status="pass",
 		semantic_validation_status="pass",
 		proposal_generation_latency_ms=120,
 		compilation_latency_ms=5,

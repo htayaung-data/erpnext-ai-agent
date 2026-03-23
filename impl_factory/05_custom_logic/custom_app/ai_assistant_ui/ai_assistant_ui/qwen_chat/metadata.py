@@ -53,6 +53,10 @@ def load_composite_read_registry() -> Dict[str, Any]:
 	return _load_json("composite_read_registry.json")
 
 
+def load_family_evaluation_registry() -> Dict[str, Any]:
+	return _load_json("family_evaluation_registry.json")
+
+
 def load_validation_rules() -> Dict[str, Any]:
 	return _load_json("validation_rules.json")
 
@@ -116,6 +120,21 @@ def get_composite_read_spec(plan_id: str) -> Dict[str, Any]:
 	target = str(plan_id or "").strip()
 	for item in list_composite_read_specs():
 		if str(item.get("plan_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_family_evaluation_case_sets() -> List[Dict[str, Any]]:
+	values = load_family_evaluation_registry().get("case_sets")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_family_evaluation_case_set(set_id: str) -> Dict[str, Any]:
+	target = str(set_id or "").strip()
+	for item in list_family_evaluation_case_sets():
+		if str(item.get("set_id") or "").strip() == target:
 			return item
 	return {}
 

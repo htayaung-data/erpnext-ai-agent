@@ -31,6 +31,7 @@
 28. Qwen ERP Phase 4B enterprise checkpoint note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_enterprise_checkpoint_note_2026-03-22.md`
 29. Qwen ERP Phase 4B Slice 7 family validation and rendering note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice7_family_validation_rendering_note_2026-03-22.md`
 30. Qwen ERP Phase 4B Slice 8 family tool surface note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice8_family_tool_surface_note_2026-03-22.md`
+31. Qwen ERP Phase 4B Slice 9 evaluation and rollout note (2026-03-22): `impl_factory/00_governance/qwen_erp_phase4b_slice9_evaluation_rollout_note_2026-03-22.md`
 
 ## Existing Governance
 1. Roles and permissions: `impl_factory/00_governance/roles_permissions.md`

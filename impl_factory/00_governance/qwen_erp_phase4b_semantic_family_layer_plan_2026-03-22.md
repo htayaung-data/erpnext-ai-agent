@@ -1,6 +1,6 @@
 # Qwen ERP Phase 4B Semantic Family Layer Plan (2026-03-22)
 
-Status: in progress  
+Status: core semantic family layer implemented; operational hardening continues  
 Scope: extend Phase 4 from fresh-query compilation into governed report-family abstraction, normalized business artifacts, and broad read-path expansion  
 Phase goal: support broad ERP business questions through governed family routing, deterministic adapters, and composite multi-report analysis without drifting into report-by-report hacks.
 
@@ -470,12 +470,20 @@ Outcome note:
 
 ### Slice 4B.9: Evaluation and Rollout
 
+Status:
+
+- `completed`
+
 Deliver:
 
 1. family-based golden datasets
 2. latency and semantic pass metrics by family
 3. family rollout tracking
 4. fallback monitoring by family
+
+Outcome note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_slice9_evaluation_rollout_note_2026-03-22.md`
 
 ## 10. Exit Criteria
 
@@ -492,12 +500,12 @@ Phase 4B should close only when:
 
 The immediate next step after this note is:
 
-1. move to Slice 4B.9 next:
-   - family-based evaluation datasets
-   - latency and semantic pass metrics by family
-   - family rollout tracking
+1. treat the planned Phase 4B slice set as implemented, with the current core governed family baseline passing `7/7`
 2. keep the compiled family path as the preferred enterprise execution route for richer families
-3. continue hardening legacy family routing where requirements-first behavior still needs tightening
+3. move into post-4B operational hardening:
+   - reduce composite and other heavy-family latency
+   - expand family evaluation datasets beyond the core set
+   - continue hardening legacy family routing where requirements-first behavior still needs tightening
 4. keep expanding by semantic family packages, not by isolated example questions
 5. continue latency hardening without relaxing compiler or validator governance
 

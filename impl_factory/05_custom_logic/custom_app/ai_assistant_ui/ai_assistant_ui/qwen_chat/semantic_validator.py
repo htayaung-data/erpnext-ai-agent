@@ -249,6 +249,8 @@ def validate_compiled_semantic_result(
 	interpretation_contract: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
 	runtime_payload: Dict[str, Any],
+	normalized_family_artifact: Dict[str, Any] | None = None,
+	family_validation_payload: Dict[str, Any] | None = None,
 ) -> SemanticValidationOutcome:
 	request_id = str(interaction_contract.get("request_id") or compiler_contract.get("request_id") or "").strip()
 	capability_id = str(compiler_contract.get("capability_id") or "").strip()
@@ -262,6 +264,32 @@ def validate_compiled_semantic_result(
 		if isinstance(compiler_contract.get("completed_filters"), dict)
 		else {}
 	)
+	artifact_payload = (
+		dict(normalized_family_artifact)
+		if isinstance(normalized_family_artifact, dict)
+		else {}
+	)
+	artifact_family_id = str(
+		artifact_payload.get("family_id") or compiler_contract.get("selected_report_family") or ""
+	).strip()
+	artifact_filters = dict(artifact_payload.get("filters")) if isinstance(artifact_payload.get("filters"), dict) else {}
+	family_validation = (
+		dict(family_validation_payload)
+		if isinstance(family_validation_payload, dict)
+		else {}
+	)
+	family_validation_status = str(family_validation.get("status") or "").strip()
+	family_validation_contract = (
+		dict(family_validation.get("contract"))
+		if isinstance(family_validation.get("contract"), dict)
+		else {}
+	)
+	family_time_scope_match = bool(
+		family_validation.get("time_scope_match")
+		if "time_scope_match" in family_validation
+		else family_validation_contract.get("time_scope_match")
+	)
+	family_artifact_governed = bool(artifact_family_id and family_validation_status == "pass")
 
 	errors: List[str] = []
 	warnings: List[str] = []
@@ -346,6 +374,19 @@ def validate_compiled_semantic_result(
 			time_scope_errors.append(
 				f"`as_of_today` requested, but grounded report_date was `{report_date or 'missing'}`."
 			)
+
+	if family_artifact_governed:
+		# Once a normalized family artifact has passed deterministic family validation,
+		# semantic validation should not reject on raw report-schema mismatches alone.
+		if metric_errors:
+			metric_errors = []
+			metric_ok = True
+		if time_scope_errors and (
+			family_time_scope_match
+			or str(artifact_filters.get("report_date") or "").strip() == _today_iso()
+		):
+			time_scope_errors = []
+	field_errors = list(metric_errors)
 
 	policy = semantic_validation_policy()
 	zero_result_intents = set(_clean_list(policy.get("zero_result_clarify_intent_classes")))

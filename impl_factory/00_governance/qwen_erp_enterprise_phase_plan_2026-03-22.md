@@ -314,8 +314,10 @@ The next implementation order is now:
    - enterprise checkpoint after Slice 4B.6: completed
    - Slice 4B.7 family-level validation and rendering: completed
    - Slice 4B.8 family tool surface for Qwen-Agent: completed
-   - Slice 4B.9 family-based evaluation and rollout: next
+   - Slice 4B.9 family-based evaluation and rollout: completed
+   - current governed family baseline after post-4B.9 hardening: 7 of 7 core family cases passing
    - legacy family tool routing now uses governed family narrowing, with compiled execution still preferred for richer families
+   - next work has moved from one remaining family gap into post-4B operational hardening and broader family-package expansion
 4. return to the remaining Phase 3 convenience expansions after Phase 4B establishes the broad governed read path:
    - column projection
    - filter refinement

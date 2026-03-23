@@ -616,6 +616,8 @@ class CompiledExecutionAuditContract:
 	compiler_reason: str
 	capability_id: str
 	selected_report: str
+	governed_family_id: str
+	composite_plan_id: str
 	proposal_cache_hit: bool
 	proposal_shared_inflight_hit: bool
 	compiled_query_available: bool
@@ -624,6 +626,7 @@ class CompiledExecutionAuditContract:
 	runtime_engine: str
 	runtime_model: str
 	grounded_validation_status: str
+	family_validation_status: str
 	semantic_validation_status: str
 	semantic_validation_errors: List[str]
 	semantic_validation_warnings: List[str]
@@ -646,6 +649,8 @@ class CompiledExecutionAuditContract:
 			"compiler_reason": self.compiler_reason,
 			"capability_id": self.capability_id,
 			"selected_report": self.selected_report,
+			"governed_family_id": self.governed_family_id,
+			"composite_plan_id": self.composite_plan_id,
 			"proposal_cache_hit": self.proposal_cache_hit,
 			"proposal_shared_inflight_hit": self.proposal_shared_inflight_hit,
 			"compiled_query_available": self.compiled_query_available,
@@ -654,6 +659,7 @@ class CompiledExecutionAuditContract:
 			"runtime_engine": self.runtime_engine,
 			"runtime_model": self.runtime_model,
 			"grounded_validation_status": self.grounded_validation_status,
+			"family_validation_status": self.family_validation_status,
 			"semantic_validation_status": self.semantic_validation_status,
 			"semantic_validation_errors": list(self.semantic_validation_errors),
 			"semantic_validation_warnings": list(self.semantic_validation_warnings),
@@ -1000,6 +1006,8 @@ def build_compiled_execution_audit_contract(
 	compiler_reason: str = "",
 	capability_id: str = "",
 	selected_report: str = "",
+	governed_family_id: str = "",
+	composite_plan_id: str = "",
 	proposal_cache_hit: bool = False,
 	proposal_shared_inflight_hit: bool = False,
 	compiled_query_available: bool = False,
@@ -1008,6 +1016,7 @@ def build_compiled_execution_audit_contract(
 	runtime_engine: str = "",
 	runtime_model: str = "",
 	grounded_validation_status: str = "",
+	family_validation_status: str = "",
 	semantic_validation_status: str = "",
 	semantic_validation_errors: List[str] | None = None,
 	semantic_validation_warnings: List[str] | None = None,
@@ -1027,6 +1036,8 @@ def build_compiled_execution_audit_contract(
 		compiler_reason=str(compiler_reason or "").strip(),
 		capability_id=str(capability_id or "").strip(),
 		selected_report=str(selected_report or "").strip(),
+		governed_family_id=str(governed_family_id or "").strip(),
+		composite_plan_id=str(composite_plan_id or "").strip(),
 		proposal_cache_hit=bool(proposal_cache_hit),
 		proposal_shared_inflight_hit=bool(proposal_shared_inflight_hit),
 		compiled_query_available=bool(compiled_query_available),
@@ -1035,6 +1046,7 @@ def build_compiled_execution_audit_contract(
 		runtime_engine=str(runtime_engine or "").strip(),
 		runtime_model=str(runtime_model or "").strip(),
 		grounded_validation_status=str(grounded_validation_status or "").strip(),
+		family_validation_status=str(family_validation_status or "").strip(),
 		semantic_validation_status=str(semantic_validation_status or "").strip(),
 		semantic_validation_errors=[str(x or "").strip() for x in (semantic_validation_errors or []) if str(x or "").strip()],
 		semantic_validation_warnings=[str(x or "").strip() for x in (semantic_validation_warnings or []) if str(x or "").strip()],

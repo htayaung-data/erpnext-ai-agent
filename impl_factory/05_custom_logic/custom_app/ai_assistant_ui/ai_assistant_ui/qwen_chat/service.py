@@ -23,7 +23,11 @@ from ai_assistant_ui.qwen_chat.contracts import (
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.followup_interpreter import is_safe_local_compatibility_intent
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
-from ai_assistant_ui.qwen_chat.metadata import resolve_followup_report_switch
+from ai_assistant_ui.qwen_chat.metadata import (
+	get_family_evaluation_case_set,
+	list_family_evaluation_case_sets,
+	resolve_followup_report_switch,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
 from ai_assistant_ui.qwen_chat.semantic_interpreter import interpret_followup_semantically
 
@@ -1515,6 +1519,78 @@ def _audit_latency_summary(values: List[int]) -> Dict[str, int]:
 	}
 
 
+def _family_metrics_summary(records: List[Dict[str, Any]], rollout_fallbacks: List[Dict[str, Any]]) -> Dict[str, Any]:
+	fallback_keys = {
+		(
+			str(item.get("session_name") or "").strip(),
+			str(item.get("request_id") or "").strip(),
+		)
+		for item in rollout_fallbacks
+		if str(item.get("session_name") or "").strip() and str(item.get("request_id") or "").strip()
+	}
+	grouped: Dict[str, List[Dict[str, Any]]] = {}
+	for record in records:
+		family_id = str(record.get("governed_family_id") or "").strip() or "unknown"
+		grouped.setdefault(family_id, []).append(record)
+
+	out: Dict[str, Any] = {}
+	for family_id, items in grouped.items():
+		total = len(items)
+		runtime_ok_count = sum(1 for item in items if bool(item.get("runtime_ok")))
+		fallback_count = sum(
+			1
+			for item in items
+			if (
+				str(item.get("session_name") or "").strip(),
+				str(item.get("request_id") or "").strip(),
+			)
+			in fallback_keys
+		)
+		out[family_id] = {
+			"audit_count": total,
+			"compiler_decision_counts": {
+				value: sum(1 for item in items if str(item.get("compiler_decision") or "").strip() == value)
+				for value in sorted(
+					{
+						str(item.get("compiler_decision") or "").strip() or "unknown"
+						for item in items
+					}
+				)
+			},
+			"semantic_validation_status_counts": {
+				value: sum(1 for item in items if str(item.get("semantic_validation_status") or "").strip() == value)
+				for value in sorted(
+					{
+						str(item.get("semantic_validation_status") or "").strip() or "unknown"
+						for item in items
+					}
+				)
+			},
+			"family_validation_status_counts": {
+				value: sum(1 for item in items if str(item.get("family_validation_status") or "").strip() == value)
+				for value in sorted(
+					{
+						str(item.get("family_validation_status") or "").strip() or "unknown"
+						for item in items
+					}
+				)
+			},
+			"runtime_ok_rate": 0.0 if total == 0 else round(runtime_ok_count / float(total), 4),
+			"rollout_fallback_count": fallback_count,
+			"rollout_fallback_rate": 0.0 if total == 0 else round(fallback_count / float(total), 4),
+			"proposal_generation_latency": _audit_latency_summary(
+				[int(item.get("proposal_generation_latency_ms") or 0) for item in items]
+			),
+			"runtime_execution_latency": _audit_latency_summary(
+				[int(item.get("runtime_execution_latency_ms") or 0) for item in items]
+			),
+			"total_pipeline_latency": _audit_latency_summary(
+				[int(item.get("total_pipeline_latency_ms") or 0) for item in items]
+			),
+		}
+	return out
+
+
 def summarize_compiled_first_turn_audits(
 	limit_sessions: int = 50,
 	limit_audits: int = 200,
@@ -1567,11 +1643,14 @@ def summarize_compiled_first_turn_audits(
 					"request_id": str(payload.get("request_id") or "").strip(),
 						"compiler_decision": str(payload.get("compiler_decision") or "").strip(),
 						"selected_report": str(payload.get("selected_report") or "").strip(),
+						"governed_family_id": str(payload.get("governed_family_id") or "").strip(),
+						"composite_plan_id": str(payload.get("composite_plan_id") or "").strip(),
 						"capability_id": str(payload.get("capability_id") or "").strip(),
 						"proposal_cache_hit": bool(payload.get("proposal_cache_hit")),
 						"proposal_shared_inflight_hit": bool(payload.get("proposal_shared_inflight_hit")),
 						"runtime_ok": bool(payload.get("runtime_ok")),
 					"grounded_validation_status": str(payload.get("grounded_validation_status") or "").strip(),
+					"family_validation_status": str(payload.get("family_validation_status") or "").strip(),
 					"semantic_validation_status": str(payload.get("semantic_validation_status") or "").strip(),
 					"proposal_generation_latency_ms": int(max(0, payload.get("proposal_generation_latency_ms") or 0)),
 					"compilation_latency_ms": int(max(0, payload.get("compilation_latency_ms") or 0)),
@@ -1632,6 +1711,7 @@ def summarize_compiled_first_turn_audits(
 		"average_tool_count": 0.0
 		if total == 0
 		else round(sum(int(record.get("tool_count") or 0) for record in records) / float(total), 2),
+		"family_metrics": _family_metrics_summary(records, rollout_fallbacks),
 		"recent_audits": records[:10],
 		"recent_rollout_fallbacks": rollout_fallbacks[:10],
 	}
@@ -1858,6 +1938,250 @@ def run_first_turn_regression_suite(messages: List[str] | None = None) -> Dict[s
 					conf.pop(key, None)
 				except Exception:
 					pass
+
+
+def _latest_tool_payload_by_type(tool_payloads: List[Dict[str, Any]], payload_type: str) -> Dict[str, Any]:
+	for item in reversed(tool_payloads):
+		if str(item.get("type") or "").strip() == str(payload_type or "").strip():
+			return item
+	return {}
+
+
+def _run_family_evaluation_case(*, case: Dict[str, Any], user: str = "Administrator") -> Dict[str, Any]:
+	message = str(case.get("message") or "").strip()
+	case_id = str(case.get("case_id") or "").strip()
+	expected_mode = str(case.get("expected_mode") or "").strip()
+	expected_compiler_decision = str(case.get("expected_compiler_decision") or "").strip()
+	expected_family_validation_status = str(case.get("expected_family_validation_status") or "").strip()
+	expected_semantic_status = str(case.get("expected_semantic_status") or "").strip()
+	expected_family_id = str(case.get("family_id") or "").strip()
+	expected_composite_plan_id = str(case.get("composite_plan_id") or "").strip()
+
+	doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+	doc.title = f"Phase4B Family Evaluation {case_id or 'case'}"
+	doc.insert(ignore_permissions=False)
+	start = time.perf_counter()
+	try:
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message=message,
+			user=user,
+		)
+		elapsed_ms = int((time.perf_counter() - start) * 1000)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_payload = _latest_assistant_payload(session_doc)
+		answer_text = str(assistant_payload.get("text") or "").strip()
+		tool_payloads = []
+		for row in session_doc.get("messages") or []:
+			if str(row.role or "").strip().lower() != "tool":
+				continue
+			payload_obj = _parse_payload(str(row.content or ""))
+			if payload_obj:
+				tool_payloads.append(payload_obj)
+		type_names = [str(item.get("type") or "").strip() for item in tool_payloads if isinstance(item, dict)]
+		compiled_audit = _latest_tool_payload_by_type(tool_payloads, "qwen_compiled_execution_audit_contract")
+		family_validation = _latest_tool_payload_by_type(tool_payloads, "qwen_family_validation_outcome")
+		composite_validation = _latest_tool_payload_by_type(tool_payloads, "qwen_composite_read_validation_contract")
+		semantic_validation = _latest_tool_payload_by_type(tool_payloads, "qwen_semantic_validation_outcome")
+		composite_semantic = _latest_tool_payload_by_type(tool_payloads, "qwen_composite_semantic_validation")
+		fallback_payload = _latest_tool_payload_by_type(tool_payloads, "qwen_compiled_rollout_fallback")
+		observed_mode = str((payload or {}).get("mode") or "").strip()
+		observed_compiler_decision = str((compiled_audit or {}).get("compiler_decision") or "").strip()
+		observed_family_id = str((compiled_audit or {}).get("governed_family_id") or "").strip()
+		observed_composite_plan_id = str((compiled_audit or {}).get("composite_plan_id") or "").strip()
+		observed_family_validation_status = str((compiled_audit or {}).get("family_validation_status") or "").strip()
+		if not observed_family_validation_status:
+			observed_family_validation_status = str(
+				(family_validation or composite_validation or {}).get("status") or ""
+			).strip()
+		observed_semantic_status = str((compiled_audit or {}).get("semantic_validation_status") or "").strip()
+		if not observed_semantic_status:
+			observed_semantic_status = str((semantic_validation or composite_semantic or {}).get("status") or "").strip()
+
+		mismatches: List[str] = []
+		if expected_mode and observed_mode != expected_mode:
+			mismatches.append(f"mode expected `{expected_mode}` but observed `{observed_mode or 'missing'}`")
+		if expected_compiler_decision and observed_compiler_decision != expected_compiler_decision:
+			mismatches.append(
+				f"compiler decision expected `{expected_compiler_decision}` but observed `{observed_compiler_decision or 'missing'}`"
+			)
+		if expected_family_id and observed_family_id != expected_family_id:
+			mismatches.append(f"family expected `{expected_family_id}` but observed `{observed_family_id or 'missing'}`")
+		if expected_composite_plan_id and observed_composite_plan_id != expected_composite_plan_id:
+			mismatches.append(
+				f"composite plan expected `{expected_composite_plan_id}` but observed `{observed_composite_plan_id or 'missing'}`"
+			)
+		if expected_family_validation_status and observed_family_validation_status != expected_family_validation_status:
+			mismatches.append(
+				f"family validation expected `{expected_family_validation_status}` but observed `{observed_family_validation_status or 'missing'}`"
+			)
+		if expected_semantic_status and observed_semantic_status != expected_semantic_status:
+			mismatches.append(
+				f"semantic status expected `{expected_semantic_status}` but observed `{observed_semantic_status or 'missing'}`"
+			)
+
+		return {
+			"case_id": case_id,
+			"session_name": doc.name,
+			"message": message,
+			"ok": bool(ok),
+			"elapsed_ms": elapsed_ms,
+			"answer_text": answer_text,
+			"expected_mode": expected_mode,
+			"observed_mode": observed_mode,
+			"expected_compiler_decision": expected_compiler_decision,
+			"observed_compiler_decision": observed_compiler_decision,
+			"expected_family_id": expected_family_id,
+			"observed_family_id": observed_family_id,
+			"expected_composite_plan_id": expected_composite_plan_id,
+			"observed_composite_plan_id": observed_composite_plan_id,
+			"expected_family_validation_status": expected_family_validation_status,
+			"observed_family_validation_status": observed_family_validation_status,
+			"expected_semantic_status": expected_semantic_status,
+			"observed_semantic_status": observed_semantic_status,
+			"selected_report": str((compiled_audit or {}).get("selected_report") or "").strip(),
+			"proposal_generation_latency_ms": int(
+				max(0, (compiled_audit or {}).get("proposal_generation_latency_ms") or 0)
+			),
+			"runtime_execution_latency_ms": int(
+				max(0, (compiled_audit or {}).get("runtime_execution_latency_ms") or 0)
+			),
+			"total_pipeline_latency_ms": int(
+				max(0, (compiled_audit or {}).get("total_pipeline_latency_ms") or 0)
+			),
+			"persisted_tool_payload_types": type_names,
+			"fallback_payload": fallback_payload,
+			"case_ok": bool(ok) and not mismatches,
+			"mismatches": mismatches,
+		}
+	except Exception:
+		frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+		raise
+
+
+def run_phase4b_family_evaluation_suite(set_id: str = "core_governed_families") -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	available_case_sets = [
+		str(item.get("set_id") or "").strip()
+		for item in list_family_evaluation_case_sets()
+		if isinstance(item, dict) and str(item.get("set_id") or "").strip()
+	]
+	case_set = get_family_evaluation_case_set(set_id)
+	if not case_set:
+		raise RuntimeError(
+			f"Unknown family evaluation case set `{set_id}`. Available sets: {', '.join(available_case_sets) or 'none'}."
+		)
+	cases = [item for item in list(case_set.get("cases") or []) if isinstance(item, dict)]
+	if not cases:
+		raise RuntimeError(f"Family evaluation case set `{set_id}` does not contain any cases.")
+
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	session_names: List[str] = []
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 100
+		conf[users_key] = []
+		results: List[Dict[str, Any]] = []
+		for case in cases:
+			case_id = str(case.get("case_id") or "").strip()
+			try:
+				result = _run_family_evaluation_case(case=case, user="Administrator")
+			except Exception as exc:
+				result = {
+					"case_id": case_id,
+					"session_name": "",
+					"message": str(case.get("message") or "").strip(),
+					"ok": False,
+					"elapsed_ms": 0,
+					"answer_text": "",
+					"expected_mode": str(case.get("expected_mode") or "").strip(),
+					"observed_mode": "",
+					"expected_compiler_decision": str(case.get("expected_compiler_decision") or "").strip(),
+					"observed_compiler_decision": "",
+					"expected_family_id": str(case.get("family_id") or "").strip(),
+					"observed_family_id": "",
+					"expected_composite_plan_id": str(case.get("composite_plan_id") or "").strip(),
+					"observed_composite_plan_id": "",
+					"expected_family_validation_status": str(
+						case.get("expected_family_validation_status") or ""
+					).strip(),
+					"observed_family_validation_status": "",
+					"expected_semantic_status": str(case.get("expected_semantic_status") or "").strip(),
+					"observed_semantic_status": "",
+					"selected_report": "",
+					"proposal_generation_latency_ms": 0,
+					"runtime_execution_latency_ms": 0,
+					"total_pipeline_latency_ms": 0,
+					"persisted_tool_payload_types": [],
+					"fallback_payload": {},
+					"case_ok": False,
+					"mismatches": [f"case execution raised `{str(exc).strip() or type(exc).__name__}`"],
+				}
+			session_name = str(result.get("session_name") or "").strip()
+			if session_name:
+				session_names.append(session_name)
+			results.append(result)
+		summary = summarize_compiled_first_turn_audits(
+			limit_sessions=max(10, len(session_names)),
+			limit_audits=max(50, len(session_names) * 4),
+			session_names=session_names,
+		)
+		failed_cases = [item for item in results if not bool(item.get("case_ok"))]
+		return {
+			"ok": len(failed_cases) == 0,
+			"set_id": str(case_set.get("set_id") or "").strip(),
+			"set_label": str(case_set.get("set_label") or "").strip(),
+			"description": str(case_set.get("description") or "").strip(),
+			"available_case_sets": available_case_sets,
+			"case_count": len(results),
+			"passed_case_count": len(results) - len(failed_cases),
+			"failed_case_count": len(failed_cases),
+			"failed_cases": failed_cases,
+			"results": results,
+			"family_metrics": summary.get("family_metrics") if isinstance(summary.get("family_metrics"), dict) else {},
+			"audit_summary": summary,
+			"rollout_status": get_compiled_first_turn_rollout_status(),
+		}
+	finally:
+		for session_name in session_names:
+			try:
+				frappe.delete_doc(QWEN_SESSION_DOCTYPE, session_name, ignore_permissions=False)
+			except Exception:
+				pass
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_family_evaluation_smoke(set_id: str = "core_governed_families") -> Dict[str, Any]:
+	result = run_phase4b_family_evaluation_suite(set_id=set_id)
+	family_metrics = result.get("family_metrics") if isinstance(result.get("family_metrics"), dict) else {}
+	if not family_metrics:
+		raise RuntimeError(f"Phase 4B family evaluation smoke failed for set `{set_id}`: no family metrics were produced.")
+	if int(result.get("case_count") or 0) <= 0:
+		raise RuntimeError(f"Phase 4B family evaluation smoke failed for set `{set_id}`: no evaluation cases were executed.")
+	return {
+		**result,
+		"smoke_ok": True,
+		"baseline_ok": bool(result.get("ok")),
+	}
 
 
 def run_phase4b_family_tool_surface_smoke(messages: List[str] | None = None) -> Dict[str, Any]:
