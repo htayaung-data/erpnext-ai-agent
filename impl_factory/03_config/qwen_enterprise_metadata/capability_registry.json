@@ -51,8 +51,7 @@
       "description": "Questions asking for governed financial statements such as profit and loss or income statement views.",
       "semantic_tags": [
         "financial",
-        "statement",
-        "profitability"
+        "statement"
       ]
     },
     {
@@ -281,8 +280,7 @@
       ],
       "semantic_tags": [
         "financial",
-        "statement",
-        "profitability"
+        "statement"
       ],
       "dimensions": [
         "Account",

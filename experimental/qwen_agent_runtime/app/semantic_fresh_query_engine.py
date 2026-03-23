@@ -133,6 +133,51 @@ def _message_tokens(value: str) -> set[str]:
 	return {token for token in text.split() if token}
 
 
+def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
+	tokens = _message_tokens(message)
+	if not tokens:
+		return str(intent_class or "").strip()
+	product_terms = {"product", "products", "item", "items", "sku", "brand"}
+	performance_terms = {"performing", "performance", "well", "profit", "profitability", "gross", "margin"}
+	ranking_terms = {"top", "bottom", "highest", "lowest", "rank", "ranking", "best", "worst"}
+	sales_terms = {"sale", "sales", "revenue"}
+	trend_terms = {"trend", "monthly", "weekly", "daily", "history"}
+	if {"balance", "sheet"}.issubset(tokens):
+		return "financial_statement"
+	if {"cash", "flow"}.issubset(tokens):
+		return "financial_statement"
+	if {"income", "statement"}.issubset(tokens) or {"profit", "loss"}.issubset(tokens) or {"p", "l"}.issubset(tokens):
+		return "financial_statement"
+	if (tokens & sales_terms) and (tokens & trend_terms) and not (tokens & product_terms):
+		return "trend_analysis"
+	if (tokens & product_terms) and (tokens & performance_terms) and not (tokens & ranking_terms):
+		return "product_performance"
+	return str(intent_class or "").strip()
+
+
+def _infer_governed_time_scope(*, intent_class: str, message: str, requested_time_scope: str) -> str:
+	if str(requested_time_scope or "").strip():
+		return str(requested_time_scope or "").strip()
+	tokens = _message_tokens(message)
+	if not tokens:
+		return ""
+	if {"last", "month"}.issubset(tokens) or {"previous", "month"}.issubset(tokens) or {"prior", "month"}.issubset(tokens):
+		return "last_month"
+	if {"this", "month"}.issubset(tokens) or {"current", "month"}.issubset(tokens):
+		return "current_period"
+	if {"year", "date"}.issubset(tokens) or {"fiscal", "year"}.issubset(tokens):
+		return "current_fiscal_year_to_date"
+	if str(intent_class or "").strip() in {"trend_analysis", "product_performance"} and tokens & {
+		"trend",
+		"monthly",
+		"weekly",
+		"daily",
+		"history",
+	}:
+		return "current_fiscal_year_to_date"
+	return ""
+
+
 def _apply_governed_interpretation_biases(
 	*,
 	intent_class: str,
@@ -142,31 +187,121 @@ def _apply_governed_interpretation_biases(
 	requested_dimensions: List[str],
 	requested_metrics: List[str],
 ) -> tuple[List[str], List[str]]:
-	if str(intent_class or "").strip() != "trend_analysis":
-		return candidate_capability_ids, candidate_reports
 	tokens = _message_tokens(message)
+	intent_key = str(intent_class or "").strip()
+	if intent_key == "financial_statement":
+		if {"balance", "sheet"}.issubset(tokens):
+			return ["financial_statement_read"], ["Balance Sheet"]
+		if {"cash", "flow"}.issubset(tokens):
+			return ["financial_statement_read"], ["Cash Flow"]
+		if {"income", "statement"}.issubset(tokens) or {"profit", "loss"}.issubset(tokens) or {"p", "l"}.issubset(tokens):
+			return ["financial_statement_read"], ["Profit and Loss Statement"]
+	if intent_key != "trend_analysis":
+		return candidate_capability_ids, candidate_reports
 	if not tokens:
 		return candidate_capability_ids, candidate_reports
 	product_terms = {"product", "products", "item", "items", "sku", "brand", "gross", "margin"}
 	sales_terms = {"sale", "sales", "revenue", "customer", "territory", "trend", "monthly", "weekly", "daily"}
 	dimension_keys = {_normalize_key(value) for value in requested_dimensions if str(value or "").strip()}
-	metric_keys = {_normalize_key(value) for value in requested_metrics if str(value or "").strip()}
-	report_keys = {_normalize_key(value) for value in candidate_reports if str(value or "").strip()}
 	product_specific_dimensions = {"item", "item_code", "item_group", "brand"}
-	product_specific_metrics = {"gross_profit", "gross_profit_percent", "selling_amount"}
 	if tokens & product_terms:
 		return candidate_capability_ids, candidate_reports
 	if dimension_keys & product_specific_dimensions:
 		return candidate_capability_ids, candidate_reports
-	if metric_keys & product_specific_metrics:
-		return candidate_capability_ids, candidate_reports
 	if not (tokens & sales_terms):
 		return candidate_capability_ids, candidate_reports
-	if "item_wise_sales_history" in report_keys and "sales_analytics" not in report_keys:
-		return ["sales_read"], ["Sales Analytics"]
-	if not candidate_capability_ids or candidate_capability_ids == ["product_performance_read"]:
-		return ["sales_read"], ["Sales Analytics"]
-	return candidate_capability_ids, candidate_reports
+	return ["sales_read"], ["Sales Analytics"]
+
+
+def _apply_governed_request_defaults(
+	*,
+	intent_class: str,
+	message: str,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+	requested_time_scope: str,
+) -> tuple[List[str], List[str], str]:
+	tokens = _message_tokens(message)
+	capability_ids = {str(value or "").strip() for value in candidate_capability_ids if str(value or "").strip()}
+	report_names = {str(value or "").strip() for value in candidate_reports if str(value or "").strip()}
+	dimensions = list(dict.fromkeys(_clean_list(requested_dimensions)))
+	metrics = list(dict.fromkeys(_clean_list(requested_metrics)))
+	time_scope = str(requested_time_scope or "").strip()
+
+	def _default_sales_dimension() -> str:
+		if {"territory", "region", "regions"} & tokens:
+			return "Territory"
+		if {"product", "products", "item", "items", "sku", "brand"} & tokens:
+			return "Item"
+		return "Customer"
+
+	if str(intent_class or "").strip() == "ranked_entities":
+		if not dimensions:
+			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
+				dimensions = [_default_sales_dimension()]
+			elif "accounts_payable_read" in capability_ids or "Accounts Payable Summary" in report_names:
+				dimensions = ["Supplier"]
+			elif "accounts_receivable_read" in capability_ids or "Accounts Receivable Summary" in report_names:
+				dimensions = ["Customer"]
+			elif "stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}:
+				dimensions = ["Warehouse"] if {"warehouse", "warehouses"} & tokens else ["Item"]
+			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
+				dimensions = ["Item Code"]
+		if not metrics:
+			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
+				metrics = ["Quantity"] if {"quantity", "qty", "volume", "units"} & tokens else ["Revenue"]
+			elif "accounts_payable_read" in capability_ids or "Accounts Payable Summary" in report_names:
+				metrics = ["Outstanding"]
+			elif "accounts_receivable_read" in capability_ids or "Accounts Receivable Summary" in report_names:
+				metrics = ["Outstanding"]
+			elif "stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}:
+				metrics = ["Balance Value (MMK)"] if {"value", "valuation", "worth"} & tokens else ["Balance Qty"]
+			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
+				metrics = ["Gross Profit"]
+		if not time_scope:
+			time_scope = "current_fiscal_year_to_date"
+
+	if str(intent_class or "").strip() == "trend_analysis":
+		if not metrics:
+			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
+				metrics = ["Revenue"]
+			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
+				metrics = ["Billed Amount"]
+		if not time_scope:
+			time_scope = "current_fiscal_year_to_date"
+
+	if str(intent_class or "").strip() == "product_performance":
+		if not dimensions:
+			dimensions = ["Item Code"]
+		if not metrics:
+			metrics = ["Gross Profit"]
+		if not time_scope:
+			time_scope = "current_fiscal_year_to_date"
+
+	if str(intent_class or "").strip() == "financial_summary":
+		if not metrics:
+			if "accounts_payable_read" in capability_ids or "Accounts Payable Summary" in report_names:
+				metrics = ["Outstanding"]
+			elif "accounts_receivable_read" in capability_ids or "Accounts Receivable Summary" in report_names:
+				metrics = ["Outstanding"]
+			elif "stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}:
+				metrics = ["Balance Value (MMK)"]
+		if not time_scope and (
+			"accounts_payable_read" in capability_ids
+			or "accounts_receivable_read" in capability_ids
+			or report_names & {"Accounts Payable Summary", "Accounts Receivable Summary"}
+		):
+			time_scope = "as_of_today"
+
+	if str(intent_class or "").strip() == "inventory_summary":
+		if not dimensions and ("stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}):
+			dimensions = ["Warehouse"] if {"warehouse", "warehouses"} & tokens else ["Item"]
+		if not metrics:
+			metrics = ["Balance Value (MMK)"] if {"value", "valuation", "worth"} & tokens else ["Balance Qty"]
+
+	return dimensions, metrics, time_scope
 
 
 def _canonicalize_interpretation_obj(
@@ -186,6 +321,7 @@ def _canonicalize_interpretation_obj(
 	)
 	raw_intent_class = str(obj.get("intent_class") or "").strip()
 	intent_class = intent_lookup.get(_normalize_key(raw_intent_class), "")
+	intent_class = _apply_governed_intent_bias(intent_class=intent_class, message=str(request.message or "").strip())
 
 	capabilities = [
 		dict(item)
@@ -312,6 +448,11 @@ def _canonicalize_interpretation_obj(
 	confidence = max(0.0, min(1.0, confidence))
 	ambiguity_reason = str(obj.get("ambiguity_reason") or "").strip()
 	requested_time_scope = str(obj.get("requested_time_scope") or "").strip()
+	requested_time_scope = _infer_governed_time_scope(
+		intent_class=intent_class,
+		message=str(request.message or "").strip(),
+		requested_time_scope=requested_time_scope,
+	)
 
 	if not any(
 		[
@@ -335,6 +476,15 @@ def _canonicalize_interpretation_obj(
 		candidate_reports=candidate_reports,
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
+	)
+	requested_dimensions, requested_metrics, requested_time_scope = _apply_governed_request_defaults(
+		intent_class=intent_class,
+		message=str(request.message or "").strip(),
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+		requested_time_scope=requested_time_scope,
 	)
 
 	return {

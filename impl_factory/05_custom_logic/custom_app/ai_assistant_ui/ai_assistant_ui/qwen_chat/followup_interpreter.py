@@ -6,8 +6,8 @@ from typing import Dict, List
 
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_dimensions_for_report,
+	governed_self_contained_business_terms,
 	load_business_ontology,
-	ontology_business_terms,
 	ontology_self_contained_prefixes,
 	report_local_followup_adapter,
 )
@@ -167,7 +167,10 @@ def is_self_contained_business_request(
 	grounded_turn: Dict[str, object] | None = None,
 ) -> bool:
 	text = _normalize_text(message)
-	if len(text.split()) < 4:
+	terms = governed_self_contained_business_terms(language)
+	if len(text.split()) < 3:
+		return False
+	if len(text.split()) < 4 and not any(_contains_alias(text, token) for token in terms):
 		return False
 	parsed = intent or detect_followup_intent(text, language=language, grounded_turn=grounded_turn)
 	has_grounded_turn = bool(isinstance(grounded_turn, dict) and grounded_turn.get("grounded"))
@@ -176,7 +179,7 @@ def is_self_contained_business_request(
 	prefixes = ontology_self_contained_prefixes(language)
 	if not any(text.startswith(f"{prefix} ") or text == prefix for prefix in prefixes):
 		return False
-	return any(_contains_alias(text, token) for token in ontology_business_terms(language))
+	return any(_contains_alias(text, token) for token in terms)
 
 
 def is_safe_local_compatibility_intent(

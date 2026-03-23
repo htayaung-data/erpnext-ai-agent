@@ -1,6 +1,6 @@
 # Qwen ERP Phase 4B Semantic Family Layer Plan (2026-03-22)
 
-Status: core semantic family layer implemented; operational hardening continues  
+Status: core semantic family layer implemented; governed family baseline green; operational hardening continues  
 Scope: extend Phase 4 from fresh-query compilation into governed report-family abstraction, normalized business artifacts, and broad read-path expansion  
 Phase goal: support broad ERP business questions through governed family routing, deterministic adapters, and composite multi-report analysis without drifting into report-by-report hacks.
 
@@ -96,6 +96,19 @@ the enterprise review result is:
 Checkpoint note:
 
 - `impl_factory/00_governance/qwen_erp_phase4b_enterprise_checkpoint_note_2026-03-22.md`
+
+### 2.5 Post-4B resilience checkpoint (2026-03-23)
+
+After family evaluation and post-4B hardening:
+
+1. the remaining ranking-family miss was traced to missing governed dimension/metric defaults in the proposal/fallback path
+2. the correction was implemented as family-level deterministic request defaults, not query-specific answer logic
+3. deterministic family-surface fallback now preserves compiler governance when runtime proposal generation is unavailable or invalid
+4. the full governed family suite now passes `11/11`
+
+Resilience note:
+
+- `impl_factory/00_governance/qwen_erp_phase4b_post_family_proposal_resilience_note_2026-03-23.md`
 
 ## 3. Governing Rule for Phase 4B
 

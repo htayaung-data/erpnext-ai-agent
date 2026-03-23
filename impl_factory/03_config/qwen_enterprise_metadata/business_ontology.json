@@ -37,6 +37,20 @@
       }
     },
     {
+      "concept_id": "balance_sheet",
+      "aliases": {
+        "en": ["balance sheet", "assets and liabilities", "liabilities and equity"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "cash_flow",
+      "aliases": {
+        "en": ["cash flow", "cashflow", "cash flow statement", "operating cash flow", "net change in cash"],
+        "my": []
+      }
+    },
+    {
       "concept_id": "working_capital",
       "aliases": {
         "en": ["working capital", "liquidity", "company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],

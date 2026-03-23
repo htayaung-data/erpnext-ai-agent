@@ -94,20 +94,27 @@
           "expected_compiler_decision": "execute",
           "expected_family_validation_status": "pass",
           "expected_semantic_status": "pass"
-        },
+        }
+      ]
+    },
+    {
+      "set_id": "extended_governed_execute",
+      "set_label": "Extended Governed Execute",
+      "description": "Additional execute-path cases across supported governed families using alternate but stable business phrasing.",
+      "cases": [
         {
-          "case_id": "inventory_item_balance",
-          "family_id": "inventory_snapshot",
-          "message": "Show stock balance by item",
+          "case_id": "aging_receivable_summary",
+          "family_id": "aging",
+          "message": "How much receivable amount do we have as of now",
           "expected_mode": "compiled_first_turn",
           "expected_compiler_decision": "execute",
           "expected_family_validation_status": "pass",
           "expected_semantic_status": "pass"
         },
         {
-          "case_id": "product_history_fiscal_year",
-          "family_id": "product_profitability",
-          "message": "Show item sales history this fiscal year",
+          "case_id": "inventory_stock_balance_item",
+          "family_id": "inventory_snapshot",
+          "message": "Show stock balance by item",
           "expected_mode": "compiled_first_turn",
           "expected_compiler_decision": "execute",
           "expected_family_validation_status": "pass",

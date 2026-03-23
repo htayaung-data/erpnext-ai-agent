@@ -377,6 +377,8 @@ def _compiled_rollout_fallback_eligible(result: Dict[str, Any]) -> bool:
 	decision = str(compiler.get("decision") or "").strip()
 	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
 	semantic_status = str(semantic_payload.get("status") or "").strip()
+	if semantic_status == "pass":
+		return False
 	return decision not in {"clarify", "reject"} and semantic_status not in {"clarify", "reject_semantically_inconsistent"}
 
 
@@ -2177,6 +2179,55 @@ def run_phase4b_family_evaluation_smoke(set_id: str = "core_governed_families") 
 		raise RuntimeError(f"Phase 4B family evaluation smoke failed for set `{set_id}`: no family metrics were produced.")
 	if int(result.get("case_count") or 0) <= 0:
 		raise RuntimeError(f"Phase 4B family evaluation smoke failed for set `{set_id}`: no evaluation cases were executed.")
+	return {
+		**result,
+		"smoke_ok": True,
+		"baseline_ok": bool(result.get("ok")),
+	}
+
+
+def run_phase4b_full_family_evaluation_suite() -> Dict[str, Any]:
+	set_ids = [
+		str(item.get("set_id") or "").strip()
+		for item in list_family_evaluation_case_sets()
+		if isinstance(item, dict) and str(item.get("set_id") or "").strip()
+	]
+	if not set_ids:
+		raise RuntimeError("No Phase 4B family evaluation case sets are configured.")
+
+	suite_results: List[Dict[str, Any]] = []
+	all_results: List[Dict[str, Any]] = []
+	failed_cases: List[Dict[str, Any]] = []
+	for set_id in set_ids:
+		result = run_phase4b_family_evaluation_suite(set_id=set_id)
+		suite_results.append(result)
+		for item in list(result.get("results") or []):
+			if isinstance(item, dict):
+				enriched = dict(item)
+				enriched["set_id"] = set_id
+				all_results.append(enriched)
+		for item in list(result.get("failed_cases") or []):
+			if isinstance(item, dict):
+				enriched = dict(item)
+				enriched["set_id"] = set_id
+				failed_cases.append(enriched)
+
+	return {
+		"ok": len(failed_cases) == 0,
+		"set_ids": set_ids,
+		"suite_count": len(suite_results),
+		"case_count": len(all_results),
+		"passed_case_count": len(all_results) - len(failed_cases),
+		"failed_case_count": len(failed_cases),
+		"failed_cases": failed_cases,
+		"suite_results": suite_results,
+	}
+
+
+def run_phase4b_full_family_evaluation_smoke() -> Dict[str, Any]:
+	result = run_phase4b_full_family_evaluation_suite()
+	if int(result.get("case_count") or 0) <= 0:
+		raise RuntimeError("Phase 4B full family evaluation smoke failed: no evaluation cases were executed.")
 	return {
 		**result,
 		"smoke_ok": True,
