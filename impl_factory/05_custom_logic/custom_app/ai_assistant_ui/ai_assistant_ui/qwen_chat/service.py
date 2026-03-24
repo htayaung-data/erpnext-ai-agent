@@ -490,9 +490,7 @@ def _detect_amount_unit(value: str) -> str:
 	lower = inner.lower().strip()
 	if not lower:
 		return ""
-	if re.fullmatch(r"mmk\s*-?\d[\d,]*(?:\.\d+)?\s*million mmk", lower):
-		return "million_mmk"
-	if re.fullmatch(r"-?\d[\d,]*(?:\.\d+)?\s*million mmk", lower):
+	if re.fullmatch(r"(?:mmk\s+)?-?\d[\d,]*(?:\.\d+)?\s*(?:million mmk|mmk million)", lower):
 		return "million_mmk"
 	if re.fullmatch(r"mmk\s*-?\d[\d,]*(?:\.\d+)?", lower):
 		return "mmk"
@@ -503,7 +501,7 @@ def _detect_amount_unit(value: str) -> str:
 
 def _header_unit_mode(header: str) -> str:
 	value = str(header or "").strip().lower()
-	if "million mmk" in value:
+	if "million mmk" in value or "mmk million" in value:
 		return "million_mmk"
 	if "mmk" in value:
 		return "mmk"
@@ -545,7 +543,7 @@ def _normalize_table_headers_and_rows(headers: List[str], body_lines: List[str])
 
 		header_text = str(header or "").strip()
 		if not header_mode:
-			suffix = "(Million MMK)" if target_mode == "million_mmk" else "(MMK)"
+			suffix = "(MMK Million)" if target_mode == "million_mmk" else "(MMK)"
 			normalized_headers[idx] = f"{header_text} {suffix}".strip()
 
 		for row_idx, cells in enumerate(normalized_rows):
@@ -561,18 +559,19 @@ def _normalize_inline_amount_units(line: str) -> str:
 		lead = match.group(1) or ""
 		number = match.group(2) or ""
 		million = bool(match.group(3))
-		trail = match.group(4) or ""
+		trail = match.group(3) or ""
 		if million:
-			return f"{lead}{number} Million MMK{trail}"
+			return f"{lead}{number} MMK Million{trail}"
 		return f"{lead}{number} MMK{trail}"
 
 	normalized = re.sub(
-		r"(\*{0,2})MMK\s+(-?\d[\d,]*(?:\.\d+)?)(?:\s+(Million MMK))?(\*{0,2})",
+		r"(\*{0,2})MMK\s+(-?\d[\d,]*(?:\.\d+)?)(?:\s+((?:Million MMK|MMK Million)))?(\*{0,2})",
 		repl,
 		str(line or ""),
 		flags=re.IGNORECASE,
 	)
-	return re.sub(r"\bMillion MMK\s+MMK\b", "Million MMK", normalized, flags=re.IGNORECASE)
+	normalized = re.sub(r"\bMMK Million\s+MMK\b", "MMK Million", normalized, flags=re.IGNORECASE)
+	return re.sub(r"\bMillion MMK\b", "MMK Million", normalized, flags=re.IGNORECASE)
 
 
 def _normalize_markdown_units(text: str) -> str:
@@ -635,24 +634,25 @@ def _assistant_text_payload(text: str) -> str:
 	Create assistant text payload with currency normalization.
 	
 	Ensures:
-	- All currency values use MMK, not other symbols like ₹
-	- "MMKM" is corrected to "Million MMK"
+	- All currency values use MMK, not other symbols like ₹ or ₩
+	- "MMKM" is corrected to "MMK Million"
 	- Table cells don't have redundant currency labels
 	"""
 	import re
 	
 	clean = _normalize_markdown_units(str(text or "").strip())
 	
-	# Fix "MMKM" → "Million MMK"
-	clean = clean.replace("MMKM", "Million MMK")
+	# Fix compact or legacy million labels
+	clean = re.sub(r"\bMMKM\b", "MMK Million", clean, flags=re.IGNORECASE)
+	clean = re.sub(r"\bMillion MMK\b", "MMK Million", clean, flags=re.IGNORECASE)
+	clean = re.sub(r"(\d+(?:\.\d+)?)\s*M\s*MMK\b", r"\1 MMK Million", clean, flags=re.IGNORECASE)
+	clean = re.sub(r"(\d+(?:\.\d+)?)\s*million\b", r"\1 MMK Million", clean, flags=re.IGNORECASE)
+	clean = re.sub(r"\bMMK\s+MMK\s+Million\b", "MMK Million", clean, flags=re.IGNORECASE)
+	clean = re.sub(r"\bMMK\s+million\b", "MMK Million", clean, flags=re.IGNORECASE)
 	
 	# Replace any non-MMK currency symbols with MMK
-	# Replace ₹ (Indian Rupee) with MMK
-	clean = re.sub(r'₹\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
-	# Replace $ (USD) with MMK (keep the number)
-	clean = re.sub(r'\$\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
-	# Replace € (Euro) with MMK
-	clean = re.sub(r'€\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
+	clean = re.sub(r'[₹₩¥₮$€]\s*([\d,]+(?:\.\d+)?)\s*(?:m|mn)\b', r'\1 MMK Million', clean, flags=re.IGNORECASE)
+	clean = re.sub(r'[₹₩¥₮$€]\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
 	# Replace any standalone currency symbols that aren't MMK
 	clean = re.sub(r'\b(INR|USD|EUR|GBP)\b', 'MMK', clean)
 	
@@ -799,7 +799,7 @@ def _latest_display_preferences(session_doc, requested_modes: List[str] | None =
 	text = str(payload.get("text") or "").strip().lower()
 	has_tables = bool(payload.get("tables"))
 	return {
-		"million": "presentation_transform" in requested or "million mmk" in text,
+		"million": "presentation_transform" in requested or "mmk million" in text or "million mmk" in text,
 		"table": "table_presentation" in requested or has_tables,
 		"bullet": "bullet_presentation" in requested or "•" in text or "\n- " in text,
 	}
@@ -812,13 +812,12 @@ def _compile_capability_requery_message(
 	followup_resolution,
 	grounded_turn: Dict[str, Any],
 ) -> str:
+	source_report = str(grounded_turn.get("source_name") or "").strip()
 	switch = resolve_followup_report_switch(
 		getattr(followup_resolution, "requested_modes", []) or [],
-		str(grounded_turn.get("source_name") or "").strip(),
+		source_report,
 	)
 	target_report = str(getattr(followup_resolution, "target_report", "") or switch.get("target_report") or "").strip()
-	if not target_report:
-		return str(raw_message or "").strip()
 
 	filters = grounded_turn.get("filters") if isinstance(grounded_turn.get("filters"), dict) else {}
 	date_range = grounded_turn.get("date_range") if isinstance(grounded_turn.get("date_range"), dict) else {}
@@ -827,7 +826,18 @@ def _compile_capability_requery_message(
 	from_date = str(date_range.get("from_date") or filters.get("from_date") or "").strip()
 	to_date = str(date_range.get("to_date") or filters.get("to_date") or "").strip()
 	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+	target_dimension = str(getattr(followup_resolution, "target_dimension", "") or "").strip()
 	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
+	target_capability_id = str(getattr(followup_resolution, "target_capability_id", "") or "").strip()
+	requested_modes = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(value or "").strip()
+	]
+	preserve_prior_date_scope = not (
+		target_dimension
+		or bool(set(requested_modes).intersection({"dimension_breakdown", "grouping_change"}))
+	)
 	requested_columns = [
 		str(value or "").strip()
 		for value in (getattr(followup_resolution, "requested_columns", []) or [])
@@ -836,7 +846,15 @@ def _compile_capability_requery_message(
 	prefs = _latest_display_preferences(session_doc, getattr(followup_resolution, "requested_modes", []) or [])
 	hint = str(switch.get("requery_prompt_hint") or "").strip()
 
-	parts = [f"Use the report `{target_report}`."]
+	parts: List[str] = []
+	if target_report:
+		parts.append(f"Use the report `{target_report}`.")
+	else:
+		parts.append("Keep the governed business context from the latest grounded answer.")
+		if source_report:
+			parts.append(f"Latest grounded report: `{source_report}`.")
+		if target_capability_id:
+			parts.append(f"Use the governed capability `{target_capability_id}` if needed to satisfy the request.")
 	if company:
 		parts.append(f'Use company "{company}".')
 	if requested_time_scope == "last_month":
@@ -845,18 +863,22 @@ def _compile_capability_requery_message(
 		parts.append("Use the current month to date.")
 	elif requested_time_scope == "all_period":
 		parts.append("Use the full available time range.")
-	elif report_date:
+	elif preserve_prior_date_scope and report_date:
 		parts.append(f"Use report_date {report_date}.")
-	elif from_date and to_date:
+	elif preserve_prior_date_scope and from_date and to_date:
 		parts.append(f"Use the date range from {from_date} to {to_date}.")
+	if target_dimension:
+		parts.append(f"Return the result grouped or broken down by `{target_dimension}` if supported.")
 	if target_metric:
 		parts.append(f"Prioritize the metric `{target_metric}`.")
 	if requested_columns:
 		parts.append("Return these columns if available: " + ", ".join(requested_columns) + ".")
+	if requested_modes:
+		parts.append("Requested follow-up transforms: " + ", ".join(requested_modes) + ".")
 	if hint:
 		parts.append(hint)
 	if prefs.get("million"):
-		parts.append("Present all amounts in Million MMK.")
+		parts.append("Present all amounts in MMK Million.")
 	if prefs.get("table"):
 		parts.append("Return the result as a table.")
 	parts.append(f"User request: {str(raw_message or '').strip()}")
@@ -949,7 +971,7 @@ def _convert_summary_line_to_million(line: str) -> str:
 
 	def _replace(match: re.Match[str]) -> str:
 		scaled = _format_million_value(match.group(2))
-		return f"{match.group(1)}{scaled} Million MMK{match.group(3)}"
+		return f"{match.group(1)}{scaled} MMK Million{match.group(3)}"
 
 	return pattern.sub(_replace, text)
 
@@ -969,9 +991,9 @@ def _transform_markdown_to_million(text: str) -> str:
 				if _currency_like_header(header):
 					scale_cols.add(idx)
 					if "million" not in header.lower():
-						header = header.replace("(MMK)", "(Million MMK)")
+						header = header.replace("(MMK)", "(MMK Million)")
 						if header == headers[idx]:
-							header = f"{header} (Million MMK)"
+							header = f"{header} (MMK Million)"
 				scaled_headers.append(header)
 			out.append("| " + " | ".join(scaled_headers) + " |")
 			out.append(next_line)
@@ -1099,6 +1121,7 @@ def _try_local_followup_transform(
 			request_id=request_id,
 			artifact_payload=family_artifact_payload,
 			target_limit=target_limit,
+			sort_direction=sort_direction,
 			target_metric=target_metric,
 			requested_columns=requested_columns,
 			requested_modes=list(requested_modes),
@@ -1414,6 +1437,59 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		site_name=site_name,
 		raw_message=msg,
 	)
+	compiled_rollout = _compiled_first_turn_rollout_decision(
+		session_name=session_name,
+		user=user,
+		site_name=site_name,
+	)
+	if bool(compiled_rollout.get("enabled")) and not latest_grounded_turn_available:
+		response_policy_contract = build_response_policy_contract(
+			interaction_contract=interaction_contract,
+		)
+		followup_resolution = FollowUpResolution(
+			request_id=request_id,
+			mode="new_query",
+			requested_modes=[],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=False,
+			self_contained=True,
+			latest_grounded_turn_available=False,
+			reason="No grounded context exists yet, so the request should be treated as a fresh governed ERP query.",
+		)
+		execution_path = build_execution_path(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			local_transform_applied=False,
+		)
+		if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
+			session_doc.title = (msg[:60] + "…") if len(msg) > 60 else msg
+		_append_message(session_doc, "user", msg)
+		_append_tool_payload(session_doc, interaction_contract.to_payload())
+		_append_tool_payload(session_doc, response_policy_contract.to_payload())
+		_append_tool_payload(session_doc, followup_resolution.to_payload())
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		compiled_result = execute_compiled_fresh_query_message(
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=msg,
+			recent_messages=[],
+		)
+		return _handle_compiled_first_turn_result(
+			session_doc=session_doc,
+			request_id=request_id,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			result=compiled_result,
+		)
 	entity_drilldown = None
 	context_isolation = {
 		"force_new_query": False,
@@ -1495,6 +1571,34 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			semantic_intent=semantic_intent,
 			allow_heuristic_fallback=allow_heuristic_fallback if followup_context_available else True,
 			degraded_reason=str(context_isolation.get("reason") or degraded_reason or "").strip(),
+		)
+	if (
+		entity_drilldown is None
+		and bool(context_isolation.get("force_new_query"))
+		and not bool(context_isolation.get("out_of_scope"))
+		and followup_resolution.mode != "capability_requery"
+	):
+		followup_resolution = FollowUpResolution(
+			request_id=request_id,
+			mode="new_query",
+			requested_modes=list(getattr(followup_resolution, "requested_modes", []) or []),
+			target_dimension=str(getattr(followup_resolution, "target_dimension", "") or "").strip(),
+			target_limit=int(max(0, getattr(followup_resolution, "target_limit", 0) or 0)),
+			sort_direction=str(getattr(followup_resolution, "sort_direction", "") or "").strip(),
+			target_metric=str(getattr(followup_resolution, "target_metric", "") or "").strip(),
+			requested_columns=[
+				str(value or "").strip()
+				for value in (getattr(followup_resolution, "requested_columns", []) or [])
+				if str(value or "").strip()
+			],
+			requested_time_scope=str(getattr(followup_resolution, "requested_time_scope", "") or "").strip(),
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=False,
+			self_contained=True,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			reason=str(context_isolation.get("reason") or getattr(followup_resolution, "reason", "") or "").strip()
+			or "The request should be treated as a fresh governed ERP query.",
 		)
 	response_policy_contract = build_response_policy_contract(
 		interaction_contract=interaction_contract,
@@ -1628,22 +1732,22 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		session_doc,
 		execution_path.to_payload(),
 	)
-	compiled_rollout = _compiled_first_turn_rollout_decision(
-		session_name=session_name,
-		user=user,
-		site_name=site_name,
-	)
 	compiled_rollout_fallback: Dict[str, Any] | None = None
 	if (
 		bool(compiled_rollout.get("enabled"))
-		and followup_resolution.mode == "new_query"
-		and bool(followup_resolution.self_contained)
+		and (
+			(
+				followup_resolution.mode == "new_query"
+				and bool(followup_resolution.self_contained)
+			)
+			or followup_resolution.mode == "capability_requery"
+		)
 	):
 		compiled_result = execute_compiled_fresh_query_message(
 			session_id=session_name,
 			user_id=user,
 			site_name=site_name,
-			message=msg,
+			message=runtime_message,
 			recent_messages=[],
 		)
 		if _compiled_rollout_fallback_eligible(compiled_result):

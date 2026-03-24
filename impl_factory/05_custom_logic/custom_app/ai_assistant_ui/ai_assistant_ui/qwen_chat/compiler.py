@@ -331,29 +331,39 @@ def _extract_candidate_filters(
 ) -> Dict[str, Any]:
 	filters: Dict[str, Any] = {}
 	slots = interpretation.extracted_slots if isinstance(interpretation.extracted_slots, dict) else {}
+	ambiguity_flags = {str(value or "").strip() for value in _clean_list(interpretation.ambiguity_flags)}
+	requested_time_scope = str(interpretation.requested_time_scope or "").strip()
+	allow_slot_dates = "missing_time_scope" not in ambiguity_flags or requested_time_scope == "as_of_today"
+	date_slot_fields = {"report_date", "from_date", "to_date", "period_start_date", "period_end_date"}
 	slot_filters = slots.get("filters")
 	if isinstance(slot_filters, dict):
-		filters.update({str(k or "").strip(): v for k, v in slot_filters.items() if str(k or "").strip()})
+		for raw_key, value in slot_filters.items():
+			key = str(raw_key or "").strip()
+			if not key:
+				continue
+			if not allow_slot_dates and key in date_slot_fields:
+				continue
+			filters[key] = value
 
 	report_spec = get_report_spec(report_name)
 	required_filters = set(_clean_list(report_spec.get("required_filters")))
-	if "report_date" in required_filters and not filters.get("report_date"):
+	if allow_slot_dates and "report_date" in required_filters and not filters.get("report_date"):
 		slot_value = slots.get("report_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["report_date"] = slot_value.strip()
-	if "from_date" in required_filters and not filters.get("from_date"):
+	if allow_slot_dates and "from_date" in required_filters and not filters.get("from_date"):
 		slot_value = slots.get("from_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["from_date"] = slot_value.strip()
-	if "to_date" in required_filters and not filters.get("to_date"):
+	if allow_slot_dates and "to_date" in required_filters and not filters.get("to_date"):
 		slot_value = slots.get("to_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["to_date"] = slot_value.strip()
-	if "period_start_date" in required_filters and not filters.get("period_start_date"):
+	if allow_slot_dates and "period_start_date" in required_filters and not filters.get("period_start_date"):
 		slot_value = slots.get("from_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["period_start_date"] = slot_value.strip()
-	if "period_end_date" in required_filters and not filters.get("period_end_date"):
+	if allow_slot_dates and "period_end_date" in required_filters and not filters.get("period_end_date"):
 		slot_value = slots.get("to_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["period_end_date"] = slot_value.strip()

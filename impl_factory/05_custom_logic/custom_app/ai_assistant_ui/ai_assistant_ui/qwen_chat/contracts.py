@@ -1238,8 +1238,13 @@ def build_followup_resolution(
 	allow_heuristic_fallback: bool = True,
 	degraded_reason: str = "",
 ) -> FollowUpResolution:
+	use_heuristic_compatibility = bool(semantic_intent is None or allow_heuristic_fallback)
 	if semantic_intent is not None:
-		requested_modes = list(getattr(semantic_intent, "requested_modes", []) or [])
+		requested_modes = [
+			"column_refinement" if str(mode or "").strip() == "column_projection" else str(mode or "").strip()
+			for mode in (getattr(semantic_intent, "requested_modes", []) or [])
+			if str(mode or "").strip()
+		]
 		target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
 		target_limit = int(max(0, getattr(semantic_intent, "target_limit", 0) or 0))
 		sort_direction = str(getattr(semantic_intent, "sort_direction", "") or "").strip()
@@ -1276,56 +1281,85 @@ def build_followup_resolution(
 		target_capability_id = ""
 		self_contained = False
 		semantic_reason = ""
-	heuristic_intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
-	heuristic_self_contained = _is_self_contained_business_request(
-		message,
-		grounded_turn=latest_grounded_turn,
-		intent=heuristic_intent,
-	)
-	heuristic_local_refinement = bool(
-		set(getattr(heuristic_intent, "requested_modes", []) or []).intersection(
-			{
+	compatibility_intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
+	if "column_refinement" in requested_modes and not requested_columns:
+		requested_columns = [
+			str(value or "").strip()
+			for value in (getattr(compatibility_intent, "requested_columns", []) or [])
+			if str(value or "").strip()
+		]
+	compatibility_sort_direction = str(getattr(compatibility_intent, "sort_direction", "") or "").strip()
+	if "sort_or_limit" in requested_modes and compatibility_sort_direction:
+		sort_direction = compatibility_sort_direction
+	if "sort_or_limit" in requested_modes and not target_limit:
+		target_limit = int(max(0, getattr(compatibility_intent, "target_limit", 0) or 0))
+	presentation_only_request = bool(set(requested_modes).intersection({"presentation_transform", "table_presentation", "bullet_presentation"})) and set(
+		str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()
+	).issubset({"presentation_transform", "table_presentation", "bullet_presentation"})
+	if presentation_only_request:
+		compatibility_dimension = str(getattr(compatibility_intent, "target_dimension", "") or "").strip()
+		compatibility_limit = int(max(0, getattr(compatibility_intent, "target_limit", 0) or 0))
+		compatibility_sort = str(getattr(compatibility_intent, "sort_direction", "") or "").strip()
+		compatibility_metric = str(getattr(compatibility_intent, "target_metric", "") or "").strip()
+		if not compatibility_dimension:
+			target_dimension = ""
+		if not compatibility_limit:
+			target_limit = 0
+		if not compatibility_sort:
+			sort_direction = ""
+		if not compatibility_metric and not requested_columns:
+			target_metric = ""
+	if use_heuristic_compatibility:
+		heuristic_intent = compatibility_intent
+		heuristic_self_contained = _is_self_contained_business_request(
+			message,
+			grounded_turn=latest_grounded_turn,
+			intent=heuristic_intent,
+		)
+		heuristic_local_refinement = bool(
+			set(getattr(heuristic_intent, "requested_modes", []) or []).intersection(
+				{
+					"presentation_transform",
+					"table_presentation",
+					"sort_or_limit",
+					"metric_refinement",
+					"column_refinement",
+					"time_scope_restatement",
+				}
+			)
+		)
+		if heuristic_local_refinement and not heuristic_self_contained:
+			self_contained = False
+			requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "new_query"]
+			if not target_dimension:
+				target_dimension = str(getattr(heuristic_intent, "target_dimension", "") or "").strip()
+			if not target_limit:
+				target_limit = int(max(0, getattr(heuristic_intent, "target_limit", 0) or 0))
+			if not sort_direction:
+				sort_direction = str(getattr(heuristic_intent, "sort_direction", "") or "").strip()
+		self_contained = bool(self_contained or heuristic_self_contained)
+		if not target_metric:
+			target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
+		if not requested_columns:
+			requested_columns = [
+				str(value or "").strip()
+				for value in (getattr(heuristic_intent, "requested_columns", []) or [])
+				if str(value or "").strip()
+			]
+		if not requested_time_scope:
+			requested_time_scope = str(getattr(heuristic_intent, "requested_time_scope", "") or "").strip()
+		for mode in getattr(heuristic_intent, "requested_modes", []) or []:
+			clean_mode = str(mode or "").strip()
+			if clean_mode and clean_mode not in requested_modes and clean_mode in {
 				"presentation_transform",
 				"table_presentation",
+				"bullet_presentation",
 				"sort_or_limit",
 				"metric_refinement",
 				"column_refinement",
 				"time_scope_restatement",
-			}
-		)
-	)
-	if heuristic_local_refinement and not heuristic_self_contained:
-		self_contained = False
-		requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "new_query"]
-		if not target_dimension:
-			target_dimension = str(getattr(heuristic_intent, "target_dimension", "") or "").strip()
-		if not target_limit:
-			target_limit = int(max(0, getattr(heuristic_intent, "target_limit", 0) or 0))
-		if not sort_direction:
-			sort_direction = str(getattr(heuristic_intent, "sort_direction", "") or "").strip()
-	self_contained = bool(self_contained or heuristic_self_contained)
-	if not target_metric:
-		target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
-	if not requested_columns:
-		requested_columns = [
-			str(value or "").strip()
-			for value in (getattr(heuristic_intent, "requested_columns", []) or [])
-			if str(value or "").strip()
-		]
-	if not requested_time_scope:
-		requested_time_scope = str(getattr(heuristic_intent, "requested_time_scope", "") or "").strip()
-	for mode in getattr(heuristic_intent, "requested_modes", []) or []:
-		clean_mode = str(mode or "").strip()
-		if clean_mode and clean_mode not in requested_modes and clean_mode in {
-			"presentation_transform",
-			"table_presentation",
-			"bullet_presentation",
-			"sort_or_limit",
-			"metric_refinement",
-			"column_refinement",
-			"time_scope_restatement",
-		}:
-			requested_modes.append(clean_mode)
+			}:
+				requested_modes.append(clean_mode)
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
 	local_grounded_modes = {"presentation_transform", "table_presentation", "bullet_presentation", "metric_refinement", "column_refinement"}
 	if supports_local_followup_mode(grounded_turn, "aging_bucket_view"):
@@ -1334,6 +1368,38 @@ def build_followup_resolution(
 		local_grounded_modes.add("dimension_breakdown")
 	if supports_local_followup_mode(grounded_turn, "sort_or_limit"):
 		local_grounded_modes.add("sort_or_limit")
+	requested_mode_set = {
+		str(mode or "").strip()
+		for mode in (requested_modes or [])
+		if str(mode or "").strip()
+	}
+	grounded_dimensions = {
+		str(value or "").strip().lower()
+		for value in (
+			list(grounded_turn.get("dimensions") or [])
+			+ list(grounded_turn.get("returned_schema") or [])
+		)
+		if str(value or "").strip()
+	}
+	target_dimension_present = not target_dimension or str(target_dimension or "").strip().lower() in grounded_dimensions
+	dimension_change_requested = bool(target_dimension) and not target_dimension_present
+	presentation_only_request = bool(requested_mode_set) and requested_mode_set.issubset(
+		{"presentation_transform", "table_presentation", "bullet_presentation"}
+	)
+	structured_breakout_request = bool(
+		dimension_change_requested
+		or target_limit
+		or sort_direction
+		or target_metric
+		or requested_time_scope
+		or target_capability_id
+	)
+	local_transform_only = (
+		bool(requested_mode_set)
+		and requested_mode_set.issubset(local_grounded_modes)
+		and not dimension_change_requested
+		and not (presentation_only_request and structured_breakout_request)
+	)
 	source_report = str(grounded_turn.get("source_name") or "").strip()
 	switch = resolve_followup_report_switch(requested_modes, source_report) if latest_grounded_turn_available else {}
 	target_report = ""
@@ -1341,8 +1407,20 @@ def build_followup_resolution(
 		target_report = resolve_target_report_for_capability(source_report, target_capability_id)
 	if latest_grounded_turn_available and not target_report and requested_time_scope:
 		target_report = source_report
+	requery_requested = bool(
+		target_capability_id
+		or target_report
+		or switch
+		or dimension_change_requested
+		or requested_time_scope
+		or (
+			bool(target_dimension)
+			and not local_transform_only
+			and bool(requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
+		)
+	)
 
-	if latest_grounded_turn_available and not self_contained and requested_modes and set(requested_modes).issubset(local_grounded_modes):
+	if latest_grounded_turn_available and local_transform_only and not target_capability_id and not requested_time_scope and not self_contained:
 		return FollowUpResolution(
 			request_id=request_id,
 			mode="local_grounded_transform",
@@ -1360,7 +1438,7 @@ def build_followup_resolution(
 			latest_grounded_turn_available=True,
 			reason="The request can be resolved deterministically from the latest grounded answer using local capability adapters.",
 		)
-	if latest_grounded_turn_available and not self_contained and (target_report or switch):
+	if latest_grounded_turn_available and requery_requested:
 		return FollowUpResolution(
 			request_id=request_id,
 			mode="capability_requery",

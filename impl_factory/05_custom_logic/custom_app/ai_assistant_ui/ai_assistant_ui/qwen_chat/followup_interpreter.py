@@ -86,7 +86,13 @@ def _detect_dimension_breakdown_target(text: str, grounded_turn: Dict[str, objec
 	if not target:
 		return ""
 	candidates = _normalized_dimension_candidates(grounded_turn)
-	return str(candidates.get(target) or "")
+	if target in candidates:
+		return str(candidates.get(target) or "")
+	if target.endswith("s"):
+		singular = target[:-1].strip()
+		if singular in candidates:
+			return str(candidates.get(singular) or "")
+	return ""
 
 
 def _detect_sort_limit_spec(text: str) -> tuple[int, str]:
@@ -118,15 +124,17 @@ def _detect_target_metric(text: str) -> str:
 
 def _detect_requested_columns(text: str) -> List[str]:
 	columns: List[str] = []
-	dimension_keys = detect_canonical_keys(text, dimension_or_metric="dimension")
-	if {"item_name", "customer", "supplier"} & set(dimension_keys):
+	dimension_key_set = set(detect_canonical_keys(text, dimension_or_metric="dimension"))
+	if {"item_name", "customer", "supplier"} & dimension_key_set:
+		columns.append("entity")
+	elif "item_code" in dimension_key_set:
 		columns.append("entity")
 	metric = _detect_target_metric(text)
 	if metric:
 		columns.append(metric)
-	if "item_code" in dimension_keys:
+	if "item_code" in dimension_key_set and "item_name" not in dimension_key_set:
 		columns.append("entity_code")
-	if "territory" in dimension_keys:
+	if "territory" in dimension_key_set:
 		columns.append("territory")
 	return list(dict.fromkeys([value for value in columns if value]))
 
@@ -261,6 +269,17 @@ def is_self_contained_business_request(
 		"column_refinement",
 		"time_scope_restatement",
 	}
+	local_column_shape_request = bool(
+		has_grounded_turn
+		and bool(parsed.requested_columns)
+		and set(parsed.requested_modes).issubset({"column_refinement", "metric_refinement"})
+		and not parsed.requested_time_scope
+		and not parsed.target_dimension
+		and not parsed.target_limit
+		and not parsed.sort_direction
+	)
+	if local_column_shape_request:
+		return False
 	if has_grounded_turn:
 		if set(parsed.requested_modes).issubset(refinement_modes) and not business_signals:
 			return False
@@ -318,6 +337,8 @@ def is_safe_local_compatibility_intent(
 	if not modes.issubset({"presentation_transform", "table_presentation", "bullet_presentation", "sort_or_limit", "metric_refinement", "column_refinement"}):
 		return False
 	if "sort_or_limit" in modes and not (parsed.target_limit or parsed.sort_direction):
+		return False
+	if "column_refinement" in modes and not list(parsed.requested_columns or []):
 		return False
 	if "time_scope_restatement" in modes:
 		return False
@@ -383,6 +404,19 @@ def assess_context_isolation(
 		intent=intent,
 		grounded_turn=grounded_turn,
 	)
+	if (
+		message_concepts
+		and context_concepts
+		and message_concepts.isdisjoint(context_concepts)
+		and "dimension_breakdown" not in requested_modes
+	):
+		return {
+			"force_new_query": True,
+			"out_of_scope": False,
+			"reason": "The request shifts to a different governed business area and should not inherit the prior artifact.",
+			"requested_domains": sorted(message_concepts),
+			"context_domains": sorted(context_concepts),
+		}
 	if requested_modes and requested_modes.issubset(local_only_modes) and not self_contained:
 		return {
 			"force_new_query": False,
@@ -396,15 +430,6 @@ def assess_context_isolation(
 			"force_new_query": True,
 			"out_of_scope": False,
 			"reason": "The request is self-contained and should be treated as a fresh governed ERP question.",
-			"requested_domains": sorted(message_concepts),
-			"context_domains": sorted(context_concepts),
-		}
-
-	if message_concepts and context_concepts and message_concepts.isdisjoint(context_concepts):
-		return {
-			"force_new_query": True,
-			"out_of_scope": False,
-			"reason": "The request shifts to a different governed business area and should not inherit the prior artifact.",
 			"requested_domains": sorted(message_concepts),
 			"context_domains": sorted(context_concepts),
 		}

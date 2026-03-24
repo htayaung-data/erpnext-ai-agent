@@ -134,6 +134,20 @@ def _requested_top_n(dimensions: Dict[str, Any], response_overrides: Dict[str, A
 	return default
 
 
+def _requested_sort_direction(
+	dimensions: Dict[str, Any],
+	response_overrides: Dict[str, Any] | None,
+	default: str = "desc",
+) -> str:
+	override_value = _clean_text((response_overrides or {}).get("sort_direction")).lower()
+	if override_value in {"asc", "desc"}:
+		return override_value
+	stored_value = _clean_text(dimensions.get("requested_sort_direction")).lower()
+	if stored_value in {"asc", "desc"}:
+		return stored_value
+	return default
+
+
 def _requested_columns(dimensions: Dict[str, Any], response_overrides: Dict[str, Any] | None) -> List[str]:
 	override_values = _clean_list((response_overrides or {}).get("requested_columns"))
 	if override_values:
@@ -424,8 +438,15 @@ def _ranking_blocks(
 	metric_key = _preferred_metric_key(all_ranked_rows, dimensions, response_overrides)
 	metric_label = _metric_label(metric_key, _clean_text(dimensions.get("primary_metric_label")) or "Primary Metric")
 	top_n = _requested_top_n(dimensions, response_overrides, default=10)
-	ranked_rows = all_ranked_rows[:top_n]
-	title = _title_with_period(f"Top {top_n} {entity_label}s by {metric_label}", artifact.period)
+	sort_direction = _requested_sort_direction(dimensions, response_overrides, default="desc")
+	if sort_direction == "asc":
+		ranked_rows = list(reversed(all_ranked_rows))[:top_n]
+		title = _title_with_period(f"Bottom {top_n} {entity_label}s by {metric_label}", artifact.period)
+		table_title = "Bottom Ranked Rows"
+	else:
+		ranked_rows = all_ranked_rows[:top_n]
+		title = _title_with_period(f"Top {top_n} {entity_label}s by {metric_label}", artifact.period)
+		table_title = "Top Ranked Rows"
 	summary = _clean_rows(sections.get("summary"))
 	requested_columns = _requested_columns(dimensions, response_overrides)
 	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
@@ -457,7 +478,7 @@ def _ranking_blocks(
 		blocks.append(
 			{
 				"block_type": "data_table",
-				"title": "Top Ranked Rows",
+				"title": table_title,
 				"columns": table_headers,
 				"rows": table_rows,
 			}
@@ -558,9 +579,16 @@ def _product_blocks(
 	metric_key = _preferred_metric_key(product_rows_all, dimensions, response_overrides)
 	metric_label = _metric_label(metric_key, _clean_text(dimensions.get("primary_metric_label")) or "Primary Metric")
 	top_n = _requested_top_n(dimensions, response_overrides, default=10)
-	title = _title_with_period(f"Top {top_n} Products by {metric_label}", artifact.period)
+	sort_direction = _requested_sort_direction(dimensions, response_overrides, default="desc")
+	if sort_direction == "asc":
+		title = _title_with_period(f"Bottom {top_n} Products by {metric_label}", artifact.period)
+		product_rows = list(reversed(product_rows_all))[:top_n]
+		table_title = "Bottom Products"
+	else:
+		title = _title_with_period(f"Top {top_n} Products by {metric_label}", artifact.period)
+		product_rows = product_rows_all[:top_n]
+		table_title = "Top Products"
 	summary = _clean_rows(sections.get("summary"))
-	product_rows = product_rows_all[:top_n]
 	requested_columns = _requested_columns(dimensions, response_overrides)
 	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
 	blocks = [
@@ -600,7 +628,7 @@ def _product_blocks(
 		blocks.append(
 			{
 				"block_type": "data_table",
-				"title": "Top Products",
+				"title": table_title,
 				"columns": table_headers,
 				"rows": table_rows,
 			}
