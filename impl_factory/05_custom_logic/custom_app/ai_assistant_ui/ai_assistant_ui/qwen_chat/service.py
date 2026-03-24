@@ -42,12 +42,19 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import detect_followup_inten
 from ai_assistant_ui.qwen_chat.followup_interpreter import assess_context_isolation
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import (
+	capability_report_names,
 	get_family_evaluation_case_set,
 	get_family_latency_budget_spec,
 	list_family_evaluation_case_sets,
+	report_business_family_ids,
+	report_capability_ids,
+	report_defaultable_filters,
+	report_family_capability_ids,
+	report_supported_metrics,
 	resolve_followup_report_switch,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
+from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key, get_metric_label
 from ai_assistant_ui.qwen_chat.semantic_interpreter import interpret_followup_semantically
 
 QWEN_SESSION_DOCTYPE = "Qwen Chat Session"
@@ -827,6 +834,7 @@ def _compile_capability_requery_message(
 	to_date = str(date_range.get("to_date") or filters.get("to_date") or "").strip()
 	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
 	target_dimension = str(getattr(followup_resolution, "target_dimension", "") or "").strip()
+	target_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
 	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
 	target_capability_id = str(getattr(followup_resolution, "target_capability_id", "") or "").strip()
 	requested_modes = [
@@ -843,8 +851,32 @@ def _compile_capability_requery_message(
 		for value in (getattr(followup_resolution, "requested_columns", []) or [])
 		if str(value or "").strip()
 	]
+	effective_capability_id = target_capability_id
+	if not effective_capability_id:
+		report_for_capability = target_report or source_report
+		effective_capability_id = str((report_capability_ids(report_for_capability) or [""])[0] or "").strip()
 	prefs = _latest_display_preferences(session_doc, getattr(followup_resolution, "requested_modes", []) or [])
 	hint = str(switch.get("requery_prompt_hint") or "").strip()
+
+	target_metric_canonical = (
+		get_canonical_key(target_metric, capability_id=effective_capability_id, dimension_or_metric="metric")
+		if target_metric
+		else None
+	)
+	extra_metric_labels: List[str] = []
+	for value in requested_columns:
+		canonical_metric = get_canonical_key(
+			value,
+			capability_id=effective_capability_id,
+			dimension_or_metric="metric",
+		)
+		if not canonical_metric:
+			continue
+		if target_metric_canonical and canonical_metric == target_metric_canonical:
+			continue
+		label = get_metric_label(canonical_metric)
+		if label and label not in extra_metric_labels:
+			extra_metric_labels.append(label)
 
 	parts: List[str] = []
 	if target_report:
@@ -869,8 +901,12 @@ def _compile_capability_requery_message(
 		parts.append(f"Use the date range from {from_date} to {to_date}.")
 	if target_dimension:
 		parts.append(f"Return the result grouped or broken down by `{target_dimension}` if supported.")
+	if target_limit > 0:
+		parts.append(f"Keep the same ranking scope and return only the top {target_limit} ranked rows.")
 	if target_metric:
 		parts.append(f"Prioritize the metric `{target_metric}`.")
+	if extra_metric_labels:
+		parts.append("Also include these governed metrics if supported: " + ", ".join(f"`{label}`" for label in extra_metric_labels) + ".")
 	if requested_columns:
 		parts.append("Return these columns if available: " + ", ".join(requested_columns) + ".")
 	if requested_modes:
@@ -883,6 +919,179 @@ def _compile_capability_requery_message(
 		parts.append("Return the result as a table.")
 	parts.append(f"User request: {str(raw_message or '').strip()}")
 	return " ".join(part for part in parts if part).strip()
+
+
+def _artifact_metric_columns_available(
+	artifact_payload: Dict[str, Any],
+	requested_columns: List[str],
+) -> bool:
+	if not isinstance(artifact_payload, dict) or not artifact_payload:
+		return True
+	requested = [str(value or "").strip() for value in (requested_columns or []) if str(value or "").strip()]
+	if not requested:
+		return True
+	family_id = str(artifact_payload.get("family_id") or "").strip()
+	if family_id not in {"ranking_analytics", "product_profitability", "inventory_snapshot"}:
+		return True
+	dimensions = artifact_payload.get("dimensions") if isinstance(artifact_payload.get("dimensions"), dict) else {}
+	sections = artifact_payload.get("sections") if isinstance(artifact_payload.get("sections"), dict) else {}
+	if family_id == "product_profitability":
+		rows = [row for row in (sections.get("product_rows") or []) if isinstance(row, dict)]
+	else:
+		rows = [row for row in (sections.get("ranked_rows") or []) if isinstance(row, dict)]
+	primary_metric_key = str(dimensions.get("requested_metric_key") or dimensions.get("primary_metric_key") or "").strip()
+	available_metric_keys = {
+		str(value or "").strip()
+		for value in (dimensions.get("available_metric_keys") or [])
+		if str(value or "").strip()
+	}
+	if primary_metric_key:
+		available_metric_keys.add(primary_metric_key)
+	row_keys = {str(key or "").strip() for row in rows for key in row.keys() if str(key or "").strip()}
+	always_supported = {"entity", "entity_code", "item_name", "item_code", "item", "contribution_percent", "rank", "amount"}
+	for column in requested:
+		if column in always_supported:
+			continue
+		if column in available_metric_keys:
+			continue
+		if column in row_keys:
+			continue
+		return False
+	return True
+
+
+def _canonical_metric_keys_for_values(values: List[str], capability_id: str = "") -> List[str]:
+	out: List[str] = []
+	for value in values:
+		canonical = get_canonical_key(
+			value,
+			capability_id=capability_id or None,
+			dimension_or_metric="metric",
+		)
+		clean = str(canonical or value or "").strip()
+		if clean and clean not in out:
+			out.append(clean)
+	return out
+
+
+def _report_can_project_metric_union(report_name: str, required_metric_keys: List[str], capability_id: str) -> bool:
+	required = [str(value or "").strip() for value in required_metric_keys if str(value or "").strip()]
+	if not required:
+		return True
+	report_metric_keys = _canonical_metric_keys_for_values(report_supported_metrics(report_name), capability_id=capability_id)
+	if not set(required).issubset(set(report_metric_keys)):
+		return False
+	defaultable_fields = {
+		str(item.get("fieldname") or "").strip()
+		for item in report_defaultable_filters(report_name)
+		if isinstance(item, dict) and str(item.get("fieldname") or "").strip()
+	}
+	if len(required) > 1 and "value_quantity" in defaultable_fields:
+		return False
+	return True
+
+
+def _resolve_metric_union_requery_target(
+	*,
+	artifact_payload: Dict[str, Any],
+	source_report: str,
+	current_capability_id: str,
+	required_metric_keys: List[str],
+) -> tuple[str, str]:
+	family_id = str(artifact_payload.get("family_id") or "").strip()
+	candidate_families = [family_id] if family_id else report_business_family_ids(source_report)
+	for family_candidate in candidate_families:
+		for capability_id in report_family_capability_ids(family_candidate):
+			for report_name in capability_report_names(capability_id):
+				if not _report_can_project_metric_union(report_name, required_metric_keys, capability_id):
+					continue
+				return capability_id, report_name
+	if current_capability_id and _report_can_project_metric_union(source_report, required_metric_keys, current_capability_id):
+		return current_capability_id, source_report
+	return current_capability_id, ""
+
+
+def _requery_resolution_for_unsupported_local_columns(
+	*,
+	request_id: str,
+	followup_resolution,
+	artifact_payload: Dict[str, Any],
+	grounded_turn: Dict[str, Any],
+) -> Any | None:
+	requested_columns = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_columns", []) or [])
+		if str(value or "").strip()
+	]
+	requested_modes = {
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(value or "").strip()
+	}
+	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
+	columns_to_validate = list(requested_columns)
+	if target_metric and target_metric not in columns_to_validate:
+		columns_to_validate.append(target_metric)
+	if not requested_modes.intersection({"column_refinement", "metric_refinement"}):
+		return None
+	if not columns_to_validate:
+		return None
+	if _artifact_metric_columns_available(artifact_payload, columns_to_validate):
+		return None
+	artifact_dimensions = artifact_payload.get("dimensions") if isinstance(artifact_payload.get("dimensions"), dict) else {}
+	fallback_dimension = str(
+		getattr(followup_resolution, "target_dimension", "")
+		or artifact_dimensions.get("entity_dimension")
+		or ""
+	).strip()
+	fallback_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
+	if not fallback_limit:
+		try:
+			fallback_limit = int(max(0, artifact_dimensions.get("requested_top_n") or 0))
+		except Exception:
+			fallback_limit = 0
+	fallback_metric = str(
+		target_metric
+		or artifact_dimensions.get("requested_metric_key")
+		or artifact_dimensions.get("primary_metric_key")
+		or ""
+	).strip()
+	fallback_report = str((grounded_turn or {}).get("source_name") or "").strip()
+	fallback_capability_id = str(getattr(followup_resolution, "target_capability_id", "") or "").strip()
+	if not fallback_capability_id and fallback_report:
+		fallback_capability_id = str((report_capability_ids(fallback_report) or [""])[0] or "").strip()
+	required_metric_keys = _canonical_metric_keys_for_values(
+		[
+			target_metric,
+			str(artifact_dimensions.get("requested_metric_key") or "").strip(),
+			str(artifact_dimensions.get("primary_metric_key") or "").strip(),
+			*columns_to_validate,
+		],
+		capability_id=fallback_capability_id,
+	)
+	selected_capability_id, selected_report = _resolve_metric_union_requery_target(
+		artifact_payload=artifact_payload,
+		source_report=fallback_report,
+		current_capability_id=fallback_capability_id,
+		required_metric_keys=required_metric_keys,
+	)
+	return FollowUpResolution(
+		request_id=request_id,
+		mode="capability_requery",
+		requested_modes=list(getattr(followup_resolution, "requested_modes", []) or []),
+		target_dimension=fallback_dimension,
+		target_limit=fallback_limit,
+		sort_direction=str(getattr(followup_resolution, "sort_direction", "") or "").strip(),
+		target_metric=fallback_metric,
+		requested_columns=requested_columns,
+		requested_time_scope=str(getattr(followup_resolution, "requested_time_scope", "") or "").strip(),
+		target_capability_id=selected_capability_id,
+		target_report=selected_report,
+		depends_on_grounded_turn=True,
+		self_contained=False,
+		latest_grounded_turn_available=bool(getattr(followup_resolution, "latest_grounded_turn_available", False)),
+		reason="The requested columns or metric are not populated in the current grounded artifact and need a governed requery.",
+	)
 
 
 def _latest_qwen_trace_payload(session_doc) -> Dict[str, Any]:
@@ -1203,10 +1412,7 @@ def _try_local_followup_transform(
 			_session_tool_payloads(),
 			"qwen_entity_detail_rendered_response",
 		)
-	if family_artifact_payload and (
-		family_followup_payload
-		or requested_modes.intersection({"table_presentation", "bullet_presentation", "metric_refinement", "column_refinement", "sort_or_limit"})
-	):
+	if family_artifact_payload and not family_followup_payload and requested_modes.intersection({"bullet_presentation"}):
 		artifact_context = build_artifact_narrative_context(
 			request_id=request_id,
 			artifact_payload=family_artifact_payload,
@@ -1572,6 +1778,15 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			allow_heuristic_fallback=allow_heuristic_fallback if followup_context_available else True,
 			degraded_reason=str(context_isolation.get("reason") or degraded_reason or "").strip(),
 		)
+	family_artifact_for_requery = _latest_normalized_family_artifact(session_doc) if followup_context_available else {}
+	requery_upgrade = _requery_resolution_for_unsupported_local_columns(
+		request_id=request_id,
+		followup_resolution=followup_resolution,
+		artifact_payload=family_artifact_for_requery,
+		grounded_turn=latest_grounded_turn if followup_context_available else {},
+	)
+	if requery_upgrade is not None:
+		followup_resolution = requery_upgrade
 	if (
 		entity_drilldown is None
 		and bool(context_isolation.get("force_new_query"))

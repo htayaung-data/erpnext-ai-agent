@@ -10,7 +10,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	NormalizedFamilyArtifactContract,
 	build_normalized_family_artifact_contract,
 )
-from ai_assistant_ui.qwen_chat.metadata import report_business_family_ids
+from ai_assistant_ui.qwen_chat.metadata import report_business_family_ids, report_family_entity_dimension_label
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
@@ -1096,7 +1096,11 @@ def _build_gross_profit_ranking(
 		period=period,
 		filters=filters,
 		dimensions=_apply_request_hints({
-			"entity_dimension": str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+			"entity_dimension": report_family_entity_dimension_label(
+				"ranking_analytics",
+				entity_fields=("item_name", "item_code"),
+				default_label=str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+			),
 			"primary_metric_key": metric_key,
 			"primary_metric_label": metric_label,
 			"source_grain": "grouped_profitability",

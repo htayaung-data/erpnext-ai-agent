@@ -1665,9 +1665,31 @@ def build_grounded_turn_context(
 		header_text = str(header or "").strip()
 		if header_text and header_text not in metrics:
 			metrics.append(header_text)
-
 	trace_request_id = str(runtime_payload.get("request_id") or request_id).strip()
 	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
+	artifact_dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	if isinstance(artifact_dimensions, dict):
+		for key in (
+			"entity_dimension",
+			"product_dimension",
+			"aging_type",
+			"transaction_type",
+			"document_label",
+		):
+			value = str(artifact_dimensions.get(key) or "").strip()
+			if value and value not in dimensions:
+				dimensions.append(value)
+		for metric_key in artifact_dimensions.get("available_metric_keys") or []:
+			clean_metric = str(metric_key or "").strip()
+			if clean_metric and clean_metric not in metrics:
+				metrics.append(clean_metric)
+		for metric_key in (
+			str(artifact_dimensions.get("requested_metric_key") or "").strip(),
+			str(artifact_dimensions.get("primary_metric_key") or "").strip(),
+			str(artifact_dimensions.get("primary_metric_label") or "").strip(),
+		):
+			if metric_key and metric_key not in metrics:
+				metrics.append(metric_key)
 	known_entities, known_documents = _artifact_known_references(artifact)
 	return GroundedTurnContext(
 		request_id=request_id,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
@@ -169,46 +170,78 @@ def get_intent_class_spec(intent_class_id: str) -> Dict[str, Any]:
 	return {}
 
 
-def ontology_followup_aliases(mode: str, language: str = "en") -> List[str]:
-	entries = load_business_ontology().get("follow_up_classes")
-	if not isinstance(entries, list):
+def _normalize_ontology_text(value: str) -> str:
+	return " ".join(str(value or "").strip().lower().split())
+
+
+def _ontology_contains_alias(text: str, alias: str) -> bool:
+	value = _normalize_ontology_text(text)
+	target = _normalize_ontology_text(alias)
+	if not value or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, value))
+
+
+def list_followup_class_specs() -> List[Dict[str, Any]]:
+	values = load_business_ontology().get("follow_up_classes")
+	if not isinstance(values, list):
 		return []
-	for item in entries:
-		if not isinstance(item, dict):
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_followup_class_spec(mode: str) -> Dict[str, Any]:
+	target = str(mode or "").strip()
+	for item in list_followup_class_specs():
+		if str(item.get("mode") or "").strip() == target:
+			return item
+	return {}
+
+
+def ontology_followup_aliases(mode: str, language: str = "en") -> List[str]:
+	item = get_followup_class_spec(mode)
+	aliases = item.get("aliases")
+	if not isinstance(aliases, dict):
+		return []
+	values = aliases.get(language)
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+
+
+def ontology_followup_slot_aliases(mode: str, slot_key: str, language: str = "en") -> Dict[str, List[str]]:
+	item = get_followup_class_spec(mode)
+	slot_aliases = item.get("slot_aliases")
+	if not isinstance(slot_aliases, dict):
+		return {}
+	slot_values = slot_aliases.get(str(slot_key or "").strip())
+	if not isinstance(slot_values, dict):
+		return {}
+	out: Dict[str, List[str]] = {}
+	for value_key, language_map in slot_values.items():
+		if not isinstance(language_map, dict):
 			continue
-		if str(item.get("mode") or "").strip() != str(mode or "").strip():
-			continue
-		aliases = item.get("aliases")
-		if not isinstance(aliases, dict):
-			return []
-		values = aliases.get(language)
+		values = language_map.get(language)
 		if not isinstance(values, list):
-			return []
-		return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+			continue
+		clean = [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+		if clean:
+			out[str(value_key or "").strip()] = clean
+	return out
 	return []
 
 
 def ontology_detect_followup_modes(message: str, language: str = "en") -> List[str]:
-	text = " ".join(str(message or "").strip().lower().split())
+	text = _normalize_ontology_text(message)
 	if not text:
 		return []
-	entries = load_business_ontology().get("follow_up_classes")
-	if not isinstance(entries, list):
-		return []
 	out: List[str] = []
-	for item in entries:
-		if not isinstance(item, dict):
-			continue
+	for item in list_followup_class_specs():
 		mode = str(item.get("mode") or "").strip()
 		if not mode:
 			continue
-		aliases = item.get("aliases")
-		if not isinstance(aliases, dict):
-			continue
-		values = aliases.get(language)
-		if not isinstance(values, list):
-			continue
-		if any(str(alias or "").strip().lower() in text for alias in values if str(alias or "").strip()):
+		values = ontology_followup_aliases(mode, language=language)
+		if any(_ontology_contains_alias(text, alias) for alias in values):
 			out.append(mode)
 	return list(dict.fromkeys(out))
 
@@ -269,7 +302,7 @@ def ontology_concept_aliases(concept_id: str, language: str = "en") -> List[str]
 
 
 def ontology_detect_concepts(message: str, language: str = "en") -> List[str]:
-	text = " ".join(str(message or "").strip().lower().split())
+	text = _normalize_ontology_text(message)
 	if not text:
 		return []
 	entries = load_business_ontology().get("concepts")
@@ -288,7 +321,7 @@ def ontology_detect_concepts(message: str, language: str = "en") -> List[str]:
 		values = aliases.get(language)
 		if not isinstance(values, list):
 			continue
-		if any(str(alias or "").strip().lower() in text for alias in values if str(alias or "").strip()):
+		if any(_ontology_contains_alias(text, alias) for alias in values if str(alias or "").strip()):
 			out.append(concept_id)
 	return list(dict.fromkeys(out))
 
@@ -306,6 +339,26 @@ def ontology_self_contained_prefixes(language: str = "en") -> List[str]:
 	return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
 
 
+def ontology_query_slot_aliases(slot_key: str, language: str = "en") -> Dict[str, List[str]]:
+	slot_aliases = load_business_ontology().get("query_slot_aliases")
+	if not isinstance(slot_aliases, dict):
+		return {}
+	slot_values = slot_aliases.get(str(slot_key or "").strip())
+	if not isinstance(slot_values, dict):
+		return {}
+	out: Dict[str, List[str]] = {}
+	for value_key, language_map in slot_values.items():
+		if not isinstance(language_map, dict):
+			continue
+		values = language_map.get(language)
+		if not isinstance(values, list):
+			continue
+		clean = [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+		if clean:
+			out[str(value_key or "").strip()] = clean
+	return out
+
+
 def report_capability_ids(report_name: str) -> List[str]:
 	spec = get_report_spec(report_name)
 	values = spec.get("capability_ids")
@@ -316,6 +369,13 @@ def report_capability_ids(report_name: str) -> List[str]:
 
 def capability_intent_classes(capability_id: str) -> List[str]:
 	values = get_capability_spec(capability_id).get("intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def capability_ontology_concepts(capability_id: str) -> List[str]:
+	values = get_capability_spec(capability_id).get("ontology_concepts")
 	if not isinstance(values, list):
 		return []
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
@@ -337,6 +397,17 @@ def capability_report_names(capability_id: str) -> List[str]:
 
 def capability_default_report_name(capability_id: str) -> str:
 	return str(get_capability_spec(capability_id).get("default_report_name") or "").strip()
+
+
+def capability_fresh_query_defaults(capability_id: str, intent_class: str = "") -> Dict[str, Any]:
+	spec = get_capability_spec(capability_id)
+	defaults = spec.get("fresh_query_defaults")
+	if not isinstance(defaults, dict):
+		return {}
+	if intent_class:
+		value = defaults.get(str(intent_class or "").strip())
+		return dict(value) if isinstance(value, dict) else {}
+	return dict(defaults)
 
 
 def capability_business_family_ids(capability_id: str) -> List[str]:
@@ -480,6 +551,31 @@ def report_family_capability_ids(family_id: str) -> List[str]:
 def report_family_routing_hints(family_id: str) -> Dict[str, Any]:
 	value = get_report_family_spec(family_id).get("routing_hints")
 	return dict(value) if isinstance(value, dict) else {}
+
+
+def report_family_display_policies(family_id: str) -> Dict[str, Any]:
+	value = get_report_family_spec(family_id).get("display_policies")
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def report_family_entity_dimension_label(
+	family_id: str,
+	*,
+	entity_fields: List[str] | tuple[str, ...] | None = None,
+	default_label: str = "",
+) -> str:
+	policies = report_family_display_policies(family_id)
+	label_map = policies.get("entity_dimension_labels")
+	if not isinstance(label_map, dict):
+		return str(default_label or "").strip()
+	for field_name in entity_fields or []:
+		key = str(field_name or "").strip()
+		if not key:
+			continue
+		value = str(label_map.get(key) or "").strip()
+		if value:
+			return value
+	return str(default_label or "").strip()
 
 
 def report_family_ontology_concepts(family_id: str) -> List[str]:

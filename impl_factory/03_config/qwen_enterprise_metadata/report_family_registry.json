@@ -193,6 +193,17 @@
         "ranking",
         "analytics"
       ],
+      "display_policies": {
+        "entity_dimension_labels": {
+          "item_name": "Item",
+          "item_code": "Item",
+          "item": "Item",
+          "customer_name": "Customer",
+          "customer": "Customer",
+          "supplier_name": "Supplier",
+          "supplier": "Supplier"
+        }
+      },
       "routing_hints": {
         "ontology_concepts": [
           "sales",
@@ -207,7 +218,11 @@
           "highest",
           "lowest",
           "rank",
-          "ranking"
+          "ranking",
+          "revenue",
+          "sales amount",
+          "quantity",
+          "outstanding amount"
         ]
       },
       "coverage_status": "active"
@@ -420,16 +435,20 @@
       "routing_hints": {
         "ontology_concepts": [
           "product",
-          "sales",
           "profit_and_loss"
         ],
         "intent_markers": [
-          "product",
-          "products",
-          "item",
-          "items",
           "gross profit",
-          "performing well"
+          "gross profit percent",
+          "gross margin",
+          "profit margin",
+          "profitability",
+          "product performance",
+          "performing well",
+          "top performing",
+          "best performing",
+          "most profitable",
+          "least profitable"
         ]
       },
       "coverage_status": "active"

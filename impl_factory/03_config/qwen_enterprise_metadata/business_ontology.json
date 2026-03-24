@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0",
+  "contract_version": "1.1",
   "concepts": [
     {
       "concept_id": "sales",
@@ -113,6 +113,18 @@
       "label": "Presentation-only transform",
       "requires_grounded_turn": true,
       "slot_keys": ["display_unit"],
+      "aliases": {
+        "en": ["show in million", "show as million", "in million", "as million", "million view", "million format", "show in mmk million"],
+        "my": []
+      },
+      "slot_aliases": {
+        "display_unit": {
+          "million_mmk": {
+            "en": ["million", "mmk million", "million mmk", "in million", "as million", "show in million", "show as million"],
+            "my": []
+          }
+        }
+      },
       "supported_families": ["aging", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
@@ -120,6 +132,10 @@
       "label": "Column projection or narrowing",
       "requires_grounded_turn": true,
       "slot_keys": ["requested_columns"],
+      "aliases": {
+        "en": ["column", "columns", "column only", "columns only", "show only", "only show", "include column", "include columns"],
+        "my": []
+      },
       "supported_families": ["ranking_analytics", "trend_analytics", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
@@ -127,6 +143,21 @@
       "label": "Tabular presentation request",
       "requires_grounded_turn": true,
       "slot_keys": ["presentation_format"],
+      "aliases": {
+        "en": ["as table", "in table", "show as table", "show in table", "tabular", "table"],
+        "my": []
+      },
+      "supported_families": ["aging", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
+    },
+    {
+      "mode": "bullet_presentation",
+      "label": "Bullet presentation request",
+      "requires_grounded_turn": true,
+      "slot_keys": ["presentation_format"],
+      "aliases": {
+        "en": ["bullet", "bullets", "bullet point", "bullet points", "key points", "bullet list"],
+        "my": []
+      },
       "supported_families": ["aging", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
@@ -134,6 +165,10 @@
       "label": "Dimension breakdown over prior artifact",
       "requires_grounded_turn": true,
       "slot_keys": ["target_dimension"],
+      "aliases": {
+        "en": ["show by", "group by", "breakdown by", "split by"],
+        "my": []
+      },
       "supported_families": ["aging", "ranking_analytics", "trend_analytics", "inventory_snapshot", "product_profitability"]
     },
     {
@@ -141,6 +176,32 @@
       "label": "Ranking or row-limit change",
       "requires_grounded_turn": true,
       "slot_keys": ["target_limit", "sort_direction"],
+      "aliases": {
+        "en": ["top", "bottom", "highest", "lowest", "ascending", "descending"],
+        "my": []
+      },
+      "slot_aliases": {
+        "sort_direction": {
+          "desc": {
+            "en": ["top", "highest", "largest", "biggest", "descending", "desc"],
+            "my": []
+          },
+          "asc": {
+            "en": ["bottom", "lowest", "smallest", "ascending", "asc"],
+            "my": []
+          }
+        },
+        "limit_prefix": {
+          "desc": {
+            "en": ["top"],
+            "my": []
+          },
+          "asc": {
+            "en": ["bottom", "lowest"],
+            "my": []
+          }
+        }
+      },
       "supported_families": ["ranking_analytics", "product_profitability", "transaction_listing"]
     },
     {
@@ -148,6 +209,10 @@
       "label": "Aging bucket focus",
       "requires_grounded_turn": true,
       "slot_keys": ["aging_bucket"],
+      "aliases": {
+        "en": ["aging bucket", "due period", "bucket view", "overdue bucket", "show aging"],
+        "my": []
+      },
       "supported_families": ["aging"]
     },
     {
@@ -155,6 +220,10 @@
       "label": "Switch to sibling governed family or party type",
       "requires_grounded_turn": true,
       "slot_keys": ["target_concept_id"],
+      "aliases": {
+        "en": ["how about", "what about", "instead show", "switch to"],
+        "my": []
+      },
       "supported_families": ["aging", "working_capital_health"]
     },
     {
@@ -162,6 +231,10 @@
       "label": "Metric refinement over prior artifact",
       "requires_grounded_turn": true,
       "slot_keys": ["target_metric", "requested_metrics"],
+      "aliases": {
+        "en": ["by metric", "show metric", "use metric"],
+        "my": []
+      },
       "supported_families": ["ranking_analytics", "trend_analytics", "product_profitability", "inventory_snapshot"]
     },
     {
@@ -169,7 +242,69 @@
       "label": "Time scope change over prior artifact",
       "requires_grounded_turn": true,
       "slot_keys": ["requested_time_scope", "absolute_year", "from_date", "to_date"],
+      "aliases": {
+        "en": ["last month", "current month", "this month", "all time", "all period", "overall", "as of now", "as of today", "last year", "this year"],
+        "my": []
+      },
+      "slot_aliases": {
+        "requested_time_scope": {
+          "last_month": {
+            "en": ["last month", "previous month", "prior month"],
+            "my": []
+          },
+          "current_period": {
+            "en": ["this month", "current month"],
+            "my": []
+          },
+          "all_period": {
+            "en": ["all time", "all period", "overall"],
+            "my": []
+          },
+          "as_of_today": {
+            "en": ["as of", "as of now", "as of today"],
+            "my": []
+          },
+          "last_year": {
+            "en": ["last year", "previous year", "prior year"],
+            "my": []
+          }
+        }
+      },
       "supported_families": ["ranking_analytics", "trend_analytics", "financial_statement", "aging", "product_profitability", "transaction_listing"]
     }
-  ]
+  ],
+  "query_slot_aliases": {
+    "requested_time_scope": {
+      "as_of_today": {
+        "en": ["as of", "as of now", "as of today", "today", "now", "current date"],
+        "my": []
+      },
+      "current_period": {
+        "en": ["this month", "current month", "current period"],
+        "my": []
+      },
+      "last_month": {
+        "en": ["last month", "previous month", "prior month"],
+        "my": []
+      },
+      "current_fiscal_year_to_date": {
+        "en": ["year to date", "ytd", "fiscal year to date", "this year", "current year"],
+        "my": []
+      },
+      "all_period": {
+        "en": ["all time", "all period", "overall"],
+        "my": []
+      },
+      "last_year": {
+        "en": ["last year", "previous year", "prior year"],
+        "my": []
+      }
+    }
+  },
+  "interaction_hints": {
+    "self_contained_prefixes": {
+      "en": ["show me", "give me", "tell me", "display", "list", "analyze", "what is", "how much", "show"],
+      "my": []
+    }
+  }
 }

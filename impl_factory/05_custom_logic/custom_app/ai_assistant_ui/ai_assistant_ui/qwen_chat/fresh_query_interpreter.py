@@ -31,12 +31,29 @@ from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
-from ai_assistant_ui.qwen_chat.metadata import list_capability_specs, list_intent_class_specs
+from ai_assistant_ui.qwen_chat.metadata import (
+	capability_default_report_name,
+	capability_fresh_query_defaults,
+	capability_intent_classes,
+	capability_ontology_concepts,
+	list_capability_specs,
+	list_intent_class_specs,
+	ontology_detect_concepts,
+	ontology_query_slot_aliases,
+	report_business_family_ids,
+	report_capability_ids,
+	report_family_capability_ids,
+	report_family_ids_for_intent_class,
+	report_family_report_names,
+	report_supported_dimensions,
+	report_supported_metrics,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_chat,
 	call_qwen_runtime_fresh_query_interpretation,
 )
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_erp_field_mapping
 from ai_assistant_ui.qwen_chat.semantic_validator import (
 	run_phase4_semantic_validation_selftests,
 	validate_compiled_semantic_result,
@@ -111,6 +128,10 @@ def _normalize_time_scope(value: Any) -> str:
 	key = _normalize_key(value)
 	if not key:
 		return ""
+	if key in {"undefined", "none", "null", "na", "n_a", "unknown"}:
+		return ""
+	if re.fullmatch(r"\d{4}_\d{2}_\d{2}", key):
+		return ""
 	if key in {"as_of_today", "as_of_now", "today", "now", "current_date", "current_date_utc"}:
 		return "as_of_today"
 	if key in {"current_period", "this_period", "this_month", "current_month"}:
@@ -124,25 +145,33 @@ def _normalize_time_scope(value: Any) -> str:
 	return key
 
 
+def _contains_alias(text: str, alias: str) -> bool:
+	value = " ".join(str(text or "").strip().lower().split())
+	target = " ".join(str(alias or "").strip().lower().split())
+	if not value or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, value))
+
+
+def _metadata_slot_value(message: str, slot_aliases: Dict[str, List[str]]) -> str:
+	text = str(message or "").strip()
+	if not text:
+		return ""
+	for slot_value, aliases in slot_aliases.items():
+		for alias in aliases:
+			if _contains_alias(text, alias):
+				return str(slot_value or "").strip()
+	return ""
+
+
 def _infer_governed_time_scope(*, intent_class: str, message: str, requested_time_scope: str) -> str:
 	if str(requested_time_scope or "").strip():
 		return str(requested_time_scope or "").strip()
-	tokens = _message_tokens(message)
-	if not tokens:
-		return ""
-	if {"last", "month"}.issubset(tokens) or {"previous", "month"}.issubset(tokens) or {"prior", "month"}.issubset(tokens):
-		return "last_month"
-	if {"this", "month"}.issubset(tokens) or {"current", "month"}.issubset(tokens):
-		return "current_period"
-	if {"year", "date"}.issubset(tokens) or {"fiscal", "year"}.issubset(tokens):
-		return "current_fiscal_year_to_date"
-	if str(intent_class or "").strip() in {"trend_analysis", "product_performance"} and tokens & {
-		"trend",
-		"monthly",
-		"weekly",
-		"daily",
-		"history",
-	}:
+	value = _metadata_slot_value(message, ontology_query_slot_aliases("requested_time_scope"))
+	if value:
+		return _normalize_time_scope(value)
+	if str(intent_class or "").strip() in {"trend_analysis", "product_performance"}:
 		return "current_fiscal_year_to_date"
 	return ""
 
@@ -292,6 +321,150 @@ def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
 	return result.intent_class
 
 
+def _default_spec_values(spec: Dict[str, Any], key: str) -> List[str]:
+	values = spec.get(key)
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def _ordered_capability_ids_for_family(
+	*,
+	family_id: str,
+	intent_class: str,
+	message_concepts: List[str],
+) -> List[str]:
+	candidate_ids = report_family_capability_ids(family_id)
+	if not candidate_ids:
+		return []
+	concept_set = {str(value or "").strip() for value in message_concepts if str(value or "").strip()}
+	scored: List[tuple[int, int, str]] = []
+	for order_index, capability_id in enumerate(candidate_ids):
+		score = 0
+		if intent_class and intent_class in capability_intent_classes(capability_id):
+			score += 20
+		overlap = concept_set & set(capability_ontology_concepts(capability_id))
+		score += 25 * len(overlap)
+		scored.append((score, order_index, capability_id))
+	scored.sort(key=lambda item: (-item[0], item[1]))
+	return [capability_id for _score, _order_index, capability_id in scored]
+
+
+def _resolve_default_report_name(
+	*,
+	capability_id: str,
+	intent_class: str,
+	message_concepts: List[str],
+	candidate_reports: List[str],
+) -> str:
+	for report_name in candidate_reports:
+		if capability_id in report_capability_ids(report_name):
+			return report_name
+	spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
+	report_overrides = spec.get("report_overrides_by_concept")
+	if isinstance(report_overrides, dict):
+		for concept_id in message_concepts:
+			value = str(report_overrides.get(str(concept_id or "").strip()) or "").strip()
+			if value:
+				return value
+	value = str(spec.get("default_report_name") or "").strip()
+	if value:
+		return value
+	return capability_default_report_name(capability_id)
+
+
+def _supported_labels_for_report(report_name: str, *, dimension_or_metric: str) -> List[str]:
+	if dimension_or_metric == "dimension":
+		values = report_supported_dimensions(report_name)
+	else:
+		values = report_supported_metrics(report_name)
+	return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+
+def _resolve_supported_labels_for_canonical_keys(
+	*,
+	report_name: str,
+	capability_id: str,
+	canonical_keys: List[str],
+	dimension_or_metric: str,
+) -> List[str]:
+	supported = _supported_labels_for_report(report_name, dimension_or_metric=dimension_or_metric)
+	if not supported:
+		return []
+	supported_lookup = {_normalize_key(value): value for value in supported}
+	out: List[str] = []
+	for canonical_key in canonical_keys:
+		for field_name in get_erp_field_mapping(canonical_key, report_name):
+			canonical = supported_lookup.get(_normalize_key(field_name))
+			if canonical and canonical not in out:
+				out.append(canonical)
+	return out
+
+
+def _default_labels_from_spec(
+	*,
+	spec: Dict[str, Any],
+	message_concepts: List[str],
+	dimension_or_metric: str,
+) -> List[str]:
+	if dimension_or_metric == "dimension":
+		override_key = "dimension_overrides_by_concept"
+		default_key = "default_dimensions"
+	else:
+		override_key = "metric_overrides_by_canonical_key"
+		default_key = "default_metrics"
+	overrides = spec.get(override_key)
+	if dimension_or_metric == "dimension" and isinstance(overrides, dict):
+		for concept_id in message_concepts:
+			values = overrides.get(str(concept_id or "").strip())
+			if isinstance(values, list):
+				clean = [str(x or "").strip() for x in values if str(x or "").strip()]
+				if clean:
+					return clean
+	return _default_spec_values(spec, default_key)
+
+
+def _resolve_requested_labels(
+	*,
+	message: str,
+	report_name: str,
+	capability_id: str,
+	intent_class: str,
+	existing_values: List[str],
+	dimension_or_metric: str,
+) -> List[str]:
+	if existing_values:
+		return list(dict.fromkeys(_clean_list(existing_values)))
+	spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
+	canonical_keys = detect_canonical_keys(
+		message,
+		capability_id=capability_id,
+		dimension_or_metric=dimension_or_metric,
+	)
+	if dimension_or_metric == "metric":
+		metric_overrides = spec.get("metric_overrides_by_canonical_key")
+		if isinstance(metric_overrides, dict):
+			for canonical_key in canonical_keys:
+				values = metric_overrides.get(str(canonical_key or "").strip())
+				if isinstance(values, list):
+					clean = [str(x or "").strip() for x in values if str(x or "").strip()]
+					if clean:
+						return clean
+	resolved = _resolve_supported_labels_for_canonical_keys(
+		report_name=report_name,
+		capability_id=capability_id,
+		canonical_keys=canonical_keys,
+		dimension_or_metric=dimension_or_metric,
+	)
+	if resolved:
+		return resolved
+	return _default_labels_from_spec(
+		spec=spec,
+		message_concepts=ontology_detect_concepts(message),
+		dimension_or_metric=dimension_or_metric,
+	)
+
+
 def _apply_governed_interpretation_biases(
 	*,
 	intent_class: str,
@@ -301,37 +474,39 @@ def _apply_governed_interpretation_biases(
 	requested_dimensions: List[str],
 	requested_metrics: List[str],
 ) -> tuple[List[str], List[str]]:
-	tokens = _message_tokens(message)
 	intent_key = str(intent_class or "").strip()
-	if intent_key == "financial_statement":
-		if {"balance", "sheet"}.issubset(tokens):
-			return ["financial_statement_read"], ["Balance Sheet"]
-		if {"cash", "flow"}.issubset(tokens):
-			return ["financial_statement_read"], ["Cash Flow"]
-		if {"income", "statement"}.issubset(tokens) or {"profit", "loss"}.issubset(tokens) or {"p", "l"}.issubset(tokens):
-			return ["financial_statement_read"], ["Profit and Loss Statement"]
-	if intent_key == "transaction_listing":
-		if "invoice" in tokens or "invoices" in tokens:
-			return ["sales_read"], ["Sales Invoice List"]
-	if intent_key == "ranked_entities" and (tokens & {"product", "products", "item", "items", "sku", "brand"}):
-		return ["product_performance_read"], ["Gross Profit"]
-	if intent_key == "product_performance":
-		return ["product_performance_read"], ["Gross Profit"]
-	if intent_key != "trend_analysis":
-		return candidate_capability_ids, candidate_reports
-	if not tokens:
-		return candidate_capability_ids, candidate_reports
-	product_terms = {"product", "products", "item", "items", "sku", "brand", "gross", "margin"}
-	sales_terms = {"sale", "sales", "revenue", "customer", "territory", "trend", "monthly", "weekly", "daily"}
-	dimension_keys = {_normalize_key(value) for value in requested_dimensions if str(value or "").strip()}
-	product_specific_dimensions = {"item", "item_code", "item_group", "brand"}
-	if tokens & product_terms:
-		return candidate_capability_ids, candidate_reports
-	if dimension_keys & product_specific_dimensions:
-		return candidate_capability_ids, candidate_reports
-	if not (tokens & sales_terms):
-		return candidate_capability_ids, candidate_reports
-	return ["sales_read"], ["Sales Analytics"]
+	message_concepts = ontology_detect_concepts(message)
+	capability_ids = list(dict.fromkeys(_clean_list(candidate_capability_ids)))
+	if not capability_ids and intent_key:
+		surface = build_family_tool_surface_for_message(
+			request_id="",
+			session_id="",
+			message=message,
+			preferred_intent_class=intent_key,
+		)
+		family_id = ""
+		if surface is not None and list(surface.candidate_family_ids or []):
+			family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
+		if not family_id:
+			family_ids = report_family_ids_for_intent_class(intent_key)
+			family_id = str((family_ids or [""])[0] or "").strip()
+		if family_id:
+			capability_ids = _ordered_capability_ids_for_family(
+				family_id=family_id,
+				intent_class=intent_key,
+				message_concepts=message_concepts,
+			)
+			if capability_ids:
+				capability_ids = capability_ids[:1]
+	if not capability_ids:
+		return [], []
+	report_name = _resolve_default_report_name(
+		capability_id=capability_ids[0],
+		intent_class=intent_key,
+		message_concepts=message_concepts,
+		candidate_reports=_clean_list(candidate_reports),
+	)
+	return capability_ids, [report_name] if report_name else []
 
 
 def _apply_governed_request_defaults(
@@ -344,90 +519,28 @@ def _apply_governed_request_defaults(
 	requested_metrics: List[str],
 	requested_time_scope: str,
 ) -> tuple[List[str], List[str], str]:
-	tokens = _message_tokens(message)
-	capability_ids = {str(value or "").strip() for value in candidate_capability_ids if str(value or "").strip()}
-	report_names = {str(value or "").strip() for value in candidate_reports if str(value or "").strip()}
-	dimensions = list(dict.fromkeys(_clean_list(requested_dimensions)))
-	metrics = list(dict.fromkeys(_clean_list(requested_metrics)))
+	capability_id = str((_clean_list(candidate_capability_ids) or [""])[0] or "").strip()
+	report_name = str((_clean_list(candidate_reports) or [""])[0] or "").strip()
+	dimensions = _resolve_requested_labels(
+		message=message,
+		report_name=report_name,
+		capability_id=capability_id,
+		intent_class=intent_class,
+		existing_values=requested_dimensions,
+		dimension_or_metric="dimension",
+	)
+	metrics = _resolve_requested_labels(
+		message=message,
+		report_name=report_name,
+		capability_id=capability_id,
+		intent_class=intent_class,
+		existing_values=requested_metrics,
+		dimension_or_metric="metric",
+	)
 	time_scope = str(requested_time_scope or "").strip()
-
-	def _default_sales_dimension() -> str:
-		if {"territory", "region", "regions"} & tokens:
-			return "Territory"
-		if {"product", "products", "item", "items", "sku", "brand"} & tokens:
-			return "Item"
-		return "Customer"
-
-	if str(intent_class or "").strip() == "ranked_entities":
-		if not dimensions:
-			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
-				dimensions = [_default_sales_dimension()]
-			elif "accounts_payable_read" in capability_ids or "Accounts Payable Summary" in report_names:
-				dimensions = ["Supplier"]
-			elif "accounts_receivable_read" in capability_ids or "Accounts Receivable Summary" in report_names:
-				dimensions = ["Customer"]
-			elif "stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}:
-				dimensions = ["Warehouse"] if {"warehouse", "warehouses"} & tokens else ["Item"]
-			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
-				dimensions = ["Item Code"]
-		if not metrics:
-			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
-				metrics = ["Quantity"] if {"quantity", "qty", "volume", "units"} & tokens else ["Revenue"]
-			elif "accounts_payable_read" in capability_ids or "Accounts Payable Summary" in report_names:
-				metrics = ["Outstanding"]
-			elif "accounts_receivable_read" in capability_ids or "Accounts Receivable Summary" in report_names:
-				metrics = ["Outstanding"]
-			elif "stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}:
-				metrics = ["Balance Value (MMK)"] if {"value", "valuation", "worth"} & tokens else ["Balance Qty"]
-			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
-				metrics = ["Gross Profit"]
-		if not time_scope:
-			time_scope = "current_fiscal_year_to_date"
-
-	if str(intent_class or "").strip() == "trend_analysis":
-		if not metrics:
-			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
-				metrics = ["Revenue"]
-			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
-				metrics = ["Billed Amount"]
-		if not time_scope:
-			time_scope = "current_fiscal_year_to_date"
-
-	if str(intent_class or "").strip() == "product_performance":
-		if not dimensions:
-			dimensions = ["Item Code"]
-		if not metrics:
-			metrics = ["Gross Profit"]
-		if not time_scope:
-			time_scope = "current_fiscal_year_to_date"
-
-	if str(intent_class or "").strip() == "transaction_listing":
-		if not dimensions:
-			dimensions = ["Invoice"]
-		if not metrics:
-			metrics = ["Grand Total"]
-
-	if str(intent_class or "").strip() == "financial_summary":
-		if not metrics:
-			if "accounts_payable_read" in capability_ids or "Accounts Payable Summary" in report_names:
-				metrics = ["Outstanding"]
-			elif "accounts_receivable_read" in capability_ids or "Accounts Receivable Summary" in report_names:
-				metrics = ["Outstanding"]
-			elif "stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}:
-				metrics = ["Balance Value (MMK)"]
-		if not time_scope and (
-			"accounts_payable_read" in capability_ids
-			or "accounts_receivable_read" in capability_ids
-			or report_names & {"Accounts Payable Summary", "Accounts Receivable Summary"}
-		):
-			time_scope = "as_of_today"
-
-	if str(intent_class or "").strip() == "inventory_summary":
-		if not dimensions and ("stock_read" in capability_ids or report_names & {"Stock Balance", "Warehouse Wise Stock Balance"}):
-			dimensions = ["Warehouse"] if {"warehouse", "warehouses"} & tokens else ["Item"]
-		if not metrics:
-			metrics = ["Balance Value (MMK)"] if {"value", "valuation", "worth"} & tokens else ["Balance Qty"]
-
+	if not time_scope:
+		spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
+		time_scope = str(spec.get("default_time_scope") or "").strip()
 	return dimensions, metrics, time_scope
 
 
@@ -440,26 +553,34 @@ def _preferred_family_id_for_message(
 	report_name = str(compiler_contract.get("selected_report") or "").strip()
 	capability_id = str(compiler_contract.get("capability_id") or "").strip()
 	intent_class = str((interpretation_contract or {}).get("intent_class") or "").strip()
-	tokens = _message_tokens(message)
-	ranking_terms = {"top", "bottom", "highest", "lowest", "rank", "ranking", "best", "worst"}
-	trend_terms = {"trend", "monthly", "weekly", "daily", "history"}
-	product_terms = {"product", "products", "item", "items", "sku", "brand"}
-	performance_terms = {"performing", "performance", "well", "profit", "profitability", "gross", "margin"}
-	if report_name == "Sales Analytics":
-		if intent_class == "trend_analysis" or ((tokens & trend_terms) and not (tokens & ranking_terms)):
-			return "trend_analytics"
-		if intent_class == "ranked_entities" or tokens & ranking_terms:
-			return "ranking_analytics"
-	if report_name in {"Gross Profit", "Item-wise Sales History"} and capability_id == "product_performance_read":
+	report_family_ids = report_business_family_ids(report_name)
+	if not report_family_ids:
+		return ""
+	intent_family_ids = set(report_family_ids_for_intent_class(intent_class))
+	if intent_family_ids:
+		matching = [family_id for family_id in report_family_ids if family_id in intent_family_ids]
+		if len(matching) == 1:
+			return matching[0]
+		if capability_id:
+			capability_families = set(report_business_family_ids(report_name))
+			for family_id in report_family_ids:
+				if family_id in capability_families:
+					return family_id
+		if intent_class == "trend_analysis":
+			for family_id in matching:
+				if family_id == "trend_analytics":
+					return family_id
+		if intent_class == "ranked_entities":
+			for family_id in matching:
+				if family_id == "ranking_analytics":
+					return family_id
 		if intent_class == "product_performance":
-			return "product_profitability"
-		if (tokens & product_terms) and (tokens & performance_terms) and not (tokens & ranking_terms):
-			return "product_profitability"
-		if intent_class == "trend_analysis" and tokens & trend_terms:
-			return "trend_analytics"
-		if intent_class == "ranked_entities" or tokens & ranking_terms:
-			return "ranking_analytics"
-	return ""
+			for family_id in matching:
+				if family_id == "product_profitability":
+					return family_id
+		if matching:
+			return matching[0]
+	return report_family_ids[0]
 
 
 def _validate_semantic_payload(
@@ -779,87 +900,44 @@ def _deterministic_family_surface_interpretation(
 	)
 	if surface is None or not list(surface.candidate_family_ids or []):
 		return None
-	tokens = _message_tokens(message)
 	family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
-	intent_class = ""
-	candidate_capability_ids: List[str] = []
-	candidate_reports: List[str] = []
+	message_concepts = ontology_detect_concepts(message)
+	intent_defaults = {
+		"financial_statement": "financial_statement",
+		"aging": "financial_summary",
+		"ranking_analytics": "ranked_entities",
+		"trend_analytics": "trend_analysis",
+		"inventory_snapshot": "inventory_summary",
+		"product_profitability": "product_performance",
+		"transaction_listing": "transaction_listing",
+	}
+	intent_class = str(intent_defaults.get(family_id) or "").strip()
+	candidate_capability_ids = _ordered_capability_ids_for_family(
+		family_id=family_id,
+		intent_class=intent_class,
+		message_concepts=message_concepts,
+	)
+	if not candidate_capability_ids:
+		return None
+	candidate_capability_ids = candidate_capability_ids[:1]
+	report_name = _resolve_default_report_name(
+		capability_id=candidate_capability_ids[0],
+		intent_class=intent_class,
+		message_concepts=message_concepts,
+		candidate_reports=[],
+	)
+	if not report_name:
+		report_names = report_family_report_names(family_id)
+		report_name = str((report_names or [""])[0] or "").strip()
+	candidate_reports = [report_name] if report_name else []
 	requested_dimensions: List[str] = []
 	requested_metrics: List[str] = []
 	requested_time_scope = _infer_governed_time_scope(
-		intent_class="",
+		intent_class=intent_class,
 		message=message,
 		requested_time_scope="",
 	)
-
-	if family_id == "financial_statement":
-		intent_class = "financial_statement"
-		candidate_capability_ids = ["financial_statement_read"]
-		if {"balance", "sheet"}.issubset(tokens):
-			candidate_reports = ["Balance Sheet"]
-		elif {"cash", "flow"}.issubset(tokens):
-			candidate_reports = ["Cash Flow"]
-		else:
-			candidate_reports = ["Profit and Loss Statement"]
-		if not requested_time_scope:
-			requested_time_scope = "current_fiscal_year_to_date"
-	elif family_id == "aging":
-		intent_class = "financial_summary"
-		if {"payable", "ap"} & tokens:
-			candidate_capability_ids = ["accounts_payable_read"]
-			candidate_reports = ["Accounts Payable Summary"]
-		else:
-			candidate_capability_ids = ["accounts_receivable_read"]
-			candidate_reports = ["Accounts Receivable Summary"]
-		if not requested_time_scope:
-			requested_time_scope = "as_of_today"
-	elif family_id == "ranking_analytics":
-		intent_class = "ranked_entities"
-		if {"stock", "inventory", "warehouse"} & tokens:
-			candidate_capability_ids = ["stock_read"]
-			candidate_reports = ["Stock Balance"]
-		elif {"receivable", "ar"} & tokens:
-			candidate_capability_ids = ["accounts_receivable_read"]
-			candidate_reports = ["Accounts Receivable Summary"]
-		elif {"payable", "ap"} & tokens:
-			candidate_capability_ids = ["accounts_payable_read"]
-			candidate_reports = ["Accounts Payable Summary"]
-		elif {"product", "products", "item", "items", "sku"} & tokens:
-			candidate_capability_ids = ["product_performance_read"]
-			candidate_reports = ["Gross Profit"]
-		else:
-			candidate_capability_ids = ["sales_read"]
-			candidate_reports = ["Sales Analytics"]
-		if not requested_time_scope:
-			requested_time_scope = "current_fiscal_year_to_date"
-	elif family_id == "trend_analytics":
-		intent_class = "trend_analysis"
-		if {"product", "products", "item", "items", "sku"} & tokens:
-			candidate_capability_ids = ["product_performance_read"]
-			candidate_reports = ["Item-wise Sales History"]
-		else:
-			candidate_capability_ids = ["sales_read"]
-			candidate_reports = ["Sales Analytics"]
-		if not requested_time_scope:
-			requested_time_scope = "current_fiscal_year_to_date"
-	elif family_id == "inventory_snapshot":
-		intent_class = "inventory_summary"
-		candidate_capability_ids = ["stock_read"]
-		if {"warehouse", "warehouses"} & tokens:
-			candidate_reports = ["Warehouse Wise Stock Balance"]
-		else:
-			candidate_reports = ["Stock Balance"]
-	elif family_id == "product_profitability":
-		intent_class = "product_performance"
-		candidate_capability_ids = ["product_performance_read"]
-		candidate_reports = ["Gross Profit"]
-		if not requested_time_scope:
-			requested_time_scope = "current_fiscal_year_to_date"
-	elif family_id == "transaction_listing":
-		intent_class = "transaction_listing"
-		candidate_capability_ids = ["sales_read"]
-		candidate_reports = ["Sales Invoice List"]
-	else:
+	if not intent_class:
 		return None
 
 	default_dimensions, default_metrics, default_time_scope = _apply_governed_request_defaults(

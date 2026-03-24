@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1",
+  "contract_version": "1.2",
   "intent_classes": [
     {
       "intent_class_id": "financial_summary",
@@ -122,6 +122,65 @@
         "Grand Total",
         "Outstanding Amount"
       ],
+      "fresh_query_defaults": {
+        "financial_summary": {
+          "default_report_name": "Sales Analytics",
+          "default_dimensions": ["Customer"],
+          "default_metrics": ["Sales Amount"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "dimension_overrides_by_concept": {
+            "territory": ["Territory"],
+            "product": ["Item"],
+            "customer": ["Customer"]
+          },
+          "metric_overrides_by_canonical_key": {
+            "sales_amount": ["Sales Amount"],
+            "quantity": ["Quantity"],
+            "grand_total": ["Grand Total"],
+            "outstanding_amount": ["Outstanding Amount"]
+          }
+        },
+        "ranked_entities": {
+          "default_report_name": "Sales Analytics",
+          "default_dimensions": ["Customer"],
+          "default_metrics": ["Sales Amount"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "dimension_overrides_by_concept": {
+            "territory": ["Territory"],
+            "product": ["Item"],
+            "customer": ["Customer"]
+          },
+          "metric_overrides_by_canonical_key": {
+            "sales_amount": ["Sales Amount"],
+            "quantity": ["Quantity"],
+            "grand_total": ["Grand Total"],
+            "outstanding_amount": ["Outstanding Amount"]
+          }
+        },
+        "trend_analysis": {
+          "default_report_name": "Sales Analytics",
+          "default_dimensions": [],
+          "default_metrics": ["Sales Amount"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "metric_overrides_by_canonical_key": {
+            "sales_amount": ["Sales Amount"],
+            "quantity": ["Quantity"]
+          }
+        },
+        "transaction_listing": {
+          "default_report_name": "Sales Invoice List",
+          "default_dimensions": ["Invoice"],
+          "default_metrics": ["Grand Total"],
+          "default_time_scope": "",
+          "report_overrides_by_concept": {
+            "sales_invoice": "Sales Invoice List"
+          },
+          "metric_overrides_by_canonical_key": {
+            "grand_total": ["Grand Total"],
+            "outstanding_amount": ["Outstanding Amount"]
+          }
+        }
+      },
       "default_validation_profile": "report_grounded_read"
     },
     {
@@ -159,6 +218,57 @@
         "Balance Qty",
         "Balance Value (MMK)"
       ],
+      "fresh_query_defaults": {
+        "inventory_summary": {
+          "default_report_name": "Stock Balance",
+          "default_dimensions": ["Item"],
+          "default_metrics": ["Balance Qty"],
+          "default_time_scope": "",
+          "report_overrides_by_concept": {
+            "warehouse": "Warehouse Wise Stock Balance"
+          },
+          "dimension_overrides_by_concept": {
+            "warehouse": ["Warehouse"]
+          },
+          "metric_overrides_by_canonical_key": {
+            "balance_qty": ["Balance Qty"],
+            "balance_value": ["Balance Value (MMK)"],
+            "quantity": ["Balance Qty"]
+          }
+        },
+        "financial_summary": {
+          "default_report_name": "Stock Balance",
+          "default_dimensions": ["Item"],
+          "default_metrics": ["Balance Value (MMK)"],
+          "default_time_scope": "",
+          "report_overrides_by_concept": {
+            "warehouse": "Warehouse Wise Stock Balance"
+          },
+          "dimension_overrides_by_concept": {
+            "warehouse": ["Warehouse"]
+          },
+          "metric_overrides_by_canonical_key": {
+            "balance_value": ["Balance Value (MMK)"],
+            "balance_qty": ["Balance Qty"]
+          }
+        },
+        "ranked_entities": {
+          "default_report_name": "Stock Balance",
+          "default_dimensions": ["Item"],
+          "default_metrics": ["Balance Qty"],
+          "default_time_scope": "",
+          "report_overrides_by_concept": {
+            "warehouse": "Warehouse Wise Stock Balance"
+          },
+          "dimension_overrides_by_concept": {
+            "warehouse": ["Warehouse"]
+          },
+          "metric_overrides_by_canonical_key": {
+            "balance_qty": ["Balance Qty"],
+            "balance_value": ["Balance Value (MMK)"]
+          }
+        }
+      },
       "default_validation_profile": "report_grounded_read"
     },
     {
@@ -211,6 +321,41 @@
       "sibling_capabilities": [
         "accounts_receivable_read"
       ],
+      "fresh_query_defaults": {
+        "financial_summary": {
+          "default_report_name": "Accounts Payable Summary",
+          "default_dimensions": ["Supplier"],
+          "default_metrics": ["Outstanding"],
+          "default_time_scope": "as_of_today",
+          "metric_overrides_by_canonical_key": {
+            "outstanding_total": ["Outstanding"],
+            "outstanding_amount": ["Outstanding Amount"],
+            "total_due": ["Total Due"]
+          }
+        },
+        "ranked_entities": {
+          "default_report_name": "Accounts Payable Summary",
+          "default_dimensions": ["Supplier"],
+          "default_metrics": ["Outstanding"],
+          "default_time_scope": "as_of_today",
+          "metric_overrides_by_canonical_key": {
+            "outstanding_total": ["Outstanding"],
+            "outstanding_amount": ["Outstanding Amount"],
+            "total_due": ["Total Due"]
+          }
+        },
+        "aging_analysis": {
+          "default_report_name": "Accounts Payable Summary",
+          "default_dimensions": ["Supplier"],
+          "default_metrics": ["Outstanding"],
+          "default_time_scope": "as_of_today",
+          "metric_overrides_by_canonical_key": {
+            "outstanding_total": ["Outstanding"],
+            "outstanding_amount": ["Outstanding Amount"],
+            "total_due": ["Total Due"]
+          }
+        }
+      },
       "default_validation_profile": "report_grounded_read"
     },
     {
@@ -263,6 +408,41 @@
       "sibling_capabilities": [
         "accounts_payable_read"
       ],
+      "fresh_query_defaults": {
+        "financial_summary": {
+          "default_report_name": "Accounts Receivable Summary",
+          "default_dimensions": ["Customer"],
+          "default_metrics": ["Outstanding"],
+          "default_time_scope": "as_of_today",
+          "metric_overrides_by_canonical_key": {
+            "outstanding_total": ["Outstanding"],
+            "outstanding_amount": ["Outstanding Amount"],
+            "total_due": ["Total Due"]
+          }
+        },
+        "ranked_entities": {
+          "default_report_name": "Accounts Receivable Summary",
+          "default_dimensions": ["Customer"],
+          "default_metrics": ["Outstanding"],
+          "default_time_scope": "as_of_today",
+          "metric_overrides_by_canonical_key": {
+            "outstanding_total": ["Outstanding"],
+            "outstanding_amount": ["Outstanding Amount"],
+            "total_due": ["Total Due"]
+          }
+        },
+        "aging_analysis": {
+          "default_report_name": "Accounts Receivable Summary",
+          "default_dimensions": ["Customer"],
+          "default_metrics": ["Outstanding"],
+          "default_time_scope": "as_of_today",
+          "metric_overrides_by_canonical_key": {
+            "outstanding_total": ["Outstanding"],
+            "outstanding_amount": ["Outstanding Amount"],
+            "total_due": ["Total Due"]
+          }
+        }
+      },
       "default_validation_profile": "report_grounded_read"
     },
     {
@@ -320,6 +500,30 @@
         "Net Cash from Financing",
         "Net Change in Cash"
       ],
+      "fresh_query_defaults": {
+        "financial_statement": {
+          "default_report_name": "Profit and Loss Statement",
+          "default_dimensions": [],
+          "default_metrics": [],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "report_overrides_by_concept": {
+            "profit_and_loss": "Profit and Loss Statement",
+            "balance_sheet": "Balance Sheet",
+            "cash_flow": "Cash Flow"
+          }
+        },
+        "financial_summary": {
+          "default_report_name": "Profit and Loss Statement",
+          "default_dimensions": [],
+          "default_metrics": [],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "report_overrides_by_concept": {
+            "profit_and_loss": "Profit and Loss Statement",
+            "balance_sheet": "Balance Sheet",
+            "cash_flow": "Cash Flow"
+          }
+        }
+      },
       "default_validation_profile": "report_grounded_read"
     },
     {
@@ -370,6 +574,57 @@
         "Billed Amount",
         "Delivered Quantity"
       ],
+      "fresh_query_defaults": {
+        "product_performance": {
+          "default_report_name": "Gross Profit",
+          "default_dimensions": ["Item Code"],
+          "default_metrics": ["Gross Profit"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "metric_overrides_by_canonical_key": {
+            "gross_profit": ["Gross Profit"],
+            "gross_profit_percent": ["Gross Profit Percent"],
+            "sales_amount": ["Selling Amount"],
+            "buying_amount": ["Buying Amount"],
+            "quantity": ["Qty"]
+          }
+        },
+        "ranked_entities": {
+          "default_report_name": "Gross Profit",
+          "default_dimensions": ["Item Code"],
+          "default_metrics": ["Gross Profit"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "metric_overrides_by_canonical_key": {
+            "gross_profit": ["Gross Profit"],
+            "gross_profit_percent": ["Gross Profit Percent"],
+            "sales_amount": ["Selling Amount"],
+            "buying_amount": ["Buying Amount"],
+            "quantity": ["Qty"]
+          }
+        },
+        "financial_summary": {
+          "default_report_name": "Gross Profit",
+          "default_dimensions": ["Item Code"],
+          "default_metrics": ["Gross Profit"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "metric_overrides_by_canonical_key": {
+            "gross_profit": ["Gross Profit"],
+            "gross_profit_percent": ["Gross Profit Percent"],
+            "sales_amount": ["Selling Amount"],
+            "buying_amount": ["Buying Amount"],
+            "quantity": ["Qty"]
+          }
+        },
+        "trend_analysis": {
+          "default_report_name": "Item-wise Sales History",
+          "default_dimensions": ["Item"],
+          "default_metrics": ["Billed Amount"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "metric_overrides_by_canonical_key": {
+            "sales_amount": ["Billed Amount"],
+            "quantity": ["Delivered Quantity"]
+          }
+        }
+      },
       "default_validation_profile": "report_grounded_read"
     }
   ]
