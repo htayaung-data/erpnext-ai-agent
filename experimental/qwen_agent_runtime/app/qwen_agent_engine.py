@@ -430,9 +430,12 @@ def _artifact_narrative_messages(request: ChatRequest) -> List[Dict[str, Any]]:
 	]
 
 
+_TOOL_CALL_ERROR_PREFIX = "An error occurred when calling tool"
+
+
 def _tool_output_status(content: str) -> str:
 	text = str(content or "").strip()
-	if "An error occurred when calling tool" in text:
+	if _TOOL_CALL_ERROR_PREFIX in text:
 		return "error"
 	obj = _parse_json_like(text)
 	if not isinstance(obj, dict):

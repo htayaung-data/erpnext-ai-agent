@@ -28,6 +28,10 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_intent_classes,
 	report_supported_metrics,
 )
+from ai_assistant_ui.qwen_chat.semantic_aliases import (
+	get_canonical_key,
+	get_aliases,
+)
 
 
 @dataclass(frozen=True)
@@ -54,33 +58,39 @@ def _normalize_key(value: Any) -> str:
 
 
 def _semantic_alias_keys(value: Any) -> set[str]:
+	"""
+	Get semantic aliases from metadata registry.
+	
+	This function loads aliases from semantic_alias_registry.json metadata file,
+	not hardcoded in Python. This is enterprise-grade architecture.
+	
+	Args:
+		value: Business term (e.g., "revenue", "qty", "gross profit")
+	
+	Returns:
+		Set of semantically equivalent canonical keys
+	
+	Example:
+		>>> _semantic_alias_keys("revenue")
+		{'revenue', 'sales_amount', 'selling_amount', 'value', ...}
+	"""
 	key = _normalize_key(value)
 	if not key:
 		return set()
-	aliases: Dict[str, set[str]] = {
-		"revenue": {"sales_amount", "selling_amount", "value", "billed_amount", "invoiced_amount"},
-		"sales": {"sales_amount", "selling_amount", "value", "billed_amount"},
-		"sales_amount": {"revenue", "selling_amount", "value", "billed_amount"},
-		"selling_amount": {"sales_amount", "revenue", "value", "billed_amount"},
-		"value": {"sales_amount", "revenue", "selling_amount", "billed_amount"},
-		"billed_amount": {"sales_amount", "revenue", "value"},
-		"invoiced_amount": {"sales_amount", "revenue", "value"},
-		"outstanding_amount": {"outstanding"},
-		"total_amount_due": {"total_due"},
-		"gross_profit_percentage": {"gross_profit_percent", "gross_profit"},
-		"gross_profit_percent": {"gross_profit_percentage", "gross_profit"},
-		"qty": {"quantity", "delivered_quantity", "balance_qty"},
-		"quantity": {"qty", "delivered_quantity", "balance_qty"},
-		"delivered_quantity": {"quantity", "qty"},
-		"balance_qty": {"quantity", "qty"},
-		"balance_value_mmk": {"balance_value"},
-		"item": {"item_code", "item_name"},
-		"customer": {"party"},
-		"supplier": {"party"},
-	}
-	out = {key}
-	out.update(aliases.get(key, set()))
-	return out
+	
+	# Try to resolve to canonical key using metadata registry
+	canonical = get_canonical_key(key)
+	
+	if canonical:
+		# Get all aliases for this canonical key from metadata
+		all_aliases = get_aliases(canonical)
+		# Include the canonical key itself and all aliases
+		result = {canonical}
+		result.update(alias.lower() for alias in all_aliases)
+		return result
+	
+	# Fallback: return the key itself if not found in registry
+	return {key}
 
 
 def _tokenize(value: Any) -> set[str]:
@@ -465,6 +475,11 @@ def compile_fresh_query(
 	capability_id, capability_reason = _resolve_capability(interpretation)
 	if not capability_id:
 		decision = "clarify" if interpretation.ambiguity_flags else "reject"
+		reason_type = "capability_ambiguity" if interpretation.ambiguity_flags else "capability_missing"
+		reason_details = {
+			"capability_candidates": list(interpretation.candidate_capability_ids),
+			"ambiguity_flags": list(interpretation.ambiguity_flags),
+		}
 		compiler_contract = build_fresh_query_compiler_contract(
 			request_id=request_id,
 			session_id=session_id,
@@ -474,6 +489,8 @@ def compile_fresh_query(
 			decision=decision,
 			clarification_required=decision == "clarify",
 			compiler_reason=capability_reason or interpretation.ambiguity_reason or "Capability resolution failed.",
+			clarification_reason_type=reason_type if decision == "clarify" else "",
+			clarification_details=reason_details if decision == "clarify" else {},
 		)
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
 
@@ -489,6 +506,8 @@ def compile_fresh_query(
 			decision="clarify",
 			clarification_required=True,
 			compiler_reason=report_reason or "Report selection remained ambiguous.",
+			clarification_reason_type="report_ambiguity",
+			clarification_details={"report_candidates": list(interpretation.candidate_reports)},
 		)
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
 
@@ -509,6 +528,8 @@ def compile_fresh_query(
 
 	decision = "execute"
 	clarification_required = False
+	clarification_reason_type = ""
+	clarification_details: Dict[str, Any] = {}
 	reasons: List[str] = [capability_reason, report_reason]
 	if requested_dimensions != _clean_list(interpretation.requested_dimensions):
 		reasons.append("Compiler pruned unsupported requested dimensions to the report-governed subset.")
@@ -517,10 +538,18 @@ def compile_fresh_query(
 	if ambiguity_decision == "clarify":
 		decision = "clarify"
 		clarification_required = True
+		clarification_reason_type = "request_underspecified"
+		clarification_details = {"ambiguity_flags": list(interpretation.ambiguity_flags)}
 		reasons.append(interpretation.ambiguity_reason or "The request is valid but underspecified for safe execution.")
 	if missing_filters:
 		decision = "clarify"
 		clarification_required = True
+		clarification_reason_type = (
+			"time_scope_missing"
+			if set(missing_filters) & {"from_date", "to_date", "report_date"}
+			else "filter_missing"
+		)
+		clarification_details = {"missing_fields": list(missing_filters)}
 		reasons.append(f"Missing or unresolved required filters: {', '.join(missing_filters)}")
 
 	compiler_contract = build_fresh_query_compiler_contract(
@@ -536,6 +565,8 @@ def compile_fresh_query(
 		decision=decision,
 		clarification_required=clarification_required,
 		compiler_reason=" ".join(part for part in reasons if part).strip(),
+		clarification_reason_type=clarification_reason_type,
+		clarification_details=clarification_details,
 	)
 	if decision != "execute":
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)

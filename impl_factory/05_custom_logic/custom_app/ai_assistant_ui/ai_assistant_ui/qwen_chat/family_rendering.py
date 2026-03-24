@@ -46,14 +46,38 @@ def _ratio_text(value: Any) -> str:
 	return f"{number:.1f}%"
 
 
-def _amount_text(value: Any, currency: str = "") -> str:
+def _amount_text(value: Any, currency: str = "", show_million: bool = False) -> str:
+	"""
+	Format amount with optional million transformation.
+	
+	Args:
+		value: Numeric value
+		currency: Currency label (e.g., "MMK")
+		show_million: If True, divide by 1,000,000 and label as "Million {currency}"
+	
+	Returns:
+		Formatted amount string
+	"""
 	number = _float_value(value)
+	
+	if show_million:
+		# Divide by million and format
+		million_value = number / 1_000_000.0
+		formatted = f"{million_value:,.2f}".rstrip("0").rstrip(".")
+		clean_currency = _clean_text(currency)
+		if clean_currency:
+			return f"{formatted} Million {clean_currency}"
+		return f"{formatted}"
+	
+	# Normal formatting
 	if abs(number - round(number)) < 0.005:
 		formatted = f"{number:,.0f}"
 	else:
 		formatted = f"{number:,.2f}"
 	clean_currency = _clean_text(currency)
-	return f"{formatted} {clean_currency}".strip()
+	if clean_currency:
+		return f"{formatted} {clean_currency}".strip()
+	return formatted
 
 
 def _metric_label(metric_key: str, fallback: str = "Value") -> str:
@@ -135,6 +159,7 @@ def _ranking_table_spec(
 	metric_key: str,
 	metric_label: str,
 	requested_columns: List[str],
+	show_million: bool = False,
 ) -> tuple[List[str], List[List[str]]]:
 	column_specs: List[tuple[str, str]] = [("Rank", "rank")]
 	selected = list(requested_columns or [])
@@ -164,7 +189,7 @@ def _ranking_table_spec(
 			elif key in {"gross_profit_percent", "contribution_percent"}:
 				out.append(_ratio_text(item.get(key)))
 			else:
-				out.append(_amount_text(item.get(key)))
+				out.append(_amount_text(item.get(key), show_million=show_million))
 		table_rows.append(out)
 	return [label for label, _ in column_specs], table_rows
 
@@ -404,12 +429,15 @@ def _ranking_blocks(
 	summary = _clean_rows(sections.get("summary"))
 	requested_columns = _requested_columns(dimensions, response_overrides)
 	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
+	# Extract show_million from response_overrides
+	show_million = bool((response_overrides or {}).get("show_million"))
 	table_headers, table_rows = _ranking_table_spec(
 		rows=ranked_rows,
 		entity_label=entity_label,
 		metric_key=metric_key,
 		metric_label=metric_label,
 		requested_columns=requested_columns,
+		show_million=show_million,
 	)
 	blocks = [
 		{
@@ -419,7 +447,7 @@ def _ranking_blocks(
 			"rows": [
 				[
 					_clean_text(item.get("label")),
-					_amount_text(item.get("amount")) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
+					_amount_text(item.get("amount"), show_million=show_million) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
 				]
 				for item in summary
 			],

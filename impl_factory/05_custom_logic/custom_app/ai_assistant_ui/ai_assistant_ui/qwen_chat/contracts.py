@@ -20,6 +20,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	resolve_target_report_for_capability,
 )
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
 def _utc_now() -> str:
@@ -238,6 +239,8 @@ class FreshQueryCompilerContract:
 	decision: str
 	clarification_required: bool
 	compiler_reason: str
+	clarification_reason_type: str
+	clarification_details: Dict[str, Any]
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -252,11 +255,13 @@ class FreshQueryCompilerContract:
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
 			"requested_time_scope": self.requested_time_scope,
-			"decision": self.decision,
-			"clarification_required": self.clarification_required,
-			"compiler_reason": self.compiler_reason,
-			"created_at": _utc_now(),
-		}
+				"decision": self.decision,
+				"clarification_required": self.clarification_required,
+				"compiler_reason": self.compiler_reason,
+				"clarification_reason_type": self.clarification_reason_type,
+				"clarification_details": dict(self.clarification_details),
+				"created_at": _utc_now(),
+			}
 
 
 @dataclass(frozen=True)
@@ -901,6 +906,8 @@ def build_fresh_query_compiler_contract(
 	decision: str = "clarify",
 	clarification_required: bool = False,
 	compiler_reason: str = "",
+	clarification_reason_type: str = "",
+	clarification_details: Dict[str, Any] | None = None,
 ) -> FreshQueryCompilerContract:
 	return FreshQueryCompilerContract(
 		request_id=request_id,
@@ -915,6 +922,8 @@ def build_fresh_query_compiler_contract(
 		decision=str(decision or "clarify").strip(),
 		clarification_required=bool(clarification_required),
 		compiler_reason=str(compiler_reason or "").strip(),
+		clarification_reason_type=str(clarification_reason_type or "").strip(),
+		clarification_details=dict(clarification_details or {}),
 	)
 
 
@@ -1288,6 +1297,12 @@ def build_followup_resolution(
 	if heuristic_local_refinement and not heuristic_self_contained:
 		self_contained = False
 		requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "new_query"]
+		if not target_dimension:
+			target_dimension = str(getattr(heuristic_intent, "target_dimension", "") or "").strip()
+		if not target_limit:
+			target_limit = int(max(0, getattr(heuristic_intent, "target_limit", 0) or 0))
+		if not sort_direction:
+			sort_direction = str(getattr(heuristic_intent, "sort_direction", "") or "").strip()
 	self_contained = bool(self_contained or heuristic_self_contained)
 	if not target_metric:
 		target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
@@ -1301,7 +1316,15 @@ def build_followup_resolution(
 		requested_time_scope = str(getattr(heuristic_intent, "requested_time_scope", "") or "").strip()
 	for mode in getattr(heuristic_intent, "requested_modes", []) or []:
 		clean_mode = str(mode or "").strip()
-		if clean_mode and clean_mode not in requested_modes and clean_mode in {"metric_refinement", "column_refinement", "time_scope_restatement"}:
+		if clean_mode and clean_mode not in requested_modes and clean_mode in {
+			"presentation_transform",
+			"table_presentation",
+			"bullet_presentation",
+			"sort_or_limit",
+			"metric_refinement",
+			"column_refinement",
+			"time_scope_restatement",
+		}:
 			requested_modes.append(clean_mode)
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
 	local_grounded_modes = {"presentation_transform", "table_presentation", "bullet_presentation", "metric_refinement", "column_refinement"}
@@ -1414,15 +1437,16 @@ def build_execution_path(
 
 
 def _entity_type_from_dimension(value: str) -> str:
-	text = str(value or "").strip().lower()
-	if "supplier" in text or "vendor" in text:
-		return "supplier"
-	if "customer" in text or "party" in text:
-		return "customer"
-	if "item" in text or "product" in text:
-		return "item"
-	if "invoice" in text or "document" in text:
-		return "sales_invoice"
+	dimension_keys = detect_canonical_keys(str(value or ""), dimension_or_metric="dimension")
+	for key in dimension_keys:
+		if key == "supplier":
+			return "supplier"
+		if key == "customer":
+			return "customer"
+		if key in {"item_code", "item_name"}:
+			return "item"
+		if key == "document_name":
+			return "sales_invoice"
 	return ""
 
 

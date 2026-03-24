@@ -1,0 +1,122 @@
+{
+  "contract_version": "1.0",
+  "description": "Business-language clarification wording for structured clarification reasons. Decision logic must stay in governed contracts, not in template metadata.",
+  "followup_clarification_templates": [
+    {
+      "mode": "column_refinement",
+      "template": "Let me clarify: Do you want me to add {columns_text} to the {family_label} table above?",
+      "options": [
+        "Yes, include {columns_text}",
+        "No, keep current columns",
+        "Let me specify exactly what I need"
+      ]
+    },
+    {
+      "mode": "metric_refinement",
+      "template": "Let me clarify: Do you want me to show {metric_label} in addition to the current metrics?",
+      "options": [
+        "Yes, include {metric_label}",
+        "No, keep current metrics",
+        "Show me all available metrics"
+      ]
+    },
+    {
+      "mode": "presentation_transform",
+      "template": "Let me clarify: Do you want me to show all values in {transform_type}?",
+      "options": [
+        "Yes, show in {transform_type}",
+        "No, keep current format"
+      ]
+    },
+    {
+      "mode": "sort_or_limit",
+      "template": "Let me clarify: Do you want me to show {sort_description}?",
+      "options": [
+        "Yes, show {sort_description}",
+        "No, keep current sorting",
+        "Let me specify the sorting"
+      ]
+    },
+    {
+      "mode": "time_scope_restatement",
+      "template": "Let me clarify: Do you want me to rerun the same report for {time_scope}?",
+      "options": [
+        "Yes, for {time_scope}",
+        "No, I meant something else"
+      ]
+    },
+    {
+      "mode": "dimension_breakdown",
+      "template": "Let me clarify: Do you want me to break down the data by {dimension}?",
+      "options": [
+        "Yes, break down by {dimension}",
+        "No, I need a different breakdown",
+        "Show me available breakdowns"
+      ]
+    }
+  ],
+  "generic_followup_template": {
+    "template": "I want to make sure I understand correctly. You're asking for {modes_text}, is that right?",
+    "options": [
+      "Yes, that's correct",
+      "Let me clarify what I need"
+    ]
+  },
+  "scope_clarification_templates": [
+    {
+      "governance_status": "not_yet_governed",
+      "template": "I understand you're asking about {concept_label}. That area is not yet available in my current governed ERP coverage. Would you like help with a nearby governed business area instead?",
+      "options": [
+        "Show me what you can help with instead",
+        "Let me ask a different governed business question"
+      ]
+    },
+    {
+      "governance_status": "partially_governed",
+      "template": "I can help with {concept_label}, but my capabilities are limited. What specific information about {concept_label} do you need?",
+      "options": [
+        "Show me what you can show",
+        "Let me be more specific"
+      ]
+    }
+  ],
+  "ambiguous_request_templates": [
+    {
+      "condition": "single_candidate",
+      "template": "Could you clarify what specific information about {concept_label} you need?",
+      "options": [
+        "Show me available options",
+        "Let me be more specific"
+      ]
+    },
+    {
+      "condition": "multiple_candidates",
+      "template": "Are you asking about {candidates_text}? Or something else?",
+      "options": []
+    }
+  ],
+  "metric_labels": {
+    "sales_amount": "Sales Amount",
+    "quantity": "Quantity",
+    "gross_profit": "Gross Profit",
+    "gross_profit_percent": "Gross Profit %",
+    "buying_amount": "Buying Amount",
+    "outstanding_total": "Outstanding Amount",
+    "total_due": "Total Amount Due",
+    "balance_value": "Balance Value",
+    "balance_qty": "Balance Quantity"
+  },
+  "family_labels": {
+    "ranking_analytics": "ranking",
+    "product_profitability": "product profitability",
+    "trend_analytics": "trend",
+    "financial_statement": "financial statement",
+    "aging": "aging summary",
+    "inventory_snapshot": "inventory snapshot",
+    "transaction_listing": "transaction list"
+  },
+  "transform_types": {
+    "million": "millions (divided by 1,000,000)",
+    "thousand": "thousands (divided by 1,000)"
+  }
+}

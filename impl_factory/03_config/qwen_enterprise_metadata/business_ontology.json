@@ -4,7 +4,7 @@
     {
       "concept_id": "sales",
       "aliases": {
-        "en": ["sales", "revenue", "monthly sales", "sales trend"],
+        "en": ["sales", "revenue"],
         "my": []
       }
     },
@@ -60,21 +60,21 @@
     {
       "concept_id": "product",
       "aliases": {
-        "en": ["product", "products", "item", "items", "sku", "product performance", "best product", "top product"],
+        "en": ["product", "products", "item", "items", "sku"],
         "my": []
       }
     },
     {
       "concept_id": "sales_invoice",
       "aliases": {
-        "en": ["sales invoice", "sales invoices", "invoice", "invoices", "recent invoice", "recent invoices", "latest invoice", "latest invoices"],
+        "en": ["sales invoice", "sales invoices", "invoice", "invoices"],
         "my": []
       }
     },
     {
       "concept_id": "customer",
       "aliases": {
-        "en": ["customer", "customers", "buyer", "buyers", "client", "clients", "purchase pattern", "buying pattern"],
+        "en": ["customer", "customers", "buyer", "buyers", "client", "clients"],
         "my": []
       }
     },
@@ -88,14 +88,14 @@
     {
       "concept_id": "employee",
       "aliases": {
-        "en": ["staff", "staffs", "employee", "employees", "headcount", "workforce", "team size"],
+        "en": ["staff", "employee", "employees", "headcount", "workforce", "team size"],
         "my": []
       }
     },
     {
       "concept_id": "territory",
       "aliases": {
-        "en": ["territory", "region", "yangon", "mandalay", "naypyitaw", "taunggyi"],
+        "en": ["territory", "region", "area", "zone"],
         "my": []
       }
     },
@@ -110,76 +110,66 @@
   "follow_up_classes": [
     {
       "mode": "presentation_transform",
-      "aliases": {
-        "en": ["show in million", "display in million", "convert to million", "in million"],
-        "my": []
-      }
+      "label": "Presentation-only transform",
+      "requires_grounded_turn": true,
+      "slot_keys": ["display_unit"],
+      "supported_families": ["aging", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
       "mode": "column_projection",
-      "aliases": {
-        "en": ["only item name and qty", "only item name", "only qty", "only quantity"],
-        "my": []
-      }
+      "label": "Column projection or narrowing",
+      "requires_grounded_turn": true,
+      "slot_keys": ["requested_columns"],
+      "supported_families": ["ranking_analytics", "trend_analytics", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
       "mode": "table_presentation",
-      "aliases": {
-        "en": ["as table", "as a table", "in table", "table format", "provide as table"],
-        "my": []
-      }
+      "label": "Tabular presentation request",
+      "requires_grounded_turn": true,
+      "slot_keys": ["presentation_format"],
+      "supported_families": ["aging", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
       "mode": "dimension_breakdown",
-      "aliases": {
-        "en": ["show by", "group by", "breakdown by", "split by"],
-        "my": []
-      }
+      "label": "Dimension breakdown over prior artifact",
+      "requires_grounded_turn": true,
+      "slot_keys": ["target_dimension"],
+      "supported_families": ["aging", "ranking_analytics", "trend_analytics", "inventory_snapshot", "product_profitability"]
     },
     {
       "mode": "sort_or_limit",
-      "aliases": {
-        "en": ["top 5", "top 10", "sort descending", "sort ascending", "latest only"],
-        "my": []
-      }
+      "label": "Ranking or row-limit change",
+      "requires_grounded_turn": true,
+      "slot_keys": ["target_limit", "sort_direction"],
+      "supported_families": ["ranking_analytics", "product_profitability", "transaction_listing"]
     },
     {
       "mode": "aging_bucket_view",
-      "aliases": {
-        "en": [
-          "by period of due",
-          "by due period",
-          "period due",
-          "ageing",
-          "aging",
-          "ageing bucket",
-          "aging bucket",
-          "longer than one month",
-          "longer than two month",
-          "longer than two months",
-          "one month",
-          "two month",
-          "two months",
-          "31-60",
-          "61-90",
-          "91-120",
-          "121+"
-        ],
-        "my": []
-      }
+      "label": "Aging bucket focus",
+      "requires_grounded_turn": true,
+      "slot_keys": ["aging_bucket"],
+      "supported_families": ["aging"]
     },
     {
       "mode": "sibling_switch",
-      "aliases": {
-        "en": ["how about receivable", "how about payable", "what about receivable", "what about payable"],
-        "my": []
-      }
+      "label": "Switch to sibling governed family or party type",
+      "requires_grounded_turn": true,
+      "slot_keys": ["target_concept_id"],
+      "supported_families": ["aging", "working_capital_health"]
+    },
+    {
+      "mode": "metric_refinement",
+      "label": "Metric refinement over prior artifact",
+      "requires_grounded_turn": true,
+      "slot_keys": ["target_metric", "requested_metrics"],
+      "supported_families": ["ranking_analytics", "trend_analytics", "product_profitability", "inventory_snapshot"]
+    },
+    {
+      "mode": "time_scope_restatement",
+      "label": "Time scope change over prior artifact",
+      "requires_grounded_turn": true,
+      "slot_keys": ["requested_time_scope", "absolute_year", "from_date", "to_date"],
+      "supported_families": ["ranking_analytics", "trend_analytics", "financial_statement", "aging", "product_profitability", "transaction_listing"]
     }
-  ],
-  "interaction_hints": {
-    "self_contained_prefixes": {
-      "en": ["show", "show me", "show the", "give", "tell me", "list", "top", "which", "what is", "what are", "who are", "stock", "sales", "outstanding", "compare", "how much", "profit", "products", "analyze", "evaluate", "perform", "please perform", "last", "latest", "recent", "number of", "total number of", "count", "total"],
-      "my": []
-    }
-  }
+  ]
 }

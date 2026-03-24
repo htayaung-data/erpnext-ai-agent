@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import (
@@ -29,6 +28,8 @@ _CAPABILITY_LABEL_OVERRIDES = {
 	"product_performance_read": "product performance",
 }
 
+_DEFAULT_TIME_SCOPE_OPTIONS = ["today", "last month", "all time"]
+
 
 def _capability_business_label(capability_id: str) -> str:
 	clean_id = _clean_text(capability_id)
@@ -44,14 +45,6 @@ def _capability_business_label(capability_id: str) -> str:
 	return clean_id.replace("_", " ")
 
 
-def _extract_suffix_list(reason: str, prefix: str) -> List[str]:
-	text = _clean_text(reason)
-	if not text.lower().startswith(prefix.lower()):
-		return []
-	suffix = text[len(prefix):].strip()
-	return [part.strip() for part in suffix.split(",") if part.strip()]
-
-
 def _human_join(values: List[str]) -> str:
 	items = [value for value in values if _clean_text(value)]
 	if not items:
@@ -63,15 +56,13 @@ def _human_join(values: List[str]) -> str:
 	return f"{', '.join(items[:-1])}, or {items[-1]}"
 
 
-def _group_business_options(capability_ids: List[str], raw_message: str) -> List[str]:
+def _group_business_options(capability_ids: List[str]) -> List[str]:
 	options: List[str] = []
 	capability_set = set(capability_ids)
 	if capability_set & {"accounts_receivable_read", "accounts_payable_read"}:
 		options.append("AR / AP")
 	if "financial_statement_read" in capability_set:
-		if "cash flow" in _clean_text(raw_message).lower():
-			options.append("cash flow")
-		options.append("profitability")
+		options.extend(["profitability", "cash flow"])
 	if "sales_read" in capability_set:
 		options.append("sales")
 	if "stock_read" in capability_set:
@@ -85,146 +76,153 @@ def _group_business_options(capability_ids: List[str], raw_message: str) -> List
 	return list(dict.fromkeys(options))[:5]
 
 
-def _time_scope_options(raw_message: str) -> List[str]:
-	text = _clean_text(raw_message).lower()
-	if "trend" in text or "monthly" in text or "weekly" in text:
-		return ["last month", "this quarter", "all time"]
-	return ["today", "last month", "all time"]
+def _time_scope_options(details: Dict[str, Any]) -> List[str]:
+	options = _clean_list(details.get("suggested_time_scope_options"))
+	return options or list(_DEFAULT_TIME_SCOPE_OPTIONS)
 
 
-def _translate_compiler_reason(
+def _translate_compiler_signal(
 	*,
 	request_id: str,
-	raw_message: str,
 	compiler_reason: str,
+	compiler_reason_type: str,
+	compiler_details: Dict[str, Any],
 ) -> ClarificationSignalContract:
-	reason = _clean_text(compiler_reason)
-	capability_candidates = _extract_suffix_list(reason, "Ambiguous capability candidates:")
-	if capability_candidates:
-		options = _group_business_options(capability_candidates, raw_message)
+	reason_type = _clean_text(compiler_reason_type)
+	details = dict(compiler_details or {})
+	if reason_type == "capability_ambiguity":
+		options = _group_business_options(_clean_list(details.get("capability_candidates")))
 		question = "Which area would you like me to analyze?"
 		if options:
 			question = f"Which area would you like me to analyze: {_human_join(options)}?"
 		return build_clarification_signal_contract(
 			request_id=request_id,
 			stage="compiler",
-			reason_type="capability_ambiguity",
+			reason_type=reason_type,
 			user_question=question,
 			suggested_options=options,
-			internal_reason=reason,
-			internal_details={"capability_candidates": capability_candidates},
+			internal_reason=_clean_text(compiler_reason),
+			internal_details=details,
 		)
-
-	report_candidates = _extract_suffix_list(reason, "Ambiguous governed report candidates:")
-	if report_candidates:
-		options = [value.replace("Statement", "").strip() if value.endswith("Statement") else value for value in report_candidates]
+	if reason_type == "report_ambiguity":
+		options = _clean_list(details.get("report_candidates"))
 		question = "Which report would you like me to use?"
 		if {"Profit and Loss", "Balance Sheet", "Cash Flow"} & set(options):
 			question = "Which financial view would you like to see: Profit & Loss, Balance Sheet, or Cash Flow?"
 		return build_clarification_signal_contract(
 			request_id=request_id,
 			stage="compiler",
-			reason_type="report_ambiguity",
+			reason_type=reason_type,
 			user_question=question,
 			suggested_options=list(dict.fromkeys(options))[:5],
-			internal_reason=reason,
-			internal_details={"report_candidates": report_candidates},
+			internal_reason=_clean_text(compiler_reason),
+			internal_details=details,
 		)
-
-	if "Missing or unresolved required filters:" in reason:
-		missing_fields = _extract_suffix_list(reason, "Missing or unresolved required filters:")
-		if set(missing_fields) & {"from_date", "to_date", "report_date"}:
-			return build_clarification_signal_contract(
-				request_id=request_id,
-				stage="compiler",
-				reason_type="time_scope_missing",
-				user_question="Which period would you like me to use for this?",
-				suggested_options=_time_scope_options(raw_message),
-				internal_reason=reason,
-				internal_details={"missing_fields": missing_fields},
-			)
+	if reason_type == "time_scope_missing":
 		return build_clarification_signal_contract(
 			request_id=request_id,
 			stage="compiler",
-			reason_type="filter_missing",
+			reason_type=reason_type,
+			user_question="Which period would you like me to use for this?",
+			suggested_options=_time_scope_options(details),
+			internal_reason=_clean_text(compiler_reason),
+			internal_details=details,
+		)
+	if reason_type == "filter_missing":
+		return build_clarification_signal_contract(
+			request_id=request_id,
+			stage="compiler",
+			reason_type=reason_type,
 			user_question="I can help with that, but I need one more detail before I run it. Which specific scope would you like me to use?",
 			suggested_options=[],
-			internal_reason=reason,
-			internal_details={"missing_fields": missing_fields},
+			internal_reason=_clean_text(compiler_reason),
+			internal_details=details,
 		)
-
-	if reason.startswith("No governed capability could be resolved"):
+	if reason_type == "capability_missing":
 		return build_clarification_signal_contract(
 			request_id=request_id,
 			stage="compiler",
-			reason_type="capability_missing",
-			user_question="Which business area would you like me to focus on: sales, AR/AP, financial statements, inventory, or product performance?",
+			reason_type=reason_type,
+			user_question="Which business area would you like me to focus on: sales, AR / AP, financial statements, inventory, or product performance?",
 			suggested_options=["sales", "AR / AP", "financial statements", "inventory", "product performance"],
-			internal_reason=reason,
-			internal_details={},
+			internal_reason=_clean_text(compiler_reason),
+			internal_details=details,
 		)
-
+	if reason_type == "request_underspecified":
+		return build_clarification_signal_contract(
+			request_id=request_id,
+			stage="compiler",
+			reason_type=reason_type,
+			user_question="I can help with that, but I need one more detail before I proceed. Could you clarify the metric, scope, or period you want?",
+			suggested_options=[],
+			internal_reason=_clean_text(compiler_reason),
+			internal_details=details,
+		)
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage="compiler",
-		reason_type="generic_clarification",
+		reason_type=reason_type or "generic_clarification",
 		user_question="I can help with that, but I need one more detail before I proceed. Could you clarify the area or time period you want?",
 		suggested_options=[],
-		internal_reason=reason,
-		internal_details={},
+		internal_reason=_clean_text(compiler_reason),
+		internal_details=details,
 	)
 
 
-def _translate_validation_reason(
+def _translate_validation_signal(
 	*,
 	request_id: str,
 	stage: str,
-	message: str,
-	detail: str,
+	validation_payload: Dict[str, Any],
 ) -> ClarificationSignalContract:
-	text = _clean_text(detail)
-	options = _time_scope_options(message) if "zero rows" in text.lower() or "time scope" in text.lower() else []
-	question = "I need one more detail before I can answer this confidently."
-	if options:
-		question = "I couldn't find a confident grounded result for that scope. Would you like to try a different period?"
+	payload = dict(validation_payload or {})
+	reason_type = "validation_clarification"
+	user_question = "I need one more detail before I can answer this confidently."
+	suggested_options: List[str] = []
+	if payload.get("time_scope_match") is False:
+		reason_type = "time_scope_clarification"
+		user_question = "I couldn't confirm the right grounded period for that answer. Would you like me to try a different time scope?"
+		suggested_options = list(_DEFAULT_TIME_SCOPE_OPTIONS)
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage=stage,
-		reason_type="validation_clarification",
-		user_question=question,
-		suggested_options=options,
-		internal_reason=text,
-		internal_details={},
+		reason_type=reason_type,
+		user_question=user_question,
+		suggested_options=suggested_options,
+		internal_reason=_clean_text(payload.get("decision")),
+		internal_details=payload,
 	)
 
 
 def translate_clarification_signal(
 	*,
 	request_id: str,
-	raw_message: str,
+	raw_message: str = "",
 	compiler_reason: str = "",
-	family_detail: str = "",
-	semantic_detail: str = "",
+	compiler_reason_type: str = "",
+	compiler_details: Dict[str, Any] | None = None,
+	family_validation: Dict[str, Any] | None = None,
+	semantic_validation: Dict[str, Any] | None = None,
 ) -> ClarificationSignalContract:
-	if _clean_text(compiler_reason):
-		return _translate_compiler_reason(
+	_ = _clean_text(raw_message)
+	if _clean_text(compiler_reason_type):
+		return _translate_compiler_signal(
 			request_id=request_id,
-			raw_message=raw_message,
 			compiler_reason=compiler_reason,
+			compiler_reason_type=compiler_reason_type,
+			compiler_details=dict(compiler_details or {}),
 		)
-	if _clean_text(family_detail):
-		return _translate_validation_reason(
+	if isinstance(family_validation, dict) and family_validation:
+		return _translate_validation_signal(
 			request_id=request_id,
 			stage="family_validation",
-			message=raw_message,
-			detail=family_detail,
+			validation_payload=family_validation,
 		)
-	if _clean_text(semantic_detail):
-		return _translate_validation_reason(
+	if isinstance(semantic_validation, dict) and semantic_validation:
+		return _translate_validation_signal(
 			request_id=request_id,
 			stage="semantic_validation",
-			message=raw_message,
-			detail=semantic_detail,
+			validation_payload=semantic_validation,
 		)
 	return build_clarification_signal_contract(
 		request_id=request_id,

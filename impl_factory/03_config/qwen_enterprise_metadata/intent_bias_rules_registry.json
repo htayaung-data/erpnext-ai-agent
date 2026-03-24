@@ -1,0 +1,21 @@
+{
+  "contract_version": "2.0",
+  "status": "disabled_pending_schema_redesign",
+  "description": "Intent bias metadata is intentionally disabled until it is rebuilt around structural predicates and canonical concepts rather than lexical token rules.",
+  "rules": [],
+  "planned_predicates": [
+    "concept_present",
+    "explicit_document_id_present",
+    "explicit_absolute_year_present",
+    "explicit_date_range_present",
+    "current_intent_class_is",
+    "prior_artifact_family_supports_transform"
+  ],
+  "planned_actions": [
+    "set_intent_class",
+    "set_capabilities",
+    "set_reports",
+    "set_time_scope",
+    "add_ambiguity_flag"
+  ]
+}

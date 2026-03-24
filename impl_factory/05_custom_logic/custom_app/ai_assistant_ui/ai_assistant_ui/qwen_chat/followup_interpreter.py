@@ -6,12 +6,13 @@ from typing import Any, Dict, List, Set
 
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_dimensions_for_report,
-	governed_self_contained_business_terms,
-	load_business_ontology,
 	ontology_detect_concepts,
 	ontology_self_contained_prefixes,
 	report_local_followup_adapter,
+	report_family_ontology_concepts,
+	supported_ontology_concepts,
 )
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
 def _normalize_text(text: str) -> str:
@@ -111,60 +112,33 @@ def _detect_sort_limit_spec(text: str) -> tuple[int, str]:
 
 
 def _detect_target_metric(text: str) -> str:
-	if not text:
-		return ""
-	if "contribution percent" in text or "contribution %" in text or "contribution ratio" in text:
-		return "contribution_percent"
-	if "gross profit percent" in text or "gross profit percentage" in text or "margin percent" in text:
-		return "gross_profit_percent"
-	if "gross profit" in text:
-		return "gross_profit"
-	if "buying amount" in text or re.search(r"\bcost\b", text):
-		return "buying_amount"
-	if "revenue" in text or "sales amount" in text:
-		return "sales_amount"
-	if "outstanding amount" in text or "outstanding" in text:
-		return "outstanding_total"
-	if "total due" in text or "amount due" in text:
-		return "total_due"
-	if "balance value" in text or "stock value" in text:
-		return "balance_value"
-	if "balance qty" in text or "balance quantity" in text:
-		return "balance_qty"
-	if "quantity" in text or re.search(r"\bqty\b", text):
-		return "quantity"
-	if re.search(r"\bamount\b", text):
-		return "amount"
-	return ""
+	metric_keys = detect_canonical_keys(text, dimension_or_metric="metric")
+	return str(metric_keys[0] or "").strip() if metric_keys else ""
 
 
 def _detect_requested_columns(text: str) -> List[str]:
 	columns: List[str] = []
-	if any(token in text for token in ("item name", "product name", "customer name", "supplier name", "with their", "with item", "with customer", "with supplier")):
+	dimension_keys = detect_canonical_keys(text, dimension_or_metric="dimension")
+	if {"item_name", "customer", "supplier"} & set(dimension_keys):
 		columns.append("entity")
 	metric = _detect_target_metric(text)
 	if metric:
-		if metric == "amount":
-			columns.append("amount")
-		else:
-			columns.append(metric)
-	if "contribution percent" in text or "contribution %" in text:
-		columns.append("contribution_percent")
-	if "item code" in text:
+		columns.append(metric)
+	if "item_code" in dimension_keys:
 		columns.append("entity_code")
-	if "territory" in text:
+	if "territory" in dimension_keys:
 		columns.append("territory")
 	return list(dict.fromkeys([value for value in columns if value]))
 
 
 def _detect_requested_time_scope(text: str) -> str:
-	if "last month" in text or "previous month" in text:
+	if re.search(r"\b(?:last|previous)\s+month\b", text):
 		return "last_month"
-	if "this month" in text or "current month" in text:
+	if re.search(r"\b(?:this|current)\s+month\b", text):
 		return "current_period"
-	if "all time" in text or "all period" in text or "overall" in text:
+	if re.search(r"\b(?:all\s+time|all\s+period|overall)\b", text):
 		return "all_period"
-	if "as of now" in text or "as of today" in text or re.search(r"\bas of\b", text):
+	if re.search(r"\bas of(?:\s+now|\s+today)?\b", text):
 		return "as_of_today"
 	return ""
 
@@ -203,41 +177,10 @@ def detect_followup_intent(message: str, language: str = "en", grounded_turn: Di
 			requested_columns=[],
 			requested_time_scope="",
 		)
-	entries = load_business_ontology().get("follow_up_classes")
-	if not isinstance(entries, list):
-		return FollowUpIntent(
-			requested_modes=[],
-			matched_aliases={},
-			target_dimension="",
-			target_limit=0,
-			sort_direction="",
-			target_metric="",
-			requested_columns=[],
-			requested_time_scope="",
-		)
-
 	requested_modes: List[str] = []
 	matched_aliases: Dict[str, List[str]] = {}
-	for item in entries:
-		if not isinstance(item, dict):
-			continue
-		mode = str(item.get("mode") or "").strip()
-		aliases = item.get("aliases")
-		if not mode or not isinstance(aliases, dict):
-			continue
-		values = aliases.get(language)
-		if not isinstance(values, list):
-			continue
-		matches = [
-			str(alias or "").strip()
-			for alias in values
-			if str(alias or "").strip() and _contains_alias(text, str(alias or ""))
-		]
-		if matches:
-			requested_modes.append(mode)
-			matched_aliases[mode] = matches
 
-	if "million" in text.split() and "presentation_transform" not in requested_modes:
+	if re.search(r"\bmillion\b", text) and "presentation_transform" not in requested_modes:
 		requested_modes.append("presentation_transform")
 		matched_aliases.setdefault("presentation_transform", []).append("million")
 
@@ -301,46 +244,37 @@ def is_self_contained_business_request(
 ) -> bool:
 	text = _normalize_text(message)
 	normalized_text = _strip_leading_politeness(text)
-	terms = governed_self_contained_business_terms(language)
 	if len(normalized_text.split()) < 3:
 		return False
 	parsed = intent or detect_followup_intent(normalized_text, language=language, grounded_turn=grounded_turn)
 	has_grounded_turn = bool(isinstance(grounded_turn, dict) and grounded_turn.get("grounded"))
-	explicit_domain_anchor = bool(
-		re.search(
-			r"\b(customer|customers|supplier|suppliers|vendor|vendors|sale|sales|revenue|profit|invoice|invoices|product|products|item|items|inventory|stock|warehouse|warehouses|payable|payables|receivable|receivables|cash|balance|statement|trend|ar|ap)\b",
-			normalized_text,
-		)
-	)
 	prefixes = ontology_self_contained_prefixes(language)
-	business_signals = any(_contains_alias(normalized_text, token) for token in terms)
 	concept_hits = ontology_detect_concepts(normalized_text, language=language)
-	if not business_signals and not concept_hits:
-		business_signals = bool(
-			re.search(r"\b(customer|customers|supplier|suppliers|vendor|vendors|staff|employee|employees|headcount)\b", normalized_text)
-		)
+	alias_hits = detect_canonical_keys(normalized_text)
+	business_signals = bool(concept_hits or alias_hits)
+	refinement_modes = {
+		"presentation_transform",
+		"table_presentation",
+		"bullet_presentation",
+		"sort_or_limit",
+		"metric_refinement",
+		"column_refinement",
+		"time_scope_restatement",
+	}
 	if has_grounded_turn:
-		refinement_modes = {
-			"presentation_transform",
-			"table_presentation",
-			"bullet_presentation",
-			"sort_or_limit",
-			"metric_refinement",
-			"column_refinement",
-			"time_scope_restatement",
-		}
-		if set(parsed.requested_modes).issubset(refinement_modes) and not explicit_domain_anchor:
+		if set(parsed.requested_modes).issubset(refinement_modes) and not business_signals:
 			return False
 	if len(normalized_text.split()) < 4 and not business_signals:
 		return False
 	strong_business_restatement = bool(
-		(business_signals or explicit_domain_anchor)
+		business_signals
 		and len(normalized_text.split()) >= 5
 		and (
 			parsed.requested_time_scope
+			or parsed.target_limit > 0
+			or bool(parsed.target_dimension)
 			or parsed.target_metric
 			or bool(set(parsed.requested_modes).intersection({"sort_or_limit", "metric_refinement", "time_scope_restatement"}))
-			or bool(re.search(r"\b(trend|statement|revenue|profit|balance|cash flow|inventory|customer|supplier|invoice|product|item)\b", normalized_text))
 		)
 	)
 	if has_grounded_turn and "presentation_transform" in parsed.requested_modes and not strong_business_restatement:
@@ -362,9 +296,10 @@ def is_self_contained_business_request(
 		and len(normalized_text.split()) >= 4
 		and (
 			parsed.requested_time_scope
+			or parsed.target_limit > 0
+			or bool(parsed.target_dimension)
 			or parsed.target_metric
 			or bool(set(parsed.requested_modes).intersection({"sort_or_limit", "metric_refinement", "time_scope_restatement"}))
-			or bool(re.search(r"\b(trend|statement|revenue|profit|balance|cash flow|inventory|customer|supplier|staff|employee|headcount)\b", normalized_text))
 		)
 	):
 		return True
@@ -388,75 +323,24 @@ def is_safe_local_compatibility_intent(
 		return False
 	return True
 
-
-_SUPPORTED_DOMAIN_TERMS = {
-	"finance": {"profit", "loss", "balance", "cash", "payable", "payables", "receivable", "receivables", "ar", "ap", "financial"},
-	"sales": {"sales", "sale", "revenue", "trend", "customer", "customers", "invoice", "invoices"},
-	"inventory": {"inventory", "stock", "warehouse", "warehouses"},
-	"product": {"product", "products", "item", "items", "sku", "profitability", "gross", "margin"},
-	"transaction": {"transaction", "transactions", "invoice", "invoices", "payment", "payments"},
-}
-
-_OUT_OF_SCOPE_DOMAIN_TERMS = {
-	"hr": {"staff", "employee", "employees", "headcount", "payroll", "attendance", "leave", "salary slip"},
-}
-
-
-def _message_domain_hints(text: str) -> Set[str]:
-	value = _normalize_text(text)
-	if not value:
-		return set()
-	tokens = set(re.findall(r"[a-z0-9]+", value))
-	domains: Set[str] = set()
-	for domain, terms in _SUPPORTED_DOMAIN_TERMS.items():
-		for term in terms:
-			normalized_term = _normalize_text(term)
-			if not normalized_term:
-				continue
-			term_tokens = normalized_term.split()
-			if (len(term_tokens) == 1 and term_tokens[0] in tokens) or _contains_alias(value, normalized_term):
-				domains.add(domain)
-				break
-	for domain, terms in _OUT_OF_SCOPE_DOMAIN_TERMS.items():
-		for term in terms:
-			normalized_term = _normalize_text(term)
-			if not normalized_term:
-				continue
-			term_tokens = normalized_term.split()
-			if (len(term_tokens) == 1 and term_tokens[0] in tokens) or _contains_alias(value, normalized_term):
-				domains.add(domain)
-				break
-	return domains
-
-
-def _grounded_context_domains(grounded_turn: Dict[str, object] | None) -> Set[str]:
+def _grounded_context_concepts(grounded_turn: Dict[str, object] | None) -> Set[str]:
 	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
 	if not turn:
 		return set()
+	family_id = str(turn.get("artifact_family_id") or "").strip()
+	concepts = set(report_family_ontology_concepts(family_id))
+	if concepts:
+		return concepts
 	value = " ".join(
 		part
 		for part in [
-			str(turn.get("artifact_family_id") or "").strip(),
 			str(turn.get("source_name") or "").strip(),
 			" ".join(str(item or "").strip() for item in (turn.get("dimensions") or []) if str(item or "").strip()),
 			" ".join(str(item or "").strip() for item in (turn.get("metrics") or []) if str(item or "").strip()),
 		]
 		if part
 	)
-	domains = _message_domain_hints(value)
-	if "aging" in _normalize_text(value):
-		domains.update({"finance", "transaction"})
-	if "financial_statement" in _normalize_text(value):
-		domains.add("finance")
-	if "ranking_analytics" in _normalize_text(value) or "trend_analytics" in _normalize_text(value):
-		domains.add("sales")
-	if "transaction_listing" in _normalize_text(value):
-		domains.update({"transaction", "sales"})
-	if "inventory_snapshot" in _normalize_text(value):
-		domains.add("inventory")
-	if "product_profitability" in _normalize_text(value):
-		domains.add("product")
-	return domains
+	return set(ontology_detect_concepts(value))
 
 
 def assess_context_isolation(
@@ -477,18 +361,20 @@ def assess_context_isolation(
 		"column_refinement",
 		"time_scope_restatement",
 	}
-
-	message_domains = _message_domain_hints(text)
-	context_domains = _grounded_context_domains(grounded_turn)
-	out_of_scope_domains = sorted(domain for domain in message_domains if domain in _OUT_OF_SCOPE_DOMAIN_TERMS)
-	if out_of_scope_domains:
+	message_concepts = set(ontology_detect_concepts(text, language=language))
+	alias_hits = set(detect_canonical_keys(text))
+	context_concepts = _grounded_context_concepts(grounded_turn)
+	supported_concepts = set(supported_ontology_concepts())
+	out_of_scope_concepts = sorted(concept for concept in message_concepts if concept not in supported_concepts)
+	if out_of_scope_concepts and not (set(message_concepts) & supported_concepts or alias_hits):
+		primary_domain = "hr" if "employee" in out_of_scope_concepts else ""
 		return {
 			"force_new_query": True,
 			"out_of_scope": True,
 			"reason": "The request targets a business domain outside the current governed Qwen ERP scope.",
-			"requested_domains": sorted(message_domains),
-			"context_domains": sorted(context_domains),
-			"primary_domain": out_of_scope_domains[0],
+			"requested_domains": sorted(message_concepts),
+			"context_domains": sorted(context_concepts),
+			"primary_domain": primary_domain,
 		}
 
 	self_contained = is_self_contained_business_request(
@@ -502,31 +388,31 @@ def assess_context_isolation(
 			"force_new_query": False,
 			"out_of_scope": False,
 			"reason": "",
-			"requested_domains": sorted(message_domains),
-			"context_domains": sorted(context_domains),
+			"requested_domains": sorted(message_concepts),
+			"context_domains": sorted(context_concepts),
 		}
 	if self_contained:
 		return {
 			"force_new_query": True,
 			"out_of_scope": False,
 			"reason": "The request is self-contained and should be treated as a fresh governed ERP question.",
-			"requested_domains": sorted(message_domains),
-			"context_domains": sorted(context_domains),
+			"requested_domains": sorted(message_concepts),
+			"context_domains": sorted(context_concepts),
 		}
 
-	if message_domains and context_domains and message_domains.isdisjoint(context_domains):
+	if message_concepts and context_concepts and message_concepts.isdisjoint(context_concepts):
 		return {
 			"force_new_query": True,
 			"out_of_scope": False,
 			"reason": "The request shifts to a different governed business area and should not inherit the prior artifact.",
-			"requested_domains": sorted(message_domains),
-			"context_domains": sorted(context_domains),
+			"requested_domains": sorted(message_concepts),
+			"context_domains": sorted(context_concepts),
 		}
 
 	return {
 		"force_new_query": False,
 		"out_of_scope": False,
 		"reason": "",
-		"requested_domains": sorted(message_domains),
-		"context_domains": sorted(context_domains),
+		"requested_domains": sorted(message_concepts),
+		"context_domains": sorted(context_concepts),
 	}

@@ -1,0 +1,394 @@
+{
+  "contract_version": "1.0",
+  "description": "Semantic alias registry for business term to canonical metric/dimension mapping. All business language understanding must be expressed here, not in Python code.",
+  "alias_groups": [
+    {
+      "canonical_key": "sales_amount",
+      "label": "Sales Amount",
+      "aliases": [
+        "revenue",
+        "selling_amount",
+        "value",
+        "billed_amount",
+        "invoiced_amount",
+        "sales",
+        "turnover"
+      ],
+      "capability_scope": ["sales_read", "product_performance_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Sales Analytics": ["Value", "Sales Amount"],
+        "Gross Profit": ["Selling Amount"],
+        "Item-wise Sales History": ["Billed Amount"]
+      }
+    },
+    {
+      "canonical_key": "quantity",
+      "label": "Quantity",
+      "aliases": [
+        "qty",
+        "delivered_quantity",
+        "balance_qty",
+        "units",
+        "volume",
+        "count"
+      ],
+      "capability_scope": ["sales_read", "stock_read", "product_performance_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Sales Analytics": ["Quantity"],
+        "Stock Balance": ["Balance Qty"],
+        "Gross Profit": ["Qty"]
+      }
+    },
+    {
+      "canonical_key": "gross_profit",
+      "label": "Gross Profit",
+      "aliases": [
+        "gross profit",
+        "gp",
+        "margin",
+        "profit"
+      ],
+      "capability_scope": ["product_performance_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Gross Profit": ["Gross Profit"]
+      }
+    },
+    {
+      "canonical_key": "gross_profit_percent",
+      "label": "Gross Profit Percent",
+      "aliases": [
+        "gross profit percent",
+        "gross profit percentage",
+        "gross profit %",
+        "gp percent",
+        "gp %",
+        "margin percent",
+        "margin percentage",
+        "margin %"
+      ],
+      "capability_scope": ["product_performance_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Gross Profit": ["Gross Profit %"]
+      }
+    },
+    {
+      "canonical_key": "buying_amount",
+      "label": "Buying Amount",
+      "aliases": [
+        "buying amount",
+        "cost",
+        "cost amount",
+        "purchase amount"
+      ],
+      "capability_scope": ["product_performance_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Gross Profit": ["Buying Amount"]
+      }
+    },
+    {
+      "canonical_key": "outstanding_total",
+      "label": "Outstanding Total",
+      "aliases": [
+        "outstanding",
+        "outstanding amount",
+        "amount outstanding",
+        "due",
+        "amount due"
+      ],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Accounts Receivable Summary": ["Outstanding Amount"],
+        "Accounts Payable Summary": ["Outstanding Amount"]
+      }
+    },
+    {
+      "canonical_key": "total_due",
+      "label": "Total Amount Due",
+      "aliases": [
+        "total due",
+        "total amount due",
+        "amount due",
+        "total payable"
+      ],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Accounts Receivable Summary": ["Total Amount Due"],
+        "Accounts Payable Summary": ["Total Amount Due"]
+      }
+    },
+    {
+      "canonical_key": "balance_value",
+      "label": "Balance Value",
+      "aliases": [
+        "balance value",
+        "stock value",
+        "inventory value",
+        "valuation",
+        "worth",
+        "balance value (mmk)"
+      ],
+      "capability_scope": ["stock_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Stock Balance": ["Balance Value (MMK)"],
+        "Warehouse Wise Stock Balance": ["Stock Balance"]
+      }
+    },
+    {
+      "canonical_key": "balance_qty",
+      "label": "Balance Quantity",
+      "aliases": [
+        "balance qty",
+        "balance quantity",
+        "stock qty",
+        "inventory qty",
+        "on hand",
+        "qty after transaction"
+      ],
+      "capability_scope": ["stock_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Stock Balance": ["Balance Qty"],
+        "Warehouse Wise Stock Balance": ["Balance Qty"]
+      }
+    },
+    {
+      "canonical_key": "contribution_percent",
+      "label": "Contribution Percent",
+      "aliases": [
+        "contribution percent",
+        "contribution %",
+        "contribution ratio",
+        "percent contribution"
+      ],
+      "capability_scope": ["ranking_analytics", "product_profitability"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "item_code",
+      "label": "Item Code",
+      "aliases": [
+        "item code",
+        "item",
+        "product code",
+        "product",
+        "sku",
+        "product id"
+      ],
+      "capability_scope": ["sales_read", "stock_read", "product_performance_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Analytics": ["Item"],
+        "Stock Balance": ["Item Code"],
+        "Gross Profit": ["Item Code"]
+      }
+    },
+    {
+      "canonical_key": "item_name",
+      "label": "Item Name",
+      "aliases": [
+        "item name",
+        "product name",
+        "item"
+      ],
+      "capability_scope": ["sales_read", "stock_read", "product_performance_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Analytics": ["Item Name"],
+        "Gross Profit": ["Item Name"]
+      }
+    },
+    {
+      "canonical_key": "customer",
+      "label": "Customer",
+      "aliases": [
+        "customer",
+        "customers",
+        "client",
+        "clients",
+        "buyer",
+        "buyers",
+        "party"
+      ],
+      "capability_scope": ["sales_read", "accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Analytics": ["Customer"],
+        "Accounts Receivable Summary": ["Party"]
+      }
+    },
+    {
+      "canonical_key": "supplier",
+      "label": "Supplier",
+      "aliases": [
+        "supplier",
+        "suppliers",
+        "vendor",
+        "vendors",
+        "creditor",
+        "creditors",
+        "party"
+      ],
+      "capability_scope": ["accounts_payable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Accounts Payable Summary": ["Party"]
+      }
+    },
+    {
+      "canonical_key": "territory",
+      "label": "Territory",
+      "aliases": [
+        "territory",
+        "territories",
+        "region",
+        "regions",
+        "area",
+        "zone"
+      ],
+      "capability_scope": ["sales_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Analytics": ["Territory"]
+      }
+    },
+    {
+      "canonical_key": "warehouse",
+      "label": "Warehouse",
+      "aliases": [
+        "warehouse",
+        "warehouses",
+        "store",
+        "stores",
+        "stockroom",
+        "location"
+      ],
+      "capability_scope": ["stock_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Stock Balance": ["Warehouse"],
+        "Warehouse Wise Stock Balance": ["Warehouse"]
+      }
+    },
+    {
+      "canonical_key": "item_group",
+      "label": "Item Group",
+      "aliases": [
+        "item group",
+        "product group",
+        "category",
+        "product category",
+        "item category"
+      ],
+      "capability_scope": ["sales_read", "stock_read", "product_performance_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Gross Profit": ["Item Group"]
+      }
+    },
+    {
+      "canonical_key": "brand",
+      "label": "Brand",
+      "aliases": [
+        "brand",
+        "brands",
+        "manufacturer"
+      ],
+      "capability_scope": ["sales_read", "stock_read", "product_performance_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Gross Profit": ["Brand"]
+      }
+    },
+    {
+      "canonical_key": "document_name",
+      "label": "Document Name",
+      "aliases": [
+        "invoice",
+        "invoice name",
+        "invoice no",
+        "invoice number",
+        "document",
+        "document no",
+        "document number"
+      ],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Register": ["Voucher No"],
+        "Accounts Receivable Summary": ["Voucher No"],
+        "Accounts Payable Summary": ["Voucher No"]
+      }
+    },
+    {
+      "canonical_key": "posting_date",
+      "label": "Posting Date",
+      "aliases": [
+        "posting date",
+        "date",
+        "invoice date",
+        "transaction date"
+      ],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Register": ["Posting Date"],
+        "Accounts Receivable Summary": ["Posting Date"],
+        "Accounts Payable Summary": ["Posting Date"]
+      }
+    },
+    {
+      "canonical_key": "document_status",
+      "label": "Document Status",
+      "aliases": [
+        "status",
+        "document status",
+        "payment status"
+      ],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Register": ["Status"]
+      }
+    },
+    {
+      "canonical_key": "grand_total",
+      "label": "Grand Total",
+      "aliases": [
+        "amount",
+        "grand total",
+        "total amount",
+        "invoice amount"
+      ],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Sales Register": ["Grand Total"]
+      }
+    },
+    {
+      "canonical_key": "outstanding_amount",
+      "label": "Outstanding Amount",
+      "aliases": [
+        "outstanding",
+        "outstanding amount",
+        "balance due"
+      ],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Sales Register": ["Outstanding Amount"],
+        "Accounts Receivable Summary": ["Outstanding Amount"],
+        "Accounts Payable Summary": ["Outstanding Amount"]
+      }
+    }
+  ]
+}

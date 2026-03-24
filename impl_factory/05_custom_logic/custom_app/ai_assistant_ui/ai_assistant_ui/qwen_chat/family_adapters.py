@@ -11,6 +11,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_normalized_family_artifact_contract,
 )
 from ai_assistant_ui.qwen_chat.metadata import report_business_family_ids
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
 def _safe_json_loads(value: Any) -> Any:
@@ -249,25 +250,13 @@ def _requested_metric_hint(
 	available_metric_keys: List[str],
 	default_metric_key: str,
 ) -> str:
-	text = _normalized_request_text(message)
-	if not text:
+	if not _normalized_request_text(message):
 		return str(default_metric_key or "").strip()
-	candidates: List[Tuple[List[str], str]] = [
-		(["contribution percent", "contribution %"], "contribution_percent"),
-		(["gross profit percent", "gross profit percentage", "margin percent"], "gross_profit_percent"),
-		(["gross profit"], "gross_profit"),
-		(["buying amount", "cost"], "buying_amount"),
-		(["revenue", "sales amount"], "sales_amount"),
-		(["outstanding amount", "outstanding"], "outstanding_total"),
-		(["total due", "amount due"], "total_due"),
-		(["balance value", "stock value"], "balance_value"),
-		(["balance qty", "balance quantity"], "balance_qty"),
-		(["quantity", " qty "], "quantity"),
+	matched_metric_keys = [
+		metric_key
+		for metric_key in detect_canonical_keys(message, dimension_or_metric="metric")
+		if metric_key in available_metric_keys
 	]
-	matched_metric_keys: List[str] = []
-	for aliases, metric_key in candidates:
-		if any(alias in text for alias in aliases) and metric_key in available_metric_keys:
-			matched_metric_keys.append(metric_key)
 	if matched_metric_keys:
 		core_metric_keys = [
 			metric_key
@@ -277,10 +266,6 @@ def _requested_metric_hint(
 		if core_metric_keys:
 			return core_metric_keys[0]
 		return matched_metric_keys[0]
-	if "amount" in text:
-		for metric_key in ("sales_amount", "gross_profit", "buying_amount", "outstanding_total", "total_due", "balance_value"):
-			if metric_key in available_metric_keys:
-				return metric_key
 	return str(default_metric_key or "").strip()
 
 
@@ -288,13 +273,14 @@ def _requested_output_columns(
 	message: str,
 	primary_metric_key: str,
 ) -> List[str]:
-	text = _normalized_request_text(message)
 	columns: List[str] = []
-	if any(token in text for token in ("item name", "product name", "customer name", "supplier name", "with their", "with item", "with customer", "with supplier")):
+	detected_dimensions = detect_canonical_keys(message, dimension_or_metric="dimension")
+	detected_metrics = detect_canonical_keys(message, dimension_or_metric="metric")
+	if any(key in detected_dimensions for key in {"item_code", "item_name", "customer", "supplier"}):
 		columns.append("entity")
-	if "item code" in text:
+	if "item_code" in detected_dimensions:
 		columns.append("entity_code")
-	metric_key = _requested_metric_hint(text, [
+	metric_key = _requested_metric_hint(message, [
 		"sales_amount",
 		"gross_profit",
 		"gross_profit_percent",
@@ -308,7 +294,7 @@ def _requested_output_columns(
 	], primary_metric_key)
 	if metric_key:
 		columns.append(metric_key)
-	if "contribution percent" in text or "contribution %" in text:
+	if "contribution_percent" in detected_metrics:
 		columns.append("contribution_percent")
 	return list(dict.fromkeys([value for value in columns if value]))
 
@@ -2125,20 +2111,20 @@ def _build_aging_artifact(
 
 
 def _requested_transaction_columns(message: str) -> List[str]:
-	text = _normalized_request_text(message)
 	columns: List[str] = []
-	if any(token in text for token in ("invoice", "invoice name", "invoice no", "invoice number")):
-		columns.append("document_name")
-	if any(token in text for token in ("date", "posting date")):
-		columns.append("posting_date")
-	if "customer" in text:
-		columns.append("customer")
-	if any(token in text for token in ("amount", "grand total", "total amount", "revenue")):
-		columns.append("grand_total")
-	if "outstanding" in text:
-		columns.append("outstanding_amount")
-	if "status" in text:
-		columns.append("status")
+	for key in detect_canonical_keys(message):
+		if key == "document_name":
+			columns.append("document_name")
+		elif key == "posting_date":
+			columns.append("posting_date")
+		elif key == "customer":
+			columns.append("customer")
+		elif key in {"grand_total", "sales_amount"}:
+			columns.append("grand_total")
+		elif key in {"outstanding_amount", "outstanding_total"}:
+			columns.append("outstanding_amount")
+		elif key == "document_status":
+			columns.append("status")
 	return list(dict.fromkeys([value for value in columns if value]))
 
 

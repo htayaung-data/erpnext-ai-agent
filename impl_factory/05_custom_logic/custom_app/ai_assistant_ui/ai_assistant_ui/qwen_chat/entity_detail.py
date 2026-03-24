@@ -11,6 +11,7 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 	build_artifact_narrative_contract,
 	narrate_governed_artifact,
 )
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
 def _clean_text(value: Any) -> str:
@@ -155,13 +156,14 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 			out.append(payload)
 
 	def _entity_type_from_dimension(value: str) -> str:
-		text = _normalize_text(value)
-		if "supplier" in text or "vendor" in text:
-			return "supplier"
-		if "customer" in text or "party" in text:
-			return "customer"
-		if "item" in text or "product" in text:
-			return "item"
+		dimension_keys = detect_canonical_keys(value, dimension_or_metric="dimension")
+		for key in dimension_keys:
+			if key == "supplier":
+				return "supplier"
+			if key == "customer":
+				return "customer"
+			if key in {"item_code", "item_name"}:
+				return "item"
 		return ""
 
 	if family_id == "transaction_listing":

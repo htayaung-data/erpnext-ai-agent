@@ -183,6 +183,8 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
 	decision = str(compiler.get("decision") or "").strip()
 	reason = str(compiler.get("compiler_reason") or "").strip()
+	reason_type = str(compiler.get("clarification_reason_type") or "").strip()
+	reason_details = compiler.get("clarification_details") if isinstance(compiler.get("clarification_details"), dict) else {}
 	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
 	narrative_response = result.get("narrative_response") if isinstance(result.get("narrative_response"), dict) else {}
 	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
@@ -202,6 +204,8 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 			request_id=request_id,
 			raw_message=raw_message,
 			compiler_reason=reason,
+			compiler_reason_type=reason_type,
+			compiler_details=reason_details,
 		)
 		return str(signal.user_question or "").strip(), signal.to_payload()
 	if decision == "reject":
@@ -209,22 +213,20 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 			return f"I can't complete that safely within the approved ERP read path yet.\n\n{reason}", {}
 		return "I can't complete that safely within the approved ERP read path yet.", {}
 	if family_status == "clarify":
-		detail = str((family_warnings or family_errors or ["The normalized business artifact needs clarification before display."])[0] or "").strip()
 		signal = translate_clarification_signal(
 			request_id=request_id,
 			raw_message=raw_message,
-			family_detail=detail,
+			family_validation=family_validation,
 		)
 		return str(signal.user_question or "").strip(), signal.to_payload()
 	if family_status.startswith("reject"):
 		detail = str((family_errors or ["The normalized business artifact did not pass governed validation."])[0] or "").strip()
 		return f"I couldn't complete that result confidently from governed ERP data.\n\n{detail}".strip(), {}
 	if semantic_status == "clarify":
-		detail = str((semantic_warnings or semantic_errors or ["The grounded result needs clarification before display."])[0] or "").strip()
 		signal = translate_clarification_signal(
 			request_id=request_id,
 			raw_message=raw_message,
-			semantic_detail=detail,
+			semantic_validation=semantic,
 		)
 		return str(signal.user_question or "").strip(), signal.to_payload()
 	if semantic_status == "reject_semantically_inconsistent":
@@ -629,7 +631,31 @@ def _extract_markdown_tables(text: str) -> List[Dict[str, Any]]:
 
 
 def _assistant_text_payload(text: str) -> str:
+	"""
+	Create assistant text payload with currency normalization.
+	
+	Ensures:
+	- All currency values use MMK, not other symbols like ₹
+	- "MMKM" is corrected to "Million MMK"
+	- Table cells don't have redundant currency labels
+	"""
+	import re
+	
 	clean = _normalize_markdown_units(str(text or "").strip())
+	
+	# Fix "MMKM" → "Million MMK"
+	clean = clean.replace("MMKM", "Million MMK")
+	
+	# Replace any non-MMK currency symbols with MMK
+	# Replace ₹ (Indian Rupee) with MMK
+	clean = re.sub(r'₹\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
+	# Replace $ (USD) with MMK (keep the number)
+	clean = re.sub(r'\$\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
+	# Replace € (Euro) with MMK
+	clean = re.sub(r'€\s*([\d,]+(?:\.\d+)?)', r'\1 MMK', clean)
+	# Replace any standalone currency symbols that aren't MMK
+	clean = re.sub(r'\b(INR|USD|EUR|GBP)\b', 'MMK', clean)
+	
 	payload: Dict[str, Any] = {
 		"type": "text",
 		"text": clean,
@@ -1027,6 +1053,7 @@ def _try_local_followup_transform(
 	assistant_payload, trace = _latest_grounded_assistant_context(session_doc)
 	grounded_turn = _latest_grounded_turn_contract(session_doc)
 	family_artifact_payload = _latest_normalized_family_artifact(session_doc)
+	
 	heuristic_intent = detect_followup_intent(
 		str(raw_message or "").strip(),
 		grounded_turn=grounded_turn,
@@ -1043,6 +1070,7 @@ def _try_local_followup_transform(
 		clean_mode = str(mode or "").strip()
 		if clean_mode and clean_mode not in requested_modes:
 			requested_modes.add(clean_mode)
+
 	if not assistant_payload or not trace:
 		return None
 	text = str(assistant_payload.get("text") or "").strip()
@@ -1055,6 +1083,8 @@ def _try_local_followup_transform(
 		session_doc,
 		getattr(followup_resolution, "requested_modes", []) or [],
 	)
+	# Extract show_million from display preferences or requested_modes
+	show_million = bool((display_preferences or {}).get("million")) or ("presentation_transform" in requested_modes)
 
 	if supports_local_family_followup(
 		family_artifact_payload,
@@ -1063,6 +1093,7 @@ def _try_local_followup_transform(
 		requested_columns=requested_columns,
 		requested_time_scope=requested_time_scope,
 		requested_modes=list(requested_modes),
+		show_million=show_million,
 	):
 		family_render = render_local_family_followup(
 			request_id=request_id,
@@ -1071,6 +1102,7 @@ def _try_local_followup_transform(
 			target_metric=target_metric,
 			requested_columns=requested_columns,
 			requested_modes=list(requested_modes),
+			show_million=show_million,
 		)
 		family_text = str(family_render.get("answer_text") or "").strip()
 		if family_text:
@@ -1241,9 +1273,6 @@ def _tool_trace_payload(
 
 
 def _safe_runtime_failure_message(exc: Exception) -> str:
-	raw = str(exc or "").strip()
-	if raw:
-		return f"Qwen runtime is unavailable right now. {raw}"
 	return "Qwen runtime is unavailable right now. Please try again."
 
 
@@ -1297,7 +1326,11 @@ def _try_entity_detail_followup(
 		)
 	except Exception as exc:
 		frappe.log_error(frappe.get_traceback(), "Qwen Assistant: entity drilldown failed")
-		_append_message(session_doc, "assistant", _assistant_text_payload(f"I couldn't complete a grounded entity drilldown confidently.\n\n{str(exc or '').strip()}"))
+		_append_message(
+			session_doc,
+			"assistant",
+			_assistant_text_payload("I couldn't complete that entity detail confidently from governed ERP data."),
+		)
 		_append_message(
 			session_doc,
 			"tool",
@@ -1692,10 +1725,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	error = str(runtime_payload.get("error") or "").strip()
 
 	if not answer_text:
-		if error:
-			answer_text = f"Qwen runtime could not complete the request. {error}"
-		else:
-			answer_text = "Qwen runtime returned no answer."
+		answer_text = "Qwen runtime could not complete the request right now. Please try again."
 
 	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 	_append_message(
@@ -3368,12 +3398,25 @@ def run_phase4b_clarification_translation_probe() -> Dict[str, Any]:
 	cases = [
 		{
 			"message": "Analyze company health and suggest area to improve",
-			"compiler_reason": "Ambiguous capability candidates: financial_statement_read, sales_read, accounts_receivable_read, accounts_payable_read, stock_read, product_performance_read",
+			"compiler_reason": "Capability resolution remained ambiguous.",
+			"compiler_reason_type": "capability_ambiguity",
+			"compiler_details": {
+				"capability_candidates": [
+					"financial_statement_read",
+					"sales_read",
+					"accounts_receivable_read",
+					"accounts_payable_read",
+					"stock_read",
+					"product_performance_read",
+				]
+			},
 			"reason_type": "capability_ambiguity",
 		},
 		{
 			"message": "Show me top 10 products last month by revenue",
-			"compiler_reason": "Missing or unresolved required filters: from_date",
+			"compiler_reason": "The request needs a period before execution.",
+			"compiler_reason_type": "time_scope_missing",
+			"compiler_details": {"missing_fields": ["from_date"]},
 			"reason_type": "time_scope_missing",
 		},
 	]
@@ -3383,6 +3426,8 @@ def run_phase4b_clarification_translation_probe() -> Dict[str, Any]:
 			request_id=f"phase4b-clarify-{index}",
 			raw_message=str(case.get("message") or "").strip(),
 			compiler_reason=str(case.get("compiler_reason") or "").strip(),
+			compiler_reason_type=str(case.get("compiler_reason_type") or "").strip(),
+			compiler_details=dict(case.get("compiler_details") or {}),
 		)
 		question = str(signal.user_question or "").strip()
 		if not question:

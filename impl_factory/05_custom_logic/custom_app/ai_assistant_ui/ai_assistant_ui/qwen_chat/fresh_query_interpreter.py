@@ -41,6 +41,7 @@ from ai_assistant_ui.qwen_chat.semantic_validator import (
 	run_phase4_semantic_validation_selftests,
 	validate_compiled_semantic_result,
 )
+from ai_assistant_ui.qwen_chat.intent_rules_engine import apply_intent_rules
 
 try:
 	import frappe  # type: ignore
@@ -256,30 +257,39 @@ def _message_tokens(value: str) -> set[str]:
 
 
 def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
-	tokens = _message_tokens(message)
-	if not tokens:
-		return str(intent_class or "").strip()
-	product_terms = {"product", "products", "item", "items", "sku", "brand"}
-	performance_terms = {"performing", "performance", "well", "profit", "profitability", "gross", "margin"}
-	ranking_terms = {"top", "bottom", "highest", "lowest", "rank", "ranking", "best", "worst"}
-	sales_terms = {"sale", "sales", "revenue"}
-	trend_terms = {"trend", "monthly", "weekly", "daily", "history"}
-	transaction_terms = {"invoice", "invoices", "recent", "latest", "last"}
-	if {"balance", "sheet"}.issubset(tokens):
-		return "financial_statement"
-	if {"cash", "flow"}.issubset(tokens):
-		return "financial_statement"
-	if {"income", "statement"}.issubset(tokens) or {"profit", "loss"}.issubset(tokens) or {"p", "l"}.issubset(tokens):
-		return "financial_statement"
-	if ("invoice" in tokens or "invoices" in tokens) and (tokens & transaction_terms):
-		return "transaction_listing"
-	if (tokens & product_terms) and (tokens & ranking_terms):
-		return "ranked_entities"
-	if (tokens & sales_terms) and (tokens & trend_terms) and not (tokens & product_terms):
-		return "trend_analysis"
-	if (tokens & product_terms) and (tokens & performance_terms) and not (tokens & ranking_terms):
-		return "product_performance"
-	return str(intent_class or "").strip()
+	"""
+	Apply intent bias rules from metadata registry.
+	
+	This function uses the metadata-driven rules engine instead of
+	hardcoded Python logic. This is enterprise-grade architecture.
+	
+	Args:
+		intent_class: Current intent class from proposal
+		message: Original user message
+	
+	Returns:
+		Updated intent class (or original if no rules matched)
+	"""
+	# Create minimal interpretation for rule evaluation
+	interpretation = FreshQueryInterpretationContract(
+		request_id="",
+		session_id="",
+		intent_class=intent_class,
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		requested_dimensions=[],
+		requested_metrics=[],
+		requested_time_scope="",
+		requested_presentation=[],
+		extracted_slots={},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=0.0,
+	)
+	
+	# Apply rules from metadata registry
+	result = apply_intent_rules(message, interpretation)
+	return result.intent_class
 
 
 def _apply_governed_interpretation_biases(

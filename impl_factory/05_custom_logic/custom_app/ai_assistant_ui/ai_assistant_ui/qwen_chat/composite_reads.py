@@ -313,6 +313,8 @@ def plan_composite_read(
 		decision=decision,
 		clarification_required=decision != "execute",
 		compiler_reason=str(plan_contract.compiler_reason or "").strip(),
+		clarification_reason_type="composite_plan_clarify" if decision != "execute" else "",
+		clarification_details={"plan_id": str(plan_contract.plan_id or "").strip(), "errors": list(errors)} if decision != "execute" else {},
 	)
 	return CompositePlanOutcome(
 		status=decision,

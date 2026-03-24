@@ -482,6 +482,23 @@ def report_family_routing_hints(family_id: str) -> Dict[str, Any]:
 	return dict(value) if isinstance(value, dict) else {}
 
 
+def report_family_ontology_concepts(family_id: str) -> List[str]:
+	values = report_family_routing_hints(family_id).get("ontology_concepts")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+def supported_ontology_concepts() -> List[str]:
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		family_id = str(spec.get("family_id") or "").strip()
+		if not family_id:
+			continue
+		out.extend(report_family_ontology_concepts(family_id))
+	return list(dict.fromkeys([value for value in out if value]))
+
+
 def report_family_ids_for_intent_class(intent_class_id: str) -> List[str]:
 	target = str(intent_class_id or "").strip()
 	if not target:

@@ -34,11 +34,20 @@ def supports_local_family_followup(
 	requested_columns: list[str] | None = None,
 	requested_time_scope: str = "",
 	requested_modes: list[str] | None = None,
+	show_million: bool = False,
 ) -> bool:
+	"""
+	Check if family follow-up can be handled locally.
+	
+	Supports:
+	- ranking_analytics, product_profitability, trend_analytics, financial_statement, aging, inventory_snapshot
+	- sort_or_limit, metric_refinement, column_refinement
+	- presentation_transform (million)
+	"""
 	if not isinstance(artifact_payload, dict) or not artifact_payload:
 		return False
 	family_id = str(artifact_payload.get("family_id") or "").strip()
-	if family_id not in {"ranking_analytics", "product_profitability"}:
+	if family_id not in {"ranking_analytics", "product_profitability", "trend_analytics", "financial_statement", "aging", "inventory_snapshot"}:
 		return False
 	if str(requested_time_scope or "").strip():
 		return False
@@ -47,11 +56,13 @@ def supports_local_family_followup(
 		for value in (requested_modes or [])
 		if str(value or "").strip()
 	}
+	supported_modes = {"sort_or_limit", "metric_refinement", "column_refinement", "presentation_transform"}
 	return bool(
 		int(max(0, target_limit or 0))
 		or str(target_metric or "").strip()
 		or list(requested_columns or [])
-		or modes.intersection({"sort_or_limit", "metric_refinement", "column_refinement"})
+		or modes.intersection(supported_modes)
+		or show_million
 	)
 
 
@@ -63,7 +74,17 @@ def render_local_family_followup(
 	target_metric: str = "",
 	requested_columns: list[str] | None = None,
 	requested_modes: list[str] | None = None,
+	show_million: bool = False,
 ) -> Dict[str, Any]:
+	"""
+	Render family follow-up with support for all transformation types.
+	
+	Handles:
+	- top_n changes
+	- metric changes
+	- column refinement
+	- presentation_transform (million)
+	"""
 	artifact_contract = _artifact_contract_from_payload(artifact_payload)
 	if artifact_contract is None:
 		return {}
@@ -88,6 +109,9 @@ def render_local_family_followup(
 		overrides["metric_key"] = "amount"
 	if "requested_columns" not in overrides and "metric_key" in overrides and str(overrides.get("metric_key") or "").strip() == "amount":
 		overrides["requested_columns"] = ["entity", "amount"]
+	# Handle presentation_transform (million)
+	if show_million or "presentation_transform" in modes:
+		overrides["show_million"] = True
 	render_outcome = render_normalized_family_response(
 		request_id=request_id,
 		artifact_contract=artifact_contract,
