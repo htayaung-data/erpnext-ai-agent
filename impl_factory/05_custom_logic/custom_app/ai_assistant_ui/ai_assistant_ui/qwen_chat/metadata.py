@@ -58,6 +58,10 @@ def load_family_evaluation_registry() -> Dict[str, Any]:
 	return _load_json("family_evaluation_registry.json")
 
 
+def load_report_surface_evidence_registry() -> Dict[str, Any]:
+	return _load_json("report_surface_evidence_registry.json")
+
+
 def load_validation_rules() -> Dict[str, Any]:
 	return _load_json("validation_rules.json")
 
@@ -92,6 +96,21 @@ def get_report_spec(report_name: str) -> Dict[str, Any]:
 			continue
 		if str(item.get("report_name") or "").strip().lower() == name:
 			return dict(item)
+	return {}
+
+
+def list_report_surface_evidence_specs() -> List[Dict[str, Any]]:
+	values = load_report_surface_evidence_registry().get("report_surface_evidence")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_report_surface_evidence_spec(report_name: str) -> Dict[str, Any]:
+	name = str(report_name or "").strip().lower()
+	for item in list_report_surface_evidence_specs():
+		if str(item.get("report_name") or "").strip().lower() == name:
+			return item
 	return {}
 
 
@@ -254,12 +273,7 @@ def ontology_business_terms(language: str = "en") -> List[str]:
 	for item in entries:
 		if not isinstance(item, dict):
 			continue
-		aliases = item.get("aliases")
-		if not isinstance(aliases, dict):
-			continue
-		values = aliases.get(language)
-		if not isinstance(values, list):
-			continue
+		values = _ontology_alias_values(item, language=language, include_extended=False)
 		out.extend(str(x or "").strip().lower() for x in values if str(x or "").strip())
 	return list(dict.fromkeys(out))
 
@@ -278,18 +292,26 @@ def all_ontology_concepts() -> List[str]:
 	return list(dict.fromkeys(out))
 
 
+def _canonicalize_ontology_values(values: List[Any], language: str = "en") -> List[str]:
+	known_concepts = set(all_ontology_concepts())
+	out: List[str] = []
+	for item in values or []:
+		value = str(item or "").strip()
+		if not value:
+			continue
+		if value in known_concepts:
+			out.append(value)
+			continue
+		out.extend(ontology_detect_concepts(value, language=language))
+	return list(dict.fromkeys([value for value in out if value]))
+
+
 def governed_self_contained_business_terms(language: str = "en") -> List[str]:
 	out: List[str] = list(ontology_business_terms(language))
 	for spec in list_report_family_specs():
 		report_names = spec.get("report_names")
 		if isinstance(report_names, list):
 			out.extend(str(x or "").strip().lower() for x in report_names if str(x or "").strip())
-		routing_hints = spec.get("routing_hints")
-		if not isinstance(routing_hints, dict):
-			continue
-		intent_markers = routing_hints.get("intent_markers")
-		if isinstance(intent_markers, list):
-			out.extend(str(x or "").strip().lower() for x in intent_markers if str(x or "").strip())
 	return list(dict.fromkeys(out))
 
 
@@ -305,17 +327,28 @@ def ontology_concept_aliases(concept_id: str, language: str = "en") -> List[str]
 			continue
 		if str(item.get("concept_id") or "").strip() != target:
 			continue
-		aliases = item.get("aliases")
-		if not isinstance(aliases, dict):
-			return []
-		values = aliases.get(language)
-		if not isinstance(values, list):
-			return []
+		values = _ontology_alias_values(item, language=language, include_extended=False)
 		return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
 	return []
 
 
-def ontology_detect_concepts(message: str, language: str = "en") -> List[str]:
+def _ontology_alias_values(item: Dict[str, Any], *, language: str = "en", include_extended: bool = False) -> List[str]:
+	aliases = item.get("aliases")
+	out: List[str] = []
+	if isinstance(aliases, dict):
+		values = aliases.get(language)
+		if isinstance(values, list):
+			out.extend(str(x or "").strip().lower() for x in values if str(x or "").strip())
+	if include_extended:
+		extended_aliases = item.get("extended_aliases")
+		if isinstance(extended_aliases, dict):
+			values = extended_aliases.get(language)
+			if isinstance(values, list):
+				out.extend(str(x or "").strip().lower() for x in values if str(x or "").strip())
+	return list(dict.fromkeys(out))
+
+
+def ontology_detect_concepts(message: str, language: str = "en", include_extended: bool = True) -> List[str]:
 	text = _normalize_ontology_text(message)
 	if not text:
 		return []
@@ -329,12 +362,7 @@ def ontology_detect_concepts(message: str, language: str = "en") -> List[str]:
 		concept_id = str(item.get("concept_id") or "").strip()
 		if not concept_id:
 			continue
-		aliases = item.get("aliases")
-		if not isinstance(aliases, dict):
-			continue
-		values = aliases.get(language)
-		if not isinstance(values, list):
-			continue
+		values = _ontology_alias_values(item, language=language, include_extended=include_extended)
 		if any(_ontology_contains_alias(text, alias) for alias in values if str(alias or "").strip()):
 			out.append(concept_id)
 	return list(dict.fromkeys(out))
@@ -392,7 +420,7 @@ def capability_ontology_concepts(capability_id: str) -> List[str]:
 	values = get_capability_spec(capability_id).get("ontology_concepts")
 	if not isinstance(values, list):
 		return []
-	return [str(x or "").strip() for x in values if str(x or "").strip()]
+	return _canonicalize_ontology_values(values)
 
 
 def capability_semantic_tags(capability_id: str) -> List[str]:
@@ -503,6 +531,15 @@ def report_family_supported_intent_classes(family_id: str) -> List[str]:
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
 
 
+def report_family_default_intent_class(family_id: str) -> str:
+	spec = get_report_family_spec(family_id)
+	value = str(spec.get("default_intent_class") or "").strip()
+	if value:
+		return value
+	values = report_family_supported_intent_classes(family_id)
+	return str((values or [""])[0] or "").strip()
+
+
 def report_family_canonical_metrics(family_id: str) -> List[str]:
 	values = get_report_family_spec(family_id).get("canonical_metrics")
 	if not isinstance(values, list):
@@ -596,14 +633,20 @@ def report_family_ontology_concepts(family_id: str) -> List[str]:
 	values = report_family_routing_hints(family_id).get("ontology_concepts")
 	if not isinstance(values, list):
 		return []
-	return [str(x or "").strip() for x in values if str(x or "").strip()]
+	return _canonicalize_ontology_values(values)
 
 
-def report_family_intent_markers(family_id: str) -> List[str]:
+def report_family_transitional_surface_markers(family_id: str) -> List[str]:
 	values = report_family_routing_hints(family_id).get("intent_markers")
 	if not isinstance(values, list):
 		return []
 	return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+
+
+def report_family_intent_markers(family_id: str) -> List[str]:
+	# Backward-compatible wrapper. These markers are transitional phrase-surface
+	# hints only and should not be treated as canonical business semantics.
+	return report_family_transitional_surface_markers(family_id)
 
 
 def supported_ontology_concepts() -> List[str]:
@@ -614,10 +657,7 @@ def supported_ontology_concepts() -> List[str]:
 			continue
 		out.extend(report_family_ontology_concepts(family_id))
 		for capability_id in report_family_capability_ids(family_id):
-			for value in capability_ontology_concepts(capability_id):
-				detected = ontology_detect_concepts(str(value or "").strip())
-				if detected:
-					out.extend(detected)
+			out.extend(capability_ontology_concepts(capability_id))
 	return list(dict.fromkeys([value for value in out if value]))
 
 

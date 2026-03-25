@@ -44,6 +44,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_business_family_ids,
 	report_capability_ids,
 	report_family_capability_ids,
+	report_family_default_intent_class,
 	report_family_ids_for_intent_class,
 	report_family_report_names,
 	report_supported_dimensions,
@@ -965,16 +966,7 @@ def _deterministic_family_surface_interpretation(
 		return None
 	family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
 	message_concepts = ontology_detect_concepts(message)
-	intent_defaults = {
-		"financial_statement": "financial_statement",
-		"aging": "financial_summary",
-		"ranking_analytics": "ranked_entities",
-		"trend_analytics": "trend_analysis",
-		"inventory_snapshot": "inventory_summary",
-		"product_profitability": "product_performance",
-		"transaction_listing": "transaction_listing",
-	}
-	intent_class = str(intent_defaults.get(family_id) or "").strip()
+	intent_class = report_family_default_intent_class(family_id)
 	candidate_capability_ids = _ordered_capability_ids_for_family(
 		family_id=family_id,
 		intent_class=intent_class,

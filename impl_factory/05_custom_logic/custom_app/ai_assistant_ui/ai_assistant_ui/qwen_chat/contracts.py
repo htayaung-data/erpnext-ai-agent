@@ -10,6 +10,7 @@ from ai_assistant_ui.qwen_chat.capability_adapters import (
 	extract_grounded_table,
 	supports_local_followup_mode,
 )
+from ai_assistant_ui.qwen_chat.erp_metadata_discovery import get_report_surface_summary
 from ai_assistant_ui.qwen_chat.followup_interpreter import (
 	detect_followup_intent,
 	is_million_transform_intent as _is_million_transform_intent,
@@ -17,13 +18,26 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import (
 )
 from ai_assistant_ui.qwen_chat.metadata import (
 	all_ontology_concepts,
+	capability_default_report_name,
+	capability_report_names,
+	capability_semantic_tags,
 	report_capability_ids,
+	report_family_report_names,
+	report_semantic_tags,
+	report_supported_dimensions,
+	report_supported_metrics,
 	resolve_followup_report_switch,
 	resolve_target_report_for_capability,
 	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
-from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_canonical_key
+from ai_assistant_ui.qwen_chat.scope_decision_input import (
+	ScopeDecisionInputContract,
+	build_known_unsupported_scope_decision_input,
+	build_scope_decision_input,
+	normalize_scope_decision_input,
+)
 
 
 def _utc_now() -> str:
@@ -602,6 +616,129 @@ class FollowUpResolution:
 		}
 
 
+def build_followup_resolution_contract(
+	*,
+	request_id: str,
+	mode: str,
+	requested_modes: List[str] | None = None,
+	target_dimension: str = "",
+	target_limit: int = 0,
+	sort_direction: str = "",
+	target_metric: str = "",
+	requested_columns: List[str] | None = None,
+	requested_time_scope: str = "",
+	target_capability_id: str = "",
+	target_report: str = "",
+	depends_on_grounded_turn: bool = False,
+	self_contained: bool = False,
+	latest_grounded_turn_available: bool = False,
+	reason: str = "",
+) -> FollowUpResolution:
+	return FollowUpResolution(
+		request_id=str(request_id or "").strip(),
+		mode=str(mode or "").strip(),
+		requested_modes=[str(value or "").strip() for value in (requested_modes or []) if str(value or "").strip()],
+		target_dimension=str(target_dimension or "").strip(),
+		target_limit=int(max(0, target_limit or 0)),
+		sort_direction=str(sort_direction or "").strip(),
+		target_metric=str(target_metric or "").strip(),
+		requested_columns=[str(value or "").strip() for value in (requested_columns or []) if str(value or "").strip()],
+		requested_time_scope=str(requested_time_scope or "").strip(),
+		target_capability_id=str(target_capability_id or "").strip(),
+		target_report=str(target_report or "").strip(),
+		depends_on_grounded_turn=bool(depends_on_grounded_turn),
+		self_contained=bool(self_contained),
+		latest_grounded_turn_available=bool(latest_grounded_turn_available),
+		reason=str(reason or "").strip(),
+	)
+
+
+def clone_followup_resolution(
+	resolution: FollowUpResolution,
+	*,
+	request_id: str = "",
+	mode: str | None = None,
+	requested_modes: List[str] | None = None,
+	target_dimension: str | None = None,
+	target_limit: int | None = None,
+	sort_direction: str | None = None,
+	target_metric: str | None = None,
+	requested_columns: List[str] | None = None,
+	requested_time_scope: str | None = None,
+	target_capability_id: str | None = None,
+	target_report: str | None = None,
+	depends_on_grounded_turn: bool | None = None,
+	self_contained: bool | None = None,
+	latest_grounded_turn_available: bool | None = None,
+	reason: str | None = None,
+) -> FollowUpResolution:
+	return build_followup_resolution_contract(
+		request_id=request_id or str(getattr(resolution, "request_id", "") or "").strip(),
+		mode=str(mode if mode is not None else getattr(resolution, "mode", "") or "").strip(),
+		requested_modes=(
+			requested_modes
+			if requested_modes is not None
+			else list(getattr(resolution, "requested_modes", []) or [])
+		),
+		target_dimension=(
+			target_dimension
+			if target_dimension is not None
+			else str(getattr(resolution, "target_dimension", "") or "").strip()
+		),
+		target_limit=(
+			target_limit
+			if target_limit is not None
+			else int(max(0, getattr(resolution, "target_limit", 0) or 0))
+		),
+		sort_direction=(
+			sort_direction
+			if sort_direction is not None
+			else str(getattr(resolution, "sort_direction", "") or "").strip()
+		),
+		target_metric=(
+			target_metric
+			if target_metric is not None
+			else str(getattr(resolution, "target_metric", "") or "").strip()
+		),
+		requested_columns=(
+			requested_columns
+			if requested_columns is not None
+			else list(getattr(resolution, "requested_columns", []) or [])
+		),
+		requested_time_scope=(
+			requested_time_scope
+			if requested_time_scope is not None
+			else str(getattr(resolution, "requested_time_scope", "") or "").strip()
+		),
+		target_capability_id=(
+			target_capability_id
+			if target_capability_id is not None
+			else str(getattr(resolution, "target_capability_id", "") or "").strip()
+		),
+		target_report=(
+			target_report
+			if target_report is not None
+			else str(getattr(resolution, "target_report", "") or "").strip()
+		),
+		depends_on_grounded_turn=(
+			depends_on_grounded_turn
+			if depends_on_grounded_turn is not None
+			else bool(getattr(resolution, "depends_on_grounded_turn", False))
+		),
+		self_contained=(
+			self_contained
+			if self_contained is not None
+			else bool(getattr(resolution, "self_contained", False))
+		),
+		latest_grounded_turn_available=(
+			latest_grounded_turn_available
+			if latest_grounded_turn_available is not None
+			else bool(getattr(resolution, "latest_grounded_turn_available", False))
+		),
+		reason=reason if reason is not None else str(getattr(resolution, "reason", "") or "").strip(),
+	)
+
+
 @dataclass(frozen=True)
 class ExecutionPath:
 	request_id: str
@@ -794,6 +931,49 @@ class GovernedScopeDecisionContract:
 			"recommended_next_lane": self.recommended_next_lane,
 			"target_capability_id": self.target_capability_id,
 			"target_report": self.target_report,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ArtifactEnrichmentCompatibilityContract:
+	request_id: str
+	source_family_id: str
+	source_capability_id: str
+	source_report: str
+	source_dimension: str
+	target_metric: str
+	requested_columns: List[str]
+	required_metric_keys: List[str]
+	compatibility_status: str
+	compatible: bool
+	target_capability_id: str
+	target_report: str
+	candidate_reports_considered: List[str]
+	source_surface_sources: List[str]
+	source_selector_filters: List[str]
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_artifact_enrichment_compatibility_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"source_family_id": self.source_family_id,
+			"source_capability_id": self.source_capability_id,
+			"source_report": self.source_report,
+			"source_dimension": self.source_dimension,
+			"target_metric": self.target_metric,
+			"requested_columns": list(self.requested_columns),
+			"required_metric_keys": list(self.required_metric_keys),
+			"compatibility_status": self.compatibility_status,
+			"compatible": bool(self.compatible),
+			"target_capability_id": self.target_capability_id,
+			"target_report": self.target_report,
+			"candidate_reports_considered": list(self.candidate_reports_considered),
+			"source_surface_sources": list(self.source_surface_sources),
+			"source_selector_filters": list(self.source_selector_filters),
+			"reason": self.reason,
 			"created_at": _utc_now(),
 		}
 
@@ -1551,6 +1731,299 @@ def _clean_string_list(values: Any) -> List[str]:
 	return out
 
 
+def _normalized_key_fallback(value: str) -> str:
+	clean = str(value or "").strip().lower()
+	if not clean:
+		return ""
+	return re.sub(r"[^a-z0-9]+", "_", clean).strip("_")
+
+
+def _canonical_metric_keys(values: List[str] | None, capability_id: str = "") -> List[str]:
+	out: List[str] = []
+	for value in values or []:
+		clean = str(value or "").strip()
+		if not clean:
+			continue
+		canonical = get_canonical_key(clean, capability_id=capability_id or None, dimension_or_metric="metric")
+		final_value = str(canonical or _normalized_key_fallback(clean) or clean).strip()
+		if final_value and final_value not in out:
+			out.append(final_value)
+	return out
+
+
+def _canonical_dimension_key(value: str, capability_id: str = "") -> str:
+	clean = str(value or "").strip()
+	if not clean:
+		return ""
+	canonical = get_canonical_key(clean, capability_id=capability_id or None, dimension_or_metric="dimension")
+	if canonical:
+		return str(canonical or "").strip()
+	return _normalized_key_fallback(clean) or clean.lower()
+
+
+def _surface_declared_metric_keys(
+	*,
+	report_name: str,
+	capability_id: str,
+	surface_summary: Dict[str, Any],
+) -> List[str]:
+	values: List[str] = []
+	for item in surface_summary.get("columns") or []:
+		if not isinstance(item, dict):
+			continue
+		for key in ("label", "fieldname"):
+			clean = str(item.get(key) or "").strip()
+			if clean:
+				values.append(clean)
+	governed_hints = surface_summary.get("governed_surface_hints") if isinstance(surface_summary.get("governed_surface_hints"), dict) else {}
+	direct_query = governed_hints.get("direct_query") if isinstance(governed_hints.get("direct_query"), dict) else {}
+	for clean in _clean_string_list(direct_query.get("fields")):
+		values.append(clean)
+	return _canonical_metric_keys(values, capability_id=capability_id)
+
+
+def _surface_selector_filters(
+	*,
+	report_name: str,
+	capability_id: str,
+	surface_summary: Dict[str, Any],
+) -> List[str]:
+	supported_metric_keys = set(
+		_canonical_metric_keys(report_supported_metrics(report_name), capability_id=capability_id)
+	)
+	if not supported_metric_keys:
+		return []
+	governed_hints = surface_summary.get("governed_surface_hints") if isinstance(surface_summary.get("governed_surface_hints"), dict) else {}
+	defaultable_filters = governed_hints.get("defaultable_filters")
+	if not isinstance(defaultable_filters, list):
+		defaultable_filters = []
+	out: List[str] = []
+	for item in defaultable_filters:
+		if not isinstance(item, dict):
+			continue
+		fieldname = str(item.get("fieldname") or "").strip()
+		default_value = str(item.get("value") or "").strip()
+		if not fieldname or not default_value:
+			continue
+		canonical_value = _canonical_metric_keys([default_value], capability_id=capability_id)
+		if canonical_value and canonical_value[0] in supported_metric_keys and fieldname not in out:
+			out.append(fieldname)
+	return out
+
+
+def _dimensions_compatible(
+	*,
+	source_dimension: str,
+	report_name: str,
+	capability_id: str,
+) -> bool:
+	clean_source = str(source_dimension or "").strip()
+	if not clean_source:
+		return True
+	supported = [
+		str(value or "").strip()
+		for value in report_supported_dimensions(report_name)
+		if str(value or "").strip()
+	]
+	if not supported:
+		return True
+	source_canonical = _canonical_dimension_key(clean_source, capability_id=capability_id)
+	if source_canonical in {_canonical_dimension_key(value, capability_id=capability_id) for value in supported}:
+		return True
+	return clean_source.lower() in {value.lower() for value in supported}
+
+
+def _report_surface_can_cover_metric_union(
+	*,
+	report_name: str,
+	capability_id: str,
+	required_metric_keys: List[str],
+	surface_summary: Dict[str, Any],
+) -> tuple[bool, List[str]]:
+	required = [
+		str(value or "").strip()
+		for value in (required_metric_keys or [])
+		if str(value or "").strip()
+	]
+	if not required:
+		return False, []
+	supported = set(_canonical_metric_keys(report_supported_metrics(report_name), capability_id=capability_id))
+	if not set(required).issubset(supported):
+		return False, []
+	if len(required) <= 1:
+		return True, []
+	declared_metrics = set(
+		_surface_declared_metric_keys(
+			report_name=report_name,
+			capability_id=capability_id,
+			surface_summary=surface_summary,
+		)
+	)
+	if set(required).issubset(declared_metrics):
+		return True, []
+	selector_filters = _surface_selector_filters(
+		report_name=report_name,
+		capability_id=capability_id,
+		surface_summary=surface_summary,
+	)
+	if selector_filters:
+		return False, selector_filters
+	return True, []
+
+
+def build_artifact_enrichment_compatibility_contract(
+	*,
+	request_id: str,
+	followup_resolution: FollowUpResolution,
+	artifact_payload: Dict[str, Any] | None = None,
+	grounded_turn: Dict[str, Any] | None = None,
+	continuation_contract: ArtifactContinuationContract | None = None,
+	required_metric_keys: List[str] | None = None,
+) -> ArtifactEnrichmentCompatibilityContract:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	source_family_id = str(getattr(continuation_contract, "source_family_id", "") or artifact.get("family_id") or "").strip()
+	source_capability_id = str(getattr(continuation_contract, "source_capability_id", "") or "").strip()
+	source_report = str(getattr(continuation_contract, "source_report", "") or turn.get("source_name") or "").strip()
+	if not source_capability_id and source_report:
+		source_capability_id = str((report_capability_ids(source_report) or [""])[0] or "").strip()
+	source_dimension = str(
+		getattr(followup_resolution, "target_dimension", "")
+		or getattr(continuation_contract, "preserved_dimension", "")
+		or getattr(continuation_contract, "source_dimension", "")
+		or ""
+	).strip()
+	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
+	requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
+	required_keys = _canonical_metric_keys(required_metric_keys or [], capability_id=source_capability_id)
+	source_surface = get_report_surface_summary(source_report)
+	source_surface_sources = _clean_string_list(source_surface.get("surface_sources"))
+	source_selector_filters = _surface_selector_filters(
+		report_name=source_report,
+		capability_id=source_capability_id,
+		surface_summary=source_surface,
+	) if source_report and source_capability_id and source_surface else []
+	candidate_reports: List[str] = []
+	family_reports = set(report_family_report_names(source_family_id)) if source_family_id else set()
+	for report_name in [source_report, *capability_report_names(source_capability_id)]:
+		clean = str(report_name or "").strip()
+		if not clean or clean in candidate_reports:
+			continue
+		if family_reports and clean not in family_reports:
+			continue
+		candidate_reports.append(clean)
+
+	candidates: List[tuple[int, str, str]] = []
+	for report_name in candidate_reports:
+		capability_id = source_capability_id or str((report_capability_ids(report_name) or [""])[0] or "").strip()
+		if not capability_id:
+			continue
+		surface = get_report_surface_summary(report_name)
+		if not surface:
+			continue
+		surface_assessment = surface.get("surface_assessment") if isinstance(surface.get("surface_assessment"), dict) else {}
+		if not bool(surface_assessment.get("erp_declared_surface")) and not bool(surface_assessment.get("governed_hint_surface")):
+			continue
+		if not _dimensions_compatible(
+			source_dimension=source_dimension,
+			report_name=report_name,
+			capability_id=capability_id,
+		):
+			continue
+		can_cover, _ = _report_surface_can_cover_metric_union(
+			report_name=report_name,
+			capability_id=capability_id,
+			required_metric_keys=required_keys,
+			surface_summary=surface,
+		)
+		if not can_cover:
+			continue
+		score = 0
+		if report_name == source_report:
+			score += 1000
+		if capability_id == source_capability_id:
+			score += 250
+		if report_name == capability_default_report_name(capability_id):
+			score += 40
+		source_tags = {
+			str(value or "").strip()
+			for value in report_semantic_tags(source_report)
+			if str(value or "").strip()
+		}
+		candidate_tags = {
+			str(value or "").strip()
+			for value in report_semantic_tags(report_name)
+			if str(value or "").strip()
+		}
+		if source_tags and candidate_tags:
+			score += len(source_tags.intersection(candidate_tags)) * 10
+		capability_tags = {
+			str(value or "").strip()
+			for value in capability_semantic_tags(capability_id)
+			if str(value or "").strip()
+		}
+		if capability_tags and candidate_tags:
+			score += len(capability_tags.intersection(candidate_tags)) * 20
+		if bool(surface_assessment.get("erp_declared_surface")):
+			score += 10
+		if bool(surface_assessment.get("governed_hint_surface")):
+			score += 5
+		candidates.append((score, capability_id, report_name))
+
+	if candidates:
+		_, target_capability_id, target_report = max(candidates, key=lambda item: item[0])
+		reason = (
+			"The requested column or metric is not populated in the current artifact, "
+			"but a compatible governed enrichment path exists within the current family and capability boundary."
+		)
+		return ArtifactEnrichmentCompatibilityContract(
+			request_id=str(request_id or "").strip(),
+			source_family_id=source_family_id,
+			source_capability_id=source_capability_id,
+			source_report=source_report,
+			source_dimension=source_dimension,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			required_metric_keys=required_keys,
+			compatibility_status="governed_requery_compatible",
+			compatible=True,
+			target_capability_id=target_capability_id,
+			target_report=target_report,
+			candidate_reports_considered=candidate_reports,
+			source_surface_sources=source_surface_sources,
+			source_selector_filters=source_selector_filters,
+			reason=reason,
+		)
+
+	reason = (
+		"The current governed artifact does not expose the requested column or metric, "
+		"and no compatible governed enrichment path was proven inside the current family and capability boundary."
+	)
+	if source_selector_filters and len(required_keys) > 1:
+		reason = (
+			"The current governed report uses a metric-selector surface, so it cannot safely add the requested metric union "
+			"without switching the report basis."
+		)
+	return ArtifactEnrichmentCompatibilityContract(
+		request_id=str(request_id or "").strip(),
+		source_family_id=source_family_id,
+		source_capability_id=source_capability_id,
+		source_report=source_report,
+		source_dimension=source_dimension,
+		target_metric=target_metric,
+		requested_columns=requested_columns,
+		required_metric_keys=required_keys,
+		compatibility_status="unavailable_in_current_governed_path",
+		compatible=False,
+		target_capability_id="",
+		target_report="",
+		candidate_reports_considered=candidate_reports,
+		source_surface_sources=source_surface_sources,
+		source_selector_filters=source_selector_filters,
+		reason=reason,
+	)
+
+
 def _artifact_requested_columns(turn: Dict[str, Any], artifact: Dict[str, Any], source_metric_key: str) -> List[str]:
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	stored_columns = _clean_string_list(dimensions.get("requested_columns"))
@@ -1756,13 +2229,13 @@ def build_governed_scope_decision_contract(
 	request_id: str,
 	stage: str,
 	followup_resolution: FollowUpResolution | None = None,
-	context_isolation: Dict[str, Any] | None = None,
+	context_isolation: ScopeDecisionInputContract | Dict[str, Any] | None = None,
 	latest_grounded_turn_available: bool = False,
 	entity_drilldown: Dict[str, Any] | None = None,
 	continuation_contract: ArtifactContinuationContract | None = None,
 	clarification_required: bool = False,
 ) -> GovernedScopeDecisionContract:
-	context = context_isolation if isinstance(context_isolation, dict) else {}
+	context = normalize_scope_decision_input(context_isolation)
 	resolution = followup_resolution
 	mode = str(getattr(resolution, "mode", "") or "").strip()
 	execution_mode = {
@@ -1772,12 +2245,12 @@ def build_governed_scope_decision_contract(
 		execution_mode = "entity_drilldown"
 	requested_domains = [
 		str(value or "").strip()
-		for value in (context.get("requested_domains") or [])
+		for value in (context.requested_domains or [])
 		if str(value or "").strip()
 	]
 	context_domains = [
 		str(value or "").strip()
-		for value in (context.get("context_domains") or [])
+		for value in (context.context_domains or [])
 		if str(value or "").strip()
 	]
 	known_domain_surface = set(all_ontology_concepts())
@@ -1789,7 +2262,7 @@ def build_governed_scope_decision_contract(
 		if value in known_domain_surface and value not in supported_domain_surface
 	]
 
-	primary_domain = str(context.get("primary_domain") or "").strip()
+	primary_domain = str(context.primary_domain or "").strip()
 	if not primary_domain:
 		if {
 			"tax",
@@ -1804,7 +2277,7 @@ def build_governed_scope_decision_contract(
 		elif {"employee"} & set(unsupported_known_request_domains):
 			primary_domain = "hr"
 
-	out_of_scope = bool(context.get("out_of_scope"))
+	out_of_scope = bool(context.out_of_scope)
 	if out_of_scope and unsupported_known_request_domains:
 		governed_scope_status = "out_of_scope_but_valid_erp_domain"
 	elif out_of_scope:
@@ -1835,7 +2308,7 @@ def build_governed_scope_decision_contract(
 		stage=str(stage or "").strip() or "followup_orchestration",
 		governed_scope_status=governed_scope_status,
 		execution_mode=execution_mode or "unresolved",
-		reason=str(context.get("reason") or getattr(resolution, "reason", "") or "").strip(),
+		reason=str(context.reason or getattr(resolution, "reason", "") or "").strip(),
 		requested_domains=requested_domains,
 		context_domains=context_domains,
 		known_request_domains=known_request_domains,
@@ -1853,6 +2326,63 @@ def build_governed_scope_decision_contract(
 		recommended_next_lane=recommended_next_lane,
 		target_capability_id=str(getattr(resolution, "target_capability_id", "") or "").strip(),
 		target_report=str(getattr(resolution, "target_report", "") or "").strip(),
+	)
+
+
+def governed_scope_decision_requires_fresh_query(scope_decision_contract: GovernedScopeDecisionContract | None) -> bool:
+	return str(getattr(scope_decision_contract, "governed_scope_status", "") or "").strip() in {
+		"fresh_query_breakout",
+	}
+
+
+def governed_scope_decision_is_out_of_scope(scope_decision_contract: GovernedScopeDecisionContract | None) -> bool:
+	return bool(getattr(scope_decision_contract, "out_of_scope", False))
+
+
+def governed_scope_decision_public_decision(
+	scope_decision_contract: GovernedScopeDecisionContract | None,
+) -> Dict[str, Any]:
+	return {
+		"force_new_query": governed_scope_decision_requires_fresh_query(scope_decision_contract),
+		"out_of_scope": governed_scope_decision_is_out_of_scope(scope_decision_contract),
+		"reason": str(getattr(scope_decision_contract, "reason", "") or "").strip(),
+		"requested_domains": [
+			str(value or "").strip()
+			for value in (getattr(scope_decision_contract, "requested_domains", []) or [])
+			if str(value or "").strip()
+		],
+		"context_domains": [
+			str(value or "").strip()
+			for value in (getattr(scope_decision_contract, "context_domains", []) or [])
+			if str(value or "").strip()
+		],
+		"primary_domain": str(getattr(scope_decision_contract, "primary_domain", "") or "").strip(),
+	}
+
+
+def coerce_followup_resolution_from_scope_decision(
+	*,
+	request_id: str,
+	followup_resolution: FollowUpResolution,
+	scope_decision_contract: GovernedScopeDecisionContract | None,
+) -> FollowUpResolution:
+	if not governed_scope_decision_requires_fresh_query(scope_decision_contract):
+		return followup_resolution
+	if str(getattr(followup_resolution, "mode", "") or "").strip() == "capability_requery":
+		return followup_resolution
+	return clone_followup_resolution(
+		followup_resolution,
+		request_id=request_id,
+		mode="new_query",
+		target_capability_id="",
+		target_report="",
+		depends_on_grounded_turn=False,
+		self_contained=True,
+		reason=(
+			str(getattr(scope_decision_contract, "reason", "") or "").strip()
+			or str(getattr(followup_resolution, "reason", "") or "").strip()
+			or "The request should be treated as a fresh governed ERP query."
+		),
 	)
 
 
@@ -2055,7 +2585,7 @@ def build_followup_resolution(
 	)
 
 	if latest_grounded_turn_available and local_transform_only and not target_capability_id and not requested_time_scope and not self_contained:
-		return FollowUpResolution(
+		return build_followup_resolution_contract(
 			request_id=request_id,
 			mode="local_grounded_transform",
 			requested_modes=requested_modes,
@@ -2073,7 +2603,7 @@ def build_followup_resolution(
 			reason="The request can be resolved deterministically from the latest grounded answer using local capability adapters.",
 		)
 	if latest_grounded_turn_available and requery_requested:
-		return FollowUpResolution(
+		return build_followup_resolution_contract(
 			request_id=request_id,
 			mode="capability_requery",
 			requested_modes=requested_modes,
@@ -2091,7 +2621,7 @@ def build_followup_resolution(
 			reason=semantic_reason or "The request needs a governed report switch within the same business capability.",
 		)
 	if latest_grounded_turn_available and not self_contained:
-		return FollowUpResolution(
+		return build_followup_resolution_contract(
 			request_id=request_id,
 			mode="grounded_follow_up",
 			requested_modes=requested_modes,
@@ -2108,7 +2638,7 @@ def build_followup_resolution(
 			latest_grounded_turn_available=True,
 			reason=degraded_reason or semantic_reason or "The request depends on prior grounded context and is not self-contained.",
 		)
-	return FollowUpResolution(
+	return build_followup_resolution_contract(
 		request_id=request_id,
 		mode="new_query",
 		requested_modes=requested_modes,

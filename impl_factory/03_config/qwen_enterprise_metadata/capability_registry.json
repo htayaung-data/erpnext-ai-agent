@@ -90,12 +90,9 @@
       ],
       "ontology_concepts": [
         "sales",
-        "revenue",
-        "trend",
         "customer",
         "territory",
-        "item",
-        "invoice",
+        "product",
         "sales_invoice"
       ],
       "intent_classes": [
@@ -197,7 +194,6 @@
       ],
       "ontology_concepts": [
         "stock",
-        "inventory",
         "warehouse"
       ],
       "intent_classes": [
@@ -287,8 +283,7 @@
       ],
       "ontology_concepts": [
         "payable",
-        "supplier",
-        "outstanding"
+        "supplier"
       ],
       "intent_classes": [
         "financial_summary",
@@ -374,8 +369,7 @@
       ],
       "ontology_concepts": [
         "receivable",
-        "customer",
-        "outstanding"
+        "customer"
       ],
       "intent_classes": [
         "financial_summary",
@@ -460,18 +454,10 @@
         "Cash Flow"
       ],
       "ontology_concepts": [
-        "profit and loss",
-        "p&l",
-        "p and l",
-        "income statement",
-        "balance sheet",
-        "statement of financial position",
-        "cash flow",
-        "cash flow statement",
-        "liquidity",
-        "net profit",
-        "profitability",
-        "statement"
+        "profit_and_loss",
+        "balance_sheet",
+        "cash_flow",
+        "working_capital"
       ],
       "intent_classes": [
         "financial_statement",
@@ -540,14 +526,8 @@
       ],
       "ontology_concepts": [
         "product",
-        "products",
-        "item",
-        "items",
-        "sku",
-        "product performance",
-        "gross profit",
-        "item sales",
-        "best selling"
+        "sales",
+        "profit_and_loss"
       ],
       "intent_classes": [
         "product_performance",

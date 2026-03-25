@@ -12,14 +12,18 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	ontology_followup_aliases,
 	ontology_followup_slot_aliases,
 	ontology_self_contained_prefixes,
-	report_family_intent_markers,
 	report_family_report_names,
+	report_family_transitional_surface_markers,
 	report_local_followup_adapter,
 	report_family_ontology_concepts,
 	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_aliases
+from ai_assistant_ui.qwen_chat.scope_decision_input import (
+	ScopeDecisionInputContract,
+	build_scope_decision_input,
+)
 
 
 def _normalize_text(text: str) -> str:
@@ -267,7 +271,7 @@ def _looks_like_ambiguous_family_report_request(
 		return False
 	if set(parsed.requested_modes):
 		return False
-	intent_markers = report_family_intent_markers(family_id)
+	intent_markers = report_family_transitional_surface_markers(family_id)
 	if not _family_intent_marker_match(signal.text, intent_markers):
 		return False
 	family_concepts = set(report_family_ontology_concepts(family_id))
@@ -305,6 +309,68 @@ def _looks_like_column_projection(tokens: Set[str], followup_modes: Set[str]) ->
 	if not tokens:
 		return False
 	return "column_projection" in followup_modes
+
+
+def _projection_phrase_patterns(language: str = "en") -> List[re.Pattern[str]]:
+	if str(language or "en").strip() != "en":
+		return []
+	return [
+		re.compile(r"\b(?:show|display|include|add|return|give)\b(?:\s+me)?\s+(.+?)\s+\bcolumns?\b(?:\s+only)?\s*$", re.IGNORECASE),
+		re.compile(r"\b(?:show|display|include|add|return|give)\b(?:\s+me)?\s+(.+?)\s+\bonly\b\s*$", re.IGNORECASE),
+		re.compile(r"\b(.+?)\s+\bcolumns?\s+\bonly\b\s*$", re.IGNORECASE),
+	]
+
+
+def _clean_projection_segment(segment: str) -> str:
+	value = str(segment or "").strip().lower()
+	value = re.sub(r"\b(?:the|a|an|just|please|to|give|me|show|display|include|add|return|only)\b", " ", value)
+	value = re.sub(r"\bcolumns?\b", " ", value)
+	value = re.sub(r"\s+", " ", value).strip(" ,./")
+	return value
+
+
+def _split_projection_labels(segment: str) -> List[str]:
+	text = _clean_projection_segment(segment)
+	if not text:
+		return []
+	parts = re.split(r"\s*(?:,|/|&|\band\b)\s*", text)
+	out: List[str] = []
+	for part in parts:
+		clean = _clean_projection_segment(part)
+		if not clean:
+			continue
+		if clean in {"column", "columns"}:
+			continue
+		if clean not in out:
+			out.append(clean)
+	return out
+
+
+def _explicit_projection_columns(text: str, language: str = "en") -> List[str]:
+	value = str(text or "").strip()
+	if not value:
+		return []
+	out: List[str] = []
+	for pattern in _projection_phrase_patterns(language):
+		match = pattern.search(value)
+		if not match:
+			continue
+		for label in _split_projection_labels(str(match.group(1) or "").strip()):
+			if label and label not in out:
+				out.append(label)
+	if out:
+		return out
+	normalized = _normalize_text(value)
+	for alias in ontology_followup_aliases("column_projection", language=language):
+		clean_alias = _normalize_text(alias)
+		if not clean_alias or clean_alias not in normalized:
+			continue
+		before, _, after = normalized.partition(clean_alias)
+		for candidate in [after, before]:
+			for label in _split_projection_labels(candidate):
+				if label and label not in out:
+					out.append(label)
+	return out
 
 
 def _map_requested_columns(
@@ -437,6 +503,13 @@ def detect_followup_intent(message: str, language: str = "en", grounded_turn: Di
 
 	target_metric = _select_target_metric(artifact_signal, signal.metric_keys, signal.text)
 	requested_columns = list(signal.requested_columns)
+	for raw_label in _explicit_projection_columns(signal.text, language=language):
+		if detect_canonical_keys(raw_label, dimension_or_metric="metric"):
+			continue
+		if detect_canonical_keys(raw_label, dimension_or_metric="dimension"):
+			continue
+		if raw_label not in requested_columns:
+			requested_columns.append(raw_label)
 	if target_metric and requested_columns:
 		requested_columns = [
 			column
@@ -482,11 +555,15 @@ def is_self_contained_business_request(
 	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
 	parsed = intent or detect_followup_intent(signal.text, language=language, grounded_turn=grounded_turn)
 	alias_hits = set(signal.dimension_keys) | set(signal.metric_keys)
-	family_marker_hit = _family_intent_marker_match(
-		signal.text,
-		report_family_intent_markers(str(artifact_signal.family_id or "").strip()),
+	ambiguous_family_report = _looks_like_ambiguous_family_report_request(
+		signal=signal,
+		artifact_signal=artifact_signal,
+		parsed=parsed,
 	)
-	business_signals = bool(signal.concepts or alias_hits or family_marker_hit)
+	if ambiguous_family_report:
+		return True
+
+	business_signals = bool(signal.concepts or alias_hits)
 	if not business_signals:
 		return False
 
@@ -500,13 +577,6 @@ def is_self_contained_business_request(
 		"time_scope_restatement",
 	}
 	if not artifact_signal.has_grounded_turn:
-		return True
-
-	if _looks_like_ambiguous_family_report_request(
-		signal=signal,
-		artifact_signal=artifact_signal,
-		parsed=parsed,
-	):
 		return True
 
 	if set(parsed.requested_modes).issubset(local_only_modes):
@@ -561,7 +631,7 @@ def assess_context_isolation(
 	*,
 	language: str = "en",
 	grounded_turn: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
+) -> ScopeDecisionInputContract:
 	artifact_signal = _artifact_context_signal(grounded_turn)
 	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
 	intent = detect_followup_intent(signal.text, language=language, grounded_turn=grounded_turn)
@@ -581,14 +651,14 @@ def assess_context_isolation(
 	out_of_scope_concepts = sorted(concept for concept in message_concepts if concept not in supported_concepts)
 	if out_of_scope_concepts and not (message_concepts & supported_concepts or alias_hits):
 		primary_domain = "hr" if "employee" in out_of_scope_concepts else ""
-		return {
-			"force_new_query": True,
-			"out_of_scope": True,
-			"reason": "The request targets a business domain outside the current governed Qwen ERP scope.",
-			"requested_domains": sorted(message_concepts),
-			"context_domains": sorted(artifact_signal.context_concepts),
-			"primary_domain": primary_domain,
-		}
+		return build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=True,
+			reason="The request targets a business domain outside the current governed Qwen ERP scope.",
+			requested_domains=sorted(message_concepts),
+			context_domains=sorted(artifact_signal.context_concepts),
+			primary_domain=primary_domain,
+		)
 
 	self_contained = is_self_contained_business_request(
 		message,
@@ -602,34 +672,34 @@ def assess_context_isolation(
 		and message_concepts.isdisjoint(artifact_signal.context_concepts)
 		and "dimension_breakdown" not in requested_modes
 	):
-		return {
-			"force_new_query": True,
-			"out_of_scope": False,
-			"reason": "The request shifts to a different governed business area and should not inherit the prior artifact.",
-			"requested_domains": sorted(message_concepts),
-			"context_domains": sorted(artifact_signal.context_concepts),
-		}
+		return build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=False,
+			reason="The request shifts to a different governed business area and should not inherit the prior artifact.",
+			requested_domains=sorted(message_concepts),
+			context_domains=sorted(artifact_signal.context_concepts),
+		)
 	if requested_modes and requested_modes.issubset(local_only_modes) and not self_contained:
-		return {
-			"force_new_query": False,
-			"out_of_scope": False,
-			"reason": "",
-			"requested_domains": sorted(message_concepts),
-			"context_domains": sorted(artifact_signal.context_concepts),
-		}
+		return build_scope_decision_input(
+			force_new_query=False,
+			out_of_scope=False,
+			reason="",
+			requested_domains=sorted(message_concepts),
+			context_domains=sorted(artifact_signal.context_concepts),
+		)
 	if self_contained:
-		return {
-			"force_new_query": True,
-			"out_of_scope": False,
-			"reason": "The request is self-contained and should be treated as a fresh governed ERP question.",
-			"requested_domains": sorted(message_concepts),
-			"context_domains": sorted(artifact_signal.context_concepts),
-		}
+		return build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=False,
+			reason="The request is self-contained and should be treated as a fresh governed ERP question.",
+			requested_domains=sorted(message_concepts),
+			context_domains=sorted(artifact_signal.context_concepts),
+		)
 
-	return {
-		"force_new_query": False,
-		"out_of_scope": False,
-		"reason": "",
-		"requested_domains": sorted(message_concepts),
-		"context_domains": sorted(artifact_signal.context_concepts),
-	}
+	return build_scope_decision_input(
+		force_new_query=False,
+		out_of_scope=False,
+		reason="",
+		requested_domains=sorted(message_concepts),
+		context_domains=sorted(artifact_signal.context_concepts),
+	)

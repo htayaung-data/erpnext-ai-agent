@@ -136,7 +136,13 @@ We are here now:
 
 ## 5. Revised Mini-phase Sequence
 
-This is the new enterprise roadmap from now on.
+This is the updated enterprise roadmap from now on.
+
+Important correction:
+
+1. Mini-phase 3 contract cleanup was necessary and valuable, but it is no longer the active core track
+2. the active core track now moves to metadata/discovery because that is the foundation for later contract families, enrichment compatibility, reasoning boundaries, and front-door quality
+3. runtime UX/recovery issues discovered during testing are real, but they should not pull this chapter away from metadata/discovery completion
 
 ## Mini-phase 1
 
@@ -173,49 +179,79 @@ Still to do:
 
 ## Mini-phase 3
 
-Current next priority.
+Completed enough to move forward, with final review retained as needed.
 
 Goal:
 
-1. finish `GovernedScopeDecisionContract`
-2. make it the real authority for:
-   - local continuation
-   - governed requery
-   - clarify
-   - fresh query
-   - governed out-of-scope
+1. complete contract authority cleanup for:
+   - `ArtifactContinuationContract`
+   - `GovernedScopeDecisionContract`
+   - `ClarificationReasonContract`
+2. reduce Python-owned fallback policy and phrase-surface overreach
+3. make current artifact-lane behavior production-acceptable before new chapters
 
-Important rule:
+Status judgment:
 
-1. do not solve semantic or unknown cases by adding more local term patches
-2. solve them by improving scope decision quality
-
-Still to add here:
-
-1. stronger treatment of:
-   - ambiguous ERP-business semantic questions
-   - valid ERP-domain but not-yet-covered questions
-   - safe escalation from governed artifact lane into later ERP reasoning lane
+1. good enough to stop as the active focus
+2. may still receive targeted cleanup later if another chapter proves real residual debt
+3. should not be expanded further right now
 
 ## Mini-phase 4
 
-After Contract 2 is clean enough.
+Current active priority: metadata/discovery core.
 
 Goal:
 
-1. build `ClarificationReasonContract`
-2. unify clarification cause across fresh-query, follow-up, and boundary decisions
+1. build and harden discovered ERP metadata as a separate foundation layer
+2. keep discovered ERP surface separate from governed semantic contracts
+3. use discovery to understand real ERP/report surface before adding more runtime behavior
 
-It must own:
+Sub-sequence:
 
-1. why clarification is required
-2. what is missing or ambiguous
-3. whether the clarification is blocking
-4. what user-safe options may be suggested
+1. Discovery Foundation
+   - extract reports, doctypes, filters, columns, and governed/live alignment
+2. Change Detection
+   - add source signature, diff awareness, and refresh-if-changed behavior
+3. Discovery Evaluation
+   - evaluate whether the extracted ERP surface is useful enough and where it is weak
+4. Discovery Strengthening
+   - enrich script-report surface using governed hints where live ERP declaration is weak
+5. Discovery-to-Runtime Bridge
+   - use discovery outputs to inform runtime and contract decisions carefully, without turning discovery into the runtime authority
+6. Discovery Evidence Policy
+   - define what discovery proves vs what still depends on governed semantic assumptions for priority reports
+
+Current status:
+
+1. Discovery Foundation: done
+2. Change Detection: done
+3. Discovery Evaluation: done
+4. Discovery Strengthening: done for the current boundary
+5. Discovery-to-Runtime Bridge: started carefully
+6. metadata gap audit completed:
+   - `qwen_erp_metadata_gap_audit_2026-03-25.md`
+7. discovery evidence policy added:
+   - `report_surface_evidence_registry.json`
+   - `qwen_erp_discovery_evidence_policy_note_2026-03-25.md`
+
+Current judgment:
+
+1. discovery is already useful enough to keep
+2. report-backed governed alignment is now honest after separating `direct_query` entries
+3. the main remaining gap is not report discovery itself
+4. it is the thin ERP-declared surface of script reports
+5. the current metadata chapter now has an explicit evidence boundary for priority reports
+6. so the next metadata move should be governance/use of discovery, not blind generic extractor expansion
+
+Rules:
+
+1. discovery tells us what exists
+2. discovery does not decide business meaning by itself
+3. discovery supports later contracts; it does not replace them
 
 ## Mini-phase 5
 
-After the first 3 contracts are clean enough.
+After metadata/discovery is judged stable enough.
 
 Goal:
 
@@ -279,13 +315,51 @@ This phase is what prevents semantic questions from being pushed into the wrong 
 
 ## Mini-phase 8
 
+Deferred structural chapter: artifact enrichment recovery and conversational repair.
+
+Reason for deferral:
+
+1. this chapter was surfaced by runtime testing
+2. it is important, but it should not interrupt metadata/discovery as the current core track
+3. it should be implemented after discovery and boundary foundations are stronger
+
+Target authorities to add here:
+
+1. `ArtifactEnrichmentRecoveryContract`
+2. `ConversationalRepairIntent`
+
+Required outcomes:
+
+1. when enrichment fails, return structured recovery options:
+   - `keep_current_artifact`
+   - `run_alternative_governed_query`
+   - `clarify_target_output`
+   - `unavailable`
+2. if the user accepts an alternative, convert that into a fresh governed query with preserved safe context
+3. repair/instruction questions such as:
+   - `how can I instruct you`
+   - `what should I ask for`
+   - `how do I get`
+   should go to guidance/clarification instead of being treated as data requests
+4. explicit fresh asks such as:
+   - `just give me top 7 product, revenue, qty`
+   must override stale continuation context more strongly
+
+Rule:
+
+1. this chapter is not template polishing
+2. this chapter is recovery orchestration and conversational repair
+
+## Mini-phase 9
+
 Integration phase.
 
 Goal:
 
 1. integrate front-door + artifact lane + reasoning lane + boundary layer
-2. retire legacy split-authority branches
-3. prove behavior with browser regression packs
+2. integrate enrichment recovery after its chapter is complete
+3. retire legacy split-authority branches
+4. prove behavior with browser regression packs
 
 ## 6. Design Rules For All Remaining Mini-phases
 
@@ -303,19 +377,18 @@ These rules are now fixed.
 
 The immediate next step is:
 
-1. continue Mini-phase 3
-2. finish `GovernedScopeDecisionContract` cleanly
-3. make it better at handling:
-   - ambiguous ERP-business questions
-   - valid-but-not-covered ERP business questions
-   - safe transition points for the future ERP reasoning lane
+1. stay on Mini-phase 4
+2. focus on metadata/discovery as the core issue
+3. evaluate whether current discovery output is already sufficient for the next governed-semantic step
+4. avoid getting pulled into runtime UX/recovery work unless a critical blocker appears
 
 What is explicitly not next:
 
 1. not report-family expansion
 2. not more term-pair fixes
-3. not front-door implementation yet
-4. not ERP business reasoning implementation yet
+3. not enrichment-recovery implementation yet
+4. not front-door implementation yet
+5. not ERP business reasoning implementation yet
 
 ## 8. Practical Summary
 
@@ -324,19 +397,21 @@ What we have done:
 1. started the 3-contract migration
 2. improved continuation and scope architecture materially
 3. improved several governed finance support surfaces
-4. documented contract inventory and post-contract expansion backlog
+4. built discovery foundation, change detection, evaluation, and strengthening slices
+5. documented contract inventory and post-contract expansion backlog
 
 Where we are now:
 
-1. Contract 1 and Contract 2 are partially real
-2. architecture direction is clearer
-3. semantic-question policy is still missing
+1. Mini-phase 3 is good enough to stop as the active center
+2. metadata/discovery is now the active core track
+3. runtime testing surfaced a later recovery chapter that is valid but explicitly deferred
+4. architecture direction is clearer
 
 What is next:
 
-1. finish Contract 2 cleanly
-2. then build Contract 3
-3. then build front door
-4. then build ERP business reasoning
-5. then build knowledge boundary
+1. continue and close metadata/discovery work cleanly
+2. then build front door
+3. then build ERP business reasoning
+4. then build knowledge boundary
+5. then implement enrichment recovery in its proper chapter
 6. then integrate all lanes cleanly

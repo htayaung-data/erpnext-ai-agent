@@ -70,6 +70,8 @@ def derive_response_policy(
 	followup_mode: str = "",
 	self_contained: bool = True,
 ) -> Dict[str, Any]:
+	# Presentation-only policy: these heuristics may shape answer format and narrative
+	# structure, but they must not be treated as family/capability/report routing authority.
 	text = _clean_text(raw_message)
 	tokens = _message_tokens(text)
 	followup_mode_key = _clean_text(followup_mode) or "new_query"

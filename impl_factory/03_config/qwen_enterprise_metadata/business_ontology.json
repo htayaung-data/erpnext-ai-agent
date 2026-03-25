@@ -32,7 +32,11 @@
     {
       "concept_id": "profit_and_loss",
       "aliases": {
-        "en": ["profit and loss", "p&l", "p & l", "p and l", "income statement", "net profit", "profitability"],
+        "en": ["profit and loss", "p&l", "p & l", "p and l", "income statement"],
+        "my": []
+      },
+      "extended_aliases": {
+        "en": ["net profit", "profitability"],
         "my": []
       }
     },
@@ -65,7 +69,11 @@
     {
       "concept_id": "working_capital",
       "aliases": {
-        "en": ["working capital", "liquidity", "company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],
+        "en": ["working capital", "liquidity"],
+        "my": []
+      },
+      "extended_aliases": {
+        "en": ["company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],
         "my": []
       }
     },
@@ -87,6 +95,23 @@
       "concept_id": "sales_invoice",
       "aliases": {
         "en": ["sales invoice", "sales invoices", "invoice", "invoices"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "fulfillment",
+      "aliases": {
+        "en": [
+          "delivery",
+          "delivered",
+          "delivery status",
+          "shipment",
+          "shipped",
+          "shipping",
+          "fulfillment",
+          "fulfilled",
+          "delivery note"
+        ],
         "my": []
       }
     },

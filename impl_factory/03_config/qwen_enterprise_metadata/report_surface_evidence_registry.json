@@ -1,0 +1,183 @@
+{
+  "contract_version": "1.0",
+  "report_surface_evidence": [
+    {
+      "report_name": "Sales Analytics",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "selector_filter_semantics",
+        "multi_metric_coavailability",
+        "meaning_preserving_metric_union"
+      ],
+      "runtime_semantic_assumptions": [
+        "supported_metrics and selector behavior come from governed metadata, not ERP-declared report surface",
+        "cross-metric enrichment requires a compatibility contract above discovery"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_require_curated_semantic_contracts_for_enrichment_and_report_switching"
+    },
+    {
+      "report_name": "Item-wise Sales History",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "exact_live_output_columns",
+        "grain_compatibility_with_other_reports",
+        "meaning_preserving_cross_report_enrichment"
+      ],
+      "runtime_semantic_assumptions": [
+        "supported dimensions and metrics come from governed metadata",
+        "continuation from sales ranking artifacts requires semantic compatibility above discovery"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_do_not_infer_cross_report_compatibility_from_discovery_alone"
+    },
+    {
+      "report_name": "Gross Profit",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "same_grain_as_sales_analytics",
+        "meaning_preserving_substitution_for_sales_ranking",
+        "safe_metric_union_with_other_reports"
+      ],
+      "runtime_semantic_assumptions": [
+        "profitability semantics come from governed metadata",
+        "use for continuation only when a higher contract explicitly proves compatibility"
+      ],
+      "recommended_runtime_posture": "treat_as_semantically_distinct_until_compatibility_is_explicitly_proven"
+    },
+    {
+      "report_name": "Sales Invoice List",
+      "evidence_class": "governed_direct_query",
+      "discovery_proves": [
+        "governed_surface_presence",
+        "direct_query_doctype",
+        "direct_query_fields",
+        "direct_query_ordering"
+      ],
+      "discovery_does_not_prove": [
+        "live_erp_report_doc_presence"
+      ],
+      "runtime_semantic_assumptions": [
+        "this governed surface is intentionally direct-query backed rather than ERP-report-doc backed"
+      ],
+      "recommended_runtime_posture": "treat_as_expected_direct_query_surface_not_as_missing_erp_report"
+    },
+    {
+      "report_name": "Accounts Receivable",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "exact_aging_bucket_shape",
+        "exact_live_output_columns"
+      ],
+      "runtime_semantic_assumptions": [
+        "aging semantics and supported metrics come from governed metadata"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_keep_aging_and_column_semantics_contract_led"
+    },
+    {
+      "report_name": "Accounts Payable",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "exact_aging_bucket_shape",
+        "exact_live_output_columns"
+      ],
+      "runtime_semantic_assumptions": [
+        "aging semantics and supported metrics come from governed metadata"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_keep_aging_and_column_semantics_contract_led"
+    },
+    {
+      "report_name": "Balance Sheet",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "exact_section_layout",
+        "detail_level_availability",
+        "exact_metric_labeling"
+      ],
+      "runtime_semantic_assumptions": [
+        "statement section and summary semantics come from governed metadata and statement translators"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_keep_statement_shape_and_follow_up_contract_led"
+    },
+    {
+      "report_name": "Profit and Loss Statement",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "exact_section_layout",
+        "detail_level_availability",
+        "exact_metric_labeling"
+      ],
+      "runtime_semantic_assumptions": [
+        "statement section and summary semantics come from governed metadata and statement translators"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_keep_statement_shape_and_follow_up_contract_led"
+    },
+    {
+      "report_name": "Cash Flow",
+      "evidence_class": "script_report_governed_hint_only",
+      "discovery_proves": [
+        "report_presence",
+        "report_type",
+        "module",
+        "ref_doctype",
+        "governed_required_filters"
+      ],
+      "discovery_does_not_prove": [
+        "exact_section_layout",
+        "detail_level_availability",
+        "exact_metric_labeling"
+      ],
+      "runtime_semantic_assumptions": [
+        "statement section and summary semantics come from governed metadata and statement translators"
+      ],
+      "recommended_runtime_posture": "allow_governed_use_but_keep_statement_shape_and_follow_up_contract_led"
+    }
+  ]
+}

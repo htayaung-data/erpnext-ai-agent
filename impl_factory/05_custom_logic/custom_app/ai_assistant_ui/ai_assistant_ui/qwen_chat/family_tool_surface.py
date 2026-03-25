@@ -13,6 +13,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_family_agent_prompt_hint,
 	report_family_agent_tool_id,
 	report_family_capability_ids,
+	report_family_transitional_surface_markers,
 	report_family_report_names,
 	report_family_routing_hints,
 	report_family_supported_intent_classes,
@@ -67,11 +68,7 @@ def build_family_tool_surface_for_message(
 			for item in (routing_hints.get("ontology_concepts") or [])
 			if str(item or "").strip()
 		]
-		intent_markers = [
-			str(item or "").strip()
-			for item in (routing_hints.get("intent_markers") or [])
-			if str(item or "").strip()
-		]
+		intent_markers = report_family_transitional_surface_markers(family_id)
 		matched_concepts = [item for item in concept_hints if item in detected_concepts]
 		matched_markers = _matched_phrases(text, intent_markers)
 		matched_report_names = _matched_phrases(text, report_family_report_names(family_id))
@@ -79,14 +76,16 @@ def build_family_tool_surface_for_message(
 		score = 0
 		if matched_concepts:
 			score += 14 * len(matched_concepts)
-		if matched_markers:
-			score += 12 * len(matched_markers)
 		if matched_report_names:
 			score += 18 * len(matched_report_names)
 		if preferred_intent_class and preferred_intent_class in report_family_supported_intent_classes(family_id):
 			score += 20
 		if preferred_capability_id and preferred_capability_id in report_family_capability_ids(family_id):
 			score += 20
+		if score <= 0:
+			continue
+		if matched_markers:
+			score += 6 * len(matched_markers)
 		if score <= 0:
 			continue
 

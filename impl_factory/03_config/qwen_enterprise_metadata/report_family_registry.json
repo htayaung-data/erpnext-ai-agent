@@ -9,6 +9,7 @@
         "financial_statement",
         "financial_summary"
       ],
+      "default_intent_class": "financial_statement",
       "canonical_metrics": [
         "total_asset",
         "total_liability",
@@ -62,11 +63,7 @@
           "report",
           "financial report",
           "management report",
-          "statement",
-          "balance sheet",
-          "cash flow",
-          "income statement",
-          "net profit"
+          "statement"
         ]
       },
       "coverage_status": "active"
@@ -80,6 +77,7 @@
         "financial_summary",
         "ranked_entities"
       ],
+      "default_intent_class": "aging_analysis",
       "canonical_metrics": [
         "outstanding_total",
         "total_due",
@@ -138,11 +136,7 @@
         "intent_markers": [
           "aging",
           "overdue",
-          "outstanding",
-          "payable",
-          "receivable",
-          "ar",
-          "ap"
+          "outstanding"
         ]
       },
       "coverage_status": "active"
@@ -154,6 +148,7 @@
       "supported_intent_classes": [
         "ranked_entities"
       ],
+      "default_intent_class": "ranked_entities",
       "canonical_metrics": [
         "primary_metric",
         "secondary_metric"
@@ -224,7 +219,6 @@
           "lowest",
           "rank",
           "ranking",
-          "revenue",
           "sales amount",
           "quantity",
           "outstanding amount"
@@ -239,6 +233,7 @@
       "supported_intent_classes": [
         "trend_analysis"
       ],
+      "default_intent_class": "trend_analysis",
       "canonical_metrics": [
         "period_value",
         "period_quantity"
@@ -292,6 +287,7 @@
       "supported_intent_classes": [
         "transaction_listing"
       ],
+      "default_intent_class": "transaction_listing",
       "canonical_metrics": [
         "document_count",
         "total_amount",
@@ -329,8 +325,6 @@
           "sales_invoice"
         ],
         "intent_markers": [
-          "sales invoice",
-          "sales invoices",
           "invoice list",
           "recent invoices",
           "latest invoices",
@@ -348,6 +342,7 @@
         "inventory_summary",
         "financial_summary"
       ],
+      "default_intent_class": "inventory_summary",
       "canonical_metrics": [
         "balance_qty",
         "balance_value"
@@ -384,11 +379,8 @@
           "warehouse"
         ],
         "intent_markers": [
-          "inventory",
-          "stock",
           "stock balance",
-          "on hand",
-          "warehouse"
+          "on hand"
         ]
       },
       "coverage_status": "active"
@@ -403,6 +395,7 @@
         "ranked_entities",
         "trend_analysis"
       ],
+      "default_intent_class": "product_performance",
       "canonical_metrics": [
         "gross_profit",
         "gross_profit_percent",
@@ -447,7 +440,6 @@
           "gross profit percent",
           "gross margin",
           "profit margin",
-          "profitability",
           "product performance",
           "performing well",
           "top performing",
