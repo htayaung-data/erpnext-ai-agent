@@ -264,6 +264,20 @@ def ontology_business_terms(language: str = "en") -> List[str]:
 	return list(dict.fromkeys(out))
 
 
+def all_ontology_concepts() -> List[str]:
+	entries = load_business_ontology().get("concepts")
+	if not isinstance(entries, list):
+		return []
+	out: List[str] = []
+	for item in entries:
+		if not isinstance(item, dict):
+			continue
+		value = str(item.get("concept_id") or "").strip()
+		if value:
+			out.append(value)
+	return list(dict.fromkeys(out))
+
+
 def governed_self_contained_business_terms(language: str = "en") -> List[str]:
 	out: List[str] = list(ontology_business_terms(language))
 	for spec in list_report_family_specs():
@@ -585,6 +599,13 @@ def report_family_ontology_concepts(family_id: str) -> List[str]:
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
 
 
+def report_family_intent_markers(family_id: str) -> List[str]:
+	values = report_family_routing_hints(family_id).get("intent_markers")
+	if not isinstance(values, list):
+		return []
+	return [str(x or "").strip().lower() for x in values if str(x or "").strip()]
+
+
 def supported_ontology_concepts() -> List[str]:
 	out: List[str] = []
 	for spec in list_report_family_specs():
@@ -592,6 +613,11 @@ def supported_ontology_concepts() -> List[str]:
 		if not family_id:
 			continue
 		out.extend(report_family_ontology_concepts(family_id))
+		for capability_id in report_family_capability_ids(family_id):
+			for value in capability_ontology_concepts(capability_id):
+				detected = ontology_detect_concepts(str(value or "").strip())
+				if detected:
+					out.extend(detected)
 	return list(dict.fromkeys([value for value in out if value]))
 
 

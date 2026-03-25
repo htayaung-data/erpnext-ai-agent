@@ -310,10 +310,8 @@ def _select_report(capability_id: str, interpretation: FreshQueryInterpretationC
 	]
 	if len(advisory_candidates) == 1:
 		return advisory_candidates[0], "Compiler accepted a single governed advisory report candidate."
-
-	default_report = capability_default_report_name(capability_id)
-	if default_report and default_report in allowed_reports and _report_supports_intent(default_report, intent_class):
-		return default_report, "Compiler selected the capability default report."
+	if len(advisory_candidates) > 1:
+		return "", f"Ambiguous governed report candidates: {', '.join(advisory_candidates)}"
 
 	supported_reports = [
 		report_name for report_name in allowed_reports if _report_supports_intent(report_name, intent_class)
@@ -322,6 +320,9 @@ def _select_report(capability_id: str, interpretation: FreshQueryInterpretationC
 		return supported_reports[0], "Compiler selected the only governed report matching the requested intent class."
 	if len(supported_reports) > 1:
 		return "", f"Ambiguous governed report candidates: {', '.join(supported_reports)}"
+	default_report = capability_default_report_name(capability_id)
+	if default_report and default_report in allowed_reports and _report_supports_intent(default_report, intent_class):
+		return default_report, "Compiler selected the capability default report."
 	return "", f"No governed report supports intent class `{intent_class}` for capability `{capability_id}`."
 
 

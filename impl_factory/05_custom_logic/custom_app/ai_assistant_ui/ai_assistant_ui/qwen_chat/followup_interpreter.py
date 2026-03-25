@@ -12,6 +12,8 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	ontology_followup_aliases,
 	ontology_followup_slot_aliases,
 	ontology_self_contained_prefixes,
+	report_family_intent_markers,
+	report_family_report_names,
 	report_local_followup_adapter,
 	report_family_ontology_concepts,
 	supported_ontology_concepts,
@@ -34,6 +36,15 @@ def _tokenize(text: str) -> List[str]:
 
 def _token_set(text: str) -> Set[str]:
 	return set(_tokenize(text))
+
+
+def _contains_alias(text: str, alias: str) -> bool:
+	value = _normalize_text(text)
+	target = _normalize_text(alias)
+	if not value or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, value))
 
 
 def _starts_with_self_contained_prefix(text: str, language: str) -> bool:
@@ -233,6 +244,63 @@ def _detect_presentation_modes(followup_modes: Set[str]) -> List[str]:
 	]
 
 
+def _family_intent_marker_match(text: str, markers: List[str]) -> bool:
+	for marker in markers:
+		if _contains_alias(text, marker):
+			return True
+	return False
+
+
+def _looks_like_ambiguous_family_report_request(
+	*,
+	signal: MessageSignal,
+	artifact_signal: ArtifactContextSignal,
+	parsed: FollowUpIntent,
+) -> bool:
+	if not artifact_signal.has_grounded_turn:
+		return False
+	family_id = str(artifact_signal.family_id or "").strip()
+	if not family_id:
+		return False
+	family_reports = report_family_report_names(family_id)
+	if len(family_reports) <= 1:
+		return False
+	if set(parsed.requested_modes):
+		return False
+	intent_markers = report_family_intent_markers(family_id)
+	if not _family_intent_marker_match(signal.text, intent_markers):
+		return False
+	family_concepts = set(report_family_ontology_concepts(family_id))
+	if signal.concepts & family_concepts:
+		return False
+	return True
+
+
+def detect_ambiguous_family_report_request(
+	message: str,
+	*,
+	language: str = "en",
+	grounded_turn: Dict[str, object] | None = None,
+) -> Dict[str, Any]:
+	artifact_signal = _artifact_context_signal(grounded_turn)
+	if not artifact_signal.has_grounded_turn:
+		return {}
+	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
+	parsed = detect_followup_intent(message, language=language, grounded_turn=grounded_turn)
+	if not _looks_like_ambiguous_family_report_request(
+		signal=signal,
+		artifact_signal=artifact_signal,
+		parsed=parsed,
+	):
+		return {}
+	family_id = str(artifact_signal.family_id or "").strip()
+	return {
+		"family_id": family_id,
+		"report_candidates": report_family_report_names(family_id),
+		"reason": "The follow-up refers broadly to a governed multi-report family and does not identify a unique report view.",
+	}
+
+
 def _looks_like_column_projection(tokens: Set[str], followup_modes: Set[str]) -> bool:
 	if not tokens:
 		return False
@@ -414,7 +482,11 @@ def is_self_contained_business_request(
 	signal = _message_signal(message, language=language, grounded_turn=grounded_turn)
 	parsed = intent or detect_followup_intent(signal.text, language=language, grounded_turn=grounded_turn)
 	alias_hits = set(signal.dimension_keys) | set(signal.metric_keys)
-	business_signals = bool(signal.concepts or alias_hits)
+	family_marker_hit = _family_intent_marker_match(
+		signal.text,
+		report_family_intent_markers(str(artifact_signal.family_id or "").strip()),
+	)
+	business_signals = bool(signal.concepts or alias_hits or family_marker_hit)
 	if not business_signals:
 		return False
 
@@ -428,6 +500,13 @@ def is_self_contained_business_request(
 		"time_scope_restatement",
 	}
 	if not artifact_signal.has_grounded_turn:
+		return True
+
+	if _looks_like_ambiguous_family_report_request(
+		signal=signal,
+		artifact_signal=artifact_signal,
+		parsed=parsed,
+	):
 		return True
 
 	if set(parsed.requested_modes).issubset(local_only_modes):

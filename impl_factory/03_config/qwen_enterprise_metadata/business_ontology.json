@@ -39,7 +39,19 @@
     {
       "concept_id": "balance_sheet",
       "aliases": {
-        "en": ["balance sheet", "assets and liabilities", "liabilities and equity"],
+        "en": [
+          "balance sheet",
+          "assets and liabilities",
+          "liabilities and equity",
+          "statement of financial position",
+          "assets",
+          "liabilities",
+          "equity",
+          "current assets",
+          "current liabilities",
+          "non current assets",
+          "non current liabilities"
+        ],
         "my": []
       }
     },
@@ -54,6 +66,13 @@
       "concept_id": "working_capital",
       "aliases": {
         "en": ["working capital", "liquidity", "company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "tax",
+      "aliases": {
+        "en": ["tax", "tax amount", "income tax", "tax expense", "tax payable", "commercial tax"],
         "my": []
       }
     },

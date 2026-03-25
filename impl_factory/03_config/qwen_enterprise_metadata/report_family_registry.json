@@ -54,9 +54,14 @@
       ],
       "routing_hints": {
         "ontology_concepts": [
-          "profit_and_loss"
+          "profit_and_loss",
+          "balance_sheet",
+          "cash_flow"
         ],
         "intent_markers": [
+          "report",
+          "financial report",
+          "management report",
           "statement",
           "balance sheet",
           "cash flow",

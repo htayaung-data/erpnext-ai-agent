@@ -32,6 +32,7 @@ from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surf
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
 from ai_assistant_ui.qwen_chat.metadata import (
+	capability_report_names,
 	capability_default_report_name,
 	capability_fresh_query_defaults,
 	capability_intent_classes,
@@ -46,6 +47,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_family_ids_for_intent_class,
 	report_family_report_names,
 	report_supported_dimensions,
+	report_supported_intent_classes,
 	report_supported_metrics,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import (
@@ -373,6 +375,55 @@ def _resolve_default_report_name(
 	return capability_default_report_name(capability_id)
 
 
+def _intent_supported_reports_for_capability(*, capability_id: str, intent_class: str) -> List[str]:
+	allowed_reports = [
+		report_name
+		for report_name in capability_report_names(capability_id)
+		if capability_id in report_capability_ids(report_name)
+	]
+	if not intent_class:
+		return list(dict.fromkeys(_clean_list(allowed_reports)))
+	out: List[str] = []
+	for report_name in allowed_reports:
+		supported_intents = set(report_supported_intent_classes(report_name))
+		if not supported_intents or intent_class in supported_intents:
+			out.append(report_name)
+	return list(dict.fromkeys(_clean_list(out)))
+
+
+def _resolve_governed_report_candidates(
+	*,
+	capability_id: str,
+	intent_class: str,
+	message_concepts: List[str],
+	candidate_reports: List[str],
+) -> List[str]:
+	supported_reports = _intent_supported_reports_for_capability(
+		capability_id=capability_id,
+		intent_class=intent_class,
+	)
+	explicit_candidates = [
+		report_name
+		for report_name in _clean_list(candidate_reports)
+		if report_name in supported_reports
+	]
+	if explicit_candidates:
+		return list(dict.fromkeys(explicit_candidates))
+	spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
+	report_overrides = spec.get("report_overrides_by_concept")
+	if isinstance(report_overrides, dict):
+		override_candidates: List[str] = []
+		for concept_id in message_concepts:
+			value = str(report_overrides.get(str(concept_id or "").strip()) or "").strip()
+			if value and value in supported_reports and value not in override_candidates:
+				override_candidates.append(value)
+		if override_candidates:
+			return override_candidates
+	if len(supported_reports) <= 1:
+		return supported_reports
+	return supported_reports
+
+
 def _supported_labels_for_report(report_name: str, *, dimension_or_metric: str) -> List[str]:
 	if dimension_or_metric == "dimension":
 		values = report_supported_dimensions(report_name)
@@ -500,6 +551,14 @@ def _apply_governed_interpretation_biases(
 				capability_ids = capability_ids[:1]
 	if not capability_ids:
 		return [], []
+	report_candidates = _resolve_governed_report_candidates(
+		capability_id=capability_ids[0],
+		intent_class=intent_key,
+		message_concepts=message_concepts,
+		candidate_reports=_clean_list(candidate_reports),
+	)
+	if report_candidates:
+		return capability_ids, report_candidates
 	report_name = _resolve_default_report_name(
 		capability_id=capability_ids[0],
 		intent_class=intent_key,
@@ -746,6 +805,10 @@ def _validate_semantic_payload(
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 	)
+	if len(candidate_reports) > 1 and "ambiguous_report" not in ambiguity_flags:
+		ambiguity_flags.append("ambiguous_report")
+		if not ambiguity_reason:
+			ambiguity_reason = "The request matches multiple governed reports and needs clarification before execution."
 	requested_dimensions, requested_metrics, requested_time_scope = _apply_governed_request_defaults(
 		intent_class=intent_class,
 		message=message,
@@ -920,16 +983,25 @@ def _deterministic_family_surface_interpretation(
 	if not candidate_capability_ids:
 		return None
 	candidate_capability_ids = candidate_capability_ids[:1]
-	report_name = _resolve_default_report_name(
+	candidate_reports = _resolve_governed_report_candidates(
 		capability_id=candidate_capability_ids[0],
 		intent_class=intent_class,
 		message_concepts=message_concepts,
 		candidate_reports=[],
 	)
-	if not report_name:
+	if not candidate_reports:
+		report_name = _resolve_default_report_name(
+			capability_id=candidate_capability_ids[0],
+			intent_class=intent_class,
+			message_concepts=message_concepts,
+			candidate_reports=[],
+		)
+		if report_name:
+			candidate_reports = [report_name]
+	if not candidate_reports:
 		report_names = report_family_report_names(family_id)
 		report_name = str((report_names or [""])[0] or "").strip()
-	candidate_reports = [report_name] if report_name else []
+		candidate_reports = [report_name] if report_name else []
 	requested_dimensions: List[str] = []
 	requested_metrics: List[str] = []
 	requested_time_scope = _infer_governed_time_scope(
@@ -940,15 +1012,24 @@ def _deterministic_family_surface_interpretation(
 	if not intent_class:
 		return None
 
-	default_dimensions, default_metrics, default_time_scope = _apply_governed_request_defaults(
-		intent_class=intent_class,
-		message=message,
-		candidate_capability_ids=candidate_capability_ids,
-		candidate_reports=candidate_reports,
-		requested_dimensions=requested_dimensions,
-		requested_metrics=requested_metrics,
-		requested_time_scope=requested_time_scope,
-	)
+	ambiguity_flags: List[str] = []
+	ambiguity_reason = ""
+	if len(candidate_reports) > 1:
+		ambiguity_flags.append("ambiguous_report")
+		ambiguity_reason = "The request matches multiple governed reports and needs clarification before execution."
+		default_dimensions = []
+		default_metrics = []
+		default_time_scope = requested_time_scope
+	else:
+		default_dimensions, default_metrics, default_time_scope = _apply_governed_request_defaults(
+			intent_class=intent_class,
+			message=message,
+			candidate_capability_ids=candidate_capability_ids,
+			candidate_reports=candidate_reports,
+			requested_dimensions=requested_dimensions,
+			requested_metrics=requested_metrics,
+			requested_time_scope=requested_time_scope,
+		)
 
 	return build_fresh_query_interpretation_contract(
 		request_id=request_id,
@@ -961,8 +1042,8 @@ def _deterministic_family_surface_interpretation(
 		requested_time_scope=default_time_scope,
 		requested_presentation=[],
 		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
+		ambiguity_flags=ambiguity_flags,
+		ambiguity_reason=ambiguity_reason,
 		confidence=max(confidence_threshold, 0.85),
 	)
 
@@ -1073,13 +1154,48 @@ def compile_from_fresh_query_message(
 			confidence_threshold=confidence_threshold,
 		)
 		if deterministic_interpretation is not None:
+			deterministic_report_candidates = _clean_list(deterministic_interpretation.candidate_reports)
+			deterministic_ambiguity_flags = set(_clean_list(deterministic_interpretation.ambiguity_flags))
 			deterministic_outcome = compile_fresh_query(
 				request_id=request_id,
 				session_id=session_id,
 				interpretation=deterministic_interpretation,
 				response_policy=response_policy.to_runtime_payload(),
 			)
-			if str(deterministic_outcome.compiler_contract.decision or "").strip() == "execute":
+			deterministic_decision = str(deterministic_outcome.compiler_contract.decision or "").strip()
+			deterministic_reason_type = str(deterministic_outcome.compiler_contract.clarification_reason_type or "").strip()
+			if (
+				deterministic_decision == "clarify"
+				and deterministic_reason_type == "report_ambiguity"
+				and len(deterministic_report_candidates) > 1
+			):
+				semantic_result = SemanticFreshQueryResult(
+					status="deterministic_family_clarification_refinement",
+					interpretation=deterministic_interpretation,
+					confidence_threshold=confidence_threshold,
+					agent_meta={
+						"engine": "deterministic_family_surface",
+						"model": "none",
+						"telemetry": {
+							"fallback_attempted": True,
+							"fallback_used": True,
+							"fallback_type": "family_tool_surface_clarify_refinement",
+							"primary_status": str(semantic_result.status or "").strip(),
+							"primary_model": str((semantic_result.agent_meta or {}).get("model") or "").strip(),
+							"cache_hit": bool(
+								(((semantic_result.agent_meta or {}).get("telemetry") or {}).get("cache_hit"))
+								if isinstance((semantic_result.agent_meta or {}).get("telemetry"), dict)
+								else False
+							),
+						},
+					},
+				)
+				compiler_outcome = deterministic_outcome
+			if (
+				deterministic_decision == "execute"
+				and len(deterministic_report_candidates) <= 1
+				and "ambiguous_report" not in deterministic_ambiguity_flags
+			):
 				semantic_result = SemanticFreshQueryResult(
 					status="deterministic_family_override",
 					interpretation=deterministic_interpretation,
@@ -1540,6 +1656,51 @@ def run_phase4b_financial_statement_family_probe() -> Dict[str, Any]:
 			requested_metrics=["Net Cash from Operations", "Net Change in Cash"],
 		),
 	}
+
+
+def run_phase4b_broad_financial_report_ambiguity_probe() -> Dict[str, Any]:
+	site_name = ""
+	if frappe is not None:
+		site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
+	results: List[Dict[str, Any]] = []
+	for message in [
+		"give me the statement",
+		"give me the financial statement",
+		"give me the management report",
+	]:
+		result = compile_from_fresh_query_message(
+			session_id="phase4b-broad-financial-report-ambiguity",
+			user_id="Administrator",
+			site_name=site_name,
+			message=message,
+			recent_messages=[],
+		)
+		compiler = result.get("fresh_query_compiler") if isinstance(result.get("fresh_query_compiler"), dict) else {}
+		decision = str(compiler.get("decision") or "").strip()
+		reason_type = str(compiler.get("clarification_reason_type") or "").strip()
+		details = compiler.get("clarification_details") if isinstance(compiler.get("clarification_details"), dict) else {}
+		report_candidates = [str(value or "").strip() for value in (details.get("report_candidates") or []) if str(value or "").strip()]
+		if decision != "clarify":
+			raise RuntimeError(
+				f"Broad financial report ambiguity probe failed: `{message}` resolved as `{decision}` instead of clarification."
+			)
+		if reason_type != "report_ambiguity":
+			raise RuntimeError(
+				f"Broad financial report ambiguity probe failed: `{message}` produced `{reason_type}` instead of report_ambiguity."
+			)
+		if len(report_candidates) < 2:
+			raise RuntimeError(
+				f"Broad financial report ambiguity probe failed: `{message}` did not preserve multiple report candidates."
+			)
+		results.append(
+			{
+				"message": message,
+				"decision": decision,
+				"reason_type": reason_type,
+				"report_candidates": report_candidates,
+			}
+		)
+	return {"ok": True, "results": results}
 
 
 def run_phase4b_financial_statement_family_smoke() -> Dict[str, Any]:

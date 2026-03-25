@@ -16,8 +16,11 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import (
 	is_self_contained_business_request as _is_self_contained_business_request,
 )
 from ai_assistant_ui.qwen_chat.metadata import (
+	all_ontology_concepts,
+	report_capability_ids,
 	resolve_followup_report_switch,
 	resolve_target_report_for_capability,
+	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
@@ -181,6 +184,47 @@ class ClarificationSignalContract:
 			"stage": self.stage,
 			"reason_type": self.reason_type,
 			"user_question": self.user_question,
+			"suggested_options": list(self.suggested_options),
+			"internal_reason": self.internal_reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ClarificationReasonContract:
+	request_id: str
+	stage: str
+	source_contract_type: str
+	reason_type: str
+	clarification_required: bool
+	blocking: bool
+	recommended_next_lane: str
+	primary_domain: str
+	missing_fields: List[str]
+	ambiguity_flags: List[str]
+	candidate_capability_ids: List[str]
+	candidate_reports: List[str]
+	suggested_options: List[str]
+	internal_reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_clarification_reason_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"stage": self.stage,
+			"source_contract_type": self.source_contract_type,
+			"reason_type": self.reason_type,
+			"clarification_required": self.clarification_required,
+			"blocking": self.blocking,
+			"recommended_next_lane": self.recommended_next_lane,
+			"primary_domain": self.primary_domain,
+			"missing_fields": list(self.missing_fields),
+			"ambiguity_flags": list(self.ambiguity_flags),
+			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"candidate_reports": list(self.candidate_reports),
 			"suggested_options": list(self.suggested_options),
 			"internal_reason": self.internal_reason,
 			"internal_details": dict(self.internal_details),
@@ -631,6 +675,130 @@ class GroundedTurnContext:
 
 
 @dataclass(frozen=True)
+class ArtifactContinuationContract:
+	request_id: str
+	source_family_id: str
+	source_capability_id: str
+	source_report: str
+	source_artifact_type: str
+	source_dimension: str
+	source_metric_key: str
+	source_requested_columns: List[str]
+	source_available_columns: List[str]
+	source_row_count: int
+	source_limit: int
+	source_sort_direction: str
+	source_time_scope: str
+	continuation_mode: str
+	preserve_grounded_context: bool
+	preserve_metric_context: bool
+	preserve_projection_shape: bool
+	preserve_date_context: bool
+	preserved_dimension: str
+	preserved_metric_key: str
+	preserved_requested_columns: List[str]
+	preserved_limit: int
+	preserved_sort_direction: str
+	preserved_time_scope: str
+	preserved_report_date: str
+	preserved_from_date: str
+	preserved_to_date: str
+	preserve_rank_membership: bool
+	preserve_rank_order: bool
+	preserved_entities: List[str]
+	requested_modes: List[str]
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_artifact_continuation_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"source_family_id": self.source_family_id,
+			"source_capability_id": self.source_capability_id,
+			"source_report": self.source_report,
+			"source_artifact_type": self.source_artifact_type,
+			"source_dimension": self.source_dimension,
+			"source_metric_key": self.source_metric_key,
+			"source_requested_columns": list(self.source_requested_columns),
+			"source_available_columns": list(self.source_available_columns),
+			"source_row_count": int(max(0, self.source_row_count)),
+			"source_limit": int(max(0, self.source_limit)),
+			"source_sort_direction": self.source_sort_direction,
+			"source_time_scope": self.source_time_scope,
+			"continuation_mode": self.continuation_mode,
+			"preserve_grounded_context": self.preserve_grounded_context,
+			"preserve_metric_context": self.preserve_metric_context,
+			"preserve_projection_shape": self.preserve_projection_shape,
+			"preserve_date_context": self.preserve_date_context,
+			"preserved_dimension": self.preserved_dimension,
+			"preserved_metric_key": self.preserved_metric_key,
+			"preserved_requested_columns": list(self.preserved_requested_columns),
+			"preserved_limit": int(max(0, self.preserved_limit)),
+			"preserved_sort_direction": self.preserved_sort_direction,
+			"preserved_time_scope": self.preserved_time_scope,
+			"preserved_report_date": self.preserved_report_date,
+			"preserved_from_date": self.preserved_from_date,
+			"preserved_to_date": self.preserved_to_date,
+			"preserve_rank_membership": self.preserve_rank_membership,
+			"preserve_rank_order": self.preserve_rank_order,
+			"preserved_entities": list(self.preserved_entities),
+			"requested_modes": list(self.requested_modes),
+			"reason": self.reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class GovernedScopeDecisionContract:
+	request_id: str
+	stage: str
+	governed_scope_status: str
+	execution_mode: str
+	reason: str
+	requested_domains: List[str]
+	context_domains: List[str]
+	known_request_domains: List[str]
+	supported_request_domains: List[str]
+	unsupported_known_request_domains: List[str]
+	latest_grounded_turn_available: bool
+	preserve_grounded_context: bool
+	self_contained: bool
+	out_of_scope: bool
+	clarification_required: bool
+	primary_domain: str
+	recommended_next_lane: str
+	target_capability_id: str
+	target_report: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_governed_scope_decision_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"stage": self.stage,
+			"governed_scope_status": self.governed_scope_status,
+			"execution_mode": self.execution_mode,
+			"reason": self.reason,
+			"requested_domains": list(self.requested_domains),
+			"context_domains": list(self.context_domains),
+			"known_request_domains": list(self.known_request_domains),
+			"supported_request_domains": list(self.supported_request_domains),
+			"unsupported_known_request_domains": list(self.unsupported_known_request_domains),
+			"latest_grounded_turn_available": self.latest_grounded_turn_available,
+			"preserve_grounded_context": self.preserve_grounded_context,
+			"self_contained": self.self_contained,
+			"out_of_scope": self.out_of_scope,
+			"clarification_required": self.clarification_required,
+			"primary_domain": self.primary_domain,
+			"recommended_next_lane": self.recommended_next_lane,
+			"target_capability_id": self.target_capability_id,
+			"target_report": self.target_report,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class AuditEnvelope:
 	request_id: str
 	session_id: str
@@ -857,6 +1025,108 @@ def build_clarification_signal_contract(
 		internal_reason=str(internal_reason or "").strip(),
 		internal_details=dict(internal_details or {}),
 	)
+
+
+def build_clarification_reason_contract(
+	*,
+	request_id: str,
+	stage: str,
+	source_contract_type: str,
+	reason_type: str,
+	clarification_required: bool = True,
+	blocking: bool = True,
+	recommended_next_lane: str = "clarification",
+	primary_domain: str = "",
+	missing_fields: List[str] | None = None,
+	ambiguity_flags: List[str] | None = None,
+	candidate_capability_ids: List[str] | None = None,
+	candidate_reports: List[str] | None = None,
+	suggested_options: List[str] | None = None,
+	internal_reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> ClarificationReasonContract:
+	return ClarificationReasonContract(
+		request_id=str(request_id or "").strip(),
+		stage=str(stage or "").strip(),
+		source_contract_type=str(source_contract_type or "").strip(),
+		reason_type=str(reason_type or "").strip(),
+		clarification_required=bool(clarification_required),
+		blocking=bool(blocking),
+		recommended_next_lane=str(recommended_next_lane or "clarification").strip() or "clarification",
+		primary_domain=str(primary_domain or "").strip(),
+		missing_fields=[str(x or "").strip() for x in (missing_fields or []) if str(x or "").strip()],
+		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
+		candidate_capability_ids=[str(x or "").strip() for x in (candidate_capability_ids or []) if str(x or "").strip()],
+		candidate_reports=[str(x or "").strip() for x in (candidate_reports or []) if str(x or "").strip()],
+		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
+		internal_reason=str(internal_reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_clarification_reason_contract_from_sources(
+	*,
+	request_id: str,
+	compiler_reason: str = "",
+	compiler_reason_type: str = "",
+	compiler_details: Dict[str, Any] | None = None,
+	family_validation: Dict[str, Any] | None = None,
+	semantic_validation: Dict[str, Any] | None = None,
+) -> ClarificationReasonContract | None:
+	reason_type = str(compiler_reason_type or "").strip()
+	if reason_type:
+		details = dict(compiler_details or {})
+		return build_clarification_reason_contract(
+			request_id=request_id,
+			stage="compiler",
+			source_contract_type="fresh_query_compiler",
+			reason_type=reason_type,
+			clarification_required=True,
+			blocking=True,
+			recommended_next_lane="clarification",
+			missing_fields=details.get("missing_fields") if isinstance(details.get("missing_fields"), list) else [],
+			ambiguity_flags=details.get("ambiguity_flags") if isinstance(details.get("ambiguity_flags"), list) else [],
+			candidate_capability_ids=details.get("capability_candidates") if isinstance(details.get("capability_candidates"), list) else [],
+			candidate_reports=details.get("report_candidates") if isinstance(details.get("report_candidates"), list) else [],
+			suggested_options=details.get("suggested_time_scope_options") if isinstance(details.get("suggested_time_scope_options"), list) else [],
+			internal_reason=str(compiler_reason or "").strip(),
+			internal_details=details,
+		)
+	if isinstance(family_validation, dict) and str(family_validation.get("status") or "").strip() == "clarify":
+		payload = dict(family_validation or {})
+		reason_type = "time_scope_clarification" if payload.get("time_scope_match") is False else "validation_clarification"
+		suggested_options = ["today", "last month", "all time"] if payload.get("time_scope_match") is False else []
+		return build_clarification_reason_contract(
+			request_id=request_id,
+			stage="family_validation",
+			source_contract_type="family_validation",
+			reason_type=reason_type,
+			clarification_required=True,
+			blocking=True,
+			recommended_next_lane="clarification",
+			missing_fields=payload.get("missing_fields") if isinstance(payload.get("missing_fields"), list) else [],
+			suggested_options=suggested_options,
+			internal_reason=str(payload.get("decision") or "").strip(),
+			internal_details=payload,
+		)
+	if isinstance(semantic_validation, dict) and str(semantic_validation.get("status") or "").strip() == "clarify":
+		payload = dict(semantic_validation or {})
+		reason_type = "time_scope_clarification" if payload.get("time_scope_match") is False else "validation_clarification"
+		suggested_options = ["today", "last month", "all time"] if payload.get("time_scope_match") is False else []
+		return build_clarification_reason_contract(
+			request_id=request_id,
+			stage="semantic_validation",
+			source_contract_type="semantic_validation",
+			reason_type=reason_type,
+			clarification_required=True,
+			blocking=True,
+			recommended_next_lane="clarification",
+			missing_fields=payload.get("missing_fields") if isinstance(payload.get("missing_fields"), list) else [],
+			suggested_options=suggested_options,
+			internal_reason=str(payload.get("decision") or "").strip(),
+			internal_details=payload,
+		)
+	return None
 
 
 def build_fresh_query_interpretation_contract(
@@ -1228,6 +1498,364 @@ def build_compiled_execution_audit_contract(
 	)
 
 
+def _first_canonical_metric_key(values: List[str] | None) -> str:
+	for value in values or []:
+		candidates = detect_canonical_keys(str(value or "").strip(), dimension_or_metric="metric")
+		if candidates:
+			return str(candidates[0] or "").strip()
+	return ""
+
+
+def _ranked_entity_labels(grounded_turn: Dict[str, Any], limit: int) -> List[str]:
+	known_entities = grounded_turn.get("known_entities")
+	if isinstance(known_entities, list):
+		values: List[str] = []
+		for item in known_entities:
+			if not isinstance(item, dict):
+				continue
+			for key in ("label", "name", "entity_name", "entity"):
+				clean = str(item.get(key) or "").strip()
+				if clean:
+					values.append(clean)
+					break
+			if limit > 0 and len(values) >= limit:
+				return values[:limit]
+		if values:
+			return values[:limit] if limit > 0 else values
+
+	rows = grounded_turn.get("table_rows")
+	if not isinstance(rows, list):
+		rows = []
+	values = []
+	for row in rows:
+		if not isinstance(row, dict):
+			continue
+		for key in ("entity_name", "entity", "item_name", "customer", "supplier", "party", "name", "label"):
+			clean = str(row.get(key) or "").strip()
+			if clean:
+				values.append(clean)
+				break
+		if limit > 0 and len(values) >= limit:
+			break
+	return values[:limit] if limit > 0 else values
+
+
+def _clean_string_list(values: Any) -> List[str]:
+	if not isinstance(values, list):
+		return []
+	out: List[str] = []
+	for value in values:
+		clean = str(value or "").strip()
+		if clean and clean not in out:
+			out.append(clean)
+	return out
+
+
+def _artifact_requested_columns(turn: Dict[str, Any], artifact: Dict[str, Any], source_metric_key: str) -> List[str]:
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	stored_columns = _clean_string_list(dimensions.get("requested_columns"))
+	if stored_columns:
+		return stored_columns
+	return _clean_string_list([
+		*(turn.get("returned_schema") or [] if isinstance(turn.get("returned_schema"), list) else []),
+		"entity" if source_metric_key else "",
+		source_metric_key,
+	])
+
+
+def _artifact_available_columns(turn: Dict[str, Any], artifact: Dict[str, Any], source_metric_key: str) -> List[str]:
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	values: List[str] = []
+	for column in _clean_string_list(turn.get("returned_schema")):
+		if column not in values:
+			values.append(column)
+	for column in _clean_string_list(dimensions.get("available_metric_keys")):
+		if column not in values:
+			values.append(column)
+	for column in (
+		str(dimensions.get("requested_metric_key") or "").strip(),
+		str(dimensions.get("primary_metric_key") or "").strip(),
+		source_metric_key,
+	):
+		if column and column not in values:
+			values.append(column)
+	row_lists = []
+	table_rows = turn.get("table_rows")
+	if isinstance(table_rows, list):
+		row_lists.append(table_rows)
+	for key in ("ranked_rows", "rows", "series", "document_rows", "product_rows"):
+		rows = sections.get(key)
+		if isinstance(rows, list):
+			row_lists.append(rows)
+	for rows in row_lists:
+		for row in rows:
+			if not isinstance(row, dict):
+				continue
+			for key in row.keys():
+				clean = str(key or "").strip()
+				if clean and clean not in values:
+					values.append(clean)
+	return values
+
+
+def _artifact_row_count(turn: Dict[str, Any], artifact: Dict[str, Any]) -> int:
+	for key in ("row_count",):
+		try:
+			value = int(max(0, turn.get(key) or 0))
+		except Exception:
+			value = 0
+		if value > 0:
+			return value
+	table_rows = turn.get("table_rows")
+	if isinstance(table_rows, list) and table_rows:
+		return len(table_rows)
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	for key in ("ranked_rows", "rows", "series", "document_rows", "product_rows"):
+		rows = sections.get(key)
+		if isinstance(rows, list) and rows:
+			return len(rows)
+	return 0
+
+
+def build_artifact_continuation_contract(
+	*,
+	request_id: str,
+	followup_resolution: FollowUpResolution,
+	grounded_turn: Dict[str, Any] | None = None,
+	artifact_payload: Dict[str, Any] | None = None,
+) -> ArtifactContinuationContract:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	artifact_dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	artifact_period = artifact.get("period") if isinstance(artifact.get("period"), dict) else {}
+	filters = turn.get("filters") if isinstance(turn.get("filters"), dict) else {}
+	date_range = turn.get("date_range") if isinstance(turn.get("date_range"), dict) else {}
+	requested_modes = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(value or "").strip()
+	]
+	source_report = str(turn.get("source_name") or "").strip()
+	source_family_id = str(turn.get("artifact_family_id") or artifact.get("family_id") or "").strip()
+	source_capability_id = str((report_capability_ids(source_report) or [""])[0] or "").strip() if source_report else ""
+	source_artifact_type = str(turn.get("artifact_type") or artifact.get("artifact_type") or "").strip()
+	source_dimension = str(
+		artifact_dimensions.get("entity_dimension")
+		or ((turn.get("dimensions") or [""])[0] if isinstance(turn.get("dimensions"), list) else "")
+		or ""
+	).strip()
+	source_metric_key = str(
+		artifact_dimensions.get("requested_metric_key")
+		or artifact_dimensions.get("primary_metric_key")
+		or _first_canonical_metric_key(turn.get("metrics") or [])
+		or ""
+	).strip()
+	source_requested_columns = _artifact_requested_columns(turn, artifact, source_metric_key)
+	source_available_columns = _artifact_available_columns(turn, artifact, source_metric_key)
+	source_row_count = _artifact_row_count(turn, artifact)
+	source_limit = 0
+	try:
+		source_limit = int(max(0, artifact_dimensions.get("requested_top_n") or 0))
+	except Exception:
+		source_limit = 0
+	source_sort_direction = str(
+		artifact_dimensions.get("sort_direction")
+		or artifact_dimensions.get("requested_sort_direction")
+		or ""
+	).strip()
+	source_time_scope = str(
+		artifact_period.get("time_scope")
+		or artifact_period.get("requested_time_scope")
+		or ""
+	).strip()
+	preserved_dimension = str(getattr(followup_resolution, "target_dimension", "") or source_dimension or "").strip()
+	preserved_metric_key = str(getattr(followup_resolution, "target_metric", "") or source_metric_key or "").strip()
+	preserved_requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
+	if not preserved_requested_columns:
+		preserved_requested_columns = list(source_requested_columns)
+	preserved_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
+	if not preserved_limit:
+		preserved_limit = source_limit
+	preserved_sort_direction = str(
+		getattr(followup_resolution, "sort_direction", "")
+		or source_sort_direction
+		or ""
+	).strip()
+	preserved_time_scope = str(
+		getattr(followup_resolution, "requested_time_scope", "")
+		or source_time_scope
+		or ""
+	).strip()
+	preserved_report_date = str(date_range.get("report_date") or filters.get("report_date") or "").strip()
+	preserved_from_date = str(date_range.get("from_date") or filters.get("from_date") or "").strip()
+	preserved_to_date = str(date_range.get("to_date") or filters.get("to_date") or "").strip()
+	continuation_mode = {
+		"local_grounded_transform": "exact_local_continuation",
+		"capability_requery": "governed_requery_continuation",
+		"grounded_follow_up": "grounded_context_continuation",
+		"entity_drilldown": "entity_drilldown_continuation",
+		"new_query": "fresh_query_breakout",
+	}.get(str(getattr(followup_resolution, "mode", "") or "").strip(), "unknown")
+	preserve_grounded_context = bool(getattr(followup_resolution, "depends_on_grounded_turn", False))
+	mode_set = set(requested_modes)
+	preserve_metric_context = bool(preserve_grounded_context and "metric_refinement" not in mode_set)
+	preserve_projection_shape = bool(
+		preserve_grounded_context
+		and not mode_set.intersection({"column_refinement", "dimension_breakdown", "grouping_change", "time_scope_restatement"})
+	)
+	preserve_date_context = bool(
+		preserve_grounded_context
+		and not str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+		and "time_scope_restatement" not in mode_set
+	)
+	preserve_rank_membership = bool(
+		preserve_grounded_context
+		and preserved_limit > 0
+		and not mode_set.intersection({"dimension_breakdown", "grouping_change", "time_scope_restatement"})
+	)
+	preserve_rank_order = bool(preserve_rank_membership and not str(getattr(followup_resolution, "sort_direction", "") or "").strip())
+	return ArtifactContinuationContract(
+		request_id=str(request_id or "").strip(),
+		source_family_id=source_family_id,
+		source_capability_id=source_capability_id,
+		source_report=source_report,
+		source_artifact_type=source_artifact_type,
+		source_dimension=source_dimension,
+		source_metric_key=source_metric_key,
+		source_requested_columns=source_requested_columns,
+		source_available_columns=source_available_columns,
+		source_row_count=source_row_count,
+		source_limit=source_limit,
+		source_sort_direction=source_sort_direction,
+		source_time_scope=source_time_scope,
+		continuation_mode=continuation_mode,
+		preserve_grounded_context=preserve_grounded_context,
+		preserve_metric_context=preserve_metric_context,
+		preserve_projection_shape=preserve_projection_shape,
+		preserve_date_context=preserve_date_context,
+		preserved_dimension=preserved_dimension,
+		preserved_metric_key=preserved_metric_key,
+		preserved_requested_columns=preserved_requested_columns,
+		preserved_limit=preserved_limit,
+		preserved_sort_direction=preserved_sort_direction,
+		preserved_time_scope=preserved_time_scope,
+		preserved_report_date=preserved_report_date,
+		preserved_from_date=preserved_from_date,
+		preserved_to_date=preserved_to_date,
+		preserve_rank_membership=preserve_rank_membership,
+		preserve_rank_order=preserve_rank_order,
+		preserved_entities=_ranked_entity_labels(turn, preserved_limit),
+		requested_modes=requested_modes,
+		reason=str(getattr(followup_resolution, "reason", "") or "").strip(),
+	)
+
+
+def build_governed_scope_decision_contract(
+	*,
+	request_id: str,
+	stage: str,
+	followup_resolution: FollowUpResolution | None = None,
+	context_isolation: Dict[str, Any] | None = None,
+	latest_grounded_turn_available: bool = False,
+	entity_drilldown: Dict[str, Any] | None = None,
+	continuation_contract: ArtifactContinuationContract | None = None,
+	clarification_required: bool = False,
+) -> GovernedScopeDecisionContract:
+	context = context_isolation if isinstance(context_isolation, dict) else {}
+	resolution = followup_resolution
+	mode = str(getattr(resolution, "mode", "") or "").strip()
+	execution_mode = {
+		"new_query": "fresh_query",
+	}.get(mode, mode or ("fresh_query" if not latest_grounded_turn_available else ""))
+	if entity_drilldown is not None:
+		execution_mode = "entity_drilldown"
+	requested_domains = [
+		str(value or "").strip()
+		for value in (context.get("requested_domains") or [])
+		if str(value or "").strip()
+	]
+	context_domains = [
+		str(value or "").strip()
+		for value in (context.get("context_domains") or [])
+		if str(value or "").strip()
+	]
+	known_domain_surface = set(all_ontology_concepts())
+	supported_domain_surface = set(supported_ontology_concepts())
+	known_request_domains = [value for value in requested_domains if value in known_domain_surface]
+	supported_request_domains = [value for value in requested_domains if value in supported_domain_surface]
+	unsupported_known_request_domains = [
+		value for value in requested_domains
+		if value in known_domain_surface and value not in supported_domain_surface
+	]
+
+	primary_domain = str(context.get("primary_domain") or "").strip()
+	if not primary_domain:
+		if {
+			"tax",
+			"balance_sheet",
+			"cash_flow",
+			"profit_and_loss",
+			"working_capital",
+			"payable",
+			"receivable",
+		} & set(unsupported_known_request_domains):
+			primary_domain = "finance"
+		elif {"employee"} & set(unsupported_known_request_domains):
+			primary_domain = "hr"
+
+	out_of_scope = bool(context.get("out_of_scope"))
+	if out_of_scope and unsupported_known_request_domains:
+		governed_scope_status = "out_of_scope_but_valid_erp_domain"
+	elif out_of_scope:
+		governed_scope_status = "unsupported_request"
+	elif clarification_required:
+		governed_scope_status = "clarification_needed"
+	elif execution_mode == "fresh_query" and latest_grounded_turn_available:
+		governed_scope_status = "fresh_query_breakout"
+	elif execution_mode in {
+		"local_grounded_transform",
+		"capability_requery",
+		"grounded_follow_up",
+		"entity_drilldown",
+		"fresh_query",
+	}:
+		governed_scope_status = "covered_family"
+	else:
+		governed_scope_status = "unsupported_request"
+	recommended_next_lane = "governed_artifact"
+	if governed_scope_status == "clarification_needed":
+		recommended_next_lane = "clarification"
+	elif governed_scope_status == "out_of_scope_but_valid_erp_domain":
+		recommended_next_lane = "future_erp_business_reasoning"
+	elif governed_scope_status == "unsupported_request":
+		recommended_next_lane = "unsupported"
+	return GovernedScopeDecisionContract(
+		request_id=str(request_id or "").strip(),
+		stage=str(stage or "").strip() or "followup_orchestration",
+		governed_scope_status=governed_scope_status,
+		execution_mode=execution_mode or "unresolved",
+		reason=str(context.get("reason") or getattr(resolution, "reason", "") or "").strip(),
+		requested_domains=requested_domains,
+		context_domains=context_domains,
+		known_request_domains=known_request_domains,
+		supported_request_domains=supported_request_domains,
+		unsupported_known_request_domains=unsupported_known_request_domains,
+		latest_grounded_turn_available=bool(latest_grounded_turn_available),
+		preserve_grounded_context=bool(
+			getattr(continuation_contract, "preserve_grounded_context", False)
+			or getattr(resolution, "depends_on_grounded_turn", False)
+		),
+		self_contained=bool(getattr(resolution, "self_contained", False)),
+		out_of_scope=governed_scope_status in {"out_of_scope_but_valid_erp_domain", "unsupported_request"},
+		clarification_required=bool(clarification_required),
+		primary_domain=primary_domain,
+		recommended_next_lane=recommended_next_lane,
+		target_capability_id=str(getattr(resolution, "target_capability_id", "") or "").strip(),
+		target_report=str(getattr(resolution, "target_report", "") or "").strip(),
+	)
+
+
 def build_followup_resolution(
 	*,
 	request_id: str,
@@ -1361,7 +1989,13 @@ def build_followup_resolution(
 			}:
 				requested_modes.append(clean_mode)
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
-	local_grounded_modes = {"presentation_transform", "table_presentation", "bullet_presentation", "metric_refinement", "column_refinement"}
+	local_grounded_modes = {
+		"presentation_transform",
+		"table_presentation",
+		"bullet_presentation",
+		"metric_refinement",
+		"column_refinement",
+	}
 	if supports_local_followup_mode(grounded_turn, "aging_bucket_view"):
 		local_grounded_modes.add("aging_bucket_view")
 	if supports_local_followup_mode(grounded_turn, "dimension_breakdown", target_dimension=target_dimension):

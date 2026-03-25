@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import (
+	ClarificationReasonContract,
 	ClarificationSignalContract,
+	build_clarification_reason_contract_from_sources,
 	build_clarification_signal_contract,
 )
 from ai_assistant_ui.qwen_chat.metadata import get_capability_spec
@@ -194,6 +196,28 @@ def _translate_validation_signal(
 	)
 
 
+def translate_clarification_reason_contract(
+	*,
+	reason_contract: ClarificationReasonContract,
+) -> ClarificationSignalContract:
+	stage = _clean_text(reason_contract.stage)
+	reason_type = _clean_text(reason_contract.reason_type)
+	details = dict(reason_contract.internal_details or {})
+	internal_reason = _clean_text(reason_contract.internal_reason)
+	if stage == "compiler" or reason_type in {"report_ambiguity", "capability_ambiguity", "time_scope_missing", "filter_missing", "capability_missing", "request_underspecified"}:
+		return _translate_compiler_signal(
+			request_id=reason_contract.request_id,
+			compiler_reason=internal_reason,
+			compiler_reason_type=reason_type,
+			compiler_details=details,
+		)
+	return _translate_validation_signal(
+		request_id=reason_contract.request_id,
+		stage=stage or "validation",
+		validation_payload=details,
+	)
+
+
 def translate_clarification_signal(
 	*,
 	request_id: str,
@@ -205,25 +229,16 @@ def translate_clarification_signal(
 	semantic_validation: Dict[str, Any] | None = None,
 ) -> ClarificationSignalContract:
 	_ = _clean_text(raw_message)
-	if _clean_text(compiler_reason_type):
-		return _translate_compiler_signal(
-			request_id=request_id,
-			compiler_reason=compiler_reason,
-			compiler_reason_type=compiler_reason_type,
-			compiler_details=dict(compiler_details or {}),
-		)
-	if isinstance(family_validation, dict) and family_validation:
-		return _translate_validation_signal(
-			request_id=request_id,
-			stage="family_validation",
-			validation_payload=family_validation,
-		)
-	if isinstance(semantic_validation, dict) and semantic_validation:
-		return _translate_validation_signal(
-			request_id=request_id,
-			stage="semantic_validation",
-			validation_payload=semantic_validation,
-		)
+	reason_contract = build_clarification_reason_contract_from_sources(
+		request_id=request_id,
+		compiler_reason=compiler_reason,
+		compiler_reason_type=compiler_reason_type,
+		compiler_details=dict(compiler_details or {}),
+		family_validation=dict(family_validation or {}) if isinstance(family_validation, dict) else None,
+		semantic_validation=dict(semantic_validation or {}) if isinstance(semantic_validation, dict) else None,
+	)
+	if reason_contract is not None:
+		return translate_clarification_reason_contract(reason_contract=reason_contract)
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage="unknown",

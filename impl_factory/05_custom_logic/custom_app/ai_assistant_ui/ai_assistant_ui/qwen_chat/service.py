@@ -16,13 +16,20 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 	narrate_governed_artifact,
 )
 from ai_assistant_ui.qwen_chat.capability_adapters import render_local_followup
-from ai_assistant_ui.qwen_chat.clarification_translation import translate_clarification_signal
+from ai_assistant_ui.qwen_chat.clarification_translation import (
+	translate_clarification_reason_contract,
+	translate_clarification_signal,
+)
 from ai_assistant_ui.qwen_chat.contracts import (
 	ExecutionPath,
 	FollowUpResolution,
+	build_artifact_continuation_contract,
 	build_audit_envelope,
+	build_clarification_reason_contract,
+	build_clarification_reason_contract_from_sources,
 	build_execution_path,
 	build_followup_resolution,
+	build_governed_scope_decision_contract,
 	build_grounded_turn_context,
 	build_interaction_contract,
 	build_response_policy_contract,
@@ -37,21 +44,26 @@ from ai_assistant_ui.qwen_chat.family_followup import (
 	supports_local_family_followup,
 )
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
-from ai_assistant_ui.qwen_chat.followup_interpreter import is_safe_local_compatibility_intent
-from ai_assistant_ui.qwen_chat.followup_interpreter import detect_followup_intent
-from ai_assistant_ui.qwen_chat.followup_interpreter import assess_context_isolation
+from ai_assistant_ui.qwen_chat.followup_interpreter import (
+	assess_context_isolation,
+	detect_ambiguous_family_report_request,
+	is_safe_local_compatibility_intent,
+)
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import (
+	all_ontology_concepts,
 	capability_report_names,
 	get_family_evaluation_case_set,
 	get_family_latency_budget_spec,
 	list_family_evaluation_case_sets,
+	ontology_detect_concepts,
 	report_business_family_ids,
 	report_capability_ids,
 	report_defaultable_filters,
 	report_family_capability_ids,
 	report_supported_metrics,
 	resolve_followup_report_switch,
+	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key, get_metric_label
@@ -205,6 +217,7 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
 	runtime_error = str(runtime_payload.get("error") or "").strip()
 	runtime_answer = str(runtime_payload.get("answer_text") or "").strip()
+	unsupported_decision = _compiled_known_out_of_scope_decision(raw_message)
 
 	if decision == "clarify":
 		signal = translate_clarification_signal(
@@ -216,6 +229,8 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 		)
 		return str(signal.user_question or "").strip(), signal.to_payload()
 	if decision == "reject":
+		if unsupported_decision:
+			return _out_of_scope_answer(raw_message, unsupported_decision), {}
 		if reason:
 			return f"I can't complete that safely within the approved ERP read path yet.\n\n{reason}", {}
 		return "I can't complete that safely within the approved ERP read path yet.", {}
@@ -227,6 +242,8 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 		)
 		return str(signal.user_question or "").strip(), signal.to_payload()
 	if family_status.startswith("reject"):
+		if unsupported_decision:
+			return _out_of_scope_answer(raw_message, unsupported_decision), {}
 		detail = str((family_errors or ["The normalized business artifact did not pass governed validation."])[0] or "").strip()
 		return f"I couldn't complete that result confidently from governed ERP data.\n\n{detail}".strip(), {}
 	if semantic_status == "clarify":
@@ -237,6 +254,8 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 		)
 		return str(signal.user_question or "").strip(), signal.to_payload()
 	if semantic_status == "reject_semantically_inconsistent":
+		if unsupported_decision:
+			return _out_of_scope_answer(raw_message, unsupported_decision), {}
 		detail = str((semantic_errors or ["The grounded result did not match the requested business intent."])[0] or "").strip()
 		return f"I couldn't complete a grounded answer that matched the requested business intent.\n\n{detail}".strip(), {}
 	narrative_answer = str(narrative_response.get("answer_text") or "").strip()
@@ -245,11 +264,66 @@ def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dic
 	rendered_answer = str(rendered_response.get("answer_text") or "").strip()
 	if rendered_answer:
 		return rendered_answer, {}
+	if unsupported_decision and _is_generic_compiled_failure_answer(runtime_answer):
+		return _out_of_scope_answer(raw_message, unsupported_decision), {}
 	if runtime_answer:
 		return runtime_answer, {}
 	if runtime_error:
+		if unsupported_decision:
+			return _out_of_scope_answer(raw_message, unsupported_decision), {}
 		return _safe_runtime_failure_message(RuntimeError(runtime_error)), {}
+	if unsupported_decision:
+		return _out_of_scope_answer(raw_message, unsupported_decision), {}
 	return "I could not complete a governed ERP lookup.", {}
+
+
+def _compiled_clarification_reason_contract(*, request_id: str, result: Dict[str, Any]):
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+	semantic = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
+	return build_clarification_reason_contract_from_sources(
+		request_id=request_id,
+		compiler_reason=str(compiler.get("compiler_reason") or "").strip(),
+		compiler_reason_type=str(compiler.get("clarification_reason_type") or "").strip(),
+		compiler_details=compiler.get("clarification_details") if isinstance(compiler.get("clarification_details"), dict) else {},
+		family_validation=family_validation,
+		semantic_validation=semantic,
+	)
+
+
+def _followup_report_ambiguity_contract(
+	*,
+	request_id: str,
+	ambiguity_payload: Dict[str, Any],
+) -> Tuple[Any, Any]:
+	reports = [
+		str(value or "").strip()
+		for value in (ambiguity_payload.get("report_candidates") or [])
+		if str(value or "").strip()
+	]
+	internal_reason = str(ambiguity_payload.get("reason") or "").strip()
+	reason_contract = build_clarification_reason_contract(
+		request_id=request_id,
+		stage="followup_scope",
+		source_contract_type="governed_scope_decision",
+		reason_type="report_ambiguity",
+		clarification_required=True,
+		blocking=True,
+		recommended_next_lane="clarification",
+		primary_domain=str(ambiguity_payload.get("family_id") or "").strip(),
+		ambiguity_flags=["ambiguous_report"],
+		candidate_reports=reports,
+		suggested_options=reports,
+		internal_reason=internal_reason or "The follow-up does not identify a unique governed report view.",
+		internal_details={
+			"family_id": str(ambiguity_payload.get("family_id") or "").strip(),
+			"report_candidates": reports,
+			"ambiguity_flags": ["ambiguous_report"],
+			"reason": internal_reason,
+		},
+	)
+	return reason_contract, translate_clarification_reason_contract(reason_contract=reason_contract)
 
 
 def _handle_compiled_first_turn_result(
@@ -276,6 +350,12 @@ def _handle_compiled_first_turn_result(
 	)
 	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 	if clarification_signal_payload:
+		clarification_reason_contract = _compiled_clarification_reason_contract(
+			request_id=request_id,
+			result=result,
+		)
+		if clarification_reason_contract is not None:
+			_append_tool_payload(session_doc, clarification_reason_contract.to_payload())
 		_append_tool_payload(session_doc, clarification_signal_payload)
 
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
@@ -818,6 +898,7 @@ def _compile_capability_requery_message(
 	raw_message: str,
 	followup_resolution,
 	grounded_turn: Dict[str, Any],
+	continuation_contract=None,
 ) -> str:
 	source_report = str(grounded_turn.get("source_name") or "").strip()
 	switch = resolve_followup_report_switch(
@@ -842,15 +923,33 @@ def _compile_capability_requery_message(
 		for value in (getattr(followup_resolution, "requested_modes", []) or [])
 		if str(value or "").strip()
 	]
-	preserve_prior_date_scope = not (
-		target_dimension
-		or bool(set(requested_modes).intersection({"dimension_breakdown", "grouping_change"}))
-	)
+	preserved_dimension = str(getattr(continuation_contract, "preserved_dimension", "") or "").strip()
+	preserved_metric_key = str(getattr(continuation_contract, "preserved_metric_key", "") or "").strip()
+	preserved_requested_columns = [
+		str(value or "").strip()
+		for value in (
+			getattr(continuation_contract, "preserved_requested_columns", [])
+			or getattr(continuation_contract, "source_requested_columns", [])
+			or []
+		)
+		if str(value or "").strip()
+	]
+	preserved_limit = int(max(0, getattr(continuation_contract, "preserved_limit", 0) or 0))
+	preserved_entities = [
+		str(value or "").strip()
+		for value in (getattr(continuation_contract, "preserved_entities", []) or [])
+		if str(value or "").strip()
+	]
+	preserve_rank_membership = bool(getattr(continuation_contract, "preserve_rank_membership", False))
+	preserve_rank_order = bool(getattr(continuation_contract, "preserve_rank_order", False))
+	preserve_prior_date_scope = bool(getattr(continuation_contract, "preserve_date_context", False))
 	requested_columns = [
 		str(value or "").strip()
 		for value in (getattr(followup_resolution, "requested_columns", []) or [])
 		if str(value or "").strip()
 	]
+	if not requested_columns and bool(getattr(continuation_contract, "preserve_projection_shape", False)):
+		requested_columns = list(preserved_requested_columns)
 	effective_capability_id = target_capability_id
 	if not effective_capability_id:
 		report_for_capability = target_report or source_report
@@ -901,12 +1000,23 @@ def _compile_capability_requery_message(
 		parts.append(f"Use the date range from {from_date} to {to_date}.")
 	if target_dimension:
 		parts.append(f"Return the result grouped or broken down by `{target_dimension}` if supported.")
+	elif preserved_dimension:
+		parts.append(f"Preserve the current entity dimension `{preserved_dimension}`.")
 	if target_limit > 0:
 		parts.append(f"Keep the same ranking scope and return only the top {target_limit} ranked rows.")
+	elif preserved_limit > 0:
+		parts.append(f"Keep the same ranking scope and return only the top {preserved_limit} ranked rows.")
 	if target_metric:
 		parts.append(f"Prioritize the metric `{target_metric}`.")
+	elif preserved_metric_key:
+		parts.append(f"Preserve the primary governed metric `{preserved_metric_key}`.")
 	if extra_metric_labels:
 		parts.append("Also include these governed metrics if supported: " + ", ".join(f"`{label}`" for label in extra_metric_labels) + ".")
+	if preserve_rank_membership and preserved_entities:
+		entity_text = ", ".join(f"`{value}`" for value in preserved_entities[:15])
+		parts.append("Preserve the exact current ranked entities when enriching the result: " + entity_text + ".")
+	if preserve_rank_order:
+		parts.append("Preserve the existing ranking order from the latest grounded artifact unless the user explicitly changes it.")
 	if requested_columns:
 		parts.append("Return these columns if available: " + ", ".join(requested_columns) + ".")
 	if requested_modes:
@@ -1011,12 +1121,169 @@ def _resolve_metric_union_requery_target(
 	return current_capability_id, ""
 
 
+def _artifact_rank_row_count(artifact_payload: Dict[str, Any], grounded_turn: Dict[str, Any]) -> int:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	for key in ("ranked_rows", "rows", "series", "document_rows"):
+		rows = sections.get(key)
+		if isinstance(rows, list) and rows:
+			return len(rows)
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	table_rows = turn.get("table_rows")
+	if isinstance(table_rows, list) and table_rows:
+		return len(table_rows)
+	try:
+		return int(max(0, turn.get("row_count") or 0))
+	except Exception:
+		return 0
+
+
+def _authoritative_continuation_resolution(
+	*,
+	request_id: str,
+	followup_resolution,
+	continuation_contract,
+	artifact_payload: Dict[str, Any],
+	grounded_turn: Dict[str, Any],
+):
+	if continuation_contract is None or not bool(getattr(continuation_contract, "preserve_grounded_context", False)):
+		return followup_resolution
+	requested_modes = {
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(value or "").strip()
+	}
+	source_family_id = str(getattr(continuation_contract, "source_family_id", "") or "").strip()
+	source_capability_id = str(getattr(continuation_contract, "source_capability_id", "") or "").strip()
+	source_report = str(getattr(continuation_contract, "source_report", "") or "").strip()
+	current_row_count = _artifact_rank_row_count(artifact_payload, grounded_turn)
+	if current_row_count <= 0:
+		current_row_count = int(max(0, getattr(continuation_contract, "source_row_count", 0) or 0))
+	target_dimension = str(getattr(followup_resolution, "target_dimension", "") or "").strip()
+	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
+	requested_columns = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_columns", []) or [])
+		if str(value or "").strip()
+	]
+	target_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
+	sort_direction = str(getattr(followup_resolution, "sort_direction", "") or "").strip()
+	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+
+	if not target_dimension:
+		target_dimension = str(
+			getattr(continuation_contract, "preserved_dimension", "")
+			or getattr(continuation_contract, "source_dimension", "")
+			or ""
+		).strip()
+	if not target_metric:
+		target_metric = str(
+			getattr(continuation_contract, "preserved_metric_key", "")
+			or getattr(continuation_contract, "source_metric_key", "")
+			or ""
+		).strip()
+	if not requested_columns and bool(getattr(continuation_contract, "preserve_projection_shape", False)):
+		requested_columns = [
+			str(value or "").strip()
+			for value in (
+				getattr(continuation_contract, "preserved_requested_columns", [])
+				or getattr(continuation_contract, "source_requested_columns", [])
+				or []
+			)
+			if str(value or "").strip()
+		]
+	if not target_limit and bool(getattr(continuation_contract, "preserve_rank_membership", False)):
+		target_limit = int(
+			max(
+				0,
+				getattr(continuation_contract, "preserved_limit", 0)
+				or getattr(continuation_contract, "source_limit", 0)
+				or 0,
+			)
+		)
+	if not sort_direction and bool(getattr(continuation_contract, "preserve_rank_order", False)):
+		sort_direction = str(
+			getattr(continuation_contract, "preserved_sort_direction", "")
+			or getattr(continuation_contract, "source_sort_direction", "")
+			or ""
+		).strip()
+	if not requested_time_scope:
+		requested_time_scope = str(
+			getattr(continuation_contract, "preserved_time_scope", "")
+			or getattr(continuation_contract, "source_time_scope", "")
+			or ""
+		).strip()
+
+	mode = str(getattr(followup_resolution, "mode", "") or "").strip()
+	if source_family_id == "ranking_analytics" and requested_modes.intersection({"sort_or_limit", "metric_refinement", "column_refinement"}):
+		return FollowUpResolution(
+			request_id=request_id,
+			mode="capability_requery",
+			requested_modes=list(getattr(followup_resolution, "requested_modes", []) or []),
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
+			target_capability_id=source_capability_id,
+			target_report=source_report,
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=bool(getattr(followup_resolution, "latest_grounded_turn_available", False)),
+			reason="Ranking follow-up transforms are governed through continuation requery so scope and metric stay anchored to the prior artifact.",
+		)
+	if (
+		mode in {"local_grounded_transform", "grounded_follow_up"}
+		and "sort_or_limit" in requested_modes
+		and target_limit > 0
+		and current_row_count > 0
+		and target_limit > current_row_count
+	):
+		return FollowUpResolution(
+			request_id=request_id,
+			mode="capability_requery",
+			requested_modes=list(getattr(followup_resolution, "requested_modes", []) or []),
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
+			target_capability_id=str(getattr(continuation_contract, "source_capability_id", "") or "").strip(),
+			target_report=str(getattr(continuation_contract, "source_report", "") or "").strip(),
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=bool(getattr(followup_resolution, "latest_grounded_turn_available", False)),
+			reason="The requested continuation scope exceeds the current artifact and requires governed requery with preserved context.",
+		)
+
+	return FollowUpResolution(
+		request_id=request_id,
+		mode=mode,
+		requested_modes=list(getattr(followup_resolution, "requested_modes", []) or []),
+		target_dimension=target_dimension,
+		target_limit=target_limit,
+		sort_direction=sort_direction,
+		target_metric=target_metric,
+		requested_columns=requested_columns,
+		requested_time_scope=requested_time_scope,
+		target_capability_id=str(getattr(followup_resolution, "target_capability_id", "") or "").strip(),
+		target_report=str(getattr(followup_resolution, "target_report", "") or "").strip(),
+		depends_on_grounded_turn=bool(getattr(followup_resolution, "depends_on_grounded_turn", False)),
+		self_contained=bool(getattr(followup_resolution, "self_contained", False)),
+		latest_grounded_turn_available=bool(getattr(followup_resolution, "latest_grounded_turn_available", False)),
+		reason=str(getattr(followup_resolution, "reason", "") or "").strip(),
+	)
+
+
 def _requery_resolution_for_unsupported_local_columns(
 	*,
 	request_id: str,
 	followup_resolution,
 	artifact_payload: Dict[str, Any],
 	grounded_turn: Dict[str, Any],
+	continuation_contract=None,
 ) -> Any | None:
 	requested_columns = [
 		str(value or "").strip()
@@ -1039,25 +1306,53 @@ def _requery_resolution_for_unsupported_local_columns(
 	if _artifact_metric_columns_available(artifact_payload, columns_to_validate):
 		return None
 	artifact_dimensions = artifact_payload.get("dimensions") if isinstance(artifact_payload.get("dimensions"), dict) else {}
+	contract_preserved_dimension = str(getattr(continuation_contract, "preserved_dimension", "") or "").strip()
+	contract_source_dimension = str(getattr(continuation_contract, "source_dimension", "") or "").strip()
+	contract_preserved_metric = str(getattr(continuation_contract, "preserved_metric_key", "") or "").strip()
+	contract_source_metric = str(getattr(continuation_contract, "source_metric_key", "") or "").strip()
+	contract_source_report = str(getattr(continuation_contract, "source_report", "") or "").strip()
+	contract_source_capability = str(getattr(continuation_contract, "source_capability_id", "") or "").strip()
+	contract_preserved_limit = int(max(0, getattr(continuation_contract, "preserved_limit", 0) or 0))
+	contract_source_limit = int(max(0, getattr(continuation_contract, "source_limit", 0) or 0))
 	fallback_dimension = str(
 		getattr(followup_resolution, "target_dimension", "")
+		or contract_preserved_dimension
+		or contract_source_dimension
 		or artifact_dimensions.get("entity_dimension")
 		or ""
 	).strip()
 	fallback_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
 	if not fallback_limit:
 		try:
-			fallback_limit = int(max(0, artifact_dimensions.get("requested_top_n") or 0))
+			fallback_limit = int(
+				max(
+					0,
+					contract_preserved_limit
+					or contract_source_limit
+					or artifact_dimensions.get("requested_top_n")
+					or 0,
+				)
+			)
 		except Exception:
 			fallback_limit = 0
 	fallback_metric = str(
 		target_metric
+		or contract_preserved_metric
+		or contract_source_metric
 		or artifact_dimensions.get("requested_metric_key")
 		or artifact_dimensions.get("primary_metric_key")
 		or ""
 	).strip()
-	fallback_report = str((grounded_turn or {}).get("source_name") or "").strip()
-	fallback_capability_id = str(getattr(followup_resolution, "target_capability_id", "") or "").strip()
+	fallback_report = str(
+		contract_source_report
+		or (grounded_turn or {}).get("source_name")
+		or ""
+	).strip()
+	fallback_capability_id = str(
+		getattr(followup_resolution, "target_capability_id", "")
+		or contract_source_capability
+		or ""
+	).strip()
 	if not fallback_capability_id and fallback_report:
 		fallback_capability_id = str((report_capability_ids(fallback_report) or [""])[0] or "").strip()
 	required_metric_keys = _canonical_metric_keys_for_values(
@@ -1254,6 +1549,7 @@ def _try_local_followup_transform(
 	followup_resolution,
 	interaction_contract,
 	response_policy_contract,
+	continuation_contract=None,
 ) -> Tuple[bool, Dict[str, Any]] | None:
 	requested_modes = {
 		str(mode or "").strip()
@@ -1284,23 +1580,24 @@ def _try_local_followup_transform(
 	assistant_payload, trace = _latest_grounded_assistant_context(session_doc)
 	grounded_turn = _latest_grounded_turn_contract(session_doc)
 	family_artifact_payload = _latest_normalized_family_artifact(session_doc)
-	
-	heuristic_intent = detect_followup_intent(
-		str(raw_message or "").strip(),
-		grounded_turn=grounded_turn,
-	)
+	contract_preserved_metric = str(getattr(continuation_contract, "preserved_metric_key", "") or "").strip()
+	contract_source_metric = str(getattr(continuation_contract, "source_metric_key", "") or "").strip()
 	if not target_metric:
-		target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
-	if not requested_columns:
+		target_metric = str(
+			contract_preserved_metric
+			or contract_source_metric
+			or ""
+		).strip()
+	if not requested_columns and bool(getattr(continuation_contract, "preserve_projection_shape", False)):
 		requested_columns = [
 			str(value or "").strip()
-			for value in (getattr(heuristic_intent, "requested_columns", []) or [])
+			for value in (
+				getattr(continuation_contract, "preserved_requested_columns", [])
+				or getattr(continuation_contract, "source_requested_columns", [])
+				or []
+			)
 			if str(value or "").strip()
 		]
-	for mode in getattr(heuristic_intent, "requested_modes", []) or []:
-		clean_mode = str(mode or "").strip()
-		if clean_mode and clean_mode not in requested_modes:
-			requested_modes.add(clean_mode)
 
 	if not assistant_payload or not trace:
 		return None
@@ -1505,6 +1802,17 @@ def _safe_runtime_failure_message(exc: Exception) -> str:
 	return "Qwen runtime is unavailable right now. Please try again."
 
 
+def _is_generic_compiled_failure_answer(answer_text: str) -> bool:
+	clean = str(answer_text or "").strip().lower()
+	if not clean:
+		return False
+	return clean in {
+		"i could not complete a grounded erp lookup.",
+		"i could not complete a governed erp lookup.",
+		"i can't complete that safely within the approved erp read path yet.",
+	}
+
+
 def _context_isolation_payload(*, request_id: str, decision: Dict[str, Any]) -> Dict[str, Any]:
 	return {
 		"type": "qwen_context_isolation_decision",
@@ -1521,6 +1829,11 @@ def _context_isolation_payload(*, request_id: str, decision: Dict[str, Any]) -> 
 
 def _out_of_scope_answer(message: str, decision: Dict[str, Any]) -> str:
 	primary_domain = str(decision.get("primary_domain") or "").strip()
+	if primary_domain == "finance":
+		return (
+			"I can help with governed financial statements, AR / AP, sales, inventory, product performance, invoices, and governed ERP drilldowns.\n\n"
+			"This is a valid finance question, but this exact finance area is not yet covered as a governed Qwen ERP answer path."
+		)
 	if primary_domain == "hr":
 		return (
 			"I can help with finance, sales, inventory, product performance, invoices, and governed ERP drilldowns.\n\n"
@@ -1530,6 +1843,63 @@ def _out_of_scope_answer(message: str, decision: Dict[str, Any]) -> str:
 		"I can help with finance, sales, inventory, product performance, invoices, and governed ERP drilldowns.\n\n"
 		"This question falls outside the current governed Qwen ERP coverage, so I can't answer it confidently from ERP data yet."
 	)
+
+
+def _compiled_known_out_of_scope_decision(raw_message: str) -> Dict[str, Any]:
+	message_concepts = {
+		str(value or "").strip()
+		for value in ontology_detect_concepts(raw_message)
+		if str(value or "").strip()
+	}
+	if not message_concepts:
+		return {}
+	supported = set(supported_ontology_concepts())
+	known = set(all_ontology_concepts())
+	unsupported_known = sorted(concept for concept in message_concepts if concept in known and concept not in supported)
+	if not unsupported_known:
+		return {}
+	primary_domain = ""
+	if {"tax", "balance_sheet", "cash_flow", "profit_and_loss", "working_capital", "payable", "receivable"} & set(unsupported_known):
+		primary_domain = "finance"
+	if "employee" in unsupported_known:
+		primary_domain = "hr"
+	return {
+		"force_new_query": True,
+		"out_of_scope": True,
+		"reason": "The request targets a valid ERP business area that is not yet covered by the current governed assistant.",
+		"requested_domains": unsupported_known,
+		"context_domains": [],
+		"primary_domain": primary_domain,
+	}
+
+
+def _scope_decision_requires_fresh_query(scope_decision_contract) -> bool:
+	return str(getattr(scope_decision_contract, "governed_scope_status", "") or "").strip() in {
+		"fresh_query_breakout",
+	}
+
+
+def _scope_decision_is_out_of_scope(scope_decision_contract) -> bool:
+	return bool(getattr(scope_decision_contract, "out_of_scope", False))
+
+
+def _scope_decision_public_decision(scope_decision_contract) -> Dict[str, Any]:
+	return {
+		"force_new_query": _scope_decision_requires_fresh_query(scope_decision_contract),
+		"out_of_scope": _scope_decision_is_out_of_scope(scope_decision_contract),
+		"reason": str(getattr(scope_decision_contract, "reason", "") or "").strip(),
+		"requested_domains": [
+			str(value or "").strip()
+			for value in (getattr(scope_decision_contract, "requested_domains", []) or [])
+			if str(value or "").strip()
+		],
+		"context_domains": [
+			str(value or "").strip()
+			for value in (getattr(scope_decision_contract, "context_domains", []) or [])
+			if str(value or "").strip()
+		],
+		"primary_domain": str(getattr(scope_decision_contract, "primary_domain", "") or "").strip(),
+	}
 
 
 def _try_entity_detail_followup(
@@ -1674,12 +2044,23 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			followup_resolution=followup_resolution,
 			local_transform_applied=False,
 		)
+		scope_decision_contract = build_governed_scope_decision_contract(
+			request_id=request_id,
+			stage="followup_orchestration",
+			followup_resolution=followup_resolution,
+			context_isolation={},
+			latest_grounded_turn_available=False,
+			entity_drilldown=None,
+			continuation_contract=None,
+			clarification_required=False,
+		)
 		if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
 			session_doc.title = (msg[:60] + "…") if len(msg) > 60 else msg
 		_append_message(session_doc, "user", msg)
 		_append_tool_payload(session_doc, interaction_contract.to_payload())
 		_append_tool_payload(session_doc, response_policy_contract.to_payload())
 		_append_tool_payload(session_doc, followup_resolution.to_payload())
+		_append_tool_payload(session_doc, scope_decision_contract.to_payload())
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		compiled_result = execute_compiled_fresh_query_message(
 			session_id=session_name,
@@ -1779,18 +2160,43 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			degraded_reason=str(context_isolation.get("reason") or degraded_reason or "").strip(),
 		)
 	family_artifact_for_requery = _latest_normalized_family_artifact(session_doc) if followup_context_available else {}
+	provisional_continuation_contract = None
+	if latest_grounded_turn_available:
+		provisional_continuation_contract = build_artifact_continuation_contract(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			grounded_turn=latest_grounded_turn,
+			artifact_payload=family_artifact_for_requery,
+		)
+		followup_resolution = _authoritative_continuation_resolution(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			continuation_contract=provisional_continuation_contract,
+			artifact_payload=family_artifact_for_requery,
+			grounded_turn=latest_grounded_turn,
+		)
 	requery_upgrade = _requery_resolution_for_unsupported_local_columns(
 		request_id=request_id,
 		followup_resolution=followup_resolution,
 		artifact_payload=family_artifact_for_requery,
 		grounded_turn=latest_grounded_turn if followup_context_available else {},
+		continuation_contract=provisional_continuation_contract,
 	)
 	if requery_upgrade is not None:
 		followup_resolution = requery_upgrade
+	provisional_scope_decision_contract = build_governed_scope_decision_contract(
+		request_id=request_id,
+		stage="followup_orchestration",
+		followup_resolution=followup_resolution,
+		context_isolation=context_isolation,
+		latest_grounded_turn_available=latest_grounded_turn_available,
+		entity_drilldown=entity_drilldown,
+		continuation_contract=provisional_continuation_contract,
+		clarification_required=False,
+	)
 	if (
 		entity_drilldown is None
-		and bool(context_isolation.get("force_new_query"))
-		and not bool(context_isolation.get("out_of_scope"))
+		and _scope_decision_requires_fresh_query(provisional_scope_decision_contract)
 		and followup_resolution.mode != "capability_requery"
 	):
 		followup_resolution = FollowUpResolution(
@@ -1815,13 +2221,38 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			reason=str(context_isolation.get("reason") or getattr(followup_resolution, "reason", "") or "").strip()
 			or "The request should be treated as a fresh governed ERP query.",
 		)
+	continuation_contract = None
+	if latest_grounded_turn_available:
+		continuation_contract = build_artifact_continuation_contract(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			grounded_turn=latest_grounded_turn,
+			artifact_payload=family_artifact_for_requery,
+		)
+	ambiguous_family_report = {}
+	if latest_grounded_turn_available and entity_drilldown is None:
+		ambiguous_family_report = detect_ambiguous_family_report_request(
+			msg,
+			language=interaction_contract.detected_language,
+			grounded_turn=latest_grounded_turn,
+		)
+	scope_decision_contract = build_governed_scope_decision_contract(
+		request_id=request_id,
+		stage="followup_orchestration",
+		followup_resolution=followup_resolution,
+		context_isolation=context_isolation,
+		latest_grounded_turn_available=latest_grounded_turn_available,
+		entity_drilldown=entity_drilldown,
+		continuation_contract=continuation_contract,
+		clarification_required=bool(ambiguous_family_report),
+	)
 	response_policy_contract = build_response_policy_contract(
 		interaction_contract=interaction_contract,
 		followup_resolution=followup_resolution,
 	)
 	recent_messages = (
 		[]
-		if followup_resolution.mode == "new_query" and bool(followup_resolution.self_contained)
+		if _scope_decision_requires_fresh_query(scope_decision_contract)
 		else _recent_messages(session_doc, limit=10)
 	)
 	runtime_message = msg
@@ -1831,6 +2262,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			raw_message=msg,
 			followup_resolution=followup_resolution,
 			grounded_turn=latest_grounded_turn,
+			continuation_contract=continuation_contract,
 		)
 		recent_messages = []
 
@@ -1842,16 +2274,61 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	_append_tool_payload(session_doc, response_policy_contract.to_payload())
 	if isinstance(semantic_payload, dict):
 		_append_tool_payload(session_doc, semantic_payload)
-	if bool(context_isolation.get("force_new_query")):
-		_append_tool_payload(session_doc, _context_isolation_payload(request_id=request_id, decision=context_isolation))
+	if _scope_decision_requires_fresh_query(scope_decision_contract):
+		_append_tool_payload(
+			session_doc,
+			_context_isolation_payload(
+				request_id=request_id,
+				decision=_scope_decision_public_decision(scope_decision_contract),
+			),
+		)
 	_append_tool_payload(session_doc, followup_resolution.to_payload())
+	if continuation_contract is not None:
+		_append_tool_payload(session_doc, continuation_contract.to_payload())
+	_append_tool_payload(session_doc, scope_decision_contract.to_payload())
 
-	if bool(context_isolation.get("out_of_scope")) and entity_drilldown is None:
-		answer_text = _out_of_scope_answer(msg, context_isolation)
+	if ambiguous_family_report and entity_drilldown is None:
+		reason_contract, clarification_signal = _followup_report_ambiguity_contract(
+			request_id=request_id,
+			ambiguity_payload=ambiguous_family_report,
+		)
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="clarification",
+			reason=str(reason_contract.internal_reason or "").strip() or "The follow-up requires clarification before the governed report can be selected.",
+			requires_runtime=False,
+			grounded_required=False,
+		)
+		answer_text = str(clarification_signal.user_question or "").strip()
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+		_append_tool_payload(session_doc, reason_contract.to_payload())
+		_append_tool_payload(session_doc, clarification_signal.to_payload())
+		_append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=followup_resolution,
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context=latest_grounded_turn,
+				answer_text=answer_text,
+			).to_payload(),
+		)
+		session_doc.save(ignore_permissions=False)
+		return True, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "clarification",
+			"agent_meta": {"engine": "local_clarification", "mode": "followup_report_ambiguity"},
+		}
+
+	if _scope_decision_is_out_of_scope(scope_decision_contract) and entity_drilldown is None:
+		answer_text = _out_of_scope_answer(msg, _scope_decision_public_decision(scope_decision_contract))
 		execution_path = ExecutionPath(
 			request_id=request_id,
 			path="unsupported_domain",
-			reason=str(context_isolation.get("reason") or "").strip() or "The request is outside the current governed ERP scope.",
+			reason=str(getattr(scope_decision_contract, "reason", "") or "").strip() or "The request is outside the current governed ERP scope.",
 			requires_runtime=False,
 			grounded_required=False,
 		)
@@ -1880,6 +2357,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			followup_resolution=followup_resolution,
 			interaction_contract=interaction_contract,
 			response_policy_contract=response_policy_contract,
+			continuation_contract=continuation_contract,
 		)
 	if local_transform:
 		execution_path = build_execution_path(
@@ -1983,6 +2461,35 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				execution_path=execution_path,
 				result=compiled_result,
 			)
+	known_unsupported_decision = _compiled_known_out_of_scope_decision(msg)
+	if (
+		entity_drilldown is None
+		and known_unsupported_decision
+		and followup_resolution.mode in {"new_query", "capability_requery"}
+	):
+		answer_text = _out_of_scope_answer(msg, known_unsupported_decision)
+		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+		_append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=followup_resolution,
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context={},
+				answer_text=answer_text,
+			).to_payload(),
+		)
+		session_doc.save(ignore_permissions=False)
+		payload: Dict[str, Any] = {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "known_unsupported_erp_domain",
+			"agent_meta": {"engine": "local_governed_scope_guard"},
+		}
+		if isinstance(compiled_rollout_fallback, dict):
+			payload["compiled_rollout_fallback_reason"] = str(compiled_rollout_fallback.get("reason") or "").strip()
+		return True, payload
 	start = time.perf_counter()
 	family_tool_surface = build_family_tool_surface_for_message(
 		request_id=request_id,
@@ -4127,6 +4634,83 @@ def run_phase4b_entity_drilldown_smoke() -> Dict[str, Any]:
 				"invoice_text": invoice_text,
 				"customer_mode": str((customer_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
 				"customer_text": customer_text,
+			}
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase4b_followup_report_ambiguity_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase 4B Followup Report Ambiguity Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me the statement",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Follow-up report ambiguity smoke failed on initial statement request.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			first_question = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "which financial view would you like to see" not in first_question.lower():
+				raise RuntimeError("Follow-up report ambiguity smoke failed: initial statement request did not clarify report choice.")
+
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Balance Sheet",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Follow-up report ambiguity smoke failed on Balance Sheet selection.")
+
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me the management report",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Follow-up report ambiguity smoke failed on ambiguous report follow-up.")
+			if str((payload or {}).get("mode") or "").strip() != "clarification":
+				raise RuntimeError("Follow-up report ambiguity smoke failed: ambiguous follow-up did not return clarification mode.")
+			if str(((payload or {}).get("agent_meta") or {}).get("mode") or "").strip() != "followup_report_ambiguity":
+				raise RuntimeError("Follow-up report ambiguity smoke failed: clarification was not attributed to the follow-up ambiguity lane.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			final_question = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "which financial view would you like to see" not in final_question.lower():
+				raise RuntimeError("Follow-up report ambiguity smoke failed: ambiguous follow-up did not clarify financial view.")
+			return {
+				"ok": True,
+				"initial_question": first_question,
+				"followup_question": final_question,
+				"followup_mode": str((payload or {}).get("mode") or "").strip(),
 			}
 		finally:
 			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
