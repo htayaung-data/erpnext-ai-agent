@@ -288,6 +288,100 @@ class ClarificationResolutionContract:
 
 
 @dataclass(frozen=True)
+class ERPBusinessReasoningActivationContract:
+	request_id: str
+	session_id: str
+	grounded_context_available: bool
+	grounded_source_request_id: str
+	grounded_source_kind: str
+	grounded_source_name: str
+	grounded_family_id: str
+	grounded_artifact_type: str
+	grounded_source_reports: List[str]
+	grounded_capability_id: str
+	grounded_semantic_tags: List[str]
+	grounding_summary: Dict[str, Any]
+	recommendation_allowed: bool
+	recommendation_policy_basis: List[str]
+	allowed_reasoning_types: List[str]
+	activation_state: str
+	route_target: str
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_erp_business_reasoning_activation_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"grounded_context_available": bool(self.grounded_context_available),
+			"grounded_source_request_id": self.grounded_source_request_id,
+			"grounded_source_kind": self.grounded_source_kind,
+			"grounded_source_name": self.grounded_source_name,
+			"grounded_family_id": self.grounded_family_id,
+			"grounded_artifact_type": self.grounded_artifact_type,
+			"grounded_source_reports": list(self.grounded_source_reports),
+			"grounded_capability_id": self.grounded_capability_id,
+			"grounded_semantic_tags": list(self.grounded_semantic_tags),
+			"grounding_summary": dict(self.grounding_summary),
+			"recommendation_allowed": bool(self.recommendation_allowed),
+			"recommendation_policy_basis": list(self.recommendation_policy_basis),
+			"allowed_reasoning_types": list(self.allowed_reasoning_types),
+			"activation_state": self.activation_state,
+			"route_target": self.route_target,
+			"reason": self.reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ERPBusinessReasoningContract:
+	request_id: str
+	session_id: str
+	reasoning_type: str
+	grounding_source_request_id: str
+	grounding_source_kind: str
+	grounding_family_id: str
+	grounding_artifact_type: str
+	grounding_source_reports: List[str]
+	grounding_sufficient: bool
+	grounding_gaps: List[str]
+	bounded_domain: str
+	reasoning_scope: str
+	supported_claims: List[Dict[str, Any]]
+	recommendations: List[Dict[str, Any]]
+	speculation_flags: List[str]
+	allowed_to_answer: bool
+	reason: str
+	confidence: float
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_erp_business_reasoning_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"reasoning_type": self.reasoning_type,
+			"grounding_source_request_id": self.grounding_source_request_id,
+			"grounding_source_kind": self.grounding_source_kind,
+			"grounding_family_id": self.grounding_family_id,
+			"grounding_artifact_type": self.grounding_artifact_type,
+			"grounding_source_reports": list(self.grounding_source_reports),
+			"grounding_sufficient": bool(self.grounding_sufficient),
+			"grounding_gaps": list(self.grounding_gaps),
+			"bounded_domain": self.bounded_domain,
+			"reasoning_scope": self.reasoning_scope,
+			"supported_claims": [dict(item) for item in self.supported_claims if isinstance(item, dict)],
+			"recommendations": [dict(item) for item in self.recommendations if isinstance(item, dict)],
+			"speculation_flags": list(self.speculation_flags),
+			"allowed_to_answer": bool(self.allowed_to_answer),
+			"reason": self.reason,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class FreshQueryInterpretationContract:
 	request_id: str
 	session_id: str
@@ -1498,6 +1592,92 @@ def build_clarification_response_resolution_contract(
 		matched_by=matched_by,
 		confidence=1.0 if str(decision or "").strip() == "resolved_option" else 0.0,
 		reason=reason,
+	)
+
+
+def build_erp_business_reasoning_activation_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	grounded_context_available: bool,
+	grounded_source_request_id: str = "",
+	grounded_source_kind: str = "",
+	grounded_source_name: str = "",
+	grounded_family_id: str = "",
+	grounded_artifact_type: str = "",
+	grounded_source_reports: List[str] | None = None,
+	grounded_capability_id: str = "",
+	grounded_semantic_tags: List[str] | None = None,
+	grounding_summary: Dict[str, Any] | None = None,
+	recommendation_allowed: bool = False,
+	recommendation_policy_basis: List[str] | None = None,
+	allowed_reasoning_types: List[str] | None = None,
+	activation_state: str = "not_eligible",
+	route_target: str = "artifact_lane",
+	reason: str = "",
+) -> ERPBusinessReasoningActivationContract:
+	return ERPBusinessReasoningActivationContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		grounded_context_available=bool(grounded_context_available),
+		grounded_source_request_id=str(grounded_source_request_id or "").strip(),
+		grounded_source_kind=str(grounded_source_kind or "").strip(),
+		grounded_source_name=str(grounded_source_name or "").strip(),
+		grounded_family_id=str(grounded_family_id or "").strip(),
+		grounded_artifact_type=str(grounded_artifact_type or "").strip(),
+		grounded_source_reports=[str(x or "").strip() for x in (grounded_source_reports or []) if str(x or "").strip()],
+		grounded_capability_id=str(grounded_capability_id or "").strip(),
+		grounded_semantic_tags=[str(x or "").strip() for x in (grounded_semantic_tags or []) if str(x or "").strip()],
+		grounding_summary=dict(grounding_summary or {}),
+		recommendation_allowed=bool(recommendation_allowed),
+		recommendation_policy_basis=[str(x or "").strip() for x in (recommendation_policy_basis or []) if str(x or "").strip()],
+		allowed_reasoning_types=[str(x or "").strip() for x in (allowed_reasoning_types or []) if str(x or "").strip()],
+		activation_state=str(activation_state or "not_eligible").strip() or "not_eligible",
+		route_target=str(route_target or "artifact_lane").strip() or "artifact_lane",
+		reason=str(reason or "").strip(),
+	)
+
+
+def build_erp_business_reasoning_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	reasoning_type: str,
+	grounding_source_request_id: str = "",
+	grounding_source_kind: str = "",
+	grounding_family_id: str = "",
+	grounding_artifact_type: str = "",
+	grounding_source_reports: List[str] | None = None,
+	grounding_sufficient: bool = False,
+	grounding_gaps: List[str] | None = None,
+	bounded_domain: str = "erp_business",
+	reasoning_scope: str = "",
+	supported_claims: List[Dict[str, Any]] | None = None,
+	recommendations: List[Dict[str, Any]] | None = None,
+	speculation_flags: List[str] | None = None,
+	allowed_to_answer: bool = False,
+	reason: str = "",
+	confidence: float = 0.0,
+) -> ERPBusinessReasoningContract:
+	return ERPBusinessReasoningContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		reasoning_type=str(reasoning_type or "").strip(),
+		grounding_source_request_id=str(grounding_source_request_id or "").strip(),
+		grounding_source_kind=str(grounding_source_kind or "").strip(),
+		grounding_family_id=str(grounding_family_id or "").strip(),
+		grounding_artifact_type=str(grounding_artifact_type or "").strip(),
+		grounding_source_reports=[str(x or "").strip() for x in (grounding_source_reports or []) if str(x or "").strip()],
+		grounding_sufficient=bool(grounding_sufficient),
+		grounding_gaps=[str(x or "").strip() for x in (grounding_gaps or []) if str(x or "").strip()],
+		bounded_domain=str(bounded_domain or "erp_business").strip() or "erp_business",
+		reasoning_scope=str(reasoning_scope or "").strip(),
+		supported_claims=[dict(item) for item in (supported_claims or []) if isinstance(item, dict)],
+		recommendations=[dict(item) for item in (recommendations or []) if isinstance(item, dict)],
+		speculation_flags=[str(x or "").strip() for x in (speculation_flags or []) if str(x or "").strip()],
+		allowed_to_answer=bool(allowed_to_answer),
+		reason=str(reason or "").strip(),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
 	)
 
 
@@ -3054,8 +3234,16 @@ def build_grounded_turn_context(
 	if not isinstance(filters, dict):
 		filters = {}
 
+	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
+	artifact_type = str(artifact.get("artifact_type") or artifact.get("type") or "").strip()
+	artifact_source_name = str(artifact.get("source_name") or artifact.get("title") or "").strip()
+	is_composite_artifact = artifact_type == "normalized_composite_family_artifact"
 	source_kind = "report" if tool_name == "erp_fac-generate_report" else "tool"
 	source_name = str(tool_args.get("report_name") or tool_name or "").strip()
+	if is_composite_artifact:
+		source_kind = "composite_artifact"
+		if artifact_source_name:
+			source_name = artifact_source_name
 	date_range = {
 		"from_date": filters.get("from_date"),
 		"to_date": filters.get("to_date"),
@@ -3087,7 +3275,6 @@ def build_grounded_turn_context(
 		if header_text and header_text not in metrics:
 			metrics.append(header_text)
 	trace_request_id = str(runtime_payload.get("request_id") or request_id).strip()
-	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
 	artifact_dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	if isinstance(artifact_dimensions, dict):
 		for key in (

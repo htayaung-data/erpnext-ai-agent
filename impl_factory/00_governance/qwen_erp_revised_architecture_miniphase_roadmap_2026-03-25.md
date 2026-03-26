@@ -476,10 +476,6 @@ Carry-forward obligations from Mini-phase 5.5:
 
 1. Mini-phase 6.1:
    - promote callable hardening smokes into a more formal CI-grade regression layer
-   - add observability severity levels such as:
-     - `info`
-     - `warning`
-     - `error`
    - add explicit regression protection for previously fixed:
      - pending clarification fresh-query override
      - stale-context gratitude/closure leakage
@@ -495,6 +491,118 @@ This phase should also absorb:
    - `give me suggestions in details`
    - `explain that recommendation more`
 3. these are not front-door failures and should not be solved by Mini-phase 5 routing logic
+
+Detailed design:
+
+1. Mini-phase 6 is a separate ERP business reasoning lane, not a report family and not a front-door extension
+2. it exists for:
+   - grounded interpretation
+   - grounded explanation
+   - bounded ERP-domain recommendation framing
+   - recommendation / explanation continuation detail
+3. it must never become:
+   - a hidden general chatbot lane
+   - a fallback for unsupported requests
+   - a silent fresh-data retrieval path
+4. it requires grounded ERP sources such as:
+   - `qwen_grounded_turn_context`
+   - normalized family artifact
+   - composite grounded artifact
+5. it should use two contracts:
+   - `ERPBusinessReasoningActivationContract`
+   - `ERPBusinessReasoningContract`
+6. deterministic authority must remain absolute for:
+   - grounded-context existence
+   - source-artifact ownership
+   - grounding sufficiency
+   - lane precedence
+   - blocked speculation
+7. AI may be used later for:
+   - reasoning activation proposal after deterministic eligibility exists
+   - natural-language explanation rendering
+   - natural-language recommendation rendering within bounded grounded scope
+8. Mini-phase 6 should be implemented in slices:
+   - 6A activation foundation
+   - 6B semantic reasoning activation
+   - 6C reasoning execution contract
+   - 6D recommendation-detail continuation
+9. Mini-phase 6 anti-patterns:
+   - no front-door expansion
+   - no keyword detection of analysis/explain/recommend
+   - no silent fresh-data retrieval from reasoning lane
+   - no recommendation text without deterministic grounding sufficiency
+
+Current progress:
+
+1. 6A through 6D are now implemented, and Phase 6 hardening is materially in place
+2. a dedicated design document now exists at:
+   - `qwen_erp_miniphase6_erp_business_reasoning_design_2026-03-26.md`
+3. code foundation now exists for:
+   - `ERPBusinessReasoningActivationContract`
+   - `ERPBusinessReasoningContract`
+   - deterministic reasoning activation context building
+   - semantic reasoning activation proposal + governed validation
+   - reasoning execution contract + grounded rendering foundation
+   - recommendation-detail continuation compatibility + continuation foundation
+4. the current 6A/6B/6C foundation is implemented in:
+   - `contracts.py`
+   - `reasoning_activation.py`
+   - `semantic_reasoning_activation.py`
+   - `reasoning_execution.py`
+   - runtime semantic reasoning activation endpoint
+   - runtime ERP business reasoning render endpoint
+5. backend probes now pass for:
+   - no-grounding -> `not_eligible`
+   - grounded artifact context -> `eligible`
+   - eligible reasoning activation -> `accepted`
+   - grounded reasoning execution -> `answered`
+   - grounded reasoning continuation -> `answered`
+6. rollout-gated live service routing is now implemented for grounded reasoning turns
+7. live rollout smoke now passes:
+   - grounded artifact first turn
+   - follow-up `what does this mean`
+   - second turn routes to `erp_business_reasoning`
+8. rollout control currently uses:
+   - `qwen_enable_erp_business_reasoning`
+   - `qwen_erp_business_reasoning_rollout_percentage`
+   - `qwen_erp_business_reasoning_rollout_users`
+9. hardening now implemented for Phase 6:
+   - reasoning activation is skipped when clarification is pending
+   - structured Phase 6 observability events now exist with severity levels:
+     - `info`
+     - `warning`
+     - `error`
+   - Phase 6 performance metrics now exist for:
+     - `reasoning_activation_latency`
+     - `reasoning_execution_latency`
+   - callable hardening suite now covers:
+     - live rollout path
+     - no-grounding refusal boundary
+     - front-door gratitude boundary after grounded ERP context
+     - continuation-detail source mismatch guardrail
+     - observability emission
+     - governed recommendation-policy boundary for non-advisory grounded sources
+   - recommendation hardening now includes:
+     - recommendation recognition is separate from recommendation answerability
+     - recommendation allowance comes from governed grounded semantics
+     - transactional/document-style grounded sources may still recognize recommendation-shaped asks, but deterministic policy blocks unsafe recommendation answers
+     - interpretation/explanation outputs are deterministically stripped of recommendations
+     - recommendation objects must cite supported claims via `basis_claim_refs`
+     - blocked non-advisory recommendation asks now remain in the reasoning lane and return a bounded guardrail answer instead of falling through to report behavior
+     - structural artifact refinements now preempt reasoning lane activation, preventing ranking/column/metric corrections from being hijacked by reasoning continuation
+     - continuation-detail answers are now validated for substantive fulfillment so accepted reasoning turns cannot stop at a teaser or dangling lead-in
+     - grounded-turn authority now anchors reasoning activation more strongly than “latest appended artifact,” so fresh grounded sources can reset stale reasoning context structurally
+     - composite grounded artifacts now preserve explicit source identity for reasoning, including request id, source name, and source report set
+     - source-compatible artifact lookup now replaces “latest artifact wins” behavior for reasoning activation
+   - post-restart live rollout smoke on the running backend now passes
+10. Phase 6 is now closed:
+   - the earlier closure-review findings were addressed structurally
+   - live backend smokes pass after the final source-authority hardening
+   - manual browser confirmation passed on the previously failing AR/AP reasoning flow and the transactional safe-refusal boundary
+11. Remaining carry-forward is operational rather than architectural:
+   - CI-grade regression promotion is still pending
+   - broader adversarial/runtime-failure coverage is still pending
+   - broader reasoning coverage beyond the current grounded path still needs hardening
 
 ## Mini-phase 7
 

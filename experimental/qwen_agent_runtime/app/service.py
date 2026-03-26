@@ -13,7 +13,15 @@ from app.schemas import (
 	FreshQueryInterpretResponse,
 	FollowUpInterpretRequest,
 	FollowUpInterpretResponse,
+	ReasoningActivationInterpretRequest,
+	ReasoningActivationInterpretResponse,
+	ReasoningRenderRequest,
+	ReasoningRenderResponse,
 	ToolTraceItem,
+)
+from app.erp_business_reasoning_engine import (
+	ERPBusinessReasoningEngineError,
+	run_erp_business_reasoning_engine,
 )
 from app.semantic_frontdoor_engine import (
 	SemanticFrontDoorEngineError,
@@ -30,6 +38,10 @@ from app.semantic_fresh_query_engine import (
 from app.semantic_followup_engine import (
 	SemanticFollowUpEngineError,
 	run_semantic_followup_engine,
+)
+from app.semantic_reasoning_activation_engine import (
+	SemanticReasoningActivationEngineError,
+	run_semantic_reasoning_activation_engine,
 )
 from app.settings import Settings
 from app.validation import summarize_artifact_narrative_validation, summarize_read_validation
@@ -222,4 +234,48 @@ def handle_fresh_query_interpretation(
 			interpretation=None,
 			agent_meta={"engine": "semantic_fresh_query"},
 			error=f"Unexpected semantic fresh-query error: {exc}",
+		)
+
+
+def handle_reasoning_activation_interpretation(
+	request: ReasoningActivationInterpretRequest,
+	settings: Settings,
+) -> ReasoningActivationInterpretResponse:
+	try:
+		return run_semantic_reasoning_activation_engine(request, settings)
+	except SemanticReasoningActivationEngineError as exc:
+		return ReasoningActivationInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_reasoning_activation"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return ReasoningActivationInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_reasoning_activation"},
+			error=f"Unexpected semantic reasoning activation error: {exc}",
+		)
+
+
+def handle_reasoning_render(
+	request: ReasoningRenderRequest,
+	settings: Settings,
+) -> ReasoningRenderResponse:
+	try:
+		return run_erp_business_reasoning_engine(request, settings)
+	except ERPBusinessReasoningEngineError as exc:
+		return ReasoningRenderResponse(
+			ok=False,
+			payload=None,
+			agent_meta={"engine": "erp_business_reasoning"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return ReasoningRenderResponse(
+			ok=False,
+			payload=None,
+			agent_meta={"engine": "erp_business_reasoning"},
+			error=f"Unexpected ERP business reasoning error: {exc}",
 		)

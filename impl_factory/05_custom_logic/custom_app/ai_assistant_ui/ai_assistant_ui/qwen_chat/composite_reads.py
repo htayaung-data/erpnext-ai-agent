@@ -403,16 +403,22 @@ def _execute_composite_step(
 
 def _working_capital_health_summary(
 	*,
+	request_id: str,
 	message: str,
 	plan_id: str,
 	step_results: List[CompositeStepExecution],
 ) -> Dict[str, Any]:
 	receivable_artifact = {}
 	payable_artifact = {}
+	source_reports: List[str] = []
 	for item in step_results:
 		artifact = item.artifact_payload if isinstance(item.artifact_payload, dict) else {}
 		dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 		aging_type = str(dimensions.get("aging_type") or "").strip()
+		for report_name in artifact.get("source_reports") or []:
+			clean_report_name = str(report_name or "").strip()
+			if clean_report_name and clean_report_name not in source_reports:
+				source_reports.append(clean_report_name)
 		if aging_type == "accounts_receivable":
 			receivable_artifact = artifact
 		if aging_type == "accounts_payable":
@@ -476,9 +482,13 @@ def _working_capital_health_summary(
 	return {
 		"type": "qwen_composite_family_artifact",
 		"contract_version": "1.0",
+		"request_id": request_id,
 		"plan_id": plan_id,
 		"family_id": "composite_working_capital_health",
 		"artifact_type": "normalized_composite_family_artifact",
+		"capability_id": f"composite::{plan_id}",
+		"source_name": "AR / AP Working Capital Health",
+		"source_reports": source_reports,
 		"period": {"to_date": report_date},
 		"dimensions": {"currency": currency},
 		"metrics": {
@@ -642,6 +652,7 @@ def execute_composite_read_plan(
 	runtime_execution_latency_ms = int((time.perf_counter() - runtime_started) * 1000)
 
 	composite_artifact = _working_capital_health_summary(
+		request_id=request_id,
 		message=message,
 		plan_id=str(plan_contract.plan_id or "").strip(),
 		step_results=step_results,

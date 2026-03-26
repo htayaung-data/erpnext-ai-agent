@@ -78,8 +78,21 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	interpret_front_door_semantically,
 	render_front_door_answer,
 )
-from ai_assistant_ui.qwen_chat.observability import record_phase55_observability_event
+from ai_assistant_ui.qwen_chat.observability import (
+	record_phase55_observability_event,
+	record_phase6_observability_event,
+	record_phase6_performance_metric,
+)
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
+from ai_assistant_ui.qwen_chat.reasoning_activation import (
+	build_reasoning_activation_contract,
+	run_phase6a_recommendation_policy_probe,
+)
+from ai_assistant_ui.qwen_chat.reasoning_execution import (
+	build_reasoning_boundary_answer,
+	execute_erp_business_reasoning,
+	run_phase6d_reasoning_continuation_guardrail_smoke,
+)
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_default_report_name,
 	capability_report_names,
@@ -100,6 +113,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key, get_metric_label
 from ai_assistant_ui.qwen_chat.semantic_interpreter import interpret_followup_semantically
+from ai_assistant_ui.qwen_chat.semantic_reasoning_activation import interpret_reasoning_activation_semantically
 
 QWEN_SESSION_DOCTYPE = "Qwen Chat Session"
 VISIBLE_ROLES = {"user", "assistant"}
@@ -226,6 +240,92 @@ def get_compiled_first_turn_rollout_status(
 		"rollout_percentage": _compiled_first_turn_rollout_percentage(),
 		"allow_users": _compiled_first_turn_rollout_allow_users(),
 		"sample_decision": decision,
+	}
+
+
+def _erp_business_reasoning_rollout_enabled() -> bool:
+	try:
+		return bool((getattr(frappe, "conf", None) or {}).get("qwen_enable_erp_business_reasoning", False))
+	except Exception:
+		return False
+
+
+def _erp_business_reasoning_rollout_percentage() -> float:
+	raw = _conf_get("qwen_erp_business_reasoning_rollout_percentage", None)
+	if raw is None:
+		return 100.0
+	if isinstance(raw, str) and not str(raw).strip():
+		return 100.0
+	try:
+		return max(0.0, min(100.0, float(raw)))
+	except Exception:
+		return 100.0
+
+
+def _erp_business_reasoning_rollout_allow_users() -> List[str]:
+	return list(dict.fromkeys(_conf_string_list("qwen_erp_business_reasoning_rollout_users")))
+
+
+def _erp_business_reasoning_rollout_bucket(*, session_name: str, user: str, site_name: str) -> float:
+	seed = f"reasoning::{str(site_name or '').strip()}::{str(user or '').strip()}::{str(session_name or '').strip()}"
+	digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+	bucket_basis_points = int(digest[:8], 16) % 10_000
+	return round(bucket_basis_points / 100.0, 2)
+
+
+def _erp_business_reasoning_rollout_decision(
+	*,
+	session_name: str,
+	user: str,
+	site_name: str,
+) -> Dict[str, Any]:
+	master_enabled = _erp_business_reasoning_rollout_enabled()
+	rollout_percentage = _erp_business_reasoning_rollout_percentage()
+	allow_users = _erp_business_reasoning_rollout_allow_users()
+	canonical_user = str(user or "").strip()
+	bucket = _erp_business_reasoning_rollout_bucket(
+		session_name=session_name,
+		user=user,
+		site_name=site_name,
+	)
+	if not master_enabled:
+		return {
+			"enabled": False,
+			"reason": "master_disabled",
+			"rollout_percentage": rollout_percentage,
+			"rollout_bucket": bucket,
+			"allow_users": allow_users,
+		}
+	if canonical_user and canonical_user in allow_users:
+		return {
+			"enabled": True,
+			"reason": "allow_user",
+			"rollout_percentage": rollout_percentage,
+			"rollout_bucket": bucket,
+			"allow_users": allow_users,
+		}
+	if rollout_percentage <= 0.0:
+		return {
+			"enabled": False,
+			"reason": "percentage_zero",
+			"rollout_percentage": rollout_percentage,
+			"rollout_bucket": bucket,
+			"allow_users": allow_users,
+		}
+	if rollout_percentage >= 100.0:
+		return {
+			"enabled": True,
+			"reason": "percentage_full",
+			"rollout_percentage": rollout_percentage,
+			"rollout_bucket": bucket,
+			"allow_users": allow_users,
+		}
+	return {
+		"enabled": bucket < rollout_percentage,
+		"reason": "percentage_canary",
+		"rollout_percentage": rollout_percentage,
+		"rollout_bucket": bucket,
+		"allow_users": allow_users,
 	}
 
 
@@ -1720,15 +1820,156 @@ def _latest_grounded_turn_contract(session_doc) -> Dict[str, Any]:
 	return {}
 
 
-def _latest_normalized_family_artifact(session_doc) -> Dict[str, Any]:
+def _artifact_compatible_with_grounded_turn(*, artifact_payload: Dict[str, Any], grounded_turn: Dict[str, Any]) -> bool:
+	artifact = dict(artifact_payload or {})
+	grounded = dict(grounded_turn or {})
+	if not artifact or not grounded:
+		return False
+	grounded_artifact_type = str(grounded.get("artifact_type") or "").strip()
+	artifact_contract_type = str(artifact.get("type") or "").strip().lower()
+	artifact_type = str(artifact.get("artifact_type") or artifact.get("type") or "").strip()
+	if grounded_artifact_type == "normalized_composite_family_artifact":
+		if artifact_contract_type != "qwen_composite_family_artifact" and artifact_type != "normalized_composite_family_artifact":
+			return False
+	grounded_request_id = str(grounded.get("trace_request_id") or grounded.get("request_id") or "").strip()
+	artifact_request_id = str(artifact.get("request_id") or "").strip()
+	if grounded_request_id and artifact_request_id:
+		return grounded_request_id == artifact_request_id
+	grounded_family_id = str(grounded.get("artifact_family_id") or "").strip()
+	artifact_family_id = str(artifact.get("family_id") or "").strip()
+	if grounded_family_id and artifact_family_id and grounded_family_id != artifact_family_id:
+		return False
+	grounded_reports = {
+		str(value or "").strip()
+		for value in (grounded.get("artifact_source_reports") or [])
+		if str(value or "").strip()
+	}
+	artifact_reports = {
+		str(value or "").strip()
+		for value in (artifact.get("source_reports") or [])
+		if str(value or "").strip()
+	}
+	if grounded_reports and artifact_reports:
+		return grounded_reports == artifact_reports
+	return bool(grounded_family_id and artifact_family_id and grounded_family_id == artifact_family_id)
+
+
+def _latest_normalized_family_artifact(session_doc, *, grounded_turn: Dict[str, Any] | None = None) -> Dict[str, Any]:
+	candidates: List[Dict[str, Any]] = []
 	for m in reversed(session_doc.get("messages") or []):
 		if str(m.role or "").strip().lower() != "tool":
 			continue
 		payload = _parse_payload(str(m.content or ""))
 		payload_type = str(payload.get("type") or "").strip().lower()
 		if payload_type in {"qwen_normalized_family_artifact_contract", "qwen_composite_family_artifact", "qwen_entity_detail_artifact"}:
+			candidates.append(payload)
+	if not candidates:
+		return {}
+	grounded = dict(grounded_turn or {})
+	if grounded:
+		for payload in candidates:
+			if _artifact_compatible_with_grounded_turn(artifact_payload=payload, grounded_turn=grounded):
+				return payload
+	return candidates[0]
+
+
+def _latest_reasoning_contract(session_doc) -> Dict[str, Any]:
+	for m in reversed(session_doc.get("messages") or []):
+		if str(m.role or "").strip().lower() != "tool":
+			continue
+		payload = _parse_payload(str(m.content or ""))
+		if str(payload.get("type") or "").strip().lower() == "qwen_erp_business_reasoning_contract":
 			return payload
 	return {}
+
+
+def _source_compatible_reasoning_contract(
+	*,
+	grounded_turn: Dict[str, Any],
+	reasoning_contract: Dict[str, Any],
+) -> Dict[str, Any]:
+	grounded = dict(grounded_turn or {})
+	contract = dict(reasoning_contract or {})
+	if not grounded or not contract:
+		return {}
+	grounded_source_request_id = str(grounded.get("trace_request_id") or grounded.get("request_id") or "").strip()
+	contract_source_request_id = str(contract.get("grounding_source_request_id") or "").strip()
+	if grounded_source_request_id and contract_source_request_id and grounded_source_request_id != contract_source_request_id:
+		return {}
+	grounded_family_id = str(grounded.get("artifact_family_id") or "").strip()
+	contract_family_id = str(contract.get("grounding_family_id") or "").strip()
+	if grounded_family_id and contract_family_id and grounded_family_id != contract_family_id:
+		return {}
+	grounded_reports = {
+		str(value or "").strip()
+		for value in (grounded.get("artifact_source_reports") or [])
+		if str(value or "").strip()
+	}
+	contract_reports = {
+		str(value or "").strip()
+		for value in (contract.get("grounding_source_reports") or [])
+		if str(value or "").strip()
+	}
+	if grounded_reports and contract_reports and grounded_reports != contract_reports:
+		return {}
+	return contract
+
+
+def _recent_messages_for_grounded_source(
+	session_doc,
+	*,
+	grounded_turn: Dict[str, Any],
+	limit: int = 10,
+) -> List[Dict[str, str]]:
+	grounded = dict(grounded_turn or {})
+	source_request_id = str(grounded.get("trace_request_id") or grounded.get("request_id") or "").strip()
+	if not source_request_id:
+		return _recent_messages(session_doc, limit=limit)
+	messages = list(session_doc.get("messages") or [])
+	skip_positions = _positions_to_skip_for_runtime_context(session_doc)
+	start_pos = -1
+	for pos, message in enumerate(messages):
+		if str(message.role or "").strip().lower() != "tool":
+			continue
+		payload = _parse_payload(str(message.content or ""))
+		if str(payload.get("type") or "").strip().lower() != "qwen_grounded_turn_context":
+			continue
+		payload_request_id = str(payload.get("trace_request_id") or payload.get("request_id") or "").strip()
+		if payload_request_id == source_request_id:
+			start_pos = pos
+	out: List[Dict[str, str]] = []
+	for pos in range(len(messages) - 1, start_pos, -1):
+		if pos in skip_positions:
+			continue
+		message = messages[pos]
+		role = str(message.role or "").strip().lower()
+		if role not in VISIBLE_ROLES:
+			continue
+		content = _visible_message_text(role, str(message.content or ""))
+		if not content:
+			continue
+		out.append({"role": role, "content": content[:2000]})
+		if len(out) >= max(1, int(limit)):
+			break
+	return list(reversed(out))
+
+
+def _phase6_activation_event_level(status: str) -> str:
+	value = str(status or "").strip().lower()
+	if value in {"runtime_error", "invalid_payload"}:
+		return "error"
+	if value in {"low_confidence"}:
+		return "warning"
+	return "info"
+
+
+def _phase6_execution_event_level(status: str) -> str:
+	value = str(status or "").strip().lower()
+	if value in {"runtime_error", "invalid_payload"}:
+		return "error"
+	if value in {"insufficient_grounding"}:
+		return "warning"
+	return "info"
 
 
 def _format_million_value(raw: str) -> str:
@@ -2240,8 +2481,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	raw_msg = msg
 	recent_frontdoor_messages = _recent_messages(session_doc, limit=6)
 	latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
-	latest_family_artifact = _latest_normalized_family_artifact(session_doc)
+	latest_family_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=latest_grounded_turn)
 	latest_assistant_payload = _latest_assistant_payload(session_doc)
+	latest_reasoning_contract = _source_compatible_reasoning_contract(
+		grounded_turn=latest_grounded_turn,
+		reasoning_contract=_latest_reasoning_contract(session_doc),
+	)
 	clarification_state = get_clarification_state(session_doc)
 	pending_clarification_signal = (
 		dict(clarification_state.pending_signal)
@@ -2258,6 +2503,84 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		site_name=site_name,
 		raw_message=msg,
 	)
+	reasoning_rollout = _erp_business_reasoning_rollout_decision(
+		session_name=session_name,
+		user=user,
+		site_name=site_name,
+	)
+	provisional_response_policy_contract = build_response_policy_contract(
+		interaction_contract=interaction_contract,
+	)
+	pre_frontdoor_reasoning_activation_contract = None
+	pre_frontdoor_reasoning_semantic_result = None
+	pre_frontdoor_reasoning_activation_latency_ms = 0
+	reasoning_recent_messages = _recent_messages_for_grounded_source(
+		session_doc,
+		grounded_turn=latest_grounded_turn,
+		limit=10,
+	)
+	if bool(reasoning_rollout.get("enabled")) and latest_grounded_turn_available and not pending_clarification_signal:
+		pre_frontdoor_reasoning_activation_contract = build_reasoning_activation_contract(
+			request_id=request_id,
+			session_id=session_name,
+			message=msg,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_family_artifact=latest_family_artifact,
+			latest_assistant_payload=latest_assistant_payload,
+			response_policy_contract=provisional_response_policy_contract.to_payload(),
+		)
+		activation_started_at = time.perf_counter()
+		pre_frontdoor_reasoning_semantic_result = interpret_reasoning_activation_semantically(
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=msg,
+			recent_messages=reasoning_recent_messages,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_family_artifact=latest_family_artifact,
+			latest_assistant_payload=latest_assistant_payload,
+			activation_contract=pre_frontdoor_reasoning_activation_contract.to_payload(),
+			prior_reasoning_contract=latest_reasoning_contract,
+		)
+		pre_frontdoor_reasoning_activation_latency_ms = int(max(0, round((time.perf_counter() - activation_started_at) * 1000)))
+		_append_tool_payload(
+			session_doc,
+			record_phase6_observability_event(
+				request_id=request_id,
+				session_id=session_name,
+				event_family="reasoning_activation",
+				event_name=str(pre_frontdoor_reasoning_semantic_result.status or "").strip() or "unknown",
+				event_level=_phase6_activation_event_level(pre_frontdoor_reasoning_semantic_result.status),
+				details={
+					"reasoning_type": str(getattr(getattr(pre_frontdoor_reasoning_semantic_result, "intent", None), "reasoning_type", "") or "").strip(),
+					"confidence": float(getattr(getattr(pre_frontdoor_reasoning_semantic_result, "intent", None), "confidence", 0.0) or 0.0),
+					"confidence_threshold": float(getattr(pre_frontdoor_reasoning_semantic_result, "confidence_threshold", 0.0) or 0.0),
+					"grounded_source_name": str(pre_frontdoor_reasoning_activation_contract.grounded_source_name or "").strip(),
+					"grounded_family_id": str(pre_frontdoor_reasoning_activation_contract.grounded_family_id or "").strip(),
+					"activation_state": str(pre_frontdoor_reasoning_activation_contract.activation_state or "").strip(),
+					"rollout_source": str(reasoning_rollout.get("source") or "").strip(),
+					"latency_ms": pre_frontdoor_reasoning_activation_latency_ms,
+					"validation_error": str(getattr(pre_frontdoor_reasoning_semantic_result, "validation_error", "") or "").strip(),
+					"runtime_error": str(getattr(pre_frontdoor_reasoning_semantic_result, "runtime_error", "") or "").strip(),
+					"stage": "pre_frontdoor",
+				},
+			),
+		)
+		_append_tool_payload(
+			session_doc,
+			record_phase6_performance_metric(
+				request_id=request_id,
+				session_id=session_name,
+				metric_name="reasoning_activation_latency",
+				metric_value=float(pre_frontdoor_reasoning_activation_latency_ms),
+				metric_unit="ms",
+				details={
+					"stage": "pre_frontdoor",
+					"status": str(pre_frontdoor_reasoning_semantic_result.status or "").strip(),
+				},
+			),
+		)
 	clarification_response_contract = None
 	frontdoor_render_result = None
 	frontdoor_answer = ""
@@ -2287,15 +2610,34 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			grounded_context_available=latest_grounded_turn_available,
 		)
 	else:
-		frontdoor_semantic_result = interpret_front_door_semantically(
-			request_id=request_id,
-			session_id=session_name,
-			user_id=user,
-			site_name=site_name,
-			message=msg,
-			recent_messages=recent_frontdoor_messages,
-			grounded_context_available=latest_grounded_turn_available,
-		)
+		if (
+			pre_frontdoor_reasoning_semantic_result is not None
+			and str(pre_frontdoor_reasoning_semantic_result.status or "").strip() == "accepted"
+			and getattr(pre_frontdoor_reasoning_semantic_result, "intent", None) is not None
+		):
+			reasoning_intent = pre_frontdoor_reasoning_semantic_result.intent
+			frontdoor_semantic_result = SemanticFrontDoorResult(
+				status="guardrailed_to_route_onward",
+				intent=SemanticFrontDoorIntent(
+					intent_class="route_onward",
+					confidence=max(0.95, float(getattr(reasoning_intent, "confidence", 0.0) or 0.0)),
+					reason=(
+						f"Grounded ERP business reasoning activation accepted the turn as "
+						f"`{str(getattr(reasoning_intent, 'reasoning_type', '') or '').strip()}`, so front door must route onward."
+					),
+				),
+				confidence_threshold=1.0,
+			)
+		else:
+			frontdoor_semantic_result = interpret_front_door_semantically(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=msg,
+				recent_messages=recent_frontdoor_messages,
+				grounded_context_available=latest_grounded_turn_available,
+			)
 		frontdoor_contract = build_front_door_intent_gate_contract_from_semantic_result(
 			request_id=request_id,
 			semantic_result=frontdoor_semantic_result,
@@ -2570,12 +2912,277 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 					language=interaction_contract.detected_language,
 					grounded_turn=latest_grounded_turn,
 				)
+		)
+	pre_reasoning_followup_resolution = None
+	pre_reasoning_requested_modes: List[str] = []
+	reasoning_preempted_by_artifact_refinement = False
+	if latest_grounded_turn_available and not bool(context_isolation.force_new_query) and entity_drilldown is None:
+		pre_reasoning_followup_resolution = build_followup_resolution(
+			request_id=request_id,
+			message=msg,
+			latest_grounded_turn_available=True,
+			latest_grounded_turn=latest_grounded_turn,
+			semantic_intent=None,
+			allow_heuristic_fallback=True,
+			degraded_reason=str(context_isolation.reason or "").strip(),
+		)
+		pre_reasoning_requested_modes = [
+			str(mode or "").strip()
+			for mode in (getattr(pre_reasoning_followup_resolution, "requested_modes", []) or [])
+			if str(mode or "").strip()
+		]
+		reasoning_preempted_by_artifact_refinement = (
+			str(getattr(pre_reasoning_followup_resolution, "mode", "") or "").strip() in {"local_grounded_transform", "capability_requery"}
+			and bool(
+				{
+					"sort_or_limit",
+					"metric_refinement",
+					"column_refinement",
+					"time_scope_restatement",
+					"dimension_breakdown",
+					"grouping_change",
+				}.intersection(pre_reasoning_requested_modes)
 			)
+		)
+	reasoning_display_preferences = _latest_display_preferences(session_doc, pre_reasoning_requested_modes)
 
 	semantic_intent = None
 	allow_heuristic_fallback = True
 	degraded_reason = ""
 	semantic_payload = None
+	if (
+		bool(reasoning_rollout.get("enabled"))
+		and latest_grounded_turn_available
+		and not bool(context_isolation.force_new_query)
+		and entity_drilldown is None
+		and not reasoning_preempted_by_artifact_refinement
+	):
+		reasoning_activation_contract = (
+			pre_frontdoor_reasoning_activation_contract
+			if pre_frontdoor_reasoning_activation_contract is not None
+			else build_reasoning_activation_contract(
+				request_id=request_id,
+				session_id=session_name,
+				message=msg,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				response_policy_contract=provisional_response_policy_contract.to_payload(),
+			)
+		)
+		reasoning_semantic_result = (
+			pre_frontdoor_reasoning_semantic_result
+			if pre_frontdoor_reasoning_semantic_result is not None
+			else interpret_reasoning_activation_semantically(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=msg,
+				recent_messages=reasoning_recent_messages,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				activation_contract=reasoning_activation_contract.to_payload(),
+				prior_reasoning_contract=latest_reasoning_contract,
+			)
+		)
+		if reasoning_semantic_result.status == "accepted" and reasoning_semantic_result.intent is not None:
+			prior_assistant_payload = _latest_assistant_payload(session_doc)
+			reasoning_execution_started_at = time.perf_counter()
+			reasoning_execution = execute_erp_business_reasoning(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				message=msg,
+				recent_messages=reasoning_recent_messages,
+				activation_contract=reasoning_activation_contract.to_payload(),
+				semantic_activation_result=reasoning_semantic_result.to_payload(),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				presentation_preferences={
+					"million": bool(reasoning_display_preferences.get("million")),
+					"bullet": str(getattr(reasoning_semantic_result.intent, "presentation_style", "") or "").strip() == "bullet",
+					"table": str(getattr(reasoning_semantic_result.intent, "presentation_style", "") or "").strip() == "table",
+				},
+				prior_reasoning_contract=latest_reasoning_contract,
+				prior_answer_text=str(prior_assistant_payload.get("text") or "").strip(),
+			)
+			reasoning_execution_latency_ms = int(max(0, round((time.perf_counter() - reasoning_execution_started_at) * 1000)))
+			_append_tool_payload(
+				session_doc,
+				record_phase6_observability_event(
+					request_id=request_id,
+					session_id=session_name,
+					event_family="reasoning_execution",
+					event_name=str(reasoning_execution.status or "").strip() or "unknown",
+					event_level=_phase6_execution_event_level(reasoning_execution.status),
+					details={
+						"reasoning_type": str(getattr(reasoning_semantic_result.intent, "reasoning_type", "") or "").strip(),
+						"grounded_source_name": str(reasoning_activation_contract.grounded_source_name or "").strip(),
+						"grounded_family_id": str(reasoning_activation_contract.grounded_family_id or "").strip(),
+						"latency_ms": reasoning_execution_latency_ms,
+						"validation_error": str(reasoning_execution.validation_error or "").strip(),
+						"runtime_error": str(reasoning_execution.runtime_error or "").strip(),
+						"allowed_to_answer": bool((reasoning_execution.reasoning_contract or {}).get("allowed_to_answer")),
+						"grounding_sufficient": bool((reasoning_execution.reasoning_contract or {}).get("grounding_sufficient")),
+						"grounding_gaps": list((reasoning_execution.reasoning_contract or {}).get("grounding_gaps") or []),
+					},
+				),
+			)
+			_append_tool_payload(
+				session_doc,
+				record_phase6_performance_metric(
+					request_id=request_id,
+					session_id=session_name,
+					metric_name="reasoning_execution_latency",
+					metric_value=float(reasoning_execution_latency_ms),
+					metric_unit="ms",
+					details={
+						"status": str(reasoning_execution.status or "").strip(),
+						"reasoning_type": str(getattr(reasoning_semantic_result.intent, "reasoning_type", "") or "").strip(),
+					},
+				),
+			)
+			if reasoning_execution.status == "answered":
+				reasoning_followup_resolution = build_followup_resolution_contract(
+					request_id=request_id,
+					mode="reasoning_lane",
+					depends_on_grounded_turn=True,
+					self_contained=False,
+					latest_grounded_turn_available=True,
+					reason="The current turn was handled by the grounded ERP business reasoning lane.",
+				)
+				execution_path = ExecutionPath(
+					request_id=request_id,
+					path="reasoning_lane",
+					reason="The current turn requested grounded ERP interpretation, explanation, recommendation, or continuation detail.",
+					requires_runtime=True,
+					grounded_required=True,
+				)
+				if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
+					session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
+				_append_message(session_doc, "user", raw_msg)
+				_append_tool_payload(session_doc, interaction_contract.to_payload())
+				_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+				_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+				if clarification_response_contract is not None:
+					_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+				_append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())
+				_append_tool_payload(session_doc, reasoning_activation_contract.to_payload())
+				_append_tool_payload(session_doc, reasoning_semantic_result.to_payload())
+				_append_tool_payload(session_doc, reasoning_execution.to_payload())
+				if reasoning_execution.reasoning_contract:
+					_append_tool_payload(session_doc, reasoning_execution.reasoning_contract)
+				_append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())
+				_append_tool_payload(session_doc, execution_path.to_payload())
+				answer_text = str(reasoning_execution.answer_text or "").strip()
+				_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+				_append_tool_payload(
+					session_doc,
+					build_audit_envelope(
+						interaction_contract=interaction_contract,
+						followup_resolution=reasoning_followup_resolution,
+						execution_path=execution_path,
+						runtime_trace_payload={
+							"agent_meta": dict(reasoning_execution.agent_meta or {}),
+							"runtime_latency_ms": int(
+								max(
+									0,
+									(
+										(reasoning_execution.agent_meta.get("telemetry") or {})
+										if isinstance(reasoning_execution.agent_meta, dict)
+										else {}
+									).get("latency_ms")
+									or 0,
+								)
+							),
+						},
+						grounded_turn_context=latest_grounded_turn,
+						answer_text=answer_text,
+					).to_payload(),
+				)
+				session_doc.save(ignore_permissions=False)
+				return True, {
+					"ok": True,
+					"request_id": request_id,
+					"mode": "erp_business_reasoning",
+					"answer_text": answer_text,
+					"agent_meta": reasoning_execution.agent_meta if isinstance(reasoning_execution.agent_meta, dict) else {},
+				}
+			reasoning_boundary_answer = build_reasoning_boundary_answer(
+				execution_result=reasoning_execution,
+				activation_contract=reasoning_activation_contract.to_payload(),
+				semantic_activation_result=reasoning_semantic_result.to_payload(),
+			)
+			reasoning_followup_resolution = build_followup_resolution_contract(
+				request_id=request_id,
+				mode="reasoning_lane",
+				depends_on_grounded_turn=True,
+				self_contained=False,
+				latest_grounded_turn_available=True,
+				reason="The current turn entered the grounded ERP reasoning lane but was stopped by a deterministic reasoning boundary.",
+			)
+			execution_path = ExecutionPath(
+				request_id=request_id,
+				path="reasoning_lane_guardrail",
+				reason="The current turn requested grounded ERP reasoning, but deterministic execution boundaries prevented an unsafe answer.",
+				requires_runtime=True,
+				grounded_required=True,
+			)
+			if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
+				session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
+			_append_message(session_doc, "user", raw_msg)
+			_append_tool_payload(session_doc, interaction_contract.to_payload())
+			_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+			_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+			if clarification_response_contract is not None:
+				_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+			_append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())
+			_append_tool_payload(session_doc, reasoning_activation_contract.to_payload())
+			_append_tool_payload(session_doc, reasoning_semantic_result.to_payload())
+			_append_tool_payload(session_doc, reasoning_execution.to_payload())
+			if reasoning_execution.reasoning_contract:
+				_append_tool_payload(session_doc, reasoning_execution.reasoning_contract)
+			_append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())
+			_append_tool_payload(session_doc, execution_path.to_payload())
+			_append_message(session_doc, "assistant", _assistant_text_payload(reasoning_boundary_answer))
+			_append_tool_payload(
+				session_doc,
+				build_audit_envelope(
+					interaction_contract=interaction_contract,
+					followup_resolution=reasoning_followup_resolution,
+					execution_path=execution_path,
+					runtime_trace_payload={
+						"agent_meta": dict(reasoning_execution.agent_meta or {}),
+						"runtime_latency_ms": int(
+							max(
+								0,
+								(
+									(reasoning_execution.agent_meta.get("telemetry") or {})
+									if isinstance(reasoning_execution.agent_meta, dict)
+									else {}
+								).get("latency_ms")
+								or 0,
+							)
+						),
+					},
+					grounded_turn_context=latest_grounded_turn,
+					answer_text=reasoning_boundary_answer,
+				).to_payload(),
+			)
+			session_doc.save(ignore_permissions=False)
+			return True, {
+				"ok": True,
+				"request_id": request_id,
+				"mode": "erp_business_reasoning",
+				"answer_text": reasoning_boundary_answer,
+				"agent_meta": {
+					"engine": "erp_business_reasoning_guardrail",
+					"status": str(reasoning_execution.status or "").strip(),
+				},
+			}
 	followup_context_available = bool(latest_grounded_turn_available and not bool(context_isolation.force_new_query) and entity_drilldown is None)
 	if followup_context_available and latest_grounded_turn:
 		semantic_result = interpret_followup_semantically(
@@ -4305,6 +4912,17 @@ def _latest_tool_payload_by_type(tool_payloads: List[Dict[str, Any]], payload_ty
 	return {}
 
 
+def _session_tool_payloads(session_doc) -> List[Dict[str, Any]]:
+	out: List[Dict[str, Any]] = []
+	for row in session_doc.get("messages") or []:
+		if str(row.role or "").strip().lower() != "tool":
+			continue
+		payload = _parse_payload(str(row.content or ""))
+		if payload:
+			out.append(payload)
+	return out
+
+
 def _run_family_evaluation_case(*, case: Dict[str, Any], user: str = "Administrator") -> Dict[str, Any]:
 	message = str(case.get("message") or "").strip()
 	case_id = str(case.get("case_id") or "").strip()
@@ -5444,6 +6062,49 @@ def _run_phase55_smoke_session(title: str, runner: Callable[[Any], Dict[str, Any
 					pass
 
 
+def _run_phase6_smoke_session(title: str, runner: Callable[[Any], Dict[str, Any]]) -> Dict[str, Any]:
+	compiled_flag_key = "qwen_enable_compiled_first_turn"
+	compiled_percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	compiled_users_key = "qwen_compiled_first_turn_rollout_users"
+	reasoning_flag_key = "qwen_enable_erp_business_reasoning"
+	reasoning_percent_key = "qwen_erp_business_reasoning_rollout_percentage"
+	reasoning_users_key = "qwen_erp_business_reasoning_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	keys = [
+		compiled_flag_key,
+		compiled_percent_key,
+		compiled_users_key,
+		reasoning_flag_key,
+		reasoning_percent_key,
+		reasoning_users_key,
+	]
+	originals = {key: conf.get(key) for key in keys}
+	presence = {key: key in conf for key in keys}
+	try:
+		conf[compiled_flag_key] = True
+		conf[compiled_percent_key] = 0
+		conf[compiled_users_key] = ["Administrator"]
+		conf[reasoning_flag_key] = True
+		conf[reasoning_percent_key] = 0
+		conf[reasoning_users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = str(title or "Phase 6 Smoke").strip() or "Phase 6 Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			return runner(doc)
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
 def run_phase55_clarification_attempt_smoke() -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
 		handle_qwen_user_message(
@@ -5715,3 +6376,521 @@ def run_phase55_observability_smoke() -> Dict[str, Any]:
 		}
 
 	return _run_phase55_smoke_session("Phase 5.5 Observability Smoke", _runner)
+
+
+def run_phase6_reasoning_live_rollout_smoke() -> Dict[str, Any]:
+	flag_key = "qwen_enable_erp_business_reasoning"
+	percent_key = "qwen_erp_business_reasoning_rollout_percentage"
+	users_key = "qwen_erp_business_reasoning_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+
+		def _runner(doc) -> Dict[str, Any]:
+			ok, first_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me AR insight",
+				user="Administrator",
+			)
+			if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			}:
+				raise RuntimeError("Phase 6 live reasoning rollout smoke failed: first turn did not produce grounded ERP output.")
+
+			ok, second_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what does this mean",
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads: List[Dict[str, Any]] = []
+			for row in session_doc.get("messages") or []:
+				if str(row.role or "").strip().lower() != "tool":
+					continue
+				payload_obj = _parse_payload(str(row.content or ""))
+				if payload_obj:
+					tool_payloads.append(payload_obj)
+			if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+				raise RuntimeError(
+					f"Phase 6 live reasoning rollout smoke failed: second payload was {second_payload!r}, tool types were {[item.get('type') for item in tool_payloads]!r}."
+				)
+			activation = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_activation_contract")
+			reasoning_contract = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract")
+			execution = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_execution")
+			if not activation or not reasoning_contract or not execution:
+				raise RuntimeError("Phase 6 live reasoning rollout smoke failed: reasoning audit payloads were not persisted.")
+			return {
+				"ok": True,
+				"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+				"second_mode": str((second_payload or {}).get("mode") or "").strip(),
+				"reasoning_type": str(reasoning_contract.get("reasoning_type") or "").strip(),
+				"answer_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+			}
+
+		return _run_phase55_smoke_session("Phase 6 Live Reasoning Rollout Smoke", _runner)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase6_reasoning_without_grounding_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 reasoning-without-grounding smoke failed: request did not complete.")
+		if str((payload or {}).get("mode") or "").strip() == "erp_business_reasoning":
+			raise RuntimeError("Phase 6 reasoning-without-grounding smoke failed: reasoning activated without governed grounding.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		if _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract"):
+			raise RuntimeError("Phase 6 reasoning-without-grounding smoke failed: reasoning contract was persisted without grounding.")
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"answer_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase6_smoke_session("Phase 6 No Grounding Smoke", _runner)
+
+
+def run_phase6_reasoning_frontdoor_boundary_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 6 front-door boundary smoke failed: first turn did not produce grounded ERP output.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Really Great, thank you",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "front_door":
+			raise RuntimeError("Phase 6 front-door boundary smoke failed: gratitude after grounded reasoning context did not remain front door.")
+		if str((((second_payload or {}).get("agent_meta") or {}).get("intent_class") or "")).strip() != "thanks":
+			raise RuntimeError("Phase 6 front-door boundary smoke failed: gratitude turn was not classified as thanks.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_observability_event"
+			and str(item.get("event_family") or "").strip() == "reasoning_activation"
+		]
+		if not events:
+			raise RuntimeError("Phase 6 front-door boundary smoke failed: no reasoning activation observability event was emitted.")
+		latest_event = events[-1]
+		if str(latest_event.get("event_name") or "").strip() == "accepted":
+			raise RuntimeError("Phase 6 front-door boundary smoke failed: gratitude turn was incorrectly accepted as reasoning activation.")
+		if _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract"):
+			raise RuntimeError("Phase 6 front-door boundary smoke failed: reasoning contract was persisted for gratitude turn.")
+		return {
+			"ok": True,
+			"frontdoor_mode": str((second_payload or {}).get("mode") or "").strip(),
+			"intent_class": str((((second_payload or {}).get("agent_meta") or {}).get("intent_class") or "")).strip(),
+			"activation_status": str(latest_event.get("event_name") or "").strip(),
+		}
+
+	return _run_phase6_smoke_session("Phase 6 Front Door Boundary Smoke", _runner)
+
+
+def run_phase6_nonadvisory_recommendation_boundary_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me sales invoice list",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 6 non-advisory boundary smoke failed: first turn did not produce grounded transactional output.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what should management do next",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("Phase 6 non-advisory boundary smoke failed: second turn did not stay within the reasoning guardrail path.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		execution_payload = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_execution")
+		if str(execution_payload.get("status") or "").strip() != "insufficient_grounding":
+			raise RuntimeError(
+				f"Phase 6 non-advisory boundary smoke failed: expected insufficient_grounding, got {execution_payload!r}."
+			)
+		answer_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		if not answer_text:
+			raise RuntimeError("Phase 6 non-advisory boundary smoke failed: missing guardrail answer text.")
+		return {
+			"ok": True,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"execution_status": str(execution_payload.get("status") or "").strip(),
+			"answer_text": answer_text,
+		}
+
+	return _run_phase6_smoke_session("Phase 6 Non-Advisory Recommendation Boundary Smoke", _runner)
+
+
+def run_phase6_artifact_refinement_precedence_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 customers by revenue",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed on initial ranking request.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="I mean top 3",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed on top-3 refinement.")
+		if str((second_payload or {}).get("mode") or "").strip() == "erp_business_reasoning":
+			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed: refinement was incorrectly intercepted by reasoning.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		rendered = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+		blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+		data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+		rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+		if len(rows) != 3:
+			raise RuntimeError(
+				f"Phase 6 artifact-refinement precedence smoke failed: expected 3 rows after refinement, observed {len(rows)}."
+			)
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"second_mode": str((second_payload or {}).get("mode") or "").strip(),
+			"row_count": len(rows),
+		}
+
+	return _run_phase6_smoke_session("Phase 6 Artifact Refinement Precedence Smoke", _runner)
+
+
+def run_phase6_continuation_fulfillment_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR / AP insight",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 continuation-fulfillment smoke failed on AR/AP insight request.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what should management do next",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 continuation-fulfillment smoke failed on management recommendation request.")
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me with bullet style recommendation so that I can understand more easily",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("Phase 6 continuation-fulfillment smoke failed: bullet-style continuation did not stay in reasoning.")
+		answer_text = str((third_payload or {}).get("answer_text") or "").strip()
+		if not answer_text or answer_text.endswith(":"):
+			raise RuntimeError("Phase 6 continuation-fulfillment smoke failed: continuation returned an incomplete teaser.")
+		if "\n-" not in answer_text and "\n•" not in answer_text and not answer_text.startswith("- "):
+			raise RuntimeError("Phase 6 continuation-fulfillment smoke failed: bullet-style continuation did not render bullet content.")
+		return {
+			"ok": True,
+			"initial_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"recommendation_mode": str((second_payload or {}).get("mode") or "").strip(),
+			"continuation_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"answer_text": answer_text,
+		}
+
+	return _run_phase6_smoke_session("Phase 6 Continuation Fulfillment Smoke", _runner)
+
+
+def run_phase6_grounded_source_reset_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, _ = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 customers by revenue",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 grounded-source reset smoke failed on initial revenue ranking.")
+		ok, _ = handle_qwen_user_message(
+			session_name=doc.name,
+			message="I mean top 3",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 grounded-source reset smoke failed on top-3 refinement.")
+		ok, _ = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR / AP insight",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 6 grounded-source reset smoke failed on AR/AP insight.")
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what should management do next",
+			user="Administrator",
+		)
+		if not ok or str((payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("Phase 6 grounded-source reset smoke failed: management follow-up did not stay in reasoning.")
+		answer_text = str((payload or {}).get("answer_text") or "").strip().lower()
+		if "top 3 customers by sales" in answer_text or "39.7% of sales" in answer_text:
+			raise RuntimeError("Phase 6 grounded-source reset smoke failed: stale sales-ranking context leaked into AR/AP reasoning.")
+		tool_payloads = _session_tool_payloads(frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name))
+		reasoning_contract = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract")
+		source_reports = {
+			str(value or "").strip()
+			for value in (reasoning_contract.get("grounding_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if source_reports != {"Accounts Receivable Summary", "Accounts Payable Summary"}:
+			raise RuntimeError(
+				f"Phase 6 grounded-source reset smoke failed: reasoning grounded on unexpected reports {sorted(source_reports)!r}."
+			)
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"answer_text": str((payload or {}).get("answer_text") or "").strip(),
+			"source_reports": sorted(source_reports),
+		}
+
+	return _run_phase6_smoke_session("Phase 6 Grounded Source Reset Smoke", _runner)
+
+
+def run_phase6_observability_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 6 observability smoke failed: first turn did not produce grounded ERP output.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("Phase 6 observability smoke failed: second turn was not handled in the reasoning lane.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_observability_event"
+		]
+		metrics = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_performance_metric"
+		]
+		activation_event = next(
+			(
+				item
+				for item in reversed(events)
+				if str(item.get("event_family") or "").strip() == "reasoning_activation"
+				and str(item.get("event_name") or "").strip() == "accepted"
+			),
+			{},
+		)
+		execution_event = next(
+			(
+				item
+				for item in reversed(events)
+				if str(item.get("event_family") or "").strip() == "reasoning_execution"
+				and str(item.get("event_name") or "").strip() == "answered"
+			),
+			{},
+		)
+		if not activation_event:
+			raise RuntimeError("Phase 6 observability smoke failed: missing reasoning activation accepted event.")
+		if not execution_event:
+			raise RuntimeError("Phase 6 observability smoke failed: missing reasoning execution answered event.")
+		if str(activation_event.get("event_level") or "").strip() != "info":
+			raise RuntimeError("Phase 6 observability smoke failed: activation event level was not info.")
+		if str(execution_event.get("event_level") or "").strip() != "info":
+			raise RuntimeError("Phase 6 observability smoke failed: execution event level was not info.")
+		metric_names = {
+			str(item.get("metric_name") or "").strip()
+			for item in metrics
+			if str(item.get("metric_name") or "").strip()
+		}
+		if "reasoning_activation_latency" not in metric_names or "reasoning_execution_latency" not in metric_names:
+			raise RuntimeError("Phase 6 observability smoke failed: missing reasoning latency metrics.")
+		return {
+			"ok": True,
+			"activation_event": activation_event,
+			"execution_event": execution_event,
+			"metric_names": sorted(metric_names),
+		}
+
+	return _run_phase6_smoke_session("Phase 6 Observability Smoke", _runner)
+
+
+def run_phase6_hardening_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"recommendation_policy": run_phase6a_recommendation_policy_probe(),
+		"live_rollout": run_phase6_reasoning_live_rollout_smoke(),
+		"no_grounding": run_phase6_reasoning_without_grounding_smoke(),
+		"frontdoor_boundary": run_phase6_reasoning_frontdoor_boundary_smoke(),
+		"nonadvisory_boundary": run_phase6_nonadvisory_recommendation_boundary_smoke(),
+		"artifact_refinement_precedence": run_phase6_artifact_refinement_precedence_smoke(),
+		"continuation_fulfillment": run_phase6_continuation_fulfillment_smoke(),
+		"grounded_source_reset": run_phase6_grounded_source_reset_smoke(),
+		"continuation_guardrail": run_phase6d_reasoning_continuation_guardrail_smoke(),
+		"observability": run_phase6_observability_smoke(),
+	}
+
+
+def run_phase6_reasoning_live_debug() -> Dict[str, Any]:
+	flag_key = "qwen_enable_erp_business_reasoning"
+	percent_key = "qwen_erp_business_reasoning_rollout_percentage"
+	users_key = "qwen_erp_business_reasoning_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+
+		def _runner(doc) -> Dict[str, Any]:
+			ok, first_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me AR insight",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase 6 live reasoning debug failed: first turn did not complete.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
+			latest_family_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=latest_grounded_turn)
+			latest_assistant_payload = _latest_assistant_payload(session_doc)
+			request_id = "phase6-debug"
+			interaction_contract = build_interaction_contract(
+				request_id=request_id,
+				session_id=doc.name,
+				user_id="Administrator",
+				site_name=str(getattr(getattr(frappe, "local", None), "site", "") or "").strip(),
+				raw_message="what does this mean",
+			)
+			response_policy_contract = build_response_policy_contract(
+				interaction_contract=interaction_contract,
+			)
+			activation = build_reasoning_activation_contract(
+				request_id=request_id,
+				session_id=doc.name,
+				message="what does this mean",
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				response_policy_contract=response_policy_contract.to_payload(),
+			)
+			semantic = interpret_reasoning_activation_semantically(
+				request_id=request_id,
+				session_id=doc.name,
+				user_id="Administrator",
+				site_name=str(getattr(getattr(frappe, "local", None), "site", "") or "").strip(),
+				message="what does this mean",
+				recent_messages=_recent_messages(session_doc, limit=8),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				activation_contract=activation.to_payload(),
+			)
+			direct_execution = execute_erp_business_reasoning(
+				request_id=request_id,
+				session_id=doc.name,
+				user_id="Administrator",
+				message="what does this mean",
+				recent_messages=_recent_messages(session_doc, limit=10),
+				activation_contract=activation.to_payload(),
+				semantic_activation_result=semantic.to_payload(),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				prior_reasoning_contract=_latest_reasoning_contract(session_doc),
+				prior_answer_text=str(latest_assistant_payload.get("text") or "").strip(),
+			)
+			ok2, second_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what does this mean",
+				user="Administrator",
+			)
+			return {
+				"ok": True,
+				"rollout": _erp_business_reasoning_rollout_decision(
+					session_name=doc.name,
+					user="Administrator",
+					site_name=str(getattr(getattr(frappe, "local", None), "site", "") or "").strip(),
+				),
+				"first_payload": first_payload,
+				"activation": activation.to_payload(),
+				"semantic": semantic.to_payload(),
+				"direct_execution": direct_execution.to_payload(),
+				"second_ok": ok2,
+				"second_payload": second_payload,
+				"latest_assistant_payload": _latest_assistant_payload(frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)),
+			}
+
+		return _run_phase55_smoke_session("Phase 6 Live Reasoning Debug", _runner)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass

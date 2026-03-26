@@ -39,6 +39,9 @@ class Settings:
 	semantic_followup_model: str
 	semantic_followup_max_attempts: int
 	semantic_followup_backoff_ms: int
+	semantic_reasoning_model: str
+	semantic_reasoning_max_attempts: int
+	semantic_reasoning_backoff_ms: int
 	qwen_base_url: str
 	qwen_model: str
 	qwen_api_key: str
@@ -73,6 +76,12 @@ class Settings:
 
 	def semantic_frontdoor_override_active(self) -> bool:
 		return bool(str(self.semantic_frontdoor_model or "").strip())
+
+	def effective_semantic_reasoning_model(self) -> str:
+		return str(self.semantic_reasoning_model or self.qwen_model or "").strip()
+
+	def semantic_reasoning_override_active(self) -> bool:
+		return bool(str(self.semantic_reasoning_model or "").strip())
 
 	def fac_mcp_config(self) -> Dict[str, Any]:
 		if self.fac_mcp_config_json:
@@ -120,6 +129,9 @@ def load_settings() -> Settings:
 		semantic_followup_model=_env("SEMANTIC_FOLLOWUP_MODEL"),
 		semantic_followup_max_attempts=max(1, _env_int("SEMANTIC_FOLLOWUP_MAX_ATTEMPTS", 2)),
 		semantic_followup_backoff_ms=max(50, _env_int("SEMANTIC_FOLLOWUP_BACKOFF_MS", 350)),
+		semantic_reasoning_model=_env("SEMANTIC_REASONING_MODEL"),
+		semantic_reasoning_max_attempts=max(1, _env_int("SEMANTIC_REASONING_MAX_ATTEMPTS", 2)),
+		semantic_reasoning_backoff_ms=max(50, _env_int("SEMANTIC_REASONING_BACKOFF_MS", 350)),
 		qwen_base_url=_env("QWEN_BASE_URL"),
 		qwen_model=_env("QWEN_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507"),
 		qwen_api_key=_env("QWEN_API_KEY", "EMPTY"),

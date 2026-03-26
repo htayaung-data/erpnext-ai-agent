@@ -15,6 +15,10 @@ from app.schemas import (
 	FreshQueryInterpretResponse,
 	FollowUpInterpretRequest,
 	FollowUpInterpretResponse,
+	ReasoningActivationInterpretRequest,
+	ReasoningActivationInterpretResponse,
+	ReasoningRenderRequest,
+	ReasoningRenderResponse,
 )
 from app.service import (
 	handle_chat,
@@ -22,6 +26,8 @@ from app.service import (
 	handle_frontdoor_render,
 	handle_followup_interpretation,
 	handle_fresh_query_interpretation,
+	handle_reasoning_activation_interpretation,
+	handle_reasoning_render,
 )
 from app.settings import Settings, load_settings
 
@@ -49,6 +55,7 @@ def health(settings: Settings = Depends(get_settings)) -> dict[str, object]:
 		settings.semantic_frontdoor_override_active()
 		or settings.semantic_fresh_query_override_active()
 		or settings.semantic_followup_override_active()
+		or settings.semantic_reasoning_override_active()
 	)
 	return {
 		"ok": True,
@@ -60,6 +67,8 @@ def health(settings: Settings = Depends(get_settings)) -> dict[str, object]:
 		"semantic_fresh_query_override_active": settings.semantic_fresh_query_override_active(),
 		"semantic_followup_model": settings.effective_semantic_followup_model(),
 		"semantic_followup_override_active": settings.semantic_followup_override_active(),
+		"semantic_reasoning_model": settings.effective_semantic_reasoning_model(),
+		"semantic_reasoning_override_active": settings.semantic_reasoning_override_active(),
 		"single_model_mode": not multi_model_mode,
 		"multi_model_mode": multi_model_mode,
 		"fac_mcp_configured": bool(settings.fac_mcp_url or settings.fac_mcp_config_json),
@@ -117,3 +126,27 @@ def interpret_fresh_query(
 	settings: Settings = Depends(get_settings),
 ) -> FreshQueryInterpretResponse:
 	return handle_fresh_query_interpretation(request, settings)
+
+
+@app.post(
+	"/interpret-reasoning-activation",
+	response_model=ReasoningActivationInterpretResponse,
+	dependencies=[Depends(_require_auth)],
+)
+def interpret_reasoning_activation(
+	request: ReasoningActivationInterpretRequest,
+	settings: Settings = Depends(get_settings),
+) -> ReasoningActivationInterpretResponse:
+	return handle_reasoning_activation_interpretation(request, settings)
+
+
+@app.post(
+	"/render-erp-business-reasoning",
+	response_model=ReasoningRenderResponse,
+	dependencies=[Depends(_require_auth)],
+)
+def render_erp_business_reasoning(
+	request: ReasoningRenderRequest,
+	settings: Settings = Depends(get_settings),
+) -> ReasoningRenderResponse:
+	return handle_reasoning_render(request, settings)
