@@ -606,11 +606,13 @@ Current progress:
 
 ## Mini-phase 7
 
-After the ERP reasoning lane exists.
+Closed after implementation, runtime verification, and manual closure review.
 
 Goal:
 
 1. add `KnowledgeBoundaryContract`
+2. validate lane suitability after front door / artifact / reasoning decisions
+3. distinguish valid ERP-domain-uncovered asks from truly unsupported requests
 
 It must decide between:
 
@@ -623,7 +625,78 @@ It must decide between:
 
 This phase is what prevents semantic questions from being pushed into the wrong report path.
 
+Design judgment:
+
+1. Mini-phase 7 should be a late-stage validation and arbitration layer, not a first-pass keyword router
+2. it should read prior contract outputs rather than trying to replace:
+   - clarification authority
+   - front door
+   - artifact continuation / execution
+   - ERP reasoning activation / execution
+3. its key business value is the explicit separation of:
+   - `covered`
+   - `covered_but_wrong_lane`
+   - `valid_erp_domain_uncovered`
+   - `unsupported_non_erp`
+
+Primary design artifact:
+
+1. `qwen_erp_miniphase7_knowledge_boundary_design_2026-03-26.md`
+
+Recommended implementation slices:
+
+1. 7A boundary contract foundation
+2. 7B lane-validation foundation
+3. 7C coverage-state classification
+4. 7D user-facing boundary responses
+
+Current progress:
+
+1. 7A boundary contract foundation is now implemented in `contracts.py`
+2. the new contract surface includes:
+   - `KnowledgeBoundaryContract`
+   - `build_knowledge_boundary_contract(...)`
+   - normalized boundary status / coverage-state / safe-next-action fields
+3. Phase 7A probe now passes for:
+   - confirmed covered lane
+   - reclassified valid-ERP-domain-uncovered case
+4. 7B lane-validation foundation is now implemented in `knowledge_boundary.py`
+5. the new evaluator validates lane suitability from prior contract evidence rather than raw text
+6. Phase 7B probe now passes for:
+   - front door reclassified to artifact lane
+   - confirmed reasoning lane
+   - valid-ERP-domain-uncovered reasoning case
+7. 7C coverage-state classification is now integrated into live orchestration in `service.py`
+8. live chat flow now emits `qwen_knowledge_boundary_contract` across front-door, artifact, reasoning, clarification, and unsupported/boundary exits
+9. Phase 7C live smoke now passes for:
+   - confirmed `front_door`
+   - confirmed `artifact_lane`
+   - confirmed `reasoning_lane`
+10. 7D user-facing boundary responses are now implemented through a bounded renderer in `knowledge_boundary.py`
+11. uncovered and unsupported follow-up exits now render from the boundary contract while preserving stronger grounded detail where available
+12. Phase 7D verification now passes for:
+   - uncovered ERP-domain response rendering
+   - unsupported request refusal rendering
+   - live `valid_erp_domain_uncovered` follow-up response
+13. manual browser closure pass also passed for:
+   - front door staying normal
+   - governed artifact answers staying normal
+   - uncovered ERP-domain answer for `employee headcount`
+   - safe blocked response for `sales invoice list -> what should management do next`
+   - grounded reasoning continuity for `AR insight -> what does this mean -> more insight`
+14. Mini-phase 7 is now closed for its intended scope
+15. the next correct step is Mini-phase 8
+
+Important anti-patterns:
+
+1. no front-door expansion hidden inside boundary logic
+2. no keyword routing of business-likeness
+3. no AI-only boundary authority
+4. no silent fallback that hides coverage gaps
+
 ## Mini-phase 8
+
+Active next feature phase after Mini-phase 7 closure.
 
 Deferred structural chapter: artifact enrichment recovery and conversational repair.
 
@@ -663,7 +736,7 @@ Rule:
 
 ## Mini-phase 9
 
-Integration phase.
+Post-core integration phase.
 
 Goal:
 
@@ -671,6 +744,15 @@ Goal:
 2. integrate enrichment recovery after its chapter is complete
 3. retire legacy split-authority branches
 4. prove behavior with browser regression packs
+
+Important sequencing note:
+
+1. Mini-phase 9 should not begin immediately after Mini-phase 8 by default
+2. after Mini-phase 8, the recommended path is:
+   - post-contract hardening
+   - Wave 1 governed operational coverage expansion
+   - then complex request decomposition
+3. Mini-phase 9 integration should happen when the post-contract expansion surface is mature enough to integrate cleanly
 
 ## 6. Design Rules For All Remaining Mini-phases
 
@@ -688,20 +770,23 @@ These rules are now fixed.
 
 The immediate next step is:
 
-1. start Mini-phase 6 on top of the now-closed Mini-phase 5.5 hardening foundation
-2. carry 5.5 follow-through explicitly into:
-   - Mini-phase 6.1 regression formalization
-   - Mini-phase 6.1 observability severity improvements
-   - Mini-phase 6.2 clarification-state concurrency review
-3. keep clarification resolution as the only owner of pending clarification state
+1. start Mini-phase 8 on top of the now-closed Mini-phase 7 foundation
+2. keep the already-closed authorities stable:
+   - clarification
+   - front door
+   - reasoning
+   - knowledge boundary
+3. use Mini-phase 8 to add recovery / repair structurally, not by conversation patches
+4. after Mini-phase 8, complete post-contract hardening before expanding governed coverage
+5. then begin Wave 1 operational expansion before complex request decomposition
 
 What is explicitly not next:
 
 1. not more front-door expansion right now
 2. not more phrase-level patching
 3. not hidden dissatisfaction handling inside front door or clarification
-4. not knowledge-boundary implementation yet
-5. not enrichment-recovery implementation yet
+4. not broad ERP/business education expansion yet
+5. not CRUD / action-layer work yet
 
 ## 8. Practical Summary
 
@@ -724,8 +809,20 @@ Where we are now:
 
 What is next:
 
-1. build front door
-2. then build ERP business reasoning
-3. then build knowledge boundary
-4. then implement enrichment recovery in its proper chapter
-5. then integrate all lanes cleanly
+1. front door is closed
+2. ERP business reasoning is closed
+3. knowledge boundary is closed
+4. build Mini-phase 8 next
+5. then complete post-contract hardening
+6. then run Wave 1 governed operational coverage expansion:
+   - Delivery / Fulfillment
+   - Sales Order Status
+   - Purchase Order Tracking
+   - Customer Credit Status
+7. then move to complex request decomposition
+8. then later platform expansion such as:
+   - Burmese understanding
+   - charts / graphs / dashboards
+   - CSV / Excel export
+   - OCR understanding
+   - CRUD with approvals last

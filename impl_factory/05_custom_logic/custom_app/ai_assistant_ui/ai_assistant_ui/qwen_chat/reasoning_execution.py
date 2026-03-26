@@ -336,10 +336,35 @@ def _sanitize_runtime_payload(
 	*,
 	payload: Dict[str, Any],
 	reasoning_type: str,
+	presentation_preferences: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	out = dict(payload or {})
 	if str(reasoning_type or "").strip() in {"interpretation", "explanation"}:
 		out["recommendations"] = []
+	prefs = dict(presentation_preferences or {})
+	answer_text = str(out.get("answer_text") or "").strip()
+	if bool(prefs.get("bullet")) and not re.search(r"(^|\n)\s*[-•]\s+", answer_text):
+		recommendations = [dict(item) for item in (out.get("recommendations") or []) if isinstance(item, dict)]
+		supported_claims = [dict(item) for item in (out.get("supported_claims") or []) if isinstance(item, dict)]
+		bullets: List[str] = []
+		if str(reasoning_type or "").strip() in {"recommendation", "continuation_detail"} and recommendations:
+			for item in recommendations:
+				action = str(item.get("action") or "").strip()
+				rationale = str(item.get("rationale") or "").strip()
+				if action and rationale:
+					bullets.append(f"- {action} {rationale}")
+				elif action:
+					bullets.append(f"- {action}")
+		elif supported_claims:
+			for item in supported_claims:
+				claim = str(item.get("claim") or "").strip()
+				support = str(item.get("support") or "").strip()
+				if claim and support:
+					bullets.append(f"- {claim} {support}")
+				elif claim:
+					bullets.append(f"- {claim}")
+		if bullets:
+			out["answer_text"] = "\n".join(bullets)
 	return out
 
 
@@ -424,6 +449,7 @@ def execute_erp_business_reasoning(
 	payload = _sanitize_runtime_payload(
 		payload=payload,
 		reasoning_type=reasoning_type,
+		presentation_preferences=presentation_preferences,
 	)
 	ok, validation_error = _validate_runtime_payload(
 		payload=payload,

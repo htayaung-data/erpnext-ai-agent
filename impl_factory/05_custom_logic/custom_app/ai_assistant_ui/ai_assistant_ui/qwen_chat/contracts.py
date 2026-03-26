@@ -382,6 +382,49 @@ class ERPBusinessReasoningContract:
 
 
 @dataclass(frozen=True)
+class KnowledgeBoundaryContract:
+	request_id: str
+	session_id: str
+	proposed_lane: str
+	final_lane: str
+	boundary_status: str
+	lane_appropriate: bool
+	valid_erp_domain: bool
+	grounding_required: bool
+	grounding_available: bool
+	knowledge_coverage_state: str
+	reclassification_reason: str
+	boundary_flags: List[str]
+	allowed_to_answer: bool
+	safe_next_action: str
+	user_response_mode: str
+	confidence: float
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_knowledge_boundary_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"proposed_lane": self.proposed_lane,
+			"final_lane": self.final_lane,
+			"boundary_status": self.boundary_status,
+			"lane_appropriate": bool(self.lane_appropriate),
+			"valid_erp_domain": bool(self.valid_erp_domain),
+			"grounding_required": bool(self.grounding_required),
+			"grounding_available": bool(self.grounding_available),
+			"knowledge_coverage_state": self.knowledge_coverage_state,
+			"reclassification_reason": self.reclassification_reason,
+			"boundary_flags": list(self.boundary_flags),
+			"allowed_to_answer": bool(self.allowed_to_answer),
+			"safe_next_action": self.safe_next_action,
+			"user_response_mode": self.user_response_mode,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class FreshQueryInterpretationContract:
 	request_id: str
 	session_id: str
@@ -1677,6 +1720,45 @@ def build_erp_business_reasoning_contract(
 		speculation_flags=[str(x or "").strip() for x in (speculation_flags or []) if str(x or "").strip()],
 		allowed_to_answer=bool(allowed_to_answer),
 		reason=str(reason or "").strip(),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+	)
+
+
+def build_knowledge_boundary_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	proposed_lane: str,
+	final_lane: str,
+	boundary_status: str = "confirmed",
+	lane_appropriate: bool = False,
+	valid_erp_domain: bool = False,
+	grounding_required: bool = False,
+	grounding_available: bool = False,
+	knowledge_coverage_state: str = "unsupported_non_erp",
+	reclassification_reason: str = "",
+	boundary_flags: List[str] | None = None,
+	allowed_to_answer: bool = False,
+	safe_next_action: str = "respond_unsupported",
+	user_response_mode: str = "safe_refusal",
+	confidence: float = 0.0,
+) -> KnowledgeBoundaryContract:
+	return KnowledgeBoundaryContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		proposed_lane=str(proposed_lane or "").strip(),
+		final_lane=str(final_lane or "").strip(),
+		boundary_status=str(boundary_status or "confirmed").strip() or "confirmed",
+		lane_appropriate=bool(lane_appropriate),
+		valid_erp_domain=bool(valid_erp_domain),
+		grounding_required=bool(grounding_required),
+		grounding_available=bool(grounding_available),
+		knowledge_coverage_state=str(knowledge_coverage_state or "unsupported_non_erp").strip() or "unsupported_non_erp",
+		reclassification_reason=str(reclassification_reason or "").strip(),
+		boundary_flags=[str(x or "").strip() for x in (boundary_flags or []) if str(x or "").strip()],
+		allowed_to_answer=bool(allowed_to_answer),
+		safe_next_action=str(safe_next_action or "respond_unsupported").strip() or "respond_unsupported",
+		user_response_mode=str(user_response_mode or "safe_refusal").strip() or "safe_refusal",
 		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
 	)
 
@@ -3370,3 +3452,59 @@ def build_audit_envelope(
 		validation_errors=[str(x or "").strip() for x in validation_errors if str(x or "").strip()],
 		answer_chars=len(str(answer_text or "").strip()),
 	)
+
+
+def run_phase7a_knowledge_boundary_contract_probe() -> Dict[str, Any]:
+	confirmed = build_knowledge_boundary_contract(
+		request_id="phase7a-confirmed",
+		session_id="phase7a",
+		proposed_lane="artifact_lane",
+		final_lane="artifact_lane",
+		boundary_status="confirmed",
+		lane_appropriate=True,
+		valid_erp_domain=True,
+		grounding_required=False,
+		grounding_available=False,
+		knowledge_coverage_state="covered",
+		reclassification_reason="",
+		boundary_flags=[],
+		allowed_to_answer=True,
+		safe_next_action="allow_current_lane",
+		user_response_mode="normal_answer",
+		confidence=0.97,
+	)
+	reclassified = build_knowledge_boundary_contract(
+		request_id="phase7a-reclassified",
+		session_id="phase7a",
+		proposed_lane="reasoning_lane",
+		final_lane="valid_erp_domain_uncovered",
+		boundary_status="reclassified",
+		lane_appropriate=False,
+		valid_erp_domain=True,
+		grounding_required=True,
+		grounding_available=False,
+		knowledge_coverage_state="valid_erp_domain_uncovered",
+		reclassification_reason="Grounded reasoning is not available for this otherwise valid ERP/business ask.",
+		boundary_flags=["missing_grounded_support"],
+		allowed_to_answer=False,
+		safe_next_action="respond_uncovered_erp_domain",
+		user_response_mode="coverage_gap_explanation",
+		confidence=0.84,
+	)
+	confirmed_payload = confirmed.to_payload()
+	reclassified_payload = reclassified.to_payload()
+	if str(confirmed_payload.get("type") or "").strip() != "qwen_knowledge_boundary_contract":
+		raise RuntimeError("Phase 7A probe failed: confirmed boundary payload type mismatch.")
+	if str(confirmed_payload.get("boundary_status") or "").strip() != "confirmed":
+		raise RuntimeError("Phase 7A probe failed: confirmed boundary status mismatch.")
+	if not bool(confirmed_payload.get("lane_appropriate")):
+		raise RuntimeError("Phase 7A probe failed: confirmed lane should be appropriate.")
+	if str(reclassified_payload.get("knowledge_coverage_state") or "").strip() != "valid_erp_domain_uncovered":
+		raise RuntimeError("Phase 7A probe failed: reclassified coverage state mismatch.")
+	if str(reclassified_payload.get("safe_next_action") or "").strip() != "respond_uncovered_erp_domain":
+		raise RuntimeError("Phase 7A probe failed: safe_next_action mismatch.")
+	return {
+		"ok": True,
+		"confirmed": confirmed_payload,
+		"reclassified": reclassified_payload,
+	}

@@ -112,6 +112,23 @@ def _build_activation_context(
 	}
 
 
+def _normalize_presentation_style(
+	*,
+	reasoning_type: str,
+	detail_level: str,
+	presentation_style: str,
+) -> str:
+	style = str(presentation_style or "default").strip().lower() or "default"
+	if style in {"bullet", "table"}:
+		return style
+	if str(detail_level or "").strip().lower() in {"expanded", "comprehensive"} and str(reasoning_type or "").strip() in {
+		"recommendation",
+		"continuation_detail",
+	}:
+		return "bullet"
+	return "default"
+
+
 def _validate_semantic_payload(
 	*,
 	payload: Dict[str, Any],
@@ -133,6 +150,11 @@ def _validate_semantic_payload(
 	presentation_style = str(payload.get("presentation_style") or "default").strip().lower() or "default"
 	if presentation_style not in {"default", "bullet", "table"}:
 		return None
+	presentation_style = _normalize_presentation_style(
+		reasoning_type=reasoning_type,
+		detail_level=detail_level,
+		presentation_style=presentation_style,
+	)
 	try:
 		confidence = float(payload.get("confidence") or 0.0)
 	except Exception:
@@ -306,4 +328,54 @@ def run_phase6b_reasoning_activation_smoke() -> Dict[str, Any]:
 		"ok": True,
 		"not_applicable": not_applicable.to_payload(),
 		"eligible": eligible.to_payload(),
+	}
+
+
+def run_phase6_detail_presentation_policy_probe() -> Dict[str, Any]:
+	normalized = _validate_semantic_payload(
+		payload={
+			"reasoning_type": "continuation_detail",
+			"detail_level": "comprehensive",
+			"presentation_style": "default",
+			"confidence": 0.93,
+			"reason": "Expanded grounded continuation requested.",
+		},
+		context={
+			"allowed_reasoning_types": ["interpretation", "explanation", "recommendation", "continuation_detail"],
+		},
+	)
+	if normalized is None:
+		raise RuntimeError("Phase 6 detail presentation policy probe failed: normalized intent was rejected.")
+	if str(normalized.presentation_style or "").strip() != "bullet":
+		raise RuntimeError("Phase 6 detail presentation policy probe failed: expanded continuation did not default to bullet presentation.")
+
+	explicit_default = _validate_semantic_payload(
+		payload={
+			"reasoning_type": "recommendation",
+			"detail_level": "default",
+			"presentation_style": "default",
+			"confidence": 0.9,
+			"reason": "Initial recommendation request.",
+		},
+		context={
+			"allowed_reasoning_types": ["interpretation", "explanation", "recommendation", "continuation_detail"],
+		},
+	)
+	if explicit_default is None:
+		raise RuntimeError("Phase 6 detail presentation policy probe failed: default recommendation intent was rejected.")
+	if str(explicit_default.presentation_style or "").strip() != "default":
+		raise RuntimeError("Phase 6 detail presentation policy probe failed: first-turn recommendation should stay default presentation.")
+
+	return {
+		"ok": True,
+		"normalized": {
+			"reasoning_type": normalized.reasoning_type,
+			"detail_level": normalized.detail_level,
+			"presentation_style": normalized.presentation_style,
+		},
+		"default_recommendation": {
+			"reasoning_type": explicit_default.reasoning_type,
+			"detail_level": explicit_default.detail_level,
+			"presentation_style": explicit_default.presentation_style,
+		},
 	}

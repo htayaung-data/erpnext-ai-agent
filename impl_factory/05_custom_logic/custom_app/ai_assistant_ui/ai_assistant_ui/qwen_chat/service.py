@@ -78,6 +78,10 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	interpret_front_door_semantically,
 	render_front_door_answer,
 )
+from ai_assistant_ui.qwen_chat.knowledge_boundary import (
+	evaluate_knowledge_boundary,
+	render_knowledge_boundary_answer,
+)
 from ai_assistant_ui.qwen_chat.observability import (
 	record_phase55_observability_event,
 	record_phase6_observability_event,
@@ -465,6 +469,9 @@ def _handle_compiled_first_turn_result(
 	interaction_contract,
 	followup_resolution,
 	execution_path,
+	governed_scope_contract=None,
+	front_door_contract=None,
+	clarification_response_contract=None,
 	result: Dict[str, Any],
 ) -> Tuple[bool, Dict[str, Any]]:
 	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
@@ -481,13 +488,15 @@ def _handle_compiled_first_turn_result(
 		result=result,
 	)
 	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+	clarification_reason_payload: Dict[str, Any] = {}
 	if clarification_signal_payload:
 		clarification_reason_contract = _compiled_clarification_reason_contract(
 			request_id=request_id,
 			result=result,
 		)
 		if clarification_reason_contract is not None:
-			_append_tool_payload(session_doc, clarification_reason_contract.to_payload())
+			clarification_reason_payload = clarification_reason_contract.to_payload()
+			_append_tool_payload(session_doc, clarification_reason_payload)
 		_append_tool_payload(session_doc, clarification_signal_payload)
 		store_pending_clarification_signal(session_doc, clarification_signal_payload)
 	else:
@@ -527,6 +536,21 @@ def _handle_compiled_first_turn_result(
 		if grounded_turn_context and grounded_turn_context.grounded:
 			grounded_turn_payload = grounded_turn_context.to_payload()
 			_append_tool_payload(session_doc, grounded_turn_payload)
+	compiled_audit_payload = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
+	_append_knowledge_boundary_contract(
+		session_doc,
+		request_id=request_id,
+		session_id=str(getattr(interaction_contract, "session_id", "") or "").strip(),
+		proposed_lane="clarification" if clarification_signal_payload else "artifact_lane",
+		clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else {},
+		clarification_reason=clarification_reason_payload,
+		front_door_contract=front_door_contract.to_payload() if front_door_contract is not None else {},
+		governed_scope_contract=governed_scope_contract.to_payload() if governed_scope_contract is not None else {},
+		compiled_execution_audit=compiled_audit_payload,
+		family_validation=family_payload,
+		semantic_validation=semantic_payload,
+		grounded_turn=grounded_turn_payload,
+	)
 
 	_append_tool_payload(
 		session_doc,
@@ -1954,6 +1978,42 @@ def _recent_messages_for_grounded_source(
 	return list(reversed(out))
 
 
+def _append_knowledge_boundary_contract(
+	session_doc,
+	*,
+	request_id: str,
+	session_id: str,
+	proposed_lane: str,
+	clarification_resolution: Dict[str, Any] | None = None,
+	clarification_reason: Dict[str, Any] | None = None,
+	front_door_contract: Dict[str, Any] | None = None,
+	governed_scope_contract: Dict[str, Any] | None = None,
+	compiled_execution_audit: Dict[str, Any] | None = None,
+	family_validation: Dict[str, Any] | None = None,
+	semantic_validation: Dict[str, Any] | None = None,
+	reasoning_activation_contract: Dict[str, Any] | None = None,
+	reasoning_contract: Dict[str, Any] | None = None,
+	grounded_turn: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	boundary_payload = evaluate_knowledge_boundary(
+		request_id=request_id,
+		session_id=session_id,
+		proposed_lane=proposed_lane,
+		clarification_resolution=clarification_resolution,
+		clarification_reason=clarification_reason,
+		front_door_contract=front_door_contract,
+		governed_scope_contract=governed_scope_contract,
+		compiled_execution_audit=compiled_execution_audit,
+		family_validation=family_validation,
+		semantic_validation=semantic_validation,
+		reasoning_activation_contract=reasoning_activation_contract,
+		reasoning_contract=reasoning_contract,
+		grounded_turn=grounded_turn,
+	)
+	_append_tool_payload(session_doc, boundary_payload)
+	return boundary_payload
+
+
 def _phase6_activation_event_level(status: str) -> str:
 	value = str(status or "").strip().lower()
 	if value in {"runtime_error", "invalid_payload"}:
@@ -2701,6 +2761,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				},
 			),
 		)
+		_append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="front_door",
+			front_door_contract=frontdoor_contract.to_payload(),
+			grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
+		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		_append_message(session_doc, "assistant", _assistant_text_payload(frontdoor_answer))
 		_append_tool_payload(
@@ -2785,6 +2853,15 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 							"max_attempts": int(max(1, clarification_state.max_attempts)),
 						},
 					),
+				)
+				_append_knowledge_boundary_contract(
+					session_doc,
+					request_id=request_id,
+					session_id=session_name,
+					proposed_lane="clarification",
+					clarification_resolution=clarification_response_contract.to_payload(),
+					front_door_contract=frontdoor_contract.to_payload(),
+					grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
 				)
 				_append_tool_payload(session_doc, execution_path.to_payload())
 				_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
@@ -2895,6 +2972,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			interaction_contract=interaction_contract,
 			followup_resolution=followup_resolution,
 			execution_path=execution_path,
+			governed_scope_contract=scope_decision_contract,
+			front_door_contract=frontdoor_contract,
+			clarification_response_contract=clarification_response_contract,
 			result=compiled_result,
 		)
 	entity_drilldown = None
@@ -3075,6 +3155,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				_append_tool_payload(session_doc, reasoning_execution.to_payload())
 				if reasoning_execution.reasoning_contract:
 					_append_tool_payload(session_doc, reasoning_execution.reasoning_contract)
+				_append_knowledge_boundary_contract(
+					session_doc,
+					request_id=request_id,
+					session_id=session_name,
+					proposed_lane="reasoning_lane",
+					front_door_contract=frontdoor_contract.to_payload(),
+					reasoning_activation_contract=reasoning_activation_contract.to_payload(),
+					reasoning_contract=reasoning_execution.reasoning_contract,
+					grounded_turn=latest_grounded_turn,
+				)
 				_append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())
 				_append_tool_payload(session_doc, execution_path.to_payload())
 				answer_text = str(reasoning_execution.answer_text or "").strip()
@@ -3145,9 +3235,23 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			_append_tool_payload(session_doc, reasoning_execution.to_payload())
 			if reasoning_execution.reasoning_contract:
 				_append_tool_payload(session_doc, reasoning_execution.reasoning_contract)
+			boundary_payload = _append_knowledge_boundary_contract(
+				session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				proposed_lane="reasoning_lane",
+				front_door_contract=frontdoor_contract.to_payload(),
+				reasoning_activation_contract=reasoning_activation_contract.to_payload(),
+				reasoning_contract=reasoning_execution.reasoning_contract,
+				grounded_turn=latest_grounded_turn,
+			)
 			_append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())
 			_append_tool_payload(session_doc, execution_path.to_payload())
-			_append_message(session_doc, "assistant", _assistant_text_payload(reasoning_boundary_answer))
+			answer_text = render_knowledge_boundary_answer(
+				boundary_contract=boundary_payload,
+				detail_answer=reasoning_boundary_answer,
+			)
+			_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 			_append_tool_payload(
 				session_doc,
 				build_audit_envelope(
@@ -3169,7 +3273,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 						),
 					},
 					grounded_turn_context=latest_grounded_turn,
-					answer_text=reasoning_boundary_answer,
+					answer_text=answer_text,
 				).to_payload(),
 			)
 			session_doc.save(ignore_permissions=False)
@@ -3370,6 +3474,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 		_append_tool_payload(session_doc, reason_contract.to_payload())
 		_append_tool_payload(session_doc, clarification_signal.to_payload())
+		_append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="clarification",
+			clarification_reason=reason_contract.to_payload(),
+			front_door_contract=frontdoor_contract.to_payload(),
+			governed_scope_contract=scope_decision_contract.to_payload(),
+			grounded_turn=latest_grounded_turn,
+		)
 		store_pending_clarification_signal(session_doc, clarification_signal.to_payload())
 		_append_tool_payload(
 			session_doc,
@@ -3391,13 +3505,26 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		}
 
 	if governed_scope_decision_is_out_of_scope(scope_decision_contract) and entity_drilldown is None:
-		answer_text = _out_of_scope_answer(msg, governed_scope_decision_public_decision(scope_decision_contract))
+		legacy_out_of_scope_answer = _out_of_scope_answer(msg, governed_scope_decision_public_decision(scope_decision_contract))
 		execution_path = ExecutionPath(
 			request_id=request_id,
 			path="unsupported_domain",
 			reason=str(getattr(scope_decision_contract, "reason", "") or "").strip() or "The request is outside the current governed ERP scope.",
 			requires_runtime=False,
 			grounded_required=False,
+		)
+		boundary_payload = _append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="artifact_lane",
+			front_door_contract=frontdoor_contract.to_payload(),
+			governed_scope_contract=scope_decision_contract.to_payload(),
+			grounded_turn=latest_grounded_turn,
+		)
+		answer_text = render_knowledge_boundary_answer(
+			boundary_contract=boundary_payload,
+			detail_answer=legacy_out_of_scope_answer,
 		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
@@ -3427,6 +3554,15 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			continuation_contract=continuation_contract,
 		)
 	if local_transform:
+		_append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="artifact_lane",
+			front_door_contract=frontdoor_contract.to_payload(),
+			governed_scope_contract=scope_decision_contract.to_payload(),
+			grounded_turn=latest_grounded_turn,
+		)
 		execution_path = build_execution_path(
 			request_id=request_id,
 			followup_resolution=followup_resolution,
@@ -3465,8 +3601,21 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			requires_runtime=False,
 			grounded_required=True,
 		)
+		boundary_payload = _append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="artifact_lane",
+			front_door_contract=frontdoor_contract.to_payload(),
+			governed_scope_contract=scope_decision_contract.to_payload(),
+			grounded_turn=latest_grounded_turn,
+		)
+		answer_text = render_knowledge_boundary_answer(
+			boundary_contract=boundary_payload,
+			detail_answer=evidence_boundary_answer,
+		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
-		_append_message(session_doc, "assistant", _assistant_text_payload(evidence_boundary_answer))
+		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 		_append_tool_payload(
 			session_doc,
 			build_audit_envelope(
@@ -3475,7 +3624,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				execution_path=execution_path,
 				runtime_trace_payload={},
 				grounded_turn_context=latest_grounded_turn,
-				answer_text=evidence_boundary_answer,
+				answer_text=answer_text,
 			).to_payload(),
 		)
 		session_doc.save(ignore_permissions=False)
@@ -3496,8 +3645,21 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			requires_runtime=False,
 			grounded_required=True,
 		)
+		boundary_payload = _append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="artifact_lane",
+			front_door_contract=frontdoor_contract.to_payload(),
+			governed_scope_contract=scope_decision_contract.to_payload(),
+			grounded_turn=latest_grounded_turn,
+		)
+		answer_text = render_knowledge_boundary_answer(
+			boundary_contract=boundary_payload,
+			detail_answer=enrichment_boundary_answer,
+		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
-		_append_message(session_doc, "assistant", _assistant_text_payload(enrichment_boundary_answer))
+		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 		_append_tool_payload(
 			session_doc,
 			build_audit_envelope(
@@ -3506,7 +3668,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				execution_path=execution_path,
 				runtime_trace_payload={},
 				grounded_turn_context=latest_grounded_turn,
-				answer_text=enrichment_boundary_answer,
+				answer_text=answer_text,
 			).to_payload(),
 		)
 		session_doc.save(ignore_permissions=False)
@@ -3531,6 +3693,15 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			latest_grounded_turn=latest_grounded_turn,
 		)
 		if entity_result:
+			_append_knowledge_boundary_contract(
+				session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				proposed_lane="artifact_lane",
+				front_door_contract=frontdoor_contract.to_payload(),
+				governed_scope_contract=scope_decision_contract.to_payload(),
+				grounded_turn=_latest_grounded_turn_contract(session_doc),
+			)
 			_append_tool_payload(
 				session_doc,
 				build_audit_envelope(
@@ -3589,6 +3760,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				interaction_contract=interaction_contract,
 				followup_resolution=followup_resolution,
 				execution_path=execution_path,
+				governed_scope_contract=scope_decision_contract,
+				front_door_contract=frontdoor_contract,
+				clarification_response_contract=clarification_response_contract,
 				result=compiled_result,
 			)
 	known_unsupported_decision = build_known_unsupported_scope_decision_input(raw_message=msg)
@@ -3597,7 +3771,30 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and known_unsupported_decision
 		and followup_resolution.mode in {"new_query", "capability_requery"}
 	):
-		answer_text = _out_of_scope_answer(msg, known_unsupported_decision)
+		legacy_out_of_scope_answer = _out_of_scope_answer(msg, known_unsupported_decision)
+		unsupported_scope_payload = {
+			"governed_scope_status": "out_of_scope_but_valid_erp_domain"
+			if list(known_unsupported_decision.requested_domains or [])
+			else "unsupported_request",
+			"out_of_scope": True,
+			"reason": str(getattr(known_unsupported_decision, "reason", "") or "").strip(),
+			"requested_domains": list(getattr(known_unsupported_decision, "requested_domains", []) or []),
+			"context_domains": list(getattr(known_unsupported_decision, "context_domains", []) or []),
+			"primary_domain": str(getattr(known_unsupported_decision, "primary_domain", "") or "").strip(),
+		}
+		boundary_payload = _append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			proposed_lane="artifact_lane",
+			front_door_contract=frontdoor_contract.to_payload(),
+			governed_scope_contract=unsupported_scope_payload,
+			grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
+		)
+		answer_text = render_knowledge_boundary_answer(
+			boundary_contract=boundary_payload,
+			detail_answer=legacy_out_of_scope_answer,
+		)
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 		_append_tool_payload(
 			session_doc,
@@ -6894,3 +7091,112 @@ def run_phase6_reasoning_live_debug() -> Dict[str, Any]:
 					conf.pop(key, None)
 				except Exception:
 					pass
+
+
+def run_phase7c_live_boundary_orchestration_smoke() -> Dict[str, Any]:
+	def _latest_boundary_payload(session_doc) -> Dict[str, Any]:
+		tool_payloads = _session_tool_payloads(session_doc)
+		return _latest_tool_payload_by_type(tool_payloads, "qwen_knowledge_boundary_contract")
+
+	def _runner(doc) -> Dict[str, Any]:
+		ok, frontdoor_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="hello",
+			user="Administrator",
+		)
+		if not ok or str((frontdoor_payload or {}).get("mode") or "").strip() != "front_door":
+			raise RuntimeError("Phase 7C live boundary smoke failed: front-door turn did not complete in the front-door lane.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		frontdoor_boundary = _latest_boundary_payload(session_doc)
+		if str(frontdoor_boundary.get("final_lane") or "").strip() != "front_door":
+			raise RuntimeError("Phase 7C live boundary smoke failed: front-door boundary did not confirm front_door.")
+
+		ok, artifact_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="top 5 customers by revenue",
+			user="Administrator",
+		)
+		if not ok or str((artifact_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 7C live boundary smoke failed: artifact turn did not produce governed ERP output.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		artifact_boundary = _latest_boundary_payload(session_doc)
+		if str(artifact_boundary.get("final_lane") or "").strip() != "artifact_lane":
+			raise RuntimeError("Phase 7C live boundary smoke failed: artifact boundary did not confirm artifact_lane.")
+
+		ok, second_artifact_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((second_artifact_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 7C live boundary smoke failed: AR artifact turn did not complete.")
+
+		ok, reasoning_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((reasoning_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("Phase 7C live boundary smoke failed: grounded reasoning turn did not enter the reasoning lane.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		reasoning_boundary = _latest_boundary_payload(session_doc)
+		if str(reasoning_boundary.get("final_lane") or "").strip() != "reasoning_lane":
+			raise RuntimeError("Phase 7C live boundary smoke failed: reasoning boundary did not confirm reasoning_lane.")
+
+		return {
+			"ok": True,
+			"frontdoor_boundary": frontdoor_boundary,
+			"artifact_boundary": artifact_boundary,
+			"reasoning_boundary": reasoning_boundary,
+		}
+
+	return _run_phase55_smoke_session("Phase 7C Live Boundary Orchestration Smoke", _runner)
+
+
+def run_phase7d_boundary_response_live_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="top 5 customers by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 7D live boundary smoke failed: setup governed artifact turn did not complete.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="employee headcount",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 7D live boundary smoke failed: uncovered-domain turn did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_payload = _latest_assistant_payload(session_doc)
+		answer_text = str(assistant_payload.get("text") or "").strip()
+		boundary_payload = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_knowledge_boundary_contract")
+		if str(boundary_payload.get("knowledge_coverage_state") or "").strip() != "valid_erp_domain_uncovered":
+			raise RuntimeError("Phase 7D live boundary smoke failed: employee headcount did not classify as valid_erp_domain_uncovered.")
+		if str(boundary_payload.get("user_response_mode") or "").strip() != "coverage_gap_explanation":
+			raise RuntimeError("Phase 7D live boundary smoke failed: uncovered-domain response mode was not coverage_gap_explanation.")
+		if "ERP/business scope" not in answer_text and "valid ERP/business question" not in answer_text:
+			raise RuntimeError("Phase 7D live boundary smoke failed: user-facing answer did not explain the coverage gap.")
+		return {
+			"ok": True,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"boundary_payload": boundary_payload,
+			"answer_text": answer_text,
+		}
+
+	return _run_phase55_smoke_session("Phase 7D Boundary Response Live Smoke", _runner)
