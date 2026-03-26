@@ -425,6 +425,94 @@ class KnowledgeBoundaryContract:
 
 
 @dataclass(frozen=True)
+class ArtifactEnrichmentRecoveryContract:
+	request_id: str
+	session_id: str
+	source_request_id: str
+	source_family_id: str
+	source_capability_id: str
+	source_report: str
+	failure_type: str
+	recovery_state: str
+	available_recovery_actions: List[str]
+	recommended_recovery_action: str
+	preservable_scope: Dict[str, Any]
+	preservable_dimensions: List[str]
+	preservable_metrics: List[str]
+	preservable_time_context: Dict[str, Any]
+	alternative_capability_id: str
+	alternative_report: str
+	reason: str
+	allowed_to_recover: bool
+	confidence: float
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_artifact_enrichment_recovery_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"source_request_id": self.source_request_id,
+			"source_family_id": self.source_family_id,
+			"source_capability_id": self.source_capability_id,
+			"source_report": self.source_report,
+			"failure_type": self.failure_type,
+			"recovery_state": self.recovery_state,
+			"available_recovery_actions": list(self.available_recovery_actions),
+			"recommended_recovery_action": self.recommended_recovery_action,
+			"preservable_scope": dict(self.preservable_scope),
+			"preservable_dimensions": list(self.preservable_dimensions),
+			"preservable_metrics": list(self.preservable_metrics),
+			"preservable_time_context": dict(self.preservable_time_context),
+			"alternative_capability_id": self.alternative_capability_id,
+			"alternative_report": self.alternative_report,
+			"reason": self.reason,
+			"allowed_to_recover": bool(self.allowed_to_recover),
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ConversationalRepairIntentContract:
+	request_id: str
+	session_id: str
+	repair_intent_type: str
+	repair_state: str
+	targets_prior_recovery: bool
+	accepted_recovery_action: str
+	guidance_topic: str
+	fresh_query_override: bool
+	preserve_scope: bool
+	preserve_entity_dimension: bool
+	preserve_time_context: bool
+	reason: str
+	allowed_next_lane: str
+	confidence: float
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_conversational_repair_intent_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"repair_intent_type": self.repair_intent_type,
+			"repair_state": self.repair_state,
+			"targets_prior_recovery": bool(self.targets_prior_recovery),
+			"accepted_recovery_action": self.accepted_recovery_action,
+			"guidance_topic": self.guidance_topic,
+			"fresh_query_override": bool(self.fresh_query_override),
+			"preserve_scope": bool(self.preserve_scope),
+			"preserve_entity_dimension": bool(self.preserve_entity_dimension),
+			"preserve_time_context": bool(self.preserve_time_context),
+			"reason": self.reason,
+			"allowed_next_lane": self.allowed_next_lane,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class FreshQueryInterpretationContract:
 	request_id: str
 	session_id: str
@@ -1763,6 +1851,86 @@ def build_knowledge_boundary_contract(
 	)
 
 
+def build_artifact_enrichment_recovery_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	source_request_id: str = "",
+	source_family_id: str = "",
+	source_capability_id: str = "",
+	source_report: str = "",
+	failure_type: str = "artifact_enrichment_incompatible",
+	recovery_state: str = "unavailable",
+	available_recovery_actions: List[str] | None = None,
+	recommended_recovery_action: str = "",
+	preservable_scope: Dict[str, Any] | None = None,
+	preservable_dimensions: List[str] | None = None,
+	preservable_metrics: List[str] | None = None,
+	preservable_time_context: Dict[str, Any] | None = None,
+	alternative_capability_id: str = "",
+	alternative_report: str = "",
+	reason: str = "",
+	allowed_to_recover: bool = False,
+	confidence: float = 0.0,
+) -> ArtifactEnrichmentRecoveryContract:
+	return ArtifactEnrichmentRecoveryContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		source_request_id=str(source_request_id or "").strip(),
+		source_family_id=str(source_family_id or "").strip(),
+		source_capability_id=str(source_capability_id or "").strip(),
+		source_report=str(source_report or "").strip(),
+		failure_type=str(failure_type or "artifact_enrichment_incompatible").strip() or "artifact_enrichment_incompatible",
+		recovery_state=str(recovery_state or "unavailable").strip() or "unavailable",
+		available_recovery_actions=[str(x or "").strip() for x in (available_recovery_actions or []) if str(x or "").strip()],
+		recommended_recovery_action=str(recommended_recovery_action or "").strip(),
+		preservable_scope=dict(preservable_scope or {}),
+		preservable_dimensions=[str(x or "").strip() for x in (preservable_dimensions or []) if str(x or "").strip()],
+		preservable_metrics=[str(x or "").strip() for x in (preservable_metrics or []) if str(x or "").strip()],
+		preservable_time_context=dict(preservable_time_context or {}),
+		alternative_capability_id=str(alternative_capability_id or "").strip(),
+		alternative_report=str(alternative_report or "").strip(),
+		reason=str(reason or "").strip(),
+		allowed_to_recover=bool(allowed_to_recover),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+	)
+
+
+def build_conversational_repair_intent_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	repair_intent_type: str = "not_applicable",
+	repair_state: str = "unresolved",
+	targets_prior_recovery: bool = False,
+	accepted_recovery_action: str = "",
+	guidance_topic: str = "",
+	fresh_query_override: bool = False,
+	preserve_scope: bool = False,
+	preserve_entity_dimension: bool = False,
+	preserve_time_context: bool = False,
+	reason: str = "",
+	allowed_next_lane: str = "",
+	confidence: float = 0.0,
+) -> ConversationalRepairIntentContract:
+	return ConversationalRepairIntentContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		repair_intent_type=str(repair_intent_type or "not_applicable").strip() or "not_applicable",
+		repair_state=str(repair_state or "unresolved").strip() or "unresolved",
+		targets_prior_recovery=bool(targets_prior_recovery),
+		accepted_recovery_action=str(accepted_recovery_action or "").strip(),
+		guidance_topic=str(guidance_topic or "").strip(),
+		fresh_query_override=bool(fresh_query_override),
+		preserve_scope=bool(preserve_scope),
+		preserve_entity_dimension=bool(preserve_entity_dimension),
+		preserve_time_context=bool(preserve_time_context),
+		reason=str(reason or "").strip(),
+		allowed_next_lane=str(allowed_next_lane or "").strip(),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+	)
+
+
 def build_clarification_reason_contract_from_sources(
 	*,
 	request_id: str,
@@ -2422,6 +2590,32 @@ def build_artifact_enrichment_compatibility_contract(
 		capability_id=source_capability_id,
 		surface_summary=source_surface,
 	) if source_report and source_capability_id and source_surface else []
+	if len(required_keys) > 1 and (
+		"value_quantity" in source_selector_filters
+		or source_family_id == "ranking_analytics"
+	):
+		reason = (
+			"The current governed ranking path is anchored to one primary metric basis, so it cannot safely combine "
+			"multiple metric bases into one ranking artifact."
+		)
+		return ArtifactEnrichmentCompatibilityContract(
+			request_id=str(request_id or "").strip(),
+			source_family_id=source_family_id,
+			source_capability_id=source_capability_id,
+			source_report=source_report,
+			source_dimension=source_dimension,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			required_metric_keys=required_keys,
+			compatibility_status="unavailable_in_current_governed_path",
+			compatible=False,
+			target_capability_id="",
+			target_report="",
+			candidate_reports_considered=[],
+			source_surface_sources=source_surface_sources,
+			source_selector_filters=source_selector_filters,
+			reason=reason,
+		)
 	candidate_reports: List[str] = []
 	family_reports = set(report_family_report_names(source_family_id)) if source_family_id else set()
 	for report_name in [source_report, *capability_report_names(source_capability_id)]:
@@ -2540,6 +2734,258 @@ def build_artifact_enrichment_compatibility_contract(
 		source_surface_sources=source_surface_sources,
 		source_selector_filters=source_selector_filters,
 		reason=reason,
+	)
+
+
+def _recovery_scope_from_grounded_turn(
+	grounded_turn: Dict[str, Any] | None,
+	followup_resolution: FollowUpResolution | None = None,
+) -> Dict[str, Any]:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	scope: Dict[str, Any] = {}
+	company = str(turn.get("company") or "").strip()
+	if company:
+		scope["company"] = company
+	filters = turn.get("filters") if isinstance(turn.get("filters"), dict) else {}
+	preserved_filters: Dict[str, Any] = {}
+	for raw_key, raw_value in filters.items():
+		key = str(raw_key or "").strip()
+		if not key or key in {"company", "from_date", "to_date", "report_date"}:
+			continue
+		if isinstance(raw_value, (list, tuple, set)):
+			values = [value for value in raw_value if value not in {None, ""}]
+			if values:
+				preserved_filters[key] = list(values)
+			continue
+		if isinstance(raw_value, dict):
+			if raw_value:
+				preserved_filters[key] = dict(raw_value)
+			continue
+		if raw_value not in {None, ""}:
+			preserved_filters[key] = raw_value
+	if preserved_filters:
+		scope["filters"] = preserved_filters
+	try:
+		requested_top_n = int(
+			max(
+				0,
+				getattr(followup_resolution, "target_limit", 0) if followup_resolution is not None else 0,
+			)
+		)
+	except Exception:
+		requested_top_n = 0
+	if requested_top_n <= 0:
+		try:
+			requested_top_n = int(max(0, turn.get("row_count") or 0))
+		except Exception:
+			requested_top_n = 0
+	if requested_top_n > 0:
+		scope["requested_top_n"] = requested_top_n
+	return scope
+
+
+def _recovery_time_context(
+	grounded_turn: Dict[str, Any] | None,
+	followup_resolution: FollowUpResolution | None = None,
+) -> Dict[str, Any]:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	time_context: Dict[str, Any] = {}
+	date_range = turn.get("date_range") if isinstance(turn.get("date_range"), dict) else {}
+	for key in ("from_date", "to_date", "report_date"):
+		value = date_range.get(key)
+		if value not in {None, ""}:
+			time_context[key] = value
+	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+	if requested_time_scope:
+		time_context["requested_time_scope"] = requested_time_scope
+	return time_context
+
+
+def _recovery_dimensions(
+	*,
+	grounded_turn: Dict[str, Any] | None = None,
+	source_dimension: str = "",
+	followup_resolution: FollowUpResolution | None = None,
+) -> List[str]:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	values: List[str] = []
+	for candidate in [
+		str(source_dimension or "").strip(),
+		str(getattr(followup_resolution, "target_dimension", "") or "").strip(),
+		*[str(item or "").strip() for item in (turn.get("dimensions") or []) if str(item or "").strip()],
+	]:
+		if candidate and candidate not in values:
+			values.append(candidate)
+	return values
+
+
+def _recovery_metrics(
+	*,
+	grounded_turn: Dict[str, Any] | None = None,
+	target_metric: str = "",
+	required_metric_keys: List[str] | None = None,
+	followup_resolution: FollowUpResolution | None = None,
+) -> List[str]:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	values: List[str] = []
+	requested_columns = getattr(followup_resolution, "requested_columns", []) if followup_resolution is not None else []
+	source_metric_key = ""
+	for candidate in (turn.get("metrics") or []):
+		clean = str(candidate or "").strip()
+		if clean:
+			source_metric_key = str(
+				get_canonical_key(clean, dimension_or_metric="metric")
+				or _normalized_key_fallback(clean)
+				or clean.lower()
+			).strip()
+			break
+	if not source_metric_key:
+		filters = turn.get("filters") if isinstance(turn.get("filters"), dict) else {}
+		value_quantity = str(filters.get("value_quantity") or "").strip()
+		if value_quantity:
+			source_metric_key = str(
+				get_canonical_key(value_quantity, dimension_or_metric="metric")
+				or _normalized_key_fallback(value_quantity)
+				or value_quantity.lower()
+			).strip()
+	for candidate in [
+		str(target_metric or "").strip(),
+		*[str(item or "").strip() for item in (requested_columns or []) if str(item or "").strip()],
+		*[str(item or "").strip() for item in (required_metric_keys or []) if str(item or "").strip()],
+		*[str(item or "").strip() for item in (turn.get("metrics") or []) if str(item or "").strip()],
+	]:
+		if candidate and candidate not in values:
+			values.append(candidate)
+	if source_metric_key and len(values) > 1:
+		alternative_first = [
+			value
+			for value in values
+			if (_normalized_key_fallback(value) or value.lower()) != source_metric_key
+		]
+		source_metrics = [
+			value
+			for value in values
+			if (_normalized_key_fallback(value) or value.lower()) == source_metric_key
+		]
+		values = alternative_first + source_metrics
+	return values
+
+
+def build_recovery_contract_from_enrichment_compatibility(
+	*,
+	request_id: str,
+	session_id: str,
+	compatibility_contract: ArtifactEnrichmentCompatibilityContract,
+	grounded_turn: Dict[str, Any] | None = None,
+	followup_resolution: FollowUpResolution | None = None,
+) -> ArtifactEnrichmentRecoveryContract:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	source_report = str(getattr(compatibility_contract, "source_report", "") or turn.get("source_name") or "").strip()
+	source_capability_id = str(getattr(compatibility_contract, "source_capability_id", "") or "").strip()
+	if not source_capability_id and source_report:
+		source_capability_id = str((report_capability_ids(source_report) or [""])[0] or "").strip()
+	alternative_capability_id = str(getattr(compatibility_contract, "target_capability_id", "") or "").strip()
+	alternative_report = str(getattr(compatibility_contract, "target_report", "") or "").strip()
+	source_selector_filters = {
+		str(value or "").strip()
+		for value in (getattr(compatibility_contract, "source_selector_filters", []) or [])
+		if str(value or "").strip()
+	}
+	recoverable_metrics = _recovery_metrics(
+		grounded_turn=turn,
+		target_metric=str(getattr(compatibility_contract, "target_metric", "") or "").strip(),
+		required_metric_keys=list(getattr(compatibility_contract, "required_metric_keys", []) or []),
+		followup_resolution=followup_resolution,
+	)
+	recoverable_dimensions = _recovery_dimensions(
+		grounded_turn=turn,
+		source_dimension=str(getattr(compatibility_contract, "source_dimension", "") or "").strip(),
+		followup_resolution=followup_resolution,
+	)
+	has_synthetic_alternative = bool(
+		not alternative_capability_id
+		and not alternative_report
+		and "value_quantity" in source_selector_filters
+		and recoverable_dimensions
+		and recoverable_metrics
+	)
+	if has_synthetic_alternative:
+		alternative_capability_id = source_capability_id
+	has_governed_alternative = bool(alternative_capability_id or alternative_report)
+	available_actions = ["keep_current_artifact"]
+	if has_governed_alternative:
+		available_actions.append("run_alternative_governed_query")
+	available_actions.append("clarify_target_output")
+	recovery_state = "recoverable" if has_governed_alternative else "clarify_recovery_target"
+	recommended_action = "run_alternative_governed_query" if has_governed_alternative else "clarify_target_output"
+	reason = str(getattr(compatibility_contract, "reason", "") or "").strip()
+	if not reason:
+		reason = (
+			"The current governed artifact cannot satisfy the requested enrichment safely, "
+			"so recovery must stay within governed requery or clarified target output."
+		)
+	return build_artifact_enrichment_recovery_contract(
+		request_id=request_id,
+		session_id=session_id,
+		source_request_id=str(turn.get("trace_request_id") or turn.get("request_id") or request_id or "").strip(),
+		source_family_id=str(getattr(compatibility_contract, "source_family_id", "") or turn.get("artifact_family_id") or "").strip(),
+		source_capability_id=source_capability_id,
+		source_report=source_report,
+		failure_type="artifact_enrichment_incompatible",
+		recovery_state=recovery_state,
+		available_recovery_actions=available_actions,
+		recommended_recovery_action=recommended_action,
+		preservable_scope=_recovery_scope_from_grounded_turn(turn, followup_resolution),
+		preservable_dimensions=recoverable_dimensions,
+		preservable_metrics=recoverable_metrics,
+		preservable_time_context=_recovery_time_context(turn, followup_resolution),
+		alternative_capability_id=alternative_capability_id,
+		alternative_report=alternative_report,
+		reason=reason,
+		allowed_to_recover=bool(has_governed_alternative or "clarify_target_output" in available_actions),
+		confidence=0.93 if has_governed_alternative else 0.82,
+	)
+
+
+def build_recovery_contract_from_evidence_boundary(
+	*,
+	request_id: str,
+	session_id: str,
+	artifact_payload: Dict[str, Any] | None = None,
+	grounded_turn: Dict[str, Any] | None = None,
+	followup_resolution: FollowUpResolution | None = None,
+	reason: str = "",
+) -> ArtifactEnrichmentRecoveryContract:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	source_report = str(turn.get("source_name") or artifact.get("source_name") or artifact.get("title") or "").strip()
+	source_capability_id = str((report_capability_ids(source_report) or [""])[0] or "").strip() if source_report else ""
+	recovery_reason = str(reason or "").strip()
+	if not recovery_reason:
+		recovery_reason = (
+			"The current grounded artifact does not contain direct governed evidence for the requested operational status, "
+			"so the next safe step is to clarify the target output or switch to a governed operational source."
+		)
+	return build_artifact_enrichment_recovery_contract(
+		request_id=request_id,
+		session_id=session_id,
+		source_request_id=str(turn.get("trace_request_id") or turn.get("request_id") or request_id or "").strip(),
+		source_family_id=str(artifact.get("family_id") or turn.get("artifact_family_id") or "").strip(),
+		source_capability_id=source_capability_id,
+		source_report=source_report,
+		failure_type="grounded_evidence_missing",
+		recovery_state="clarify_recovery_target",
+		available_recovery_actions=["keep_current_artifact", "clarify_target_output"],
+		recommended_recovery_action="clarify_target_output",
+		preservable_scope=_recovery_scope_from_grounded_turn(turn),
+		preservable_dimensions=_recovery_dimensions(grounded_turn=turn, followup_resolution=followup_resolution),
+		preservable_metrics=_recovery_metrics(grounded_turn=turn, followup_resolution=followup_resolution),
+		preservable_time_context=_recovery_time_context(turn, followup_resolution),
+		alternative_capability_id="",
+		alternative_report="",
+		reason=recovery_reason,
+		allowed_to_recover=True,
+		confidence=0.79,
 	)
 
 
@@ -3507,4 +3953,149 @@ def run_phase7a_knowledge_boundary_contract_probe() -> Dict[str, Any]:
 		"ok": True,
 		"confirmed": confirmed_payload,
 		"reclassified": reclassified_payload,
+	}
+
+
+def run_phase8a_recovery_contract_probe() -> Dict[str, Any]:
+	recovery = build_artifact_enrichment_recovery_contract(
+		request_id="phase8a-recovery",
+		session_id="phase8a",
+		source_request_id="artifact-trace-1",
+		source_family_id="customer_rankings",
+		source_capability_id="top_customers_by_revenue",
+		source_report="Top Customers by Revenue",
+		failure_type="artifact_enrichment_incompatible",
+		recovery_state="recoverable",
+		available_recovery_actions=[
+			"keep_current_artifact",
+			"run_alternative_governed_query",
+			"clarify_target_output",
+		],
+		recommended_recovery_action="run_alternative_governed_query",
+		preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd."},
+		preservable_dimensions=["customer"],
+		preservable_metrics=["revenue"],
+		preservable_time_context={"range_label": "last month"},
+		alternative_capability_id="top_customers_by_quantity",
+		alternative_report="Top Customers by Quantity",
+		reason="The current artifact cannot provide quantity columns safely, but a governed sibling query exists.",
+		allowed_to_recover=True,
+		confidence=0.91,
+	)
+	repair = build_conversational_repair_intent_contract(
+		request_id="phase8a-repair",
+		session_id="phase8a",
+		repair_intent_type="accept_recovery_action",
+		repair_state="accepted",
+		targets_prior_recovery=True,
+		accepted_recovery_action="run_alternative_governed_query",
+		guidance_topic="",
+		fresh_query_override=False,
+		preserve_scope=True,
+		preserve_entity_dimension=True,
+		preserve_time_context=True,
+		reason="The user accepted the governed alternative recovery action.",
+		allowed_next_lane="artifact_lane",
+		confidence=0.93,
+	)
+	recovery_payload = recovery.to_payload()
+	repair_payload = repair.to_payload()
+	if str(recovery_payload.get("type") or "").strip() != "qwen_artifact_enrichment_recovery_contract":
+		raise RuntimeError("Phase 8A probe failed: recovery payload type mismatch.")
+	if str(recovery_payload.get("recovery_state") or "").strip() != "recoverable":
+		raise RuntimeError("Phase 8A probe failed: recovery_state mismatch.")
+	if str(recovery_payload.get("recommended_recovery_action") or "").strip() != "run_alternative_governed_query":
+		raise RuntimeError("Phase 8A probe failed: recommended recovery action mismatch.")
+	if str(repair_payload.get("type") or "").strip() != "qwen_conversational_repair_intent_contract":
+		raise RuntimeError("Phase 8A probe failed: repair payload type mismatch.")
+	if str(repair_payload.get("repair_intent_type") or "").strip() != "accept_recovery_action":
+		raise RuntimeError("Phase 8A probe failed: repair_intent_type mismatch.")
+	if not bool(repair_payload.get("targets_prior_recovery")):
+		raise RuntimeError("Phase 8A probe failed: repair contract should target prior recovery.")
+	return {
+		"ok": True,
+		"recovery": recovery_payload,
+		"repair": repair_payload,
+	}
+
+
+def run_phase8b_recovery_authority_probe() -> Dict[str, Any]:
+	compatibility_contract = ArtifactEnrichmentCompatibilityContract(
+		request_id="phase8b-compatibility",
+		source_family_id="product_rankings",
+		source_capability_id="top_products_by_revenue",
+		source_report="Top Products by Revenue",
+		source_dimension="item_code",
+		target_metric="qty",
+		requested_columns=["qty"],
+		required_metric_keys=["qty"],
+		compatibility_status="governed_requery_compatible",
+		compatible=False,
+		target_capability_id="top_products_by_quantity",
+		target_report="Top Products by Quantity",
+		candidate_reports_considered=["Top Products by Revenue", "Top Products by Quantity"],
+		source_surface_sources=["erp_declared_surface"],
+		source_selector_filters=[],
+		reason="Quantity cannot be added safely to the current artifact, but a governed sibling query exists.",
+	)
+	grounded_turn = {
+		"request_id": "grounded-turn-1",
+		"trace_request_id": "grounded-trace-1",
+		"source_name": "Top Products by Revenue",
+		"company": "Mingalar Mobile Distribution Co., Ltd.",
+		"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+		"filters": {"company": "Mingalar Mobile Distribution Co., Ltd.", "warehouse": "Yangon Main Warehouse"},
+		"dimensions": ["item_code"],
+		"metrics": ["revenue"],
+		"artifact_family_id": "product_rankings",
+	}
+	followup_resolution = build_followup_resolution_contract(
+		request_id="phase8b-followup",
+		mode="family_followup",
+		target_dimension="item_code",
+		target_metric="qty",
+		requested_columns=["qty"],
+		requested_time_scope="last month",
+		depends_on_grounded_turn=True,
+		latest_grounded_turn_available=True,
+		reason="The user requested quantity columns over the existing ranking artifact.",
+	)
+	enrichment_recovery = build_recovery_contract_from_enrichment_compatibility(
+		request_id="phase8b-enrichment-recovery",
+		session_id="phase8b",
+		compatibility_contract=compatibility_contract,
+		grounded_turn=grounded_turn,
+		followup_resolution=followup_resolution,
+	)
+	evidence_recovery = build_recovery_contract_from_evidence_boundary(
+		request_id="phase8b-evidence-recovery",
+		session_id="phase8b",
+		artifact_payload={"family_id": "transaction_listing", "source_name": "Sales Invoice List"},
+		grounded_turn={
+			"request_id": "grounded-turn-2",
+			"trace_request_id": "grounded-trace-2",
+			"source_name": "Sales Invoice List",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["invoice"],
+			"metrics": ["grand_total", "outstanding_amount"],
+			"artifact_family_id": "transaction_listing",
+		},
+		reason="The current artifact does not include governed delivery evidence.",
+	)
+	enrichment_payload = enrichment_recovery.to_payload()
+	evidence_payload = evidence_recovery.to_payload()
+	if str(enrichment_payload.get("recommended_recovery_action") or "").strip() != "run_alternative_governed_query":
+		raise RuntimeError("Phase 8B probe failed: governed enrichment recovery did not recommend the governed alternative.")
+	if str(enrichment_payload.get("alternative_report") or "").strip() != "Top Products by Quantity":
+		raise RuntimeError("Phase 8B probe failed: alternative report mismatch.")
+	if str(evidence_payload.get("failure_type") or "").strip() != "grounded_evidence_missing":
+		raise RuntimeError("Phase 8B probe failed: evidence-boundary failure type mismatch.")
+	if str(evidence_payload.get("recommended_recovery_action") or "").strip() != "clarify_target_output":
+		raise RuntimeError("Phase 8B probe failed: evidence-boundary recovery did not recommend clarification.")
+	return {
+		"ok": True,
+		"enrichment_recovery": enrichment_payload,
+		"evidence_recovery": evidence_payload,
 	}

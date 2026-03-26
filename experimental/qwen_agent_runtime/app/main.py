@@ -17,6 +17,8 @@ from app.schemas import (
 	FollowUpInterpretResponse,
 	ReasoningActivationInterpretRequest,
 	ReasoningActivationInterpretResponse,
+	RepairIntentInterpretRequest,
+	RepairIntentInterpretResponse,
 	ReasoningRenderRequest,
 	ReasoningRenderResponse,
 )
@@ -26,6 +28,7 @@ from app.service import (
 	handle_frontdoor_render,
 	handle_followup_interpretation,
 	handle_fresh_query_interpretation,
+	handle_repair_intent_interpretation,
 	handle_reasoning_activation_interpretation,
 	handle_reasoning_render,
 )
@@ -138,6 +141,18 @@ def interpret_reasoning_activation(
 	settings: Settings = Depends(get_settings),
 ) -> ReasoningActivationInterpretResponse:
 	return handle_reasoning_activation_interpretation(request, settings)
+
+
+@app.post(
+	"/interpret-repair-intent",
+	response_model=RepairIntentInterpretResponse,
+	dependencies=[Depends(_require_auth)],
+)
+def interpret_repair_intent(
+	request: RepairIntentInterpretRequest,
+	settings: Settings = Depends(get_settings),
+) -> RepairIntentInterpretResponse:
+	return handle_repair_intent_interpretation(request, settings)
 
 
 @app.post(

@@ -15,6 +15,8 @@ from app.schemas import (
 	FollowUpInterpretResponse,
 	ReasoningActivationInterpretRequest,
 	ReasoningActivationInterpretResponse,
+	RepairIntentInterpretRequest,
+	RepairIntentInterpretResponse,
 	ReasoningRenderRequest,
 	ReasoningRenderResponse,
 	ToolTraceItem,
@@ -42,6 +44,10 @@ from app.semantic_followup_engine import (
 from app.semantic_reasoning_activation_engine import (
 	SemanticReasoningActivationEngineError,
 	run_semantic_reasoning_activation_engine,
+)
+from app.semantic_repair_intent_engine import (
+	SemanticRepairIntentEngineError,
+	run_semantic_repair_intent_engine,
 )
 from app.settings import Settings
 from app.validation import summarize_artifact_narrative_validation, summarize_read_validation
@@ -278,4 +284,26 @@ def handle_reasoning_render(
 			payload=None,
 			agent_meta={"engine": "erp_business_reasoning"},
 			error=f"Unexpected ERP business reasoning error: {exc}",
+		)
+
+
+def handle_repair_intent_interpretation(
+	request: RepairIntentInterpretRequest,
+	settings: Settings,
+) -> RepairIntentInterpretResponse:
+	try:
+		return run_semantic_repair_intent_engine(request, settings)
+	except SemanticRepairIntentEngineError as exc:
+		return RepairIntentInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_repair_intent"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return RepairIntentInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_repair_intent"},
+			error=f"Unexpected semantic repair intent error: {exc}",
 		)

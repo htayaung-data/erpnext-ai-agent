@@ -177,6 +177,37 @@ class ReasoningActivationInterpretResponse(BaseModel):
 	error: str = ""
 
 
+class RepairIntentInterpretRequest(BaseModel):
+	request_id: str
+	session_id: str
+	user_id: str
+	site_name: str
+	message: str
+	recent_messages: List[ChatMessage] = Field(default_factory=list)
+	latest_recovery_contract: Dict[str, Any] = Field(default_factory=dict)
+	latest_grounded_turn: Dict[str, Any] = Field(default_factory=dict)
+	latest_assistant_payload: Dict[str, Any] = Field(default_factory=dict)
+	interpretation_context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RepairIntentInterpretation(BaseModel):
+	repair_intent_type: str = ""
+	accepted_recovery_action: str = ""
+	guidance_topic: str = ""
+	preserve_scope: bool = False
+	preserve_entity_dimension: bool = False
+	preserve_time_context: bool = False
+	confidence: float = 0.0
+	reason: str = ""
+
+
+class RepairIntentInterpretResponse(BaseModel):
+	ok: bool
+	interpretation: RepairIntentInterpretation | None = None
+	agent_meta: Dict[str, Any] = Field(default_factory=dict)
+	error: str = ""
+
+
 class ReasoningRenderRequest(BaseModel):
 	request_id: str
 	session_id: str

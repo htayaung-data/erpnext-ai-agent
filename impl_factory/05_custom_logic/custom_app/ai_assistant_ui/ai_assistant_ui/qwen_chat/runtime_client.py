@@ -312,6 +312,66 @@ def call_qwen_runtime_reasoning_activation_interpretation(
 	return data
 
 
+def call_qwen_runtime_repair_intent_interpretation(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]],
+	latest_recovery_contract: Dict[str, Any],
+	latest_grounded_turn: Dict[str, Any],
+	latest_assistant_payload: Dict[str, Any],
+	interpretation_context: Dict[str, Any],
+) -> Dict[str, Any]:
+	base_url = _base_url()
+	if not base_url:
+		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
+
+	payload = {
+		"request_id": str(request_id or "").strip(),
+		"session_id": str(session_id or "").strip(),
+		"user_id": str(user_id or "").strip(),
+		"site_name": str(site_name or "").strip(),
+		"message": str(message or "").strip(),
+		"recent_messages": list(recent_messages or []),
+		"latest_recovery_contract": latest_recovery_contract if isinstance(latest_recovery_contract, dict) else {},
+		"latest_grounded_turn": latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {},
+		"latest_assistant_payload": latest_assistant_payload if isinstance(latest_assistant_payload, dict) else {},
+		"interpretation_context": interpretation_context if isinstance(interpretation_context, dict) else {},
+	}
+
+	url = f"{base_url}/interpret-repair-intent"
+	try:
+		resp = requests.post(
+			url,
+			headers=_auth_headers(),
+			data=json.dumps(payload),
+			timeout=_timeout_seconds(),
+		)
+	except requests.RequestException as exc:
+		raise QwenRuntimeClientError(f"Qwen runtime repair interpretation failed: {exc}") from exc
+
+	try:
+		data = resp.json()
+	except Exception as exc:
+		raise QwenRuntimeClientError(
+			f"Qwen runtime repair interpreter returned non-JSON response ({resp.status_code})."
+		) from exc
+
+	if resp.status_code >= 400:
+		msg = ""
+		if isinstance(data, dict):
+			msg = str(data.get("error") or data.get("detail") or "").strip()
+		raise QwenRuntimeClientError(msg or f"Qwen runtime repair interpreter error ({resp.status_code}).")
+
+	if not isinstance(data, dict):
+		raise QwenRuntimeClientError("Qwen runtime repair interpreter returned invalid payload.")
+
+	return data
+
+
 def call_qwen_runtime_reasoning_render(
 	*,
 	request_id: str,

@@ -35,7 +35,10 @@ from ai_assistant_ui.qwen_chat.clarification_resolution import (
 )
 from ai_assistant_ui.qwen_chat.contracts import (
 	ExecutionPath,
+	build_artifact_enrichment_recovery_contract,
 	build_artifact_enrichment_compatibility_contract,
+	build_recovery_contract_from_enrichment_compatibility,
+	build_recovery_contract_from_evidence_boundary,
 	build_known_unsupported_scope_decision_input,
 	coerce_followup_resolution_from_scope_decision,
 	build_artifact_continuation_contract,
@@ -118,6 +121,10 @@ from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, cal
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key, get_metric_label
 from ai_assistant_ui.qwen_chat.semantic_interpreter import interpret_followup_semantically
 from ai_assistant_ui.qwen_chat.semantic_reasoning_activation import interpret_reasoning_activation_semantically
+from ai_assistant_ui.qwen_chat.semantic_repair_intent import (
+	build_repair_intent_contract_from_semantic_result,
+	interpret_repair_intent_semantically,
+)
 
 QWEN_SESSION_DOCTYPE = "Qwen Chat Session"
 VISIBLE_ROLES = {"user", "assistant"}
@@ -472,6 +479,7 @@ def _handle_compiled_first_turn_result(
 	governed_scope_contract=None,
 	front_door_contract=None,
 	clarification_response_contract=None,
+	pre_result_tool_payloads: List[Dict[str, Any]] | None = None,
 	result: Dict[str, Any],
 ) -> Tuple[bool, Dict[str, Any]]:
 	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
@@ -488,6 +496,9 @@ def _handle_compiled_first_turn_result(
 		result=result,
 	)
 	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+	for payload in (pre_result_tool_payloads or []):
+		if isinstance(payload, dict) and payload:
+			_append_tool_payload(session_doc, payload)
 	clarification_reason_payload: Dict[str, Any] = {}
 	if clarification_signal_payload:
 		clarification_reason_contract = _compiled_clarification_reason_contract(
@@ -1136,6 +1147,49 @@ def _compile_capability_requery_message(
 		if label and label not in extra_metric_labels:
 			extra_metric_labels.append(label)
 
+	source_family_id = str(
+		getattr(continuation_contract, "source_family_id", "")
+		or grounded_turn.get("artifact_family_id")
+		or ""
+	).strip()
+	primary_metric_for_query = str(target_metric or "").strip()
+	if not primary_metric_for_query:
+		for value in requested_columns:
+			canonical_metric = get_canonical_key(
+				value,
+				capability_id=effective_capability_id or None,
+				dimension_or_metric="metric",
+			)
+			if canonical_metric:
+				primary_metric_for_query = str(get_metric_label(canonical_metric) or value or "").strip()
+				break
+	time_phrase = ""
+	if requested_time_scope == "last_month":
+		time_phrase = " for last month"
+	elif requested_time_scope == "current_period":
+		time_phrase = " for the current month"
+	elif requested_time_scope == "all_period":
+		time_phrase = " for the full available time range"
+	elif preserve_prior_date_scope and report_date:
+		time_phrase = f" as of {report_date}"
+	elif preserve_prior_date_scope and from_date and to_date:
+		time_phrase = f" from {from_date} to {to_date}"
+	if (
+		source_family_id == "ranking_analytics"
+		and primary_metric_for_query
+		and {"metric_refinement", "column_refinement"}.intersection(set(requested_modes))
+	):
+		structured_query = _structured_governed_query_message(
+			requested_top_n=target_limit or preserved_limit,
+			dimension=target_dimension or preserved_dimension,
+			metric=primary_metric_for_query,
+			time_phrase=time_phrase,
+			report_name=target_report or source_report,
+			capability_id=effective_capability_id,
+		)
+		if structured_query:
+			return structured_query
+
 	parts: List[str] = []
 	if target_report:
 		parts.append(f"Use the report `{target_report}`.")
@@ -1188,6 +1242,160 @@ def _compile_capability_requery_message(
 		parts.append("Return the result as a table.")
 	parts.append(f"User request: {str(raw_message or '').strip()}")
 	return " ".join(part for part in parts if part).strip()
+
+
+def _recovery_time_phrase(recovery_contract: Dict[str, Any]) -> str:
+	time_context = recovery_contract.get("preservable_time_context") if isinstance(recovery_contract.get("preservable_time_context"), dict) else {}
+	requested_time_scope = str(time_context.get("requested_time_scope") or "").strip()
+	if requested_time_scope:
+		return f" for {requested_time_scope.replace('_', ' ')}"
+	report_date = str(time_context.get("report_date") or "").strip()
+	if report_date:
+		return f" as of {report_date}"
+	from_date = str(time_context.get("from_date") or "").strip()
+	to_date = str(time_context.get("to_date") or "").strip()
+	if from_date and to_date:
+		return f" from {from_date} to {to_date}"
+	return ""
+
+
+def _dimension_query_subject(value: str) -> str:
+	canonical = str(get_canonical_key(value, dimension_or_metric="dimension") or "").strip()
+	if canonical in {"item", "item_name", "item_code"}:
+		return "products"
+	if canonical == "customer":
+		return "customers"
+	if canonical == "supplier":
+		return "suppliers"
+	if canonical == "territory":
+		return "territories"
+	if canonical == "warehouse":
+		return "warehouses"
+	clean = str(value or "").strip().lower().replace("_", " ")
+	if clean.endswith(" name"):
+		clean = clean[: -len(" name")].strip()
+	return clean
+
+
+def _metric_query_phrase(value: str, capability_id: str = "") -> str:
+	canonical = str(
+		get_canonical_key(value, capability_id=capability_id or None, dimension_or_metric="metric")
+		or ""
+	).strip()
+	if canonical:
+		return str(get_metric_label(canonical) or canonical).strip().lower()
+	return str(value or "").strip().replace("_", " ").lower()
+
+
+def _structured_governed_query_message(
+	*,
+	requested_top_n: int,
+	dimension: str,
+	metric: str,
+	time_phrase: str = "",
+	report_name: str = "",
+	capability_id: str = "",
+) -> str:
+	subject = _dimension_query_subject(dimension)
+	metric_phrase = _metric_query_phrase(metric, capability_id=capability_id)
+	if subject and metric_phrase:
+		parts: List[str] = ["show me"]
+		if requested_top_n > 0:
+			parts.append(f"top {requested_top_n}")
+		parts.append(subject)
+		parts.append(f"by {metric_phrase}")
+		query = " ".join(part for part in parts if part).strip()
+		if time_phrase:
+			query = f"{query}{time_phrase}"
+		return query.strip()
+	if report_name:
+		base = f"show me {report_name}".strip()
+		if metric_phrase:
+			base = f"{base} by {metric_phrase}".strip()
+		if time_phrase:
+			base = f"{base}{time_phrase}"
+		return base.strip()
+	return ""
+
+
+def _build_recovery_governed_query_message(recovery_contract: Dict[str, Any]) -> str:
+	scope = recovery_contract.get("preservable_scope") if isinstance(recovery_contract.get("preservable_scope"), dict) else {}
+	dimensions = [
+		str(value or "").strip()
+		for value in (recovery_contract.get("preservable_dimensions") or [])
+		if str(value or "").strip()
+	]
+	metrics = [
+		str(value or "").strip()
+		for value in (recovery_contract.get("preservable_metrics") or [])
+		if str(value or "").strip()
+	]
+	try:
+		requested_top_n = int(max(0, scope.get("requested_top_n") or 0))
+	except Exception:
+		requested_top_n = 0
+	primary_dimension = dimensions[0] if dimensions else ""
+	primary_metric = metrics[0] if metrics else ""
+	if primary_dimension or primary_metric or requested_top_n > 0:
+		time_phrase = _recovery_time_phrase(recovery_contract)
+		query = _structured_governed_query_message(
+			requested_top_n=requested_top_n,
+			dimension=primary_dimension,
+			metric=primary_metric,
+			time_phrase=time_phrase,
+			report_name=str(recovery_contract.get("alternative_report") or recovery_contract.get("source_report") or "").strip(),
+			capability_id=str(recovery_contract.get("alternative_capability_id") or recovery_contract.get("source_capability_id") or "").strip(),
+		)
+		if query:
+			return query.strip()
+	report_name = str(recovery_contract.get("alternative_report") or "").strip()
+	if not report_name:
+		report_name = str(recovery_contract.get("source_report") or "").strip()
+	time_phrase = _recovery_time_phrase(recovery_contract)
+	if report_name:
+		return f"show me {report_name}{time_phrase}".strip()
+	metrics = [
+		str(value or "").strip()
+		for value in (recovery_contract.get("preservable_metrics") or [])
+		if str(value or "").strip()
+	]
+	dimensions = [
+		str(value or "").strip()
+		for value in (recovery_contract.get("preservable_dimensions") or [])
+		if str(value or "").strip()
+	]
+	metric_phrase = f" {metrics[0]}" if metrics else ""
+	dimension_phrase = f" by {dimensions[0]}" if dimensions else ""
+	return f"show me a governed query with{metric_phrase}{dimension_phrase}{time_phrase}".strip()
+
+
+def _build_recovery_guidance_answer(recovery_contract: Dict[str, Any]) -> str:
+	source_report = str(recovery_contract.get("source_report") or "the current governed artifact").strip()
+	alternative_report = str(recovery_contract.get("alternative_report") or "").strip()
+	recommended_action = str(recovery_contract.get("recommended_recovery_action") or "").strip()
+	guidance_query = _build_recovery_governed_query_message(recovery_contract)
+	if alternative_report or guidance_query:
+		alternative_intro = (
+			f"- Ask for the governed alternative `{alternative_report}` directly"
+			if alternative_report
+			else "- Ask for the governed alternative directly"
+		)
+		if guidance_query:
+			alternative_intro = f"{alternative_intro}: `{guidance_query}`"
+		return (
+			f"The current governed source cannot safely provide that output from {source_report}.\n\n"
+			"Try one of these governed next steps:\n"
+			f"{alternative_intro}\n"
+			f"- If you want to stay on the current artifact, ask only for fields already present in {source_report}\n"
+			f"- Current recommended recovery path: `{recommended_action or 'run_alternative_governed_query'}`"
+		)
+	return (
+		f"The current governed source cannot safely provide that output from {source_report}.\n\n"
+		"Try one of these bounded next steps:\n"
+		"- Clarify the exact governed output you want\n"
+		"- Ask for a governed operational source that directly contains the missing evidence\n"
+		f"- Current recommended recovery path: `{recommended_action or 'clarify_target_output'}`"
+	)
 
 
 def _artifact_metric_columns_available(
@@ -1907,6 +2115,16 @@ def _latest_reasoning_contract(session_doc) -> Dict[str, Any]:
 	return {}
 
 
+def _latest_recovery_contract(session_doc) -> Dict[str, Any]:
+	for m in reversed(session_doc.get("messages") or []):
+		if str(m.role or "").strip().lower() != "tool":
+			continue
+		payload = _parse_payload(str(m.content or ""))
+		if str(payload.get("type") or "").strip().lower() == "qwen_artifact_enrichment_recovery_contract":
+			return payload
+	return {}
+
+
 def _source_compatible_reasoning_contract(
 	*,
 	grounded_turn: Dict[str, Any],
@@ -2012,6 +2230,113 @@ def _append_knowledge_boundary_contract(
 	)
 	_append_tool_payload(session_doc, boundary_payload)
 	return boundary_payload
+
+
+def _append_grounded_evidence_recovery_contract(
+	session_doc,
+	*,
+	request_id: str,
+	session_id: str,
+	artifact_payload: Dict[str, Any] | None,
+	grounded_turn: Dict[str, Any] | None,
+	followup_resolution,
+	reason: str,
+) -> Dict[str, Any]:
+	recovery_payload = build_recovery_contract_from_evidence_boundary(
+		request_id=request_id,
+		session_id=session_id,
+		artifact_payload=artifact_payload,
+		grounded_turn=grounded_turn,
+		followup_resolution=followup_resolution,
+		reason=reason,
+	).to_payload()
+	_append_tool_payload(session_doc, recovery_payload)
+	return recovery_payload
+
+
+def _append_enrichment_recovery_contract(
+	session_doc,
+	*,
+	request_id: str,
+	session_id: str,
+	compatibility_contract,
+	grounded_turn: Dict[str, Any] | None,
+	followup_resolution,
+) -> Dict[str, Any]:
+	recovery_payload = build_recovery_contract_from_enrichment_compatibility(
+		request_id=request_id,
+		session_id=session_id,
+		compatibility_contract=compatibility_contract,
+		grounded_turn=grounded_turn,
+		followup_resolution=followup_resolution,
+	).to_payload()
+	_append_tool_payload(session_doc, recovery_payload)
+	return recovery_payload
+
+
+def _handle_recovery_guidance_response(
+	*,
+	session_doc,
+	request_id: str,
+	raw_message: str,
+	interaction_contract,
+	frontdoor_semantic_result,
+	frontdoor_contract,
+	clarification_response_contract,
+	response_policy_contract,
+	semantic_repair_payload: Dict[str, Any],
+	repair_contract_payload: Dict[str, Any],
+	latest_grounded_turn: Dict[str, Any],
+	answer_text: str,
+) -> Tuple[bool, Dict[str, Any]]:
+	followup_resolution = build_followup_resolution_contract(
+		request_id=request_id,
+		mode="repair_guidance",
+		depends_on_grounded_turn=bool(latest_grounded_turn),
+		self_contained=False,
+		latest_grounded_turn_available=bool(latest_grounded_turn),
+		reason="The current turn asked for bounded recovery guidance rather than new data retrieval.",
+	)
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path="recovery_guidance",
+		reason="The assistant rendered bounded guidance from the active recovery contract.",
+		requires_runtime=False,
+		grounded_required=bool(latest_grounded_turn),
+	)
+	if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
+		session_doc.title = (raw_message[:60] + "…") if len(raw_message) > 60 else raw_message
+	_append_message(session_doc, "user", raw_message)
+	_append_tool_payload(session_doc, interaction_contract.to_payload())
+	_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+	_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+	if clarification_response_contract is not None:
+		_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+	_append_tool_payload(session_doc, response_policy_contract.to_payload())
+	_append_tool_payload(session_doc, semantic_repair_payload)
+	_append_tool_payload(session_doc, repair_contract_payload)
+	_append_tool_payload(session_doc, followup_resolution.to_payload())
+	_append_tool_payload(session_doc, execution_path.to_payload())
+	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+	_append_tool_payload(
+		session_doc,
+		build_audit_envelope(
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload={},
+			grounded_turn_context=latest_grounded_turn,
+			answer_text=answer_text,
+		).to_payload(),
+	)
+	session_doc.save(ignore_permissions=False)
+	return True, {
+		"ok": True,
+		"request_id": request_id,
+		"mode": "recovery_guidance",
+		"answer_text": answer_text,
+		"agent_meta": {"engine": "recovery_guidance"},
+	}
 
 
 def _phase6_activation_event_level(status: str) -> str:
@@ -2547,6 +2872,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		grounded_turn=latest_grounded_turn,
 		reasoning_contract=_latest_reasoning_contract(session_doc),
 	)
+	latest_recovery_contract = _latest_recovery_contract(session_doc)
 	clarification_state = get_clarification_state(session_doc)
 	pending_clarification_signal = (
 		dict(clarification_state.pending_signal)
@@ -2715,7 +3041,138 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				frontdoor_contract=frontdoor_contract,
 			)
 			frontdoor_answer = str(frontdoor_render_result.answer_text or "").strip() or _front_door_answer_text(frontdoor_contract)
-	if bool(getattr(frontdoor_contract, "handle_in_front_door", False)) and frontdoor_answer:
+	context_isolation = build_scope_decision_input()
+	if latest_grounded_turn_available:
+		context_isolation = normalize_scope_decision_input(
+			assess_context_isolation(
+				msg,
+				language=interaction_contract.detected_language,
+				grounded_turn=latest_grounded_turn,
+			)
+		)
+	repair_recent_messages = _recent_messages(session_doc, limit=8)
+	if latest_recovery_contract and not pending_clarification_signal and not bool(context_isolation.force_new_query):
+		semantic_repair_result = interpret_repair_intent_semantically(
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=msg,
+			recent_messages=repair_recent_messages,
+			latest_recovery_contract=latest_recovery_contract,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_assistant_payload=latest_assistant_payload,
+		)
+		semantic_repair_payload = semantic_repair_result.to_payload()
+		repair_contract_payload = build_repair_intent_contract_from_semantic_result(
+			request_id=request_id,
+			session_id=session_name,
+			semantic_result=semantic_repair_result,
+		)
+		repair_intent = semantic_repair_result.intent
+		if (
+			semantic_repair_result.status == "accepted"
+			and repair_intent is not None
+			and str(repair_intent.repair_intent_type or "").strip() == "guidance_request"
+		):
+			answer_text = _build_recovery_guidance_answer(latest_recovery_contract)
+			return _handle_recovery_guidance_response(
+				session_doc=session_doc,
+				request_id=request_id,
+				raw_message=raw_msg,
+				interaction_contract=interaction_contract,
+				frontdoor_semantic_result=frontdoor_semantic_result,
+				frontdoor_contract=frontdoor_contract,
+				clarification_response_contract=clarification_response_contract,
+				response_policy_contract=provisional_response_policy_contract,
+				semantic_repair_payload=semantic_repair_payload,
+				repair_contract_payload=repair_contract_payload,
+				latest_grounded_turn=latest_grounded_turn,
+				answer_text=answer_text,
+			)
+		if (
+			semantic_repair_result.status == "accepted"
+			and repair_intent is not None
+			and str(repair_intent.repair_intent_type or "").strip() == "accept_recovery_action"
+		):
+			accepted_action = str(repair_intent.accepted_recovery_action or "").strip()
+			if accepted_action == "run_alternative_governed_query":
+				synthesized_message = _build_recovery_governed_query_message(latest_recovery_contract)
+				followup_resolution = build_followup_resolution_contract(
+					request_id=request_id,
+					mode="new_query",
+					depends_on_grounded_turn=False,
+					self_contained=True,
+					latest_grounded_turn_available=bool(latest_grounded_turn),
+					reason="The user accepted a governed recovery alternative, so the assistant must run a fresh governed query.",
+				)
+				execution_path = ExecutionPath(
+					request_id=request_id,
+					path="recovery_fresh_query",
+					reason="The user accepted a governed recovery alternative and it was converted into a fresh governed query.",
+					requires_runtime=True,
+					grounded_required=False,
+				)
+				scope_decision_contract = build_governed_scope_decision_contract(
+					request_id=request_id,
+					stage="recovery_orchestration",
+					followup_resolution=followup_resolution,
+					context_isolation=build_scope_decision_input(force_new_query=True, reason="Accepted governed recovery action."),
+					latest_grounded_turn_available=False,
+					entity_drilldown=None,
+					continuation_contract=None,
+					clarification_required=False,
+				)
+				if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
+					session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
+				_append_message(session_doc, "user", raw_msg)
+				_append_tool_payload(session_doc, interaction_contract.to_payload())
+				_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+				_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+				if clarification_response_contract is not None:
+					_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+				_append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())
+				_append_tool_payload(session_doc, semantic_repair_payload)
+				_append_tool_payload(session_doc, repair_contract_payload)
+				_append_tool_payload(session_doc, followup_resolution.to_payload())
+				_append_tool_payload(session_doc, scope_decision_contract.to_payload())
+				_append_tool_payload(session_doc, execution_path.to_payload())
+				compiled_result = execute_compiled_fresh_query_message(
+					session_id=session_name,
+					user_id=user,
+					site_name=site_name,
+					message=synthesized_message,
+					recent_messages=[],
+					clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
+				)
+				return _handle_compiled_first_turn_result(
+					session_doc=session_doc,
+					request_id=request_id,
+					interaction_contract=interaction_contract,
+					followup_resolution=followup_resolution,
+					execution_path=execution_path,
+					governed_scope_contract=scope_decision_contract,
+					front_door_contract=frontdoor_contract,
+					clarification_response_contract=clarification_response_contract,
+					result=compiled_result,
+				)
+			if accepted_action == "clarify_target_output":
+				answer_text = _build_recovery_guidance_answer(latest_recovery_contract)
+				return _handle_recovery_guidance_response(
+					session_doc=session_doc,
+					request_id=request_id,
+					raw_message=raw_msg,
+					interaction_contract=interaction_contract,
+					frontdoor_semantic_result=frontdoor_semantic_result,
+					frontdoor_contract=frontdoor_contract,
+					clarification_response_contract=clarification_response_contract,
+					response_policy_contract=provisional_response_policy_contract,
+					semantic_repair_payload=semantic_repair_payload,
+					repair_contract_payload=repair_contract_payload,
+					latest_grounded_turn=latest_grounded_turn,
+					answer_text=answer_text,
+				)
+	if bool(getattr(frontdoor_contract, "handle_in_front_door", False)) and frontdoor_answer and not bool(context_isolation.force_new_query):
 		frontdoor_followup_resolution = build_followup_resolution_contract(
 			request_id=request_id,
 			mode="front_door",
@@ -2978,20 +3435,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			result=compiled_result,
 		)
 	entity_drilldown = None
-	context_isolation = build_scope_decision_input()
 	if latest_grounded_turn_available:
 		entity_drilldown = detect_entity_drilldown_request(
 			message=msg,
 			artifact_payload=latest_family_artifact,
 			grounded_turn=latest_grounded_turn,
-		)
-		if entity_drilldown is None:
-			context_isolation = normalize_scope_decision_input(
-				assess_context_isolation(
-					msg,
-					language=interaction_contract.detected_language,
-					grounded_turn=latest_grounded_turn,
-				)
 		)
 	pre_reasoning_followup_resolution = None
 	pre_reasoning_requested_modes: List[str] = []
@@ -3610,6 +4058,15 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			governed_scope_contract=scope_decision_contract.to_payload(),
 			grounded_turn=latest_grounded_turn,
 		)
+		_append_grounded_evidence_recovery_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			followup_resolution=followup_resolution,
+			reason=execution_path.reason,
+		)
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
 			detail_answer=evidence_boundary_answer,
@@ -3653,6 +4110,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			front_door_contract=frontdoor_contract.to_payload(),
 			governed_scope_contract=scope_decision_contract.to_payload(),
 			grounded_turn=latest_grounded_turn,
+		)
+		_append_enrichment_recovery_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			compatibility_contract=enrichment_compatibility_contract,
+			grounded_turn=latest_grounded_turn,
+			followup_resolution=followup_resolution,
 		)
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
@@ -7200,3 +7665,448 @@ def run_phase7d_boundary_response_live_smoke() -> Dict[str, Any]:
 		}
 
 	return _run_phase55_smoke_session("Phase 7D Boundary Response Live Smoke", _runner)
+
+
+def run_phase8b_recovery_authority_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		followup_resolution = build_followup_resolution_contract(
+			request_id="phase8b-smoke-followup",
+			mode="family_followup",
+			target_dimension="invoice",
+			requested_columns=["delivery_status"],
+			depends_on_grounded_turn=True,
+			latest_grounded_turn_available=True,
+			reason="The user asked for delivery status over a sales-invoice artifact.",
+		)
+		recovery_payload = _append_grounded_evidence_recovery_contract(
+			doc,
+			request_id="phase8b-smoke-recovery",
+			session_id=doc.name,
+			artifact_payload={"family_id": "transaction_listing", "source_name": "Sales Invoice List"},
+			grounded_turn={
+				"request_id": "phase8b-grounded-turn",
+				"trace_request_id": "phase8b-grounded-trace",
+				"source_name": "Sales Invoice List",
+				"company": "Mingalar Mobile Distribution Co., Ltd.",
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+				"dimensions": ["invoice"],
+				"metrics": ["grand_total", "outstanding_amount"],
+				"artifact_family_id": "transaction_listing",
+			},
+			followup_resolution=followup_resolution,
+			reason="The current governed artifact does not contain direct ERP evidence for the requested operational status.",
+		)
+		if str(recovery_payload.get("failure_type") or "").strip() != "grounded_evidence_missing":
+			raise RuntimeError("Phase 8B recovery smoke failed: failure_type was not grounded_evidence_missing.")
+		if str(recovery_payload.get("recommended_recovery_action") or "").strip() != "clarify_target_output":
+			raise RuntimeError("Phase 8B recovery smoke failed: grounded evidence boundary did not recommend clarification.")
+		if not bool(recovery_payload.get("allowed_to_recover")):
+			raise RuntimeError("Phase 8B recovery smoke failed: grounded evidence boundary recovery should remain recoverable via clarification.")
+		return {
+			"ok": True,
+			"mode": "recovery_contract_emitted",
+			"recovery_payload": recovery_payload,
+		}
+
+	return _run_phase55_smoke_session("Phase 8B Recovery Authority Smoke", _runner)
+
+
+def run_phase8c_repair_handling_smoke() -> Dict[str, Any]:
+	def _seed_recovery_session(doc) -> None:
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="phase8c-seed-recovery",
+			session_id=doc.name,
+			source_request_id="phase8c-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "phase8c-grounded-request",
+			"trace_request_id": "phase8c-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"I can't safely add quantity to the current ranking, but I can run the governed Top Customers by Quantity report for last month."
+			),
+		)
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_recovery_session(doc)
+		ok, guidance_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="how do I ask for qty",
+			user="Administrator",
+		)
+		if not ok or str((guidance_payload or {}).get("mode") or "").strip() != "recovery_guidance":
+			raise RuntimeError("Phase 8C repair smoke failed: guidance request did not route to recovery guidance.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		guidance_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		repair_payload = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_conversational_repair_intent_contract")
+		if str(repair_payload.get("repair_intent_type") or "").strip() != "guidance_request":
+			raise RuntimeError("Phase 8C repair smoke failed: guidance request did not emit guidance_request contract.")
+		if "Top Customers by Quantity" not in guidance_text:
+			raise RuntimeError("Phase 8C repair smoke failed: guidance answer did not include the governed alternative report.")
+
+		ok, accepted_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8C repair smoke failed: accepted recovery action did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		repair_payload = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_conversational_repair_intent_contract")
+		if str(repair_payload.get("accepted_recovery_action") or "").strip() != "run_alternative_governed_query":
+			raise RuntimeError("Phase 8C repair smoke failed: accepted recovery action mismatch.")
+		user_messages = [
+			str(row.content or "").strip()
+			for row in (session_doc.get("messages") or [])
+			if str(row.role or "").strip().lower() == "user"
+		]
+		if "yes please run the governed alternative" not in user_messages:
+			raise RuntimeError("Phase 8C repair smoke failed: accepted recovery user turn was not persisted.")
+		lower_text = assistant_text.lower()
+		if "quantity" not in lower_text and "qty" not in lower_text and "unit" not in lower_text:
+			raise RuntimeError("Phase 8C repair smoke failed: accepted recovery did not appear to run the governed quantity query.")
+		return {
+			"ok": True,
+			"guidance_mode": str((guidance_payload or {}).get("mode") or "").strip(),
+			"guidance_text": guidance_text,
+			"accepted_mode": str((accepted_payload or {}).get("mode") or "").strip(),
+			"accepted_text": assistant_text,
+		}
+
+	return _run_phase55_smoke_session("Phase 8C Repair Handling Smoke", _runner)
+
+
+def run_phase8c_repair_handling_debug() -> Dict[str, Any]:
+	def _seed_recovery_session(doc) -> None:
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="phase8c-debug-recovery",
+			session_id=doc.name,
+			source_request_id="phase8c-debug-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "phase8c-debug-grounded-request",
+			"trace_request_id": "phase8c-debug-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"I can't safely add quantity to the current ranking, but I can run the governed Top Customers by Quantity report for last month."
+			),
+		)
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_recovery_session(doc)
+		ok, guidance_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="how do I ask for qty",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8C repair debug failed on guidance turn.")
+		ok, accepted_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8C repair debug failed on accepted recovery turn.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		return {
+			"ok": True,
+			"guidance_mode": str((guidance_payload or {}).get("mode") or "").strip(),
+			"accepted_mode": str((accepted_payload or {}).get("mode") or "").strip(),
+			"assistant_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+			"repair_contract": _latest_tool_payload_by_type(tool_payloads, "qwen_conversational_repair_intent_contract"),
+			"followup_resolution": _latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution_contract"),
+			"compiled_audit": _latest_tool_payload_by_type(tool_payloads, "qwen_compiled_execution_audit_contract"),
+			"rendered_family_response": _latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract"),
+		}
+
+	return _run_phase55_smoke_session("Phase 8C Repair Handling Debug", _runner)
+
+
+def run_phase8d_fresh_query_override_smoke() -> Dict[str, Any]:
+	def _seed_recovery_session(doc) -> None:
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="phase8d-seed-recovery",
+			session_id=doc.name,
+			source_request_id="phase8d-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd."},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["revenue"],
+			preservable_time_context={"requested_time_scope": "last_month"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "phase8d-grounded-request",
+			"trace_request_id": "phase8d-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"I cannot safely add quantity to the current ranking, but I can run the governed Top Customers by Quantity report for last month."
+			),
+		)
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_recovery_session(doc)
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="forget that, show me AR insight",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8D fresh-query override smoke failed: explicit fresh query did not complete.")
+		if str((payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("Phase 8D fresh-query override smoke failed: explicit fresh query was not treated as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		repair_payload = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_conversational_repair_intent_contract")
+		if repair_payload:
+			raise RuntimeError("Phase 8D fresh-query override smoke failed: explicit fresh query should not emit a repair contract.")
+		if "Top Customers by Quantity" in assistant_text:
+			raise RuntimeError("Phase 8D fresh-query override smoke failed: stale recovery guidance leaked into the fresh query answer.")
+		if "AR" not in assistant_text and "receivable" not in assistant_text.lower():
+			raise RuntimeError("Phase 8D fresh-query override smoke failed: fresh query answer did not switch to AR context.")
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"assistant_text": assistant_text,
+		}
+
+	return _run_phase55_smoke_session("Phase 8D Fresh Query Override Smoke", _runner)
+
+
+def run_phase8_recovery_execution_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 products by revenue",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery smoke failed on initial products ranking request.")
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="include qty column",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery smoke failed on quantity enrichment request.")
+		initial_mode = str((payload or {}).get("mode") or "").strip()
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		initial_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		latest_repair_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_conversational_repair_intent_contract",
+		)
+		if str(latest_repair_payload.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query":
+			raise RuntimeError("Phase 8 recovery smoke failed: enrichment request auto-accepted the governed alternative before an explicit acceptance turn.")
+		recovery_payload = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_artifact_enrichment_recovery_contract")
+		if initial_mode == "artifact_enrichment_boundary" and str(recovery_payload.get("recommended_recovery_action") or "").strip() != "run_alternative_governed_query":
+			raise RuntimeError("Phase 8 recovery smoke failed: quantity enrichment did not recommend a governed alternative.")
+		accepted_mode = initial_mode
+		assistant_text = initial_text
+		if initial_mode == "artifact_enrichment_boundary":
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="yes, run that",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase 8 recovery smoke failed: accepted alternative did not complete.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+			repair_payload = _latest_tool_payload_by_type(_session_tool_payloads(session_doc), "qwen_conversational_repair_intent_contract")
+			if str(repair_payload.get("accepted_recovery_action") or "").strip() != "run_alternative_governed_query":
+				raise RuntimeError("Phase 8 recovery smoke failed: accepted recovery action mismatch.")
+			accepted_mode = str((payload or {}).get("mode") or "").strip()
+			if accepted_mode != "compiled_first_turn":
+				raise RuntimeError("Phase 8 recovery smoke failed: accepted alternative did not execute as compiled_first_turn.")
+		else:
+			lower_initial = initial_text.lower()
+			if "quantity" not in lower_initial and "qty" not in lower_initial and "unit" not in lower_initial:
+				raise RuntimeError("Phase 8 recovery smoke failed: direct quantity enrichment did not appear to return a quantity-focused result.")
+		ok, mixed_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Show together Qty, and revenue",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery smoke failed on mixed metric follow-up.")
+		mixed_mode = str((mixed_payload or {}).get("mode") or "").strip()
+		mixed_text = str(_latest_assistant_payload(frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)).get("text") or "").strip()
+		if mixed_mode not in {"artifact_enrichment_boundary", "recovery_guidance"}:
+			raise RuntimeError("Phase 8 recovery smoke failed: mixed metric follow-up did not stop safely in recovery/boundary handling.")
+		return {
+			"ok": True,
+			"initial_mode": initial_mode,
+			"initial_text": initial_text,
+			"recovery_payload": recovery_payload,
+			"accepted_mode": accepted_mode,
+			"accepted_text": assistant_text,
+			"mixed_mode": mixed_mode,
+			"mixed_text": mixed_text,
+		}
+
+	return _run_phase55_smoke_session("Phase 8 Recovery Execution Smoke", _runner)
+
+
+def run_phase8_recovery_execution_debug() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 products by revenue last month",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery debug failed on initial products ranking request.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="include qty column",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery debug failed on quantity enrichment request.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"first_assistant_text": first_assistant_text,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"assistant_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+			"recent_tool_types": [str(item.get("type") or "").strip() for item in tool_payloads[-20:]],
+			"followup_resolution": _latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution_contract"),
+			"continuation_contract": _latest_tool_payload_by_type(tool_payloads, "qwen_artifact_continuation_contract"),
+			"enrichment_compatibility_contract": _latest_tool_payload_by_type(tool_payloads, "qwen_artifact_enrichment_compatibility_contract"),
+			"recovery_contract": _latest_tool_payload_by_type(tool_payloads, "qwen_artifact_enrichment_recovery_contract"),
+			"scope_decision_contract": _latest_tool_payload_by_type(tool_payloads, "qwen_governed_scope_decision_contract"),
+			"grounded_turn_context": _latest_tool_payload_by_type(tool_payloads, "qwen_grounded_turn_context"),
+			"compiled_audit": _latest_tool_payload_by_type(tool_payloads, "qwen_compiled_execution_audit_contract"),
+			"rendered_family_response": _latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract"),
+		}
+
+	return _run_phase55_smoke_session("Phase 8 Recovery Execution Debug", _runner)

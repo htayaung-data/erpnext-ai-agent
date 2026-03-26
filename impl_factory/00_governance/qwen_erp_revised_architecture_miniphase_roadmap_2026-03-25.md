@@ -696,20 +696,25 @@ Important anti-patterns:
 
 ## Mini-phase 8
 
-Active next feature phase after Mini-phase 7 closure.
+Closed after implementation, runtime verification, and manual browser closure review.
 
-Deferred structural chapter: artifact enrichment recovery and conversational repair.
+Recovery and conversational repair phase.
 
-Reason for deferral:
+Goal:
 
-1. this chapter was surfaced by runtime testing
-2. it is important, but it should not interrupt metadata/discovery as the current core track
-3. it should be implemented after discovery and boundary foundations are stronger
+1. add structured recovery after failed enrichment / failed continuation
+2. add conversational repair / guidance handling
+3. make accepted alternatives become fresh governed queries safely
+4. strengthen explicit fresh-query override over stale context
+
+Primary design artifact:
+
+1. `qwen_erp_miniphase8_recovery_repair_design_2026-03-26.md`
 
 Target authorities to add here:
 
 1. `ArtifactEnrichmentRecoveryContract`
-2. `ConversationalRepairIntent`
+2. `ConversationalRepairIntentContract`
 
 Required outcomes:
 
@@ -733,6 +738,60 @@ Rule:
 
 1. this chapter is not template polishing
 2. this chapter is recovery orchestration and conversational repair
+
+Recommended implementation slices:
+
+1. 8A recovery contract foundation
+2. 8B enrichment recovery authority
+3. 8C alternative acceptance and guidance handling
+4. 8D strong fresh-query override
+
+Current progress:
+
+1. 8A recovery contract foundation is now implemented in `contracts.py`
+2. the new contract surface includes:
+   - `ArtifactEnrichmentRecoveryContract`
+   - `ConversationalRepairIntentContract`
+   - builder helpers for both contracts
+3. 8B enrichment recovery authority is now implemented through:
+   - recovery-authority builders for enrichment incompatibility and evidence-boundary failures
+   - service-layer recovery emission on `grounded_evidence_boundary`
+   - service-layer recovery emission on `artifact_enrichment_boundary`
+4. 8C alternative acceptance and guidance handling is now implemented through:
+   - semantic repair-intent interpretation
+   - bounded recovery-guidance rendering
+   - accepted governed alternative -> fresh governed query conversion
+5. 8D strong fresh-query override is now implemented through:
+   - earlier context-isolation authority evaluation
+   - recovery handling skipped when the turn is structurally a fresh governed ask
+   - front-door early return skipped when the turn is structurally a fresh governed ask
+5. Phase 8 probes now pass for:
+   - recoverable enrichment recovery contract
+   - accepted recovery-intent contract
+   - governed enrichment recovery authority
+   - evidence-boundary recovery authority
+   - service-level recovery payload emission
+   - repair guidance handling
+   - accepted governed alternative execution
+   - strong fresh-query override over stale recovery context
+6. recovery execution is now additionally hardened for ranking metric-basis follow-ups:
+   - metric-basis enrichment stops at `artifact_enrichment_boundary`
+   - accepted alternative execution compiles into a fresh governed quantity query
+   - mixed metric follow-up remains in bounded recovery guidance
+7. user-facing boundary answers remain intentionally stable; the new runtime value now includes:
+   - explicit recovery contract emission
+   - bounded recovery guidance
+   - governed alternative acceptance handling
+   - strong fresh-query override
+8. manual browser closure pass confirmed:
+   - recovery guidance stays bounded on unsupported enrichment
+   - explicit acceptance such as `yes run that` executes the governed alternative on the next turn
+   - strong fresh-query override still breaks stale recovery context cleanly
+9. recovery acceptance persistence is now fixed structurally:
+   - explicit acceptance user turns are persisted before fresh governed execution
+   - substantive refinement requests no longer auto-trigger recovery acceptance
+10. Mini-phase 8 is now closed for its intended scope
+11. separate multi-metric ranking outputs such as `Revenue + Qty together` remain a future governed artifact expansion, not a Mini-phase 8 blocker
 
 ## Mini-phase 9
 
@@ -770,15 +829,15 @@ These rules are now fixed.
 
 The immediate next step is:
 
-1. start Mini-phase 8 on top of the now-closed Mini-phase 7 foundation
-2. keep the already-closed authorities stable:
+1. keep the now-closed authorities stable:
    - clarification
    - front door
    - reasoning
    - knowledge boundary
-3. use Mini-phase 8 to add recovery / repair structurally, not by conversation patches
-4. after Mini-phase 8, complete post-contract hardening before expanding governed coverage
-5. then begin Wave 1 operational expansion before complex request decomposition
+   - recovery / repair
+2. complete post-contract hardening before expanding governed coverage
+3. then begin Wave 1 operational expansion before complex request decomposition
+4. treat governed multi-metric ranking artifacts as a separate later expansion if product priority justifies them
 
 What is explicitly not next:
 

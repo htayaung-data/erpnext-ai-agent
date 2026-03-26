@@ -596,7 +596,11 @@ def is_self_contained_business_request(
 		return True
 	if signal.target_dimension and signal.target_dimension not in artifact_signal.available_dimensions.values():
 		return True
-	if parsed.target_metric and parsed.target_metric not in artifact_signal.available_metric_keys:
+	if (
+		parsed.target_metric
+		and parsed.target_metric not in artifact_signal.available_metric_keys
+		and not set(parsed.requested_modes).issubset(local_only_modes)
+	):
 		return True
 	if _starts_with_self_contained_prefix(signal.text, language) and business_signals:
 		return True
