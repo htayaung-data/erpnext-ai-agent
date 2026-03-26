@@ -5,11 +5,23 @@ from app.qwen_agent_engine import QwenAgentEngineError, run_qwen_agent_engine
 from app.schemas import (
 	ChatRequest,
 	ChatResponse,
+	FrontDoorInterpretRequest,
+	FrontDoorInterpretResponse,
+	FrontDoorRenderRequest,
+	FrontDoorRenderResponse,
 	FreshQueryInterpretRequest,
 	FreshQueryInterpretResponse,
 	FollowUpInterpretRequest,
 	FollowUpInterpretResponse,
 	ToolTraceItem,
+)
+from app.semantic_frontdoor_engine import (
+	SemanticFrontDoorEngineError,
+	run_semantic_frontdoor_engine,
+)
+from app.frontdoor_response_engine import (
+	FrontDoorResponseEngineError,
+	run_frontdoor_response_engine,
 )
 from app.semantic_fresh_query_engine import (
 	SemanticFreshQueryEngineError,
@@ -126,6 +138,50 @@ def handle_chat(request: ChatRequest, settings: Settings) -> ChatResponse:
 		error=f"Unsupported engine mode: {settings.engine_mode}",
 		engine=settings.engine_mode,
 	)
+
+
+def handle_frontdoor_interpretation(
+	request: FrontDoorInterpretRequest,
+	settings: Settings,
+) -> FrontDoorInterpretResponse:
+	try:
+		return run_semantic_frontdoor_engine(request, settings)
+	except SemanticFrontDoorEngineError as exc:
+		return FrontDoorInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_frontdoor"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return FrontDoorInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_frontdoor"},
+			error=f"Unexpected semantic front-door error: {exc}",
+		)
+
+
+def handle_frontdoor_render(
+	request: FrontDoorRenderRequest,
+	settings: Settings,
+) -> FrontDoorRenderResponse:
+	try:
+		return run_frontdoor_response_engine(request, settings)
+	except FrontDoorResponseEngineError as exc:
+		return FrontDoorRenderResponse(
+			ok=False,
+			answer_text="",
+			agent_meta={"engine": "frontdoor_response_renderer"},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return FrontDoorRenderResponse(
+			ok=False,
+			answer_text="",
+			agent_meta={"engine": "frontdoor_response_renderer"},
+			error=f"Unexpected front-door render error: {exc}",
+		)
 
 
 def handle_followup_interpretation(request: FollowUpInterpretRequest, settings: Settings) -> FollowUpInterpretResponse:

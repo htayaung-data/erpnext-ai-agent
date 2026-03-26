@@ -1047,6 +1047,7 @@ def compile_from_fresh_query_message(
 	site_name: str,
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
+	clarification_resolution: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	request_id = uuid.uuid4().hex
 	interaction_contract = build_interaction_contract(
@@ -1123,12 +1124,30 @@ def compile_from_fresh_query_message(
 		"response_policy_contract": response_policy.to_payload(),
 		"fresh_query_interpretation": semantic_result.to_payload(),
 	}
+	if isinstance(clarification_resolution, dict) and clarification_resolution:
+		out["clarification_resolution"] = dict(clarification_resolution)
 	if semantic_result.interpretation is None:
 		out["phase4_latency_breakdown"] = {
 			"proposal_generation_latency_ms": proposal_generation_latency_ms,
 			"compilation_latency_ms": 0,
 		}
 		return out
+	interpretation_for_compile = _apply_clarification_resolution_to_interpretation(
+		interpretation=semantic_result.interpretation,
+		clarification_resolution=clarification_resolution,
+	)
+	if interpretation_for_compile != semantic_result.interpretation:
+		semantic_result = SemanticFreshQueryResult(
+			status="clarification_resolution_override",
+			interpretation=interpretation_for_compile,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"clarification_resolution_applied": True,
+			},
+		)
 	compilation_started = time.perf_counter()
 	compiler_outcome: CompilerOutcome = compile_fresh_query(
 		request_id=request_id,
@@ -1279,6 +1298,93 @@ def _interpretation_contract_from_pipeline(pipeline: Dict[str, Any]) -> FreshQue
 		ambiguity_flags=_clean_list(interpretation.get("ambiguity_flags")),
 		ambiguity_reason=str(interpretation.get("ambiguity_reason") or "").strip(),
 		confidence=float(interpretation.get("confidence") or 0.0),
+	)
+
+
+def _resolve_capability_ids_for_business_area(option: str) -> List[str]:
+	normalized_option = _normalize_key(option)
+	if not normalized_option:
+		return []
+	option_concepts = set(ontology_detect_concepts(option))
+	matches: List[str] = []
+	for spec in list_capability_specs():
+		capability_id = str(spec.get("capability_id") or "").strip()
+		if not capability_id:
+			continue
+		aliases = {
+			_normalize_key(capability_id),
+			_normalize_key(spec.get("label")),
+			_normalize_key(spec.get("name")),
+			_normalize_key(spec.get("capability_label")),
+		}
+		if normalized_option in aliases:
+			matches.append(capability_id)
+			continue
+		capability_concepts = set(capability_ontology_concepts(capability_id))
+		if option_concepts and capability_concepts and option_concepts == capability_concepts:
+			matches.append(capability_id)
+	return list(dict.fromkeys(matches))
+
+
+def _apply_clarification_resolution_to_interpretation(
+	*,
+	interpretation: FreshQueryInterpretationContract,
+	clarification_resolution: Dict[str, Any] | None = None,
+) -> FreshQueryInterpretationContract:
+	payload = clarification_resolution if isinstance(clarification_resolution, dict) else {}
+	if str(payload.get("decision") or "").strip() != "resolved_option":
+		return interpretation
+	resolved_slot = payload.get("resolved_slot") if isinstance(payload.get("resolved_slot"), dict) else {}
+	if not resolved_slot:
+		return interpretation
+
+	candidate_capability_ids = list(_clean_list(interpretation.candidate_capability_ids))
+	candidate_reports = list(_clean_list(interpretation.candidate_reports))
+	requested_time_scope = str(interpretation.requested_time_scope or "").strip()
+	ambiguity_flags = [
+		flag
+		for flag in _clean_list(interpretation.ambiguity_flags)
+		if flag not in {"ambiguous_report", "ambiguous_capability", "missing_time_scope"}
+	]
+	ambiguity_reason = str(interpretation.ambiguity_reason or "").strip()
+
+	selected_report = str(resolved_slot.get("selected_report") or "").strip()
+	if selected_report:
+		candidate_reports = [selected_report]
+		report_capabilities = report_capability_ids(selected_report)
+		if report_capabilities:
+			candidate_capability_ids = list(report_capabilities)
+		ambiguity_reason = ""
+
+	selected_time_scope = _normalize_time_scope(resolved_slot.get("selected_time_scope"))
+	if selected_time_scope:
+		requested_time_scope = selected_time_scope
+		ambiguity_reason = ""
+
+	selected_business_area = str(resolved_slot.get("selected_business_area") or "").strip()
+	if selected_business_area:
+		business_capability_ids = _resolve_capability_ids_for_business_area(selected_business_area)
+		if len(business_capability_ids) == 1:
+			candidate_capability_ids = list(business_capability_ids)
+			default_reports = capability_report_names(business_capability_ids[0])
+			if len(default_reports) == 1:
+				candidate_reports = list(default_reports)
+			ambiguity_reason = ""
+
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=requested_time_scope,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=ambiguity_flags,
+		ambiguity_reason=ambiguity_reason,
+		confidence=float(interpretation.confidence or 0.0),
 	)
 
 
@@ -2526,6 +2632,7 @@ def execute_compiled_fresh_query_message(
 	site_name: str,
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
+	clarification_resolution: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	total_started = time.perf_counter()
 	pipeline = compile_from_fresh_query_message(
@@ -2534,6 +2641,7 @@ def execute_compiled_fresh_query_message(
 		site_name=site_name,
 		message=message,
 		recent_messages=list(recent_messages or []),
+		clarification_resolution=clarification_resolution,
 	)
 	latency_breakdown = (
 		dict(pipeline.get("phase4_latency_breakdown"))

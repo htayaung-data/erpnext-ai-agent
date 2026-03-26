@@ -1,0 +1,77 @@
+{
+  "contract_version": "1.0",
+  "intent_classes": [
+    {
+      "intent_class_id": "greeting",
+      "label": "Greeting",
+      "description": "A clearly conversational opening turn.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "thanks",
+      "label": "Thanks",
+      "description": "A clearly appreciative turn with no ERP data request.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "acknowledgement",
+      "label": "Acknowledgement",
+      "description": "A short acknowledgement turn that does not request new ERP data.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "capability_question",
+      "label": "Capability Question",
+      "description": "A question about what the assistant can help with inside governed ERP scope.",
+      "response_mode": "capability_summary",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "session_flow",
+      "label": "Session Flow",
+      "description": "A request to continue or advance the current grounded session flow.",
+      "response_mode": "continue_current_flow",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": true
+    },
+    {
+      "intent_class_id": "low_signal_non_business",
+      "label": "Low-signal Non-business",
+      "description": "A very short non-business turn with no clear ERP request.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "closure_signoff",
+      "label": "Closure / Signoff",
+      "description": "A conversational turn that politely ends or pauses the session without requesting ERP data.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "route_onward",
+      "label": "Route Onward",
+      "description": "A plausible ERP or business request that should continue through the main system lanes.",
+      "response_mode": "route_onward",
+      "route_target": "artifact_lane",
+      "handle_in_front_door": false,
+      "requires_grounded_context": false
+    }
+  ]
+}

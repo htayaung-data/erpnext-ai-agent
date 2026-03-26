@@ -1,0 +1,356 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, List
+
+from ai_assistant_ui.qwen_chat.contracts import build_front_door_intent_gate_contract
+from ai_assistant_ui.qwen_chat.fresh_query_interpreter import interpret_fresh_query_semantically
+from ai_assistant_ui.qwen_chat.metadata import list_frontdoor_intent_specs
+from ai_assistant_ui.qwen_chat.runtime_client import (
+	QwenRuntimeClientError,
+	call_qwen_runtime_frontdoor_interpretation,
+	call_qwen_runtime_frontdoor_render,
+)
+
+try:
+	import frappe  # type: ignore
+except Exception:  # pragma: no cover
+	frappe = None
+
+
+@dataclass(frozen=True)
+class SemanticFrontDoorIntent:
+	intent_class: str
+	confidence: float
+	reason: str
+
+
+@dataclass(frozen=True)
+class SemanticFrontDoorResult:
+	status: str
+	intent: SemanticFrontDoorIntent | None = None
+	confidence_threshold: float = 0.8
+	runtime_error: str = ""
+	validation_error: str = ""
+	agent_meta: Dict[str, Any] | None = None
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_semantic_frontdoor_interpretation",
+			"contract_version": "1.0",
+			"status": self.status,
+			"confidence_threshold": self.confidence_threshold,
+			"runtime_error": self.runtime_error,
+			"validation_error": self.validation_error,
+			"intent": {
+				"intent_class": self.intent.intent_class,
+				"confidence": self.intent.confidence,
+				"reason": self.intent.reason,
+			}
+			if self.intent
+			else {},
+			"agent_meta": dict(self.agent_meta or {}),
+		}
+
+
+@dataclass(frozen=True)
+class FrontDoorRenderResult:
+	ok: bool
+	answer_text: str
+	runtime_error: str = ""
+	agent_meta: Dict[str, Any] | None = None
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_frontdoor_render_result",
+			"contract_version": "1.0",
+			"ok": bool(self.ok),
+			"answer_text": str(self.answer_text or "").strip(),
+			"runtime_error": str(self.runtime_error or "").strip(),
+			"agent_meta": dict(self.agent_meta or {}),
+		}
+
+
+def _confidence_threshold() -> float:
+	default = 0.8
+	if frappe is None:
+		return default
+	try:
+		raw = (getattr(frappe, "conf", None) or {}).get("qwen_frontdoor_min_confidence", default)
+		return max(0.0, min(1.0, float(raw)))
+	except Exception:
+		return default
+
+
+def _build_interpretation_context() -> Dict[str, Any]:
+	intent_classes: List[Dict[str, str]] = []
+	for item in list_frontdoor_intent_specs():
+		intent_class_id = str(item.get("intent_class_id") or "").strip()
+		if not intent_class_id:
+			continue
+		intent_classes.append(
+			{
+				"intent_class_id": intent_class_id,
+				"label": str(item.get("label") or intent_class_id).strip(),
+				"description": str(item.get("description") or "").strip(),
+			}
+		)
+	return {"intent_classes": intent_classes}
+
+
+def _validate_semantic_payload(payload: Dict[str, Any], context: Dict[str, Any]) -> SemanticFrontDoorIntent | None:
+	if not isinstance(payload, dict):
+		return None
+	allowed_intents = {
+		str(item.get("intent_class_id") or "").strip()
+		for item in (context.get("intent_classes") or [])
+		if isinstance(item, dict) and str(item.get("intent_class_id") or "").strip()
+	}
+	intent_class = str(payload.get("intent_class") or "").strip()
+	if intent_class not in allowed_intents:
+		return None
+	try:
+		confidence = float(payload.get("confidence") or 0.0)
+	except Exception:
+		confidence = 0.0
+	return SemanticFrontDoorIntent(
+		intent_class=intent_class,
+		confidence=max(0.0, min(1.0, confidence)),
+		reason=str(payload.get("reason") or "").strip(),
+	)
+
+
+def _fresh_query_semantic_override(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+) -> SemanticFrontDoorIntent | None:
+	result = interpret_fresh_query_semantically(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		recent_messages=[],
+	)
+	interpretation = getattr(result, "interpretation", None)
+	if str(getattr(result, "status", "") or "").strip() != "accepted" or interpretation is None:
+		return None
+	if not list(getattr(interpretation, "candidate_capability_ids", []) or []) and not list(
+		getattr(interpretation, "candidate_reports", []) or []
+	):
+		return None
+	return SemanticFrontDoorIntent(
+		intent_class="route_onward",
+		confidence=max(
+			float(getattr(result, "confidence_threshold", 0.72) or 0.72),
+			float(getattr(interpretation, "confidence", 0.0) or 0.0),
+		),
+		reason="A semantic fresh-query cross-check indicates the turn is a plausible ERP request and should continue through the main lanes.",
+	)
+
+
+def interpret_front_door_semantically(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]] | None = None,
+	grounded_context_available: bool,
+) -> SemanticFrontDoorResult:
+	threshold = _confidence_threshold()
+	context = _build_interpretation_context()
+	try:
+		data = call_qwen_runtime_frontdoor_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			recent_messages=list(recent_messages or []),
+			grounded_context_available=grounded_context_available,
+			interpretation_context=context,
+		)
+	except QwenRuntimeClientError as exc:
+		return SemanticFrontDoorResult(
+			status="runtime_error",
+			confidence_threshold=threshold,
+			runtime_error=str(exc),
+		)
+
+	agent_meta = data.get("agent_meta") if isinstance(data.get("agent_meta"), dict) else {}
+	interpretation = data.get("interpretation")
+	if not isinstance(interpretation, dict):
+		return SemanticFrontDoorResult(
+			status="invalid_response",
+			confidence_threshold=threshold,
+			validation_error="Runtime front-door interpreter returned no valid interpretation object.",
+			agent_meta=agent_meta,
+		)
+	intent = _validate_semantic_payload(interpretation, context)
+	if intent is None:
+		return SemanticFrontDoorResult(
+			status="invalid_response",
+			confidence_threshold=threshold,
+			validation_error="Runtime front-door interpretation did not pass governed validation.",
+			agent_meta=agent_meta,
+		)
+	if intent.confidence < threshold:
+		return SemanticFrontDoorResult(
+			status="below_threshold",
+			intent=intent,
+			confidence_threshold=threshold,
+			validation_error="Runtime front-door interpretation confidence is below threshold.",
+			agent_meta=agent_meta,
+		)
+	if intent.intent_class != "route_onward":
+		fresh_query_override = _fresh_query_semantic_override(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+		)
+		if fresh_query_override is not None:
+			return SemanticFrontDoorResult(
+				status="guardrailed_to_route_onward",
+				intent=fresh_query_override,
+				confidence_threshold=threshold,
+				agent_meta=agent_meta,
+			)
+	if intent.intent_class == "session_flow" and not grounded_context_available:
+		return SemanticFrontDoorResult(
+			status="guardrailed_to_route_onward",
+			intent=SemanticFrontDoorIntent(
+				intent_class="route_onward",
+				confidence=max(intent.confidence, threshold),
+				reason="The turn looks like session flow, but there is no grounded context yet.",
+			),
+			confidence_threshold=threshold,
+			agent_meta=agent_meta,
+		)
+	return SemanticFrontDoorResult(
+		status="accepted",
+		intent=intent,
+		confidence_threshold=threshold,
+		agent_meta=agent_meta,
+	)
+
+
+def build_front_door_intent_gate_contract_from_semantic_result(
+	*,
+	request_id: str,
+	semantic_result: SemanticFrontDoorResult,
+	grounded_context_available: bool,
+):
+	intent = semantic_result.intent
+	intent_class = str(getattr(intent, "intent_class", "") or "route_onward").strip() or "route_onward"
+	confidence = float(getattr(intent, "confidence", 0.0) or 0.0)
+	reason = str(getattr(intent, "reason", "") or "").strip()
+	if semantic_result.status in {"runtime_error", "invalid_response", "below_threshold"}:
+		intent_class = "route_onward"
+		confidence = 0.0
+		if semantic_result.status == "runtime_error":
+			reason = "Front-door proposal was unavailable, so the turn should route onward."
+		elif semantic_result.status == "below_threshold":
+			reason = "Front-door proposal confidence was too low, so the turn should route onward."
+		else:
+			reason = "Front-door proposal did not pass governed validation, so the turn should route onward."
+	return build_front_door_intent_gate_contract(
+		request_id=request_id,
+		intent_class=intent_class,
+		confidence=confidence,
+		grounded_context_available=grounded_context_available,
+		reason=reason,
+	)
+
+
+def build_front_door_intent_gate_contract_from_message(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]] | None = None,
+	grounded_context_available: bool,
+):
+	result = interpret_front_door_semantically(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		recent_messages=recent_messages,
+		grounded_context_available=grounded_context_available,
+	)
+	return build_front_door_intent_gate_contract_from_semantic_result(
+		request_id=request_id,
+		semantic_result=result,
+		grounded_context_available=grounded_context_available,
+	)
+
+
+def render_front_door_answer(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]] | None,
+	grounded_context_available: bool,
+	frontdoor_contract: Any,
+) -> FrontDoorRenderResult:
+	response_payload = getattr(frontdoor_contract, "response_payload", {})
+	fallback_text = str(response_payload.get("text") or "").strip() if isinstance(response_payload, dict) else ""
+	try:
+		data = call_qwen_runtime_frontdoor_render(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			recent_messages=list(recent_messages or []),
+			grounded_context_available=grounded_context_available,
+			intent_class=str(getattr(frontdoor_contract, "intent_class", "") or "").strip(),
+			response_mode=str(getattr(frontdoor_contract, "response_mode", "") or "").strip(),
+			response_payload=response_payload if isinstance(response_payload, dict) else {},
+			reason=str(getattr(frontdoor_contract, "reason", "") or "").strip(),
+		)
+	except QwenRuntimeClientError as exc:
+		return FrontDoorRenderResult(
+			ok=False,
+			answer_text=fallback_text,
+			runtime_error=str(exc),
+		)
+	answer_text = str(data.get("answer_text") or "").strip()
+	if not answer_text:
+		return FrontDoorRenderResult(
+			ok=False,
+			answer_text=fallback_text,
+			runtime_error="Front-door renderer returned no answer text.",
+			agent_meta=data.get("agent_meta") if isinstance(data.get("agent_meta"), dict) else {},
+		)
+	return FrontDoorRenderResult(
+		ok=bool(data.get("ok")),
+		answer_text=answer_text,
+		runtime_error=str(data.get("error") or "").strip(),
+		agent_meta=data.get("agent_meta") if isinstance(data.get("agent_meta"), dict) else {},
+	)
+
+
+def front_door_intent_probe_cases() -> List[Dict[str, object]]:
+	return [
+		{"message": "hi", "grounded_context_available": False},
+		{"message": "thank you", "grounded_context_available": False},
+		{"message": "what can you do", "grounded_context_available": False},
+		{"message": "continue", "grounded_context_available": True},
+		{"message": "I am okay for now, I will come back later", "grounded_context_available": True},
+		{"message": "show me sales trend", "grounded_context_available": False},
+	]

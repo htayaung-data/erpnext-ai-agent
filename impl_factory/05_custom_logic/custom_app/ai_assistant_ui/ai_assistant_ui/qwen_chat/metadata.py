@@ -58,6 +58,10 @@ def load_family_evaluation_registry() -> Dict[str, Any]:
 	return _load_json("family_evaluation_registry.json")
 
 
+def load_frontdoor_intent_registry() -> Dict[str, Any]:
+	return _load_json("frontdoor_intent_registry.json")
+
+
 def load_report_surface_evidence_registry() -> Dict[str, Any]:
 	return _load_json("report_surface_evidence_registry.json")
 
@@ -184,6 +188,21 @@ def list_intent_class_specs() -> List[Dict[str, Any]]:
 def get_intent_class_spec(intent_class_id: str) -> Dict[str, Any]:
 	target = str(intent_class_id or "").strip()
 	for item in list_intent_class_specs():
+		if str(item.get("intent_class_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_frontdoor_intent_specs() -> List[Dict[str, Any]]:
+	values = load_frontdoor_intent_registry().get("intent_classes")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_frontdoor_intent_spec(intent_class_id: str) -> Dict[str, Any]:
+	target = str(intent_class_id or "").strip()
+	for item in list_frontdoor_intent_specs():
 		if str(item.get("intent_class_id") or "").strip() == target:
 			return item
 	return {}
@@ -439,6 +458,14 @@ def capability_report_names(capability_id: str) -> List[str]:
 
 def capability_default_report_name(capability_id: str) -> str:
 	return str(get_capability_spec(capability_id).get("default_report_name") or "").strip()
+
+
+def capability_summary_report_name(capability_id: str) -> str:
+	return str(get_capability_spec(capability_id).get("summary_report_name") or "").strip()
+
+
+def capability_detail_report_name(capability_id: str) -> str:
+	return str(get_capability_spec(capability_id).get("detail_report_name") or "").strip()
 
 
 def capability_fresh_query_defaults(capability_id: str, intent_class: str = "") -> Dict[str, Any]:

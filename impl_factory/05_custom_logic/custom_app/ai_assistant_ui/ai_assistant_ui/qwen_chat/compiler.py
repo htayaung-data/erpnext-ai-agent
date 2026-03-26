@@ -17,8 +17,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 from ai_assistant_ui.qwen_chat.metadata import (
 	ambiguity_rules,
 	capability_default_report_name,
+	capability_detail_report_name,
 	capability_intent_classes,
 	capability_report_names,
+	capability_summary_report_name,
 	get_capability_spec,
 	get_report_spec,
 	list_intent_class_specs,
@@ -297,6 +299,32 @@ def _report_supports_intent(report_name: str, intent_class: str) -> bool:
 	return not intent_class or intent_class in supported
 
 
+def _structural_default_report_for_capability(
+	capability_id: str,
+	interpretation: FreshQueryInterpretationContract,
+	supported_reports: List[str],
+) -> str:
+	default_report = capability_default_report_name(capability_id)
+	summary_report = capability_summary_report_name(capability_id)
+	detail_report = capability_detail_report_name(capability_id)
+	structural_reports = {
+		report_name
+		for report_name in (default_report, summary_report, detail_report)
+		if str(report_name or "").strip()
+	}
+	if len(structural_reports) < 2:
+		return ""
+	supported_set = {report_name for report_name in supported_reports if str(report_name or "").strip()}
+	if not default_report or default_report not in supported_set:
+		return ""
+	if not supported_set.issubset(structural_reports):
+		return ""
+	advisory_candidates = set(_clean_list(interpretation.candidate_reports))
+	if advisory_candidates and not advisory_candidates.issubset(structural_reports):
+		return ""
+	return default_report
+
+
 def _select_report(capability_id: str, interpretation: FreshQueryInterpretationContract) -> Tuple[str, str]:
 	intent_class = str(interpretation.intent_class or "").strip()
 	allowed_reports = capability_report_names(capability_id)
@@ -311,6 +339,9 @@ def _select_report(capability_id: str, interpretation: FreshQueryInterpretationC
 	if len(advisory_candidates) == 1:
 		return advisory_candidates[0], "Compiler accepted a single governed advisory report candidate."
 	if len(advisory_candidates) > 1:
+		structural_default = _structural_default_report_for_capability(capability_id, interpretation, advisory_candidates)
+		if structural_default:
+			return structural_default, "Compiler selected the governed default report for a structural summary/detail advisory pair."
 		return "", f"Ambiguous governed report candidates: {', '.join(advisory_candidates)}"
 
 	supported_reports = [
@@ -319,6 +350,9 @@ def _select_report(capability_id: str, interpretation: FreshQueryInterpretationC
 	if len(supported_reports) == 1:
 		return supported_reports[0], "Compiler selected the only governed report matching the requested intent class."
 	if len(supported_reports) > 1:
+		structural_default = _structural_default_report_for_capability(capability_id, interpretation, supported_reports)
+		if structural_default:
+			return structural_default, "Compiler selected the governed default report for a structural summary/detail report pair."
 		return "", f"Ambiguous governed report candidates: {', '.join(supported_reports)}"
 	default_report = capability_default_report_name(capability_id)
 	if default_report and default_report in allowed_reports and _report_supports_intent(default_report, intent_class):

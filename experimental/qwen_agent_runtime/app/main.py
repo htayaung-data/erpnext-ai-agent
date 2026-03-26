@@ -7,6 +7,10 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from app.schemas import (
 	ChatRequest,
 	ChatResponse,
+	FrontDoorInterpretRequest,
+	FrontDoorInterpretResponse,
+	FrontDoorRenderRequest,
+	FrontDoorRenderResponse,
 	FreshQueryInterpretRequest,
 	FreshQueryInterpretResponse,
 	FollowUpInterpretRequest,
@@ -14,6 +18,8 @@ from app.schemas import (
 )
 from app.service import (
 	handle_chat,
+	handle_frontdoor_interpretation,
+	handle_frontdoor_render,
 	handle_followup_interpretation,
 	handle_fresh_query_interpretation,
 )
@@ -40,13 +46,16 @@ def _require_auth(
 @app.get("/health")
 def health(settings: Settings = Depends(get_settings)) -> dict[str, object]:
 	multi_model_mode = bool(
-		settings.semantic_fresh_query_override_active()
+		settings.semantic_frontdoor_override_active()
+		or settings.semantic_fresh_query_override_active()
 		or settings.semantic_followup_override_active()
 	)
 	return {
 		"ok": True,
 		"engine_mode": settings.engine_mode,
 		"qwen_model": settings.qwen_model,
+		"semantic_frontdoor_model": settings.effective_semantic_frontdoor_model(),
+		"semantic_frontdoor_override_active": settings.semantic_frontdoor_override_active(),
 		"semantic_fresh_query_model": settings.effective_semantic_fresh_query_model(),
 		"semantic_fresh_query_override_active": settings.semantic_fresh_query_override_active(),
 		"semantic_followup_model": settings.effective_semantic_followup_model(),
@@ -60,6 +69,30 @@ def health(settings: Settings = Depends(get_settings)) -> dict[str, object]:
 @app.post("/chat", response_model=ChatResponse, dependencies=[Depends(_require_auth)])
 def chat(request: ChatRequest, settings: Settings = Depends(get_settings)) -> ChatResponse:
 	return handle_chat(request, settings)
+
+
+@app.post(
+	"/interpret-front-door",
+	response_model=FrontDoorInterpretResponse,
+	dependencies=[Depends(_require_auth)],
+)
+def interpret_front_door(
+	request: FrontDoorInterpretRequest,
+	settings: Settings = Depends(get_settings),
+) -> FrontDoorInterpretResponse:
+	return handle_frontdoor_interpretation(request, settings)
+
+
+@app.post(
+	"/render-front-door",
+	response_model=FrontDoorRenderResponse,
+	dependencies=[Depends(_require_auth)],
+)
+def render_front_door(
+	request: FrontDoorRenderRequest,
+	settings: Settings = Depends(get_settings),
+) -> FrontDoorRenderResponse:
+	return handle_frontdoor_render(request, settings)
 
 
 @app.post(

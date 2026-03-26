@@ -33,6 +33,9 @@ class Settings:
 	semantic_fresh_query_max_tokens: int
 	semantic_fresh_query_cache_ttl_seconds: int
 	semantic_fresh_query_cache_max_entries: int
+	semantic_frontdoor_model: str
+	semantic_frontdoor_max_attempts: int
+	semantic_frontdoor_backoff_ms: int
 	semantic_followup_model: str
 	semantic_followup_max_attempts: int
 	semantic_followup_backoff_ms: int
@@ -64,6 +67,12 @@ class Settings:
 
 	def semantic_followup_override_active(self) -> bool:
 		return bool(str(self.semantic_followup_model or "").strip())
+
+	def effective_semantic_frontdoor_model(self) -> str:
+		return str(self.semantic_frontdoor_model or self.qwen_model or "").strip()
+
+	def semantic_frontdoor_override_active(self) -> bool:
+		return bool(str(self.semantic_frontdoor_model or "").strip())
 
 	def fac_mcp_config(self) -> Dict[str, Any]:
 		if self.fac_mcp_config_json:
@@ -105,6 +114,9 @@ def load_settings() -> Settings:
 		semantic_fresh_query_max_tokens=max(64, _env_int("SEMANTIC_FRESH_QUERY_MAX_TOKENS", 320)),
 		semantic_fresh_query_cache_ttl_seconds=max(0, _env_int("SEMANTIC_FRESH_QUERY_CACHE_TTL_SECONDS", 300)),
 		semantic_fresh_query_cache_max_entries=max(0, _env_int("SEMANTIC_FRESH_QUERY_CACHE_MAX_ENTRIES", 256)),
+		semantic_frontdoor_model=_env("SEMANTIC_FRONTDOOR_MODEL"),
+		semantic_frontdoor_max_attempts=max(1, _env_int("SEMANTIC_FRONTDOOR_MAX_ATTEMPTS", 2)),
+		semantic_frontdoor_backoff_ms=max(50, _env_int("SEMANTIC_FRONTDOOR_BACKOFF_MS", 350)),
 		semantic_followup_model=_env("SEMANTIC_FOLLOWUP_MODEL"),
 		semantic_followup_max_attempts=max(1, _env_int("SEMANTIC_FOLLOWUP_MAX_ATTEMPTS", 2)),
 		semantic_followup_backoff_ms=max(50, _env_int("SEMANTIC_FOLLOWUP_BACKOFF_MS", 350)),

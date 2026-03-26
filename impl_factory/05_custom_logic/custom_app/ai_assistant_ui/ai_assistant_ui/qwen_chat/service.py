@@ -20,6 +20,15 @@ from ai_assistant_ui.qwen_chat.clarification_translation import (
 	translate_clarification_reason_contract,
 	translate_clarification_signal,
 )
+from ai_assistant_ui.qwen_chat.clarification_resolution import (
+	clear_pending_clarification_signal,
+	latest_pending_clarification_signal,
+	pending_clarification_empty_ack_answer,
+	pending_clarification_meta_answer,
+	pending_clarification_repeat_answer,
+	resolve_pending_clarification_response,
+	store_pending_clarification_signal,
+)
 from ai_assistant_ui.qwen_chat.contracts import (
 	ExecutionPath,
 	build_artifact_enrichment_compatibility_contract,
@@ -57,6 +66,13 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import (
 	assess_context_isolation,
 	detect_ambiguous_family_report_request,
 	is_safe_local_compatibility_intent,
+)
+from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
+	SemanticFrontDoorIntent,
+	SemanticFrontDoorResult,
+	build_front_door_intent_gate_contract_from_semantic_result,
+	interpret_front_door_semantically,
+	render_front_door_answer,
 )
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import (
@@ -368,6 +384,9 @@ def _handle_compiled_first_turn_result(
 		if clarification_reason_contract is not None:
 			_append_tool_payload(session_doc, clarification_reason_contract.to_payload())
 		_append_tool_payload(session_doc, clarification_signal_payload)
+		store_pending_clarification_signal(session_doc, clarification_signal_payload)
+	else:
+		clear_pending_clarification_signal(session_doc)
 
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
 	agent_meta = runtime_payload.get("agent_meta") if isinstance(runtime_payload.get("agent_meta"), dict) else {}
@@ -2062,6 +2081,15 @@ def _safe_runtime_failure_message(exc: Exception) -> str:
 	return "Qwen runtime is unavailable right now. Please try again."
 
 
+def _front_door_answer_text(frontdoor_contract: Any) -> str:
+	if frontdoor_contract is None:
+		return ""
+	response_payload = getattr(frontdoor_contract, "response_payload", {})
+	if not isinstance(response_payload, dict):
+		return ""
+	return str(response_payload.get("text") or "").strip()
+
+
 def _is_generic_compiled_failure_answer(answer_text: str) -> bool:
 	clean = str(answer_text or "").strip().lower()
 	if not clean:
@@ -2204,9 +2232,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	site_name = str(getattr(getattr(frappe, "local", None), "site", "") or "").strip()
 	request_id = uuid.uuid4().hex
 	msg = str(message or "").strip()
+	raw_msg = msg
+	recent_frontdoor_messages = _recent_messages(session_doc, limit=6)
 	latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
 	latest_family_artifact = _latest_normalized_family_artifact(session_doc)
 	latest_assistant_payload = _latest_assistant_payload(session_doc)
+	pending_clarification_signal = latest_pending_clarification_signal(session_doc)
 	latest_grounded_turn_available = bool(latest_grounded_turn.get("grounded")) or bool(
 		_latest_grounded_assistant_context(session_doc)[0]
 	)
@@ -2217,6 +2248,151 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		site_name=site_name,
 		raw_message=msg,
 	)
+	clarification_response_contract = None
+	frontdoor_render_result = None
+	frontdoor_answer = ""
+	if pending_clarification_signal:
+		clarification_response_contract = resolve_pending_clarification_response(
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=raw_msg,
+			signal_payload=pending_clarification_signal,
+		)
+		frontdoor_semantic_result = SemanticFrontDoorResult(
+			status="skipped_for_pending_clarification",
+			intent=SemanticFrontDoorIntent(
+				intent_class="route_onward",
+				confidence=1.0,
+				reason="A pending clarification is resolved before front-door classification runs.",
+			),
+			confidence_threshold=1.0,
+		)
+		frontdoor_contract = build_front_door_intent_gate_contract_from_semantic_result(
+			request_id=request_id,
+			semantic_result=frontdoor_semantic_result,
+			grounded_context_available=latest_grounded_turn_available,
+		)
+	else:
+		frontdoor_semantic_result = interpret_front_door_semantically(
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=msg,
+			recent_messages=recent_frontdoor_messages,
+			grounded_context_available=latest_grounded_turn_available,
+		)
+		frontdoor_contract = build_front_door_intent_gate_contract_from_semantic_result(
+			request_id=request_id,
+			semantic_result=frontdoor_semantic_result,
+			grounded_context_available=latest_grounded_turn_available,
+		)
+		if bool(getattr(frontdoor_contract, "handle_in_front_door", False)):
+			frontdoor_render_result = render_front_door_answer(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=msg,
+				recent_messages=recent_frontdoor_messages,
+				grounded_context_available=latest_grounded_turn_available,
+				frontdoor_contract=frontdoor_contract,
+			)
+			frontdoor_answer = str(frontdoor_render_result.answer_text or "").strip() or _front_door_answer_text(frontdoor_contract)
+	if bool(getattr(frontdoor_contract, "handle_in_front_door", False)) and frontdoor_answer:
+		frontdoor_followup_resolution = build_followup_resolution_contract(
+			request_id=request_id,
+			mode="front_door",
+			requested_modes=[],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=latest_grounded_turn_available,
+			self_contained=not latest_grounded_turn_available,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			reason=str(getattr(frontdoor_contract, "reason", "") or "").strip()
+			or "The turn was handled in the front-door lane.",
+		)
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="front_door",
+			reason=str(getattr(frontdoor_contract, "reason", "") or "").strip()
+			or "The turn was handled safely in the front-door lane.",
+			requires_runtime=False,
+			grounded_required=False,
+		)
+		_append_message(session_doc, "user", msg)
+		_append_tool_payload(session_doc, interaction_contract.to_payload())
+		_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+		_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+		if frontdoor_render_result is not None:
+			_append_tool_payload(session_doc, frontdoor_render_result.to_payload())
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		_append_message(session_doc, "assistant", _assistant_text_payload(frontdoor_answer))
+		_append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=frontdoor_followup_resolution,
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
+				answer_text=frontdoor_answer,
+			).to_payload(),
+		)
+		session_doc.save(ignore_permissions=False)
+		return True, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "front_door",
+			"agent_meta": {
+				"engine": "frontdoor_response_renderer" if bool(getattr(frontdoor_render_result, "ok", False)) else "semantic_frontdoor",
+				"intent_class": str(getattr(frontdoor_contract, "intent_class", "") or "").strip(),
+			},
+		}
+	if pending_clarification_signal:
+		clarification_decision = str(clarification_response_contract.decision or "").strip()
+		if clarification_decision in {"reask_pending_clarification", "meta_question", "empty_ack"}:
+			if clarification_decision == "meta_question":
+				answer_text = pending_clarification_meta_answer(pending_clarification_signal)
+			elif clarification_decision == "empty_ack":
+				answer_text = pending_clarification_empty_ack_answer(pending_clarification_signal)
+			else:
+				answer_text = pending_clarification_repeat_answer(pending_clarification_signal)
+			execution_path = ExecutionPath(
+				request_id=request_id,
+				path="clarification",
+				reason=str(clarification_response_contract.reason or "").strip()
+				or "A governed clarification is still pending before the ERP lane can continue.",
+				requires_runtime=False,
+				grounded_required=False,
+			)
+			_append_message(session_doc, "user", raw_msg)
+			_append_tool_payload(session_doc, interaction_contract.to_payload())
+			_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+			_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+			_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+			_append_tool_payload(session_doc, execution_path.to_payload())
+			_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+			_append_tool_payload(session_doc, pending_clarification_signal)
+			store_pending_clarification_signal(session_doc, pending_clarification_signal)
+			session_doc.save(ignore_permissions=False)
+			return True, {
+				"ok": True,
+				"request_id": request_id,
+				"mode": "clarification",
+				"agent_meta": {"engine": "pending_clarification_resolver", "mode": clarification_decision or "reask_pending_clarification"},
+			}
+		clear_pending_clarification_signal(session_doc)
+		if str(clarification_response_contract.decision or "").strip() == "resolved_option":
+			msg = str(clarification_response_contract.resolved_option or "").strip() or msg
 	compiled_rollout = _compiled_first_turn_rollout_decision(
 		session_name=session_name,
 		user=user,
@@ -2259,9 +2435,13 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			clarification_required=False,
 		)
 		if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
-			session_doc.title = (msg[:60] + "…") if len(msg) > 60 else msg
-		_append_message(session_doc, "user", msg)
+			session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
+		_append_message(session_doc, "user", raw_msg)
 		_append_tool_payload(session_doc, interaction_contract.to_payload())
+		_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+		_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+		if clarification_response_contract is not None:
+			_append_tool_payload(session_doc, clarification_response_contract.to_payload())
 		_append_tool_payload(session_doc, response_policy_contract.to_payload())
 		_append_tool_payload(session_doc, followup_resolution.to_payload())
 		_append_tool_payload(session_doc, scope_decision_contract.to_payload())
@@ -2272,6 +2452,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			site_name=site_name,
 			message=msg,
 			recent_messages=[],
+			clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
 		)
 		return _handle_compiled_first_turn_result(
 			session_doc=session_doc,
@@ -2438,7 +2619,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if followup_resolution.mode == "capability_requery":
 		runtime_message = _compile_capability_requery_message(
 			session_doc,
-			raw_message=msg,
+			raw_message=raw_msg,
 			followup_resolution=followup_resolution,
 			grounded_turn=latest_grounded_turn,
 			continuation_contract=continuation_contract,
@@ -2446,10 +2627,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		recent_messages = []
 
 	if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
-		session_doc.title = (msg[:60] + "…") if len(msg) > 60 else msg
+		session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
 
-	_append_message(session_doc, "user", msg)
+	_append_message(session_doc, "user", raw_msg)
 	_append_tool_payload(session_doc, interaction_contract.to_payload())
+	_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+	_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+	if clarification_response_contract is not None:
+		_append_tool_payload(session_doc, clarification_response_contract.to_payload())
 	_append_tool_payload(session_doc, response_policy_contract.to_payload())
 	if isinstance(semantic_payload, dict):
 		_append_tool_payload(session_doc, semantic_payload)
@@ -2485,6 +2670,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 		_append_tool_payload(session_doc, reason_contract.to_payload())
 		_append_tool_payload(session_doc, clarification_signal.to_payload())
+		store_pending_clarification_signal(session_doc, clarification_signal.to_payload())
 		_append_tool_payload(
 			session_doc,
 			build_audit_envelope(
@@ -2685,6 +2871,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			site_name=site_name,
 			message=runtime_message,
 			recent_messages=[],
+			clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
 		)
 		if _compiled_rollout_fallback_eligible(compiled_result):
 			reason = _compiled_rollout_fallback_reason(compiled_result)

@@ -5,6 +5,7 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
+  "pending_clarification_state_json",
   "messages"
  ],
  "fields": [
@@ -12,6 +13,13 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title"
+  },
+  {
+   "fieldname": "pending_clarification_state_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Pending Clarification State JSON",
+   "read_only": 1
   },
   {
    "fieldname": "messages",

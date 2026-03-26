@@ -198,7 +198,7 @@ Status judgment:
 
 ## Mini-phase 4
 
-Current active priority: metadata/discovery core.
+Closed.
 
 Goal:
 
@@ -243,6 +243,10 @@ Current judgment:
 5. the current metadata chapter now has an explicit evidence boundary for priority reports
 6. so the next metadata move should be governance/use of discovery, not blind generic extractor expansion
 
+Closure artifact:
+
+1. `qwen_erp_miniphase4_closure_note_2026-03-25.md`
+
 Rules:
 
 1. discovery tells us what exists
@@ -250,6 +254,8 @@ Rules:
 3. discovery supports later contracts; it does not replace them
 
 ## Mini-phase 5
+
+Closed after redesign and closure review.
 
 After metadata/discovery is judged stable enough.
 
@@ -270,10 +276,61 @@ Rule:
 
 1. this gate should route ERP-business questions onward
 2. it should not become a catch-all answer engine
+3. conversational intent proposal should come from AI classification plus deterministic guardrails, not keyword bags in code or JSON
+
+Design artifact:
+
+1. `qwen_erp_miniphase5_frontdoor_intent_gate_design_2026-03-25.md`
+
+Current status:
+
+1. Slice 5.1 contract and policy layer: implemented
+2. Slice 5.2 AI proposal plus deterministic guardrails: implemented
+3. Slice 5.3 service integration and warm response rendering: implemented
+4. live browser testing improved greetings/thanks/capability questions
+5. live browser testing also exposed regressions in ERP clarification continuity
+6. redesign implementation corrected the clarification/front-door boundary
+7. closure review passed for Mini-phase 5 scope
+
+Current lesson:
+
+1. front-door should stay thin
+2. pending ERP clarification should not be treated as ordinary front-door/session-flow state
+3. clarification option selection must bind to the pending ERP clarification, not behave like a fresh standalone query
+4. we should not keep expanding front-door features while this boundary remains unstable
+5. recommendation-detail follow-ups after a valid ERP analysis are not Mini-phase 5 work; they belong to later reasoning/recovery chapters
+
+Redesign decision after architecture review:
+
+1. add a new highest-precedence `ClarificationResolutionAuthority` before front door
+2. front door must be skipped entirely when clarification is pending
+3. front door remains a thin conversational lane only
+4. ERP lane must consume resolved clarification slots structurally
+5. clear business asks such as payable/receivable should not trigger user-facing internal report ambiguity unless a genuinely user-visible distinction is required
+
+Redesign progress now completed:
+
+1. `ClarificationResolutionContract`: implemented
+2. `ClarificationResolutionAuthority` before front door: implemented
+3. ERP lane consumption of resolved clarification slots: implemented
+4. explicit persisted pending clarification state on `Qwen Chat Session`: implemented
+5. internal default report selection for structural summary/detail ambiguity such as AP/AR: implemented
+6. minimal clarification repair handling for `empty_ack` and `meta_question`: implemented
+7. `closure_signoff` intent class added for polite session-ending turns
+8. alias-based front-door and clarification business-signal authority removed
+9. front door now uses semantic fresh-query cross-check instead of lexical business-signal veto
+10. clarification `new_request` detection now uses semantic fresh-query cross-check instead of ontology-alias matching
+11. semantic fresh-query cross-check is now current-turn-only for front door / clarification, preventing gratitude or closure turns from inheriting stale ERP context
+
+Closure decision:
+
+1. Mini-phase 5 is closed for its intended scope
+2. clarification resolution remains the only authority for pending clarification state
+3. later recommendation-detail reasoning and recovery work moves to later phases, not back into front door
 
 ## Mini-phase 6
 
-After front-door gate exists.
+Active next phase after Mini-phase 5 closure.
 
 Goal:
 
@@ -293,6 +350,14 @@ Rule:
 
 1. bounded ERP business knowledge only
 2. not random general knowledge
+
+This phase should also absorb:
+
+1. continuation over recommendation/explanation detail after a valid analytical answer
+2. examples like:
+   - `give me suggestions in details`
+   - `explain that recommendation more`
+3. these are not front-door failures and should not be solved by Mini-phase 5 routing logic
 
 ## Mini-phase 7
 
@@ -344,6 +409,7 @@ Required outcomes:
 4. explicit fresh asks such as:
    - `just give me top 7 product, revenue, qty`
    must override stale continuation context more strongly
+5. recovery after analytical-follow-up drift, when the user is trying to continue advice or explanation rather than request a new artifact view
 
 Rule:
 
@@ -377,18 +443,17 @@ These rules are now fixed.
 
 The immediate next step is:
 
-1. stay on Mini-phase 4
-2. focus on metadata/discovery as the core issue
-3. evaluate whether current discovery output is already sufficient for the next governed-semantic step
-4. avoid getting pulled into runtime UX/recovery work unless a critical blocker appears
+1. rerun targeted regression on clarification continuity
+2. keep clarification resolution as the only owner of pending clarification state
+3. keep Mini-phase 5 scoped to routing and clarification correctness
 
 What is explicitly not next:
 
-1. not report-family expansion
-2. not more term-pair fixes
-3. not enrichment-recovery implementation yet
-4. not front-door implementation yet
-5. not ERP business reasoning implementation yet
+1. not more front-door expansion right now
+2. not more phrase-level patching
+3. not ERP business reasoning implementation yet
+4. not knowledge-boundary implementation yet
+5. not enrichment-recovery implementation yet
 
 ## 8. Practical Summary
 
@@ -403,15 +468,16 @@ What we have done:
 Where we are now:
 
 1. Mini-phase 3 is good enough to stop as the active center
-2. metadata/discovery is now the active core track
-3. runtime testing surfaced a later recovery chapter that is valid but explicitly deferred
-4. architecture direction is clearer
+2. Mini-phase 4 is complete enough to close
+3. Mini-phase 5 has been implemented in early slices but is now paused for architecture review
+4. runtime testing surfaced both a later recovery chapter and a nearer clarification/front-door boundary problem
+5. architecture review now confirms that clarification resolution must become its own authority before Mini-phase 5 can succeed
+6. Mini-phase 5 should continue only through that redesign path, not by further front-door expansion
 
 What is next:
 
-1. continue and close metadata/discovery work cleanly
-2. then build front door
-3. then build ERP business reasoning
-4. then build knowledge boundary
-5. then implement enrichment recovery in its proper chapter
-6. then integrate all lanes cleanly
+1. build front door
+2. then build ERP business reasoning
+3. then build knowledge boundary
+4. then implement enrichment recovery in its proper chapter
+5. then integrate all lanes cleanly

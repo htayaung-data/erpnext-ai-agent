@@ -102,3 +102,48 @@ class FreshQueryInterpretResponse(BaseModel):
 	interpretation: FreshQueryInterpretation | None = None
 	agent_meta: Dict[str, Any] = Field(default_factory=dict)
 	error: str = ""
+
+
+class FrontDoorInterpretRequest(BaseModel):
+	request_id: str
+	session_id: str
+	user_id: str
+	site_name: str
+	message: str
+	recent_messages: List[ChatMessage] = Field(default_factory=list)
+	grounded_context_available: bool = False
+	interpretation_context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FrontDoorInterpretation(BaseModel):
+	intent_class: str = ""
+	confidence: float = 0.0
+	reason: str = ""
+
+
+class FrontDoorInterpretResponse(BaseModel):
+	ok: bool
+	interpretation: FrontDoorInterpretation | None = None
+	agent_meta: Dict[str, Any] = Field(default_factory=dict)
+	error: str = ""
+
+
+class FrontDoorRenderRequest(BaseModel):
+	request_id: str
+	session_id: str
+	user_id: str
+	site_name: str
+	message: str
+	recent_messages: List[ChatMessage] = Field(default_factory=list)
+	grounded_context_available: bool = False
+	intent_class: str = ""
+	response_mode: str = ""
+	response_payload: Dict[str, Any] = Field(default_factory=dict)
+	reason: str = ""
+
+
+class FrontDoorRenderResponse(BaseModel):
+	ok: bool
+	answer_text: str = ""
+	agent_meta: Dict[str, Any] = Field(default_factory=dict)
+	error: str = ""

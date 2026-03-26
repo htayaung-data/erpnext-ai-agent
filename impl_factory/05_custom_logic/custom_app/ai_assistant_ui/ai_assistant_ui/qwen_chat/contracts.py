@@ -21,6 +21,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_default_report_name,
 	capability_report_names,
 	capability_semantic_tags,
+	get_frontdoor_intent_spec,
 	report_capability_ids,
 	report_family_report_names,
 	report_semantic_tags,
@@ -28,6 +29,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_metrics,
 	resolve_followup_report_switch,
 	resolve_target_report_for_capability,
+	list_capability_specs,
 	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
@@ -242,6 +244,45 @@ class ClarificationReasonContract:
 			"suggested_options": list(self.suggested_options),
 			"internal_reason": self.internal_reason,
 			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ClarificationResolutionContract:
+	request_id: str
+	session_id: str
+	pending_stage: str
+	pending_reason_type: str
+	pending_user_question: str
+	pending_suggested_options: List[str]
+	decision: str
+	resolved_option: str
+	matched_by: str
+	confidence: float
+	reason: str
+	resolved_slot: Dict[str, Any]
+	clarification_attempt_count: int
+	is_final_attempt: bool
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_clarification_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"pending_stage": self.pending_stage,
+			"pending_reason_type": self.pending_reason_type,
+			"pending_user_question": self.pending_user_question,
+			"pending_suggested_options": list(self.pending_suggested_options),
+			"decision": self.decision,
+			"resolved_option": self.resolved_option,
+			"matched_by": self.matched_by,
+			"confidence": max(0.0, min(1.0, float(self.confidence))),
+			"reason": self.reason,
+			"resolved_slot": dict(self.resolved_slot),
+			"clarification_attempt_count": int(max(0, self.clarification_attempt_count)),
+			"is_final_attempt": bool(self.is_final_attempt),
 			"created_at": _utc_now(),
 		}
 
@@ -1057,6 +1098,44 @@ class FamilyToolSurfaceContract:
 
 
 @dataclass(frozen=True)
+class FrontDoorIntentGateContract:
+	request_id: str
+	intent_class: str
+	confidence: float
+	handle_in_front_door: bool
+	response_mode: str
+	response_payload: Dict[str, Any]
+	route_target: str
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_front_door_intent_gate_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"intent_class": self.intent_class,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"handle_in_front_door": bool(self.handle_in_front_door),
+			"response_mode": self.response_mode,
+			"response_payload": dict(self.response_payload),
+			"route_target": self.route_target,
+			"reason": self.reason,
+			"created_at": _utc_now(),
+		}
+
+	def to_runtime_payload(self) -> Dict[str, Any]:
+		return {
+			"intent_class": self.intent_class,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"handle_in_front_door": bool(self.handle_in_front_door),
+			"response_mode": self.response_mode,
+			"response_payload": dict(self.response_payload),
+			"route_target": self.route_target,
+			"reason": self.reason,
+		}
+
+
+@dataclass(frozen=True)
 class CompiledExecutionAuditContract:
 	request_id: str
 	session_id: str
@@ -1142,6 +1221,122 @@ def build_interaction_contract(
 		analysis_requested=analysis_requested,
 		response_policy_mode="explicit_analysis" if analysis_requested else "factual_default",
 		received_at=_utc_now(),
+	)
+
+
+def _front_door_capability_summary_payload() -> Dict[str, Any]:
+	capability_labels = []
+	for item in list_capability_specs():
+		label = str(item.get("label") or "").strip()
+		if label and label not in capability_labels:
+			capability_labels.append(label)
+	supported_areas = [
+		"financial statements",
+		"AR / AP",
+		"sales",
+		"inventory",
+		"product performance",
+		"invoices",
+	]
+	text = (
+		"I can help with governed ERP reporting and follow-up analysis across "
+		+ ", ".join(supported_areas[:-1])
+		+ ", and "
+		+ supported_areas[-1]
+		+ "."
+	)
+	return {
+		"text": text,
+		"supported_areas": supported_areas,
+		"capability_labels": capability_labels,
+		"suggested_prompts": [
+			"Show me sales trend",
+			"Analyze AR / AP",
+			"Give me the financial statement",
+		],
+	}
+
+
+def translate_front_door_intent_gate_contract(
+	*,
+	intent_class: str,
+	response_mode: str,
+	grounded_context_available: bool = False,
+) -> Dict[str, Any]:
+	intent = str(intent_class or "").strip()
+	mode = str(response_mode or "").strip()
+	if mode == "capability_summary":
+		return _front_door_capability_summary_payload()
+	if mode == "continue_current_flow":
+		if grounded_context_available:
+			return {
+				"text": "I can continue the current ERP context. Ask for more details, another view, or a new governed query.",
+				"suggested_prompts": [
+					"Give me more details",
+					"Show another view",
+					"Start a new query",
+				],
+			}
+		return {
+			"text": "There is no current governed result to continue yet. Ask a new ERP question and I can start from there.",
+			"suggested_prompts": [
+				"Show me sales trend",
+				"Analyze inventory",
+				"Give me the financial statement",
+			],
+		}
+	text_by_intent = {
+		"greeting": "I can help with governed ERP reports and follow-up analysis. What would you like to look at?",
+		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new governed query.",
+		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new governed query.",
+		"closure_signoff": "Understood. Feel free to come back anytime, and we can pick up from a new ERP question or continue from there.",
+		"low_signal_non_business": "I’m ready when you want to continue with an ERP question or follow-up.",
+		"route_onward": "",
+	}
+	return {
+		"text": str(text_by_intent.get(intent) or "").strip(),
+		"suggested_prompts": [],
+	}
+
+
+def build_front_door_intent_gate_contract(
+	*,
+	request_id: str,
+	intent_class: str,
+	confidence: float,
+	grounded_context_available: bool = False,
+	reason: str = "",
+) -> FrontDoorIntentGateContract:
+	intent = str(intent_class or "").strip() or "route_onward"
+	spec = get_frontdoor_intent_spec(intent)
+	if not spec:
+		spec = get_frontdoor_intent_spec("route_onward")
+		intent = str(spec.get("intent_class_id") or "route_onward").strip()
+	response_mode = str(spec.get("response_mode") or "route_onward").strip()
+	route_target = str(spec.get("route_target") or "artifact_lane").strip()
+	handle_in_front_door = bool(spec.get("handle_in_front_door", False))
+	final_reason = str(reason or "").strip()
+	if bool(spec.get("requires_grounded_context")) and not grounded_context_available:
+		intent = "route_onward"
+		spec = get_frontdoor_intent_spec(intent)
+		response_mode = str(spec.get("response_mode") or "route_onward").strip()
+		route_target = str(spec.get("route_target") or "artifact_lane").strip()
+		handle_in_front_door = bool(spec.get("handle_in_front_door", False))
+		final_reason = "The turn looks like session flow, but there is no grounded context yet, so it should route onward."
+	response_payload = translate_front_door_intent_gate_contract(
+		intent_class=intent,
+		response_mode=response_mode,
+		grounded_context_available=grounded_context_available,
+	)
+	return FrontDoorIntentGateContract(
+		request_id=str(request_id or "").strip(),
+		intent_class=intent,
+		confidence=float(max(0.0, min(1.0, confidence))),
+		handle_in_front_door=handle_in_front_door,
+		response_mode=response_mode,
+		response_payload=dict(response_payload),
+		route_target=route_target,
+		reason=final_reason,
 	)
 
 
@@ -1241,6 +1436,68 @@ def build_clarification_reason_contract(
 		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
 		internal_reason=str(internal_reason or "").strip(),
 		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_clarification_resolution_contract(
+	*,
+	request_id: str,
+	session_id: str = "",
+	pending_stage: str,
+	pending_reason_type: str,
+	pending_user_question: str = "",
+	pending_suggested_options: List[str] | None = None,
+	decision: str,
+	resolved_option: str = "",
+	matched_by: str = "",
+	confidence: float = 0.0,
+	reason: str = "",
+	resolved_slot: Dict[str, Any] | None = None,
+	clarification_attempt_count: int = 0,
+	is_final_attempt: bool = False,
+) -> ClarificationResolutionContract:
+	return ClarificationResolutionContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		pending_stage=str(pending_stage or "").strip(),
+		pending_reason_type=str(pending_reason_type or "").strip(),
+		pending_user_question=str(pending_user_question or "").strip(),
+		pending_suggested_options=[
+			str(x or "").strip()
+			for x in (pending_suggested_options or [])
+			if str(x or "").strip()
+		],
+		decision=str(decision or "").strip(),
+		resolved_option=str(resolved_option or "").strip(),
+		matched_by=str(matched_by or "").strip(),
+		confidence=max(0.0, min(1.0, float(confidence or 0.0))),
+		reason=str(reason or "").strip(),
+		resolved_slot=dict(resolved_slot or {}),
+		clarification_attempt_count=int(max(0, clarification_attempt_count or 0)),
+		is_final_attempt=bool(is_final_attempt),
+	)
+
+
+def build_clarification_response_resolution_contract(
+	*,
+	request_id: str,
+	pending_stage: str,
+	pending_reason_type: str,
+	decision: str,
+	resolved_option: str = "",
+	matched_by: str = "",
+	reason: str = "",
+) -> ClarificationResolutionContract:
+	# Backward-compatible wrapper for the earlier transitional contract surface.
+	return build_clarification_resolution_contract(
+		request_id=request_id,
+		pending_stage=pending_stage,
+		pending_reason_type=pending_reason_type,
+		decision=decision,
+		resolved_option=resolved_option,
+		matched_by=matched_by,
+		confidence=1.0 if str(decision or "").strip() == "resolved_option" else 0.0,
+		reason=reason,
 	)
 
 

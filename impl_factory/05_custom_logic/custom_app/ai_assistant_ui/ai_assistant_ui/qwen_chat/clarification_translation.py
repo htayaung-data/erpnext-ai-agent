@@ -111,6 +111,8 @@ def _translate_compiler_signal(
 		question = "Which report would you like me to use?"
 		if {"Profit and Loss", "Balance Sheet", "Cash Flow"} & set(options):
 			question = "Which financial view would you like to see: Profit & Loss, Balance Sheet, or Cash Flow?"
+		elif options:
+			question = f"Which report would you like me to use: {_human_join(list(dict.fromkeys(options))[:3])}?"
 		return build_clarification_signal_contract(
 			request_id=request_id,
 			stage="compiler",
