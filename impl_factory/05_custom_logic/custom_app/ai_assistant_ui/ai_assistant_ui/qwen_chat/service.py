@@ -6,7 +6,7 @@ import json
 import re
 import time
 import uuid
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import frappe
 
@@ -16,14 +16,18 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 	narrate_governed_artifact,
 )
 from ai_assistant_ui.qwen_chat.capability_adapters import render_local_followup
+from ai_assistant_ui.qwen_chat.clarification_state import get_clarification_state
 from ai_assistant_ui.qwen_chat.clarification_translation import (
 	translate_clarification_reason_contract,
 	translate_clarification_signal,
 )
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
+	clarification_state_after_unresolved_attempt,
 	clear_pending_clarification_signal,
+	governed_fallback_option,
 	latest_pending_clarification_signal,
 	pending_clarification_empty_ack_answer,
+	pending_clarification_fallback_stop_answer,
 	pending_clarification_meta_answer,
 	pending_clarification_repeat_answer,
 	resolve_pending_clarification_response,
@@ -74,6 +78,7 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	interpret_front_door_semantically,
 	render_front_door_answer,
 )
+from ai_assistant_ui.qwen_chat.observability import record_phase55_observability_event
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_default_report_name,
@@ -2237,7 +2242,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
 	latest_family_artifact = _latest_normalized_family_artifact(session_doc)
 	latest_assistant_payload = _latest_assistant_payload(session_doc)
-	pending_clarification_signal = latest_pending_clarification_signal(session_doc)
+	clarification_state = get_clarification_state(session_doc)
+	pending_clarification_signal = (
+		dict(clarification_state.pending_signal)
+		if clarification_state.has_pending
+		else latest_pending_clarification_signal(session_doc)
+	)
 	latest_grounded_turn_available = bool(latest_grounded_turn.get("grounded")) or bool(
 		_latest_grounded_assistant_context(session_doc)[0]
 	)
@@ -2259,6 +2269,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			site_name=site_name,
 			message=raw_msg,
 			signal_payload=pending_clarification_signal,
+			clarification_attempt_count=int(max(0, clarification_state.attempt_count)),
+			max_attempts=int(max(1, clarification_state.max_attempts)),
 		)
 		frontdoor_semantic_result = SemanticFrontDoorResult(
 			status="skipped_for_pending_clarification",
@@ -2334,6 +2346,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_append_tool_payload(session_doc, frontdoor_contract.to_payload())
 		if frontdoor_render_result is not None:
 			_append_tool_payload(session_doc, frontdoor_render_result.to_payload())
+		_append_tool_payload(
+			session_doc,
+			record_phase55_observability_event(
+				request_id=request_id,
+				session_id=session_name,
+				event_family="front_door",
+				event_name="handled",
+				details={
+					"intent_class": str(getattr(frontdoor_contract, "intent_class", "") or "").strip(),
+					"response_engine": "frontdoor_response_renderer" if bool(getattr(frontdoor_render_result, "ok", False)) else "semantic_frontdoor",
+				},
+			),
+		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		_append_message(session_doc, "assistant", _assistant_text_payload(frontdoor_answer))
 		_append_tool_payload(
@@ -2360,37 +2385,105 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if pending_clarification_signal:
 		clarification_decision = str(clarification_response_contract.decision or "").strip()
 		if clarification_decision in {"reask_pending_clarification", "meta_question", "empty_ack"}:
-			if clarification_decision == "meta_question":
-				answer_text = pending_clarification_meta_answer(pending_clarification_signal)
-			elif clarification_decision == "empty_ack":
-				answer_text = pending_clarification_empty_ack_answer(pending_clarification_signal)
-			else:
-				answer_text = pending_clarification_repeat_answer(pending_clarification_signal)
-			execution_path = ExecutionPath(
-				request_id=request_id,
-				path="clarification",
-				reason=str(clarification_response_contract.reason or "").strip()
-				or "A governed clarification is still pending before the ERP lane can continue.",
-				requires_runtime=False,
-				grounded_required=False,
+			clarification_state = clarification_state_after_unresolved_attempt(
+				clarification_state,
+				pending_clarification_signal,
 			)
-			_append_message(session_doc, "user", raw_msg)
-			_append_tool_payload(session_doc, interaction_contract.to_payload())
-			_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
-			_append_tool_payload(session_doc, frontdoor_contract.to_payload())
-			_append_tool_payload(session_doc, clarification_response_contract.to_payload())
-			_append_tool_payload(session_doc, execution_path.to_payload())
-			_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
-			_append_tool_payload(session_doc, pending_clarification_signal)
-			store_pending_clarification_signal(session_doc, pending_clarification_signal)
-			session_doc.save(ignore_permissions=False)
-			return True, {
-				"ok": True,
-				"request_id": request_id,
-				"mode": "clarification",
-				"agent_meta": {"engine": "pending_clarification_resolver", "mode": clarification_decision or "reask_pending_clarification"},
-			}
+			fallback_option = governed_fallback_option(pending_clarification_signal) if clarification_state.max_attempts_reached else ""
+			if fallback_option:
+				clarification_response_contract = resolve_pending_clarification_response(
+					request_id=request_id,
+					session_id=session_name,
+					user_id=user,
+					site_name=site_name,
+					message=fallback_option,
+					signal_payload=pending_clarification_signal,
+					clarification_attempt_count=int(max(0, clarification_state.attempt_count)),
+					max_attempts=int(max(1, clarification_state.max_attempts)),
+				)
+				clarification_decision = str(clarification_response_contract.decision or "").strip()
+			else:
+				answer_text = ""
+				if clarification_state.max_attempts_reached:
+					answer_text = pending_clarification_fallback_stop_answer(pending_clarification_signal)
+					clear_pending_clarification_signal(session_doc)
+				elif clarification_decision == "meta_question":
+					answer_text = pending_clarification_meta_answer(pending_clarification_signal)
+				elif clarification_decision == "empty_ack":
+					answer_text = pending_clarification_empty_ack_answer(pending_clarification_signal)
+				else:
+					answer_text = pending_clarification_repeat_answer(pending_clarification_signal)
+				execution_path = ExecutionPath(
+					request_id=request_id,
+					path="clarification",
+					reason=str(clarification_response_contract.reason or "").strip()
+					or "A governed clarification is still pending before the ERP lane can continue.",
+					requires_runtime=False,
+					grounded_required=False,
+				)
+				_append_message(session_doc, "user", raw_msg)
+				_append_tool_payload(session_doc, interaction_contract.to_payload())
+				_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+				_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+				_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+				_append_tool_payload(
+					session_doc,
+					record_phase55_observability_event(
+						request_id=request_id,
+						session_id=session_name,
+						event_family="clarification",
+						event_name=(
+							"fallback_stop"
+							if clarification_state.max_attempts_reached
+							else clarification_decision or "reask_pending_clarification"
+						),
+						details={
+							"pending_reason_type": str(pending_clarification_signal.get("reason_type") or "").strip(),
+							"attempt_count": int(max(0, clarification_state.attempt_count)),
+							"max_attempts": int(max(1, clarification_state.max_attempts)),
+						},
+					),
+				)
+				_append_tool_payload(session_doc, execution_path.to_payload())
+				_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+				if not clarification_state.max_attempts_reached:
+					_append_tool_payload(session_doc, pending_clarification_signal)
+					store_pending_clarification_signal(
+						session_doc,
+						pending_clarification_signal,
+						attempt_count=int(max(0, clarification_state.attempt_count)),
+						max_attempts=int(max(1, clarification_state.max_attempts)),
+					)
+				session_doc.save(ignore_permissions=False)
+				return True, {
+					"ok": True,
+					"request_id": request_id,
+					"mode": "clarification",
+					"agent_meta": {
+						"engine": "pending_clarification_resolver",
+						"mode": (
+							"fallback_stop"
+							if clarification_state.max_attempts_reached
+							else clarification_decision or "reask_pending_clarification"
+						),
+					},
+				}
 		clear_pending_clarification_signal(session_doc)
+		_append_tool_payload(
+			session_doc,
+			record_phase55_observability_event(
+				request_id=request_id,
+				session_id=session_name,
+				event_family="clarification",
+				event_name=str(clarification_response_contract.decision or "").strip() or "resolved",
+				details={
+					"pending_reason_type": str(pending_clarification_signal.get("reason_type") or "").strip(),
+					"attempt_count": int(max(0, clarification_state.attempt_count)),
+					"max_attempts": int(max(1, clarification_state.max_attempts)),
+					"resolved_option": str(clarification_response_contract.resolved_option or "").strip(),
+				},
+			),
+		)
 		if str(clarification_response_contract.decision or "").strip() == "resolved_option":
 			msg = str(clarification_response_contract.resolved_option or "").strip() or msg
 	compiled_rollout = _compiled_first_turn_rollout_decision(
@@ -5312,3 +5405,313 @@ def run_phase4b_entity_drilldown_probe() -> Dict[str, Any]:
 					conf.pop(key, None)
 				except Exception:
 					pass
+
+
+def _run_phase55_smoke_session(title: str, runner: Callable[[Any], Dict[str, Any]]) -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = str(title or "Phase 5.5 Smoke").strip() or "Phase 5.5 Smoke"
+		doc.insert(ignore_permissions=False)
+		try:
+			return runner(doc)
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_phase55_clarification_attempt_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me financial statement",
+			user="Administrator",
+		)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		initial_state = get_clarification_state(session_doc)
+		if not initial_state.has_pending:
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: initial clarification state was not persisted.")
+		if int(initial_state.attempt_count) != 0:
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: initial attempt count did not start at zero.")
+
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed on first unresolved reply.")
+		if str(((first_payload or {}).get("agent_meta") or {}).get("mode") or "").strip() != "empty_ack":
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: first unresolved reply was not attributed to empty_ack.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		state_after_first = get_clarification_state(session_doc)
+		if int(state_after_first.attempt_count) != 1:
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: attempt count did not increment to one.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed on second unresolved reply.")
+		if str(((second_payload or {}).get("agent_meta") or {}).get("mode") or "").strip() != "empty_ack":
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: second unresolved reply was not attributed to empty_ack.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		state_after_second = get_clarification_state(session_doc)
+		if int(state_after_second.attempt_count) != 2:
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: attempt count did not increment to two.")
+
+		ok, final_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes",
+			user="Administrator",
+		)
+		if not ok or str((final_payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed on bounded-stop reply.")
+		if str(((final_payload or {}).get("agent_meta") or {}).get("mode") or "").strip() != "fallback_stop":
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: third unresolved reply did not exit through fallback_stop.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		final_state = get_clarification_state(session_doc)
+		if final_state.has_pending:
+			raise RuntimeError("Phase 5.5 clarification-attempt smoke failed: pending clarification state was not cleared after bounded stop.")
+		return {
+			"ok": True,
+			"attempt_counts": [0, 1, 2],
+			"final_mode": str(((final_payload or {}).get("agent_meta") or {}).get("mode") or "").strip(),
+			"final_answer": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("Phase 5.5 Clarification Attempt Smoke", _runner)
+
+
+def run_phase55_clarification_meta_question_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me financial statement",
+			user="Administrator",
+		)
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what do you mean?",
+			user="Administrator",
+		)
+		if not ok or str((payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("Phase 5.5 meta-question smoke failed: clarification did not stay active.")
+		if str(((payload or {}).get("agent_meta") or {}).get("mode") or "").strip() != "meta_question":
+			raise RuntimeError("Phase 5.5 meta-question smoke failed: reply was not attributed to meta_question.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		state = get_clarification_state(session_doc)
+		if not state.has_pending or int(state.attempt_count) != 1:
+			raise RuntimeError("Phase 5.5 meta-question smoke failed: pending clarification state did not persist correctly.")
+		return {
+			"ok": True,
+			"mode": str(((payload or {}).get("agent_meta") or {}).get("mode") or "").strip(),
+			"attempt_count": int(state.attempt_count),
+			"answer_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("Phase 5.5 Meta Question Smoke", _runner)
+
+
+def run_phase55_pending_override_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me financial statement",
+			user="Administrator",
+		)
+		_, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me sales trend",
+			user="Administrator",
+		)
+		if str((payload or {}).get("mode") or "").strip() == "clarification":
+			raise RuntimeError("Phase 5.5 pending-override smoke failed: fresh ERP request remained trapped in clarification.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		state = get_clarification_state(session_doc)
+		if state.has_pending:
+			raise RuntimeError("Phase 5.5 pending-override smoke failed: pending clarification was not cleared by the fresh ERP request.")
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"answer_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("Phase 5.5 Pending Override Smoke", _runner)
+
+
+def run_phase55_frontdoor_boundary_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me top 5 customers by revenue last month",
+			user="Administrator",
+		)
+		ok, thanks_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Really Great, thank you",
+			user="Administrator",
+		)
+		if not ok or str((thanks_payload or {}).get("mode") or "").strip() != "front_door":
+			raise RuntimeError("Phase 5.5 front-door boundary smoke failed: gratitude after grounded ERP answer did not stay in front door.")
+		if str((((thanks_payload or {}).get("agent_meta") or {}).get("intent_class") or "")).strip() != "thanks":
+			raise RuntimeError("Phase 5.5 front-door boundary smoke failed: gratitude turn was not classified as thanks.")
+
+		ok, signoff_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="as of now, enough , I will come back later",
+			user="Administrator",
+		)
+		if not ok or str((signoff_payload or {}).get("mode") or "").strip() != "front_door":
+			raise RuntimeError("Phase 5.5 front-door boundary smoke failed: closure turn leaked into ERP routing.")
+		if str((((signoff_payload or {}).get("agent_meta") or {}).get("intent_class") or "")).strip() != "closure_signoff":
+			raise RuntimeError("Phase 5.5 front-door boundary smoke failed: closure turn was not classified as closure_signoff.")
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		state = get_clarification_state(session_doc)
+		if state.has_pending:
+			raise RuntimeError("Phase 5.5 front-door boundary smoke failed: front-door path left stale clarification state behind.")
+		return {
+			"ok": True,
+			"thanks_intent": str((((thanks_payload or {}).get("agent_meta") or {}).get("intent_class") or "")).strip(),
+			"closure_intent": str((((signoff_payload or {}).get("agent_meta") or {}).get("intent_class") or "")).strip(),
+			"final_answer": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("Phase 5.5 Front Door Boundary Smoke", _runner)
+
+
+def run_phase55_ap_ar_default_policy_smoke() -> Dict[str, Any]:
+	cases = {
+		"ar_insight": "give me AR insight",
+		"ap_amount": "show me payable amount as of now",
+		"ar_ap_insight": "give me AR / AP insight",
+	}
+	results: Dict[str, Any] = {}
+
+	for case_id, message in cases.items():
+		def _runner(doc, case_message: str = message, current_case_id: str = case_id) -> Dict[str, Any]:
+			_, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=case_message,
+				user="Administrator",
+			)
+			if str((payload or {}).get("mode") or "").strip() == "clarification":
+				raise RuntimeError(
+					f"Phase 5.5 AP/AR default-policy smoke failed: case `{current_case_id}` reopened report ambiguity."
+				)
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			state = get_clarification_state(session_doc)
+			if state.has_pending:
+				raise RuntimeError(
+					f"Phase 5.5 AP/AR default-policy smoke failed: case `{current_case_id}` left pending clarification state."
+				)
+			return {
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"answer_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+			}
+
+		results[case_id] = _run_phase55_smoke_session(
+			f"Phase 5.5 AP AR Policy Smoke {case_id}",
+			_runner,
+		)
+
+	return {
+		"ok": True,
+		"cases": results,
+	}
+
+
+def run_phase55_hardening_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"clarification_attempt": run_phase55_clarification_attempt_smoke(),
+		"meta_question": run_phase55_clarification_meta_question_smoke(),
+		"pending_override": run_phase55_pending_override_smoke(),
+		"frontdoor_boundary": run_phase55_frontdoor_boundary_smoke(),
+		"ap_ar_default_policy": run_phase55_ap_ar_default_policy_smoke(),
+		"observability": run_phase55_observability_smoke(),
+	}
+
+
+def run_phase55_observability_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, hello_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="hello",
+			user="Administrator",
+		)
+		if not ok or str((hello_payload or {}).get("mode") or "").strip() != "front_door":
+			raise RuntimeError("Phase 5.5 observability smoke failed: hello was not handled in front door.")
+		handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me financial statement",
+			user="Administrator",
+		)
+		ok, clarification_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes",
+			user="Administrator",
+		)
+		if not ok or str((clarification_payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("Phase 5.5 observability smoke failed: clarification path did not remain active.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads: List[Dict[str, Any]] = []
+		for row in session_doc.get("messages") or []:
+			if str(row.role or "").strip().lower() != "tool":
+				continue
+			payload_obj = _parse_payload(str(row.content or ""))
+			if payload_obj:
+				tool_payloads.append(payload_obj)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase55_observability_event"
+		]
+		if len(events) < 2:
+			raise RuntimeError("Phase 5.5 observability smoke failed: expected both front-door and clarification observability events.")
+		frontdoor_event = {}
+		clarification_event = {}
+		for item in events:
+			if str(item.get("event_family") or "").strip() == "front_door":
+				frontdoor_event = item
+			if str(item.get("event_family") or "").strip() == "clarification":
+				clarification_event = item
+		if str(frontdoor_event.get("event_name") or "").strip() != "handled":
+			raise RuntimeError("Phase 5.5 observability smoke failed: missing front-door handled event.")
+		if str(clarification_event.get("event_name") or "").strip() != "empty_ack":
+			raise RuntimeError("Phase 5.5 observability smoke failed: missing clarification empty_ack event.")
+		return {
+			"ok": True,
+			"event_count": len(events),
+			"frontdoor_event": frontdoor_event,
+			"clarification_event": clarification_event,
+		}
+
+	return _run_phase55_smoke_session("Phase 5.5 Observability Smoke", _runner)

@@ -4,6 +4,13 @@ import json
 import re
 from typing import Any, Dict, List, Tuple
 
+from ai_assistant_ui.qwen_chat.compiler import compile_fresh_query
+from ai_assistant_ui.qwen_chat.clarification_state import (
+	build_pending_clarification_state,
+	ClarificationState,
+	get_clarification_state,
+	store_clarification_state,
+)
 from ai_assistant_ui.qwen_chat.contracts import build_clarification_resolution_contract
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import interpret_fresh_query_semantically
 from ai_assistant_ui.qwen_chat.metadata import ontology_detect_concepts
@@ -39,16 +46,6 @@ def _parse_payload(content: str) -> Dict[str, Any]:
 	return obj if isinstance(obj, dict) else {}
 
 
-def _stored_pending_clarification_signal(session_doc) -> Dict[str, Any]:
-	raw_value = str(getattr(session_doc, "pending_clarification_state_json", "") or "").strip()
-	if not raw_value:
-		return {}
-	payload = _parse_payload(raw_value)
-	if str(payload.get("type") or "").strip() != "qwen_clarification_signal_contract":
-		return {}
-	return payload
-
-
 def latest_pending_clarification_signal_from_messages(session_doc) -> Dict[str, Any]:
 	messages = list(session_doc.get("messages") or [])
 	latest_assistant_index = -1
@@ -78,21 +75,29 @@ def latest_pending_clarification_signal_from_messages(session_doc) -> Dict[str, 
 
 
 def latest_pending_clarification_signal(session_doc) -> Dict[str, Any]:
-	stored = _stored_pending_clarification_signal(session_doc)
-	if stored:
-		return stored
+	stored_state = get_clarification_state(session_doc)
+	if stored_state.has_pending:
+		return dict(stored_state.pending_signal)
 	return latest_pending_clarification_signal_from_messages(session_doc)
 
 
-def store_pending_clarification_signal(session_doc, signal_payload: Dict[str, Any]) -> None:
-	payload = dict(signal_payload or {})
-	if str(payload.get("type") or "").strip() != "qwen_clarification_signal_contract":
-		return
-	session_doc.pending_clarification_state_json = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+def store_pending_clarification_signal(
+	session_doc,
+	signal_payload: Dict[str, Any],
+	*,
+	attempt_count: int = 0,
+	max_attempts: int = 3,
+) -> None:
+	state = build_pending_clarification_state(
+		signal_payload,
+		attempt_count=attempt_count,
+		max_attempts=max_attempts,
+	)
+	store_clarification_state(session_doc, state)
 
 
 def clear_pending_clarification_signal(session_doc) -> None:
-	session_doc.pending_clarification_state_json = ""
+	store_clarification_state(session_doc, build_pending_clarification_state({}))
 
 
 def _human_join(values: List[str]) -> str:
@@ -214,6 +219,22 @@ def pending_clarification_empty_ack_answer(signal_payload: Dict[str, Any]) -> st
 	return pending_clarification_repeat_answer(signal_payload)
 
 
+def pending_clarification_fallback_stop_answer(signal_payload: Dict[str, Any]) -> str:
+	options = [
+		str(value or "").strip()
+		for value in (signal_payload.get("suggested_options") or [])
+		if str(value or "").strip()
+	]
+	reason_type = str(signal_payload.get("reason_type") or "").strip()
+	if reason_type == "report_ambiguity" and options:
+		return f"I’ll pause here rather than guess the report. When you come back, please choose one of these directly: {_human_join(options[:3])}."
+	if reason_type == "capability_ambiguity" and options:
+		return f"I’ll pause here rather than guess the business area. When you come back, please choose one of these directly: {_human_join(options[:5])}."
+	if reason_type in {"time_scope_missing", "time_scope_clarification"} and options:
+		return f"I’ll pause here rather than guess the period. When you come back, please choose one of these directly: {_human_join(options[:3])}."
+	return "I’ll pause here rather than guess the missing detail. When you come back, please restate the request with the specific report, area, or period you want."
+
+
 def _resolved_slot(reason_type: str, matched_option: str) -> Dict[str, Any]:
 	if not matched_option:
 		return {}
@@ -226,6 +247,69 @@ def _resolved_slot(reason_type: str, matched_option: str) -> Dict[str, Any]:
 	return {"selected_option": matched_option}
 
 
+def governed_fallback_option(signal_payload: Dict[str, Any]) -> str:
+	payload = dict(signal_payload or {})
+	for key in ("governed_default_option", "default_option"):
+		value = str(payload.get(key) or "").strip()
+		if value:
+			return value
+	internal_details = payload.get("internal_details")
+	if isinstance(internal_details, dict):
+		for key in ("governed_default_option", "default_option"):
+			value = str(internal_details.get(key) or "").strip()
+			if value:
+				return value
+	return ""
+
+
+def clarification_state_after_unresolved_attempt(state: ClarificationState, signal_payload: Dict[str, Any]) -> ClarificationState:
+	if state.has_pending:
+		return state.next_attempt()
+	return build_pending_clarification_state(signal_payload, attempt_count=1)
+
+
+def _normalized_values(values: List[str]) -> List[str]:
+	out: List[str] = []
+	for value in values:
+		clean = re.sub(r"\s+", " ", str(value or "").strip().lower())
+		if clean and clean not in out:
+			out.append(clean)
+	return out
+
+
+def _same_pending_clarification(
+	*,
+	compiler_contract: Any,
+	signal_payload: Dict[str, Any],
+) -> bool:
+	pending_reason_type = str(signal_payload.get("reason_type") or "").strip()
+	compiler_reason_type = str(getattr(compiler_contract, "clarification_reason_type", "") or "").strip()
+	if not pending_reason_type or compiler_reason_type != pending_reason_type:
+		return False
+	compiler_details = getattr(compiler_contract, "clarification_details", None)
+	if not isinstance(compiler_details, dict):
+		return False
+	pending_options = _normalized_values(
+		[
+			str(value or "").strip()
+			for value in (signal_payload.get("suggested_options") or [])
+			if str(value or "").strip()
+		]
+	)
+	if not pending_options:
+		return False
+	candidate_values: List[str] = []
+	for key in ("report_candidates", "capability_candidates", "suggested_options"):
+		values = compiler_details.get(key)
+		if isinstance(values, list):
+			candidate_values = [str(value or "").strip() for value in values if str(value or "").strip()]
+			if candidate_values:
+				break
+	if not candidate_values:
+		return False
+	return _normalized_values(candidate_values) == pending_options
+
+
 def _semantic_new_request_detected(
 	*,
 	request_id: str,
@@ -233,6 +317,7 @@ def _semantic_new_request_detected(
 	user_id: str,
 	site_name: str,
 	message: str,
+	signal_payload: Dict[str, Any],
 ) -> bool:
 	result = interpret_fresh_query_semantically(
 		request_id=request_id,
@@ -242,14 +327,31 @@ def _semantic_new_request_detected(
 		message=message,
 		recent_messages=[],
 	)
-	if str(getattr(result, "status", "") or "").strip() != "accepted":
-		return False
 	interpretation = getattr(result, "interpretation", None)
 	if interpretation is None:
 		return False
-	return bool(list(getattr(interpretation, "candidate_capability_ids", []) or []) or list(
+	if not bool(list(getattr(interpretation, "candidate_capability_ids", []) or []) or list(
 		getattr(interpretation, "candidate_reports", []) or []
-	))
+	)):
+		return False
+	compiler_outcome = compile_fresh_query(
+		request_id=request_id,
+		session_id=session_id,
+		interpretation=interpretation,
+		response_policy={"analysis_level": "none"},
+	)
+	compiler_contract = getattr(compiler_outcome, "compiler_contract", None)
+	if compiler_contract is None:
+		return False
+	decision = str(getattr(compiler_contract, "decision", "") or "").strip()
+	if decision not in {"execute", "clarify"}:
+		return False
+	if decision == "clarify" and _same_pending_clarification(
+		compiler_contract=compiler_contract,
+		signal_payload=signal_payload,
+	):
+		return False
+	return True
 
 
 def resolve_pending_clarification_response(
@@ -260,6 +362,8 @@ def resolve_pending_clarification_response(
 	site_name: str,
 	message: str,
 	signal_payload: Dict[str, Any],
+	clarification_attempt_count: int = 0,
+	max_attempts: int = 3,
 ) -> Any:
 	stage = str(signal_payload.get("stage") or "").strip()
 	reason_type = str(signal_payload.get("reason_type") or "").strip()
@@ -284,6 +388,8 @@ def resolve_pending_clarification_response(
 			confidence=confidence,
 			reason="The user selected one of the pending clarification options.",
 			resolved_slot=_resolved_slot(reason_type, matched_option),
+			clarification_attempt_count=int(max(0, clarification_attempt_count)),
+			is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 		)
 	if _looks_like_meta_question(message):
 		return build_clarification_resolution_contract(
@@ -297,7 +403,8 @@ def resolve_pending_clarification_response(
 			matched_by="question_shape",
 			confidence=0.7,
 			reason="The user asked about the pending clarification itself rather than selecting an option.",
-			clarification_attempt_count=1,
+			clarification_attempt_count=int(max(0, clarification_attempt_count)),
+			is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 		)
 	if _looks_like_empty_ack(message):
 		return build_clarification_resolution_contract(
@@ -311,7 +418,8 @@ def resolve_pending_clarification_response(
 			matched_by="short_non_business_turn",
 			confidence=0.65,
 			reason="The user acknowledged the clarification but did not provide a resolvable option yet.",
-			clarification_attempt_count=1,
+			clarification_attempt_count=int(max(0, clarification_attempt_count)),
+			is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 		)
 	if _semantic_new_request_detected(
 		request_id=request_id,
@@ -319,6 +427,7 @@ def resolve_pending_clarification_response(
 		user_id=user_id,
 		site_name=site_name,
 		message=message,
+		signal_payload=signal_payload,
 	):
 		return build_clarification_resolution_contract(
 			request_id=request_id,
@@ -330,6 +439,8 @@ def resolve_pending_clarification_response(
 			decision="new_request",
 			confidence=0.8,
 			reason="A semantic fresh-query cross-check indicates the user started a new ERP request and should continue through the main lanes.",
+			clarification_attempt_count=int(max(0, clarification_attempt_count)),
+			is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 		)
 	return build_clarification_resolution_contract(
 		request_id=request_id,
@@ -341,4 +452,6 @@ def resolve_pending_clarification_response(
 		decision="reask_pending_clarification",
 		confidence=0.0,
 		reason="The user did not answer the pending clarification with a resolvable option or new substantive ERP request.",
+		clarification_attempt_count=int(max(0, clarification_attempt_count)),
+		is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 	)

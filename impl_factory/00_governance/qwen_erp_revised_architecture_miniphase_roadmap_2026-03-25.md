@@ -328,9 +328,130 @@ Closure decision:
 2. clarification resolution remains the only authority for pending clarification state
 3. later recommendation-detail reasoning and recovery work moves to later phases, not back into front door
 
+## Mini-phase 5.5
+
+Foundation hardening after Mini-phase 5 closure and before Mini-phase 6.
+
+Goal:
+
+1. make the newly closed Mini-phase 5 operationally trustworthy before adding new reasoning/recovery layers
+
+This is not a new user-facing lane.
+
+It is a bounded hardening phase for:
+
+1. clarification attempt enforcement
+2. regression test coverage
+3. explicit clarification state discipline
+4. basic observability for clarification/front-door decisions
+
+Rule:
+
+1. do not reopen Mini-phase 5 architecture
+2. do not add new conversational features here
+3. do not start Mini-phase 6 until Mini-phase 5.5 is good enough
+
+Why this phase exists:
+
+1. the architecture is now materially healthier
+2. but enterprise trust requires verification, not only better structure
+3. Mini-phase 6/7/8 would be riskier if built on unverified clarification and routing behavior
+
+Phase 5.5 scope:
+
+1. clarification max-attempt handling with safe fallback policy
+2. automated regression tests for clarification continuity and thin front-door behavior
+3. explicit clarification-state transitions
+4. observability for:
+   - clarification decisions
+   - attempt counts
+   - fallback usage
+   - front-door vs ERP routing outcomes
+
+Phase 5.5 constraints:
+
+1. no keyword-bag repair logic
+2. no single-case fixes
+3. no new broad front-door intent expansion
+4. fallback must be governed-safe:
+   - use a true governed default when one exists
+   - otherwise stop safely rather than silently choosing an arbitrary option
+
+Recommended implementation order:
+
+1. 5.5A clarification-state foundation
+2. 5.5B max-attempt enforcement
+3. 5.5C automated regression suite
+4. 5.5D observability and metrics
+5. 5.5E close-out review before Mini-phase 6
+
+Current progress:
+
+1. 5.5A clarification-state foundation: implemented
+2. explicit wrapper now stores:
+   - `state`
+   - `attempt_count`
+   - `max_attempts`
+   - `pending_signal`
+3. backward compatibility with older raw clarification-signal storage is preserved
+4. 5.5B max-attempt enforcement: implemented
+5. current bounded policy:
+   - unresolved clarification attempts increment explicit state
+   - true governed default may be used only when one is explicitly carried by the clarification payload
+   - otherwise the assistant stops safely and refuses to guess
+6. 5.5C callable regression suite: implemented
+7. the suite now verifies:
+   - bounded clarification attempts
+   - meta-question handling
+   - fresh ERP override while clarification is pending
+   - gratitude/closure front-door boundaries after grounded ERP answers
+   - AP/AR direct-intent default-report behavior
+8. 5.5D observability: implemented
+9. clarification/front-door decisions now emit structured `qwen_phase55_observability_event` payloads into session trace and dedicated logger output
+10. live verification confirmed:
+   - attempt count persisted across repeated unresolved replies
+   - pending clarification state cleared after the bounded stop path
+   - financial-statement ambiguity did not auto-pick an arbitrary option
+   - the callable hardening suite passed end to end
+   - observability smoke confirmed both front-door and clarification events were emitted
+
+Closure review:
+
+1. 5.5A through 5.5D are now complete
+2. the hardening suite caught and drove a structural fix in pending fresh-query override detection
+3. Mini-phase 5.5 is ready to close
+4. Mini-phase 6 can now begin on a materially safer foundation
+
+Qwen-reviewed carry-forward notes:
+
+1. Mini-phase 5.5 is closure-ready, but Mini-phase 6 should explicitly inherit a small hardening backlog rather than pretending the foundation is perfect
+2. Mini-phase 6.1 should add:
+   - severity levels for front-door and clarification observability events
+   - a more formal CI-grade regression layer built from the current callable hardening suite
+   - explicit regression lock-in for:
+     - pending fresh-query override while clarification is pending
+     - gratitude/closure staying in front door after grounded ERP answers
+3. Mini-phase 6.2 should evaluate:
+   - concurrent session mutation / clarification-state race conditions
+   - broader adversarial clarification-state tests
+4. these are carry-forward hardening tasks, not blockers to starting Mini-phase 6
+5. what should not happen next:
+   - no front-door intent expansion
+   - no keyword or phrase-bag clarification logic
+   - no uncontrolled AI authority for clarification resolution
+   - no hidden dissatisfaction/repair lane slipped into Mini-phase 6.0
+
+Exit criteria:
+
+1. clarification loops are bounded
+2. slot binding and clarification override behavior have automated regression coverage
+3. front-door gratitude/closure/capability paths have automated regression coverage
+4. basic production-visible metrics exist for clarification/front-door behavior
+5. Mini-phase 6 can start without depending on manual confidence alone
+
 ## Mini-phase 6
 
-Active next phase after Mini-phase 5 closure.
+Active next feature phase after Mini-phase 5.5 hardening.
 
 Goal:
 
@@ -350,6 +471,22 @@ Rule:
 
 1. bounded ERP business knowledge only
 2. not random general knowledge
+
+Carry-forward obligations from Mini-phase 5.5:
+
+1. Mini-phase 6.1:
+   - promote callable hardening smokes into a more formal CI-grade regression layer
+   - add observability severity levels such as:
+     - `info`
+     - `warning`
+     - `error`
+   - add explicit regression protection for previously fixed:
+     - pending clarification fresh-query override
+     - stale-context gratitude/closure leakage
+2. Mini-phase 6.2:
+   - evaluate clarification-state mutation under concurrent session writes
+   - expand adversarial clarification-state tests
+3. these hardening tasks should be treated as explicit Mini-phase 6 carry-forward work, not forgotten residual notes
 
 This phase should also absorb:
 
@@ -443,15 +580,18 @@ These rules are now fixed.
 
 The immediate next step is:
 
-1. rerun targeted regression on clarification continuity
-2. keep clarification resolution as the only owner of pending clarification state
-3. keep Mini-phase 5 scoped to routing and clarification correctness
+1. start Mini-phase 6 on top of the now-closed Mini-phase 5.5 hardening foundation
+2. carry 5.5 follow-through explicitly into:
+   - Mini-phase 6.1 regression formalization
+   - Mini-phase 6.1 observability severity improvements
+   - Mini-phase 6.2 clarification-state concurrency review
+3. keep clarification resolution as the only owner of pending clarification state
 
 What is explicitly not next:
 
 1. not more front-door expansion right now
 2. not more phrase-level patching
-3. not ERP business reasoning implementation yet
+3. not hidden dissatisfaction handling inside front door or clarification
 4. not knowledge-boundary implementation yet
 5. not enrichment-recovery implementation yet
 
