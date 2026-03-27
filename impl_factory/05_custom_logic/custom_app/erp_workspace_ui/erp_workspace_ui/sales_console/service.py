@@ -409,7 +409,7 @@ def _apply_scope_filters(
 def _count_records(doctype: str, filters: list[list[object]]) -> int:
 	rows = frappe.get_list(
 		doctype,
-		fields=["count(name) as count"],
+		fields=[{"COUNT": "name", "as": "count"}],
 		filters=filters,
 		page_length=1,
 	)
