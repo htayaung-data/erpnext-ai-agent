@@ -21,3 +21,5 @@ app_license = "mit"
 # notification_config = "erp_workspace_ui.notifications.get_notification_config"
 
 # before_tests = "erp_workspace_ui.install.before_tests"
+
+boot_session = ["erp_workspace_ui.boot.set_sales_home_page"]
