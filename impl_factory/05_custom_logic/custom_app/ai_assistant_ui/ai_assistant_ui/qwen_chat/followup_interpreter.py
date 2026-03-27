@@ -60,6 +60,39 @@ def _starts_with_self_contained_prefix(text: str, language: str) -> bool:
 	return False
 
 
+def _looks_like_creative_non_erp_request(text: str) -> bool:
+	value = _normalize_text(text)
+	if not value:
+		return False
+	creative_nouns = {
+		"poem",
+		"haiku",
+		"limerick",
+		"song",
+		"lyrics",
+		"story",
+		"joke",
+		"rap",
+		"sonnet",
+	}
+	creative_verbs = {
+		"write",
+		"make",
+		"create",
+		"compose",
+		"turn",
+	}
+	tokens = _token_set(value)
+	if creative_nouns.intersection(tokens) and creative_verbs.intersection(tokens):
+		return True
+	return bool(
+		re.search(
+			r"\b(write|make|create|compose|turn)\b.{0,40}\b(poem|haiku|limerick|song|lyrics|story|joke|rap|sonnet)\b",
+			value,
+		)
+	)
+
+
 @dataclass(frozen=True)
 class FollowUpIntent:
 	requested_modes: List[str]
@@ -315,6 +348,8 @@ def _projection_phrase_patterns(language: str = "en") -> List[re.Pattern[str]]:
 	if str(language or "en").strip() != "en":
 		return []
 	return [
+		re.compile(r"\b(?:show|display|return|give)\b(?:\s+me)?\s+(?:them\s+)?together\s+(.+?)\s*$", re.IGNORECASE),
+		re.compile(r"\b(?:add|include)\b\s+(.+?)\s+\b(?:next to each row|alongside|along with|beside)\b", re.IGNORECASE),
 		re.compile(r"\b(?:show|display|include|add|return|give)\b(?:\s+me)?\s+(.+?)\s+\bcolumns?\b(?:\s+only)?\s*$", re.IGNORECASE),
 		re.compile(r"\b(?:show|display|include|add|return|give)\b(?:\s+me)?\s+(.+?)\s+\bonly\b\s*$", re.IGNORECASE),
 		re.compile(r"\b(.+?)\s+\bcolumns?\s+\bonly\b\s*$", re.IGNORECASE),
@@ -450,11 +485,12 @@ def _message_signal(
 	target_limit, sort_direction = _detect_sort_limit_spec(tokens, text, followup_modes)
 	requested_time_scope = _detect_requested_time_scope(text, followup_modes)
 	presentation_modes = _detect_presentation_modes(followup_modes)
+	explicit_projection_labels = _explicit_projection_columns(text, language=language)
 	requested_columns = _map_requested_columns(
 		artifact_signal,
 		dimension_keys,
 		metric_keys,
-		projection_like=_looks_like_column_projection(tokens, followup_modes),
+		projection_like=bool(explicit_projection_labels) or _looks_like_column_projection(tokens, followup_modes),
 		target_dimension=target_dimension,
 	)
 	return MessageSignal(
@@ -504,9 +540,19 @@ def detect_followup_intent(message: str, language: str = "en", grounded_turn: Di
 	target_metric = _select_target_metric(artifact_signal, signal.metric_keys, signal.text)
 	requested_columns = list(signal.requested_columns)
 	for raw_label in _explicit_projection_columns(signal.text, language=language):
-		if detect_canonical_keys(raw_label, dimension_or_metric="metric"):
+		explicit_metric_keys = detect_canonical_keys(raw_label, dimension_or_metric="metric")
+		if explicit_metric_keys:
+			for key in explicit_metric_keys:
+				clean = str(key or "").strip()
+				if clean and clean not in requested_columns:
+					requested_columns.append(clean)
 			continue
-		if detect_canonical_keys(raw_label, dimension_or_metric="dimension"):
+		explicit_dimension_keys = detect_canonical_keys(raw_label, dimension_or_metric="dimension")
+		if explicit_dimension_keys:
+			for key in explicit_dimension_keys:
+				clean = str(key or "").strip()
+				if clean and clean not in requested_columns:
+					requested_columns.append(clean)
 			continue
 		if raw_label not in requested_columns:
 			requested_columns.append(raw_label)
@@ -653,6 +699,7 @@ def assess_context_isolation(
 	alias_hits = set(signal.dimension_keys) | set(signal.metric_keys)
 	supported_concepts = set(supported_ontology_concepts())
 	out_of_scope_concepts = sorted(concept for concept in message_concepts if concept not in supported_concepts)
+	business_signals = bool(message_concepts or alias_hits)
 	if out_of_scope_concepts and not (message_concepts & supported_concepts or alias_hits):
 		primary_domain = "hr" if "employee" in out_of_scope_concepts else ""
 		return build_scope_decision_input(
@@ -662,6 +709,14 @@ def assess_context_isolation(
 			requested_domains=sorted(message_concepts),
 			context_domains=sorted(artifact_signal.context_concepts),
 			primary_domain=primary_domain,
+		)
+	if _looks_like_creative_non_erp_request(signal.text) and not business_signals:
+		return build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=True,
+			reason="The request asks for creative content outside the governed ERP assistant scope.",
+			requested_domains=[],
+			context_domains=sorted(artifact_signal.context_concepts),
 		)
 
 	self_contained = is_self_contained_business_request(

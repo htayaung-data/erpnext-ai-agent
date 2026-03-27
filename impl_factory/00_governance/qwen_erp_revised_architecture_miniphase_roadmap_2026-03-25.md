@@ -810,6 +810,8 @@ Important sequencing note:
 2. after Mini-phase 8, the recommended path is:
    - post-contract hardening
    - Wave 1 governed operational coverage expansion
+   - Wave 1.5 composite governed artifact expansion
+   - Wave 1.75 business definition and formula registry
    - then complex request decomposition
 3. Mini-phase 9 integration should happen when the post-contract expansion surface is mature enough to integrate cleanly
 
@@ -835,9 +837,28 @@ The immediate next step is:
    - reasoning
    - knowledge boundary
    - recovery / repair
-2. complete post-contract hardening before expanding governed coverage
+2. complete post-contract hardening before expanding governed coverage:
+   - `qwen_erp_post_contract_hardening_plan_2026-03-26.md`
+   - H1 regression / CI hardening is now materially complete
+   - H2 observability / metrics is now started as the active hardening track
+   - H3 state integrity / concurrency hardening is now started with:
+     - fast repeated-turn state checks
+     - persisted-session duplicate-turn regressions
+     - mixed clarification/recovery interaction regressions
+     - fresh-query / grounded-context replacement regressions
+     - last-query-wins grounded-context replacement regressions
+     - repeated identical fresh-query grounding replacement regressions
+   - H2 now also has live lane validation for:
+     - Phase 5.5 front door / clarification observability
+     - Phase 6 reasoning observability and latency metrics
+     - Phase 7 uncovered-boundary observability
+     - Phase 8 recovery-guidance observability
+     - Phase 8 grounded-evidence boundary observability
+     - Phase 8 artifact-enrichment boundary observability
 3. then begin Wave 1 operational expansion before complex request decomposition
-4. treat governed multi-metric ranking artifacts as a separate later expansion if product priority justifies them
+4. then add Wave 1.5 composite governed artifact expansion before major complex request decomposition
+5. then add Wave 1.75 business definition and formula registry support
+6. treat governed multi-metric ranking artifacts and company-specific formulas as explicit governed expansion chapters, not as ad hoc stitching or prompt folklore
 
 What is explicitly not next:
 
@@ -871,15 +892,28 @@ What is next:
 1. front door is closed
 2. ERP business reasoning is closed
 3. knowledge boundary is closed
-4. build Mini-phase 8 next
-5. then complete post-contract hardening
+4. recovery / repair is closed
+5. then complete post-contract hardening:
+   - regression / CI hardening: materially complete
+   - observability / metrics hardening: materially strong and live-validated
+   - state / concurrency hardening: materially strong and closure-reviewed for the intended surface
+   - adversarial / failure-mode hardening: materially strong and closure-reviewed for the intended surface
+   - rollout / release gates: closure-ready for the automated surface; optional manual live signoff remains
 6. then run Wave 1 governed operational coverage expansion:
    - Delivery / Fulfillment
    - Sales Order Status
    - Purchase Order Tracking
    - Customer Credit Status
-7. then move to complex request decomposition
-8. then later platform expansion such as:
+7. then add Wave 1.5 composite governed artifact expansion:
+   - `CompositeRankingArtifactContract`
+   - safe multi-metric customer rankings
+   - safe multi-metric product rankings
+8. then add Wave 1.75 business definition and formula registry:
+   - company definition of tenure
+   - governed AOV / ratio / KPI formulas
+   - threshold and business-rule registry for company-specific interpretations
+9. then move to complex request decomposition
+10. then later platform expansion such as:
    - Burmese understanding
    - charts / graphs / dashboards
    - CSV / Excel export

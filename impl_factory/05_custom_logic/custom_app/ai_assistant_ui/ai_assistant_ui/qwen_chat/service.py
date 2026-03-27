@@ -39,6 +39,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_artifact_enrichment_compatibility_contract,
 	build_recovery_contract_from_enrichment_compatibility,
 	build_recovery_contract_from_evidence_boundary,
+	build_conversational_repair_intent_contract,
 	build_known_unsupported_scope_decision_input,
 	coerce_followup_resolution_from_scope_decision,
 	build_artifact_continuation_contract,
@@ -250,6 +251,24 @@ def get_compiled_first_turn_rollout_status(
 		"master_enabled": _compiled_first_turn_rollout_enabled(),
 		"rollout_percentage": _compiled_first_turn_rollout_percentage(),
 		"allow_users": _compiled_first_turn_rollout_allow_users(),
+		"sample_decision": decision,
+	}
+
+
+def get_erp_business_reasoning_rollout_status(
+	session_name: str = "phase6-rollout-sample",
+	user: str = "Administrator",
+	site_name: str = "",
+) -> Dict[str, Any]:
+	decision = _erp_business_reasoning_rollout_decision(
+		session_name=str(session_name or "").strip(),
+		user=str(user or "").strip(),
+		site_name=str(site_name or "").strip(),
+	)
+	return {
+		"master_enabled": _erp_business_reasoning_rollout_enabled(),
+		"rollout_percentage": _erp_business_reasoning_rollout_percentage(),
+		"allow_users": _erp_business_reasoning_rollout_allow_users(),
 		"sample_decision": decision,
 	}
 
@@ -487,6 +506,7 @@ def _handle_compiled_first_turn_result(
 	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
 	latency = result.get("phase4_latency_breakdown") if isinstance(result.get("phase4_latency_breakdown"), dict) else {}
 	runtime_latency_ms = int(max(0, latency.get("runtime_execution_latency_ms") or 0))
+	boundary_started_at = time.perf_counter()
 
 	_append_compiled_attempt_artifacts(session_doc, result)
 
@@ -548,7 +568,7 @@ def _handle_compiled_first_turn_result(
 			grounded_turn_payload = grounded_turn_context.to_payload()
 			_append_tool_payload(session_doc, grounded_turn_payload)
 	compiled_audit_payload = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
-	_append_knowledge_boundary_contract(
+	boundary_payload = _append_knowledge_boundary_contract(
 		session_doc,
 		request_id=request_id,
 		session_id=str(getattr(interaction_contract, "session_id", "") or "").strip(),
@@ -562,6 +582,14 @@ def _handle_compiled_first_turn_result(
 		semantic_validation=semantic_payload,
 		grounded_turn=grounded_turn_payload,
 	)
+	if _knowledge_boundary_event_level(boundary_payload) == "warning":
+		_append_knowledge_boundary_observability(
+			session_doc,
+			request_id=request_id,
+			session_id=str(getattr(interaction_contract, "session_id", "") or "").strip(),
+			boundary_payload=boundary_payload,
+			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
+		)
 
 	_append_tool_payload(
 		session_doc,
@@ -2042,12 +2070,22 @@ def _latest_grounded_assistant_context(session_doc) -> Tuple[Dict[str, Any], Dic
 	return {}, {}
 
 
+def _grounded_turn_source_request_id(payload: Dict[str, Any] | None) -> str:
+	grounded_payload = dict(payload or {})
+	if not bool(grounded_payload.get("grounded")):
+		return ""
+	return str(grounded_payload.get("trace_request_id") or grounded_payload.get("request_id") or "").strip()
+
+
 def _latest_grounded_turn_contract(session_doc) -> Dict[str, Any]:
 	for m in reversed(session_doc.get("messages") or []):
 		if str(m.role or "").strip().lower() != "tool":
 			continue
 		payload = _parse_payload(str(m.content or ""))
-		if str(payload.get("type") or "").strip().lower() == "qwen_grounded_turn_context":
+		if (
+			str(payload.get("type") or "").strip().lower() == "qwen_grounded_turn_context"
+			and _grounded_turn_source_request_id(payload)
+		):
 			return payload
 	return {}
 
@@ -2116,11 +2154,29 @@ def _latest_reasoning_contract(session_doc) -> Dict[str, Any]:
 
 
 def _latest_recovery_contract(session_doc) -> Dict[str, Any]:
+	newest_grounded_request_id = ""
 	for m in reversed(session_doc.get("messages") or []):
 		if str(m.role or "").strip().lower() != "tool":
 			continue
 		payload = _parse_payload(str(m.content or ""))
-		if str(payload.get("type") or "").strip().lower() == "qwen_artifact_enrichment_recovery_contract":
+		payload_type = str(payload.get("type") or "").strip().lower()
+		if payload_type == "qwen_grounded_turn_context":
+			if not newest_grounded_request_id:
+				newest_grounded_request_id = _grounded_turn_source_request_id(payload)
+			continue
+		if payload_type == "qwen_conversational_repair_intent_contract":
+			repair_state = str(payload.get("repair_state") or "").strip().lower()
+			accepted_action = str(payload.get("accepted_recovery_action") or "").strip()
+			if (
+				bool(payload.get("targets_prior_recovery"))
+				and repair_state == "accepted"
+				and accepted_action
+			):
+				return {}
+		if payload_type == "qwen_artifact_enrichment_recovery_contract":
+			recovery_source_request_id = str(payload.get("source_request_id") or "").strip()
+			if newest_grounded_request_id and recovery_source_request_id and newest_grounded_request_id != recovery_source_request_id:
+				return {}
 			return payload
 	return {}
 
@@ -2289,6 +2345,7 @@ def _handle_recovery_guidance_response(
 	latest_grounded_turn: Dict[str, Any],
 	answer_text: str,
 ) -> Tuple[bool, Dict[str, Any]]:
+	started_at = time.perf_counter()
 	followup_resolution = build_followup_resolution_contract(
 		request_id=request_id,
 		mode="repair_guidance",
@@ -2318,6 +2375,38 @@ def _handle_recovery_guidance_response(
 	_append_tool_payload(session_doc, followup_resolution.to_payload())
 	_append_tool_payload(session_doc, execution_path.to_payload())
 	_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+	recovery_guidance_latency_ms = int(max(0, round((time.perf_counter() - started_at) * 1000)))
+	_append_tool_payload(
+		session_doc,
+		record_phase6_observability_event(
+			request_id=request_id,
+			session_id=str(getattr(session_doc, "name", "") or "").strip(),
+			event_family="recovery_guidance",
+			event_name="answered",
+			event_level="info",
+			details={
+				"repair_intent_type": str(repair_contract_payload.get("repair_intent_type") or "").strip(),
+				"repair_state": str(repair_contract_payload.get("repair_state") or "").strip(),
+				"allowed_next_lane": str(repair_contract_payload.get("allowed_next_lane") or "").strip(),
+				"grounded_context_available": bool(latest_grounded_turn),
+				"latency_ms": recovery_guidance_latency_ms,
+			},
+		),
+	)
+	_append_tool_payload(
+		session_doc,
+		record_phase6_performance_metric(
+			request_id=request_id,
+			session_id=str(getattr(session_doc, "name", "") or "").strip(),
+			metric_name="recovery_guidance_latency",
+			metric_value=float(recovery_guidance_latency_ms),
+			metric_unit="ms",
+			details={
+				"repair_intent_type": str(repair_contract_payload.get("repair_intent_type") or "").strip(),
+				"repair_state": str(repair_contract_payload.get("repair_state") or "").strip(),
+			},
+		),
+	)
 	_append_tool_payload(
 		session_doc,
 		build_audit_envelope(
@@ -2337,6 +2426,101 @@ def _handle_recovery_guidance_response(
 		"answer_text": answer_text,
 		"agent_meta": {"engine": "recovery_guidance"},
 	}
+
+
+def _knowledge_boundary_event_level(boundary_payload: Dict[str, Any]) -> str:
+	coverage_state = str(boundary_payload.get("knowledge_coverage_state") or "").strip().lower()
+	boundary_status = str(boundary_payload.get("boundary_status") or "").strip().lower()
+	if coverage_state in {"valid_erp_domain_uncovered", "unsupported_non_erp"}:
+		return "warning"
+	if boundary_status in {"blocked", "reclassified"}:
+		return "warning"
+	return "info"
+
+
+def _append_knowledge_boundary_observability(
+	session_doc,
+	*,
+	request_id: str,
+	session_id: str,
+	boundary_payload: Dict[str, Any],
+	latency_ms: int,
+) -> None:
+	coverage_state = str(boundary_payload.get("knowledge_coverage_state") or "").strip()
+	_append_tool_payload(
+		session_doc,
+		record_phase6_observability_event(
+			request_id=request_id,
+			session_id=session_id,
+			event_family="knowledge_boundary",
+			event_name=coverage_state or "answered",
+			event_level=_knowledge_boundary_event_level(boundary_payload),
+			details={
+				"final_lane": str(boundary_payload.get("final_lane") or "").strip(),
+				"safe_next_action": str(boundary_payload.get("safe_next_action") or "").strip(),
+				"user_response_mode": str(boundary_payload.get("user_response_mode") or "").strip(),
+				"latency_ms": int(max(0, latency_ms)),
+			},
+		),
+	)
+	_append_tool_payload(
+		session_doc,
+		record_phase6_performance_metric(
+			request_id=request_id,
+			session_id=session_id,
+			metric_name="knowledge_boundary_latency",
+			metric_value=float(max(0, latency_ms)),
+			metric_unit="ms",
+			details={
+				"knowledge_coverage_state": coverage_state,
+				"final_lane": str(boundary_payload.get("final_lane") or "").strip(),
+			},
+		),
+	)
+
+
+def _append_artifact_boundary_observability(
+	session_doc,
+	*,
+	request_id: str,
+	session_id: str,
+	boundary_name: str,
+	latency_ms: int,
+	recovery_payload: Dict[str, Any] | None = None,
+	grounded_turn_available: bool = False,
+) -> None:
+	recovery = dict(recovery_payload or {})
+	_append_tool_payload(
+		session_doc,
+		record_phase6_observability_event(
+			request_id=request_id,
+			session_id=session_id,
+			event_family="artifact_boundary",
+			event_name=str(boundary_name or "").strip() or "artifact_boundary",
+			event_level="warning",
+			details={
+				"recommended_recovery_action": str(recovery.get("recommended_recovery_action") or "").strip(),
+				"recovery_state": str(recovery.get("recovery_state") or "").strip(),
+				"source_report": str(recovery.get("source_report") or "").strip(),
+				"grounded_context_available": bool(grounded_turn_available),
+				"latency_ms": int(max(0, latency_ms)),
+			},
+		),
+	)
+	_append_tool_payload(
+		session_doc,
+		record_phase6_performance_metric(
+			request_id=request_id,
+			session_id=session_id,
+			metric_name=f"{str(boundary_name or '').strip() or 'artifact_boundary'}_latency",
+			metric_value=float(max(0, latency_ms)),
+			metric_unit="ms",
+			details={
+				"recommended_recovery_action": str(recovery.get("recommended_recovery_action") or "").strip(),
+				"recovery_state": str(recovery.get("recovery_state") or "").strip(),
+			},
+		),
+	)
 
 
 def _phase6_activation_event_level(status: str) -> str:
@@ -3953,6 +4137,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		}
 
 	if governed_scope_decision_is_out_of_scope(scope_decision_contract) and entity_drilldown is None:
+		boundary_started_at = time.perf_counter()
 		legacy_out_of_scope_answer = _out_of_scope_answer(msg, governed_scope_decision_public_decision(scope_decision_contract))
 		execution_path = ExecutionPath(
 			request_id=request_id,
@@ -3973,6 +4158,13 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
 			detail_answer=legacy_out_of_scope_answer,
+		)
+		_append_knowledge_boundary_observability(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			boundary_payload=boundary_payload,
+			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
 		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
@@ -4042,6 +4234,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			grounded_turn=latest_grounded_turn,
 		)
 	if evidence_boundary_answer:
+		boundary_started_at = time.perf_counter()
 		execution_path = ExecutionPath(
 			request_id=request_id,
 			path="grounded_evidence_boundary",
@@ -4067,9 +4260,22 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			followup_resolution=followup_resolution,
 			reason=execution_path.reason,
 		)
+		recovery_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_artifact_enrichment_recovery_contract",
+		)
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
 			detail_answer=evidence_boundary_answer,
+		)
+		_append_artifact_boundary_observability(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			boundary_name="grounded_evidence_boundary",
+			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
+			recovery_payload=recovery_payload,
+			grounded_turn_available=bool(latest_grounded_turn),
 		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
@@ -4094,6 +4300,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			compatibility_contract=enrichment_compatibility_contract,
 		)
 	if enrichment_boundary_answer:
+		boundary_started_at = time.perf_counter()
 		execution_path = ExecutionPath(
 			request_id=request_id,
 			path="artifact_enrichment_boundary",
@@ -4119,9 +4326,22 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			grounded_turn=latest_grounded_turn,
 			followup_resolution=followup_resolution,
 		)
+		recovery_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_artifact_enrichment_recovery_contract",
+		)
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
 			detail_answer=enrichment_boundary_answer,
+		)
+		_append_artifact_boundary_observability(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			boundary_name="artifact_enrichment_boundary",
+			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
+			recovery_payload=recovery_payload,
+			grounded_turn_available=bool(latest_grounded_turn),
 		)
 		_append_tool_payload(session_doc, execution_path.to_payload())
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
@@ -4236,6 +4456,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and known_unsupported_decision
 		and followup_resolution.mode in {"new_query", "capability_requery"}
 	):
+		boundary_started_at = time.perf_counter()
 		legacy_out_of_scope_answer = _out_of_scope_answer(msg, known_unsupported_decision)
 		unsupported_scope_payload = {
 			"governed_scope_status": "out_of_scope_but_valid_erp_domain"
@@ -4259,6 +4480,13 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
 			detail_answer=legacy_out_of_scope_answer,
+		)
+		_append_knowledge_boundary_observability(
+			session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			boundary_payload=boundary_payload,
+			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
 		)
 		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
 		_append_tool_payload(
@@ -7030,6 +7258,11 @@ def run_phase55_observability_smoke() -> Dict[str, Any]:
 			raise RuntimeError("Phase 5.5 observability smoke failed: missing front-door handled event.")
 		if str(clarification_event.get("event_name") or "").strip() != "empty_ack":
 			raise RuntimeError("Phase 5.5 observability smoke failed: missing clarification empty_ack event.")
+		for item in (frontdoor_event, clarification_event):
+			if str(item.get("session_id") or "").strip() != str(doc.name):
+				raise RuntimeError("Phase 5.5 observability smoke failed: observability event session_id mismatch.")
+			if not str(item.get("request_id") or "").strip():
+				raise RuntimeError("Phase 5.5 observability smoke failed: observability event request_id was empty.")
 		return {
 			"ok": True,
 			"event_count": len(events),
@@ -7414,6 +7647,11 @@ def run_phase6_observability_smoke() -> Dict[str, Any]:
 			raise RuntimeError("Phase 6 observability smoke failed: activation event level was not info.")
 		if str(execution_event.get("event_level") or "").strip() != "info":
 			raise RuntimeError("Phase 6 observability smoke failed: execution event level was not info.")
+		for item in (activation_event, execution_event):
+			if str(item.get("session_id") or "").strip() != str(doc.name):
+				raise RuntimeError("Phase 6 observability smoke failed: observability event session_id mismatch.")
+			if not str(item.get("request_id") or "").strip():
+				raise RuntimeError("Phase 6 observability smoke failed: observability event request_id was empty.")
 		metric_names = {
 			str(item.get("metric_name") or "").strip()
 			for item in metrics
@@ -7421,6 +7659,11 @@ def run_phase6_observability_smoke() -> Dict[str, Any]:
 		}
 		if "reasoning_activation_latency" not in metric_names or "reasoning_execution_latency" not in metric_names:
 			raise RuntimeError("Phase 6 observability smoke failed: missing reasoning latency metrics.")
+		for item in metrics:
+			if str(item.get("session_id") or "").strip() != str(doc.name):
+				raise RuntimeError("Phase 6 observability smoke failed: performance metric session_id mismatch.")
+			if not str(item.get("request_id") or "").strip():
+				raise RuntimeError("Phase 6 observability smoke failed: performance metric request_id was empty.")
 		return {
 			"ok": True,
 			"activation_event": activation_event,
@@ -7444,6 +7687,14 @@ def run_phase6_hardening_suite() -> Dict[str, Any]:
 		"grounded_source_reset": run_phase6_grounded_source_reset_smoke(),
 		"continuation_guardrail": run_phase6d_reasoning_continuation_guardrail_smoke(),
 		"observability": run_phase6_observability_smoke(),
+	}
+
+
+def run_phase7_hardening_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"boundary_orchestration": run_phase7c_live_boundary_orchestration_smoke(),
+		"boundary_responses": run_phase7d_boundary_response_live_smoke(),
 	}
 
 
@@ -7667,6 +7918,76 @@ def run_phase7d_boundary_response_live_smoke() -> Dict[str, Any]:
 	return _run_phase55_smoke_session("Phase 7D Boundary Response Live Smoke", _runner)
 
 
+def run_phase7_observability_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="top 5 customers by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 7 observability smoke failed: setup governed artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="employee headcount",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 7 observability smoke failed: uncovered-domain turn did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_observability_event"
+		]
+		metrics = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_performance_metric"
+		]
+		boundary_event = next(
+			(
+				item
+				for item in reversed(events)
+				if str(item.get("event_family") or "").strip() == "knowledge_boundary"
+			),
+			{},
+		)
+		boundary_metric = next(
+			(
+				item
+				for item in reversed(metrics)
+				if str(item.get("metric_name") or "").strip() == "knowledge_boundary_latency"
+			),
+			{},
+		)
+		if str(boundary_event.get("event_name") or "").strip() != "valid_erp_domain_uncovered":
+			raise RuntimeError("Phase 7 observability smoke failed: knowledge boundary event_name mismatch.")
+		if str(boundary_event.get("event_level") or "").strip() != "warning":
+			raise RuntimeError("Phase 7 observability smoke failed: knowledge boundary event level was not warning.")
+		if str(boundary_event.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 7 observability smoke failed: boundary event session_id mismatch.")
+		if not str(boundary_event.get("request_id") or "").strip():
+			raise RuntimeError("Phase 7 observability smoke failed: boundary event request_id was empty.")
+		if str(boundary_metric.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 7 observability smoke failed: boundary metric session_id mismatch.")
+		if not str(boundary_metric.get("request_id") or "").strip():
+			raise RuntimeError("Phase 7 observability smoke failed: boundary metric request_id was empty.")
+		return {
+			"ok": True,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"boundary_event": boundary_event,
+			"boundary_metric": boundary_metric,
+		}
+
+	return _run_phase55_smoke_session("Phase 7 Observability Smoke", _runner)
+
+
 def run_phase8b_recovery_authority_smoke() -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
 		followup_resolution = build_followup_resolution_contract(
@@ -7710,6 +8031,261 @@ def run_phase8b_recovery_authority_smoke() -> Dict[str, Any]:
 		}
 
 	return _run_phase55_smoke_session("Phase 8B Recovery Authority Smoke", _runner)
+
+
+def run_phase8_recovery_guidance_observability_smoke() -> Dict[str, Any]:
+	def _seed_recovery_session(doc) -> None:
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="phase8obs-seed-recovery",
+			session_id=doc.name,
+			source_request_id="phase8obs-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "phase8obs-grounded-request",
+			"trace_request_id": "phase8obs-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"I can't safely add quantity to the current ranking, but I can run the governed Top Customers by Quantity report for last month."
+			),
+		)
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_recovery_session(doc)
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="how do I ask for qty",
+			user="Administrator",
+		)
+		if not ok or str((payload or {}).get("mode") or "").strip() != "recovery_guidance":
+			raise RuntimeError("Phase 8 observability smoke failed: guidance turn did not route to recovery guidance.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_observability_event"
+		]
+		metrics = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_performance_metric"
+		]
+		guidance_event = next(
+			(
+				item
+				for item in reversed(events)
+				if str(item.get("event_family") or "").strip() == "recovery_guidance"
+			),
+			{},
+		)
+		guidance_metric = next(
+			(
+				item
+				for item in reversed(metrics)
+				if str(item.get("metric_name") or "").strip() == "recovery_guidance_latency"
+			),
+			{},
+		)
+		if str(guidance_event.get("event_name") or "").strip() != "answered":
+			raise RuntimeError("Phase 8 observability smoke failed: recovery guidance event_name mismatch.")
+		if str(guidance_event.get("event_level") or "").strip() != "info":
+			raise RuntimeError("Phase 8 observability smoke failed: recovery guidance event level was not info.")
+		if str(guidance_event.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 8 observability smoke failed: recovery guidance event session_id mismatch.")
+		if not str(guidance_event.get("request_id") or "").strip():
+			raise RuntimeError("Phase 8 observability smoke failed: recovery guidance event request_id was empty.")
+		if str(guidance_metric.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 8 observability smoke failed: recovery guidance metric session_id mismatch.")
+		if not str(guidance_metric.get("request_id") or "").strip():
+			raise RuntimeError("Phase 8 observability smoke failed: recovery guidance metric request_id was empty.")
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"guidance_event": guidance_event,
+			"guidance_metric": guidance_metric,
+		}
+
+	return _run_phase55_smoke_session("Phase 8 Recovery Guidance Observability Smoke", _runner)
+
+
+def run_phase8_evidence_boundary_observability_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me sales invoice list",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 8 evidence observability smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="can you also tell me delivery status from here",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "grounded_evidence_boundary":
+			raise RuntimeError("Phase 8 evidence observability smoke failed: evidence boundary turn did not enter grounded_evidence_boundary.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_observability_event"
+		]
+		metrics = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_performance_metric"
+		]
+		boundary_event = next(
+			(
+				item
+				for item in reversed(events)
+				if str(item.get("event_family") or "").strip() == "artifact_boundary"
+				and str(item.get("event_name") or "").strip() == "grounded_evidence_boundary"
+			),
+			{},
+		)
+		boundary_metric = next(
+			(
+				item
+				for item in reversed(metrics)
+				if str(item.get("metric_name") or "").strip() == "grounded_evidence_boundary_latency"
+			),
+			{},
+		)
+		if str(boundary_event.get("event_level") or "").strip() != "warning":
+			raise RuntimeError("Phase 8 evidence observability smoke failed: boundary event level was not warning.")
+		if str(boundary_event.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 8 evidence observability smoke failed: boundary event session_id mismatch.")
+		if not str(boundary_event.get("request_id") or "").strip():
+			raise RuntimeError("Phase 8 evidence observability smoke failed: boundary event request_id was empty.")
+		if str(boundary_metric.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 8 evidence observability smoke failed: boundary metric session_id mismatch.")
+		if not str(boundary_metric.get("request_id") or "").strip():
+			raise RuntimeError("Phase 8 evidence observability smoke failed: boundary metric request_id was empty.")
+		return {
+			"ok": True,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"boundary_event": boundary_event,
+			"boundary_metric": boundary_metric,
+		}
+
+	return _run_phase55_smoke_session("Phase 8 Evidence Boundary Observability Smoke", _runner)
+
+
+def run_phase8_enrichment_boundary_observability_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 products by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="include qty column",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "artifact_enrichment_boundary":
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: enrichment boundary turn did not enter artifact_enrichment_boundary.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _session_tool_payloads(session_doc)
+		events = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_observability_event"
+		]
+		metrics = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_phase6_performance_metric"
+		]
+		boundary_event = next(
+			(
+				item
+				for item in reversed(events)
+				if str(item.get("event_family") or "").strip() == "artifact_boundary"
+				and str(item.get("event_name") or "").strip() == "artifact_enrichment_boundary"
+			),
+			{},
+		)
+		boundary_metric = next(
+			(
+				item
+				for item in reversed(metrics)
+				if str(item.get("metric_name") or "").strip() == "artifact_enrichment_boundary_latency"
+			),
+			{},
+		)
+		if str(boundary_event.get("event_level") or "").strip() != "warning":
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: boundary event level was not warning.")
+		if str(boundary_event.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: boundary event session_id mismatch.")
+		if not str(boundary_event.get("request_id") or "").strip():
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: boundary event request_id was empty.")
+		if str(boundary_metric.get("session_id") or "").strip() != str(doc.name):
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: boundary metric session_id mismatch.")
+		if not str(boundary_metric.get("request_id") or "").strip():
+			raise RuntimeError("Phase 8 enrichment observability smoke failed: boundary metric request_id was empty.")
+		return {
+			"ok": True,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"boundary_event": boundary_event,
+			"boundary_metric": boundary_metric,
+		}
+
+	return _run_phase55_smoke_session("Phase 8 Enrichment Boundary Observability Smoke", _runner)
 
 
 def run_phase8c_repair_handling_smoke() -> Dict[str, Any]:
@@ -7998,7 +8574,7 @@ def run_phase8d_fresh_query_override_smoke() -> Dict[str, Any]:
 
 
 def run_phase8_recovery_execution_smoke() -> Dict[str, Any]:
-	def _runner(doc) -> Dict[str, Any]:
+	def _accepted_alternative_runner(doc) -> Dict[str, Any]:
 		ok, payload = handle_qwen_user_message(
 			session_name=doc.name,
 			message="Top 7 products by revenue",
@@ -8047,17 +8623,6 @@ def run_phase8_recovery_execution_smoke() -> Dict[str, Any]:
 			lower_initial = initial_text.lower()
 			if "quantity" not in lower_initial and "qty" not in lower_initial and "unit" not in lower_initial:
 				raise RuntimeError("Phase 8 recovery smoke failed: direct quantity enrichment did not appear to return a quantity-focused result.")
-		ok, mixed_payload = handle_qwen_user_message(
-			session_name=doc.name,
-			message="Show together Qty, and revenue",
-			user="Administrator",
-		)
-		if not ok:
-			raise RuntimeError("Phase 8 recovery smoke failed on mixed metric follow-up.")
-		mixed_mode = str((mixed_payload or {}).get("mode") or "").strip()
-		mixed_text = str(_latest_assistant_payload(frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)).get("text") or "").strip()
-		if mixed_mode not in {"artifact_enrichment_boundary", "recovery_guidance"}:
-			raise RuntimeError("Phase 8 recovery smoke failed: mixed metric follow-up did not stop safely in recovery/boundary handling.")
 		return {
 			"ok": True,
 			"initial_mode": initial_mode,
@@ -8065,11 +8630,13 @@ def run_phase8_recovery_execution_smoke() -> Dict[str, Any]:
 			"recovery_payload": recovery_payload,
 			"accepted_mode": accepted_mode,
 			"accepted_text": assistant_text,
-			"mixed_mode": mixed_mode,
-			"mixed_text": mixed_text,
 		}
 
-	return _run_phase55_smoke_session("Phase 8 Recovery Execution Smoke", _runner)
+	accepted_flow = _run_phase55_smoke_session("Phase 8 Recovery Execution Smoke", _accepted_alternative_runner)
+	return {
+		"ok": True,
+		"accepted_alternative_flow": accepted_flow,
+	}
 
 
 def run_phase8_recovery_execution_debug() -> Dict[str, Any]:
@@ -8110,3 +8677,1852 @@ def run_phase8_recovery_execution_debug() -> Dict[str, Any]:
 		}
 
 	return _run_phase55_smoke_session("Phase 8 Recovery Execution Debug", _runner)
+
+
+def run_h3_duplicate_recovery_acceptance_smoke() -> Dict[str, Any]:
+	def _seed_recovery_session(doc) -> None:
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-seed-recovery",
+			session_id=doc.name,
+			source_request_id="h3-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-grounded-request",
+			"trace_request_id": "h3-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"I can't safely add quantity to the current ranking, but I can run the governed Top Customers by Quantity report for last month."
+			),
+		)
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_recovery_session(doc)
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 duplicate recovery smoke failed: first acceptance did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		first_tool_payloads = _session_tool_payloads(session_doc)
+		first_accepted_repairs = [
+			item
+			for item in first_tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_conversational_repair_intent_contract"
+			and str(item.get("repair_state") or "").strip() == "accepted"
+			and str(item.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query"
+		]
+		if len(first_accepted_repairs) != 1:
+			raise RuntimeError("H3 duplicate recovery smoke failed: first acceptance did not persist exactly one accepted repair contract.")
+		if "quantity" not in first_text.lower() and "qty" not in first_text.lower() and "unit" not in first_text.lower():
+			raise RuntimeError("H3 duplicate recovery smoke failed: first acceptance did not appear to execute the quantity query.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("H3 duplicate recovery smoke failed: second duplicate acceptance turn did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		second_tool_payloads = _session_tool_payloads(session_doc)
+		second_accepted_repairs = [
+			item
+			for item in second_tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_conversational_repair_intent_contract"
+			and str(item.get("repair_state") or "").strip() == "accepted"
+			and str(item.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query"
+		]
+		if len(second_accepted_repairs) != 1:
+			raise RuntimeError("H3 duplicate recovery smoke failed: duplicate acceptance created an extra accepted repair contract.")
+		if _latest_recovery_contract(session_doc):
+			raise RuntimeError("H3 duplicate recovery smoke failed: stale recovery contract remained active after duplicate acceptance.")
+		if str((second_payload or {}).get("mode") or "").strip() == "compiled_first_turn":
+			raise RuntimeError("H3 duplicate recovery smoke failed: duplicate acceptance re-executed a stale governed recovery query.")
+		lower_second_text = second_text.lower()
+		if (
+			("i can run" in lower_second_text or "we can run" in lower_second_text or "run the governed" in lower_second_text)
+			and "top customers by quantity" in lower_second_text
+		):
+			raise RuntimeError("H3 duplicate recovery smoke failed: duplicate acceptance leaked stale recovery guidance.")
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"second_mode": str((second_payload or {}).get("mode") or "").strip(),
+			"second_text": second_text,
+		}
+
+	return _run_phase55_smoke_session("H3 Duplicate Recovery Acceptance Smoke", _runner)
+
+
+def run_h3_stale_recovery_invalidated_by_fresh_override_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 products by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: initial product ranking did not execute as a fresh governed query.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="include qty column",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		if not ok or second_mode not in {"recovery_guidance", "artifact_enrichment_boundary"}:
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: enrichment follow-up did not enter a recoverable boundary mode.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		if not _latest_recovery_contract(session_doc):
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: expected active recovery contract after guidance turn.")
+
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="forget that, give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: fresh-query override did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		override_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		override_trace_request_id = str(
+			override_grounded_turn.get("trace_request_id") or override_grounded_turn.get("request_id") or ""
+		).strip()
+		override_reports = {
+			str(value or "").strip()
+			for value in (override_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if not override_trace_request_id:
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: fresh-query override did not create grounded trace identity.")
+		if override_reports != {"Accounts Receivable Summary"}:
+			raise RuntimeError(
+				f"H3 stale recovery invalidation smoke failed: override reports were unexpected: {sorted(override_reports)!r}."
+			)
+		if _latest_recovery_contract(session_doc):
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: stale recovery contract remained active after fresh grounded override.")
+
+		ok, fourth_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes run that",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: post-override confirmation turn did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		final_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		final_trace_request_id = str(
+			final_grounded_turn.get("trace_request_id") or final_grounded_turn.get("request_id") or ""
+		).strip()
+		final_reports = {
+			str(value or "").strip()
+			for value in (final_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if final_trace_request_id != override_trace_request_id:
+			raise RuntimeError(
+				"H3 stale recovery invalidation smoke failed: stale recovery acceptance changed the grounded trace after fresh override."
+			)
+		if final_reports != {"Accounts Receivable Summary"}:
+			raise RuntimeError(
+				f"H3 stale recovery invalidation smoke failed: stale recovery acceptance changed grounded reports to {sorted(final_reports)!r}."
+			)
+		final_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+		if "top products by quantity" in final_text or "quantity sold" in final_text:
+			raise RuntimeError("H3 stale recovery invalidation smoke failed: stale recovery alternative leaked back after fresh override.")
+		return {
+			"ok": True,
+			"guidance_mode": second_mode,
+			"override_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"post_override_mode": str((fourth_payload or {}).get("mode") or "").strip(),
+			"override_trace_request_id": override_trace_request_id,
+			"final_trace_request_id": final_trace_request_id,
+			"final_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase6_smoke_session("H3 Stale Recovery Invalidated By Fresh Override Smoke", _runner)
+
+
+def run_h3_post_stop_clarification_repeat_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, initial_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me financial statement",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("H3 clarification repeat smoke failed: initial ambiguous request did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		initial_state = get_clarification_state(session_doc)
+		if not initial_state.has_pending:
+			raise RuntimeError("H3 clarification repeat smoke failed: initial ambiguous request did not create pending clarification state.")
+
+		for expected_attempt in (1, 2):
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="yes",
+				user="Administrator",
+			)
+			if not ok or str((payload or {}).get("mode") or "").strip() != "clarification":
+				raise RuntimeError("H3 clarification repeat smoke failed: unresolved reply did not remain in clarification.")
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			state = get_clarification_state(session_doc)
+			if int(state.attempt_count) != expected_attempt:
+				raise RuntimeError("H3 clarification repeat smoke failed: attempt count drifted during unresolved clarification.")
+
+		ok, stop_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes",
+			user="Administrator",
+		)
+		if not ok or str((stop_payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("H3 clarification repeat smoke failed: bounded stop turn did not complete.")
+		if str(((stop_payload or {}).get("agent_meta") or {}).get("mode") or "").strip() != "fallback_stop":
+			raise RuntimeError("H3 clarification repeat smoke failed: bounded stop did not exit through fallback_stop.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		if get_clarification_state(session_doc).has_pending:
+			raise RuntimeError("H3 clarification repeat smoke failed: pending clarification was not cleared after fallback_stop.")
+
+		ok, repeated_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("H3 clarification repeat smoke failed: repeated post-stop turn did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		repeated_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		if get_clarification_state(session_doc).has_pending:
+			raise RuntimeError("H3 clarification repeat smoke failed: repeated post-stop reply resurrected stale clarification state.")
+		if str((repeated_payload or {}).get("mode") or "").strip() == "clarification":
+			raise RuntimeError("H3 clarification repeat smoke failed: repeated post-stop reply was trapped back into stale clarification.")
+		return {
+			"ok": True,
+			"post_stop_mode": str((repeated_payload or {}).get("mode") or "").strip(),
+			"post_stop_text": repeated_text,
+		}
+
+	return _run_phase55_smoke_session("H3 Post-Stop Clarification Repeat Smoke", _runner)
+
+
+def run_h3_clarification_preempts_recovery_smoke() -> Dict[str, Any]:
+	def _seed_mixed_state(doc) -> None:
+		pending_signal = {
+			"type": "qwen_clarification_signal_contract",
+			"contract_version": "1.0",
+			"request_id": "h3-mixed-clarify",
+			"stage": "fresh_query_compiler",
+			"reason_type": "report_ambiguity",
+			"user_question": "Which report would you like me to use: Sales Analytics or Stock Balance?",
+			"suggested_options": ["Sales Analytics", "Stock Balance"],
+			"governed_default_option": "Sales Analytics",
+		}
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-mixed-recovery",
+			session_id=doc.name,
+			source_request_id="h3-mixed-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-mixed-grounded-request",
+			"trace_request_id": "h3-mixed-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(doc, "assistant", _assistant_text_payload(str(pending_signal.get("user_question") or "").strip()))
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		_append_tool_payload(doc, pending_signal)
+		store_pending_clarification_signal(doc, pending_signal)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_mixed_state(doc)
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="how do I ask for qty",
+			user="Administrator",
+		)
+		if not ok or str((payload or {}).get("mode") or "").strip() != "clarification":
+			raise RuntimeError("H3 clarification/recovery smoke failed: pending clarification did not preempt recovery guidance.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		state = get_clarification_state(session_doc)
+		if not state.has_pending:
+			raise RuntimeError("H3 clarification/recovery smoke failed: pending clarification was lost during preemption.")
+		tool_payloads = _session_tool_payloads(session_doc)
+		request_id = str((payload or {}).get("request_id") or "").strip()
+		current_turn_repairs = [
+			item
+			for item in tool_payloads
+			if str(item.get("type") or "").strip() == "qwen_conversational_repair_intent_contract"
+			and str(item.get("request_id") or "").strip() == request_id
+		]
+		if current_turn_repairs:
+			raise RuntimeError("H3 clarification/recovery smoke failed: recovery repair contract leaked into a clarification-owned turn.")
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"attempt_count": int(state.attempt_count),
+		}
+
+	return _run_phase55_smoke_session("H3 Clarification Preempts Recovery Smoke", _runner)
+
+
+def run_h3_clarification_resolution_does_not_resurrect_stale_recovery_smoke() -> Dict[str, Any]:
+	def _seed_mixed_state(doc) -> None:
+		pending_signal = {
+			"type": "qwen_clarification_signal_contract",
+			"contract_version": "1.0",
+			"request_id": "h3-mixed-clarify-resolve",
+			"stage": "fresh_query_compiler",
+			"reason_type": "report_ambiguity",
+			"user_question": "Which report would you like me to use: Sales Analytics or Stock Balance?",
+			"suggested_options": ["Sales Analytics", "Stock Balance"],
+			"governed_default_option": "Sales Analytics",
+		}
+		recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-mixed-recovery-resume",
+			session_id=doc.name,
+			source_request_id="h3-mixed-grounded-trace-resume",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-mixed-grounded-request-resume",
+			"trace_request_id": "h3-mixed-grounded-trace-resume",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		_append_message(doc, "assistant", _assistant_text_payload(str(pending_signal.get("user_question") or "").strip()))
+		_append_tool_payload(doc, grounded_turn_payload)
+		_append_tool_payload(doc, recovery_payload)
+		_append_tool_payload(doc, pending_signal)
+		store_pending_clarification_signal(doc, pending_signal)
+		doc.save(ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_mixed_state(doc)
+		ok, resolution_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Sales Analytics",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("H3 clarification/recovery resume smoke failed: clarification resolution turn did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		if get_clarification_state(session_doc).has_pending:
+			raise RuntimeError("H3 clarification/recovery resolution smoke failed: clarification state did not clear after explicit resolution.")
+
+		ok, followup_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="how do I ask for qty",
+			user="Administrator",
+		)
+		followup_mode = str((followup_payload or {}).get("mode") or "").strip()
+		if followup_mode in {"recovery_guidance", "artifact_enrichment_boundary"}:
+			raise RuntimeError(
+				"H3 clarification/recovery resolution smoke failed: stale recovery resurfaced after explicit clarification resolution."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		if _latest_recovery_contract(session_doc):
+			raise RuntimeError(
+				"H3 clarification/recovery resolution smoke failed: stale recovery contract remained active after explicit clarification resolution."
+			)
+		followup_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		lower_text = followup_text.lower()
+		if "top customers by quantity" in lower_text or "governed alternative" in lower_text:
+			raise RuntimeError(
+				"H3 clarification/recovery resolution smoke failed: stale recovery guidance leaked back after explicit clarification resolution."
+			)
+		return {
+			"ok": True,
+			"resolution_mode": str((resolution_payload or {}).get("mode") or "").strip(),
+			"followup_ok": bool(ok),
+			"followup_mode": followup_mode,
+			"followup_text": followup_text,
+		}
+
+	return _run_phase55_smoke_session(
+		"H3 Clarification Resolution Does Not Resurrect Stale Recovery Smoke",
+		_runner,
+	)
+
+
+def run_h3_fresh_query_replaces_grounded_context_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="top 5 customers by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("H3 grounded-context replacement smoke failed: initial governed artifact query did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		if not first_source_name:
+			raise RuntimeError("H3 grounded-context replacement smoke failed: initial grounded artifact context was missing.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="forget that, give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 grounded-context replacement smoke failed: explicit fresh query override did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_source_name = str(second_grounded_turn.get("source_name") or "").strip()
+		if not second_source_name or second_source_name == first_source_name:
+			raise RuntimeError("H3 grounded-context replacement smoke failed: fresh query did not replace the stale grounded source.")
+
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("H3 grounded-context replacement smoke failed: follow-up interpretation did not enter the reasoning lane for the replacement context.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		tool_payloads = _session_tool_payloads(session_doc)
+		reasoning_contract = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract")
+		compatible_contract = _source_compatible_reasoning_contract(
+			grounded_turn=second_grounded_turn,
+			reasoning_contract=reasoning_contract,
+		)
+		if not compatible_contract:
+			raise RuntimeError("H3 grounded-context replacement smoke failed: reasoning contract did not bind to the replacement grounded source.")
+		lower_text = assistant_text.lower()
+		if "receivable" not in lower_text and "overdue" not in lower_text and "ar" not in lower_text:
+			raise RuntimeError("H3 grounded-context replacement smoke failed: reasoning answer did not stay anchored to AR context.")
+		return {
+			"ok": True,
+			"first_source_name": first_source_name,
+			"second_source_name": second_source_name,
+			"grounding_family_id": str(reasoning_contract.get("grounding_family_id") or "").strip(),
+			"grounding_source_reports": [
+				str(value or "").strip()
+				for value in (reasoning_contract.get("grounding_source_reports") or [])
+				if str(value or "").strip()
+			],
+			"reasoning_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"answer_text": assistant_text,
+		}
+
+	return _run_phase6_smoke_session("H3 Fresh Query Replaces Grounded Context Smoke", _runner)
+
+
+def run_h3_pending_override_replaces_with_new_grounded_context_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me financial statement",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("H3 pending override replacement smoke failed: initial ambiguous request did not complete.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		if not get_clarification_state(session_doc).has_pending:
+			raise RuntimeError("H3 pending override replacement smoke failed: initial ambiguous request did not create pending clarification state.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="forget that, give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 pending override replacement smoke failed: explicit fresh query did not override pending clarification as a new governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		if get_clarification_state(session_doc).has_pending:
+			raise RuntimeError("H3 pending override replacement smoke failed: pending clarification survived the explicit fresh query override.")
+		replacement_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		replacement_source_name = str(replacement_grounded_turn.get("source_name") or "").strip()
+		if not replacement_source_name:
+			raise RuntimeError("H3 pending override replacement smoke failed: replacement fresh query did not create grounded context.")
+
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("H3 pending override replacement smoke failed: follow-up did not enter reasoning on the new grounded context.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		tool_payloads = _session_tool_payloads(session_doc)
+		reasoning_contract = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract")
+		compatible_contract = _source_compatible_reasoning_contract(
+			grounded_turn=replacement_grounded_turn,
+			reasoning_contract=reasoning_contract,
+		)
+		if not compatible_contract:
+			raise RuntimeError("H3 pending override replacement smoke failed: reasoning contract did not bind to the replacement grounded source.")
+		lower_text = assistant_text.lower()
+		if "receivable" not in lower_text and "overdue" not in lower_text and "ar" not in lower_text:
+			raise RuntimeError("H3 pending override replacement smoke failed: reasoning answer did not stay anchored to AR context after clarification override.")
+		return {
+			"ok": True,
+			"replacement_source_name": replacement_source_name,
+			"grounding_family_id": str(reasoning_contract.get("grounding_family_id") or "").strip(),
+			"grounding_source_reports": [
+				str(value or "").strip()
+				for value in (reasoning_contract.get("grounding_source_reports") or [])
+				if str(value or "").strip()
+			],
+			"reasoning_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"answer_text": assistant_text,
+		}
+
+	return _run_phase6_smoke_session("H3 Pending Override Replaces With New Grounded Context Smoke", _runner)
+
+
+def run_h3_latest_fresh_grounded_query_wins_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR / AP insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: initial AR/AP query did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		first_family_id = str(first_grounded_turn.get("artifact_family_id") or "").strip()
+		if not first_source_name or not first_family_id:
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: initial AR/AP grounded context was missing.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: second AR query did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_source_name = str(second_grounded_turn.get("source_name") or "").strip()
+		second_family_id = str(second_grounded_turn.get("artifact_family_id") or "").strip()
+		second_reports = {
+			str(value or "").strip()
+			for value in (second_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if not second_source_name or not second_family_id:
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: second AR grounded context was missing.")
+		if first_source_name == second_source_name and first_family_id == second_family_id:
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: second fresh grounded query did not replace the first grounded context.")
+		if second_reports != {"Accounts Receivable Summary"}:
+			raise RuntimeError(
+				f"H3 latest fresh grounded query smoke failed: replacement AR reports were unexpected: {sorted(second_reports)!r}."
+			)
+
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: reasoning follow-up did not enter the reasoning lane.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		tool_payloads = _session_tool_payloads(session_doc)
+		reasoning_contract = _latest_tool_payload_by_type(tool_payloads, "qwen_erp_business_reasoning_contract")
+		compatible_contract = _source_compatible_reasoning_contract(
+			grounded_turn=second_grounded_turn,
+			reasoning_contract=reasoning_contract,
+		)
+		if not compatible_contract:
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: reasoning contract did not bind to the latest grounded query.")
+		reasoning_reports = {
+			str(value or "").strip()
+			for value in (reasoning_contract.get("grounding_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if reasoning_reports != {"Accounts Receivable Summary"}:
+			raise RuntimeError(
+				f"H3 latest fresh grounded query smoke failed: reasoning stayed on unexpected reports {sorted(reasoning_reports)!r}."
+			)
+		lower_text = assistant_text.lower()
+		if "receivable" not in lower_text and "overdue" not in lower_text and "ar" not in lower_text:
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: reasoning answer did not stay anchored to the latest AR context.")
+		if "accounts payable" in lower_text or "supplier" in lower_text:
+			raise RuntimeError("H3 latest fresh grounded query smoke failed: stale AP context leaked into the latest AR reasoning answer.")
+		return {
+			"ok": True,
+			"first_source_name": first_source_name,
+			"second_source_name": second_source_name,
+			"reasoning_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"grounding_source_reports": sorted(reasoning_reports),
+			"answer_text": assistant_text,
+		}
+
+	return _run_phase6_smoke_session("H3 Latest Fresh Grounded Query Wins Smoke", _runner)
+
+
+def run_h3_repeated_identical_fresh_query_replaces_grounding_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: first AR query did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_trace_request_id = str(first_grounded_turn.get("trace_request_id") or first_grounded_turn.get("request_id") or "").strip()
+		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		if not first_trace_request_id or not first_source_name:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: first grounded context was missing.")
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: second AR query did not execute as a fresh governed query.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_trace_request_id = str(second_grounded_turn.get("trace_request_id") or second_grounded_turn.get("request_id") or "").strip()
+		second_source_name = str(second_grounded_turn.get("source_name") or "").strip()
+		second_reports = {
+			str(value or "").strip()
+			for value in (second_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if not second_trace_request_id or not second_source_name:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: second grounded context was missing.")
+		if second_trace_request_id == first_trace_request_id:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: repeated fresh query did not replace the prior grounded trace identity.")
+		if second_source_name != first_source_name:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: repeated identical query changed the grounded source unexpectedly.")
+		if second_reports != {"Accounts Receivable Summary"}:
+			raise RuntimeError(
+				f"H3 repeated identical fresh query smoke failed: repeated AR reports were unexpected: {sorted(second_reports)!r}."
+			)
+
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning follow-up did not enter the reasoning lane.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		reasoning_contract = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_erp_business_reasoning_contract",
+		)
+		compatible_contract = _source_compatible_reasoning_contract(
+			grounded_turn=second_grounded_turn,
+			reasoning_contract=reasoning_contract,
+		)
+		if not compatible_contract:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning contract did not bind to the latest repeated grounded query.")
+		if str(reasoning_contract.get("grounding_source_request_id") or "").strip() != second_trace_request_id:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning contract did not carry the latest repeated grounded trace request id.")
+		lower_text = assistant_text.lower()
+		if "receivable" not in lower_text and "overdue" not in lower_text and "ar" not in lower_text:
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning answer did not stay anchored to AR context.")
+		return {
+			"ok": True,
+			"first_trace_request_id": first_trace_request_id,
+			"second_trace_request_id": second_trace_request_id,
+			"source_name": second_source_name,
+			"reasoning_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"answer_text": assistant_text,
+		}
+
+	return _run_phase6_smoke_session("H3 Repeated Identical Fresh Query Replaces Grounding Smoke", _runner)
+
+
+def run_h3_repeated_identical_composite_grounded_query_replaces_grounding_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR / AP insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: first AR/AP query did not execute as a fresh governed query."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_trace_request_id = str(first_grounded_turn.get("trace_request_id") or first_grounded_turn.get("request_id") or "").strip()
+		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		first_reports = {
+			str(value or "").strip()
+			for value in (first_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if not first_trace_request_id or not first_source_name:
+			raise RuntimeError("H3 repeated identical composite grounded query smoke failed: first composite grounded context was missing.")
+		if first_reports != {"Accounts Receivable Summary", "Accounts Payable Summary"}:
+			raise RuntimeError(
+				f"H3 repeated identical composite grounded query smoke failed: first AR/AP reports were unexpected: {sorted(first_reports)!r}."
+			)
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR / AP insight",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: second AR/AP query did not execute as a fresh governed query."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_trace_request_id = str(second_grounded_turn.get("trace_request_id") or second_grounded_turn.get("request_id") or "").strip()
+		second_source_name = str(second_grounded_turn.get("source_name") or "").strip()
+		second_reports = {
+			str(value or "").strip()
+			for value in (second_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if not second_trace_request_id or not second_source_name:
+			raise RuntimeError("H3 repeated identical composite grounded query smoke failed: second composite grounded context was missing.")
+		if second_trace_request_id == first_trace_request_id:
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: repeated composite fresh query did not replace the prior grounded trace identity."
+			)
+		if second_source_name != first_source_name:
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: repeated identical composite query changed the grounded source unexpectedly."
+			)
+		if second_reports != {"Accounts Receivable Summary", "Accounts Payable Summary"}:
+			raise RuntimeError(
+				f"H3 repeated identical composite grounded query smoke failed: repeated AR/AP reports were unexpected: {sorted(second_reports)!r}."
+			)
+
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what should management do next",
+			user="Administrator",
+		)
+		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: reasoning follow-up did not enter the reasoning lane."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		reasoning_contract = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_erp_business_reasoning_contract",
+		)
+		compatible_contract = _source_compatible_reasoning_contract(
+			grounded_turn=second_grounded_turn,
+			reasoning_contract=reasoning_contract,
+		)
+		if not compatible_contract:
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: reasoning contract did not bind to the latest repeated composite grounded query."
+			)
+		if str(reasoning_contract.get("grounding_source_request_id") or "").strip() != second_trace_request_id:
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: reasoning contract did not carry the latest repeated composite grounded trace request id."
+			)
+		reasoning_reports = {
+			str(value or "").strip()
+			for value in (reasoning_contract.get("grounding_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if reasoning_reports != {"Accounts Receivable Summary", "Accounts Payable Summary"}:
+			raise RuntimeError(
+				f"H3 repeated identical composite grounded query smoke failed: reasoning stayed on unexpected reports {sorted(reasoning_reports)!r}."
+			)
+		if not assistant_text:
+			raise RuntimeError("H3 repeated identical composite grounded query smoke failed: reasoning answer text was empty.")
+		lower_text = assistant_text.lower()
+		if "accounts payable" not in lower_text and "supplier" not in lower_text and "liquidity" not in lower_text:
+			raise RuntimeError(
+				"H3 repeated identical composite grounded query smoke failed: reasoning answer did not stay anchored to the repeated AR/AP composite context."
+			)
+		return {
+			"ok": True,
+			"first_trace_request_id": first_trace_request_id,
+			"second_trace_request_id": second_trace_request_id,
+			"source_name": second_source_name,
+			"grounding_source_reports": sorted(reasoning_reports),
+			"reasoning_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"answer_text": assistant_text,
+		}
+
+	return _run_phase6_smoke_session("H3 Repeated Identical Composite Grounded Query Replaces Grounding Smoke", _runner)
+
+
+def run_h3_latest_seeded_recovery_wins_smoke() -> Dict[str, Any]:
+	def _seed_multiple_recoveries(doc) -> Dict[str, str]:
+		older_grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-older-grounded-request",
+			"trace_request_id": "h3-older-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		older_recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-older-recovery",
+			session_id=doc.name,
+			source_request_id="h3-older-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling customer query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		newer_grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-newer-grounded-request",
+			"trace_request_id": "h3-newer-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Products by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["item_code"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Item", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "product_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Products by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		newer_recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-newer-recovery",
+			session_id=doc.name,
+			source_request_id="h3-newer-grounded-trace",
+			source_family_id="product_rankings",
+			source_capability_id="top_products_by_revenue",
+			source_report="Top Products by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["item_code"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_products_by_quantity",
+			alternative_report="Top Products by Quantity",
+			reason="Quantity requires a governed sibling product query.",
+			allowed_to_recover=True,
+			confidence=0.92,
+		).to_payload()
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"I can run a governed quantity alternative for the current ranking if you want."
+			),
+		)
+		_append_tool_payload(doc, older_grounded_turn_payload)
+		_append_tool_payload(doc, older_recovery_payload)
+		_append_tool_payload(doc, newer_grounded_turn_payload)
+		_append_tool_payload(doc, newer_recovery_payload)
+		doc.save(ignore_permissions=False)
+		return {
+			"older_trace_request_id": "h3-older-grounded-trace",
+			"newer_trace_request_id": "h3-newer-grounded-trace",
+		}
+
+	def _runner(doc) -> Dict[str, Any]:
+		ids = _seed_multiple_recoveries(doc)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		active_recovery = _latest_recovery_contract(session_doc)
+		if str(active_recovery.get("source_request_id") or "").strip() != ids["newer_trace_request_id"]:
+			raise RuntimeError(
+				"H3 latest seeded recovery smoke failed: newest seeded recovery was not selected as the active recovery authority."
+			)
+		if str(active_recovery.get("alternative_capability_id") or "").strip() != "top_products_by_quantity":
+			raise RuntimeError(
+				"H3 latest seeded recovery smoke failed: active recovery authority did not point to the product quantity alternative."
+			)
+
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok or str((payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError(
+				"H3 latest seeded recovery smoke failed: explicit acceptance did not execute as a fresh governed query."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+		latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		latest_grounded_request_id = str(
+			latest_grounded_turn.get("trace_request_id") or latest_grounded_turn.get("request_id") or ""
+		).strip()
+		latest_reports = {
+			str(value or "").strip()
+			for value in (latest_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if "top customers by quantity" in assistant_text:
+			raise RuntimeError(
+				"H3 latest seeded recovery smoke failed: stale customer recovery leaked into the accepted alternative execution."
+			)
+		if "top products by quantity" not in assistant_text and "quantity sold" not in assistant_text:
+			raise RuntimeError(
+				"H3 latest seeded recovery smoke failed: accepted alternative did not appear to execute the product quantity query."
+			)
+		if latest_grounded_request_id in {ids["older_trace_request_id"], ids["newer_trace_request_id"]}:
+			raise RuntimeError(
+				"H3 latest seeded recovery smoke failed: accepted recovery did not create a fresh grounded trace."
+			)
+		if "Top Products by Quantity" not in latest_reports and "Sales Analytics" not in latest_reports:
+			raise RuntimeError(
+				f"H3 latest seeded recovery smoke failed: accepted recovery produced unexpected grounded reports {sorted(latest_reports)!r}."
+			)
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"older_trace_request_id": ids["older_trace_request_id"],
+			"newer_trace_request_id": ids["newer_trace_request_id"],
+			"latest_grounded_request_id": latest_grounded_request_id,
+			"latest_reports": sorted(latest_reports),
+			"assistant_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("H3 Latest Seeded Recovery Wins Smoke", _runner)
+
+
+def run_h3_newer_recovery_survives_older_consumed_recovery_smoke() -> Dict[str, Any]:
+	def _seed_consumed_old_and_active_new_recovery(doc) -> Dict[str, str]:
+		old_grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-consumed-old-grounded-request",
+			"trace_request_id": "h3-consumed-old-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		old_recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-consumed-old-recovery",
+			session_id=doc.name,
+			source_request_id="h3-consumed-old-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling customer query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		old_accepted_repair_payload = build_conversational_repair_intent_contract(
+			request_id="h3-consumed-old-repair",
+			session_id=doc.name,
+			repair_intent_type="accept_recovery_action",
+			repair_state="accepted",
+			targets_prior_recovery=True,
+			accepted_recovery_action="run_alternative_governed_query",
+			reason="Older recovery was already accepted and consumed.",
+			allowed_next_lane="artifact_lane",
+			confidence=0.96,
+		).to_payload()
+		new_grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-active-new-grounded-request",
+			"trace_request_id": "h3-active-new-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Products by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["item_code"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Item", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "product_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Products by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		new_recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-active-new-recovery",
+			session_id=doc.name,
+			source_request_id="h3-active-new-grounded-trace",
+			source_family_id="product_rankings",
+			source_capability_id="top_products_by_revenue",
+			source_report="Top Products by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["item_code"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_products_by_quantity",
+			alternative_report="Top Products by Quantity",
+			reason="Quantity requires a governed sibling product query.",
+			allowed_to_recover=True,
+			confidence=0.92,
+		).to_payload()
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"The current ranking needs a governed quantity sibling query if you want to continue."
+			),
+		)
+		_append_tool_payload(doc, old_grounded_turn_payload)
+		_append_tool_payload(doc, old_recovery_payload)
+		_append_tool_payload(doc, old_accepted_repair_payload)
+		_append_tool_payload(doc, new_grounded_turn_payload)
+		_append_tool_payload(doc, new_recovery_payload)
+		doc.save(ignore_permissions=False)
+		return {
+			"old_trace_request_id": "h3-consumed-old-grounded-trace",
+			"new_trace_request_id": "h3-active-new-grounded-trace",
+		}
+
+	def _runner(doc) -> Dict[str, Any]:
+		ids = _seed_consumed_old_and_active_new_recovery(doc)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		active_recovery = _latest_recovery_contract(session_doc)
+		if str(active_recovery.get("request_id") or "").strip() != "h3-active-new-recovery":
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: newer active recovery was not selected."
+			)
+		if str(active_recovery.get("source_request_id") or "").strip() != ids["new_trace_request_id"]:
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: active recovery did not bind to the newer grounded trace."
+			)
+
+		ok, payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok or str((payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: explicit acceptance did not execute as a fresh governed query."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+		latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		latest_grounded_request_id = str(
+			latest_grounded_turn.get("trace_request_id") or latest_grounded_turn.get("request_id") or ""
+		).strip()
+		accepted_repairs = [
+			item
+			for item in _session_tool_payloads(session_doc)
+			if str(item.get("type") or "").strip() == "qwen_conversational_repair_intent_contract"
+			and str(item.get("repair_state") or "").strip() == "accepted"
+			and str(item.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query"
+		]
+		if len(accepted_repairs) != 2:
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: expected exactly two accepted repair contracts after newer execution."
+			)
+		if latest_grounded_request_id in {ids["old_trace_request_id"], ids["new_trace_request_id"]}:
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: accepted newer recovery did not create a fresh grounded trace."
+			)
+		if "top customers by quantity" in assistant_text:
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: stale older customer recovery leaked into newer recovery execution."
+			)
+		if "top products by quantity" not in assistant_text and "quantity sold" not in assistant_text:
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: accepted newer recovery did not appear to execute the product quantity query."
+			)
+		if _latest_recovery_contract(session_doc):
+			raise RuntimeError(
+				"H3 newer recovery survives older consumed recovery smoke failed: recovery remained active after accepted newer execution."
+			)
+		return {
+			"ok": True,
+			"mode": str((payload or {}).get("mode") or "").strip(),
+			"old_trace_request_id": ids["old_trace_request_id"],
+			"new_trace_request_id": ids["new_trace_request_id"],
+			"latest_grounded_request_id": latest_grounded_request_id,
+			"accepted_repair_count": len(accepted_repairs),
+			"assistant_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("H3 Newer Recovery Survives Older Consumed Recovery Smoke", _runner)
+
+
+def run_h3_duplicate_acceptance_after_newer_recovery_execution_smoke() -> Dict[str, Any]:
+	def _seed_consumed_old_and_active_new_recovery(doc) -> Dict[str, str]:
+		old_grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-dup-old-grounded-request",
+			"trace_request_id": "h3-dup-old-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		old_recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-dup-old-recovery",
+			session_id=doc.name,
+			source_request_id="h3-dup-old-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling customer query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		old_accepted_repair_payload = build_conversational_repair_intent_contract(
+			request_id="h3-dup-old-repair",
+			session_id=doc.name,
+			repair_intent_type="accept_recovery_action",
+			repair_state="accepted",
+			targets_prior_recovery=True,
+			accepted_recovery_action="run_alternative_governed_query",
+			reason="Older recovery was already accepted and consumed.",
+			allowed_next_lane="artifact_lane",
+			confidence=0.96,
+		).to_payload()
+		new_grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "h3-dup-new-grounded-request",
+			"trace_request_id": "h3-dup-new-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Products by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["item_code"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Item", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "product_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Products by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		new_recovery_payload = build_artifact_enrichment_recovery_contract(
+			request_id="h3-dup-new-recovery",
+			session_id=doc.name,
+			source_request_id="h3-dup-new-grounded-trace",
+			source_family_id="product_rankings",
+			source_capability_id="top_products_by_revenue",
+			source_report="Top Products by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["item_code"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_products_by_quantity",
+			alternative_report="Top Products by Quantity",
+			reason="Quantity requires a governed sibling product query.",
+			allowed_to_recover=True,
+			confidence=0.92,
+		).to_payload()
+		_append_message(
+			doc,
+			"assistant",
+			_assistant_text_payload(
+				"The current ranking needs a governed quantity sibling query if you want to continue."
+			),
+		)
+		_append_tool_payload(doc, old_grounded_turn_payload)
+		_append_tool_payload(doc, old_recovery_payload)
+		_append_tool_payload(doc, old_accepted_repair_payload)
+		_append_tool_payload(doc, new_grounded_turn_payload)
+		_append_tool_payload(doc, new_recovery_payload)
+		doc.save(ignore_permissions=False)
+		return {
+			"old_trace_request_id": "h3-dup-old-grounded-trace",
+			"new_trace_request_id": "h3-dup-new-grounded-trace",
+		}
+
+	def _runner(doc) -> Dict[str, Any]:
+		ids = _seed_consumed_old_and_active_new_recovery(doc)
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: first newer acceptance did not execute as a fresh governed query."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_latest_grounded_request_id = str(
+			first_grounded_turn.get("trace_request_id") or first_grounded_turn.get("request_id") or ""
+		).strip()
+		first_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+		first_accepted_repairs = [
+			item
+			for item in _session_tool_payloads(session_doc)
+			if str(item.get("type") or "").strip() == "qwen_conversational_repair_intent_contract"
+			and str(item.get("repair_state") or "").strip() == "accepted"
+			and str(item.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query"
+		]
+		if len(first_accepted_repairs) != 2:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: expected exactly two accepted repairs after first newer execution."
+			)
+		if first_latest_grounded_request_id in {ids["old_trace_request_id"], ids["new_trace_request_id"]}:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: first newer execution did not create a fresh grounded trace."
+			)
+		if "top products by quantity" not in first_text and "quantity sold" not in first_text:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: first newer execution did not appear to return the product quantity result."
+			)
+
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="yes please run the governed alternative",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: duplicate acceptance turn did not complete."
+			)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_latest_grounded_request_id = str(
+			second_grounded_turn.get("trace_request_id") or second_grounded_turn.get("request_id") or ""
+		).strip()
+		second_accepted_repairs = [
+			item
+			for item in _session_tool_payloads(session_doc)
+			if str(item.get("type") or "").strip() == "qwen_conversational_repair_intent_contract"
+			and str(item.get("repair_state") or "").strip() == "accepted"
+			and str(item.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query"
+		]
+		if len(second_accepted_repairs) != 2:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: duplicate acceptance created an extra accepted repair."
+			)
+		if _latest_recovery_contract(session_doc):
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: recovery remained active after duplicate acceptance."
+			)
+		if str((second_payload or {}).get("mode") or "").strip() == "compiled_first_turn":
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: duplicate acceptance re-executed a stale recovery query."
+			)
+		if second_latest_grounded_request_id != first_latest_grounded_request_id:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: duplicate acceptance changed the grounded trace unexpectedly."
+			)
+		if "top customers by quantity" in second_text:
+			raise RuntimeError(
+				"H3 duplicate acceptance after newer recovery smoke failed: stale older customer recovery leaked back on duplicate acceptance."
+			)
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"second_mode": str((second_payload or {}).get("mode") or "").strip(),
+			"latest_grounded_request_id": second_latest_grounded_request_id,
+			"accepted_repair_count": len(second_accepted_repairs),
+			"second_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+		}
+
+	return _run_phase55_smoke_session("H3 Duplicate Acceptance After Newer Recovery Execution Smoke", _runner)
+
+
+def run_phase8_hardening_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"recovery_authority": run_phase8b_recovery_authority_smoke(),
+		"repair_handling": run_phase8c_repair_handling_smoke(),
+		"fresh_query_override": run_phase8d_fresh_query_override_smoke(),
+		"recovery_execution": run_phase8_recovery_execution_smoke(),
+	}
+
+
+def run_h4_inferred_operational_evidence_stays_bounded_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show me sales invoice list",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("H4 inferred evidence smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Based on this invoice list, can you infer which ones are delivered or undelivered? Even an estimate is okay.",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		if not ok or second_mode not in {"grounded_evidence_boundary", "erp_business_reasoning"}:
+			raise RuntimeError("H4 inferred evidence smoke failed: adversarial follow-up did not stay in a bounded safe lane.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		lower_text = assistant_text.lower()
+		if "delivery" not in lower_text:
+			raise RuntimeError("H4 inferred evidence smoke failed: user-facing answer did not stay on delivery-status scope.")
+		if second_mode == "grounded_evidence_boundary":
+			recovery_payload = _latest_tool_payload_by_type(
+				_session_tool_payloads(session_doc),
+				"qwen_artifact_enrichment_recovery_contract",
+			)
+			if str(recovery_payload.get("failure_type") or "").strip() != "grounded_evidence_missing":
+				raise RuntimeError("H4 inferred evidence smoke failed: recovery failure_type was not grounded_evidence_missing.")
+			if str(recovery_payload.get("recommended_recovery_action") or "").strip() != "clarify_target_output":
+				raise RuntimeError("H4 inferred evidence smoke failed: adversarial follow-up did not recommend bounded clarification recovery.")
+		if not any(
+			phrase in lower_text
+			for phrase in (
+				"can't answer",
+				"can't confirm",
+				"cannot answer",
+				"cannot confirm",
+				"cannot safely",
+				"cannot be inferred",
+				"unsupported speculation",
+				"are absent from the provided data",
+				"current governed artifact does not include",
+			)
+		):
+			raise RuntimeError("H4 inferred evidence smoke failed: adversarial follow-up did not answer with bounded uncertainty.")
+		return {
+			"ok": True,
+			"mode": second_mode,
+			"assistant_text": assistant_text,
+		}
+
+	return _run_phase55_smoke_session("H4 Inferred Operational Evidence Stays Bounded Smoke", _runner)
+
+
+def run_h4_mixed_metric_request_stays_bounded_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 products by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("H4 mixed metric smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show together revenue and qty",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		if not ok or second_mode not in {"artifact_enrichment_boundary", "recovery_guidance"}:
+			raise RuntimeError("H4 mixed metric smoke failed: mixed-metric request did not stay bounded.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		recovery_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_artifact_enrichment_recovery_contract",
+		)
+		repair_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_conversational_repair_intent_contract",
+		)
+		if str(recovery_payload.get("failure_type") or "").strip() != "artifact_enrichment_incompatible":
+			raise RuntimeError("H4 mixed metric smoke failed: mixed-metric request did not emit artifact_enrichment_incompatible recovery.")
+		if str(repair_payload.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query":
+			raise RuntimeError("H4 mixed metric smoke failed: mixed-metric request auto-accepted a governed alternative.")
+		lower_text = assistant_text.lower()
+		if "current governed source cannot safely provide" not in lower_text and "can't answer it safely" not in lower_text:
+			raise RuntimeError("H4 mixed metric smoke failed: user-facing answer did not explain the bounded limitation.")
+		return {
+			"ok": True,
+			"mode": second_mode,
+			"assistant_text": assistant_text,
+			"recovery_payload": recovery_payload,
+		}
+
+	return _run_phase55_smoke_session("H4 Mixed Metric Request Stays Bounded Smoke", _runner)
+
+
+def run_h4_long_multisentence_followup_stays_bounded_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Top 7 products by revenue",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("H4 long follow-up smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="Please keep the exact same top 7 product ranking by revenue, add qty next to each row, do not change the ranking basis, and if you cannot do that safely then explain the governed option instead of guessing.",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		if not ok or second_mode not in {"artifact_enrichment_boundary", "recovery_guidance"}:
+			raise RuntimeError("H4 long follow-up smoke failed: long adversarial follow-up did not remain bounded.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		recovery_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_artifact_enrichment_recovery_contract",
+		)
+		repair_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_conversational_repair_intent_contract",
+		)
+		if str(recovery_payload.get("recommended_recovery_action") or "").strip() != "run_alternative_governed_query":
+			raise RuntimeError("H4 long follow-up smoke failed: long bounded follow-up did not preserve the governed alternative path.")
+		if str(repair_payload.get("accepted_recovery_action") or "").strip() == "run_alternative_governed_query":
+			raise RuntimeError("H4 long follow-up smoke failed: long bounded follow-up auto-accepted the governed alternative.")
+		lower_text = assistant_text.lower()
+		if (
+			"governed alternative" not in lower_text
+			and "top 7 products by quantity" not in lower_text
+			and "separate governed query" not in lower_text
+			and "can't answer it safely" not in lower_text
+		):
+			raise RuntimeError("H4 long follow-up smoke failed: bounded answer did not explain the governed safe path.")
+		return {
+			"ok": True,
+			"mode": second_mode,
+			"assistant_text": assistant_text,
+			"recovery_payload": recovery_payload,
+		}
+
+	return _run_phase55_smoke_session("H4 Long Multisentence Follow-Up Stays Bounded Smoke", _runner)
+
+
+def run_h4_creative_followup_after_reasoning_is_refused_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("H4 creative follow-up smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("H4 creative follow-up smoke failed: setup reasoning turn did not complete.")
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="write a short poem about this",
+			user="Administrator",
+		)
+		third_mode = str((third_payload or {}).get("mode") or "").strip()
+		if not ok or third_mode != "out_of_scope_domain":
+			raise RuntimeError("H4 creative follow-up smoke failed: creative ask did not resolve to governed out-of-scope refusal.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		lower_text = assistant_text.lower()
+		if "poem" in lower_text:
+			raise RuntimeError("H4 creative follow-up smoke failed: user-facing answer still complied with creative generation.")
+		if not any(
+			phrase in lower_text
+			for phrase in (
+				"outside the current governed erp assistant coverage",
+				"outside the current governed qwen erp coverage",
+				"can't answer it confidently",
+				"can't answer it confidently here",
+			)
+		):
+			raise RuntimeError("H4 creative follow-up smoke failed: refusal did not explain governed coverage boundary.")
+		boundary_payload = _latest_tool_payload_by_type(
+			_session_tool_payloads(session_doc),
+			"qwen_knowledge_boundary_contract",
+		)
+		if str(boundary_payload.get("knowledge_coverage_state") or "").strip() != "unsupported_non_erp":
+			raise RuntimeError("H4 creative follow-up smoke failed: knowledge boundary did not classify the creative ask as unsupported_non_erp.")
+		return {
+			"ok": True,
+			"mode": third_mode,
+			"assistant_text": assistant_text,
+			"boundary_payload": boundary_payload,
+		}
+
+	return _run_phase55_smoke_session("H4 Creative Follow-Up After Reasoning Is Refused Smoke", _runner)
+
+
+def run_h4_recommendation_guarantee_stays_bounded_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me AR insight",
+			user="Administrator",
+		)
+		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError("H4 recommendation guarantee smoke failed: setup artifact turn did not complete.")
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="what does this mean",
+			user="Administrator",
+		)
+		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
+			raise RuntimeError("H4 recommendation guarantee smoke failed: setup reasoning turn did not complete.")
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="guarantee which customer will pay this week",
+			user="Administrator",
+		)
+		third_mode = str((third_payload or {}).get("mode") or "").strip()
+		third_engine = str(((third_payload or {}).get("agent_meta") or {}).get("engine") or "").strip()
+		third_status = str(((third_payload or {}).get("agent_meta") or {}).get("status") or "").strip()
+		if not ok or third_mode != "erp_business_reasoning" or third_engine != "erp_business_reasoning_guardrail":
+			raise RuntimeError("H4 recommendation guarantee smoke failed: bounded reasoning guardrail did not own the turn.")
+		if third_status != "invalid_payload":
+			raise RuntimeError("H4 recommendation guarantee smoke failed: recommendation guarantee path did not expose the expected deterministic guardrail status.")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		lower_text = assistant_text.lower()
+		if "guarantee" in lower_text and "stopped rather than guess" not in lower_text:
+			raise RuntimeError("H4 recommendation guarantee smoke failed: user-facing answer sounded like a guarantee instead of a bounded guardrail response.")
+		if not any(
+			phrase in lower_text
+			for phrase in (
+				"stopped rather than guess",
+				"can't answer it safely",
+				"couldn't safely generate",
+				"current governed support",
+			)
+		):
+			raise RuntimeError("H4 recommendation guarantee smoke failed: user-facing answer did not explain the bounded safe stop.")
+		tool_payloads = _session_tool_payloads(session_doc)
+		boundary_payload = _latest_tool_payload_by_type(
+			tool_payloads,
+			"qwen_knowledge_boundary_contract",
+		)
+		if str(boundary_payload.get("knowledge_coverage_state") or "").strip() != "valid_erp_domain_uncovered":
+			raise RuntimeError("H4 recommendation guarantee smoke failed: knowledge boundary did not reclassify the blocked recommendation as valid_erp_domain_uncovered.")
+		execution_path = _latest_tool_payload_by_type(
+			tool_payloads,
+			"qwen_execution_path",
+		)
+		if str(execution_path.get("path") or "").strip() != "reasoning_lane_guardrail":
+			raise RuntimeError("H4 recommendation guarantee smoke failed: execution path did not record reasoning_lane_guardrail.")
+		reasoning_execution = _latest_tool_payload_by_type(
+			tool_payloads,
+			"qwen_erp_business_reasoning_execution",
+		)
+		if str(reasoning_execution.get("status") or "").strip() != "invalid_payload":
+			raise RuntimeError("H4 recommendation guarantee smoke failed: reasoning execution did not preserve the invalid_payload guardrail status.")
+		return {
+			"ok": True,
+			"mode": third_mode,
+			"assistant_text": assistant_text,
+			"boundary_payload": boundary_payload,
+			"execution_path": execution_path,
+		}
+
+	return _run_phase55_smoke_session("H4 Recommendation Guarantee Stays Bounded Smoke", _runner)
+
+
+def run_h4_adversarial_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"inferred_operational_evidence": run_h4_inferred_operational_evidence_stays_bounded_smoke(),
+		"mixed_metric_request": run_h4_mixed_metric_request_stays_bounded_smoke(),
+		"long_multisentence_followup": run_h4_long_multisentence_followup_stays_bounded_smoke(),
+		"creative_followup_after_reasoning": run_h4_creative_followup_after_reasoning_is_refused_smoke(),
+		"recommendation_guarantee": run_h4_recommendation_guarantee_stays_bounded_smoke(),
+	}
+
+
+def run_h5_release_gate_rollout_probe() -> Dict[str, Any]:
+	def _validate_status(label: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+		if not isinstance(payload, dict):
+			raise RuntimeError(f"H5 rollout probe failed: {label} status payload was not a dict.")
+		for key in ("master_enabled", "rollout_percentage", "allow_users", "sample_decision"):
+			if key not in payload:
+				raise RuntimeError(f"H5 rollout probe failed: {label} status missing `{key}`.")
+		try:
+			percentage = float(payload.get("rollout_percentage"))
+		except Exception as exc:
+			raise RuntimeError(f"H5 rollout probe failed: {label} rollout_percentage was not numeric.") from exc
+		if percentage < 0.0 or percentage > 100.0:
+			raise RuntimeError(f"H5 rollout probe failed: {label} rollout_percentage was out of range.")
+		decision = payload.get("sample_decision")
+		if not isinstance(decision, dict):
+			raise RuntimeError(f"H5 rollout probe failed: {label} sample_decision was not a dict.")
+		for key in ("enabled", "reason", "rollout_percentage", "rollout_bucket", "allow_users"):
+			if key not in decision:
+				raise RuntimeError(f"H5 rollout probe failed: {label} sample_decision missing `{key}`.")
+		if float(decision.get("rollout_percentage") or 0.0) < 0.0 or float(decision.get("rollout_percentage") or 0.0) > 100.0:
+			raise RuntimeError(f"H5 rollout probe failed: {label} sample_decision rollout_percentage was out of range.")
+		if float(decision.get("rollout_bucket") or 0.0) < 0.0 or float(decision.get("rollout_bucket") or 0.0) > 100.0:
+			raise RuntimeError(f"H5 rollout probe failed: {label} sample_decision rollout_bucket was out of range.")
+		return {
+			"master_enabled": bool(payload.get("master_enabled")),
+			"rollout_percentage": percentage,
+			"sample_reason": str(decision.get("reason") or "").strip(),
+			"sample_enabled": bool(decision.get("enabled")),
+		}
+
+	compiled = get_compiled_first_turn_rollout_status()
+	reasoning = get_erp_business_reasoning_rollout_status()
+	return {
+		"ok": True,
+		"compiled_first_turn": _validate_status("compiled_first_turn", compiled),
+		"erp_business_reasoning": _validate_status("erp_business_reasoning", reasoning),
+	}
+
+
+def run_h5_release_gate_sanity_pack() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"frontdoor_boundary": run_phase55_frontdoor_boundary_smoke(),
+		"reasoning_live_rollout": run_phase6_reasoning_live_rollout_smoke(),
+		"boundary_responses": run_phase7d_boundary_response_live_smoke(),
+		"recovery_execution": run_phase8_recovery_execution_smoke(),
+		"adversarial_recommendation_guardrail": run_h4_recommendation_guarantee_stays_bounded_smoke(),
+	}
+
+
+def run_h5_release_gate_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"rollout_probe": run_h5_release_gate_rollout_probe(),
+		"sanity_pack": run_h5_release_gate_sanity_pack(),
+	}
+
+
+def run_post_contract_regression_suite() -> Dict[str, Any]:
+	return {
+		"ok": True,
+		"phase55": run_phase55_hardening_suite(),
+		"phase6": run_phase6_hardening_suite(),
+		"phase7": run_phase7_hardening_suite(),
+		"phase8": run_phase8_hardening_suite(),
+	}

@@ -92,6 +92,8 @@ def _valid_erp_domain(
 	clarification_reason: Dict[str, Any],
 ) -> bool:
 	governed_scope_status = _status(governed_scope_contract.get("governed_scope_status"))
+	if governed_scope_status == "unsupported_request":
+		return False
 	if governed_scope_status in {"covered_family", "fresh_query_breakout", "clarification_needed", "out_of_scope_but_valid_erp_domain"}:
 		return True
 	if bool(reasoning_activation_contract.get("grounded_context_available")):
