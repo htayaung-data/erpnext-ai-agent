@@ -36,5 +36,6 @@ Key note:
 
 1. [UI-Design.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/UI-Design.md)
 2. [Sales-Console-Design.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/Sales-Console-Design.md)
-3. [Sales-Console-Navigation-Map.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/navigation/Sales-Console-Navigation-Map.md)
-4. [ui_workstream_handoff_2026-03-27.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/ui_workstream_handoff_2026-03-27.md)
+3. [Workspace-UI-Baseline-Reference.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/Workspace-UI-Baseline-Reference.md)
+4. [Sales-Console-Navigation-Map.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/navigation/Sales-Console-Navigation-Map.md)
+5. [ui_workstream_handoff_2026-03-27.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/ui_workstream_handoff_2026-03-27.md)
