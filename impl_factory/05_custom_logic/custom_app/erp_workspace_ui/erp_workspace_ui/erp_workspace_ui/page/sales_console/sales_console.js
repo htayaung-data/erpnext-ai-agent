@@ -77,8 +77,18 @@
         display: grid;
         gap: 6px;
         padding: 18px 22px 17px;
+        width: 100%;
+        border: none;
+        appearance: none;
+        text-align: left;
+        cursor: pointer;
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
         backdrop-filter: blur(10px);
+        transition: background 120ms ease, box-shadow 120ms ease;
+      }
+      .sales-console-kpi-card:hover {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.018) 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
       }
       .sales-console-kpi-card + .sales-console-kpi-card {
         border-left: 1px solid rgba(214, 227, 240, 0.12);
@@ -703,11 +713,8 @@
 
   function routeToList(doctype, filters) {
     try {
-      if (filters) {
-        frappe.set_route("List", doctype, filters);
-      } else {
-        frappe.set_route("List", doctype);
-      }
+      frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+      frappe.set_route("List", doctype);
     } catch (error) {
       frappe.msgprint({
         title: __("Navigation unavailable"),
@@ -717,8 +724,9 @@
     }
   }
 
-  function routeToReport(reportName) {
+  function routeToReport(reportName, filters) {
     try {
+      frappe.route_options = filters && Object.keys(filters).length ? filters : null;
       frappe.set_route("query-report", reportName);
     } catch (error) {
       frappe.msgprint({
@@ -727,6 +735,43 @@
         indicator: "orange",
       });
     }
+  }
+
+  function executeTarget(target, fallback) {
+    if (!target) {
+      if (typeof fallback === "function") fallback();
+      return;
+    }
+
+    if (target.notice) {
+      frappe.show_alert({
+        message: __(target.notice),
+        indicator: "blue",
+      });
+    }
+
+    if (target.kind === "new_doc" && target.doctype) {
+      frappe.new_doc(target.doctype);
+      return;
+    }
+
+    if (target.kind === "list" && target.doctype) {
+      routeToList(target.doctype, target.filters || null);
+      return;
+    }
+
+    if (target.kind === "report" && target.report_name) {
+      routeToReport(target.report_name, target.filters || null);
+      return;
+    }
+
+    if (typeof fallback === "function") fallback();
+  }
+
+  function runNavigation(pageState, group, key, fallback) {
+    const navigation = (pageState && pageState.payload && pageState.payload.navigation) || {};
+    const groupTargets = navigation[group] || {};
+    executeTarget(groupTargets[key], fallback);
   }
 
   function makeAction(config) {
@@ -782,17 +827,17 @@
 
   function makeInsightCard(config) {
     return $(`
-      <div class="sales-console-kpi-card" data-insight-key="${escapeHtml(config.key)}">
+      <button class="sales-console-kpi-card" data-insight-key="${escapeHtml(config.key)}" type="button">
         <div class="sales-console-kpi-label">${escapeHtml(config.label)}</div>
         <div class="sales-console-kpi-value" data-role="value">--</div>
         <div class="sales-console-kpi-meta" data-role="meta">${escapeHtml(config.meta)}</div>
-      </div>
+      </button>
     `);
   }
 
-  function makeReportLink(title, meta, icon, onClick) {
+  function makeReportLink(key, title, meta, icon, onClick) {
     const $row = $(`
-      <button class="sales-console-link">
+      <button class="sales-console-link" data-report-key="${escapeHtml(key)}" type="button">
         <span class="sales-console-link-icon">${iconMarkup(icon || "chart")}</span>
         <div class="sales-console-link-copy">
           <div class="sales-console-link-title">${escapeHtml(title)}</div>
@@ -974,6 +1019,17 @@
       $element.toggle(!hiddenActions.has(key));
     });
 
+    const hiddenInsights = new Set(profile.hidden_insights || []);
+    const $kpiCards = $root.find("[data-insight-key]");
+    $kpiCards.each((_, element) => {
+      const $element = $(element);
+      const key = $element.attr("data-insight-key");
+      $element.toggle(!hiddenInsights.has(key));
+    });
+    const visibleInsightCount = $kpiCards.filter((_, element) => $(element).css("display") !== "none").length;
+    const $kpiGrid = $root.find(".sales-console-kpi-grid");
+    $kpiGrid.css("grid-template-columns", visibleInsightCount <= 1 ? "1fr" : "repeat(2, minmax(0, 1fr))");
+
     if (profile.section_notes) {
       Object.entries(profile.section_notes).forEach(([key, value]) => {
         $root.find(`[data-section-note="${key}"]`).text(value);
@@ -1146,12 +1202,22 @@
         key: "quotations_awaiting_approval",
         label: "Awaiting Approval",
         meta: "Quotation approval queue.",
-      }),
+      }).on("click", () => runNavigation(
+        pageState,
+        "insights",
+        "quotations_awaiting_approval",
+        () => routeToList("Quotation")
+      )),
       makeInsightCard({
         key: "open_orders",
         label: "Open Orders",
         meta: "Current order pipeline.",
-      })
+      }).on("click", () => runNavigation(
+        pageState,
+        "insights",
+        "open_orders",
+        () => routeToList("Sales Order")
+      ))
     );
 
     const $actionsSection = $(`
@@ -1176,7 +1242,12 @@
         meta: "Create a customer quotation",
         icon: "quotation",
         primary: true,
-        onClick: () => frappe.new_doc("Quotation"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "new_quotation",
+          () => frappe.new_doc("Quotation")
+        ),
       }),
       makeAction({
         key: "new_sales_order",
@@ -1184,7 +1255,12 @@
         meta: "Create a sales order",
         icon: "order",
         primary: true,
-        onClick: () => frappe.new_doc("Sales Order"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "new_sales_order",
+          () => frappe.new_doc("Sales Order")
+        ),
       }),
       makeAction({
         key: "open_customer",
@@ -1192,7 +1268,12 @@
         meta: "Jump into customer records",
         icon: "customer",
         primary: true,
-        onClick: () => routeToList("Customer"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "open_customer",
+          () => routeToList("Customer")
+        ),
       }),
     );
     $secondaryActions.append(
@@ -1201,14 +1282,24 @@
         title: "Opportunity",
         meta: "Open a new opportunity",
         icon: "opportunity",
-        onClick: () => frappe.new_doc("Opportunity"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "new_opportunity",
+          () => frappe.new_doc("Opportunity")
+        ),
       }),
       makeAction({
         key: "open_item",
         title: "Item",
         meta: "Open item records",
         icon: "item",
-        onClick: () => routeToList("Item"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "open_item",
+          () => routeToList("Item")
+        ),
       })
     );
 
@@ -1232,35 +1323,60 @@
         meta: "Commercial cases waiting for approval or exception handling.",
         badgeClass: "blocker",
         priority: true,
-        onClick: () => routeToList("Sales Order"),
+        onClick: () => runNavigation(
+          pageState,
+          "queues",
+          "orders_blocked_by_approval",
+          () => routeToList("Sales Order")
+        ),
       }),
       makeQueueItem({
         key: "sales_orders_pending_fulfillment",
         title: "Sales Orders Pending Fulfillment",
         meta: "Open orders still waiting on operational movement.",
         badgeClass: "review",
-        onClick: () => routeToList("Sales Order"),
+        onClick: () => runNavigation(
+          pageState,
+          "queues",
+          "sales_orders_pending_fulfillment",
+          () => routeToList("Sales Order")
+        ),
       }),
       makeQueueItem({
         key: "quotations_waiting_action",
         title: "Quotations Waiting For Action",
         meta: "Active quotations needing reply, revision, or follow-up.",
         badgeClass: "attention",
-        onClick: () => routeToList("Quotation"),
+        onClick: () => runNavigation(
+          pageState,
+          "queues",
+          "quotations_waiting_action",
+          () => routeToList("Quotation")
+        ),
       }),
       makeQueueItem({
         key: "expiring_quotations",
         title: "Open Quotations Nearing Expiry",
         meta: "Open quotations at risk of slipping out of cycle.",
         badgeClass: "attention",
-        onClick: () => routeToList("Quotation"),
+        onClick: () => runNavigation(
+          pageState,
+          "queues",
+          "expiring_quotations",
+          () => routeToList("Quotation")
+        ),
       }),
       makeQueueItem({
         key: "customer_follow_up_tasks",
         title: "Customer Follow-Up Tasks",
         meta: "Promised callbacks and overdue commercial follow-up.",
         badgeClass: "attention",
-        onClick: () => routeToList("ToDo"),
+        onClick: () => runNavigation(
+          pageState,
+          "queues",
+          "customer_follow_up_tasks",
+          () => routeToList("ToDo")
+        ),
       })
     );
 
@@ -1276,10 +1392,30 @@
 
     const $reportLinks = $reportsSection.find(".sales-console-report-links");
     $reportLinks.append(
-      makeReportLink("Sales Analytics", "Management and performance review", "chart", () => routeToReport("Sales Analytics")),
-      makeReportLink("Customer-wise Sales History", "Account-level sales history", "customer", () => routeToReport("Customer-wise Sales History")),
-      makeReportLink("Item-wise Sales Register", "Item-level review", "item", () => routeToReport("Item-wise Sales Register")),
-      makeReportLink("Open Orders", "Review active order pipeline", "order", () => routeToList("Sales Order"))
+      makeReportLink("sales_analytics", "Sales Analytics", "Management and performance review", "chart", () => runNavigation(
+        pageState,
+        "reports",
+        "sales_analytics",
+        () => routeToReport("Sales Analytics")
+      )),
+      makeReportLink("customer_wise_sales_history", "Customer-wise Sales History", "Account-level sales history", "customer", () => runNavigation(
+        pageState,
+        "reports",
+        "customer_wise_sales_history",
+        () => routeToReport("Customer-wise Sales History")
+      )),
+      makeReportLink("item_wise_sales_register", "Item-wise Sales Register", "Item-level review", "item", () => runNavigation(
+        pageState,
+        "reports",
+        "item_wise_sales_register",
+        () => routeToReport("Item-wise Sales Register")
+      )),
+      makeReportLink("open_orders", "Open Orders", "Review active order pipeline", "order", () => runNavigation(
+        pageState,
+        "reports",
+        "open_orders",
+        () => routeToList("Sales Order")
+      ))
     );
 
     $body.append($workSection, $reportsSection);

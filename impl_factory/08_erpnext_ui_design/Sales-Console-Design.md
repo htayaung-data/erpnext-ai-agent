@@ -1,139 +1,160 @@
 # Sales Console Design
 
-Status: detailed workspace design for the first implementation target  
+Status: redesigned business and UI source of truth for the first implementation target  
 Scope: `Sales Console` only  
-Source authority: [UI-Design.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/UI-Design.md)
+Source authority: [UI-Design.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/UI-Design.md), [Sales-Console-ERP-Capability-Audit.md](/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/08_erpnext_ui_design/Sales-Console-ERP-Capability-Audit.md)
 
 ## 1. Purpose
 
-This document defines the detailed design for the `Sales Console`.
+This document defines the redesigned `Sales Console`.
 
-It integrates three views together:
+The redesign responds to a practical ERP reality:
 
-1. technical implementation view
-2. ERP consultant view
-3. real daily user view
+1. the salesperson is often the main customer-facing focal person
+2. sales users need status visibility beyond quotation and sales order
+3. the console must support real customer inquiry, not only action shortcuts
+4. the UI must stay sales-oriented without turning into a warehouse or finance cockpit
 
-The goal is to design a Sales Console that is:
+The goal is to make `Sales Console`:
 
-1. easy to understand
-2. simple in daily use
-3. attractive without becoming flashy
-4. enterprise-grade in structure and control
-5. AI-assisted in a way that improves efficiency without overwhelming users
+1. operationally truthful
+2. enterprise-grade in visibility and control
+3. fast for daily sales work
+4. strong for customer inquiry and follow-up
+5. expandable without becoming cluttered
 
 ## 2. Sales Console Mission
 
-The `Sales Console` should become the primary daily entry point for sales roles.
+The `Sales Console` should be the main daily workspace for sales roles.
 
-It should help sales users do five things well:
+It should help the sales team do six things well:
 
-1. start the day fast
-2. create and follow commercial documents with minimal friction
-3. keep customer context visible
-4. avoid missing approvals, blockers, and credit-risk signals
-5. move from customer conversation to ERP action with fewer clicks
+1. start the day with clear priorities
+2. create and follow quotations and sales orders quickly
+3. answer customer questions using one unified inquiry area
+4. see delivery, invoice, payment, and return status without leaving the sales context
+5. avoid missing approvals, blockers, and follow-up obligations
+6. move from customer conversation to ERP action with minimal menu hunting
 
-This console is not meant to be a full CRM replacement, a dashboard playground, or a generic selling module clone.
-It is an operating cockpit for actual selling work.
+This console is not a generic dashboard and not a full CRM replacement.
+It is a customer-facing commercial operating console.
 
-## 3. Target Users
+## 3. Core Design Judgment
+
+The redesigned `Sales Console` should no longer be only `quotation-first`.
+
+It should be:
+
+1. customer-facing
+2. order-lifecycle-aware
+3. inquiry-friendly
+4. approval-aware
+5. return-aware
+6. role-sensitive
+
+It should not become:
+
+1. finance-heavy
+2. warehouse-control-heavy
+3. setup-heavy
+4. report-first
+5. AI-first
+
+## 4. Target Users
 
 Primary users:
 
-1. Sales Supervisor
-2. Sales Executives
-3. Key Account Sales
+1. `Sales Person`
+2. `Key Account Sales`
+3. `Sales Manager`
 
-Secondary or occasional viewers:
+Secondary or occasional users:
 
-1. General Manager for approval visibility
-2. showroom-oriented sales users through a focused sales mode
+1. `Executive Approver`
+2. showroom or counter-sale user through a simplified mode later
 
-## 4. Perspective Integration
+## 5. Role Philosophy
 
-### 4.1 ERP Consultant View
+The role logic for the UI should follow this principle:
 
-From an ERP consultant standpoint, the Sales Console must:
+1. `Sales Person`
+   - broad visibility
+   - limited approval authority
+   - strong customer inquiry support
+2. `Sales Manager`
+   - broader team visibility
+   - approval and exception control
+   - stronger review surfaces
+3. `Executive Approver`
+   - escalation and exception review
+   - not a routine daily transaction user
 
-1. align with the sales quotation-to-order process
-2. show workflow and approval status clearly
-3. protect segregation of duties
-4. keep selling roles inside their commercial scope
-5. expose credit and approval issues early
+The console must distinguish between:
 
-### 4.2 Real User View
+1. seeing status
+2. owning operational action
 
-From the user standpoint, the Sales Console must:
+Sales users often need to see downstream status even when they do not own delivery, invoicing, payment posting, or return settlement.
 
-1. feel like the shortest path to doing today’s work
-2. reduce menu hunting
-3. make it obvious which quotations, orders, or customers need attention now
-4. help the user prepare before calling or meeting a customer
-5. keep the screen clean enough to work fast all day
+## 6. Business Outcomes
 
-### 4.3 Technical Implementation View
-
-From the implementation standpoint, the Sales Console must:
-
-1. start with ERPNext-native workspace capabilities where possible
-2. avoid unnecessary custom frontend complexity in the first release
-3. support branch-aware and role-aware visibility
-4. allow a compact AI assist layer without breaking the standard operating UI
-5. be expandable later without redesigning the whole console
-
-## 5. Business Outcomes
-
-The Sales Console should improve:
+The redesigned console should improve:
 
 1. quotation turnaround speed
 2. order-entry efficiency
-3. customer follow-up discipline
-4. visibility of blocked or at-risk sales work
-5. sales team adoption of role-based navigation instead of generic module browsing
-
-## 6. Design Position
-
-The Sales Console should feel:
-
-1. customer-first
-2. quotation-first
-3. status-aware
-4. approval-aware
-5. branch-aware
-
-It should not feel:
-
-1. finance-heavy
-2. stock-control-heavy
-3. setup-heavy
-4. report-only
+3. customer response speed
+4. follow-up discipline
+5. visibility of approvals and blockers
+6. visibility of delivery, invoice, payment, and return status
+7. confidence during customer calls and visits
 
 ## 7. Console Structure
 
-The Sales Console should use this structure from top to bottom.
+The recommended top-to-bottom structure is:
 
-### 7.1 Header Zone
+1. `Header And Summary`
+2. `Quick Actions`
+3. `Customer Inquiry`
+4. `My Sales Work`
+5. `Customer Lifecycle Visibility`
+6. `Approvals / Blockers`
+7. `Reports And Review`
+8. `AI Assist`
+
+This is the new reference information architecture.
+
+## 8. Detailed Section Design
+
+### 8.1 Header And Summary
 
 Contents:
 
 1. workspace title: `Sales Console`
-2. user identity and role-family label
-3. branch context
-4. optional assigned territory or sales scope
-5. quick workspace search and quick action launcher
+2. role label
+3. branch or commercial scope
+4. compact summary band
+
+Recommended summary cards:
+
+1. `Awaiting Approval`
+2. `Open Orders`
+
+Optional later additions:
+
+1. `Orders Due Soon`
+2. `Returns In Progress`
 
 Purpose:
 
-1. tell the user immediately where they are
-2. show scope clearly
-3. reduce context mistakes
+1. establish where the user is
+2. show daily commercial scope
+3. provide two trustworthy high-level signals without building a KPI-heavy dashboard
 
-### 7.2 Primary Actions Zone
+### 8.2 Quick Actions
 
-This is the most important row in the console.
+This remains the immediate action zone.
 
-Primary actions:
+Recommended cards:
 
 1. `New Opportunity`
 2. `New Quotation`
@@ -143,295 +164,277 @@ Primary actions:
 
 Rules:
 
-1. these actions must be visible without scrolling
-2. they should be large enough to scan quickly
-3. they should be ordered by actual daily frequency, not by ERP module naming
+1. must stay above the fold
+2. should remain operational, not analytical
+3. action cards should feel slightly more immediate than report cards
 
-### 7.3 Sales Work Queue Zone
+### 8.3 Customer Inquiry
 
-This is the operational heartbeat of the console.
+This is a new core section and should become one of the most important surfaces in the console.
 
-It should show:
+Purpose:
 
-1. quotations waiting for action
-2. open quotations nearing expiry
-3. sales orders pending fulfillment
-4. orders blocked by approval
-5. customer follow-up tasks
-6. overdue or at-risk commercial items
+1. let sales users answer customer questions from one place
+2. avoid jumping across multiple lists and forms
+3. provide a unified commercial trace from any known clue
 
-This zone should feel like:
+Search input should accept:
 
-1. a work list
-2. not just a report list
+1. customer ID
+2. customer name
+3. quotation ID
+4. sales order ID
+5. sales invoice ID
+6. delivery note ID
+7. phone or keyword where available
+8. optional date range filters
 
-### 7.4 Operational Insight Zone
+The result should return a unified chain such as:
 
-This zone should show lightweight commercial visibility, not a giant dashboard.
+1. customer
+2. quotation
+3. sales order
+4. delivery
+5. invoice
+6. payment summary
+7. return status
 
-Suggested cards:
+The inquiry result should show:
 
-1. quotations awaiting approval
-2. open orders
-3. orders with credit-risk flags
-4. customers needing follow-up today
-5. branch sales snapshot
-6. quotation-to-order conversion trend
+1. primary match
+2. current overall status
+3. related documents in sequence
+4. blockers or pending actions
+5. recent notes or follow-up indicators where available
 
-### 7.5 Reports And Review Zone
+This should be implemented as structured ERP data first.
+AI may summarize it later, but should not be the primary answer mechanism.
 
-This zone should provide quick access to deeper review surfaces.
+### 8.4 My Sales Work
 
-Recommended reports:
+This is the salesperson's active operating queue.
+
+Recommended cards:
+
+1. `Quotations Waiting For Action`
+2. `Open Quotations Nearing Expiry`
+3. `Sales Orders Pending Fulfillment`
+4. `Customer Follow-Up Tasks`
+
+Optional next-phase additions:
+
+1. `Opportunities Closing Soon`
+2. `Quotations Returned For Revision`
+
+Purpose:
+
+1. show work that sales must move
+2. keep the queue operational, not decorative
+
+### 8.5 Customer Lifecycle Visibility
+
+This is the most important conceptual addition in the redesign.
+
+Purpose:
+
+1. let sales users see downstream customer-impacting status
+2. keep customer-facing answers inside the sales workspace
+3. avoid forcing sales to ask warehouse or finance before answering basic status questions
+
+Recommended phase-1 cards:
+
+1. `Partially Delivered Orders`
+2. `Invoices Outstanding`
+3. `Sales Returns In Progress`
+
+Possible alternates depending on real ERP capability:
+
+1. `Orders Due Soon`
+2. `Delivered Not Yet Invoiced`
+3. `Payments Pending`
+
+Rules:
+
+1. this section is visibility-first, not authority-first
+2. cards may open delivery, invoice, payment, or return records in review mode
+3. sales users must not get inappropriate warehouse or finance controls through this section
+
+### 8.6 Approvals / Blockers
+
+This remains important, especially for `Sales Manager`.
+
+Recommended cards:
+
+1. `Orders Blocked By Approval`
+2. `Quotations Awaiting Approval`
+3. `Escalated Commercial Exceptions`
+
+Role behavior:
+
+1. `Sales Person`
+   - sees only own blocked or pending items if meaningful
+2. `Sales Manager`
+   - sees full team approval queue
+3. `Executive Approver`
+   - sees escalation-focused approval view
+
+### 8.7 Reports And Review
+
+This zone remains a lower-priority review surface.
+
+Recommended targets must be real and usable, not idealized labels.
+
+Examples:
 
 1. `Sales Analytics`
-2. `Customer-wise Sales History`
-3. `Item-wise Sales Register`
-4. `Open Orders`
-5. quotation trend or open quotation review
+2. `Item-wise Sales Register`
+3. a truthful customer-history target
+4. a truthful open-order review target
 
-### 7.6 AI Assist Zone
+Rules:
 
-The AI zone must be present but visually restrained.
+1. if a planned report does not truly exist, replace it
+2. do not keep decorative or misleading report cards
+3. this section should feel quieter than `Quick Actions`
 
-It should be:
+### 8.8 AI Assist
 
-1. right-side panel on wide screens or lower priority section on smaller screens
-2. collapsible
-3. context-aware
-4. clearly secondary to the main operating UI
+AI should remain present but secondary.
 
-## 8. Real User Experience Flow
+Best-fit AI roles:
 
-### 8.1 Morning Start
+1. summarize inquiry results
+2. produce customer brief
+3. explain approval or blocker reason
+4. recommend next action
 
-When a sales user lands on the console, they should understand within a few seconds:
+AI should not be:
 
-1. what needs attention today
-2. which quotations are aging
-3. which orders are blocked
-4. which customers need follow-up
+1. the main inquiry engine
+2. the only source of truth for status
+3. a replacement for document-linked lifecycle visibility
 
-### 8.2 Customer Call Or Visit
+## 9. Role Variants In The Console
 
-Before calling a customer, the user should be able to:
+### 9.1 Sales Person
 
-1. open the customer record quickly
-2. see recent quotations and orders
-3. see balance or credit warning context if relevant
-4. get a compact AI-generated customer brief
-
-### 8.3 Quotation Creation
-
-The user should be able to:
-
-1. start a quotation from the console directly
-2. land in a simplified quotation form
-3. see relevant customer and item context quickly
-4. know whether the quotation will require approval
-
-### 8.4 Follow-Up And Conversion
-
-The user should be able to:
-
-1. see which quotations deserve follow-up now
-2. see which open orders are still pending action
-3. move from customer context to quotation or order context without hunting through menus
-
-## 9. AI Assist Design
-
-The `Sales Console` is a high-value AI surface, but AI must remain tightly scoped.
-
-### 9.1 Best AI Uses In Sales
-
-Recommended AI functions:
-
-1. customer briefing
-   - recent orders
-   - open quotations
-   - overdue or credit context
-2. quote-follow-up prioritization
-   - which quotations deserve follow-up now
-3. risk nudges
-   - approval likely needed
-   - credit-risk exposure
-   - unusual discount situation
-4. next-best-action suggestion
-   - what should the sales user do next in this customer context
-
-### 9.2 AI Uses To Avoid
-
-Do not make AI:
-
-1. the main path for creating quotations or orders
-2. a full-page assistant
-3. a chat box constantly asking the user what to do
-4. a source of invisible pricing or approval decisions
-
-### 9.3 AI Panel Behavior
-
-The AI panel should support these modes:
-
-1. `Today`
-   - daily sales briefing
-2. `Customer Context`
-   - compact customer brief when a customer is selected
-3. `Quotation Context`
-   - approval/risk/follow-up explanation for the active quotation
-
-The default state should be:
-
-1. visible but compact
-2. informative but not noisy
-
-## 10. ERP Consultant Recommendations
-
-From an ERP consultant perspective, these are the most important rules.
-
-### 10.1 Scope Control
-
-The Sales Console should:
-
-1. keep sales users away from finance-heavy and stock-control-heavy navigation
-2. expose only the stock visibility needed for selling
-3. make branch and territory scope explicit
-
-### 10.2 Approval Visibility
-
-The Sales Console must show:
-
-1. quotations requiring approval
-2. orders blocked by credit or approval issues
-3. escalated commercial cases
-
-Sales users should never be confused about whether a document is still actionable by them or waiting on someone else.
-
-### 10.3 Showroom Treatment
-
-Do not build a separate standalone showroom workspace in the first phase.
-
-Instead:
-
-1. provide a showroom-focused mode inside `Sales Console`
-2. simplify it further for counter-style speed
-3. keep its stock visibility narrower than general sales users
-
-## 11. Technical Implementation Recommendation
-
-### 11.1 First Implementation Strategy
-
-Start with ERPNext-native workspace capabilities plus minimal custom augmentation.
-
-Phase 1 should use:
-
-1. custom ERPNext workspace
-2. curated shortcuts
-3. curated report links
-4. role-based visibility
-5. lightweight custom cards or blocks where standard workspace blocks are not enough
-
-Do not start with:
-
-1. a fully custom single-page app
-2. heavy frontend re-platforming
-3. large visual rewrite before proving workflow value
-
-### 11.2 Technical Composition
-
-The Sales Console should likely be implemented as:
-
-1. ERPNext workspace as the shell
-2. shortcut section for primary actions
-3. report section for deep review
-4. custom summary widgets or dashboard cards for queue and blocker visibility
-5. controlled AI assist panel or drawer integrated through the existing assistant stack
-
-### 11.3 Required Data And UI Inputs
-
-The console will need access to:
-
-1. quotations by status
-2. sales orders by status
-3. customer follow-up indicators
-4. branch-aware sales metrics
-5. approval state
-6. credit or balance warning context where permitted
-
-### 11.4 Role Variants
-
-The technical design should support role variants inside the same console:
-
-1. Sales Supervisor
-2. Sales Executive
-3. Key Account Sales
-4. showroom-focused sales user
-
-The console shell should stay the same, but:
-
-1. queue emphasis
-2. metrics
-3. approval visibility
-4. AI hints
-
-can vary by role.
-
-## 12. Information Architecture Recommendation
-
-Recommended top-level sections in the console:
+Highest emphasis:
 
 1. `Quick Actions`
+2. `Customer Inquiry`
+3. `My Sales Work`
+4. `Customer Lifecycle Visibility`
+
+Lower emphasis:
+
+1. `Approvals / Blockers`
+2. `Reports And Review`
+
+### 9.2 Sales Manager
+
+Highest emphasis:
+
+1. `Approvals / Blockers`
 2. `My Sales Work`
-3. `Approvals / Blockers`
-4. `Customer Follow-Up`
-5. `Sales Insight`
-6. `AI Assist`
+3. `Customer Inquiry`
+4. `Reports And Review`
 
-This is simpler and more understandable than exposing users to a large mixed dashboard of unrelated cards.
+Additional team-oriented visibility:
 
-## 13. Visual Design Recommendation
+1. team queue
+2. exception approvals
+3. return issues requiring attention
 
-The Sales Console should feel more polished than stock ERPNext, but still serious.
+### 9.3 Executive Approver
 
-Recommended visual tone:
+Highest emphasis:
 
-1. clean hierarchy
-2. disciplined spacing
-3. clear priority cards
-4. restrained use of accent color
-5. strong separation between:
-   - actions
-   - work queue
-   - AI assist
+1. `Approvals / Blockers`
+2. summary visibility
+3. escalated commercial cases
 
-The console should look modern and attractive, but the beauty should come from clarity and confidence, not decoration.
+Lower emphasis:
 
-## 14. Success Criteria
+1. routine action shortcuts
+2. daily sales follow-up surfaces
 
-The Sales Console is successful when:
+## 10. Sales Return Treatment
 
-1. sales users can start work faster than from generic ERPNext workspaces
-2. users can find the right sales action in one click
-3. follow-up obligations become harder to miss
-4. approval blockers become obvious
-5. AI improves preparation and prioritization without hijacking the UI
+`Sales Return` should be included in the console design.
 
-## 15. What Should Be Designed Next
+Reason:
 
-Before implementation, the next detail layer for `Sales Console` should define:
+1. customer often contacts sales first about the return
+2. sales needs visibility into whether the return is progressing
+3. sales needs to know whether warehouse and finance steps have completed
 
-1. exact workspace sections and card ordering
-2. role-specific differences inside the console
-3. showroom mode behavior
-4. AI panel states and triggers
-5. simplified quotation and sales order form behavior
+Recommended role interpretation:
 
-## 16. Final Design Judgment
+1. `Sales Person`
+   - customer-facing initiator or follow-up owner
+   - visibility into return progress
+2. `Warehouse / Operations`
+   - physical return validation
+3. `Finance`
+   - credit note / settlement
+4. `Manager`
+   - exception review if policy requires it
 
-The `Sales Console` should be the first workspace implemented because it has the clearest business value and the clearest path to a better user experience.
+The console should therefore show return status, but not turn sales into stock or refund controllers.
 
-If designed correctly, it will:
+## 11. What The Console Should Not Include
 
-1. prove the role-based workspace strategy
-2. improve adoption quickly
-3. establish the standard for later consoles
-4. demonstrate the right style of enterprise AI assistance
+Avoid adding these as main first-wave cards:
+
+1. full AR aging table
+2. stock ledger detail
+3. packing or dispatch processing actions
+4. refund accounting actions
+5. broad finance reconciliation views
+6. generic dashboard widgets with weak sales meaning
+
+The sales team needs visibility into outcomes, not ownership of every downstream process.
+
+## 12. Technical Implementation Recommendation
+
+The redesign should still follow the original first-wave technical approach:
+
+1. ERPNext workspace shell
+2. curated shortcuts
+3. custom summary blocks
+4. server-side formulas
+5. role-aware visibility
+6. truthful navigation targets
+
+New technical priority:
+
+1. implement a unified inquiry resolver that can trace related documents from one input
+
+This is more valuable than adding more decorative KPI cards.
+
+## 13. Success Criteria
+
+The redesigned `Sales Console` is successful when:
+
+1. sales users can answer customer status questions from one place
+2. users can see where a quotation or order stands in the lifecycle
+3. approvals and blockers remain obvious
+4. sales can see return and downstream status without receiving inappropriate authority
+5. managers can review team exceptions without using generic module navigation
+6. the workspace stays clean and sales-oriented
+
+## 14. Final Design Judgment
+
+The correct reference direction for `Sales Console` is:
+
+1. action-oriented
+2. inquiry-capable
+3. lifecycle-visible
+4. approval-aware
+5. return-aware
+
+It should remain a sales workspace, but a stronger one:
+
+1. not only for creating documents
+2. not only for monitoring quotes
+3. but for managing the customer-facing commercial journey from inquiry to post-sale status
