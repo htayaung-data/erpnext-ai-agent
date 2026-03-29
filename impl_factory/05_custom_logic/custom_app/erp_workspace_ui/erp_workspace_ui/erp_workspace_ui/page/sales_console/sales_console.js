@@ -3,6 +3,7 @@
 (function () {
   const PAGE_KEY = "sales-console";
   const BOOTSTRAP_METHOD = "erp_workspace_ui.sales_console.service.get_sales_console_bootstrap";
+  const INQUIRY_METHOD = "erp_workspace_ui.sales_console.service.resolve_customer_inquiry";
 
   function ensureStyle() {
     if (document.getElementById("sales-console-shell-style")) return;
@@ -77,8 +78,18 @@
         display: grid;
         gap: 6px;
         padding: 18px 22px 17px;
+        width: 100%;
+        border: none;
+        appearance: none;
+        text-align: left;
+        cursor: pointer;
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.01) 100%);
         backdrop-filter: blur(10px);
+        transition: background 120ms ease, box-shadow 120ms ease;
+      }
+      .sales-console-kpi-card:hover {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.018) 100%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
       }
       .sales-console-kpi-card + .sales-console-kpi-card {
         border-left: 1px solid rgba(214, 227, 240, 0.12);
@@ -259,12 +270,292 @@
         display: grid;
         gap: 16px;
       }
+      .sales-console-inquiry {
+        display: grid;
+        gap: 14px;
+      }
+      .sales-console-inquiry-shell {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.94);
+        background:
+          linear-gradient(180deg, rgba(248, 250, 252, 0.9) 0%, rgba(255, 255, 255, 0.98) 100%);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 10px 26px rgba(15, 23, 42, 0.055);
+      }
+      .sales-console-inquiry-intro {
+        display: grid;
+        gap: 4px;
+      }
+      .sales-console-inquiry-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .sales-console-inquiry-meta {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.45;
+        color: #64748b;
+      }
+      .sales-console-inquiry-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+      }
+      .sales-console-inquiry-input {
+        width: 100%;
+        min-width: 0;
+        height: 44px;
+        padding: 0 14px;
+        border-radius: 12px;
+        border: 1px solid #dbe4ee;
+        background: #ffffff;
+        color: #0f172a;
+        font-size: 13px;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset;
+      }
+      .sales-console-inquiry-input:focus {
+        outline: none;
+        border-color: #8ecfca;
+        box-shadow:
+          0 0 0 3px rgba(45, 212, 191, 0.12),
+          0 1px 0 rgba(255, 255, 255, 0.98) inset;
+      }
+      .sales-console-inquiry-submit,
+      .sales-console-inquiry-choice,
+      .sales-console-related-link {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.94);
+        background: #243247;
+        color: #f8fafc;
+        border-radius: 12px;
+        height: 44px;
+        padding: 0 16px;
+        font-size: 12.5px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.08) inset,
+          0 10px 20px rgba(15, 23, 42, 0.14);
+      }
+      .sales-console-inquiry-submit:hover,
+      .sales-console-inquiry-choice:hover,
+      .sales-console-related-link:hover {
+        background: #2d3d56;
+      }
+      .sales-console-inquiry-status {
+        font-size: 12px;
+        color: #64748b;
+      }
+      .sales-console-inquiry-result {
+        display: grid;
+        gap: 12px;
+      }
+      .sales-console-inquiry-result[hidden] {
+        display: none;
+      }
+      .sales-console-inquiry-placeholder {
+        padding: 14px 16px;
+        border-radius: 14px;
+        border: 1px dashed #d9e4ef;
+        background: rgba(255, 255, 255, 0.72);
+        font-size: 12px;
+        line-height: 1.55;
+        color: #64748b;
+      }
+      .sales-console-inquiry-block {
+        display: grid;
+        gap: 8px;
+        padding: 14px 16px;
+        border-radius: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.92);
+        background: #ffffff;
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 8px 20px rgba(15, 23, 42, 0.05);
+      }
+      .sales-console-inquiry-block-title {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #0b84a5;
+      }
+      .sales-console-inquiry-primary {
+        display: grid;
+        gap: 6px;
+      }
+      .sales-console-inquiry-primary-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .sales-console-inquiry-primary-label {
+        font-size: 16px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .sales-console-inquiry-primary-meta {
+        font-size: 12px;
+        color: #64748b;
+      }
+      .sales-console-inquiry-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .sales-console-inquiry-field {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .sales-console-inquiry-field-label {
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #7c8798;
+      }
+      .sales-console-inquiry-field-value {
+        font-size: 13px;
+        line-height: 1.45;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .sales-console-inquiry-flow {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .sales-console-inquiry-stage {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        min-width: 0;
+        padding: 12px 12px 11px;
+        border-radius: 14px;
+        border: 1px solid #edf2f7;
+        background: #f8fafc;
+      }
+      .sales-console-inquiry-stage-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .sales-console-inquiry-stage-label {
+        font-size: 12px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .sales-console-inquiry-stage-state {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 78px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: #eef2f7;
+        color: #475569;
+      }
+      .sales-console-inquiry-stage-items {
+        display: grid;
+        gap: 6px;
+      }
+      .sales-console-inquiry-stage-item {
+        font-size: 12px;
+        line-height: 1.45;
+        color: #334155;
+      }
+      .sales-console-inquiry-list {
+        display: grid;
+        gap: 8px;
+      }
+      .sales-console-inquiry-list-row {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+      }
+      .sales-console-inquiry-list-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #7c8798;
+      }
+      .sales-console-inquiry-list-value {
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: #334155;
+      }
+      .sales-console-inquiry-exception {
+        display: grid;
+        gap: 4px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid #edf2f7;
+        background: #f8fafc;
+      }
+      .sales-console-inquiry-exception[data-severity="blocker"] {
+        border-color: #dfe5ff;
+        background: #f5f7ff;
+      }
+      .sales-console-inquiry-exception[data-severity="attention"] {
+        border-color: #d8f0f3;
+        background: #f1fcfd;
+      }
+      .sales-console-inquiry-exception-label {
+        font-size: 12px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .sales-console-inquiry-exception-detail {
+        font-size: 12px;
+        line-height: 1.45;
+        color: #475569;
+      }
+      .sales-console-inquiry-choices,
+      .sales-console-related-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .sales-console-inquiry-choice,
+      .sales-console-related-link {
+        height: auto;
+        min-height: 38px;
+        padding: 10px 12px;
+      }
+      .sales-console-inquiry-choice {
+        background: #ffffff;
+        color: #243247;
+        border-color: #dbe4ee;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+      }
+      .sales-console-inquiry-choice-meta {
+        font-size: 11px;
+        color: #64748b;
+      }
       .sales-console-queue-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
       }
-      .sales-console-queue-grid > [data-queue-key]:first-child {
+      .sales-console-queue-grid[data-section-grid="approvals"] > [data-queue-key]:first-child {
         grid-column: 1 / -1;
       }
       .sales-console-queue-card {
@@ -425,15 +716,10 @@
       .sales-console-queue-card.priority .sales-console-queue-count {
         font-size: 24px;
       }
-      .sales-console-queue-side::after,
-      .sales-console-queue-priority-side::after {
-        content: "queued";
+      .sales-console-queue-side-label {
         font-size: 10px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #7c8798;
-      }
-      .sales-console-queue-priority-side::after {
         color: #7c8798;
       }
       .sales-console-queue-meta {
@@ -630,6 +916,10 @@
         .sales-console-report-links {
           grid-template-columns: 1fr;
         }
+        .sales-console-inquiry-grid,
+        .sales-console-inquiry-flow {
+          grid-template-columns: 1fr 1fr;
+        }
         .sales-console-section-note {
           max-width: 200px;
         }
@@ -650,7 +940,10 @@
         .sales-console-action-strip.primary,
         .sales-console-action-strip.secondary,
         .sales-console-queue-grid,
-        .sales-console-kpi-grid {
+        .sales-console-kpi-grid,
+        .sales-console-inquiry-grid,
+        .sales-console-inquiry-flow,
+        .sales-console-inquiry-form {
           grid-template-columns: 1fr;
         }
         .sales-console-kpi-grid {
@@ -660,7 +953,7 @@
           border-left: none;
           border-top: 1px solid rgba(255, 255, 255, 0.09);
         }
-        .sales-console-queue-grid > [data-queue-key]:first-child {
+        .sales-console-queue-grid[data-section-grid="approvals"] > [data-queue-key]:first-child {
           grid-column: auto;
         }
         .sales-console-action,
@@ -692,6 +985,10 @@
         .sales-console-section-note {
           max-width: 160px;
         }
+        .sales-console-inquiry-list-row {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -703,11 +1000,8 @@
 
   function routeToList(doctype, filters) {
     try {
-      if (filters) {
-        frappe.set_route("List", doctype, filters);
-      } else {
-        frappe.set_route("List", doctype);
-      }
+      frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+      frappe.set_route("List", doctype);
     } catch (error) {
       frappe.msgprint({
         title: __("Navigation unavailable"),
@@ -717,8 +1011,9 @@
     }
   }
 
-  function routeToReport(reportName) {
+  function routeToReport(reportName, filters) {
     try {
+      frappe.route_options = filters && Object.keys(filters).length ? filters : null;
       frappe.set_route("query-report", reportName);
     } catch (error) {
       frappe.msgprint({
@@ -727,6 +1022,48 @@
         indicator: "orange",
       });
     }
+  }
+
+  function executeTarget(target, fallback) {
+    if (!target) {
+      if (typeof fallback === "function") fallback();
+      return;
+    }
+
+    if (target.notice) {
+      frappe.show_alert({
+        message: __(target.notice),
+        indicator: "blue",
+      });
+    }
+
+    if (target.kind === "new_doc" && target.doctype) {
+      frappe.new_doc(target.doctype);
+      return;
+    }
+
+    if (target.kind === "form" && target.doctype && target.name) {
+      frappe.set_route("Form", target.doctype, target.name);
+      return;
+    }
+
+    if (target.kind === "list" && target.doctype) {
+      routeToList(target.doctype, target.filters || null);
+      return;
+    }
+
+    if (target.kind === "report" && target.report_name) {
+      routeToReport(target.report_name, target.filters || null);
+      return;
+    }
+
+    if (typeof fallback === "function") fallback();
+  }
+
+  function runNavigation(pageState, group, key, fallback) {
+    const navigation = (pageState && pageState.payload && pageState.payload.navigation) || {};
+    const groupTargets = navigation[group] || {};
+    executeTarget(groupTargets[key], fallback);
   }
 
   function makeAction(config) {
@@ -746,6 +1083,7 @@
 
   function makeQueueItem(config) {
     const badgeClass = config.badgeClass || "pending";
+    const sideLabel = config.sideLabel || "Open";
     if (config.priority) {
       const $priority = $(`
         <button class="sales-console-queue-card priority" data-queue-key="${escapeHtml(config.key)}">
@@ -759,6 +1097,7 @@
           </div>
           <div class="sales-console-queue-priority-side">
             <div class="sales-console-queue-count" data-role="count">--</div>
+            <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
           </div>
         </button>
       `);
@@ -773,6 +1112,7 @@
         </div>
         <div class="sales-console-queue-side">
           <div class="sales-console-queue-count" data-role="count">--</div>
+          <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
         </div>
       </button>
     `);
@@ -782,17 +1122,17 @@
 
   function makeInsightCard(config) {
     return $(`
-      <div class="sales-console-kpi-card" data-insight-key="${escapeHtml(config.key)}">
+      <button class="sales-console-kpi-card" data-insight-key="${escapeHtml(config.key)}" type="button">
         <div class="sales-console-kpi-label">${escapeHtml(config.label)}</div>
         <div class="sales-console-kpi-value" data-role="value">--</div>
         <div class="sales-console-kpi-meta" data-role="meta">${escapeHtml(config.meta)}</div>
-      </div>
+      </button>
     `);
   }
 
-  function makeReportLink(title, meta, icon, onClick) {
+  function makeReportLink(key, title, meta, icon, onClick) {
     const $row = $(`
-      <button class="sales-console-link">
+      <button class="sales-console-link" data-report-key="${escapeHtml(key)}" type="button">
         <span class="sales-console-link-icon">${iconMarkup(icon || "chart")}</span>
         <div class="sales-console-link-copy">
           <div class="sales-console-link-title">${escapeHtml(title)}</div>
@@ -803,6 +1143,261 @@
     `);
     $row.on("click", onClick);
     return $row;
+  }
+
+  function renderReportsSection($root, pageState, reportCards) {
+    const $reportLinks = $root.find(".sales-console-report-links");
+    $reportLinks.empty();
+
+    if (!Array.isArray(reportCards) || !reportCards.length) {
+      $root.find('[data-section="reports"]').hide();
+      return;
+    }
+
+    $root.find('[data-section="reports"]').show();
+
+    reportCards.forEach((card) => {
+      $reportLinks.append(
+        makeReportLink(
+          card.key,
+          card.title,
+          card.meta,
+          card.icon,
+          () => runNavigation(
+            pageState,
+            "reports",
+            card.key,
+            () => routeToReport(card.report_name)
+          )
+        )
+      );
+    });
+  }
+
+  function fallbackReportCards(payload) {
+    const targets = (payload && payload.navigation && payload.navigation.reports) || {};
+    const titleMap = {
+      sales_analytics: { title: "Sales Analytics", meta: "Management and team performance review", icon: "chart" },
+      sales_order_analysis: { title: "Sales Order Analysis", meta: "Review operational order execution and exception patterns", icon: "order" },
+      sales_order_trends: { title: "Sales Order Trends", meta: "Review directional order movement over time", icon: "order" },
+      quotation_trends: { title: "Quotation Trends", meta: "Review quotation flow, conversion direction, and aging", icon: "quotation" },
+      lost_quotations: { title: "Lost Quotations", meta: "Review commercial loss patterns and follow-up quality", icon: "quotation" },
+      payment_terms_status_sales_order: { title: "Payment Terms Status", meta: "Check sales-order payment schedule exposure", icon: "chart" },
+      item_wise_sales_history: { title: "Item-wise Sales History", meta: "Item-level commercial history for deeper review", icon: "item" },
+    };
+
+    return Object.entries(targets).map(([key, target]) => ({
+      key,
+      report_name: target.report_name,
+      title: (titleMap[key] && titleMap[key].title) || target.report_name || key,
+      meta: (titleMap[key] && titleMap[key].meta) || "Review target from live ERP",
+      icon: (titleMap[key] && titleMap[key].icon) || "chart",
+    })).filter(card => card.report_name);
+  }
+
+  function renderInquiryPlaceholder($target, message) {
+    $target.html(`
+      <div class="sales-console-inquiry-placeholder">
+        ${escapeHtml(message)}
+      </div>
+    `).removeAttr("hidden");
+  }
+
+  function stageStateLabel(state) {
+    const labels = {
+      present: "Present",
+      not_yet_created: "Not Yet Created",
+      not_used: "Not Used",
+      not_applicable: "Not Applicable",
+      unknown: "Unknown",
+    };
+    return labels[state] || "Unknown";
+  }
+
+  function renderInquiryResult($target, result) {
+    if (!result || result.state !== "resolved") {
+      renderInquiryPlaceholder($target, "No inquiry result is available.");
+      return;
+    }
+
+    const primary = result.primary_match || {};
+    const customer = result.customer_summary || {};
+    const flow = Array.isArray(result.document_flow) ? result.document_flow : [];
+    const statusRows = Array.isArray(result.current_status) ? result.current_status : [];
+    const exceptions = Array.isArray(result.exceptions) ? result.exceptions : [];
+    const related = Array.isArray(result.related_documents) ? result.related_documents : [];
+    const latestDocs = Array.isArray(customer.latest_documents) ? customer.latest_documents.filter(Boolean) : [];
+
+    const latestDocsHtml = latestDocs.map((item) => `
+      <div class="sales-console-inquiry-field">
+        <div class="sales-console-inquiry-field-label">${escapeHtml(item.doctype || "Document")}</div>
+        <div class="sales-console-inquiry-field-value">${escapeHtml(item.name ? `${item.name}${item.status ? ` (${item.status})` : ""}` : "Not available")}</div>
+      </div>
+    `).join("");
+
+    const flowHtml = flow.map((stage) => `
+      <div class="sales-console-inquiry-stage">
+        <div class="sales-console-inquiry-stage-head">
+          <div class="sales-console-inquiry-stage-label">${escapeHtml(stage.label || "Stage")}</div>
+          <div class="sales-console-inquiry-stage-state">${escapeHtml(stageStateLabel(stage.state))}</div>
+        </div>
+        <div class="sales-console-inquiry-stage-items">
+          ${(Array.isArray(stage.items) && stage.items.length ? stage.items : [{ name: "None visible in this chain", status: "" }]).map((item) => `
+            <div class="sales-console-inquiry-stage-item">
+              ${escapeHtml(item.name || "None visible in this chain")}${item.status ? ` <span class="sales-console-inquiry-choice-meta">(${escapeHtml(item.status)})</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `).join("");
+
+    const statusHtml = statusRows.map((item) => `
+      <div class="sales-console-inquiry-list-row">
+        <div class="sales-console-inquiry-list-label">${escapeHtml(item.label || "Status")}</div>
+        <div class="sales-console-inquiry-list-value">${escapeHtml(item.value || "--")}</div>
+      </div>
+    `).join("");
+
+    const exceptionsHtml = exceptions.length
+      ? exceptions.map((item) => `
+          <div class="sales-console-inquiry-exception" data-severity="${escapeHtml(item.severity || "review")}">
+            <div class="sales-console-inquiry-exception-label">${escapeHtml(item.label || "Exception")}</div>
+            <div class="sales-console-inquiry-exception-detail">${escapeHtml(item.detail || "")}</div>
+          </div>
+        `).join("")
+      : `<div class="sales-console-inquiry-placeholder">No active commercial exception is visible in the linked chain.</div>`;
+
+    const relatedHtml = related.length
+      ? related.map((item) => `
+          <button class="sales-console-related-link" type="button" data-related-doctype="${escapeHtml(item.doctype)}" data-related-name="${escapeHtml(item.name)}">
+            ${escapeHtml(item.label || `${item.doctype} ${item.name}`)}
+          </button>
+        `).join("")
+      : `<div class="sales-console-inquiry-placeholder">No related documents are visible in the current read scope.</div>`;
+
+    $target.html(`
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Primary Match</div>
+        <div class="sales-console-inquiry-primary">
+          <div class="sales-console-inquiry-primary-head">
+            <div class="sales-console-inquiry-primary-label">${escapeHtml(primary.doctype || "Record")} ${escapeHtml(primary.name || "")}</div>
+            <span class="sales-console-badge review">${escapeHtml(primary.status || "Visible")}</span>
+          </div>
+          <div class="sales-console-inquiry-primary-meta">${escapeHtml(primary.customer || "Customer context not available")}</div>
+        </div>
+      </div>
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Customer Summary</div>
+        <div class="sales-console-inquiry-grid">
+          <div class="sales-console-inquiry-field">
+            <div class="sales-console-inquiry-field-label">Customer</div>
+            <div class="sales-console-inquiry-field-value">${escapeHtml(customer.name || primary.customer || "Unknown")}</div>
+          </div>
+          <div class="sales-console-inquiry-field">
+            <div class="sales-console-inquiry-field-label">Customer ID</div>
+            <div class="sales-console-inquiry-field-value">${escapeHtml(customer.customer_id || "--")}</div>
+          </div>
+          <div class="sales-console-inquiry-field">
+            <div class="sales-console-inquiry-field-label">Territory</div>
+            <div class="sales-console-inquiry-field-value">${escapeHtml(customer.territory || "Not set")}</div>
+          </div>
+          <div class="sales-console-inquiry-field">
+            <div class="sales-console-inquiry-field-label">Contact</div>
+            <div class="sales-console-inquiry-field-value">${escapeHtml(customer.contact || "Not available")}</div>
+          </div>
+          ${latestDocsHtml}
+        </div>
+      </div>
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Document Flow</div>
+        <div class="sales-console-inquiry-flow">${flowHtml}</div>
+      </div>
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Current Status</div>
+        <div class="sales-console-inquiry-list">${statusHtml}</div>
+      </div>
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Exceptions / Blockers</div>
+        <div class="sales-console-inquiry-list">${exceptionsHtml}</div>
+      </div>
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Related Documents</div>
+        <div class="sales-console-related-links">${relatedHtml}</div>
+      </div>
+    `).removeAttr("hidden");
+
+    $target.find("[data-related-doctype]").on("click", function () {
+      executeTarget({
+        kind: "form",
+        doctype: this.getAttribute("data-related-doctype"),
+        name: this.getAttribute("data-related-name"),
+      });
+    });
+  }
+
+  function renderInquiryChoices($target, result, runSearch) {
+    const choices = Array.isArray(result.choices) ? result.choices : [];
+    $target.html(`
+      <div class="sales-console-inquiry-block">
+        <div class="sales-console-inquiry-block-title">Possible Matches</div>
+        <div class="sales-console-inquiry-meta">${escapeHtml(result.message || "Choose the correct customer chain.")}</div>
+        <div class="sales-console-inquiry-choices">
+          ${choices.map((item) => `
+            <button class="sales-console-inquiry-choice" type="button" data-choice-name="${escapeHtml(item.name)}">
+              <div>${escapeHtml(item.label || item.name)}</div>
+              <div class="sales-console-inquiry-choice-meta">${escapeHtml(item.meta || item.doctype || "Customer")}</div>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    `).removeAttr("hidden");
+
+    $target.find("[data-choice-name]").on("click", function () {
+      runSearch(this.getAttribute("data-choice-name"));
+    });
+  }
+
+  async function runInquirySearch(pageState, $section, forcedQuery) {
+    const $input = $section.find("[data-inquiry-input]");
+    const $status = $section.find("[data-inquiry-status]");
+    const $result = $section.find("[data-inquiry-result]");
+    const query = String(forcedQuery != null ? forcedQuery : $input.val() || "").trim();
+
+    if (!query) {
+      renderInquiryPlaceholder($result, "Enter a customer, quotation, sales order, invoice, or delivery reference.");
+      $status.text("Waiting for inquiry input.");
+      return;
+    }
+
+    $status.text("Searching linked customer and document context...");
+    renderInquiryPlaceholder($result, "Resolving the commercial chain...");
+
+    try {
+      const response = await frappe.call({
+        method: INQUIRY_METHOD,
+        args: { query },
+      });
+      const result = response && response.message ? response.message : {};
+      pageState.inquiry = result;
+
+      if (result.state === "resolved") {
+        renderInquiryResult($result, result);
+        $status.text(`Showing linked result for ${query}.`);
+        return;
+      }
+
+      if (result.state === "multiple_matches") {
+        renderInquiryChoices($result, result, (choiceQuery) => runInquirySearch(pageState, $section, choiceQuery));
+        $status.text("Multiple customer matches found.");
+        return;
+      }
+
+      renderInquiryPlaceholder($result, result.message || "No inquiry result is available.");
+      $status.text(result.message || "No matching customer chain was found.");
+    } catch (error) {
+      renderInquiryPlaceholder($result, "Customer inquiry is not available right now.");
+      $status.text("Customer inquiry is temporarily unavailable.");
+    }
   }
 
   function iconMarkup(name) {
@@ -866,7 +1461,10 @@
   }
 
   function metricValueText(metric) {
-    if (!metric || metric.value == null) return "--";
+    if (!metric) return "--";
+    if (metric.state === "restricted") return "LOCK";
+    if (metric.state === "unavailable") return "N/A";
+    if (metric.value == null) return "--";
     return String(metric.value);
   }
 
@@ -882,6 +1480,9 @@
     }
     if (metric.state === "restricted") {
       return { text: "Restricted", className: "restricted" };
+    }
+    if (metric.state === "unavailable") {
+      return { text: "Unavailable", className: "pending" };
     }
     return { text: "Pending", className: "pending" };
   }
@@ -910,6 +1511,37 @@
     if (metric && metric.state !== "live" && metric.note) {
       $card.find('[data-role="meta"]').text(metric.note);
     }
+  }
+
+  function hydrateKnownMetrics($root, payload) {
+    const queueSources = {
+      sales_orders_pending_fulfillment: (payload.work || {}).sales_orders_pending_fulfillment,
+      quotations_waiting_action: (payload.work || {}).quotations_waiting_action,
+      expiring_quotations: (payload.work || {}).expiring_quotations,
+      customer_follow_up_tasks: (payload.work || {}).customer_follow_up_tasks,
+      orders_due_soon: (payload.lifecycle || {}).orders_due_soon,
+      partially_delivered_orders: (payload.lifecycle || {}).partially_delivered_orders,
+      invoices_outstanding: (payload.lifecycle || {}).invoices_outstanding,
+      sales_returns_in_progress: (payload.lifecycle || {}).sales_returns_in_progress,
+      orders_blocked_by_approval: (payload.blockers || {}).orders_blocked_by_approval,
+      quotations_awaiting_approval: (payload.blockers || {}).quotations_awaiting_approval,
+    };
+
+    Object.entries(queueSources).forEach(([key, metric]) => {
+      if (metric) {
+        applyQueueMetric($root, key, metric);
+      }
+    });
+
+    const insightSources = {
+      awaiting_approval: (payload.insights || {}).awaiting_approval,
+      open_orders: (payload.insights || {}).open_orders,
+    };
+    Object.entries(insightSources).forEach(([key, metric]) => {
+      if (metric) {
+        applyInsightMetric($root, key, metric);
+      }
+    });
   }
 
   function reorderChildren($container, order, attributeName) {
@@ -964,7 +1596,7 @@
       applyActionOrder($root, profile.action_order);
     }
     if (Array.isArray(profile.queue_order)) {
-      reorderChildren($root.find(".sales-console-queue-grid"), profile.queue_order, "data-queue-key");
+      reorderChildren($root.find('[data-section-grid="work"]'), profile.queue_order, "data-queue-key");
     }
 
     const hiddenActions = new Set(profile.hidden_actions || []);
@@ -973,6 +1605,17 @@
       const key = $element.attr("data-action-key");
       $element.toggle(!hiddenActions.has(key));
     });
+
+    const hiddenInsights = new Set(profile.hidden_insights || []);
+    const $kpiCards = $root.find("[data-insight-key]");
+    $kpiCards.each((_, element) => {
+      const $element = $(element);
+      const key = $element.attr("data-insight-key");
+      $element.toggle(!hiddenInsights.has(key));
+    });
+    const visibleInsightCount = $kpiCards.filter((_, element) => $(element).css("display") !== "none").length;
+    const $kpiGrid = $root.find(".sales-console-kpi-grid");
+    $kpiGrid.css("grid-template-columns", visibleInsightCount <= 1 ? "1fr" : "repeat(2, minmax(0, 1fr))");
 
     if (profile.section_notes) {
       Object.entries(profile.section_notes).forEach(([key, value]) => {
@@ -984,6 +1627,10 @@
       $root.find('[data-section="reports"]').hide();
     } else {
       $root.find('[data-section="reports"]').show();
+    }
+
+    if (Array.isArray(profile.section_order) && profile.section_order.length) {
+      reorderChildren($root.find(".sales-console-body"), profile.section_order, "data-section-key");
     }
   }
 
@@ -1004,6 +1651,7 @@
           <h3 class="sales-console-guide-heading">How to work here</h3>
           <ul class="sales-console-guide-list">
             <li>Start with the queue, especially blocked orders and active quotation follow-up.</li>
+            <li>Use Customer Inquiry before hunting across lists when a customer asks for status.</li>
             <li>Use the action row to create documents quickly without broad module browsing.</li>
             <li>Use reports after operational work is under control, not before.</li>
           </ul>
@@ -1100,13 +1748,27 @@
 
       applyUiProfile($root, payload.ui_profile || {});
 
-      Object.entries(payload.queues || {}).forEach(([key, metric]) => {
-        applyQueueMetric($root, key, metric);
+      [payload.work || {}, payload.lifecycle || {}, payload.blockers || {}, payload.queues || {}].forEach((group) => {
+        Object.entries(group).forEach(([key, metric]) => {
+          applyQueueMetric($root, key, metric);
+        });
       });
 
       Object.entries(payload.insights || {}).forEach(([key, metric]) => {
         applyInsightMetric($root, key, metric);
       });
+
+      hydrateKnownMetrics($root, payload);
+      window.setTimeout(() => hydrateKnownMetrics($root, payload), 30);
+
+      try {
+        const reportsCatalog = Array.isArray(payload.reports_catalog) && payload.reports_catalog.length
+          ? payload.reports_catalog
+          : fallbackReportCards(payload);
+        renderReportsSection($root, pageState, reportsCatalog);
+      } catch (reportError) {
+        $root.find('[data-section="reports"]').hide();
+      }
     } catch (error) {
       frappe.show_alert({
         message: __("Sales Console data is not available yet."),
@@ -1143,15 +1805,25 @@
     const $kpiGrid = $header.find(".sales-console-kpi-grid");
     $kpiGrid.append(
       makeInsightCard({
-        key: "quotations_awaiting_approval",
+        key: "awaiting_approval",
         label: "Awaiting Approval",
-        meta: "Quotation approval queue.",
-      }),
+        meta: "Quotations and orders waiting on approval.",
+      }).on("click", () => runNavigation(
+        pageState,
+        "insights",
+        "awaiting_approval",
+        () => routeToList("Quotation")
+      )),
       makeInsightCard({
         key: "open_orders",
         label: "Open Orders",
         meta: "Current order pipeline.",
-      })
+      }).on("click", () => runNavigation(
+        pageState,
+        "insights",
+        "open_orders",
+        () => routeToList("Sales Order")
+      ))
     );
 
     const $actionsSection = $(`
@@ -1176,7 +1848,12 @@
         meta: "Create a customer quotation",
         icon: "quotation",
         primary: true,
-        onClick: () => frappe.new_doc("Quotation"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "new_quotation",
+          () => frappe.new_doc("Quotation")
+        ),
       }),
       makeAction({
         key: "new_sales_order",
@@ -1184,7 +1861,12 @@
         meta: "Create a sales order",
         icon: "order",
         primary: true,
-        onClick: () => frappe.new_doc("Sales Order"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "new_sales_order",
+          () => frappe.new_doc("Sales Order")
+        ),
       }),
       makeAction({
         key: "open_customer",
@@ -1192,7 +1874,12 @@
         meta: "Jump into customer records",
         icon: "customer",
         primary: true,
-        onClick: () => routeToList("Customer"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "open_customer",
+          () => routeToList("Customer")
+        ),
       }),
     );
     $secondaryActions.append(
@@ -1201,88 +1888,244 @@
         title: "Opportunity",
         meta: "Open a new opportunity",
         icon: "opportunity",
-        onClick: () => frappe.new_doc("Opportunity"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "new_opportunity",
+          () => frappe.new_doc("Opportunity")
+        ),
       }),
       makeAction({
         key: "open_item",
         title: "Item",
         meta: "Open item records",
         icon: "item",
-        onClick: () => routeToList("Item"),
+        onClick: () => runNavigation(
+          pageState,
+          "actions",
+          "open_item",
+          () => routeToList("Item")
+        ),
       })
     );
 
     const $body = $('<div class="sales-console-body"></div>');
 
-    const $workSection = $(`
-      <section class="sales-console-card sales-console-section">
+    const $inquirySection = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="inquiry">
         <div class="sales-console-section-head">
-          <h2 class="sales-console-section-title">Sales Work Queue</h2>
-          <div class="sales-console-section-note" data-section-note="work">Blocker-first review and queue control</div>
+          <h2 class="sales-console-section-title">Customer Inquiry</h2>
+          <div class="sales-console-section-note" data-section-note="inquiry">Search once to answer customer questions across the full sales chain</div>
         </div>
-        <div class="sales-console-queue-grid"></div>
+        <div class="sales-console-inquiry">
+          <div class="sales-console-inquiry-shell">
+            <div class="sales-console-inquiry-intro">
+              <div class="sales-console-inquiry-title">Single-point customer and document lookup</div>
+              <p class="sales-console-inquiry-meta">Search by customer, quotation, sales order, invoice, or delivery note and trace the related commercial flow without opening multiple lists first.</p>
+            </div>
+            <div class="sales-console-inquiry-form">
+              <input class="sales-console-inquiry-input" data-inquiry-input type="text" placeholder="Customer, quotation, sales order, invoice, or delivery note" />
+              <button class="sales-console-inquiry-submit" type="button" data-inquiry-submit>Search</button>
+            </div>
+            <div class="sales-console-inquiry-status" data-inquiry-status>Waiting for inquiry input.</div>
+          </div>
+          <div class="sales-console-inquiry-result" data-inquiry-result hidden></div>
+        </div>
+      </section>
+    `);
+
+    $inquirySection.find("[data-inquiry-submit]").on("click", () => runInquirySearch(pageState, $inquirySection));
+    $inquirySection.find("[data-inquiry-input]").on("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runInquirySearch(pageState, $inquirySection);
+      }
+    });
+
+    const $workSection = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="work">
+        <div class="sales-console-section-head">
+          <h2 class="sales-console-section-title">My Sales Work</h2>
+          <div class="sales-console-section-note" data-section-note="work">Execution-first commercial queue</div>
+        </div>
+        <div class="sales-console-queue-grid" data-section-grid="work"></div>
       </section>
     `);
 
     const $queue = $workSection.find(".sales-console-queue-grid");
     $queue.append(
       makeQueueItem({
-        key: "orders_blocked_by_approval",
-        title: "Orders Blocked By Approval",
-        meta: "Commercial cases waiting for approval or exception handling.",
-        badgeClass: "blocker",
-        priority: true,
-        onClick: () => routeToList("Sales Order"),
-      }),
-      makeQueueItem({
         key: "sales_orders_pending_fulfillment",
         title: "Sales Orders Pending Fulfillment",
         meta: "Open orders still waiting on operational movement.",
         badgeClass: "review",
-        onClick: () => routeToList("Sales Order"),
+        sideLabel: "Open",
+        onClick: () => runNavigation(
+          pageState,
+          "work",
+          "sales_orders_pending_fulfillment",
+          () => routeToList("Sales Order")
+        ),
       }),
       makeQueueItem({
         key: "quotations_waiting_action",
         title: "Quotations Waiting For Action",
         meta: "Active quotations needing reply, revision, or follow-up.",
         badgeClass: "attention",
-        onClick: () => routeToList("Quotation"),
+        sideLabel: "Open",
+        onClick: () => runNavigation(
+          pageState,
+          "work",
+          "quotations_waiting_action",
+          () => routeToList("Quotation")
+        ),
       }),
       makeQueueItem({
         key: "expiring_quotations",
         title: "Open Quotations Nearing Expiry",
         meta: "Open quotations at risk of slipping out of cycle.",
         badgeClass: "attention",
-        onClick: () => routeToList("Quotation"),
+        sideLabel: "Due",
+        onClick: () => runNavigation(
+          pageState,
+          "work",
+          "expiring_quotations",
+          () => routeToList("Quotation")
+        ),
       }),
       makeQueueItem({
         key: "customer_follow_up_tasks",
         title: "Customer Follow-Up Tasks",
         meta: "Promised callbacks and overdue commercial follow-up.",
         badgeClass: "attention",
-        onClick: () => routeToList("ToDo"),
+        sideLabel: "Open",
+        onClick: () => runNavigation(
+          pageState,
+          "work",
+          "customer_follow_up_tasks",
+          () => routeToList("ToDo")
+        ),
+      })
+    );
+
+    const $lifecycleSection = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="lifecycle">
+        <div class="sales-console-section-head">
+          <h2 class="sales-console-section-title">Customer Lifecycle Visibility</h2>
+          <div class="sales-console-section-note" data-section-note="lifecycle">Delivery, invoice, and return visibility for customer response</div>
+        </div>
+        <div class="sales-console-queue-grid" data-section-grid="lifecycle"></div>
+      </section>
+    `);
+
+    const $lifecycleGrid = $lifecycleSection.find(".sales-console-queue-grid");
+    $lifecycleGrid.append(
+      makeQueueItem({
+        key: "orders_due_soon",
+        title: "Orders Due Soon",
+        meta: "Confirmed orders with delivery commitments coming up soon.",
+        badgeClass: "review",
+        sideLabel: "Due Soon",
+        onClick: () => runNavigation(
+          pageState,
+          "lifecycle",
+          "orders_due_soon",
+          () => routeToList("Sales Order")
+        ),
+      }),
+      makeQueueItem({
+        key: "partially_delivered_orders",
+        title: "Partially Delivered Orders",
+        meta: "Orders already moving, but not yet fully delivered.",
+        badgeClass: "review",
+        sideLabel: "Open",
+        onClick: () => runNavigation(
+          pageState,
+          "lifecycle",
+          "partially_delivered_orders",
+          () => routeToList("Sales Order")
+        ),
+      }),
+      makeQueueItem({
+        key: "invoices_outstanding",
+        title: "Invoices Outstanding",
+        meta: "Customer-facing invoice follow-up still requiring settlement.",
+        badgeClass: "attention",
+        sideLabel: "Open",
+        onClick: () => runNavigation(
+          pageState,
+          "lifecycle",
+          "invoices_outstanding",
+          () => routeToList("Sales Invoice")
+        ),
+      }),
+      makeQueueItem({
+        key: "sales_returns_in_progress",
+        title: "Sales Returns In Progress",
+        meta: "Return situations still affecting customer communication.",
+        badgeClass: "attention",
+        sideLabel: "Active",
+        onClick: () => runNavigation(
+          pageState,
+          "lifecycle",
+          "sales_returns_in_progress",
+          () => routeToList("Delivery Note")
+        ),
+      })
+    );
+
+    const $approvalsSection = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="approvals">
+        <div class="sales-console-section-head">
+          <h2 class="sales-console-section-title">Approvals / Blockers</h2>
+          <div class="sales-console-section-note" data-section-note="approvals">Approval and exception visibility without leaving sales context</div>
+        </div>
+        <div class="sales-console-queue-grid" data-section-grid="approvals"></div>
+      </section>
+    `);
+
+    const $approvalsGrid = $approvalsSection.find(".sales-console-queue-grid");
+    $approvalsGrid.append(
+      makeQueueItem({
+        key: "orders_blocked_by_approval",
+        title: "Orders Blocked By Approval",
+        meta: "Commercial cases waiting for approval or exception handling.",
+        badgeClass: "blocker",
+        priority: true,
+        sideLabel: "Pending",
+        onClick: () => runNavigation(
+          pageState,
+          "blockers",
+          "orders_blocked_by_approval",
+          () => routeToList("Sales Order")
+        ),
+      }),
+      makeQueueItem({
+        key: "quotations_awaiting_approval",
+        title: "Quotations Awaiting Approval",
+        meta: "Quotations currently waiting on manager or executive approval.",
+        badgeClass: "blocker",
+        sideLabel: "Pending",
+        onClick: () => runNavigation(
+          pageState,
+          "blockers",
+          "quotations_awaiting_approval",
+          () => routeToList("Quotation")
+        ),
       })
     );
 
     const $reportsSection = $(`
-      <section class="sales-console-card sales-console-section" data-section="reports">
+      <section class="sales-console-card sales-console-section" data-section="reports" data-section-key="reports">
         <div class="sales-console-section-head">
           <h2 class="sales-console-section-title">Reports And Review</h2>
-          <div class="sales-console-section-note" data-section-note="reports">Management review and exception follow-up</div>
+          <div class="sales-console-section-note" data-section-note="reports">Truthful review targets from the live ERP</div>
         </div>
         <div class="sales-console-report-links"></div>
       </section>
     `);
 
-    const $reportLinks = $reportsSection.find(".sales-console-report-links");
-    $reportLinks.append(
-      makeReportLink("Sales Analytics", "Management and performance review", "chart", () => routeToReport("Sales Analytics")),
-      makeReportLink("Customer-wise Sales History", "Account-level sales history", "customer", () => routeToReport("Customer-wise Sales History")),
-      makeReportLink("Item-wise Sales Register", "Item-level review", "item", () => routeToReport("Item-wise Sales Register")),
-      makeReportLink("Open Orders", "Review active order pipeline", "order", () => routeToList("Sales Order"))
-    );
-
-    $body.append($workSection, $reportsSection);
+    $body.append($inquirySection, $workSection, $lifecycleSection, $approvalsSection, $reportsSection);
     $root.append($header, $actionsSection, $body);
     $(page.body).empty().append($root);
 
