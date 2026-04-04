@@ -11,11 +11,6 @@ from ai_assistant_ui.qwen_chat.capability_adapters import (
 	supports_local_followup_mode,
 )
 from ai_assistant_ui.qwen_chat.erp_metadata_discovery import get_report_surface_summary
-from ai_assistant_ui.qwen_chat.followup_interpreter import (
-	detect_followup_intent,
-	is_million_transform_intent as _is_million_transform_intent,
-	is_self_contained_business_request as _is_self_contained_business_request,
-)
 from ai_assistant_ui.qwen_chat.metadata import (
 	all_ontology_concepts,
 	capability_default_report_name,
@@ -79,14 +74,6 @@ def detect_explicit_analysis_request(text: str) -> bool:
 			value,
 		)
 	)
-
-
-def is_million_transform_request(message: str) -> bool:
-	return _is_million_transform_intent(message)
-
-def is_self_contained_business_request(message: str) -> bool:
-	return _is_self_contained_business_request(message)
-
 
 @dataclass(frozen=True)
 class InteractionContract:
@@ -283,6 +270,108 @@ class ClarificationResolutionContract:
 			"resolved_slot": dict(self.resolved_slot),
 			"clarification_attempt_count": int(max(0, self.clarification_attempt_count)),
 			"is_final_attempt": bool(self.is_final_attempt),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class SemanticResolutionContract:
+	request_id: str
+	session_id: str
+	intent_class: str
+	primary_business_area: str
+	resolved_slots: Dict[str, str]
+	slot_confidence: Dict[str, float]
+	candidate_family_ids: List[str]
+	candidate_capability_ids: List[str]
+	candidate_reports: List[str]
+	ambiguity_flags: List[str]
+	ambiguity_reason: str
+	resolution_source: Dict[str, str]
+	governed_decision: str
+	governed_reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_semantic_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"intent_class": self.intent_class,
+			"primary_business_area": self.primary_business_area,
+			"resolved_slots": {
+				str(key): str(value)
+				for key, value in dict(self.resolved_slots).items()
+				if str(key or "").strip()
+			},
+			"slot_confidence": {
+				str(key): float(value)
+				for key, value in dict(self.slot_confidence).items()
+				if str(key or "").strip()
+			},
+			"candidate_family_ids": [
+				str(value) for value in list(self.candidate_family_ids) if str(value or "").strip()
+			],
+			"candidate_capability_ids": [
+				str(value) for value in list(self.candidate_capability_ids) if str(value or "").strip()
+			],
+			"candidate_reports": [
+				str(value) for value in list(self.candidate_reports) if str(value or "").strip()
+			],
+			"ambiguity_flags": [
+				str(value) for value in list(self.ambiguity_flags) if str(value or "").strip()
+			],
+			"ambiguity_reason": self.ambiguity_reason,
+			"resolution_source": {
+				str(key): str(value)
+				for key, value in dict(self.resolution_source).items()
+				if str(key or "").strip()
+			},
+			"governed_decision": self.governed_decision,
+			"governed_reason": self.governed_reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class FinancialSummaryResolutionContract:
+	request_id: str
+	session_id: str
+	intent_class: str
+	resolved_summary_domains: List[str]
+	resolved_summary_focus: str
+	resolved_summary_metric_family: str
+	resolved_summary_grain: str
+	resolved_time_scope: str
+	decision: str
+	target_intent_class: str
+	target_composite_plan_id: str
+	ambiguity_flags: List[str]
+	ambiguity_reason: str
+	decision_reason: str
+	candidate_capability_ids: List[str]
+	candidate_reports: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_financial_summary_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"intent_class": self.intent_class,
+			"resolved_summary_domains": list(self.resolved_summary_domains),
+			"resolved_summary_focus": self.resolved_summary_focus,
+			"resolved_summary_metric_family": self.resolved_summary_metric_family,
+			"resolved_summary_grain": self.resolved_summary_grain,
+			"resolved_time_scope": self.resolved_time_scope,
+			"decision": self.decision,
+			"target_intent_class": self.target_intent_class,
+			"target_composite_plan_id": self.target_composite_plan_id,
+			"ambiguity_flags": list(self.ambiguity_flags),
+			"ambiguity_reason": self.ambiguity_reason,
+			"decision_reason": self.decision_reason,
+			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"candidate_reports": list(self.candidate_reports),
 			"created_at": _utc_now(),
 		}
 
@@ -527,6 +616,7 @@ class FreshQueryInterpretationContract:
 	ambiguity_flags: List[str]
 	ambiguity_reason: str
 	confidence: float
+	target_limit: int = 0
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -540,6 +630,7 @@ class FreshQueryInterpretationContract:
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
 			"requested_time_scope": self.requested_time_scope,
+			"target_limit": int(max(0, self.target_limit or 0)),
 			"requested_presentation": list(self.requested_presentation),
 			"extracted_slots": dict(self.extracted_slots),
 			"ambiguity_flags": list(self.ambiguity_flags),
@@ -563,13 +654,15 @@ class FreshQueryCompilerContract:
 	decision: str
 	clarification_required: bool
 	compiler_reason: str
+	governed_resolution_details: Dict[str, Any]
 	clarification_reason_type: str
 	clarification_details: Dict[str, Any]
+	target_limit: int = 0
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
 			"type": "qwen_fresh_query_compiler_contract",
-			"contract_version": "1.0",
+			"contract_version": "1.1",
 			"request_id": self.request_id,
 			"session_id": self.session_id,
 			"capability_id": self.capability_id,
@@ -579,13 +672,15 @@ class FreshQueryCompilerContract:
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
 			"requested_time_scope": self.requested_time_scope,
-				"decision": self.decision,
-				"clarification_required": self.clarification_required,
-				"compiler_reason": self.compiler_reason,
-				"clarification_reason_type": self.clarification_reason_type,
-				"clarification_details": dict(self.clarification_details),
-				"created_at": _utc_now(),
-			}
+			"target_limit": int(max(0, self.target_limit or 0)),
+			"decision": self.decision,
+			"clarification_required": self.clarification_required,
+			"compiler_reason": self.compiler_reason,
+			"governed_resolution_details": dict(self.governed_resolution_details),
+			"clarification_reason_type": self.clarification_reason_type,
+			"clarification_details": dict(self.clarification_details),
+			"created_at": _utc_now(),
+		}
 
 
 @dataclass(frozen=True)
@@ -597,6 +692,7 @@ class CompiledQueryRequestContract:
 	requested_dimensions: List[str]
 	requested_metrics: List[str]
 	response_policy: Dict[str, Any]
+	target_limit: int = 0
 	mode: str = "compiled_read_query"
 
 	def to_payload(self) -> Dict[str, Any]:
@@ -610,6 +706,7 @@ class CompiledQueryRequestContract:
 			"filters": dict(self.filters),
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
+			"target_limit": int(max(0, self.target_limit or 0)),
 			"response_policy": dict(self.response_policy),
 			"created_at": _utc_now(),
 		}
@@ -919,6 +1016,81 @@ def build_followup_resolution_contract(
 	)
 
 
+def build_followup_boundary_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	source_family_id: str = "",
+	source_report_name: str = "",
+	grounded_context_domains: List[str] | None = None,
+	requested_domains: List[str] | None = None,
+	structured_followup_modes: List[str] | None = None,
+	structured_business_signals_present: bool = False,
+	grounded_followup_supported: bool = False,
+	self_contained_signal: bool = False,
+	contradictory_payload: bool = False,
+	degraded_message_fallback_allowed: bool = False,
+	degraded_message_fallback_used: bool = False,
+	out_of_scope_signal: bool = False,
+	primary_domain: str = "",
+	domain_affinity: str = "unknown",
+	recommended_boundary_decision: str = "fail_closed_to_reasoning",
+	decision_reason: str = "",
+	resolution_source: Dict[str, str] | None = None,
+) -> FollowUpBoundaryContract:
+	allowed_affinity = {"same_domain", "partial_overlap", "disjoint", "unknown"}
+	allowed_decisions = {"stay_grounded", "force_fresh_query", "fail_closed_to_reasoning"}
+	clean_affinity = str(domain_affinity or "unknown").strip() or "unknown"
+	if clean_affinity not in allowed_affinity:
+		clean_affinity = "unknown"
+	clean_decision = str(recommended_boundary_decision or "fail_closed_to_reasoning").strip() or "fail_closed_to_reasoning"
+	if clean_decision not in allowed_decisions:
+		clean_decision = "fail_closed_to_reasoning"
+	return FollowUpBoundaryContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		source_family_id=str(source_family_id or "").strip(),
+		source_report_name=str(source_report_name or "").strip(),
+		grounded_context_domains=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (grounded_context_domains or [])
+				if str(value or "").strip()
+			)
+		),
+		requested_domains=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (requested_domains or [])
+				if str(value or "").strip()
+			)
+		),
+		structured_followup_modes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (structured_followup_modes or [])
+				if str(value or "").strip()
+			)
+		),
+		structured_business_signals_present=bool(structured_business_signals_present),
+		grounded_followup_supported=bool(grounded_followup_supported),
+		self_contained_signal=bool(self_contained_signal),
+		contradictory_payload=bool(contradictory_payload),
+		degraded_message_fallback_allowed=bool(degraded_message_fallback_allowed),
+		degraded_message_fallback_used=bool(degraded_message_fallback_used),
+		out_of_scope_signal=bool(out_of_scope_signal),
+		primary_domain=str(primary_domain or "").strip(),
+		domain_affinity=clean_affinity,
+		recommended_boundary_decision=clean_decision,
+		decision_reason=str(decision_reason or "").strip(),
+		resolution_source={
+			str(key): str(value)
+			for key, value in dict(resolution_source or {}).items()
+			if str(key or "").strip()
+		},
+	)
+
+
 def clone_followup_resolution(
 	resolution: FollowUpResolution,
 	*,
@@ -1073,6 +1245,59 @@ class GroundedTurnContext:
 			"artifact_source_reports": list(self.artifact_source_reports or []),
 			"known_entities": [dict(item) for item in (self.known_entities or []) if isinstance(item, dict)],
 			"known_documents": [str(item or "").strip() for item in (self.known_documents or []) if str(item or "").strip()],
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class FollowUpBoundaryContract:
+	request_id: str
+	session_id: str
+	source_family_id: str
+	source_report_name: str
+	grounded_context_domains: List[str]
+	requested_domains: List[str]
+	structured_followup_modes: List[str]
+	structured_business_signals_present: bool
+	grounded_followup_supported: bool
+	self_contained_signal: bool
+	contradictory_payload: bool
+	degraded_message_fallback_allowed: bool
+	degraded_message_fallback_used: bool
+	out_of_scope_signal: bool
+	primary_domain: str
+	domain_affinity: str
+	recommended_boundary_decision: str
+	decision_reason: str
+	resolution_source: Dict[str, str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_followup_boundary_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"source_family_id": self.source_family_id,
+			"source_report_name": self.source_report_name,
+			"grounded_context_domains": list(self.grounded_context_domains),
+			"requested_domains": list(self.requested_domains),
+			"structured_followup_modes": list(self.structured_followup_modes),
+			"structured_business_signals_present": bool(self.structured_business_signals_present),
+			"grounded_followup_supported": bool(self.grounded_followup_supported),
+			"self_contained_signal": bool(self.self_contained_signal),
+			"contradictory_payload": bool(self.contradictory_payload),
+			"degraded_message_fallback_allowed": bool(self.degraded_message_fallback_allowed),
+			"degraded_message_fallback_used": bool(self.degraded_message_fallback_used),
+			"out_of_scope_signal": bool(self.out_of_scope_signal),
+			"primary_domain": str(self.primary_domain or "").strip(),
+			"domain_affinity": self.domain_affinity,
+			"recommended_boundary_decision": self.recommended_boundary_decision,
+			"decision_reason": self.decision_reason,
+			"resolution_source": {
+				str(key): str(value)
+				for key, value in dict(self.resolution_source).items()
+				if str(key or "").strip()
+			},
 			"created_at": _utc_now(),
 		}
 
@@ -1367,6 +1592,7 @@ class CompiledExecutionAuditContract:
 	execution_mode: str
 	compiler_decision: str
 	compiler_reason: str
+	governed_resolution_details: Dict[str, Any]
 	capability_id: str
 	selected_report: str
 	governed_family_id: str
@@ -1394,12 +1620,13 @@ class CompiledExecutionAuditContract:
 	def to_payload(self) -> Dict[str, Any]:
 		return {
 			"type": "qwen_compiled_execution_audit_contract",
-			"contract_version": "1.0",
+			"contract_version": "1.1",
 			"request_id": self.request_id,
 			"session_id": self.session_id,
 			"execution_mode": self.execution_mode,
 			"compiler_decision": self.compiler_decision,
 			"compiler_reason": self.compiler_reason,
+			"governed_resolution_details": dict(self.governed_resolution_details),
 			"capability_id": self.capability_id,
 			"selected_report": self.selected_report,
 			"governed_family_id": self.governed_family_id,
@@ -1515,7 +1742,7 @@ def translate_front_door_intent_gate_contract(
 		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new governed query.",
 		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new governed query.",
 		"closure_signoff": "Understood. Feel free to come back anytime, and we can pick up from a new ERP question or continue from there.",
-		"low_signal_non_business": "I’m ready when you want to continue with an ERP question or follow-up.",
+		"low_signal_non_business": "That request is outside this ERP/business assistant. I’m ready when you want to return to the current ERP analysis or continue with an ERP question or follow-up.",
 		"route_onward": "",
 	}
 	return {
@@ -2006,6 +2233,7 @@ def build_fresh_query_interpretation_contract(
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
 	requested_time_scope: str = "",
+	target_limit: int = 0,
 	requested_presentation: List[str] | None = None,
 	extracted_slots: Dict[str, Any] | None = None,
 	ambiguity_flags: List[str] | None = None,
@@ -2021,6 +2249,7 @@ def build_fresh_query_interpretation_contract(
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
 		requested_time_scope=str(requested_time_scope or "").strip(),
+		target_limit=int(max(0, target_limit or 0)),
 		requested_presentation=[str(x or "").strip() for x in (requested_presentation or []) if str(x or "").strip()],
 		extracted_slots=dict(extracted_slots or {}),
 		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
@@ -2040,9 +2269,11 @@ def build_fresh_query_compiler_contract(
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
 	requested_time_scope: str = "",
+	target_limit: int = 0,
 	decision: str = "clarify",
 	clarification_required: bool = False,
 	compiler_reason: str = "",
+	governed_resolution_details: Dict[str, Any] | None = None,
 	clarification_reason_type: str = "",
 	clarification_details: Dict[str, Any] | None = None,
 ) -> FreshQueryCompilerContract:
@@ -2056,9 +2287,11 @@ def build_fresh_query_compiler_contract(
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
 		requested_time_scope=str(requested_time_scope or "").strip(),
+		target_limit=int(max(0, target_limit or 0)),
 		decision=str(decision or "clarify").strip(),
 		clarification_required=bool(clarification_required),
 		compiler_reason=str(compiler_reason or "").strip(),
+		governed_resolution_details=dict(governed_resolution_details or {}),
 		clarification_reason_type=str(clarification_reason_type or "").strip(),
 		clarification_details=dict(clarification_details or {}),
 	)
@@ -2072,6 +2305,7 @@ def build_compiled_query_request_contract(
 	filters: Dict[str, Any] | None = None,
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
+	target_limit: int = 0,
 	response_policy: Dict[str, Any] | None = None,
 ) -> CompiledQueryRequestContract:
 	return CompiledQueryRequestContract(
@@ -2081,7 +2315,47 @@ def build_compiled_query_request_contract(
 		filters=dict(filters or {}),
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
+		target_limit=int(max(0, target_limit or 0)),
 		response_policy=dict(response_policy or {}),
+	)
+
+
+def build_financial_summary_resolution_contract(
+	*,
+	request_id: str,
+	session_id: str,
+	intent_class: str = "financial_summary",
+	resolved_summary_domains: List[str] | None = None,
+	resolved_summary_focus: str = "",
+	resolved_summary_metric_family: str = "",
+	resolved_summary_grain: str = "",
+	resolved_time_scope: str = "",
+	decision: str = "clarify",
+	target_intent_class: str = "",
+	target_composite_plan_id: str = "",
+	ambiguity_flags: List[str] | None = None,
+	ambiguity_reason: str = "",
+	decision_reason: str = "",
+	candidate_capability_ids: List[str] | None = None,
+	candidate_reports: List[str] | None = None,
+) -> FinancialSummaryResolutionContract:
+	return FinancialSummaryResolutionContract(
+		request_id=str(request_id or "").strip(),
+		session_id=str(session_id or "").strip(),
+		intent_class=str(intent_class or "financial_summary").strip() or "financial_summary",
+		resolved_summary_domains=[str(x or "").strip() for x in (resolved_summary_domains or []) if str(x or "").strip()],
+		resolved_summary_focus=str(resolved_summary_focus or "").strip(),
+		resolved_summary_metric_family=str(resolved_summary_metric_family or "").strip(),
+		resolved_summary_grain=str(resolved_summary_grain or "").strip(),
+		resolved_time_scope=str(resolved_time_scope or "").strip(),
+		decision=str(decision or "clarify").strip() or "clarify",
+		target_intent_class=str(target_intent_class or "").strip(),
+		target_composite_plan_id=str(target_composite_plan_id or "").strip(),
+		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
+		ambiguity_reason=str(ambiguity_reason or "").strip(),
+		decision_reason=str(decision_reason or "").strip(),
+		candidate_capability_ids=[str(x or "").strip() for x in (candidate_capability_ids or []) if str(x or "").strip()],
+		candidate_reports=[str(x or "").strip() for x in (candidate_reports or []) if str(x or "").strip()],
 	)
 
 
@@ -2309,6 +2583,7 @@ def build_compiled_execution_audit_contract(
 	execution_mode: str = "compiled_first_turn",
 	compiler_decision: str = "",
 	compiler_reason: str = "",
+	governed_resolution_details: Dict[str, Any] | None = None,
 	capability_id: str = "",
 	selected_report: str = "",
 	governed_family_id: str = "",
@@ -2339,6 +2614,7 @@ def build_compiled_execution_audit_contract(
 		execution_mode=str(execution_mode or "compiled_first_turn").strip(),
 		compiler_decision=str(compiler_decision or "").strip(),
 		compiler_reason=str(compiler_reason or "").strip(),
+		governed_resolution_details=dict(governed_resolution_details or {}),
 		capability_id=str(capability_id or "").strip(),
 		selected_report=str(selected_report or "").strip(),
 		governed_family_id=str(governed_family_id or "").strip(),
@@ -3361,7 +3637,6 @@ def build_followup_resolution(
 	allow_heuristic_fallback: bool = True,
 	degraded_reason: str = "",
 ) -> FollowUpResolution:
-	use_heuristic_compatibility = bool(semantic_intent is None or allow_heuristic_fallback)
 	if semantic_intent is not None:
 		requested_modes = [
 			"column_refinement" if str(mode or "").strip() == "column_projection" else str(mode or "").strip()
@@ -3381,18 +3656,6 @@ def build_followup_resolution(
 		target_capability_id = str(getattr(semantic_intent, "target_capability_id", "") or "").strip()
 		self_contained = bool(getattr(semantic_intent, "self_contained", False))
 		semantic_reason = str(getattr(semantic_intent, "reason", "") or "").strip()
-	elif allow_heuristic_fallback:
-		intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
-		requested_modes = intent.requested_modes
-		target_dimension = intent.target_dimension
-		target_limit = intent.target_limit
-		sort_direction = intent.sort_direction
-		target_metric = intent.target_metric
-		requested_columns = list(intent.requested_columns or [])
-		requested_time_scope = intent.requested_time_scope
-		target_capability_id = ""
-		self_contained = _is_self_contained_business_request(message, grounded_turn=latest_grounded_turn, intent=intent)
-		semantic_reason = ""
 	else:
 		requested_modes = []
 		target_dimension = ""
@@ -3404,85 +3667,9 @@ def build_followup_resolution(
 		target_capability_id = ""
 		self_contained = False
 		semantic_reason = ""
-	compatibility_intent = detect_followup_intent(message, grounded_turn=latest_grounded_turn)
-	if "column_refinement" in requested_modes and not requested_columns:
-		requested_columns = [
-			str(value or "").strip()
-			for value in (getattr(compatibility_intent, "requested_columns", []) or [])
-			if str(value or "").strip()
-		]
-	compatibility_sort_direction = str(getattr(compatibility_intent, "sort_direction", "") or "").strip()
-	if "sort_or_limit" in requested_modes and compatibility_sort_direction:
-		sort_direction = compatibility_sort_direction
-	if "sort_or_limit" in requested_modes and not target_limit:
-		target_limit = int(max(0, getattr(compatibility_intent, "target_limit", 0) or 0))
 	presentation_only_request = bool(set(requested_modes).intersection({"presentation_transform", "table_presentation", "bullet_presentation"})) and set(
 		str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()
 	).issubset({"presentation_transform", "table_presentation", "bullet_presentation"})
-	if presentation_only_request:
-		compatibility_dimension = str(getattr(compatibility_intent, "target_dimension", "") or "").strip()
-		compatibility_limit = int(max(0, getattr(compatibility_intent, "target_limit", 0) or 0))
-		compatibility_sort = str(getattr(compatibility_intent, "sort_direction", "") or "").strip()
-		compatibility_metric = str(getattr(compatibility_intent, "target_metric", "") or "").strip()
-		if not compatibility_dimension:
-			target_dimension = ""
-		if not compatibility_limit:
-			target_limit = 0
-		if not compatibility_sort:
-			sort_direction = ""
-		if not compatibility_metric and not requested_columns:
-			target_metric = ""
-	if use_heuristic_compatibility:
-		heuristic_intent = compatibility_intent
-		heuristic_self_contained = _is_self_contained_business_request(
-			message,
-			grounded_turn=latest_grounded_turn,
-			intent=heuristic_intent,
-		)
-		heuristic_local_refinement = bool(
-			set(getattr(heuristic_intent, "requested_modes", []) or []).intersection(
-				{
-					"presentation_transform",
-					"table_presentation",
-					"sort_or_limit",
-					"metric_refinement",
-					"column_refinement",
-					"time_scope_restatement",
-				}
-			)
-		)
-		if heuristic_local_refinement and not heuristic_self_contained:
-			self_contained = False
-			requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "new_query"]
-			if not target_dimension:
-				target_dimension = str(getattr(heuristic_intent, "target_dimension", "") or "").strip()
-			if not target_limit:
-				target_limit = int(max(0, getattr(heuristic_intent, "target_limit", 0) or 0))
-			if not sort_direction:
-				sort_direction = str(getattr(heuristic_intent, "sort_direction", "") or "").strip()
-		self_contained = bool(self_contained or heuristic_self_contained)
-		if not target_metric:
-			target_metric = str(getattr(heuristic_intent, "target_metric", "") or "").strip()
-		if not requested_columns:
-			requested_columns = [
-				str(value or "").strip()
-				for value in (getattr(heuristic_intent, "requested_columns", []) or [])
-				if str(value or "").strip()
-			]
-		if not requested_time_scope:
-			requested_time_scope = str(getattr(heuristic_intent, "requested_time_scope", "") or "").strip()
-		for mode in getattr(heuristic_intent, "requested_modes", []) or []:
-			clean_mode = str(mode or "").strip()
-			if clean_mode and clean_mode not in requested_modes and clean_mode in {
-				"presentation_transform",
-				"table_presentation",
-				"bullet_presentation",
-				"sort_or_limit",
-				"metric_refinement",
-				"column_refinement",
-				"time_scope_restatement",
-			}:
-				requested_modes.append(clean_mode)
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
 	local_grounded_modes = {
 		"presentation_transform",

@@ -1,0 +1,370 @@
+from __future__ import annotations
+
+import datetime as dt
+import time
+from typing import Any, Callable, Dict, List, Tuple
+
+from ai_assistant_ui.qwen_chat.contracts import build_clarification_reason_contract_from_sources
+
+
+def compiled_clarification_reason_contract(*, request_id: str, result: Dict[str, Any]):
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+	semantic = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
+	return build_clarification_reason_contract_from_sources(
+		request_id=request_id,
+		compiler_reason=str(compiler.get("compiler_reason") or "").strip(),
+		compiler_reason_type=str(compiler.get("clarification_reason_type") or "").strip(),
+		compiler_details=compiler.get("clarification_details") if isinstance(compiler.get("clarification_details"), dict) else {},
+		family_validation=family_validation,
+		semantic_validation=semantic,
+	)
+
+
+def append_compiled_attempt_artifacts(
+	session_doc,
+	result: Dict[str, Any],
+	*,
+	append_tool_payload: Callable[..., None],
+) -> None:
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	normalized_family_artifact = result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {}
+	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
+	narrative_response = result.get("narrative_response") if isinstance(result.get("narrative_response"), dict) else {}
+	composite_family_artifacts = result.get("composite_family_artifacts") if isinstance(result.get("composite_family_artifacts"), list) else []
+	composite_step_validations = result.get("composite_step_validations") if isinstance(result.get("composite_step_validations"), list) else []
+	composite_validation = result.get("composite_validation") if isinstance(result.get("composite_validation"), dict) else {}
+	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
+	compiled_audit = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
+	composite_execution_audit = result.get("composite_execution_audit") if isinstance(result.get("composite_execution_audit"), dict) else {}
+	for key in ("fresh_query_interpretation", "fresh_query_compiler", "compiled_query_request", "composite_read_plan"):
+		payload = pipeline.get(key)
+		if isinstance(payload, dict) and payload:
+			append_tool_payload(session_doc, payload)
+	if normalized_family_artifact:
+		append_tool_payload(session_doc, normalized_family_artifact)
+	if rendered_response:
+		append_tool_payload(session_doc, rendered_response)
+	if narrative_response:
+		append_tool_payload(session_doc, narrative_response)
+	for payload in composite_family_artifacts:
+		if isinstance(payload, dict) and payload:
+			append_tool_payload(session_doc, payload)
+	for payload in composite_step_validations:
+		if isinstance(payload, dict) and payload:
+			append_tool_payload(session_doc, payload)
+	if composite_validation:
+		append_tool_payload(session_doc, composite_validation)
+	if family_validation and str(family_validation.get("type") or "").strip():
+		append_tool_payload(session_doc, family_validation)
+	if semantic_payload:
+		append_tool_payload(session_doc, semantic_payload)
+	if compiled_audit:
+		append_tool_payload(session_doc, compiled_audit)
+	if composite_execution_audit:
+		append_tool_payload(session_doc, composite_execution_audit)
+
+
+def compiled_rollout_fallback_reason(result: Dict[str, Any]) -> str:
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	interpretation = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	status = str(interpretation.get("status") or "").strip()
+	if status == "runtime_error":
+		return "proposal_runtime_error"
+	if status == "invalid_response":
+		return "proposal_invalid_response"
+	if status == "low_confidence":
+		return "proposal_low_confidence"
+	if status == "validation_error":
+		return "proposal_validation_error"
+	if status == "rejected":
+		return "proposal_rejected"
+	return ""
+
+
+def compiled_rollout_fallback_payload(*, request_id: str, result: Dict[str, Any], reason: str) -> Dict[str, Any]:
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+	interpretation_payload = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	interpretation_contract = (
+		interpretation_payload.get("interpretation")
+		if isinstance(interpretation_payload.get("interpretation"), dict)
+		else {}
+	)
+	compiled_audit = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
+	return {
+		"type": "qwen_compiled_rollout_fallback",
+		"request_id": str(request_id or "").strip(),
+		"reason": str(reason or "").strip(),
+		"interpretation_intent_class": str(interpretation_contract.get("intent_class") or "").strip(),
+		"compiler_decision": str(compiler.get("decision") or "").strip(),
+		"compiler_reason": str(compiler.get("compiler_reason") or "").strip(),
+		"semantic_validation_status": str(
+			(
+				result.get("semantic_intent_validation")
+				if isinstance(result.get("semantic_intent_validation"), dict)
+				else {}
+			).get("status")
+			or ""
+		).strip(),
+		"compiled_audit_request_id": str(compiled_audit.get("request_id") or "").strip(),
+		"created_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
+	}
+
+
+def compiled_rollout_fallback_eligible(result: Dict[str, Any]) -> bool:
+	reason = compiled_rollout_fallback_reason(result)
+	if not reason:
+		return False
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+	decision = str(compiler.get("decision") or "").strip()
+	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
+	semantic_status = str(semantic_payload.get("status") or "").strip()
+	if semantic_status == "pass":
+		return False
+	return decision not in {"clarify", "reject"} and semantic_status not in {"clarify", "reject_semantically_inconsistent"}
+
+
+def compiled_decision_message(
+	*,
+	request_id: str,
+	raw_message: str,
+	result: Dict[str, Any],
+	build_known_unsupported_scope_decision_input,
+	translate_clarification_signal,
+	out_of_scope_answer,
+	is_generic_compiled_failure_answer,
+	safe_runtime_failure_message,
+) -> Tuple[str, Dict[str, Any]]:
+	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
+	compiler = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+	decision = str(compiler.get("decision") or "").strip()
+	reason = str(compiler.get("compiler_reason") or "").strip()
+	reason_type = str(compiler.get("clarification_reason_type") or "").strip()
+	reason_details = compiler.get("clarification_details") if isinstance(compiler.get("clarification_details"), dict) else {}
+	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
+	narrative_response = result.get("narrative_response") if isinstance(result.get("narrative_response"), dict) else {}
+	family_validation = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+	family_status = str(family_validation.get("status") or "").strip()
+	family_errors = family_validation.get("errors") if isinstance(family_validation.get("errors"), list) else []
+	semantic = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
+	semantic_status = str(semantic.get("status") or "").strip()
+	semantic_errors = semantic.get("errors") if isinstance(semantic.get("errors"), list) else []
+	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
+	runtime_error = str(runtime_payload.get("error") or "").strip()
+	runtime_answer = str(runtime_payload.get("answer_text") or "").strip()
+	unsupported_decision = build_known_unsupported_scope_decision_input(raw_message=raw_message)
+
+	if decision == "clarify":
+		signal = translate_clarification_signal(
+			request_id=request_id,
+			raw_message=raw_message,
+			compiler_reason=reason,
+			compiler_reason_type=reason_type,
+			compiler_details=reason_details,
+		)
+		return str(signal.user_question or "").strip(), signal.to_payload()
+	if decision == "reject":
+		if unsupported_decision:
+			return out_of_scope_answer(raw_message, unsupported_decision), {}
+		if reason:
+			return f"I can't complete that safely within the approved ERP read path yet.\n\n{reason}", {}
+		return "I can't complete that safely within the approved ERP read path yet.", {}
+	if family_status == "clarify":
+		signal = translate_clarification_signal(
+			request_id=request_id,
+			raw_message=raw_message,
+			family_validation=family_validation,
+		)
+		return str(signal.user_question or "").strip(), signal.to_payload()
+	if family_status.startswith("reject"):
+		if unsupported_decision:
+			return out_of_scope_answer(raw_message, unsupported_decision), {}
+		detail = str((family_errors or ["The normalized business artifact did not pass governed validation."])[0] or "").strip()
+		return f"I couldn't complete that result confidently from governed ERP data.\n\n{detail}".strip(), {}
+	if semantic_status == "clarify":
+		signal = translate_clarification_signal(
+			request_id=request_id,
+			raw_message=raw_message,
+			semantic_validation=semantic,
+		)
+		return str(signal.user_question or "").strip(), signal.to_payload()
+	if semantic_status == "reject_semantically_inconsistent":
+		if unsupported_decision:
+			return out_of_scope_answer(raw_message, unsupported_decision), {}
+		detail = str((semantic_errors or ["The grounded result did not match the requested business intent."])[0] or "").strip()
+		return f"I couldn't complete a grounded answer that matched the requested business intent.\n\n{detail}".strip(), {}
+	narrative_answer = str(narrative_response.get("answer_text") or "").strip()
+	if narrative_answer:
+		return narrative_answer, {}
+	rendered_answer = str(rendered_response.get("answer_text") or "").strip()
+	if rendered_answer:
+		return rendered_answer, {}
+	if unsupported_decision and is_generic_compiled_failure_answer(runtime_answer):
+		return out_of_scope_answer(raw_message, unsupported_decision), {}
+	if runtime_answer:
+		return runtime_answer, {}
+	if runtime_error:
+		if unsupported_decision:
+			return out_of_scope_answer(raw_message, unsupported_decision), {}
+		return safe_runtime_failure_message(RuntimeError(runtime_error)), {}
+	if unsupported_decision:
+		return out_of_scope_answer(raw_message, unsupported_decision), {}
+	return "I could not complete a governed ERP lookup.", {}
+
+
+def handle_compiled_first_turn_result(
+	*,
+	session_doc,
+	request_id: str,
+	interaction_contract,
+	followup_resolution,
+	execution_path,
+	result: Dict[str, Any],
+	governed_scope_contract=None,
+	front_door_contract=None,
+	clarification_response_contract=None,
+	pre_result_tool_payloads: List[Dict[str, Any]] | None = None,
+	append_compiled_attempt_artifacts,
+	compiled_decision_message,
+	compiled_clarification_reason_contract,
+	append_message,
+	append_tool_payload,
+	assistant_text_payload,
+	tool_trace_message,
+	latest_qwen_trace_payload,
+	latest_assistant_payload,
+	append_knowledge_boundary_contract,
+	knowledge_boundary_event_level,
+	append_knowledge_boundary_observability,
+	build_grounded_turn_context,
+	build_audit_envelope,
+	save_session,
+	store_pending_clarification_signal,
+	clear_pending_clarification_signal,
+) -> Tuple[bool, Dict[str, Any]]:
+	runtime_payload = result.get("runtime_payload") if isinstance(result.get("runtime_payload"), dict) else {}
+	family_payload = result.get("family_validation") if isinstance(result.get("family_validation"), dict) else {}
+	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
+	latency = result.get("phase4_latency_breakdown") if isinstance(result.get("phase4_latency_breakdown"), dict) else {}
+	runtime_latency_ms = int(max(0, latency.get("runtime_execution_latency_ms") or 0))
+	boundary_started_at = time.perf_counter()
+
+	append_compiled_attempt_artifacts(session_doc, result)
+
+	answer_text, clarification_signal_payload = compiled_decision_message(
+		request_id=request_id,
+		raw_message=str(interaction_contract.raw_message or "").strip(),
+		result=result,
+	)
+	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+	for payload in (pre_result_tool_payloads or []):
+		if isinstance(payload, dict) and payload:
+			append_tool_payload(session_doc, payload)
+	clarification_reason_payload: Dict[str, Any] = {}
+	if clarification_signal_payload:
+		clarification_reason_contract = compiled_clarification_reason_contract(
+			request_id=request_id,
+			result=result,
+		)
+		if clarification_reason_contract is not None:
+			clarification_reason_payload = clarification_reason_contract.to_payload()
+			append_tool_payload(session_doc, clarification_reason_payload)
+		append_tool_payload(session_doc, clarification_signal_payload)
+		store_pending_clarification_signal(session_doc, clarification_signal_payload)
+	else:
+		clear_pending_clarification_signal(session_doc)
+
+	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
+	agent_meta = runtime_payload.get("agent_meta") if isinstance(runtime_payload.get("agent_meta"), dict) else {}
+	error = str(runtime_payload.get("error") or "").strip()
+	if tool_trace or runtime_payload:
+		append_message(
+			session_doc,
+			"tool",
+			tool_trace_message(
+				request_id=request_id,
+				ok=bool(runtime_payload.get("ok")),
+				tool_trace=tool_trace,
+				agent_meta=agent_meta,
+				error=error,
+				runtime_latency_ms=runtime_latency_ms,
+			),
+		)
+
+	grounded_turn_payload: Dict[str, Any] = {}
+	if str(semantic_payload.get("status") or "").strip() == "pass" and bool(runtime_payload.get("ok")):
+		runtime_trace_payload = latest_qwen_trace_payload(session_doc)
+		assistant_payload = latest_assistant_payload(session_doc)
+		grounded_turn_context = build_grounded_turn_context(
+			request_id=request_id,
+			interaction_contract=interaction_contract,
+			assistant_payload=assistant_payload,
+			runtime_payload={
+				**runtime_trace_payload,
+				"request_id": request_id,
+			},
+			artifact_payload=result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {},
+		)
+		if grounded_turn_context and grounded_turn_context.grounded:
+			grounded_turn_payload = grounded_turn_context.to_payload()
+			append_tool_payload(session_doc, grounded_turn_payload)
+	compiled_audit_payload = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
+	boundary_payload = append_knowledge_boundary_contract(
+		session_doc,
+		request_id=request_id,
+		session_id=str(getattr(interaction_contract, "session_id", "") or "").strip(),
+		proposed_lane="clarification" if clarification_signal_payload else "artifact_lane",
+		clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else {},
+		clarification_reason=clarification_reason_payload,
+		front_door_contract=front_door_contract.to_payload() if front_door_contract is not None else {},
+		governed_scope_contract=governed_scope_contract.to_payload() if governed_scope_contract is not None else {},
+		compiled_execution_audit=compiled_audit_payload,
+		family_validation=family_payload,
+		semantic_validation=semantic_payload,
+		grounded_turn=grounded_turn_payload,
+	)
+	if knowledge_boundary_event_level(boundary_payload) == "warning":
+		append_knowledge_boundary_observability(
+			session_doc,
+			request_id=request_id,
+			session_id=str(getattr(interaction_contract, "session_id", "") or "").strip(),
+			boundary_payload=boundary_payload,
+			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
+		)
+
+	append_tool_payload(
+		session_doc,
+		build_audit_envelope(
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload=latest_qwen_trace_payload(session_doc),
+			grounded_turn_context=grounded_turn_payload,
+			answer_text=answer_text,
+		).to_payload(),
+	)
+	save_session(session_doc, ignore_permissions=False)
+	return True, {
+		"ok": (
+			bool(runtime_payload.get("ok"))
+			and str(semantic_payload.get("status") or "").strip() == "pass"
+			and str(family_payload.get("status") or "pass").strip() in {"", "pass", "not_run"}
+		),
+		"request_id": request_id,
+		"mode": "compiled_first_turn",
+		"agent_meta": agent_meta,
+		"family_validation_status": str(family_payload.get("status") or "not_run").strip(),
+		"semantic_validation_status": str(semantic_payload.get("status") or "not_run").strip(),
+	}

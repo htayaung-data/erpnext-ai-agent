@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.metadata import (
@@ -9,8 +10,10 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_approved_followup_modes,
 	report_capability_ids,
 	report_local_followup_adapter,
+	report_semantic_tags,
 	report_sibling_capability_specs,
 )
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_followup_interpretation,
@@ -85,6 +88,15 @@ def _clean_list(values: Any) -> List[str]:
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
 
 
+def _looks_like_predictive_guarantee_claim(message: str) -> bool:
+	text = str(message or "").strip().lower()
+	if not text:
+		return False
+	if re.search(r"\b(?:guarantee|forecast|predict)\b", text):
+		return True
+	return bool(re.search(r"\bwho\s+will\s+\w+", text))
+
+
 def _normalize_direction(value: Any) -> str:
 	clean = str(value or "").strip().lower()
 	return clean if clean in {"asc", "desc"} else ""
@@ -126,14 +138,23 @@ def _build_interpretation_context(
 
 	adapter = report_local_followup_adapter(report_name, "dimension_breakdown")
 	available_dimensions = capability_dimensions_for_report(report_name)
+	approved_follow_up_modes = report_approved_followup_modes(report_name)
 	display_dimension = str(adapter.get("display_dimension_label") or "").strip()
 	if display_dimension and display_dimension not in available_dimensions:
 		available_dimensions = [display_dimension] + available_dimensions
 
 	return {
 		"source_report_name": report_name,
+		"source_family_id": str(latest_grounded_turn.get("artifact_family_id") or "").strip(),
 		"source_capability_ids": source_capability_ids,
-		"approved_follow_up_modes": report_approved_followup_modes(report_name),
+		"source_semantic_tags": report_semantic_tags(report_name),
+		"latest_grounded_source_reports": [
+			str(value or "").strip()
+			for value in (latest_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		],
+		"approved_follow_up_modes": approved_follow_up_modes,
+		"grounded_followup_supported": bool(approved_follow_up_modes),
 		"available_dimensions": available_dimensions,
 		"available_metrics": capability_metrics_for_report(report_name),
 		"returned_schema": list(latest_grounded_turn.get("returned_schema") or []),
@@ -147,6 +168,7 @@ def _validate_semantic_payload(
 	*,
 	payload: Dict[str, Any],
 	context: Dict[str, Any],
+	message: str = "",
 ) -> SemanticFollowUpIntent | None:
 	if not isinstance(payload, dict):
 		return None
@@ -189,8 +211,14 @@ def _validate_semantic_payload(
 		requested_modes = [mode for mode in requested_modes if mode != "dimension_breakdown"]
 	if "sort_or_limit" in requested_modes and not (target_limit or sort_direction):
 		requested_modes = [mode for mode in requested_modes if mode != "sort_or_limit"]
+	if not set(requested_modes).intersection({"column_projection", "column_refinement"}):
+		requested_columns = []
+	if "time_scope_restatement" not in requested_modes:
+		requested_time_scope = ""
 	if target_capability_id and "sibling_switch" not in requested_modes and "sibling_switch" in allowed_modes:
 		requested_modes.append("sibling_switch")
+	if _looks_like_predictive_guarantee_claim(message):
+		return None
 
 	try:
 		confidence = float(payload.get("confidence") or 0.0)
@@ -199,6 +227,12 @@ def _validate_semantic_payload(
 	confidence = max(0.0, min(1.0, confidence))
 	self_contained = bool(payload.get("self_contained"))
 	reason = str(payload.get("reason") or "").strip()
+	if "column_projection" in requested_modes and not requested_columns and not target_metric:
+		reason_metric_keys = detect_canonical_keys(reason, dimension_or_metric="metric")
+		if reason_metric_keys:
+			target_metric = str(reason_metric_keys[0] or "").strip().lower()
+			if target_metric:
+				requested_columns = [target_metric]
 
 	if not requested_modes and not target_capability_id and not self_contained:
 		return None
@@ -269,7 +303,7 @@ def interpret_followup_semantically(
 			validation_error="Runtime follow-up interpreter returned no valid interpretation object.",
 			agent_meta=agent_meta,
 		)
-	intent = _validate_semantic_payload(payload=interpretation, context=context)
+	intent = _validate_semantic_payload(payload=interpretation, context=context, message=message)
 	if intent is None:
 		return SemanticFollowUpResult(
 			status="invalid_response",

@@ -67,7 +67,7 @@
         {
           "case_id": "financial_statement_pnl",
           "family_id": "financial_statement",
-          "message": "Show me P & L statement",
+        "message": "Show me P & L statement for last month",
           "expected_mode": "compiled_first_turn",
           "expected_compiler_decision": "execute",
           "expected_family_validation_status": "pass",
@@ -85,7 +85,7 @@
         {
           "case_id": "ranking_top_customers",
           "family_id": "ranking_analytics",
-          "message": "Top 5 customers by revenue",
+        "message": "Top 5 customers by revenue last month",
           "expected_mode": "compiled_first_turn",
           "expected_compiler_decision": "execute",
           "expected_family_validation_status": "pass",
@@ -111,12 +111,12 @@
         },
         {
           "case_id": "product_profitability_last_month",
-          "family_id": "product_profitability",
-          "message": "Which products are performing well last month",
-          "expected_mode": "compiled_first_turn",
-          "expected_compiler_decision": "execute",
-          "expected_family_validation_status": "pass",
-          "expected_semantic_status": "pass"
+        "family_id": "product_profitability",
+        "message": "Which products are performing well last month",
+        "expected_mode": "compiled_first_turn",
+        "expected_compiler_decision": "execute",
+        "expected_family_validation_status": "pass",
+        "expected_semantic_status": "pass"
         },
         {
           "case_id": "working_capital_health",

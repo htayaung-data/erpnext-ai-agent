@@ -1,0 +1,120 @@
+{
+  "contract_version": "1.0",
+  "status": "design_only",
+  "not_loaded_by_runtime": true,
+  "description": "Design-only clarification policy for future financial_summary semantic migration. Reuses the existing clarification contracts and lane behavior rather than introducing a separate clarification subsystem.",
+  "intent_class": "financial_summary",
+  "clarification_contract_strategy": {
+    "reuse_existing_contracts": true,
+    "contracts": [
+      "ClarificationReasonContract",
+      "ClarificationSignalContract",
+      "ClarificationResolutionContract"
+    ],
+    "reason_stage": "financial_summary_resolution",
+    "notes": [
+      "Do not add a financial-summary-specific clarification contract type.",
+      "Extend reason_type values and internal_details only if and when runtime migration is approved."
+    ]
+  },
+  "reason_types": [
+    {
+      "reason_type": "financial_summary_domain_clarification",
+      "when": "No governed summary domain is resolved.",
+      "user_question": "Which area do you want summarized: sales, inventory, receivable, payable, financial statements, or product performance?",
+      "suggested_options": [
+        "sales",
+        "inventory",
+        "receivable",
+        "payable",
+        "financial statements",
+        "product performance"
+      ],
+      "resolved_slot_shape": {
+        "summary_domains": [
+          "<selected_domain>"
+        ]
+      }
+    },
+    {
+      "reason_type": "financial_summary_focus_clarification",
+      "when": "One governed summary domain is resolved but the requested focus is unclear.",
+      "user_question": "What kind of summary do you want: current position, outstanding amount, value snapshot, profitability snapshot, statement view, or cross-domain health?",
+      "suggested_options": [
+        "current position",
+        "outstanding amount",
+        "value snapshot",
+        "profitability snapshot",
+        "statement view",
+        "cross-domain health"
+      ],
+      "resolved_slot_shape": {
+        "summary_focus": "<selected_focus>"
+      }
+    },
+    {
+      "reason_type": "financial_summary_multi_domain_clarification",
+      "when": "Multiple domains are resolved but the request does not clearly ask for a governed composite health view.",
+      "user_question": "Do you want one specific area, or do you want a combined cross-domain health summary?",
+      "suggested_options": [
+        "one specific area",
+        "cross-domain health"
+      ],
+      "resolved_control_shape": {
+        "clarification_resolution_mode": "<selected_mode>"
+      },
+      "notes": [
+        "This is a transient clarification control value, not a semantic summary slot.",
+        "If the user chooses cross-domain health, the next step may resolve summary_focus to cross_domain_health.",
+        "If the user chooses one specific area, the next step should re-ask for the target domain."
+      ]
+    },
+    {
+      "reason_type": "financial_summary_sales_scope_clarification",
+      "when": "Sales is resolved as a summary domain, but no approved first-wave normalize target exists yet.",
+      "user_question": "What kind of sales summary do you want: monthly trend, top customers, top products, or a sales statement-style summary?",
+      "suggested_options": [
+        "monthly trend",
+        "top customers",
+        "top products",
+        "sales statement-style summary"
+      ],
+      "resolved_control_shape": {
+        "sales_summary_subtype": "<selected_subtype>"
+      },
+      "notes": [
+        "This remains clarification-only until a governed sales-summary normalization target is approved.",
+        "Do not guess between trend, ranking, or another composite from the initial financial_summary message."
+      ]
+    },
+    {
+      "reason_type": "financial_summary_composite_scope_clarification",
+      "when": "Cross-domain intent is present but no governed composite profile matches safely.",
+      "user_question": "I can summarize one area directly. Which area should I focus on first?",
+      "suggested_options": [
+        "receivable",
+        "payable",
+        "inventory",
+        "financial statements",
+        "sales",
+        "product performance"
+      ],
+      "resolved_slot_shape": {
+        "summary_domains": [
+          "<selected_domain>"
+        ]
+      }
+    }
+  ],
+  "governance_rules": [
+    "Clarification should prefer one clean question over a guessed routing decision.",
+    "Suggested options must be governed business options, not raw report names.",
+    "If the user selects one area, the next step should normalize into a narrower semantic-governed intent where possible.",
+    "If the user requests cross-domain health, runtime must verify that a governed composite profile exists before executing."
+  ],
+  "attempt_policy": {
+    "max_attempts": 2,
+    "fallback_after_max_attempts": "stop_and_request_new_specific_business_question",
+    "notes": "Do not loop the user through expanding clarification branches. If the summary domain stays unclear, stop safely."
+  }
+}

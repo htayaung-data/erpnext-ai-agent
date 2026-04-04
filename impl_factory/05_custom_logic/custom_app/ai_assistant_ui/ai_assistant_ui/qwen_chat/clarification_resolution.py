@@ -61,16 +61,22 @@ def latest_pending_clarification_signal_from_messages(session_doc) -> Dict[str, 
 		return {}
 
 	signal_payload: Dict[str, Any] = {}
-	for row in messages[latest_assistant_index + 1 :]:
+	signal_index = -1
+	for offset, row in enumerate(messages[latest_assistant_index + 1 :], start=latest_assistant_index + 1):
 		if str(row.role or "").strip().lower() != "tool":
 			continue
 		payload = _parse_payload(str(row.content or ""))
 		if str(payload.get("type") or "").strip() == "qwen_clarification_signal_contract":
 			signal_payload = payload
+			signal_index = offset
 	if not signal_payload:
 		return {}
 	if str(signal_payload.get("user_question") or "").strip() != latest_assistant_text:
 		return {}
+	for row in messages[signal_index + 1 :]:
+		role = str(row.role or "").strip().lower()
+		if role in {"user", "assistant"} and _visible_message_text(role, str(row.content or "")).strip():
+			return {}
 	return signal_payload
 
 

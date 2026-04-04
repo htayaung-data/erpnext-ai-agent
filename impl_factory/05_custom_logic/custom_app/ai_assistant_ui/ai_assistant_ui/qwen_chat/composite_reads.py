@@ -189,6 +189,17 @@ def _composite_profile_match(
 	supported_intents = set(_clean_list(spec.get("supported_intent_classes")))
 	if supported_intents and intent_class not in supported_intents:
 		return False
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	composite_profile_context = set(
+		_clean_list(extracted_slots.get("composite_profile_context"))
+	)
+	plan_id = str(spec.get("plan_id") or "").strip()
+	if plan_id and plan_id in composite_profile_context:
+		return True
 	message_concepts = set(ontology_detect_concepts(message))
 	required_all = set(_clean_list(spec.get("required_concepts_all")))
 	if required_all and not required_all.issubset(message_concepts):
@@ -207,6 +218,11 @@ def plan_composite_read(
 	interpretation: FreshQueryInterpretationContract,
 	response_policy: Dict[str, Any] | None = None,
 ) -> CompositePlanOutcome:
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
 	matching_spec: Dict[str, Any] = {}
 	for spec in list_composite_read_specs():
 		if _composite_profile_match(message=message, interpretation=interpretation, spec=spec):
@@ -315,6 +331,14 @@ def plan_composite_read(
 		compiler_reason=str(plan_contract.compiler_reason or "").strip(),
 		clarification_reason_type="composite_plan_clarify" if decision != "execute" else "",
 		clarification_details={"plan_id": str(plan_contract.plan_id or "").strip(), "errors": list(errors)} if decision != "execute" else {},
+		governed_resolution_details=(
+			{
+				"resolution_mode": "semantic_resolution",
+				"semantic_resolution_contract": dict(extracted_slots.get("financial_summary_resolution_contract") or {}),
+			}
+			if isinstance(extracted_slots.get("financial_summary_resolution_contract"), dict)
+			else {}
+		),
 	)
 	return CompositePlanOutcome(
 		status=decision,
@@ -344,7 +368,7 @@ def _execute_composite_step(
 		filters=compiled_request.filters if isinstance(compiled_request.filters, dict) else {},
 		user=user_id,
 		mode="compiled_composite_step",
-		request_message=message,
+		target_limit=int(max(0, getattr(compiled_request, "target_limit", 0) or 0)),
 	)
 	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
 		try:
@@ -753,6 +777,7 @@ def execute_composite_read_plan(
 		execution_mode="compiled_composite_read",
 		compiler_decision=str(plan_outcome.compiler_contract.decision or "").strip(),
 		compiler_reason=str(plan_outcome.compiler_contract.compiler_reason or "").strip(),
+		governed_resolution_details=dict(plan_outcome.compiler_contract.governed_resolution_details or {}),
 		capability_id=str(plan_outcome.compiler_contract.capability_id or "").strip(),
 		selected_report=" + ".join(
 			str(item.get("selected_report") or "").strip()

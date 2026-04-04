@@ -1,0 +1,286 @@
+{
+  "contract_version": "1.0",
+  "status": "runtime_governed",
+  "description": "Governed runtime resolution rules for the first-wave financial_summary semantic migration.",
+  "intent_class": "financial_summary",
+  "summary_domains": [
+    "sales",
+    "inventory",
+    "receivable",
+    "payable",
+    "statement",
+    "product_profitability"
+  ],
+  "summary_focuses": [
+    "statement_view",
+    "outstanding_amount",
+    "value_snapshot",
+    "profitability_snapshot",
+    "cross_domain_health"
+  ],
+  "summary_metric_families": [
+    "sales_amount",
+    "balance_value",
+    "outstanding_total",
+    "gross_profit",
+    "net_profit"
+  ],
+  "summary_grains": [
+    "customer",
+    "supplier",
+    "item",
+    "warehouse",
+    "account"
+  ],
+  "domain_rules": [
+    {
+      "rule_id": "domain_statement_from_capability",
+      "source": "candidate_capability_ids",
+      "match_any": ["financial_statement_read"],
+      "emit_domain": "statement"
+    },
+    {
+      "rule_id": "domain_receivable_from_capability",
+      "source": "candidate_capability_ids",
+      "match_any": ["accounts_receivable_read"],
+      "emit_domain": "receivable"
+    },
+    {
+      "rule_id": "domain_payable_from_capability",
+      "source": "candidate_capability_ids",
+      "match_any": ["accounts_payable_read"],
+      "emit_domain": "payable"
+    },
+    {
+      "rule_id": "domain_inventory_from_capability",
+      "source": "candidate_capability_ids",
+      "match_any": ["stock_read"],
+      "emit_domain": "inventory"
+    },
+    {
+      "rule_id": "domain_product_profitability_from_capability",
+      "source": "candidate_capability_ids",
+      "match_any": ["product_performance_read"],
+      "emit_domain": "product_profitability"
+    },
+    {
+      "rule_id": "domain_sales_from_capability",
+      "source": "candidate_capability_ids",
+      "match_any": ["sales_read"],
+      "emit_domain": "sales"
+    },
+    {
+      "rule_id": "domain_statement_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": ["profit_and_loss", "balance_sheet", "cash_flow"],
+      "emit_domain": "statement"
+    },
+    {
+      "rule_id": "domain_receivable_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": ["receivable"],
+      "emit_domain": "receivable"
+    },
+    {
+      "rule_id": "domain_payable_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": ["payable"],
+      "emit_domain": "payable"
+    },
+    {
+      "rule_id": "domain_inventory_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": ["stock"],
+      "emit_domain": "inventory"
+    },
+    {
+      "rule_id": "domain_product_profitability_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": ["product"],
+      "requires_metric_family_any": ["gross_profit", "net_profit"],
+      "emit_domain": "product_profitability"
+    },
+    {
+      "rule_id": "domain_sales_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": ["sales"],
+      "emit_domain": "sales"
+    }
+  ],
+  "metric_family_rules": [
+    {
+      "rule_id": "metric_family_outstanding_total",
+      "canonical_metrics_any": ["outstanding_amount", "outstanding_total", "total_due"],
+      "emit_metric_family": "outstanding_total"
+    },
+    {
+      "rule_id": "metric_family_balance_value",
+      "canonical_metrics_any": ["balance_value"],
+      "emit_metric_family": "balance_value"
+    },
+    {
+      "rule_id": "metric_family_gross_profit",
+      "canonical_metrics_any": ["gross_profit", "gross_profit_percent"],
+      "emit_metric_family": "gross_profit"
+    },
+    {
+      "rule_id": "metric_family_net_profit",
+      "canonical_metrics_any": ["net_profit"],
+      "emit_metric_family": "net_profit"
+    },
+    {
+      "rule_id": "metric_family_sales_amount",
+      "canonical_metrics_any": ["sales_amount", "revenue", "value"],
+      "emit_metric_family": "sales_amount"
+    }
+  ],
+  "focus_rules": [
+    {
+      "rule_id": "focus_statement_view",
+      "requires_domains_all": ["statement"],
+      "emit_focus": "statement_view"
+    },
+    {
+      "rule_id": "focus_outstanding_amount",
+      "requires_metric_family": "outstanding_total",
+      "emit_focus": "outstanding_amount"
+    },
+    {
+      "rule_id": "focus_value_snapshot",
+      "requires_metric_family": "balance_value",
+      "emit_focus": "value_snapshot"
+    },
+    {
+      "rule_id": "focus_profitability_snapshot_gross",
+      "requires_metric_family": "gross_profit",
+      "emit_focus": "profitability_snapshot"
+    },
+    {
+      "rule_id": "focus_profitability_snapshot_net",
+      "requires_metric_family": "net_profit",
+      "emit_focus": "profitability_snapshot"
+    },
+    {
+      "rule_id": "focus_cross_domain_health_from_composite_profile",
+      "source": "composite_profile_context",
+      "match_any": ["working_capital_health"],
+      "emit_focus": "cross_domain_health"
+    }
+  ],
+  "grain_rules": [
+    {
+      "rule_id": "grain_customer",
+      "requested_dimensions_any": ["Customer"],
+      "emit_grain": "customer"
+    },
+    {
+      "rule_id": "grain_supplier",
+      "requested_dimensions_any": ["Supplier"],
+      "emit_grain": "supplier"
+    },
+    {
+      "rule_id": "grain_item",
+      "requested_dimensions_any": ["Item", "Item Code"],
+      "emit_grain": "item"
+    },
+    {
+      "rule_id": "grain_warehouse",
+      "requested_dimensions_any": ["Warehouse"],
+      "emit_grain": "warehouse"
+    },
+    {
+      "rule_id": "grain_account",
+      "requested_dimensions_any": ["Account"],
+      "emit_grain": "account"
+    }
+  ],
+  "normalization_rules": [
+    {
+      "rule_id": "normalize_statement",
+      "required_domains_all": ["statement"],
+      "required_focus": "statement_view",
+      "target_intent_class": "financial_statement",
+      "decision_reason": "Financial summary normalized into financial statements because statement is the single governed summary domain and statement view is explicit."
+    },
+    {
+      "rule_id": "normalize_receivable",
+      "required_domains_all": ["receivable"],
+      "required_focus": "outstanding_amount",
+      "target_intent_class": "aging_analysis",
+      "decision_reason": "Financial summary normalized into aging analysis because receivable is the single governed summary domain and outstanding amount is explicit."
+    },
+    {
+      "rule_id": "normalize_payable",
+      "required_domains_all": ["payable"],
+      "required_focus": "outstanding_amount",
+      "target_intent_class": "aging_analysis",
+      "decision_reason": "Financial summary normalized into aging analysis because payable is the single governed summary domain and outstanding amount is explicit."
+    },
+    {
+      "rule_id": "normalize_inventory",
+      "required_domains_all": ["inventory"],
+      "required_focus": "value_snapshot",
+      "target_intent_class": "inventory_summary",
+      "decision_reason": "Financial summary normalized into inventory summary because inventory is the single governed summary domain and value snapshot is explicit."
+    },
+    {
+      "rule_id": "normalize_product_profitability",
+      "required_domains_all": ["product_profitability"],
+      "required_focus": "profitability_snapshot",
+      "target_intent_class": "product_performance",
+      "decision_reason": "Financial summary normalized into product performance because product profitability is the single governed summary domain and profitability snapshot is explicit."
+    },
+    {
+      "rule_id": "execute_working_capital_health",
+      "required_domains_all": ["receivable", "payable"],
+      "required_focus": "cross_domain_health",
+      "decision": "execute_composite",
+      "target_composite_plan_id": "working_capital_health",
+      "decision_reason": "Financial summary executes the governed working-capital composite because receivable and payable are both resolved and the structured composite profile explicitly requests cross-domain health."
+    }
+  ],
+  "clarification_rules": [
+    {
+      "policy_id": "domain_clarification",
+      "requires_domain_count": 0,
+      "clarification_reason_type": "financial_summary_domain_clarification",
+      "ambiguity_flags": ["missing_summary_domain"],
+      "ambiguity_reason": "No governed summary domain is resolved yet for this financial summary request.",
+      "decision_reason": "This financial summary request needs an explicit business area before it can normalize safely into a narrower governed intent.",
+      "blocks_legacy_fallback": true
+    },
+    {
+      "policy_id": "sales_scope_clarification",
+      "requires_domains_all": ["sales"],
+      "clarification_reason_type": "financial_summary_sales_scope_clarification",
+      "ambiguity_flags": ["missing_sales_summary_subtype"],
+      "ambiguity_reason": "Sales-only financial summary requests are not yet mapped to a governed first-wave normalize target.",
+      "decision_reason": "Sales is a valid summary domain, but the first runtime slice does not guess between trend, ranking, or another sales summary shape.",
+      "blocks_legacy_fallback": true
+    },
+    {
+      "policy_id": "focus_required_clarification",
+      "requires_domains_any": ["inventory", "product_profitability"],
+      "requires_focus_missing": true,
+      "clarification_reason_type": "financial_summary_focus_clarification",
+      "ambiguity_flags": ["missing_summary_focus"],
+      "ambiguity_reason": "The summary domain is known, but the requested summary focus is still unclear.",
+      "decision_reason": "This financial summary request needs an explicit focus before it can normalize safely into a narrower governed intent.",
+      "blocks_legacy_fallback": true
+    },
+    {
+      "policy_id": "multi_domain_clarification",
+      "requires_domain_count_min": 2,
+      "summary_focus_not_equal": "cross_domain_health",
+      "clarification_reason_type": "financial_summary_multi_domain_clarification",
+      "ambiguity_flags": ["multiple_summary_domains"],
+      "ambiguity_reason": "Multiple governed summary domains are resolved, but first-wave runtime does not execute a cross-domain summary yet.",
+      "decision_reason": "This financial summary request spans multiple business areas, so it must clarify the target area or cross-domain health intent before any later expansion.",
+      "blocks_legacy_fallback": true
+    }
+  ],
+  "clarification_policies": {
+    "focus_required_domains": ["inventory", "product_profitability"],
+    "sales_domains": ["sales"]
+  }
+}

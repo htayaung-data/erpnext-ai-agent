@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import (
@@ -13,7 +12,6 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_family_agent_prompt_hint,
 	report_family_agent_tool_id,
 	report_family_capability_ids,
-	report_family_transitional_surface_markers,
 	report_family_report_names,
 	report_family_routing_hints,
 	report_family_supported_intent_classes,
@@ -24,24 +22,8 @@ def _normalize_text(value: str) -> str:
 	return " ".join(str(value or "").strip().lower().split())
 
 
-def _normalize_phrase(value: str) -> str:
-	text = _normalize_text(value)
-	text = re.sub(r"[^a-z0-9&/\-\s]+", " ", text)
-	return " ".join(text.split())
-
-
 def _unique_strings(values: List[str]) -> List[str]:
 	return list(dict.fromkeys(str(item or "").strip() for item in values if str(item or "").strip()))
-
-
-def _matched_phrases(text: str, values: List[str]) -> List[str]:
-	normalized_text = _normalize_phrase(text)
-	out: List[str] = []
-	for item in values:
-		candidate = _normalize_phrase(item)
-		if candidate and candidate in normalized_text:
-			out.append(str(item or "").strip())
-	return _unique_strings(out)
 
 
 def build_family_tool_surface_for_message(
@@ -68,24 +50,17 @@ def build_family_tool_surface_for_message(
 			for item in (routing_hints.get("ontology_concepts") or [])
 			if str(item or "").strip()
 		]
-		intent_markers = report_family_transitional_surface_markers(family_id)
 		matched_concepts = [item for item in concept_hints if item in detected_concepts]
-		matched_markers = _matched_phrases(text, intent_markers)
-		matched_report_names = _matched_phrases(text, report_family_report_names(family_id))
+		matched_markers: List[str] = []
+		matched_report_names: List[str] = []
 
 		score = 0
 		if matched_concepts:
 			score += 14 * len(matched_concepts)
-		if matched_report_names:
-			score += 18 * len(matched_report_names)
 		if preferred_intent_class and preferred_intent_class in report_family_supported_intent_classes(family_id):
 			score += 20
 		if preferred_capability_id and preferred_capability_id in report_family_capability_ids(family_id):
 			score += 20
-		if score <= 0:
-			continue
-		if matched_markers:
-			score += 6 * len(matched_markers)
 		if score <= 0:
 			continue
 

@@ -1,0 +1,290 @@
+{
+  "contract_version": "1.0",
+  "status": "design_only",
+  "not_loaded_by_runtime": true,
+  "description": "Pre-implementation semantic design scaffold for the legacy-only financial_summary intent. This file is a planning artifact and must not drive runtime routing until a dedicated semantic migration is approved.",
+  "intent_class": "financial_summary",
+  "design_principles": [
+    "Do not route from raw message keywords.",
+    "Do not treat financial_summary as a synonym for a single governed family.",
+    "Prefer semantic decomposition into an existing narrower intent when one domain is dominant.",
+    "Use a governed composite plan only when the request is truly cross-domain."
+  ],
+  "summary_slot_definitions": [
+    {
+      "slot_name": "summary_domains",
+      "allowed_values": [
+        "sales",
+        "inventory",
+        "receivable",
+        "payable",
+        "statement",
+        "product_profitability"
+      ],
+      "cardinality": "multi",
+      "resolution_mode": "required_or_clarify"
+    },
+    {
+      "slot_name": "summary_focus",
+      "allowed_values": [
+        "current_position",
+        "outstanding_amount",
+        "value_snapshot",
+        "profitability_snapshot",
+        "statement_view",
+        "cross_domain_health"
+      ],
+      "cardinality": "single",
+      "resolution_mode": "required_or_clarify"
+    },
+    {
+      "slot_name": "summary_metric_family",
+      "allowed_values": [
+        "sales_amount",
+        "balance_value",
+        "outstanding_total",
+        "gross_profit",
+        "net_profit"
+      ],
+      "cardinality": "single",
+      "resolution_mode": "optional"
+    },
+    {
+      "slot_name": "summary_grain",
+      "allowed_values": [
+        "overall",
+        "customer",
+        "supplier",
+        "item",
+        "warehouse",
+        "account"
+      ],
+      "cardinality": "single",
+      "resolution_mode": "optional"
+    },
+    {
+      "slot_name": "time_scope",
+      "allowed_values": [
+        "today",
+        "this_month",
+        "last_month",
+        "current_fiscal_year_to_date",
+        "as_of_today"
+      ],
+      "cardinality": "single",
+      "resolution_mode": "optional"
+    }
+  ],
+  "decomposition_rules": [
+    {
+      "rule_id": "financial_summary_to_financial_statement",
+      "required_slots": {
+        "summary_domains": [
+          "statement"
+        ],
+        "summary_focus": "statement_view"
+      },
+      "target_intent_class": "financial_statement",
+      "notes": "Use only when statement intent is dominant and no cross-domain health synthesis is requested."
+    },
+    {
+      "rule_id": "financial_summary_to_aging_analysis_receivable",
+      "required_slots": {
+        "summary_domains": [
+          "receivable"
+        ],
+        "summary_focus": "outstanding_amount"
+      },
+      "target_intent_class": "aging_analysis",
+      "target_slot_defaults": {
+        "aging_view": "receivable"
+      },
+      "notes": "Use only when receivable intent is dominant."
+    },
+    {
+      "rule_id": "financial_summary_to_aging_analysis_payable",
+      "required_slots": {
+        "summary_domains": [
+          "payable"
+        ],
+        "summary_focus": "outstanding_amount"
+      },
+      "target_intent_class": "aging_analysis",
+      "target_slot_defaults": {
+        "aging_view": "payable"
+      },
+      "notes": "Use only when payable intent is dominant."
+    },
+    {
+      "rule_id": "financial_summary_to_inventory_summary",
+      "required_slots": {
+        "summary_domains": [
+          "inventory"
+        ],
+        "summary_focus": "value_snapshot"
+      },
+      "target_intent_class": "inventory_summary",
+      "notes": "Use only when inventory balance or value is the dominant business shape."
+    },
+    {
+      "rule_id": "financial_summary_to_product_performance",
+      "required_slots": {
+        "summary_domains": [
+          "product_profitability"
+        ],
+        "summary_focus": "profitability_snapshot"
+      },
+      "target_intent_class": "product_performance",
+      "notes": "Use only when product profitability is dominant."
+    }
+  ],
+  "composite_summary_profiles": [
+    {
+      "profile_id": "financial_summary_working_capital_health",
+      "required_domains_all": [
+        "receivable",
+        "payable"
+      ],
+      "required_focus": "cross_domain_health",
+      "target_composite_plan_id": "working_capital_health",
+      "notes": "This is the current governed composite pattern already present in the composite read registry."
+    }
+  ],
+  "decision_contract_design": {
+    "type": "qwen_financial_summary_resolution_contract",
+    "contract_version": "1.0",
+    "description": "Design-only contract for deciding whether a financial_summary request should decompose into a narrower semantic-governed intent, execute a governed composite plan, clarify, or reject.",
+    "fields": [
+      {
+        "field_name": "request_id",
+        "field_type": "string",
+        "required": true
+      },
+      {
+        "field_name": "session_id",
+        "field_type": "string",
+        "required": true
+      },
+      {
+        "field_name": "intent_class",
+        "field_type": "string",
+        "required": true,
+        "fixed_value": "financial_summary"
+      },
+      {
+        "field_name": "resolved_summary_domains",
+        "field_type": "string[]",
+        "required": true
+      },
+      {
+        "field_name": "resolved_summary_focus",
+        "field_type": "string",
+        "required": false
+      },
+      {
+        "field_name": "resolved_summary_metric_family",
+        "field_type": "string",
+        "required": false
+      },
+      {
+        "field_name": "resolved_summary_grain",
+        "field_type": "string",
+        "required": false
+      },
+      {
+        "field_name": "decision",
+        "field_type": "enum",
+        "required": true,
+        "allowed_values": [
+          "normalize_intent",
+          "execute_composite",
+          "clarify",
+          "reject"
+        ]
+      },
+      {
+        "field_name": "target_intent_class",
+        "field_type": "string",
+        "required_when": {
+          "decision": "normalize_intent"
+        }
+      },
+      {
+        "field_name": "target_composite_plan_id",
+        "field_type": "string",
+        "required_when": {
+          "decision": "execute_composite"
+        }
+      },
+      {
+        "field_name": "ambiguity_flags",
+        "field_type": "string[]",
+        "required": true
+      },
+      {
+        "field_name": "ambiguity_reason",
+        "field_type": "string",
+        "required": true
+      },
+      {
+        "field_name": "decision_reason",
+        "field_type": "string",
+        "required": true
+      }
+    ]
+  },
+  "ambiguity_policies": [
+    {
+      "policy_id": "financial_summary_no_domain",
+      "when": {
+        "summary_domains_count": 0
+      },
+      "decision": "clarify",
+      "clarification_goal": "Ask which business area the user wants summarized."
+    },
+    {
+      "policy_id": "financial_summary_single_domain_missing_focus",
+      "when": {
+        "summary_domains_count": 1,
+        "summary_focus_missing": true
+      },
+      "decision": "clarify",
+      "clarification_goal": "Ask whether the user wants current position, outstanding, value snapshot, profitability snapshot, or statement view."
+    },
+    {
+      "policy_id": "financial_summary_multi_domain_without_cross_domain_focus",
+      "when": {
+        "summary_domains_count_min": 2,
+        "summary_focus_not_equal": "cross_domain_health"
+      },
+      "decision": "clarify",
+      "clarification_goal": "Ask whether the user wants one specific domain or a cross-domain health summary."
+    },
+    {
+      "policy_id": "financial_summary_cross_domain_working_capital_health",
+      "when": {
+        "summary_domains_all": [
+          "receivable",
+          "payable"
+        ],
+        "summary_focus_equal": "cross_domain_health"
+      },
+      "decision": "execute_composite",
+      "target_composite_plan_id": "working_capital_health"
+    }
+  ],
+  "migration_gate": {
+    "runtime_enablement_prerequisites": [
+      "Structured extraction exists for summary_domains and summary_focus.",
+      "A governed decomposition-vs-composite decision exists in runtime contracts.",
+      "Ambiguity policy is defined for multi-domain but non-composite requests.",
+      "Tier 2 verification covers semantic migration and composite behavior."
+    ],
+    "prohibited_shortcuts": [
+      "message keyword to report routing",
+      "message keyword to capability forcing",
+      "single-prompt hardcoded rescue behavior",
+      "defaulting directly to Profit and Loss Statement for unresolved financial_summary"
+    ]
+  }
+}

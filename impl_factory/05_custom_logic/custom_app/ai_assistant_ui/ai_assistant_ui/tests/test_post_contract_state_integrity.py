@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	clear_pending_clarification_signal,
 	latest_pending_clarification_signal,
+	latest_pending_clarification_signal_from_messages,
 	store_pending_clarification_signal,
 )
 from ai_assistant_ui.qwen_chat.clarification_state import (
@@ -98,6 +99,22 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(session_doc.pending_clarification_state_json, "")
 		self.assertFalse(get_clarification_state(session_doc).has_pending)
 		self.assertEqual(latest_pending_clarification_signal(session_doc), {})
+
+	def test_message_history_pending_clarification_ignores_superseded_signal_after_later_visible_turn(self):
+		signal = _clarification_signal(
+			request_id="clarify-4b",
+			user_question="Which report do you want?",
+		)
+		session_doc = _FakeSessionDoc(
+			[
+				_FakeMessage(role="assistant", content=json.dumps({"type": "text", "text": "Which report do you want?"})),
+				_FakeMessage(role="tool", content=json.dumps(signal)),
+				_FakeMessage(role="user", content="show accounts receivable summary as of today"),
+				_FakeMessage(role="assistant", content=json.dumps({"type": "text", "text": "Accounts Receivable Summary as of today"})),
+			]
+		)
+
+		self.assertEqual(latest_pending_clarification_signal_from_messages(session_doc), {})
 
 	def test_malformed_clarification_storage_fails_closed_to_empty_state(self):
 		session_doc = _FakeSessionDoc()

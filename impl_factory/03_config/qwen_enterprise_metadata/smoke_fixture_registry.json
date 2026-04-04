@@ -1,0 +1,69 @@
+{
+  "contract_version": "1.0",
+  "fixtures": [
+    {
+      "fixture_id": "ranking_limit_refinement",
+      "fixture_family": "post_contract_live_smoke",
+      "initial_message": "Top 7 customers by quantity sold last month",
+      "followup_messages": [
+        "show only 3 rows",
+        "show top 3 rows",
+        "keep only top 3 rows",
+        "top 3",
+        "top 3 customers",
+        "limit this to top 3"
+      ],
+      "expected_initial_source_name": "Sales Analytics",
+      "expected_family_id": "ranking_analytics"
+    },
+    {
+      "fixture_id": "fresh_query_override_to_ar",
+      "fixture_family": "post_contract_live_smoke",
+      "initial_message": "Top 7 customers by quantity sold last month",
+      "replacement_message": "show accounts receivable summary as of today",
+      "reasoning_message": "what does this mean",
+      "expected_initial_source_name": "Sales Analytics",
+      "expected_replacement_source_names": [
+        "Accounts Receivable Summary",
+        "Accounts Payable Summary"
+      ]
+    },
+    {
+      "fixture_id": "fresh_query_override_to_ar_explicit_reasoning",
+      "fixture_family": "post_contract_live_smoke",
+      "initial_message": "Top 7 customers by quantity sold last month",
+      "replacement_message": "show accounts receivable summary as of today",
+      "reasoning_message": "explain this accounts receivable summary",
+      "expected_initial_source_name": "Sales Analytics",
+      "expected_replacement_source_names": [
+        "Accounts Receivable Summary",
+        "Accounts Payable Summary"
+      ]
+    },
+    {
+      "fixture_id": "product_recovery_flow",
+      "fixture_family": "post_contract_live_smoke",
+      "fixture_kind": "recovery_flow",
+      "initial_message": "Top 7 products by revenue last month",
+      "expected_initial_source_name": "Gross Profit",
+      "expected_family_id": "ranking_analytics",
+      "action_messages": {
+        "guidance": "how do I ask for qty",
+        "accept_governed_alternative": "yes please run the governed alternative",
+        "fresh_override_to_ar": "forget that, show me AR insight",
+        "qty_enrichment": "include qty column",
+        "serial_enrichment": "include serial number column",
+        "short_acceptance": "yes, run that"
+      }
+    },
+    {
+      "fixture_id": "recovery_interaction_defaults",
+      "fixture_family": "post_contract_live_smoke",
+      "fixture_kind": "interaction_actions",
+      "action_messages": {
+        "guidance": "how do I ask for qty",
+        "fresh_override_to_ar": "forget that, give me AR insight"
+      }
+    }
+  ]
+}

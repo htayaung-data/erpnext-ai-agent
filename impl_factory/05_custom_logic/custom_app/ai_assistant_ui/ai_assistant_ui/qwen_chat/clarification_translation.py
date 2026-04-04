@@ -8,7 +8,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_clarification_reason_contract_from_sources,
 	build_clarification_signal_contract,
 )
-from ai_assistant_ui.qwen_chat.metadata import get_capability_spec
+from ai_assistant_ui.qwen_chat.metadata import (
+	get_capability_spec,
+	get_financial_summary_clarification_spec,
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -81,6 +84,30 @@ def _group_business_options(capability_ids: List[str]) -> List[str]:
 def _time_scope_options(details: Dict[str, Any]) -> List[str]:
 	options = _clean_list(details.get("suggested_time_scope_options"))
 	return options or list(_DEFAULT_TIME_SCOPE_OPTIONS)
+
+
+def _translate_financial_summary_signal(
+	*,
+	request_id: str,
+	reason_type: str,
+	compiler_reason: str,
+	compiler_details: Dict[str, Any],
+) -> ClarificationSignalContract | None:
+	spec = get_financial_summary_clarification_spec(reason_type)
+	if not spec:
+		return None
+	details = dict(compiler_details or {})
+	question = _clean_text(details.get("user_question")) or _clean_text(spec.get("user_question"))
+	options = _clean_list(details.get("suggested_options")) or _clean_list(spec.get("suggested_options"))
+	return build_clarification_signal_contract(
+		request_id=request_id,
+		stage="compiler",
+		reason_type=reason_type,
+		user_question=question,
+		suggested_options=options,
+		internal_reason=_clean_text(compiler_reason),
+		internal_details=details,
+	)
 
 
 def _translate_compiler_signal(
@@ -162,6 +189,14 @@ def _translate_compiler_signal(
 			internal_reason=_clean_text(compiler_reason),
 			internal_details=details,
 		)
+	financial_summary_signal = _translate_financial_summary_signal(
+		request_id=request_id,
+		reason_type=reason_type,
+		compiler_reason=compiler_reason,
+		compiler_details=details,
+	)
+	if financial_summary_signal is not None:
+		return financial_summary_signal
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage="compiler",

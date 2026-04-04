@@ -11,7 +11,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_normalized_family_artifact_contract,
 )
 from ai_assistant_ui.qwen_chat.metadata import report_business_family_ids, report_family_entity_dimension_label
-from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key
 
 
 def _safe_json_loads(value: Any) -> Any:
@@ -230,71 +230,92 @@ def _requested_time_scope(compiler_contract: Dict[str, Any]) -> str:
 	return str(compiler_contract.get("requested_time_scope") or "").strip()
 
 
-def _normalized_request_text(message: str) -> str:
-	return " ".join(str(message or "").strip().lower().split())
-
-
-def _requested_top_n(message: str) -> int:
-	text = _normalized_request_text(message)
-	match = re.search(r"\b(?:top|bottom|last|latest|recent)\s+(\d+)\b", text)
-	if not match:
-		return 0
+def _requested_top_n_from_contract(compiler_contract: Dict[str, Any]) -> int:
 	try:
-		return max(0, min(50, int(match.group(1))))
+		return max(0, min(50, int(compiler_contract.get("target_limit") or 0)))
 	except Exception:
 		return 0
 
 
-def _requested_metric_hint(
-	message: str,
+def _canonical_requested_values(
+	compiler_contract: Dict[str, Any],
+	fieldname: str,
+	*,
+	dimension_or_metric: str,
+) -> List[str]:
+	values = compiler_contract.get(fieldname)
+	if not isinstance(values, list):
+		return []
+	capability_id = str(compiler_contract.get("capability_id") or "").strip() or None
+	out: List[str] = []
+	for value in values:
+		raw = str(value or "").strip()
+		if not raw:
+			continue
+		canonical = get_canonical_key(
+			raw,
+			capability_id=capability_id,
+			dimension_or_metric=dimension_or_metric,
+		)
+		out.append(str(canonical or _clean_metric_key(raw)).strip())
+	return list(dict.fromkeys([value for value in out if value]))
+
+
+def _requested_metric_key_from_contract(
+	compiler_contract: Dict[str, Any],
 	available_metric_keys: List[str],
 	default_metric_key: str,
 ) -> str:
-	if not _normalized_request_text(message):
-		return str(default_metric_key or "").strip()
-	matched_metric_keys = [
-		metric_key
-		for metric_key in detect_canonical_keys(message, dimension_or_metric="metric")
-		if metric_key in available_metric_keys
-	]
-	if matched_metric_keys:
-		core_metric_keys = [
-			metric_key
-			for metric_key in matched_metric_keys
-			if metric_key not in {"contribution_percent"}
-		]
-		if core_metric_keys:
-			return core_metric_keys[0]
-		return matched_metric_keys[0]
+	available_by_key = {
+		_clean_metric_key(metric_key): str(metric_key or "").strip()
+		for metric_key in available_metric_keys
+		if str(metric_key or "").strip()
+	}
+	for requested_key in _canonical_requested_values(
+		compiler_contract,
+		"requested_metrics",
+		dimension_or_metric="metric",
+	):
+		resolved = available_by_key.get(_clean_metric_key(requested_key))
+		if resolved:
+			return resolved
 	return str(default_metric_key or "").strip()
 
 
-def _requested_output_columns(
-	message: str,
+def _requested_output_columns_from_contract(
+	compiler_contract: Dict[str, Any],
+	*,
+	available_metric_keys: List[str],
 	primary_metric_key: str,
+	entity_code_dimension_keys: Tuple[str, ...] = ("item_code",),
 ) -> List[str]:
+	requested_dimensions = set(
+		_canonical_requested_values(
+			compiler_contract,
+			"requested_dimensions",
+			dimension_or_metric="dimension",
+		)
+	)
+	requested_metrics = set(
+		_canonical_requested_values(
+			compiler_contract,
+			"requested_metrics",
+			dimension_or_metric="metric",
+		)
+	)
 	columns: List[str] = []
-	detected_dimensions = detect_canonical_keys(message, dimension_or_metric="dimension")
-	detected_metrics = detect_canonical_keys(message, dimension_or_metric="metric")
-	if any(key in detected_dimensions for key in {"item_code", "item_name", "customer", "supplier"}):
+	if requested_dimensions:
 		columns.append("entity")
-	if "item_code" in detected_dimensions:
+	if requested_dimensions.intersection(entity_code_dimension_keys):
 		columns.append("entity_code")
-	metric_key = _requested_metric_hint(message, [
-		"sales_amount",
-		"gross_profit",
-		"gross_profit_percent",
-		"buying_amount",
-		"quantity",
-		"outstanding_total",
-		"total_due",
-		"balance_value",
-		"balance_qty",
-		"contribution_percent",
-	], primary_metric_key)
-	if metric_key:
-		columns.append(metric_key)
-	if "contribution_percent" in detected_metrics:
+	requested_metric_key = _requested_metric_key_from_contract(
+		compiler_contract,
+		available_metric_keys,
+		primary_metric_key,
+	)
+	if requested_metric_key:
+		columns.append(requested_metric_key)
+	if "contribution_percent" in requested_metrics and "contribution_percent" in available_metric_keys:
 		columns.append("contribution_percent")
 	return list(dict.fromkeys([value for value in columns if value]))
 
@@ -302,18 +323,28 @@ def _requested_output_columns(
 def _apply_request_hints(
 	dimensions: Dict[str, Any],
 	*,
-	request_message: str,
+	compiler_contract: Dict[str, Any],
 	available_metric_keys: List[str],
 	default_metric_key: str,
+	entity_code_dimension_keys: Tuple[str, ...] = ("item_code",),
 ) -> Dict[str, Any]:
 	hints = dict(dimensions or {})
-	top_n = _requested_top_n(request_message)
+	top_n = _requested_top_n_from_contract(compiler_contract)
 	if top_n > 0:
 		hints["requested_top_n"] = top_n
-	requested_metric_key = _requested_metric_hint(request_message, available_metric_keys, default_metric_key)
+	requested_metric_key = _requested_metric_key_from_contract(
+		compiler_contract,
+		available_metric_keys,
+		default_metric_key,
+	)
 	if requested_metric_key:
 		hints["requested_metric_key"] = requested_metric_key
-	requested_columns = _requested_output_columns(request_message, requested_metric_key or default_metric_key)
+	requested_columns = _requested_output_columns_from_contract(
+		compiler_contract,
+		available_metric_keys=available_metric_keys,
+		primary_metric_key=requested_metric_key or default_metric_key,
+		entity_code_dimension_keys=entity_code_dimension_keys,
+	)
 	if requested_columns:
 		hints["requested_columns"] = requested_columns
 	if available_metric_keys:
@@ -828,7 +859,6 @@ def _build_sales_analytics_ranking(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [
@@ -876,7 +906,7 @@ def _build_sales_analytics_ranking(
 			"time_grain": _time_grain_from_filters(filters),
 			"source_grain": "entity_total",
 		},
-			request_message=request_message,
+			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
 		),
@@ -910,7 +940,6 @@ def _build_aging_ranking(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [
@@ -938,7 +967,7 @@ def _build_aging_ranking(
 	source_field = "total_due" if metric_key == "total_due" else "outstanding"
 	entity_dimension = _aging_party_dimension_label(aging_type)
 	available_metric_keys = ["outstanding_total", "total_due", "contribution_percent"]
-	metric_key = _requested_metric_hint(request_message, available_metric_keys, metric_key)
+	metric_key = _requested_metric_key_from_contract(compiler_contract, available_metric_keys, metric_key)
 	metric_label = _metric_label(metric_key, metric_label)
 	ranked_rows = _sort_ranked_rows(
 		[
@@ -967,7 +996,7 @@ def _build_aging_ranking(
 			"source_grain": "aging_summary",
 			"aging_type": aging_type,
 		},
-			request_message=request_message,
+			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
 		),
@@ -1005,7 +1034,6 @@ def _build_gross_profit_ranking(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	all_rows = [row for row in _report_rows(result) if isinstance(row, dict)]
@@ -1058,7 +1086,7 @@ def _build_gross_profit_ranking(
 		"quantity",
 		"contribution_percent",
 	]
-	metric_key = _requested_metric_hint(request_message, available_metric_keys, metric_key)
+	metric_key = _requested_metric_key_from_contract(compiler_contract, available_metric_keys, metric_key)
 	metric_label = _metric_label(metric_key, metric_label)
 	source_field = {
 		"gross_profit": "gross_profit",
@@ -1105,7 +1133,7 @@ def _build_gross_profit_ranking(
 			"primary_metric_label": metric_label,
 			"source_grain": "grouped_profitability",
 		},
-			request_message=request_message,
+			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
 		),
@@ -1157,7 +1185,6 @@ def _build_item_history_ranking(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
@@ -1204,7 +1231,7 @@ def _build_item_history_ranking(
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
 	available_metric_keys = ["sales_amount", "quantity", "contribution_percent"]
-	metric_key = _requested_metric_hint(request_message, available_metric_keys, metric_key)
+	metric_key = _requested_metric_key_from_contract(compiler_contract, available_metric_keys, metric_key)
 	metric_label = _metric_label(metric_key, metric_label)
 	ranked_rows = _sort_ranked_rows(list(aggregated.values()), metric_key)
 	contribution_metric_key = "sales_amount" if any(_numeric_value(row.get("sales_amount")) for row in ranked_rows) else metric_key
@@ -1223,7 +1250,7 @@ def _build_item_history_ranking(
 			"primary_metric_label": metric_label,
 			"source_grain": "aggregated_history",
 		},
-			request_message=request_message,
+			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
 		),
@@ -1271,7 +1298,6 @@ def _build_stock_ranking(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
@@ -1308,7 +1334,7 @@ def _build_stock_ranking(
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
 	available_metric_keys = ["balance_qty", "balance_value", "contribution_percent"]
-	metric_key = _requested_metric_hint(request_message, available_metric_keys, metric_key)
+	metric_key = _requested_metric_key_from_contract(compiler_contract, available_metric_keys, metric_key)
 	metric_label = _metric_label(metric_key, metric_label)
 	ranked_rows = _sort_ranked_rows(list(aggregated.values()), metric_key)
 	ranked_rows = _add_contribution_percent(ranked_rows, base_metric_key=metric_key)
@@ -1326,7 +1352,7 @@ def _build_stock_ranking(
 			"primary_metric_label": metric_label,
 			"source_grain": "inventory_snapshot",
 		},
-			request_message=request_message,
+			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
 		),
@@ -1360,7 +1386,6 @@ def _build_ranking_artifact(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	report_key = _normalize_key(report_name)
 	if report_key == "sales_analytics":
@@ -1369,7 +1394,6 @@ def _build_ranking_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	if report_key in {"accounts_payable_summary", "accounts_receivable_summary"}:
 		return _build_aging_ranking(
@@ -1377,7 +1401,6 @@ def _build_ranking_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	if report_key == "gross_profit":
 		return _build_gross_profit_ranking(
@@ -1385,7 +1408,6 @@ def _build_ranking_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	if report_key == "item_wise_sales_history":
 		return _build_item_history_ranking(
@@ -1393,7 +1415,6 @@ def _build_ranking_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	if report_key in {"stock_balance", "warehouse_wise_stock_balance"}:
 		return _build_stock_ranking(
@@ -1401,7 +1422,6 @@ def _build_ranking_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	return FamilyArtifactOutcome(
 		status="unsupported_family_report",
@@ -1840,7 +1860,6 @@ def _build_product_profitability_artifact(
 	report_name: str,
 	report_tool: Dict[str, Any],
 	compiler_contract: Dict[str, Any],
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
@@ -1912,7 +1931,7 @@ def _build_product_profitability_artifact(
 		)
 	available_metrics = [str(key or "").strip() for key in metrics.keys() if str(key or "").strip()]
 	primary_metric_key, primary_metric_label = _product_primary_metric_key(compiler_contract, available_metrics)
-	primary_metric_key = _requested_metric_hint(request_message, available_metrics, primary_metric_key)
+	primary_metric_key = _requested_metric_key_from_contract(compiler_contract, available_metrics, primary_metric_key)
 	primary_metric_label = _metric_label(primary_metric_key, primary_metric_label)
 	product_rows = _sort_metric_rows(product_rows, primary_metric_key)
 	contribution_metric_key = "sales_amount" if any(_numeric_value(row.get("sales_amount")) for row in product_rows) else primary_metric_key
@@ -1922,7 +1941,7 @@ def _build_product_profitability_artifact(
 	dimensions["primary_metric_label"] = primary_metric_label
 	dimensions = _apply_request_hints(
 		dimensions,
-		request_message=request_message,
+		compiler_contract=compiler_contract,
 		available_metric_keys=available_metrics + ["contribution_percent"],
 		default_metric_key=primary_metric_key,
 	)
@@ -2114,21 +2133,34 @@ def _build_aging_artifact(
 	)
 
 
-def _requested_transaction_columns(message: str) -> List[str]:
+def _requested_transaction_columns(compiler_contract: Dict[str, Any]) -> List[str]:
+	requested_dimensions = set(
+		_canonical_requested_values(
+			compiler_contract,
+			"requested_dimensions",
+			dimension_or_metric="dimension",
+		)
+	)
+	requested_metrics = set(
+		_canonical_requested_values(
+			compiler_contract,
+			"requested_metrics",
+			dimension_or_metric="metric",
+		)
+	)
 	columns: List[str] = []
-	for key in detect_canonical_keys(message):
-		if key == "document_name":
-			columns.append("document_name")
-		elif key == "posting_date":
-			columns.append("posting_date")
-		elif key == "customer":
-			columns.append("customer")
-		elif key in {"grand_total", "sales_amount"}:
-			columns.append("grand_total")
-		elif key in {"outstanding_amount", "outstanding_total"}:
-			columns.append("outstanding_amount")
-		elif key == "document_status":
-			columns.append("status")
+	if "document_name" in requested_dimensions:
+		columns.append("document_name")
+	if "posting_date" in requested_dimensions:
+		columns.append("posting_date")
+	if "customer" in requested_dimensions:
+		columns.append("customer")
+	if requested_metrics.intersection({"grand_total", "sales_amount"}):
+		columns.append("grand_total")
+	if requested_metrics.intersection({"outstanding_amount", "outstanding_total"}):
+		columns.append("outstanding_amount")
+	if "document_status" in requested_dimensions:
+		columns.append("status")
 	return list(dict.fromkeys([value for value in columns if value]))
 
 
@@ -2137,7 +2169,7 @@ def _build_transaction_listing_artifact(
 	request_id: str,
 	report_name: str,
 	report_tool: Dict[str, Any],
-	request_message: str = "",
+	compiler_contract: Dict[str, Any],
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
@@ -2157,7 +2189,6 @@ def _build_transaction_listing_artifact(
 		)
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
-	requested_top_n = _requested_top_n(request_message)
 	document_rows = [
 		{
 			"document_name": str(row.get("name") or "").strip(),
@@ -2171,11 +2202,12 @@ def _build_transaction_listing_artifact(
 		for row in rows
 		if str(row.get("name") or "").strip()
 	]
+	requested_top_n = _requested_top_n_from_contract(compiler_contract)
 	if requested_top_n > 0:
 		document_rows = document_rows[:requested_top_n]
 	total_amount = sum(_numeric_value(row.get("grand_total")) for row in document_rows)
 	total_outstanding = sum(_numeric_value(row.get("outstanding_amount")) for row in document_rows)
-	requested_columns = _requested_transaction_columns(request_message)
+	requested_columns = _requested_transaction_columns(compiler_contract)
 	artifact = build_normalized_family_artifact_contract(
 		request_id=request_id,
 		family_id="transaction_listing",
@@ -2220,7 +2252,6 @@ def build_normalized_family_artifact(
 	runtime_payload: Dict[str, Any],
 	intent_class: str = "",
 	preferred_family_id: str = "",
-	request_message: str = "",
 ) -> FamilyArtifactOutcome:
 	report_name = str(compiler_contract.get("selected_report") or "").strip()
 	report_tool = _report_tool(runtime_payload)
@@ -2259,7 +2290,6 @@ def build_normalized_family_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	if target_family_id == "trend_analytics":
 		return _build_trend_artifact(
@@ -2281,14 +2311,13 @@ def build_normalized_family_artifact(
 			report_name=report_name,
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
-			request_message=request_message,
 		)
 	if target_family_id == "transaction_listing":
 		return _build_transaction_listing_artifact(
 			request_id=request_id,
 			report_name=report_name,
 			report_tool=report_tool,
-			request_message=request_message,
+			compiler_contract=compiler_contract,
 		)
 	return FamilyArtifactOutcome(
 		status="not_applicable",

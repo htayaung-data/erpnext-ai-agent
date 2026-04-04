@@ -70,6 +70,22 @@ def load_validation_rules() -> Dict[str, Any]:
 	return _load_json("validation_rules.json")
 
 
+def load_semantic_resolution_registry() -> Dict[str, Any]:
+	return _load_json("semantic_resolution_registry.json")
+
+
+def load_financial_summary_clarification_registry() -> Dict[str, Any]:
+	return _load_json("financial_summary_clarification_registry.json")
+
+
+def load_financial_summary_resolution_registry() -> Dict[str, Any]:
+	return _load_json("financial_summary_resolution_registry.json")
+
+
+def load_smoke_fixture_registry() -> Dict[str, Any]:
+	return _load_json("smoke_fixture_registry.json")
+
+
 def get_capability_spec(capability_id: str) -> Dict[str, Any]:
 	capabilities = load_capability_registry().get("capabilities")
 	if not isinstance(capabilities, list):
@@ -191,6 +207,98 @@ def get_intent_class_spec(intent_class_id: str) -> Dict[str, Any]:
 		if str(item.get("intent_class_id") or "").strip() == target:
 			return item
 	return {}
+
+
+def list_semantic_resolution_slot_definitions() -> List[Dict[str, Any]]:
+	values = load_semantic_resolution_registry().get("slot_definitions")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_semantic_resolution_slot_definition(slot_name: str) -> Dict[str, Any]:
+	target = str(slot_name or "").strip()
+	for item in list_semantic_resolution_slot_definitions():
+		if str(item.get("slot_name") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_financial_summary_clarification_specs() -> List[Dict[str, Any]]:
+	values = load_financial_summary_clarification_registry().get("reason_types")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_smoke_fixture_specs() -> List[Dict[str, Any]]:
+	values = load_smoke_fixture_registry().get("fixtures")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_smoke_fixture_spec(fixture_id: str) -> Dict[str, Any]:
+	target = str(fixture_id or "").strip()
+	for item in list_smoke_fixture_specs():
+		if str(item.get("fixture_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def get_financial_summary_clarification_spec(reason_type: str) -> Dict[str, Any]:
+	target = str(reason_type or "").strip()
+	for item in list_financial_summary_clarification_specs():
+		if str(item.get("reason_type") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_financial_summary_domain_rules() -> List[Dict[str, Any]]:
+	values = load_financial_summary_resolution_registry().get("domain_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_financial_summary_metric_family_rules() -> List[Dict[str, Any]]:
+	values = load_financial_summary_resolution_registry().get("metric_family_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_financial_summary_focus_rules() -> List[Dict[str, Any]]:
+	values = load_financial_summary_resolution_registry().get("focus_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_financial_summary_grain_rules() -> List[Dict[str, Any]]:
+	values = load_financial_summary_resolution_registry().get("grain_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_financial_summary_normalization_rules() -> List[Dict[str, Any]]:
+	values = load_financial_summary_resolution_registry().get("normalization_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_financial_summary_clarification_rules() -> List[Dict[str, Any]]:
+	values = load_financial_summary_resolution_registry().get("clarification_rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_financial_summary_clarification_policies() -> Dict[str, Any]:
+	value = load_financial_summary_resolution_registry().get("clarification_policies")
+	return dict(value) if isinstance(value, dict) else {}
 
 
 def list_frontdoor_intent_specs() -> List[Dict[str, Any]]:

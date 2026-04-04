@@ -21,3 +21,5 @@ Current files:
 3. `report_family_registry.json`
 4. `business_ontology.json`
 5. `validation_rules.json`
+6. `semantic_alias_registry.json`
+7. `semantic_resolution_registry.json`

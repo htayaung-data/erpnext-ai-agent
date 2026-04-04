@@ -30,6 +30,9 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_intent_classes,
 	report_supported_metrics,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution import (
+	resolve_interpretation_semantically,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import (
 	get_canonical_key,
 	get_aliases,
@@ -517,6 +520,59 @@ def compile_fresh_query(
 	interpretation: FreshQueryInterpretationContract,
 	response_policy: Dict[str, Any] | None = None,
 ) -> CompilerOutcome:
+	governed_resolution_details: Dict[str, Any] = {}
+	semantic_resolution = resolve_interpretation_semantically(interpretation)
+	if semantic_resolution is not None:
+		governed_resolution_details = {
+			"resolution_mode": "semantic_resolution",
+			"semantic_resolution_contract": semantic_resolution.contract.to_payload(),
+		}
+		if semantic_resolution.blocks_legacy_fallback:
+			governed_resolution_details["blocks_legacy_fallback"] = True
+		semantic_decision = str(
+			getattr(semantic_resolution.contract, "governed_decision", "")
+			or getattr(semantic_resolution.contract, "decision", "")
+			or ""
+		).strip()
+		semantic_reason = str(
+			getattr(semantic_resolution.contract, "governed_reason", "")
+			or getattr(semantic_resolution.contract, "decision_reason", "")
+			or ""
+		).strip()
+		semantic_capability_ids = _clean_list(
+			getattr(semantic_resolution.contract, "candidate_capability_ids", [])
+		)
+		semantic_reports = _clean_list(
+			getattr(semantic_resolution.contract, "candidate_reports", [])
+		)
+		if semantic_decision == "clarify":
+			clarification_reason_type = str(semantic_resolution.clarification_reason_type or "").strip() or "report_ambiguity"
+			clarification_details = dict(semantic_resolution.clarification_details or {})
+			if "semantic_resolution_contract" not in clarification_details:
+				clarification_details["semantic_resolution_contract"] = semantic_resolution.contract.to_payload()
+			if semantic_resolution.blocks_legacy_fallback:
+				clarification_details["blocks_legacy_fallback"] = True
+			compiler_contract = build_fresh_query_compiler_contract(
+				request_id=request_id,
+				session_id=session_id,
+				capability_id=str((semantic_capability_ids or [""])[0] or "").strip(),
+				requested_dimensions=interpretation.requested_dimensions,
+				requested_metrics=interpretation.requested_metrics,
+				requested_time_scope=interpretation.requested_time_scope,
+				target_limit=interpretation.target_limit,
+				decision="clarify",
+				clarification_required=True,
+				compiler_reason=semantic_reason,
+				governed_resolution_details=governed_resolution_details,
+				clarification_reason_type=clarification_reason_type,
+				clarification_details={
+					"report_candidates": list(semantic_reports),
+					**clarification_details,
+				},
+			)
+			return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
+		interpretation = semantic_resolution.interpretation
+
 	capability_id, capability_reason = _resolve_capability(interpretation)
 	if not capability_id:
 		decision = "clarify" if interpretation.ambiguity_flags else "reject"
@@ -531,9 +587,11 @@ def compile_fresh_query(
 			requested_dimensions=interpretation.requested_dimensions,
 			requested_metrics=interpretation.requested_metrics,
 			requested_time_scope=interpretation.requested_time_scope,
+			target_limit=interpretation.target_limit,
 			decision=decision,
 			clarification_required=decision == "clarify",
 			compiler_reason=capability_reason or interpretation.ambiguity_reason or "Capability resolution failed.",
+			governed_resolution_details=governed_resolution_details,
 			clarification_reason_type=reason_type if decision == "clarify" else "",
 			clarification_details=reason_details if decision == "clarify" else {},
 		)
@@ -548,9 +606,11 @@ def compile_fresh_query(
 			requested_dimensions=interpretation.requested_dimensions,
 			requested_metrics=interpretation.requested_metrics,
 			requested_time_scope=interpretation.requested_time_scope,
+			target_limit=interpretation.target_limit,
 			decision="clarify",
 			clarification_required=True,
 			compiler_reason=report_reason or "Report selection remained ambiguous.",
+			governed_resolution_details=governed_resolution_details,
 			clarification_reason_type="report_ambiguity",
 			clarification_details={"report_candidates": list(interpretation.candidate_reports)},
 		)
@@ -607,9 +667,11 @@ def compile_fresh_query(
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
 		decision=decision,
 		clarification_required=clarification_required,
 		compiler_reason=" ".join(part for part in reasons if part).strip(),
+		governed_resolution_details=governed_resolution_details,
 		clarification_reason_type=clarification_reason_type,
 		clarification_details=clarification_details,
 	)
@@ -623,6 +685,7 @@ def compile_fresh_query(
 		filters=filters,
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
+		target_limit=interpretation.target_limit,
 		response_policy=response_policy if isinstance(response_policy, dict) else {},
 	)
 	return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=compiled_request)

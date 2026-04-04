@@ -2,6 +2,7 @@ import json
 import unittest
 from dataclasses import dataclass
 from typing import Any, Dict
+from unittest import mock
 
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_artifact_enrichment_recovery_contract,
@@ -16,6 +17,7 @@ from ai_assistant_ui.qwen_chat.knowledge_boundary import (
 from ai_assistant_ui.qwen_chat.reasoning_execution import (
 	run_phase6d_reasoning_continuation_guardrail_smoke,
 )
+from ai_assistant_ui.qwen_chat.context.session_context import save_session
 from ai_assistant_ui.qwen_chat.service import (
 	_build_recovery_guidance_answer,
 	_latest_recovery_contract,
@@ -54,6 +56,161 @@ class TestPostContractGuardProbes(unittest.TestCase):
 			if isinstance(value, dict) and "ok" in value:
 				self._assert_ok_tree(value, f"{path}.{key}")
 
+	def test_session_save_retries_transient_lock_timeout_once(self):
+		class _TransientSessionDoc:
+			def __init__(self):
+				self.calls = 0
+
+			def save(self, *, ignore_permissions=False):
+				self.calls += 1
+				if self.calls == 1:
+					raise Exception("Lock wait timeout exceeded; try restarting transaction")
+
+		session_doc = _TransientSessionDoc()
+		with mock.patch("ai_assistant_ui.qwen_chat.context.session_context.time.sleep", return_value=None):
+			save_session(session_doc, ignore_permissions=False)
+		self.assertEqual(session_doc.calls, 2, "Transient lock timeout should be retried exactly once before succeeding.")
+
+	def test_session_save_reloads_and_retries_transient_deadlock_for_append_only_state(self):
+		class QueryDeadlockError(Exception):
+			pass
+
+		class _TransientDeadlockSessionDoc:
+			def __init__(self):
+				self.calls = 0
+				self.reload_calls = 0
+				self.pending_clarification_state_json = '{"state":"pending"}'
+				self._messages = [{"role": "user", "content": "top 7 products by revenue last month"}]
+
+			def get(self, key, default=None):
+				if key == "messages":
+					return list(self._messages)
+				return default
+
+			def append(self, key, value):
+				if key == "messages":
+					self._messages.append(dict(value))
+
+			def reload(self):
+				self.reload_calls += 1
+				self._messages = []
+				self.pending_clarification_state_json = ""
+
+			def save(self, *, ignore_permissions=False):
+				self.calls += 1
+				if self.calls == 1:
+					raise QueryDeadlockError("Deadlock found when trying to get lock; try restarting transaction")
+
+		session_doc = _TransientDeadlockSessionDoc()
+		with mock.patch("ai_assistant_ui.qwen_chat.context.session_context.time.sleep", return_value=None):
+			save_session(session_doc, ignore_permissions=False)
+		self.assertEqual(session_doc.calls, 2, "Transient deadlock should be retried once after reload/restore.")
+		self.assertEqual(session_doc.reload_calls, 1)
+		self.assertEqual(
+			session_doc.get("messages"),
+			[{"role": "user", "content": "top 7 products by revenue last month"}],
+		)
+		self.assertEqual(session_doc.pending_clarification_state_json, '{"state":"pending"}')
+
+	def test_session_save_retries_multiple_transient_deadlocks_before_success(self):
+		class QueryDeadlockError(Exception):
+			pass
+
+		class _RepeatedTransientDeadlockSessionDoc:
+			def __init__(self):
+				self.calls = 0
+				self.reload_calls = 0
+				self.pending_clarification_state_json = '{"state":"pending"}'
+				self._messages = [{"role": "user", "content": "show me financial statement"}]
+
+			def get(self, key, default=None):
+				if key == "messages":
+					return list(self._messages)
+				return default
+
+			def append(self, key, value):
+				if key == "messages":
+					self._messages.append(dict(value))
+
+			def reload(self):
+				self.reload_calls += 1
+				self._messages = []
+				self.pending_clarification_state_json = ""
+
+			def save(self, *, ignore_permissions=False):
+				self.calls += 1
+				if self.calls <= 3:
+					raise QueryDeadlockError("Deadlock found when trying to get lock; try restarting transaction")
+
+		session_doc = _RepeatedTransientDeadlockSessionDoc()
+		with mock.patch("ai_assistant_ui.qwen_chat.context.session_context.time.sleep", return_value=None):
+			save_session(session_doc, ignore_permissions=False)
+		self.assertEqual(session_doc.calls, 4, "Transient deadlocks should be retried through the bounded retry window.")
+		self.assertEqual(session_doc.reload_calls, 3)
+		self.assertEqual(
+			session_doc.get("messages"),
+			[{"role": "user", "content": "show me financial statement"}],
+		)
+		self.assertEqual(session_doc.pending_clarification_state_json, '{"state":"pending"}')
+
+	def test_session_save_does_not_swallow_non_transient_errors(self):
+		class _ExplodingSessionDoc:
+			def __init__(self):
+				self.calls = 0
+
+			def save(self, *, ignore_permissions=False):
+				self.calls += 1
+				raise RuntimeError("permanent failure")
+
+		session_doc = _ExplodingSessionDoc()
+		with mock.patch("ai_assistant_ui.qwen_chat.context.session_context.time.sleep", return_value=None):
+			with self.assertRaises(RuntimeError):
+				save_session(session_doc, ignore_permissions=False)
+		self.assertEqual(session_doc.calls, 1, "Non-transient save failures must not be retried.")
+
+	def test_session_save_reloads_and_retries_timestamp_mismatch_for_append_only_state(self):
+		class TimestampMismatchError(Exception):
+			pass
+
+		class _TimestampMismatchSessionDoc:
+			def __init__(self):
+				self.calls = 0
+				self.reload_calls = 0
+				self.pending_clarification_state_json = '{"state":"pending"}'
+				self._messages = [{"role": "user", "content": "show me financial statement"}]
+
+			def get(self, key, default=None):
+				if key == "messages":
+					return list(self._messages)
+				return default
+
+			def append(self, key, value):
+				if key == "messages":
+					self._messages.append(dict(value))
+
+			def reload(self):
+				self.reload_calls += 1
+				self._messages = []
+				self.pending_clarification_state_json = ""
+
+			def save(self, *, ignore_permissions=False):
+				self.calls += 1
+				if self.calls == 1:
+					raise TimestampMismatchError(
+						"Error: TEST (Qwen Chat Session) has been modified after you have opened it"
+					)
+
+		session_doc = _TimestampMismatchSessionDoc()
+		with mock.patch("ai_assistant_ui.qwen_chat.context.session_context.time.sleep", return_value=None):
+			save_session(session_doc, ignore_permissions=False)
+		self.assertEqual(session_doc.calls, 2, "Timestamp mismatch should be retried once after reload/restore.")
+		self.assertEqual(session_doc.reload_calls, 1)
+		self.assertEqual(
+			session_doc.get("messages"),
+			[{"role": "user", "content": "show me financial statement"}],
+		)
+		self.assertEqual(session_doc.pending_clarification_state_json, '{"state":"pending"}')
+
 	def test_phase6_continuation_guardrail_probe(self):
 		self._assert_ok_tree(
 			run_phase6d_reasoning_continuation_guardrail_smoke(),
@@ -78,30 +235,33 @@ class TestPostContractGuardProbes(unittest.TestCase):
 			"phase8a_recovery_contract",
 		)
 
-	def test_semantic_repair_rejects_substantive_followup_as_acceptance(self):
-		intent = _validate_semantic_payload(
-			payload={
-				"repair_intent_type": "accept_recovery_action",
-				"accepted_recovery_action": "run_alternative_governed_query",
-				"confidence": 0.94,
-				"reason": "User wants the governed alternative.",
-				"preserve_scope": True,
-				"preserve_entity_dimension": True,
-				"preserve_time_context": True,
-			},
-			context={
-				"available_recovery_actions": ["run_alternative_governed_query", "clarify_target_output"],
-				"preservable_scope_available": True,
-				"preservable_dimension_available": True,
-				"preservable_time_available": True,
-			},
-			message="include qty column",
-			latest_grounded_turn={"grounded": True, "artifact_family_id": "ranking_analytics"},
-		)
-		self.assertIsNone(
-			intent,
-			"Substantive follow-up requests must not be auto-treated as recovery acceptance.",
-		)
+	def test_semantic_repair_acceptance_validation_does_not_call_lexical_followup_parser(self):
+		with mock.patch(
+			"ai_assistant_ui.qwen_chat.semantic_repair_intent.detect_followup_intent",
+			side_effect=AssertionError("lexical parser should not be called"),
+			create=True,
+		):
+			intent = _validate_semantic_payload(
+				payload={
+					"repair_intent_type": "accept_recovery_action",
+					"accepted_recovery_action": "run_alternative_governed_query",
+					"confidence": 0.94,
+					"reason": "User wants the governed alternative.",
+					"preserve_scope": True,
+					"preserve_entity_dimension": True,
+					"preserve_time_context": True,
+				},
+				context={
+					"available_recovery_actions": ["run_alternative_governed_query", "clarify_target_output"],
+					"preservable_scope_available": True,
+					"preservable_dimension_available": True,
+					"preservable_time_available": True,
+				},
+				message="include qty column",
+				latest_grounded_turn={"grounded": True, "artifact_family_id": "ranking_analytics"},
+			)
+		self.assertIsNotNone(intent)
+		self.assertEqual(intent.repair_intent_type, "accept_recovery_action")
 
 	def test_semantic_repair_acceptance_allows_explicit_confirmation(self):
 		intent = _validate_semantic_payload(

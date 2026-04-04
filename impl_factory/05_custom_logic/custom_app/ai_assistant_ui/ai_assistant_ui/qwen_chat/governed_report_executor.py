@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import re
 import time
 from typing import Any, Dict
 
@@ -38,19 +37,7 @@ def _result_row_count(output_obj: Dict[str, Any]) -> int:
 	return -1
 
 
-def _normalized_text(value: str) -> str:
-	return " ".join(str(value or "").strip().lower().split())
-
-
-def _requested_limit(message: str, default_limit: int) -> int:
-	text = _normalized_text(message)
-	if text:
-		match = re.search(r"\b(?:last|latest|recent|top)\s+(\d{1,2})\b", text)
-		if match:
-			try:
-				return max(1, min(100, int(match.group(1))))
-			except Exception:
-				pass
+def _default_limit(default_limit: int) -> int:
 	return max(1, min(100, int(default_limit or 10)))
 
 
@@ -97,7 +84,7 @@ def _execute_direct_query(
 	report_name: str,
 	report_spec: Dict[str, Any],
 	filters: Dict[str, Any],
-	request_message: str,
+	target_limit: int = 0,
 ) -> Dict[str, Any]:
 	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
 	doctype = str(query_spec.get("doctype") or "").strip()
@@ -117,7 +104,7 @@ def _execute_direct_query(
 	date_field = str(query_spec.get("date_field") or "").strip()
 	order_by = str(query_spec.get("order_by") or "").strip() or "modified desc"
 	default_limit = int(query_spec.get("default_limit") or 10)
-	limit = _requested_limit(request_message, default_limit)
+	limit = _default_limit(target_limit or default_limit)
 	applied_filters: Dict[str, Any] = {}
 	fixed_filters = query_spec.get("fixed_filters") if isinstance(query_spec.get("fixed_filters"), dict) else {}
 	applied_filters.update({str(k): v for k, v in fixed_filters.items() if str(k or "").strip()})
@@ -174,7 +161,7 @@ def _execute_once(
 	report_name: str,
 	filters: Dict[str, Any],
 	user: str,
-	request_message: str = "",
+	target_limit: int = 0,
 ) -> Dict[str, Any]:
 	started = time.perf_counter()
 	try:
@@ -185,7 +172,7 @@ def _execute_once(
 				report_name=report_name,
 				report_spec=report_spec,
 				filters=filters,
-				request_message=request_message,
+				target_limit=target_limit,
 			)
 		else:
 			raw_result = fac_generate_report(
@@ -226,7 +213,7 @@ def execute_governed_report(
 	filters: Dict[str, Any] | None,
 	user: str,
 	mode: str = "compiled_read_query",
-	request_message: str = "",
+	target_limit: int = 0,
 ) -> Dict[str, Any]:
 	report = str(report_name or "").strip()
 	clean_filters = dict(filters or {})
@@ -246,7 +233,7 @@ def execute_governed_report(
 			report_name=report,
 			filters=clean_filters,
 			user=user,
-			request_message=request_message,
+			target_limit=target_limit,
 		)
 		attempts.append(
 			{

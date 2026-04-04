@@ -28,7 +28,6 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 )
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
-from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
 from ai_assistant_ui.qwen_chat.metadata import (
@@ -38,15 +37,13 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_intent_classes,
 	capability_ontology_concepts,
 	list_capability_specs,
+	list_composite_read_specs,
 	list_intent_class_specs,
 	ontology_detect_concepts,
-	ontology_query_slot_aliases,
 	report_business_family_ids,
 	report_capability_ids,
 	report_family_capability_ids,
-	report_family_default_intent_class,
 	report_family_ids_for_intent_class,
-	report_family_report_names,
 	report_supported_dimensions,
 	report_supported_intent_classes,
 	report_supported_metrics,
@@ -56,13 +53,17 @@ from ai_assistant_ui.qwen_chat.runtime_client import (
 	call_qwen_runtime_chat,
 	call_qwen_runtime_fresh_query_interpretation,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution import (
+	resolve_interpretation_semantically,
+)
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
+	semantic_resolution_governs_intent,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_erp_field_mapping
 from ai_assistant_ui.qwen_chat.semantic_validator import (
 	run_phase4_semantic_validation_selftests,
 	validate_compiled_semantic_result,
 )
-from ai_assistant_ui.qwen_chat.intent_rules_engine import apply_intent_rules
-
 try:
 	import frappe  # type: ignore
 except Exception:  # pragma: no cover
@@ -148,37 +149,6 @@ def _normalize_time_scope(value: Any) -> str:
 	return key
 
 
-def _contains_alias(text: str, alias: str) -> bool:
-	value = " ".join(str(text or "").strip().lower().split())
-	target = " ".join(str(alias or "").strip().lower().split())
-	if not value or not target:
-		return False
-	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
-	return bool(re.search(pattern, value))
-
-
-def _metadata_slot_value(message: str, slot_aliases: Dict[str, List[str]]) -> str:
-	text = str(message or "").strip()
-	if not text:
-		return ""
-	for slot_value, aliases in slot_aliases.items():
-		for alias in aliases:
-			if _contains_alias(text, alias):
-				return str(slot_value or "").strip()
-	return ""
-
-
-def _infer_governed_time_scope(*, intent_class: str, message: str, requested_time_scope: str) -> str:
-	if str(requested_time_scope or "").strip():
-		return str(requested_time_scope or "").strip()
-	value = _metadata_slot_value(message, ontology_query_slot_aliases("requested_time_scope"))
-	if value:
-		return _normalize_time_scope(value)
-	if str(intent_class or "").strip() in {"trend_analysis", "product_performance"}:
-		return "current_fiscal_year_to_date"
-	return ""
-
-
 def _confidence_threshold() -> float:
 	default = 0.72
 	if frappe is None:
@@ -221,6 +191,18 @@ def _sanitize_extracted_slots(
 		}
 		if filters:
 			clean_slots["filters"] = filters
+	composite_profile_lookup = {
+		str(item.get("plan_id") or "").strip()
+		for item in list_composite_read_specs()
+		if isinstance(item, dict) and str(item.get("plan_id") or "").strip()
+	}
+	composite_profile_context = [
+		value
+		for value in _clean_list(extracted_slots.get("composite_profile_context"))
+		if value in composite_profile_lookup
+	]
+	if composite_profile_context:
+		clean_slots["composite_profile_context"] = list(dict.fromkeys(composite_profile_context))
 	return clean_slots
 
 
@@ -245,12 +227,23 @@ def _build_interpretation_context() -> Dict[str, Any]:
 		for item in list_capability_specs()
 		if isinstance(item, dict) and str(item.get("capability_id") or "").strip()
 	]
+	composite_profiles = [
+		{
+			"plan_id": str(item.get("plan_id") or "").strip(),
+			"supported_intent_classes": _clean_list(item.get("supported_intent_classes")),
+			"required_concepts_all": _clean_list(item.get("required_concepts_all")),
+			"preferred_concepts_any": _clean_list(item.get("preferred_concepts_any")),
+		}
+		for item in list_composite_read_specs()
+		if isinstance(item, dict) and str(item.get("plan_id") or "").strip()
+	]
 	return {
 		"current_date_utc": _current_date_iso(),
 		"single_company_mode": True,
 		"company_handling": "compiler_injected_invariant",
 		"intent_classes": intent_classes,
 		"capabilities": capabilities,
+		"composite_profiles": composite_profiles,
 		"allowed_presentations": sorted(_ALLOWED_PRESENTATION_MODES),
 		"allowed_ambiguity_flags": sorted(_ALLOWED_AMBIGUITY_FLAGS),
 	}
@@ -288,40 +281,8 @@ def _message_tokens(value: str) -> set[str]:
 	return {token for token in text.split() if token}
 
 
-def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
-	"""
-	Apply intent bias rules from metadata registry.
-	
-	This function uses the metadata-driven rules engine instead of
-	hardcoded Python logic. This is enterprise-grade architecture.
-	
-	Args:
-		intent_class: Current intent class from proposal
-		message: Original user message
-	
-	Returns:
-		Updated intent class (or original if no rules matched)
-	"""
-	# Create minimal interpretation for rule evaluation
-	interpretation = FreshQueryInterpretationContract(
-		request_id="",
-		session_id="",
-		intent_class=intent_class,
-		candidate_capability_ids=[],
-		candidate_reports=[],
-		requested_dimensions=[],
-		requested_metrics=[],
-		requested_time_scope="",
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=[],
-		ambiguity_reason="",
-		confidence=0.0,
-	)
-	
-	# Apply rules from metadata registry
-	result = apply_intent_rules(message, interpretation)
-	return result.intent_class
+def _semantic_resolution_governs_intent(intent_class: str) -> bool:
+	return semantic_resolution_governs_intent(intent_class)
 
 
 def _default_spec_values(spec: Dict[str, Any], key: str) -> List[str]:
@@ -527,18 +488,15 @@ def _apply_governed_interpretation_biases(
 	requested_metrics: List[str],
 ) -> tuple[List[str], List[str]]:
 	intent_key = str(intent_class or "").strip()
+	if _semantic_resolution_governs_intent(intent_key):
+		return (
+			list(dict.fromkeys(_clean_list(candidate_capability_ids))),
+			list(dict.fromkeys(_clean_list(candidate_reports))),
+		)
 	message_concepts = ontology_detect_concepts(message)
 	capability_ids = list(dict.fromkeys(_clean_list(candidate_capability_ids)))
 	if not capability_ids and intent_key:
-		surface = build_family_tool_surface_for_message(
-			request_id="",
-			session_id="",
-			message=message,
-			preferred_intent_class=intent_key,
-		)
 		family_id = ""
-		if surface is not None and list(surface.candidate_family_ids or []):
-			family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
 		if not family_id:
 			family_ids = report_family_ids_for_intent_class(intent_key)
 			family_id = str((family_ids or [""])[0] or "").strip()
@@ -579,6 +537,12 @@ def _apply_governed_request_defaults(
 	requested_metrics: List[str],
 	requested_time_scope: str,
 ) -> tuple[List[str], List[str], str]:
+	if _semantic_resolution_governs_intent(intent_class):
+		return (
+			list(dict.fromkeys(_clean_list(requested_dimensions))),
+			list(dict.fromkeys(_clean_list(requested_metrics))),
+			str(requested_time_scope or "").strip(),
+		)
 	capability_id = str((_clean_list(candidate_capability_ids) or [""])[0] or "").strip()
 	report_name = str((_clean_list(candidate_reports) or [""])[0] or "").strip()
 	dimensions = _resolve_requested_labels(
@@ -602,6 +566,26 @@ def _apply_governed_request_defaults(
 		spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
 		time_scope = str(spec.get("default_time_scope") or "").strip()
 	return dimensions, metrics, time_scope
+
+
+def _allow_deterministic_family_surface_fallback(intent_class: str) -> bool:
+	return False
+
+
+def _apply_governed_time_scope_default(
+	*,
+	intent_class: str,
+	candidate_capability_ids: List[str],
+	requested_time_scope: str,
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if current or not _semantic_resolution_governs_intent(intent_class):
+		return current
+	capability_id = str((_clean_list(candidate_capability_ids) or [""])[0] or "").strip()
+	if not capability_id:
+		return ""
+	spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
+	return str(spec.get("default_time_scope") or "").strip()
 
 
 def _preferred_family_id_for_message(
@@ -663,7 +647,6 @@ def _validate_semantic_payload(
 	)
 	raw_intent_class = str(payload.get("intent_class") or "").strip()
 	intent_class = intent_lookup.get(_normalize_key(raw_intent_class), "")
-	intent_class = _apply_governed_intent_bias(intent_class=intent_class, message=message)
 
 	capabilities = [
 		dict(item)
@@ -717,11 +700,20 @@ def _validate_semantic_payload(
 		candidate_reports.append(canonical)
 	candidate_reports = list(dict.fromkeys(candidate_reports))
 
+	raw_requested_dimensions = list(dict.fromkeys(_clean_list(payload.get("requested_dimensions"))))
+	raw_requested_metrics = list(dict.fromkeys(_clean_list(payload.get("requested_metrics"))))
+
+	scoped_capabilities = _capability_scope(intent_class, candidate_capability_ids, context)
 	dimension_lookup = _normalized_lookup(
 		[
 			dimension
 			for capability in scoped_capabilities
 			for dimension in _clean_list(capability.get("dimensions"))
+		]
+		+ [
+			dimension
+			for report_name in candidate_reports
+			for dimension in _clean_list(report_supported_dimensions(report_name))
 		]
 	)
 	metric_lookup = _normalized_lookup(
@@ -730,9 +722,14 @@ def _validate_semantic_payload(
 			for capability in scoped_capabilities
 			for metric in _clean_list(capability.get("metrics"))
 		]
+		+ [
+			metric
+			for report_name in candidate_reports
+			for metric in _clean_list(report_supported_metrics(report_name))
+		]
 	)
 	requested_dimensions: List[str] = []
-	for value in _clean_list(payload.get("requested_dimensions")):
+	for value in raw_requested_dimensions:
 		canonical = dimension_lookup.get(_normalize_key(value), "")
 		if not canonical:
 			return None
@@ -740,7 +737,7 @@ def _validate_semantic_payload(
 	requested_dimensions = list(dict.fromkeys(requested_dimensions))
 
 	requested_metrics: List[str] = []
-	for value in _clean_list(payload.get("requested_metrics")):
+	for value in raw_requested_metrics:
 		canonical = metric_lookup.get(_normalize_key(value), "")
 		if not canonical:
 			return None
@@ -775,10 +772,15 @@ def _validate_semantic_payload(
 	except Exception:
 		confidence = 0.0
 	confidence = max(0.0, min(1.0, confidence))
+	try:
+		target_limit = int(payload.get("target_limit") or 0)
+	except Exception:
+		target_limit = 0
+	target_limit = max(0, min(50, target_limit))
 	requested_time_scope = _normalize_time_scope(payload.get("requested_time_scope"))
-	requested_time_scope = _infer_governed_time_scope(
+	requested_time_scope = _apply_governed_time_scope_default(
 		intent_class=intent_class,
-		message=message,
+		candidate_capability_ids=candidate_capability_ids,
 		requested_time_scope=requested_time_scope,
 	)
 	ambiguity_reason = str(payload.get("ambiguity_reason") or "").strip()
@@ -829,6 +831,7 @@ def _validate_semantic_payload(
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 		requested_time_scope=requested_time_scope,
+		target_limit=target_limit,
 		requested_presentation=requested_presentation,
 		extracted_slots=clean_slots,
 		ambiguity_flags=ambiguity_flags,
@@ -957,87 +960,7 @@ def _deterministic_family_surface_interpretation(
 	message: str,
 	confidence_threshold: float,
 ) -> FreshQueryInterpretationContract | None:
-	surface = build_family_tool_surface_for_message(
-		request_id=request_id,
-		session_id=session_id,
-		message=message,
-	)
-	if surface is None or not list(surface.candidate_family_ids or []):
-		return None
-	family_id = str((surface.candidate_family_ids or [""])[0] or "").strip()
-	message_concepts = ontology_detect_concepts(message)
-	intent_class = report_family_default_intent_class(family_id)
-	candidate_capability_ids = _ordered_capability_ids_for_family(
-		family_id=family_id,
-		intent_class=intent_class,
-		message_concepts=message_concepts,
-	)
-	if not candidate_capability_ids:
-		return None
-	candidate_capability_ids = candidate_capability_ids[:1]
-	candidate_reports = _resolve_governed_report_candidates(
-		capability_id=candidate_capability_ids[0],
-		intent_class=intent_class,
-		message_concepts=message_concepts,
-		candidate_reports=[],
-	)
-	if not candidate_reports:
-		report_name = _resolve_default_report_name(
-			capability_id=candidate_capability_ids[0],
-			intent_class=intent_class,
-			message_concepts=message_concepts,
-			candidate_reports=[],
-		)
-		if report_name:
-			candidate_reports = [report_name]
-	if not candidate_reports:
-		report_names = report_family_report_names(family_id)
-		report_name = str((report_names or [""])[0] or "").strip()
-		candidate_reports = [report_name] if report_name else []
-	requested_dimensions: List[str] = []
-	requested_metrics: List[str] = []
-	requested_time_scope = _infer_governed_time_scope(
-		intent_class=intent_class,
-		message=message,
-		requested_time_scope="",
-	)
-	if not intent_class:
-		return None
-
-	ambiguity_flags: List[str] = []
-	ambiguity_reason = ""
-	if len(candidate_reports) > 1:
-		ambiguity_flags.append("ambiguous_report")
-		ambiguity_reason = "The request matches multiple governed reports and needs clarification before execution."
-		default_dimensions = []
-		default_metrics = []
-		default_time_scope = requested_time_scope
-	else:
-		default_dimensions, default_metrics, default_time_scope = _apply_governed_request_defaults(
-			intent_class=intent_class,
-			message=message,
-			candidate_capability_ids=candidate_capability_ids,
-			candidate_reports=candidate_reports,
-			requested_dimensions=requested_dimensions,
-			requested_metrics=requested_metrics,
-			requested_time_scope=requested_time_scope,
-		)
-
-	return build_fresh_query_interpretation_contract(
-		request_id=request_id,
-		session_id=session_id,
-		intent_class=intent_class,
-		candidate_capability_ids=candidate_capability_ids,
-		candidate_reports=candidate_reports,
-		requested_dimensions=default_dimensions,
-		requested_metrics=default_metrics,
-		requested_time_scope=default_time_scope,
-		requested_presentation=[],
-		extracted_slots={},
-		ambiguity_flags=ambiguity_flags,
-		ambiguity_reason=ambiguity_reason,
-		confidence=max(confidence_threshold, 0.85),
-	)
+	return None
 
 
 def compile_from_fresh_query_message(
@@ -1048,6 +971,7 @@ def compile_from_fresh_query_message(
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
 	clarification_resolution: Dict[str, Any] | None = None,
+	governed_target_limit: int = 0,
 ) -> Dict[str, Any]:
 	request_id = uuid.uuid4().hex
 	interaction_contract = build_interaction_contract(
@@ -1093,29 +1017,36 @@ def compile_from_fresh_query_message(
 				),
 			)
 			semantic_result = fallback_result
-	if semantic_result.interpretation is None:
-		confidence_threshold = float(semantic_result.confidence_threshold or _confidence_threshold())
-		deterministic_interpretation = _deterministic_family_surface_interpretation(
-			request_id=request_id,
-			session_id=session_id,
-			message=message,
-			confidence_threshold=confidence_threshold,
+	governed_target_limit = int(max(0, governed_target_limit or 0))
+	if (
+		governed_target_limit > 0
+		and semantic_result.interpretation is not None
+		and int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)) == 0
+	):
+		seeded_interpretation = build_fresh_query_interpretation_contract(
+			request_id=str(getattr(semantic_result.interpretation, "request_id", "") or request_id).strip(),
+			session_id=str(getattr(semantic_result.interpretation, "session_id", "") or session_id).strip(),
+			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+			candidate_capability_ids=list(getattr(semantic_result.interpretation, "candidate_capability_ids", []) or []),
+			candidate_reports=list(getattr(semantic_result.interpretation, "candidate_reports", []) or []),
+			requested_dimensions=list(getattr(semantic_result.interpretation, "requested_dimensions", []) or []),
+			requested_metrics=list(getattr(semantic_result.interpretation, "requested_metrics", []) or []),
+			requested_time_scope=str(getattr(semantic_result.interpretation, "requested_time_scope", "") or "").strip(),
+			target_limit=governed_target_limit,
+			requested_presentation=list(getattr(semantic_result.interpretation, "requested_presentation", []) or []),
+			extracted_slots=dict(getattr(semantic_result.interpretation, "extracted_slots", {}) or {}),
+			ambiguity_flags=list(getattr(semantic_result.interpretation, "ambiguity_flags", []) or []),
+			ambiguity_reason=str(getattr(semantic_result.interpretation, "ambiguity_reason", "") or "").strip(),
+			confidence=float(getattr(semantic_result.interpretation, "confidence", 0.0) or 0.0),
 		)
-		if deterministic_interpretation is not None:
-			semantic_result = SemanticFreshQueryResult(
-				status="deterministic_family_fallback",
-				interpretation=deterministic_interpretation,
-				confidence_threshold=confidence_threshold,
-				agent_meta={
-					"engine": "deterministic_family_surface",
-					"model": "none",
-					"telemetry": {
-						"fallback_attempted": True,
-						"fallback_used": True,
-						"fallback_type": "family_tool_surface",
-					},
-				},
-			)
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=seeded_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
+		)
 	proposal_generation_latency_ms = int((time.perf_counter() - proposal_started) * 1000)
 	compilation_latency_ms = 0
 	out: Dict[str, Any] = {
@@ -1148,6 +1079,20 @@ def compile_from_fresh_query_message(
 				"clarification_resolution_applied": True,
 			},
 		)
+	semantic_resolution = resolve_interpretation_semantically(semantic_result.interpretation)
+	if semantic_resolution is not None:
+		out["semantic_resolution_contract"] = semantic_resolution.contract.to_payload()
+		semantic_result = SemanticFreshQueryResult(
+			status="semantic_resolution_applied",
+			interpretation=semantic_resolution.interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"semantic_resolution_applied": True,
+			},
+		)
 	compilation_started = time.perf_counter()
 	compiler_outcome: CompilerOutcome = compile_fresh_query(
 		request_id=request_id,
@@ -1155,80 +1100,6 @@ def compile_from_fresh_query_message(
 		interpretation=semantic_result.interpretation,
 		response_policy=response_policy.to_runtime_payload(),
 	)
-	compiler_decision = str(compiler_outcome.compiler_contract.decision or "").strip()
-	if compiler_decision == "clarify":
-		confidence_threshold = float(semantic_result.confidence_threshold or _confidence_threshold())
-		deterministic_interpretation = _deterministic_family_surface_interpretation(
-			request_id=request_id,
-			session_id=session_id,
-			message=message,
-			confidence_threshold=confidence_threshold,
-		)
-		if deterministic_interpretation is not None:
-			deterministic_report_candidates = _clean_list(deterministic_interpretation.candidate_reports)
-			deterministic_ambiguity_flags = set(_clean_list(deterministic_interpretation.ambiguity_flags))
-			deterministic_outcome = compile_fresh_query(
-				request_id=request_id,
-				session_id=session_id,
-				interpretation=deterministic_interpretation,
-				response_policy=response_policy.to_runtime_payload(),
-			)
-			deterministic_decision = str(deterministic_outcome.compiler_contract.decision or "").strip()
-			deterministic_reason_type = str(deterministic_outcome.compiler_contract.clarification_reason_type or "").strip()
-			if (
-				deterministic_decision == "clarify"
-				and deterministic_reason_type == "report_ambiguity"
-				and len(deterministic_report_candidates) > 1
-			):
-				semantic_result = SemanticFreshQueryResult(
-					status="deterministic_family_clarification_refinement",
-					interpretation=deterministic_interpretation,
-					confidence_threshold=confidence_threshold,
-					agent_meta={
-						"engine": "deterministic_family_surface",
-						"model": "none",
-						"telemetry": {
-							"fallback_attempted": True,
-							"fallback_used": True,
-							"fallback_type": "family_tool_surface_clarify_refinement",
-							"primary_status": str(semantic_result.status or "").strip(),
-							"primary_model": str((semantic_result.agent_meta or {}).get("model") or "").strip(),
-							"cache_hit": bool(
-								(((semantic_result.agent_meta or {}).get("telemetry") or {}).get("cache_hit"))
-								if isinstance((semantic_result.agent_meta or {}).get("telemetry"), dict)
-								else False
-							),
-						},
-					},
-				)
-				compiler_outcome = deterministic_outcome
-			if (
-				deterministic_decision == "execute"
-				and len(deterministic_report_candidates) <= 1
-				and "ambiguous_report" not in deterministic_ambiguity_flags
-			):
-				semantic_result = SemanticFreshQueryResult(
-					status="deterministic_family_override",
-					interpretation=deterministic_interpretation,
-					confidence_threshold=confidence_threshold,
-					agent_meta={
-						"engine": "deterministic_family_surface",
-						"model": "none",
-						"telemetry": {
-							"fallback_attempted": True,
-							"fallback_used": True,
-							"fallback_type": "family_tool_surface_after_clarify",
-							"primary_status": str(semantic_result.status or "").strip(),
-							"primary_model": str((semantic_result.agent_meta or {}).get("model") or "").strip(),
-							"cache_hit": bool(
-								(((semantic_result.agent_meta or {}).get("telemetry") or {}).get("cache_hit"))
-								if isinstance((semantic_result.agent_meta or {}).get("telemetry"), dict)
-								else False
-							),
-						},
-					},
-				)
-				compiler_outcome = deterministic_outcome
 	compilation_latency_ms = int((time.perf_counter() - compilation_started) * 1000)
 	out["fresh_query_compiler"] = compiler_outcome.compiler_contract.to_payload()
 	out["fresh_query_interpretation"] = semantic_result.to_payload()
@@ -1686,7 +1557,6 @@ def _phase4b_financial_statement_case_result(
 		request_id=interaction_contract.request_id,
 		compiler_contract=compiler_outcome.compiler_contract.to_payload(),
 		runtime_payload=runtime_payload,
-		request_message=message,
 		intent_class="financial_statement",
 		preferred_family_id=_preferred_family_id_for_message(
 			message=message,
@@ -2633,6 +2503,7 @@ def execute_compiled_fresh_query_message(
 	message: str,
 	recent_messages: List[Dict[str, str]] | None = None,
 	clarification_resolution: Dict[str, Any] | None = None,
+	governed_target_limit: int = 0,
 ) -> Dict[str, Any]:
 	total_started = time.perf_counter()
 	pipeline = compile_from_fresh_query_message(
@@ -2642,6 +2513,7 @@ def execute_compiled_fresh_query_message(
 		message=message,
 		recent_messages=list(recent_messages or []),
 		clarification_resolution=clarification_resolution,
+		governed_target_limit=governed_target_limit,
 	)
 	latency_breakdown = (
 		dict(pipeline.get("phase4_latency_breakdown"))
@@ -2719,6 +2591,11 @@ def execute_compiled_fresh_query_message(
 			session_id=session_id,
 			compiler_decision=str(compiler_contract.get("decision") or "").strip(),
 			compiler_reason=str(compiler_contract.get("compiler_reason") or "").strip(),
+			governed_resolution_details=(
+				compiler_contract.get("governed_resolution_details")
+				if isinstance(compiler_contract.get("governed_resolution_details"), dict)
+				else {}
+			),
 			capability_id=str(compiler_contract.get("capability_id") or "").strip(),
 			selected_report=str(compiler_contract.get("selected_report") or "").strip(),
 			governed_family_id=str(compiler_contract.get("selected_report_family") or "").strip(),
@@ -2766,7 +2643,7 @@ def execute_compiled_fresh_query_message(
 		filters=compiled_query.get("filters") if isinstance(compiled_query.get("filters"), dict) else {},
 		user=user_id,
 		mode="compiled_read_query",
-		request_message=message,
+		target_limit=int(max(0, compiled_query.get("target_limit") or 0)),
 	)
 	if not bool(runtime_payload.get("ok")) or not list(runtime_payload.get("tool_trace") or []):
 		try:
@@ -2794,7 +2671,6 @@ def execute_compiled_fresh_query_message(
 		request_id=str(pipeline.get("request_id") or uuid.uuid4().hex),
 		compiler_contract=compiler_contract,
 		runtime_payload=runtime_payload if isinstance(runtime_payload, dict) else {},
-		request_message=message,
 		intent_class=str(
 			(((pipeline.get("fresh_query_interpretation") or {}).get("interpretation") or {}).get("intent_class"))
 			if isinstance(pipeline.get("fresh_query_interpretation"), dict)
@@ -2894,6 +2770,11 @@ def execute_compiled_fresh_query_message(
 		session_id=session_id,
 		compiler_decision=str(compiler_contract.get("decision") or "").strip(),
 		compiler_reason=str(compiler_contract.get("compiler_reason") or "").strip(),
+		governed_resolution_details=(
+			compiler_contract.get("governed_resolution_details")
+			if isinstance(compiler_contract.get("governed_resolution_details"), dict)
+			else {}
+		),
 		capability_id=str(compiler_contract.get("capability_id") or "").strip(),
 		selected_report=str(compiler_contract.get("selected_report") or "").strip(),
 		governed_family_id=str(adapter_outcome.family_id or compiler_contract.get("selected_report_family") or "").strip(),
@@ -2971,6 +2852,10 @@ def run_phase4_slice6_selftests() -> Dict[str, Any]:
 		session_id="slice6-session",
 		compiler_decision="execute",
 		compiler_reason="governed compiler path",
+		governed_resolution_details={
+			"resolution_mode": "semantic_resolution",
+			"semantic_resolution_contract": {"type": "qwen_semantic_resolution_contract"},
+		},
 		capability_id="accounts_payable_read",
 		selected_report="Accounts Payable Summary",
 		governed_family_id="aging",
@@ -3000,6 +2885,8 @@ def run_phase4_slice6_selftests() -> Dict[str, Any]:
 		raise RuntimeError("Slice 6 selftest failed: total latency is inconsistent.")
 	if int(payload.get("tool_count") or 0) != 1:
 		raise RuntimeError("Slice 6 selftest failed: tool count mismatch.")
+	if str(((payload.get("governed_resolution_details") or {}).get("resolution_mode")) or "").strip() != "semantic_resolution":
+		raise RuntimeError("Slice 6 selftest failed: governed resolution details were not preserved.")
 	if bool(payload.get("proposal_cache_hit")):
 		raise RuntimeError("Slice 6 selftest failed: proposal cache flag mismatch.")
 	if bool(payload.get("proposal_shared_inflight_hit")):

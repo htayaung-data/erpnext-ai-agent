@@ -1,0 +1,212 @@
+{
+  "contract_version": "1.0",
+  "status": "design_only",
+  "not_loaded_by_runtime": true,
+  "description": "Governed design scaffold for how future financial_summary semantic extraction should derive summary_domains and summary_focus from structured signals already present in the interpretation pipeline.",
+  "intent_class": "financial_summary",
+  "signal_sources": [
+    {
+      "source_id": "ontology_concepts",
+      "description": "Business ontology concepts attached to capabilities, reports, and validated interpretations.",
+      "allowed_outputs": [
+        "summary_domains"
+      ]
+    },
+    {
+      "source_id": "requested_dimensions",
+      "description": "Canonical requested dimensions already normalized by the interpreter.",
+      "allowed_outputs": [
+        "summary_domains",
+        "summary_grain"
+      ]
+    },
+    {
+      "source_id": "requested_metrics",
+      "description": "Canonical requested metrics already normalized by the interpreter.",
+      "allowed_outputs": [
+        "summary_focus",
+        "summary_metric_family"
+      ]
+    },
+    {
+      "source_id": "requested_time_scope",
+      "description": "Governed time scope already inferred by the interpreter.",
+      "allowed_outputs": [
+        "time_scope"
+      ]
+    },
+    {
+      "source_id": "composite_profile_context",
+      "description": "Composite-read plan metadata for known cross-domain governed plans.",
+      "allowed_outputs": [
+        "summary_focus",
+        "summary_domains"
+      ]
+    }
+  ],
+  "domain_extraction_rules": [
+    {
+      "rule_id": "domain_sales_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": [
+        "sales"
+      ],
+      "emit_domain": "sales"
+    },
+    {
+      "rule_id": "domain_inventory_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": [
+        "stock"
+      ],
+      "emit_domain": "inventory"
+    },
+    {
+      "rule_id": "domain_receivable_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": [
+        "receivable"
+      ],
+      "emit_domain": "receivable"
+    },
+    {
+      "rule_id": "domain_payable_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": [
+        "payable"
+      ],
+      "emit_domain": "payable"
+    },
+    {
+      "rule_id": "domain_statement_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": [
+        "profit_and_loss",
+        "balance_sheet",
+        "cash_flow"
+      ],
+      "emit_domain": "statement"
+    },
+    {
+      "rule_id": "domain_product_profitability_from_ontology",
+      "source": "ontology_concepts",
+      "match_any": [
+        "product"
+      ],
+      "emit_domain": "product_profitability",
+      "requires_metric_family_any": [
+        "gross_profit",
+        "net_profit"
+      ]
+    }
+  ],
+  "focus_extraction_rules": [
+    {
+      "rule_id": "focus_statement_view_from_domain",
+      "requires_domains_all": [
+        "statement"
+      ],
+      "emit_focus": "statement_view"
+    },
+    {
+      "rule_id": "focus_outstanding_amount_from_metric",
+      "source": "requested_metrics",
+      "match_any": [
+        "Outstanding",
+        "Outstanding Amount",
+        "Total Due",
+        "Total Amount Due"
+      ],
+      "emit_focus": "outstanding_amount",
+      "emit_metric_family": "outstanding_total"
+    },
+    {
+      "rule_id": "focus_value_snapshot_from_metric",
+      "source": "requested_metrics",
+      "match_any": [
+        "Balance Value (MMK)"
+      ],
+      "emit_focus": "value_snapshot",
+      "emit_metric_family": "balance_value"
+    },
+    {
+      "rule_id": "focus_profitability_snapshot_from_metric",
+      "source": "requested_metrics",
+      "match_any": [
+        "Gross Profit",
+        "Gross Profit Percent",
+        "Net Profit"
+      ],
+      "emit_focus": "profitability_snapshot",
+      "emit_metric_family": "gross_profit"
+    },
+    {
+      "rule_id": "focus_current_position_from_domain_only",
+      "requires_domains_any": [
+        "sales",
+        "inventory",
+        "receivable",
+        "payable"
+      ],
+      "emit_focus": "current_position",
+      "priority": "low"
+    },
+    {
+      "rule_id": "focus_cross_domain_health_from_composite_profile",
+      "source": "composite_profile_context",
+      "match_any": [
+        "working_capital_health"
+      ],
+      "emit_focus": "cross_domain_health"
+    }
+  ],
+  "grain_extraction_rules": [
+    {
+      "rule_id": "grain_customer",
+      "source": "requested_dimensions",
+      "match_any": [
+        "Customer"
+      ],
+      "emit_grain": "customer"
+    },
+    {
+      "rule_id": "grain_supplier",
+      "source": "requested_dimensions",
+      "match_any": [
+        "Supplier"
+      ],
+      "emit_grain": "supplier"
+    },
+    {
+      "rule_id": "grain_item",
+      "source": "requested_dimensions",
+      "match_any": [
+        "Item",
+        "Item Code"
+      ],
+      "emit_grain": "item"
+    },
+    {
+      "rule_id": "grain_warehouse",
+      "source": "requested_dimensions",
+      "match_any": [
+        "Warehouse"
+      ],
+      "emit_grain": "warehouse"
+    },
+    {
+      "rule_id": "grain_account",
+      "source": "requested_dimensions",
+      "match_any": [
+        "Account"
+      ],
+      "emit_grain": "account"
+    }
+  ],
+  "governance_rules": [
+    "Do not inspect raw message text in the financial_summary semantic extractor.",
+    "Use only structured signals already present in interpretation or governed metadata.",
+    "If domain inference and focus inference disagree, clarify rather than forcing a target intent.",
+    "Composite execution requires an explicit governed profile match."
+  ]
+}

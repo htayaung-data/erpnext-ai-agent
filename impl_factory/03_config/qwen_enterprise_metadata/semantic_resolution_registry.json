@@ -1,0 +1,674 @@
+{
+  "contract_version": "1.0",
+  "description": "Governed semantic resolution registry. Structured slots drive family, capability, and report resolution. Lexical aliases are allowed only for slot normalization support.",
+  "slot_definitions": [
+    {
+      "slot_name": "listing_view",
+      "allowed_values": [
+        "sales_invoice"
+      ],
+      "required_for_intent_classes": [
+        "transaction_listing"
+      ],
+      "resolution_mode": "required_or_default"
+    },
+    {
+      "slot_name": "statement_variant",
+      "allowed_values": [
+        "profit_and_loss",
+        "balance_sheet",
+        "cash_flow"
+      ],
+      "required_for_intent_classes": [
+        "financial_statement"
+      ],
+      "resolution_mode": "required_or_clarify"
+    },
+    {
+      "slot_name": "inventory_axis",
+      "allowed_values": [
+        "item",
+        "warehouse"
+      ],
+      "required_for_intent_classes": [
+        "inventory_summary"
+      ],
+      "resolution_mode": "required_or_default"
+    },
+    {
+      "slot_name": "aging_view",
+      "allowed_values": [
+        "receivable",
+        "payable"
+      ],
+      "required_for_intent_classes": [
+        "aging_analysis"
+      ],
+      "resolution_mode": "required_or_clarify"
+    },
+    {
+      "slot_name": "trend_metric",
+      "allowed_values": [
+        "sales_amount",
+        "quantity"
+      ],
+      "required_for_intent_classes": [
+        "trend_analysis"
+      ],
+      "resolution_mode": "required_or_default"
+    },
+    {
+      "slot_name": "ranking_subject",
+      "allowed_values": [
+        "product",
+        "customer",
+        "supplier"
+      ],
+      "required_for_intent_classes": [
+        "ranked_entities"
+      ],
+      "resolution_mode": "optional"
+    },
+    {
+      "slot_name": "ranking_metric",
+      "allowed_values": [
+        "sales_amount",
+        "quantity",
+        "gross_profit",
+        "outstanding_total"
+      ],
+      "required_for_intent_classes": [
+        "ranked_entities"
+      ],
+      "resolution_mode": "optional"
+    },
+    {
+      "slot_name": "entity_grain",
+      "allowed_values": [
+        "item",
+        "customer",
+        "supplier",
+        "warehouse"
+      ],
+      "required_for_intent_classes": [],
+      "resolution_mode": "optional"
+    },
+    {
+      "slot_name": "performance_view",
+      "allowed_values": [
+        "profitability",
+        "sales_history"
+      ],
+      "required_for_intent_classes": [
+        "product_performance"
+      ],
+      "resolution_mode": "required_or_clarify"
+    },
+    {
+      "slot_name": "time_scope",
+      "allowed_values": [
+        "today",
+        "this_month",
+        "last_month",
+        "current_fiscal_year_to_date",
+        "as_of_today"
+      ],
+      "required_for_intent_classes": [],
+      "resolution_mode": "optional"
+    }
+  ],
+  "alias_maps": {
+    "statement_variant": [
+      {
+        "canonical_value": "profit_and_loss",
+        "aliases": [
+          "profit and loss",
+          "p&l",
+          "income statement",
+          "income report"
+        ]
+      },
+      {
+        "canonical_value": "balance_sheet",
+        "aliases": [
+          "balance sheet",
+          "financial position"
+        ]
+      },
+      {
+        "canonical_value": "cash_flow",
+        "aliases": [
+          "cash flow",
+          "cashflow"
+        ]
+      }
+    ],
+    "inventory_axis": [
+      {
+        "canonical_value": "warehouse",
+        "aliases": [
+          "warehouse",
+          "warehouse wise",
+          "by warehouse"
+        ]
+      },
+      {
+        "canonical_value": "item",
+        "aliases": [
+          "item",
+          "product",
+          "sku"
+        ]
+      }
+    ],
+    "ranking_subject": [
+      {
+        "canonical_value": "product",
+        "aliases": [
+          "product",
+          "products",
+          "item",
+          "items",
+          "item code",
+          "item name"
+        ]
+      },
+      {
+        "canonical_value": "customer",
+        "aliases": [
+          "customer",
+          "customers",
+          "client",
+          "clients"
+        ]
+      },
+      {
+        "canonical_value": "supplier",
+        "aliases": [
+          "supplier",
+          "suppliers",
+          "vendor",
+          "vendors",
+          "party"
+        ]
+      }
+    ],
+    "ranking_metric": [
+      {
+        "canonical_value": "sales_amount",
+        "aliases": [
+          "sales amount",
+          "sales",
+          "revenue"
+        ]
+      },
+      {
+        "canonical_value": "quantity",
+        "aliases": [
+          "quantity",
+          "qty",
+          "units"
+        ]
+      },
+      {
+        "canonical_value": "gross_profit",
+        "aliases": [
+          "gross profit",
+          "margin"
+        ]
+      },
+      {
+        "canonical_value": "outstanding_total",
+        "aliases": [
+          "outstanding",
+          "outstanding amount",
+          "amount due"
+        ]
+      }
+    ]
+  },
+  "family_resolution_rules": [
+    {
+      "rule_id": "transaction_listing_sales_invoice",
+      "intent_class": "transaction_listing",
+      "required_slots": {
+        "listing_view": "sales_invoice"
+      },
+      "candidate_family_ids": [
+        "transaction_listing"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Invoice List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "transaction_listing_default"
+    },
+    {
+      "rule_id": "financial_statement_profit_and_loss",
+      "intent_class": "financial_statement",
+      "required_slots": {
+        "statement_variant": "profit_and_loss"
+      },
+      "candidate_family_ids": [
+        "financial_statement"
+      ],
+      "candidate_capability_ids": [
+        "financial_statement_read"
+      ],
+      "candidate_reports": [
+        "Profit and Loss Statement"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "financial_statement_balance_sheet",
+      "intent_class": "financial_statement",
+      "required_slots": {
+        "statement_variant": "balance_sheet"
+      },
+      "candidate_family_ids": [
+        "financial_statement"
+      ],
+      "candidate_capability_ids": [
+        "financial_statement_read"
+      ],
+      "candidate_reports": [
+        "Balance Sheet"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "financial_statement_cash_flow",
+      "intent_class": "financial_statement",
+      "required_slots": {
+        "statement_variant": "cash_flow"
+      },
+      "candidate_family_ids": [
+        "financial_statement"
+      ],
+      "candidate_capability_ids": [
+        "financial_statement_read"
+      ],
+      "candidate_reports": [
+        "Cash Flow"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "inventory_snapshot_item",
+      "intent_class": "inventory_summary",
+      "required_slots": {
+        "inventory_axis": "item"
+      },
+      "candidate_family_ids": [
+        "inventory_snapshot"
+      ],
+      "candidate_capability_ids": [
+        "stock_read"
+      ],
+      "candidate_reports": [
+        "Stock Balance"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "inventory_axis_default"
+    },
+    {
+      "rule_id": "inventory_snapshot_warehouse",
+      "intent_class": "inventory_summary",
+      "required_slots": {
+        "inventory_axis": "warehouse"
+      },
+      "candidate_family_ids": [
+        "inventory_snapshot"
+      ],
+      "candidate_capability_ids": [
+        "stock_read"
+      ],
+      "candidate_reports": [
+        "Warehouse Wise Stock Balance"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "aging_receivable",
+      "intent_class": "aging_analysis",
+      "required_slots": {
+        "aging_view": "receivable"
+      },
+      "candidate_family_ids": [
+        "aging"
+      ],
+      "candidate_capability_ids": [
+        "accounts_receivable_read"
+      ],
+      "candidate_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "aging_payable",
+      "intent_class": "aging_analysis",
+      "required_slots": {
+        "aging_view": "payable"
+      },
+      "candidate_family_ids": [
+        "aging"
+      ],
+      "candidate_capability_ids": [
+        "accounts_payable_read"
+      ],
+      "candidate_reports": [
+        "Accounts Payable Summary"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "trend_sales_amount",
+      "intent_class": "trend_analysis",
+      "required_slots": {
+        "trend_metric": "sales_amount"
+      },
+      "candidate_family_ids": [
+        "trend_analytics"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "trend_metric_default"
+    },
+    {
+      "rule_id": "trend_quantity",
+      "intent_class": "trend_analysis",
+      "required_slots": {
+        "trend_metric": "quantity"
+      },
+      "candidate_family_ids": [
+        "trend_analytics"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_customer_sales_amount",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "customer",
+        "ranking_metric": "sales_amount"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_customer_quantity",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "customer",
+        "ranking_metric": "quantity"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_customer_outstanding_total",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "customer",
+        "ranking_metric": "outstanding_total"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "accounts_receivable_read"
+      ],
+      "candidate_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_supplier_outstanding_total",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "supplier",
+        "ranking_metric": "outstanding_total"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "accounts_payable_read"
+      ],
+      "candidate_reports": [
+        "Accounts Payable Summary"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_product_sales_amount",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "product",
+        "ranking_metric": "sales_amount"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_product_quantity",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "product",
+        "ranking_metric": "quantity"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "sales_read"
+      ],
+      "candidate_reports": [
+        "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "ranking_product_gross_profit",
+      "intent_class": "ranked_entities",
+      "required_slots": {
+        "ranking_subject": "product",
+        "ranking_metric": "gross_profit"
+      },
+      "candidate_family_ids": [
+        "ranking_analytics"
+      ],
+      "candidate_capability_ids": [
+        "product_performance_read"
+      ],
+      "candidate_reports": [
+        "Gross Profit"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "product_performance_profitability",
+      "intent_class": "product_performance",
+      "required_slots": {
+        "performance_view": "profitability"
+      },
+      "candidate_family_ids": [
+        "product_profitability"
+      ],
+      "candidate_capability_ids": [
+        "product_performance_read"
+      ],
+      "candidate_reports": [
+        "Gross Profit"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "product_performance_sales_history",
+      "intent_class": "product_performance",
+      "required_slots": {
+        "performance_view": "sales_history"
+      },
+      "candidate_family_ids": [
+        "product_profitability"
+      ],
+      "candidate_capability_ids": [
+        "product_performance_read"
+      ],
+      "candidate_reports": [
+        "Item-wise Sales History"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    }
+  ],
+  "ambiguity_policies": [
+    {
+      "policy_id": "transaction_listing_default",
+      "intent_class": "transaction_listing",
+      "missing_slots": [
+        "listing_view"
+      ],
+      "decision": "execute",
+      "reason": "transaction_listing_defaults_to_sales_invoice",
+      "default_slots": {
+        "listing_view": "sales_invoice"
+      }
+    },
+    {
+      "policy_id": "financial_statement_missing_variant",
+      "intent_class": "financial_statement",
+      "missing_slots": [
+        "statement_variant"
+      ],
+      "decision": "clarify",
+      "reason": "statement_variant_required_for_financial_statement"
+    },
+    {
+      "policy_id": "inventory_axis_default",
+      "intent_class": "inventory_summary",
+      "missing_slots": [
+        "inventory_axis"
+      ],
+      "decision": "execute",
+      "reason": "inventory_axis_defaults_to_item_snapshot",
+      "default_slots": {
+        "inventory_axis": "item"
+      }
+    },
+    {
+      "policy_id": "aging_missing_view",
+      "intent_class": "aging_analysis",
+      "missing_slots": [
+        "aging_view"
+      ],
+      "decision": "clarify",
+      "reason": "aging_view_required_for_governed_aging_resolution"
+    },
+    {
+      "policy_id": "trend_metric_default",
+      "intent_class": "trend_analysis",
+      "missing_slots": [
+        "trend_metric"
+      ],
+      "decision": "execute",
+      "reason": "trend_metric_defaults_to_sales_amount",
+      "default_slots": {
+        "trend_metric": "sales_amount"
+      }
+    },
+    {
+      "policy_id": "ranking_missing_subject_or_metric",
+      "intent_class": "ranked_entities",
+      "missing_slots": [
+        "ranking_subject",
+        "ranking_metric"
+      ],
+      "decision": "clarify",
+      "reason": "ranking_subject_and_metric_required_for_governed_ranking_resolution"
+    },
+    {
+      "policy_id": "product_performance_missing_view",
+      "intent_class": "product_performance",
+      "missing_slots": [
+        "performance_view"
+      ],
+      "decision": "clarify",
+      "reason": "performance_view_required_for_governed_product_performance_resolution"
+    }
+  ],
+  "defaults": {
+      "intent_defaults": {
+      "transaction_listing": {
+        "listing_view": "sales_invoice"
+      },
+      "inventory_summary": {
+        "inventory_axis": "item"
+      },
+      "trend_analysis": {
+        "trend_metric": "sales_amount"
+      }
+    },
+    "resolution_source_defaults": {
+      "alias": "metadata_alias",
+      "default": "metadata_default",
+      "unresolved": "unresolved"
+    }
+  }
+}
