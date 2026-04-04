@@ -10,8 +10,9 @@ app_license = "mit"
 
 # required_apps = []
 
-# app_include_css = "/assets/erp_workspace_ui/css/erp_workspace_ui.css"
-# app_include_js = "/assets/erp_workspace_ui/js/erp_workspace_ui.js"
+app_include_css = "/assets/erp_workspace_ui/css/erp_workspace_ui.css"
+app_include_js = "/assets/erp_workspace_ui/js/erp_workspace_ui_boot.js"
+doctype_js = {"Sales Order": "public/js/sales_order_form.js"}
 
 # page_js = {"page": "public/js/file.js"}
 
@@ -22,4 +23,7 @@ app_license = "mit"
 
 # before_tests = "erp_workspace_ui.install.before_tests"
 
-boot_session = ["erp_workspace_ui.boot.set_sales_home_page"]
+# Keep the console page available, but do not force it during Desk boot.
+# A broken custom home page can block all access to the app shell.
+# We will reintroduce this hook after the console route is verified end-to-end.
+# boot_session = ["erp_workspace_ui.boot.set_sales_home_page"]

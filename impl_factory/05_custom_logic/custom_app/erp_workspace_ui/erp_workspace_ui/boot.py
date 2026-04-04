@@ -8,7 +8,6 @@ SALES_HOME_ROLES = {
 	"Sales Manager",
 	"Sales User",
 	"Sales Master Manager",
-	"Sales Supervisor",
 	"Sales Executive",
 	"Key Account Sales",
 }

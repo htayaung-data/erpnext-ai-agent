@@ -4,6 +4,8 @@
   const PAGE_KEY = "sales-console";
   const BOOTSTRAP_METHOD = "erp_workspace_ui.sales_console.service.get_sales_console_bootstrap";
   const INQUIRY_METHOD = "erp_workspace_ui.sales_console.service.resolve_customer_inquiry";
+  const INQUIRY_SUGGEST_METHOD = "erp_workspace_ui.sales_console.service.suggest_customer_inquiry";
+  const INQUIRY_AI_METHOD = "erp_workspace_ui.sales_console.service.generate_customer_inquiry_assist";
 
   function ensureStyle() {
     if (document.getElementById("sales-console-shell-style")) return;
@@ -22,16 +24,18 @@
       }
       .sales-console-card {
         min-width: 0;
-        background: rgba(255, 255, 255, 0.97);
-        border: 1px solid rgba(255, 255, 255, 0.94);
+        background: var(--erpw-surface-elevated-quiet, rgba(255, 255, 255, 0.97));
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.94));
         border-radius: 16px;
-        box-shadow:
-          0 26px 50px rgba(15, 23, 42, 0.085),
-          0 1px 0 rgba(255, 255, 255, 0.78) inset;
+        box-shadow: var(
+          --erpw-shadow-shell,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 12px 28px rgba(15, 23, 42, 0.04)
+        );
       }
       .sales-console-header {
         overflow: hidden;
-        padding: 26px 24px 24px;
+        padding: 24px 24px 22px;
         border: none;
         background:
           radial-gradient(circle at top right, rgba(45, 212, 191, 0.16), transparent 26%),
@@ -42,15 +46,16 @@
           0 1px 0 rgba(255, 255, 255, 0.06) inset;
       }
       .sales-console-header-row {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 16px;
-        margin-bottom: 20px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 16px 20px;
+        margin-bottom: 12px;
       }
       .sales-console-header-copy {
         display: grid;
-        gap: 4px;
+        gap: 5px;
+        min-width: 0;
       }
       .sales-console-title {
         margin: 0;
@@ -59,11 +64,59 @@
         font-weight: 700;
         color: #f8fafc;
       }
+      .sales-console-header-note {
+        max-width: 760px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #d4deea;
+      }
+      .sales-console-header-context {
+        display: grid;
+        justify-items: end;
+        align-content: start;
+        gap: 6px;
+        min-width: 0;
+      }
+      .sales-console-header-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 30px;
+        padding: 0 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(214, 227, 240, 0.2);
+        background: rgba(255, 255, 255, 0.07);
+        color: #f8fafc;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .sales-console-header-roleline {
+        max-width: 320px;
+        font-size: 12.75px;
+        line-height: 1.4;
+        font-weight: 600;
+        color: #dde7f3;
+        text-align: right;
+      }
+      .sales-console-header-context-note {
+        max-width: 320px;
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: #c7d3e1;
+        text-align: right;
+      }
+      .sales-console-header-context-note[hidden] {
+        display: none;
+      }
       .sales-console-kpi-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0;
-        max-width: 820px;
+        width: 100%;
+        max-width: none;
         overflow: hidden;
         border-radius: 18px;
         border: 1px solid rgba(214, 227, 240, 0.15);
@@ -119,7 +172,7 @@
       }
       .sales-console-section-head {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: space-between;
         gap: 12px;
         margin-bottom: 14px;
@@ -132,11 +185,11 @@
         color: #0f172a;
       }
       .sales-console-section-note {
-        font-size: 12px;
-        color: #64748b;
+        font-size: 11.5px;
+        color: var(--erpw-note-color, #64748b);
         text-align: right;
-        max-width: 260px;
-        line-height: 1.4;
+        max-width: 250px;
+        line-height: 1.45;
         white-space: normal;
       }
       .sales-console-action-groups {
@@ -154,6 +207,9 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
       }
+      .sales-console-action-strip.secondary[hidden] {
+        display: none;
+      }
       .sales-console-action {
         position: relative;
         overflow: hidden;
@@ -164,14 +220,16 @@
         text-align: left;
         padding: 18px 20px 17px;
         border-radius: 16px;
-        border: 1px solid rgba(255, 255, 255, 0.92);
-        background: #ffffff;
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
+        background: var(--erpw-surface-elevated, #ffffff);
         cursor: pointer;
         transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
         min-width: 0;
-        box-shadow:
+        box-shadow: var(
+          --erpw-shadow-card,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 10px 28px rgba(0, 0, 0, 0.085);
+          0 10px 24px rgba(15, 23, 42, 0.04)
+        );
       }
       .sales-console-action::before {
         content: "";
@@ -186,9 +244,11 @@
       .sales-console-action:hover {
         transform: translateY(-1px);
         border-color: rgba(255, 255, 255, 0.98);
-        box-shadow:
+        box-shadow: var(
+          --erpw-shadow-card-hover,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 14px 38px rgba(0, 0, 0, 0.115);
+          0 14px 30px rgba(15, 23, 42, 0.07)
+        );
       }
       .sales-console-action.primary {
         background: #ffffff;
@@ -211,21 +271,21 @@
         width: 42px;
         height: 42px;
         border-radius: 11px;
-        border: 1px solid #35465f;
-        background: #2a3850;
+        border: 1px solid var(--erpw-icon-dark-border, #35465f);
+        background: var(--erpw-icon-dark-bg, #2a3850);
         color: #f8fafc;
         box-shadow:
           0 1px 0 rgba(255, 255, 255, 0.08) inset,
           0 10px 20px rgba(15, 23, 42, 0.16);
       }
       .sales-console-action.primary .sales-console-action-icon {
-        border-color: #314259;
-        background: #243247;
+        border-color: var(--erpw-icon-dark-border, #314259);
+        background: var(--erpw-icon-dark-bg, #243247);
         color: #f8fafc;
       }
       .sales-console-action.secondary .sales-console-action-icon {
-        border-color: #314259;
-        background: #243247;
+        border-color: var(--erpw-icon-dark-border, #314259);
+        background: var(--erpw-icon-dark-bg, #243247);
         color: #f8fafc;
       }
       .sales-console-action-icon .icon,
@@ -279,12 +339,13 @@
         gap: 12px;
         padding: 16px;
         border-radius: 16px;
-        border: 1px solid rgba(255, 255, 255, 0.94);
-        background:
-          linear-gradient(180deg, rgba(248, 250, 252, 0.9) 0%, rgba(255, 255, 255, 0.98) 100%);
-        box-shadow:
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.94));
+        background: var(--erpw-surface-shell, linear-gradient(180deg, rgba(248, 250, 252, 0.9) 0%, rgba(255, 255, 255, 0.98) 100%));
+        box-shadow: var(
+          --erpw-shadow-panel,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 10px 26px rgba(15, 23, 42, 0.055);
+          0 8px 18px rgba(15, 23, 42, 0.03)
+        );
       }
       .sales-console-inquiry-intro {
         display: grid;
@@ -306,7 +367,16 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
         gap: 10px;
+        align-items: start;
+      }
+      .sales-console-inquiry-input-shell {
+        position: relative;
+        min-width: 0;
+      }
+      .sales-console-inquiry-actions {
+        display: inline-flex;
         align-items: center;
+        gap: 10px;
       }
       .sales-console-inquiry-input {
         width: 100%;
@@ -327,7 +397,100 @@
           0 0 0 3px rgba(45, 212, 191, 0.12),
           0 1px 0 rgba(255, 255, 255, 0.98) inset;
       }
+      .sales-console-inquiry-suggestions {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        right: 0;
+        z-index: 20;
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        border-radius: 16px;
+        border: 1px solid var(--erpw-border-soft, #dbe4ee);
+        background: rgba(255, 255, 255, 0.99);
+        box-shadow: var(
+          --erpw-shadow-card-hover,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 14px 30px rgba(15, 23, 42, 0.07)
+        );
+      }
+      .sales-console-inquiry-suggestions[hidden] {
+        display: none;
+      }
+      .sales-console-inquiry-suggestions-group {
+        display: grid;
+        gap: 4px;
+      }
+      .sales-console-inquiry-suggestions-group + .sales-console-inquiry-suggestions-group {
+        padding-top: 8px;
+        border-top: 1px solid #eef2f7;
+      }
+      .sales-console-inquiry-suggestions-label {
+        padding: 0 6px;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .sales-console-inquiry-suggestion {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+        gap: 10px;
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        background: #ffffff;
+        color: #0f172a;
+        text-align: left;
+        cursor: pointer;
+        transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+      }
+      .sales-console-inquiry-suggestion:hover,
+      .sales-console-inquiry-suggestion.is-active {
+        border-color: #d7e6e2;
+        background: #f8fbff;
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.07);
+      }
+      .sales-console-inquiry-suggestion-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid #dbe4ee;
+        background: #f8fafc;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: #334155;
+        white-space: nowrap;
+      }
+      .sales-console-inquiry-suggestion-copy {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+      .sales-console-inquiry-suggestion-title {
+        font-size: 12.75px;
+        font-weight: 700;
+        color: #0f172a;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sales-console-inquiry-suggestion-meta {
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: #64748b;
+      }
       .sales-console-inquiry-submit,
+      .sales-console-inquiry-clear,
+      .sales-console-inquiry-open-record,
       .sales-console-inquiry-choice,
       .sales-console-related-link {
         appearance: none;
@@ -345,9 +508,35 @@
           0 10px 20px rgba(15, 23, 42, 0.14);
       }
       .sales-console-inquiry-submit:hover,
-      .sales-console-inquiry-choice:hover,
+      .sales-console-inquiry-clear:hover,
+      .sales-console-inquiry-open-record:hover,
       .sales-console-related-link:hover {
         background: #2d3d56;
+      }
+      .sales-console-inquiry-submit.is-busy,
+      .sales-console-inquiry-submit:disabled {
+        background: #94a3b8;
+        border-color: #cbd5e1;
+        color: #f8fafc;
+        cursor: wait;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+      }
+      .sales-console-inquiry-submit.is-busy:hover,
+      .sales-console-inquiry-submit:disabled:hover {
+        background: #94a3b8;
+      }
+      .sales-console-inquiry-clear {
+        border-color: #dbe4ee;
+        background: #ffffff;
+        color: #243247;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+      }
+      .sales-console-inquiry-clear:hover {
+        background: #f8fafc;
+      }
+      .sales-console-inquiry-open-record {
+        height: 40px;
+        padding: 0 14px;
       }
       .sales-console-inquiry-status {
         font-size: 12px;
@@ -359,6 +548,66 @@
       }
       .sales-console-inquiry-result[hidden] {
         display: none;
+      }
+      .sales-console-inquiry-assist {
+        display: grid;
+        gap: 12px;
+      }
+      .sales-console-inquiry-assist[hidden] {
+        display: none;
+      }
+      .sales-console-inquiry-assist-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .sales-console-inquiry-assist-copy {
+        display: grid;
+        gap: 4px;
+      }
+      .sales-console-inquiry-assist-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .sales-console-inquiry-assist-status {
+        font-size: 12px;
+        color: #64748b;
+      }
+      .sales-console-inquiry-assist-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .sales-console-inquiry-assist-card {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+        padding: 12px 13px;
+        border-radius: 14px;
+        border: 1px solid #edf2f7;
+        background: #f8fafc;
+      }
+      .sales-console-inquiry-assist-card-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #0b84a5;
+      }
+      .sales-console-inquiry-assist-card-value {
+        font-size: 12.5px;
+        line-height: 1.55;
+        color: #334155;
+        white-space: pre-wrap;
+      }
+      .sales-console-inquiry-assist-footnote {
+        font-size: 11.5px;
+        line-height: 1.45;
+        color: #64748b;
       }
       .sales-console-inquiry-placeholder {
         padding: 14px 16px;
@@ -399,6 +648,11 @@
         gap: 12px;
         flex-wrap: wrap;
       }
+      .sales-console-inquiry-primary-summary {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
       .sales-console-inquiry-primary-label {
         font-size: 16px;
         font-weight: 700;
@@ -407,6 +661,23 @@
       .sales-console-inquiry-primary-meta {
         font-size: 12px;
         color: #64748b;
+      }
+      .sales-console-inquiry-doc-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+        min-height: 24px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid #dbe4ee;
+        background: #f8fafc;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #334155;
+        white-space: nowrap;
       }
       .sales-console-inquiry-grid {
         display: grid;
@@ -476,9 +747,38 @@
         gap: 6px;
       }
       .sales-console-inquiry-stage-item {
+        display: grid;
+        gap: 4px;
+        padding: 8px 9px;
+        border-radius: 10px;
+        border: 1px solid #e8edf3;
+        background: #ffffff;
+      }
+      .sales-console-inquiry-stage-item-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .sales-console-inquiry-stage-doc {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #7c8798;
+      }
+      .sales-console-inquiry-stage-name {
         font-size: 12px;
         line-height: 1.45;
-        color: #334155;
+        font-weight: 700;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .sales-console-inquiry-stage-meta {
+        font-size: 11px;
+        line-height: 1.4;
+        color: #64748b;
       }
       .sales-console-inquiry-list {
         display: grid;
@@ -530,8 +830,8 @@
       }
       .sales-console-inquiry-choices,
       .sales-console-related-links {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 8px;
       }
       .sales-console-inquiry-choice,
@@ -545,15 +845,102 @@
         color: #243247;
         border-color: #dbe4ee;
         box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+        display: grid;
+        gap: 4px;
+        text-align: left;
+        align-content: start;
+        min-width: 220px;
+      }
+      .sales-console-inquiry-choice-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+        min-height: 22px;
+        padding: 0 9px;
+        border-radius: 999px;
+        border: 1px solid #dbe4ee;
+        background: #f8fafc;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: #334155;
       }
       .sales-console-inquiry-choice-meta {
         font-size: 11px;
+        color: #64748b;
+      }
+      .sales-console-inquiry-choice:hover {
+        background: #f8fbff;
+        border-color: #d7e6e2;
+      }
+      .sales-console-related-link {
+        position: relative;
+        border-color: #dbe4ee;
+        background: var(--erpw-surface-panel, #ffffff);
+        color: #243247;
+        box-shadow: var(
+          --erpw-shadow-panel,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 8px 18px rgba(15, 23, 42, 0.03)
+        );
+        display: grid;
+        gap: 5px;
+        text-align: left;
+        align-content: start;
+        min-width: 0;
+        padding-right: 44px;
+      }
+      .sales-console-related-link::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: 16px;
+        width: 8px;
+        height: 8px;
+        border-top: 1.5px solid #94a3b8;
+        border-right: 1.5px solid #94a3b8;
+        transform: translateY(-50%) rotate(45deg);
+        transition: border-color 120ms ease, transform 120ms ease;
+      }
+      .sales-console-related-link:hover {
+        background: var(--erpw-surface-panel, #ffffff);
+        border-color: rgba(153, 246, 228, 0.6);
+        box-shadow: var(
+          --erpw-shadow-panel-hover,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 10px 22px rgba(15, 23, 42, 0.048)
+        );
+      }
+      .sales-console-related-link:hover::after {
+        border-color: #0f766e;
+        transform: translate(1px, -50%) rotate(45deg);
+      }
+      .sales-console-related-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .sales-console-related-card-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #0f172a;
+        word-break: break-word;
+      }
+      .sales-console-related-card-meta {
+        font-size: 11.5px;
+        line-height: 1.45;
         color: #64748b;
       }
       .sales-console-queue-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
+      }
+      .sales-console-queue-grid[data-section-grid="approvals"] {
+        grid-template-columns: 1fr;
       }
       .sales-console-queue-grid[data-section-grid="approvals"] > [data-queue-key]:first-child {
         grid-column: 1 / -1;
@@ -565,45 +952,53 @@
         gap: 8px;
         padding: 16px 18px;
         border-radius: 18px;
-        border: 1px solid rgba(255, 255, 255, 0.92);
-        background: #ffffff;
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
+        background: var(--erpw-surface-elevated, #ffffff);
         cursor: pointer;
         text-align: left;
         transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
         min-width: 0;
         min-height: 92px;
-        box-shadow:
+        box-shadow: var(
+          --erpw-shadow-card,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 10px 28px rgba(0, 0, 0, 0.085);
+          0 10px 24px rgba(15, 23, 42, 0.04)
+        );
       }
       .sales-console-queue-card:hover {
         border-color: rgba(255, 255, 255, 0.98);
-        box-shadow:
+        box-shadow: var(
+          --erpw-shadow-card-hover,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 14px 38px rgba(0, 0, 0, 0.115);
+          0 14px 30px rgba(15, 23, 42, 0.07)
+        );
       }
       .sales-console-queue-card.priority {
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         gap: 20px;
         padding: 22px 22px 20px;
-        border-color: rgba(255, 255, 255, 0.94);
+        border-color: var(--erpw-border-strong, rgba(255, 255, 255, 0.94));
         background:
-          linear-gradient(90deg, rgba(34, 211, 238, 0.035) 0%, rgba(34, 211, 238, 0.012) 18%, rgba(255, 255, 255, 0) 38%),
-          #ffffff;
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.99) inset,
-          0 10px 28px rgba(0, 0, 0, 0.085);
+          linear-gradient(90deg, rgba(34, 211, 238, 0.03) 0%, rgba(34, 211, 238, 0.01) 18%, rgba(255, 255, 255, 0) 38%),
+          var(--erpw-surface-elevated, #ffffff);
+        box-shadow: var(
+          --erpw-shadow-card,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 10px 24px rgba(15, 23, 42, 0.04)
+        );
         min-height: 122px;
       }
       .sales-console-queue-card.priority:hover {
         border-color: rgba(255, 255, 255, 0.98);
         background:
-          linear-gradient(90deg, rgba(34, 211, 238, 0.05) 0%, rgba(34, 211, 238, 0.018) 18%, rgba(255, 255, 255, 0) 38%),
-          #ffffff;
-        box-shadow:
-          0 1px 0 rgba(255, 255, 255, 0.99) inset,
-          0 14px 38px rgba(0, 0, 0, 0.115);
+          linear-gradient(90deg, rgba(34, 211, 238, 0.042) 0%, rgba(34, 211, 238, 0.016) 18%, rgba(255, 255, 255, 0) 38%),
+          var(--erpw-surface-elevated, #ffffff);
+        box-shadow: var(
+          --erpw-shadow-card-hover,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 14px 30px rgba(15, 23, 42, 0.07)
+        );
       }
       .sales-console-queue-card.regular {
         grid-template-columns: minmax(0, 1fr) 104px;
@@ -612,14 +1007,12 @@
         min-height: 96px;
         box-shadow:
           inset 3px 0 0 #d8e0ea,
-          0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 10px 28px rgba(0, 0, 0, 0.085);
+          var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
       }
       .sales-console-queue-card.regular:hover {
         box-shadow:
           inset 4px 0 0 #c7d4e2,
-          0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 14px 38px rgba(0, 0, 0, 0.115);
+          var(--erpw-shadow-card-hover, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 30px rgba(15, 23, 42, 0.07));
       }
       .sales-console-queue-main {
         display: grid;
@@ -639,11 +1032,13 @@
         min-width: 104px;
         padding: 12px 14px;
         border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.92);
-        background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-        box-shadow:
-          0 2px 10px rgba(0, 0, 0, 0.04),
-          0 1px 0 rgba(255, 255, 255, 0.98) inset;
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
+        background: var(--erpw-surface-panel, linear-gradient(135deg, #f8fafc 0%, #ffffff 100%));
+        box-shadow: var(
+          --erpw-shadow-panel,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 8px 18px rgba(15, 23, 42, 0.03)
+        );
       }
       .sales-console-queue-card.priority::before {
         content: "";
@@ -674,11 +1069,13 @@
         min-width: 122px;
         padding: 12px 16px;
         border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.94);
-        background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-        box-shadow:
-          0 2px 8px rgba(0, 0, 0, 0.035),
-          0 1px 0 rgba(255, 255, 255, 0.99) inset;
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.94));
+        background: var(--erpw-surface-panel, linear-gradient(135deg, #f8fafc 0%, #ffffff 100%));
+        box-shadow: var(
+          --erpw-shadow-panel,
+          0 1px 0 rgba(255, 255, 255, 0.98) inset,
+          0 8px 18px rgba(15, 23, 42, 0.03)
+        );
       }
       .sales-console-queue-topline {
         display: flex;
@@ -783,14 +1180,16 @@
         text-align: left;
         padding: 14px 16px;
         border-radius: 16px;
-        border: 1px solid rgba(255, 255, 255, 0.92);
-        background: #ffffff;
+        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
+        background: var(--erpw-surface-elevated, #ffffff);
         cursor: pointer;
         transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
         min-width: 0;
-        box-shadow:
+        box-shadow: var(
+          --erpw-shadow-card-quiet,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 9px 26px rgba(0, 0, 0, 0.078);
+          0 8px 18px rgba(15, 23, 42, 0.028)
+        );
       }
       .sales-console-link::before {
         content: "";
@@ -804,11 +1203,13 @@
       }
       .sales-console-link:hover {
         border-color: rgba(255, 255, 255, 0.98);
-        background: #ffffff;
+        background: var(--erpw-surface-elevated, #ffffff);
         transform: translateY(-1px);
-        box-shadow:
+        box-shadow: var(
+          --erpw-shadow-card,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
-          0 13px 35px rgba(0, 0, 0, 0.108);
+          0 10px 24px rgba(15, 23, 42, 0.04)
+        );
       }
       .sales-console-link-icon {
         display: inline-flex;
@@ -817,8 +1218,8 @@
         width: 42px;
         height: 42px;
         border-radius: 11px;
-        border: 1px solid #3a4b65;
-        background: #2d3d56;
+        border: 1px solid var(--erpw-icon-dark-border, #3a4b65);
+        background: var(--erpw-icon-dark-bg, #2d3d56);
         color: #f8fafc;
         font-size: 11px;
         font-weight: 700;
@@ -920,6 +1321,9 @@
         .sales-console-inquiry-flow {
           grid-template-columns: 1fr 1fr;
         }
+        .sales-console-inquiry-assist-grid {
+          grid-template-columns: 1fr;
+        }
         .sales-console-section-note {
           max-width: 200px;
         }
@@ -934,6 +1338,13 @@
         .sales-console-title {
           font-size: 28px;
         }
+        .sales-console-header-row {
+          grid-template-columns: 1fr;
+        }
+        .sales-console-header-context {
+          justify-items: start;
+          text-align: left;
+        }
         .sales-console-section-head {
           align-items: flex-start;
         }
@@ -943,8 +1354,16 @@
         .sales-console-kpi-grid,
         .sales-console-inquiry-grid,
         .sales-console-inquiry-flow,
+        .sales-console-inquiry-assist-grid,
         .sales-console-inquiry-form {
           grid-template-columns: 1fr;
+        }
+        .sales-console-inquiry-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+        }
+        .sales-console-inquiry-suggestions {
+          position: static;
         }
         .sales-console-kpi-grid {
           max-width: none;
@@ -1069,7 +1488,7 @@
   function makeAction(config) {
     const variantClass = config.primary ? "primary" : "secondary";
     const $button = $(`
-      <button class="sales-console-action ${variantClass}" data-action-key="${escapeHtml(config.key)}">
+      <button class="sales-console-action ${variantClass}" data-action-key="${escapeHtml(config.key)}" type="button">
         <span class="sales-console-action-icon">${iconMarkup(config.icon || "square")}</span>
         <span class="sales-console-action-copy">
           <span class="sales-console-action-title">${escapeHtml(config.title)}</span>
@@ -1077,7 +1496,11 @@
         </span>
       </button>
     `);
-    $button.on("click", config.onClick);
+    $button.on("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof config.onClick === "function") config.onClick(event);
+    });
     return $button;
   }
 
@@ -1086,7 +1509,7 @@
     const sideLabel = config.sideLabel || "Open";
     if (config.priority) {
       const $priority = $(`
-        <button class="sales-console-queue-card priority" data-queue-key="${escapeHtml(config.key)}">
+        <button class="sales-console-queue-card priority" data-queue-key="${escapeHtml(config.key)}" type="button">
           <div class="sales-console-queue-priority-main">
             <div class="sales-console-queue-kicker">Priority Queue</div>
             <div class="sales-console-queue-topline">
@@ -1101,11 +1524,15 @@
           </div>
         </button>
       `);
-      $priority.on("click", config.onClick);
+      $priority.on("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (typeof config.onClick === "function") config.onClick(event);
+      });
       return $priority;
     }
     const $row = $(`
-      <button class="sales-console-queue-card regular" data-queue-key="${escapeHtml(config.key)}">
+      <button class="sales-console-queue-card regular" data-queue-key="${escapeHtml(config.key)}" type="button">
         <div class="sales-console-queue-main">
           <div class="sales-console-queue-title">${escapeHtml(config.title)}</div>
           <div class="sales-console-queue-meta" data-role="meta">${escapeHtml(config.meta)}</div>
@@ -1116,7 +1543,11 @@
         </div>
       </button>
     `);
-    $row.on("click", config.onClick);
+    $row.on("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof config.onClick === "function") config.onClick(event);
+    });
     return $row;
   }
 
@@ -1128,6 +1559,56 @@
         <div class="sales-console-kpi-meta" data-role="meta">${escapeHtml(config.meta)}</div>
       </button>
     `);
+  }
+
+  function applyHeaderContent($root, payload) {
+    const profile = (payload && payload.ui_profile) || {};
+    const context = (payload && payload.context) || {};
+    const scope = (payload && payload.scope) || {};
+
+    const note = String(
+      profile.summary_note
+      || scope.scope_label
+      || "Use Sales Console as the daily starting point for commercial execution, inquiry handling, and controlled review."
+    ).trim();
+    const modeLabel = String(profile.mode_label || "Sales Workspace").trim();
+    const roleLabel = String(context.primary_role || "Sales").trim();
+    const scopeMode = String(scope.scope_mode || "").trim();
+    const branchLabel = String(context.branch_label || "").trim();
+    const branchNote = String(context.branch_note || "").trim();
+
+    const scopeLabelMap = {
+      branch_and_owner_filtered: branchLabel ? `${branchLabel} branch scope` : "Branch sales scope",
+      team_review_scope: branchLabel ? `${branchLabel} team scope` : "Team review scope",
+      assigned_account_scope: "Assigned account scope",
+      showroom_scope: branchLabel ? `${branchLabel} showroom scope` : "Showroom scope",
+      executive_review_scope: "Company-wide approval scope",
+      permission_scope: branchLabel ? `${branchLabel} permission scope` : "Permission-based scope",
+    };
+
+    let scopeLabel = scopeLabelMap[scopeMode] || "";
+    if (!scopeLabel) {
+      scopeLabel = String(scope.scope_label || "Controlled by permissions").trim();
+    }
+
+    const roleScopeLine = [roleLabel, scopeLabel].filter(Boolean).join(" · ");
+
+    let contextNote = "";
+    if (scopeMode === "executive_review_scope") {
+      contextNote = "Cross-company visibility is still constrained by current permissions.";
+    } else if (branchNote) {
+      contextNote = `Branch is ${branchNote}. Scope follows current permissions.`;
+    }
+
+    $root.find("[data-header-note]").text(note);
+    $root.find("[data-header-mode]").text(modeLabel);
+    $root.find("[data-header-roleline]").text(roleScopeLine || roleLabel || "Sales");
+    const $contextNote = $root.find("[data-header-branch]");
+    if (contextNote) {
+      $contextNote.text(contextNote).removeAttr("hidden");
+    } else {
+      $contextNote.text("").attr("hidden", true);
+    }
   }
 
   function makeReportLink(key, title, meta, icon, onClick) {
@@ -1209,6 +1690,9 @@
       not_yet_created: "Not Yet Created",
       not_used: "Not Used",
       not_applicable: "Not Applicable",
+      settled: "Settled",
+      partly_settled: "Partly Settled",
+      follow_up: "Follow Up",
       unknown: "Unknown",
     };
     return labels[state] || "Unknown";
@@ -1244,7 +1728,11 @@
         <div class="sales-console-inquiry-stage-items">
           ${(Array.isArray(stage.items) && stage.items.length ? stage.items : [{ name: "None visible in this chain", status: "" }]).map((item) => `
             <div class="sales-console-inquiry-stage-item">
-              ${escapeHtml(item.name || "None visible in this chain")}${item.status ? ` <span class="sales-console-inquiry-choice-meta">(${escapeHtml(item.status)})</span>` : ""}
+              <div class="sales-console-inquiry-stage-item-head">
+                <span class="sales-console-inquiry-stage-doc">${escapeHtml(item.doctype || stage.label || "Record")}</span>
+              </div>
+              <div class="sales-console-inquiry-stage-name">${escapeHtml(item.name || "None visible in this chain")}</div>
+              ${item.status ? `<div class="sales-console-inquiry-stage-meta">${escapeHtml(item.status)}</div>` : ""}
             </div>
           `).join("")}
         </div>
@@ -1270,7 +1758,11 @@
     const relatedHtml = related.length
       ? related.map((item) => `
           <button class="sales-console-related-link" type="button" data-related-doctype="${escapeHtml(item.doctype)}" data-related-name="${escapeHtml(item.name)}">
-            ${escapeHtml(item.label || `${item.doctype} ${item.name}`)}
+            <div class="sales-console-related-card-head">
+              <span class="sales-console-inquiry-choice-badge">${escapeHtml(item.doctype || "Record")}</span>
+            </div>
+            <div class="sales-console-related-card-name">${escapeHtml(item.name || item.label || "Unnamed record")}</div>
+            <div class="sales-console-related-card-meta">${escapeHtml(item.status || "Visible record")}</div>
           </button>
         `).join("")
       : `<div class="sales-console-inquiry-placeholder">No related documents are visible in the current read scope.</div>`;
@@ -1280,10 +1772,19 @@
         <div class="sales-console-inquiry-block-title">Primary Match</div>
         <div class="sales-console-inquiry-primary">
           <div class="sales-console-inquiry-primary-head">
-            <div class="sales-console-inquiry-primary-label">${escapeHtml(primary.doctype || "Record")} ${escapeHtml(primary.name || "")}</div>
-            <span class="sales-console-badge review">${escapeHtml(primary.status || "Visible")}</span>
+            <div class="sales-console-inquiry-primary-summary">
+              <span class="sales-console-inquiry-doc-badge">${escapeHtml(primary.doctype || "Record")}</span>
+              <div class="sales-console-inquiry-primary-label">${escapeHtml(primary.name || "Unnamed record")}</div>
+            </div>
+            <button
+              class="sales-console-inquiry-open-record"
+              type="button"
+              data-primary-doctype="${escapeHtml(primary.doctype || "")}"
+              data-primary-name="${escapeHtml(primary.name || "")}"
+            >Open record</button>
           </div>
           <div class="sales-console-inquiry-primary-meta">${escapeHtml(primary.customer || "Customer context not available")}</div>
+          <div class="sales-console-inquiry-choice-meta">${escapeHtml(primary.status || "Visible")}</div>
         </div>
       </div>
       <div class="sales-console-inquiry-block">
@@ -1321,11 +1822,18 @@
         <div class="sales-console-inquiry-list">${exceptionsHtml}</div>
       </div>
       <div class="sales-console-inquiry-block">
-        <div class="sales-console-inquiry-block-title">Related Documents</div>
+        <div class="sales-console-inquiry-block-title">Open Related Records</div>
         <div class="sales-console-related-links">${relatedHtml}</div>
       </div>
     `).removeAttr("hidden");
 
+    $target.find("[data-primary-doctype]").on("click", function () {
+      executeTarget({
+        kind: "form",
+        doctype: this.getAttribute("data-primary-doctype"),
+        name: this.getAttribute("data-primary-name"),
+      });
+    });
     $target.find("[data-related-doctype]").on("click", function () {
       executeTarget({
         kind: "form",
@@ -1342,8 +1850,9 @@
         <div class="sales-console-inquiry-block-title">Possible Matches</div>
         <div class="sales-console-inquiry-meta">${escapeHtml(result.message || "Choose the correct customer chain.")}</div>
         <div class="sales-console-inquiry-choices">
-          ${choices.map((item) => `
-            <button class="sales-console-inquiry-choice" type="button" data-choice-name="${escapeHtml(item.name)}">
+          ${choices.map((item, index) => `
+            <button class="sales-console-inquiry-choice" type="button" data-choice-index="${index}">
+              <span class="sales-console-inquiry-choice-badge">${escapeHtml(item.doctype || "Customer")}</span>
               <div>${escapeHtml(item.label || item.name)}</div>
               <div class="sales-console-inquiry-choice-meta">${escapeHtml(item.meta || item.doctype || "Customer")}</div>
             </button>
@@ -1352,30 +1861,329 @@
       </div>
     `).removeAttr("hidden");
 
-    $target.find("[data-choice-name]").on("click", function () {
-      runSearch(this.getAttribute("data-choice-name"));
+    $target.find("[data-choice-index]").on("click", function () {
+      const item = choices[Number(this.getAttribute("data-choice-index"))];
+      if (!item) return;
+      runSearch({
+        query: item.doctype === "Customer" ? (item.label || item.name || "") : (item.name || item.label || ""),
+        doctype: item.doctype,
+        name: item.name,
+      });
     });
+  }
+
+  function getInquirySuggestState(pageState) {
+    if (!pageState.inquirySuggest) {
+      pageState.inquirySuggest = {
+        items: [],
+        activeIndex: -1,
+        requestToken: 0,
+        timer: null,
+      };
+    }
+    return pageState.inquirySuggest;
+  }
+
+  function clearInquirySuggestionTimer(pageState) {
+    const state = getInquirySuggestState(pageState);
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+  }
+
+  function resetInquirySuggestions(pageState, $section) {
+    const state = getInquirySuggestState(pageState);
+    clearInquirySuggestionTimer(pageState);
+    state.requestToken += 1;
+    state.items = [];
+    state.activeIndex = -1;
+    $section.find("[data-inquiry-suggestions]").empty().attr("hidden", true);
+  }
+
+  function setInquirySuggestionActive(pageState, $section, index) {
+    const state = getInquirySuggestState(pageState);
+    if (!state.items.length) {
+      state.activeIndex = -1;
+      return;
+    }
+
+    const boundedIndex = Math.max(0, Math.min(index, state.items.length - 1));
+    state.activeIndex = boundedIndex;
+    const $items = $section.find("[data-suggestion-index]");
+    $items.removeClass("is-active").attr("aria-selected", "false");
+    const $active = $items.filter(`[data-suggestion-index="${boundedIndex}"]`);
+    $active.addClass("is-active").attr("aria-selected", "true");
+    const activeNode = $active.get(0);
+    if (activeNode) {
+      activeNode.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function renderInquirySuggestions(pageState, $section, payload) {
+    const state = getInquirySuggestState(pageState);
+    state.items = Array.isArray(payload && payload.suggestions) ? payload.suggestions : [];
+    state.activeIndex = state.items.length ? 0 : -1;
+
+    const $wrap = $section.find("[data-inquiry-suggestions]");
+    if (!state.items.length) {
+      $wrap.empty().attr("hidden", true);
+      return;
+    }
+
+    const groups = [];
+    state.items.forEach((item, index) => {
+      const groupKey = item.doctype || "Match";
+      let group = groups.find((entry) => entry.key === groupKey);
+      if (!group) {
+        group = { key: groupKey, label: groupKey, items: [] };
+        groups.push(group);
+      }
+      group.items.push({ ...item, _index: index });
+    });
+
+    $wrap.html(groups.map((group) => `
+      <div class="sales-console-inquiry-suggestions-group">
+        <div class="sales-console-inquiry-suggestions-label">${escapeHtml(group.label)}</div>
+        ${group.items.map((item) => `
+          <button
+            class="sales-console-inquiry-suggestion${item._index === state.activeIndex ? " is-active" : ""}"
+            type="button"
+            data-suggestion-index="${item._index}"
+            aria-selected="${item._index === state.activeIndex ? "true" : "false"}"
+          >
+            <span class="sales-console-inquiry-suggestion-badge">${escapeHtml(item.doctype || "Record")}</span>
+            <span class="sales-console-inquiry-suggestion-copy">
+              <span class="sales-console-inquiry-suggestion-title">${escapeHtml(item.label || item.name || "Unnamed record")}</span>
+              <span class="sales-console-inquiry-suggestion-meta">${escapeHtml(item.meta || "")}</span>
+            </span>
+          </button>
+        `).join("")}
+      </div>
+    `).join("")).removeAttr("hidden");
+
+    $wrap.find("[data-suggestion-index]").on("mouseenter", function () {
+      setInquirySuggestionActive(pageState, $section, Number(this.getAttribute("data-suggestion-index")));
+    });
+    $wrap.find("[data-suggestion-index]").on("mousedown", (event) => {
+      event.preventDefault();
+    });
+    $wrap.find("[data-suggestion-index]").on("click", function () {
+      chooseInquirySuggestion(pageState, $section, Number(this.getAttribute("data-suggestion-index")));
+    });
+  }
+
+  function chooseInquirySuggestion(pageState, $section, index) {
+    const state = getInquirySuggestState(pageState);
+    const item = state.items[index];
+    if (!item) return false;
+
+    const query = item.doctype === "Customer"
+      ? (item.label || item.name || "")
+      : (item.name || item.label || "");
+
+    $section.find("[data-inquiry-input]").val(query);
+    resetInquirySuggestions(pageState, $section);
+    runInquirySearch(pageState, $section, {
+      query,
+      doctype: item.doctype,
+      name: item.name,
+    });
+    return true;
+  }
+
+  function maybeSelectActiveInquirySuggestion(pageState, $section) {
+    const state = getInquirySuggestState(pageState);
+    if (!state.items.length) return false;
+    return chooseInquirySuggestion(pageState, $section, state.activeIndex >= 0 ? state.activeIndex : 0);
+  }
+
+  async function fetchInquirySuggestions(pageState, $section, query) {
+    const state = getInquirySuggestState(pageState);
+    const requestToken = state.requestToken + 1;
+    state.requestToken = requestToken;
+
+    if (String(query || "").trim().length < 2) {
+      resetInquirySuggestions(pageState, $section);
+      return;
+    }
+
+    try {
+      const response = await frappe.call({
+        method: INQUIRY_SUGGEST_METHOD,
+        args: { query },
+      });
+      if (requestToken !== getInquirySuggestState(pageState).requestToken) return;
+
+      const payload = response && response.message ? response.message : {};
+      if (payload.state === "ready") {
+        renderInquirySuggestions(pageState, $section, payload);
+        return;
+      }
+      resetInquirySuggestions(pageState, $section);
+    } catch (error) {
+      if (requestToken !== getInquirySuggestState(pageState).requestToken) return;
+      resetInquirySuggestions(pageState, $section);
+    }
+  }
+
+  function scheduleInquirySuggestions(pageState, $section) {
+    const query = String($section.find("[data-inquiry-input]").val() || "").trim();
+    const state = getInquirySuggestState(pageState);
+    clearInquirySuggestionTimer(pageState);
+    if (query.length < 2) {
+      resetInquirySuggestions(pageState, $section);
+      return;
+    }
+    state.timer = setTimeout(() => {
+      fetchInquirySuggestions(pageState, $section, query);
+    }, 160);
+  }
+
+  function resetInquiryAssist($section, message) {
+    const $wrap = $section.find("[data-inquiry-ai]");
+    const $status = $section.find("[data-inquiry-ai-status]");
+    const $content = $section.find("[data-inquiry-ai-content]");
+    const $button = $section.find("[data-inquiry-ai-generate]");
+    $content.empty();
+    $status.text(message || "Generate a concise AI brief after resolving the inquiry.");
+    const idleLabel = $button.attr("data-idle-label") || $button.text() || "Generate AI Brief";
+    $button.attr("data-idle-label", idleLabel).text(idleLabel).removeClass("is-busy").prop("disabled", true);
+    $wrap.attr("hidden", true);
+  }
+
+  function resetInquiryView(pageState, $section) {
+    pageState.inquiry = null;
+    pageState.inquiryAssist = null;
+    const $input = $section.find("[data-inquiry-input]");
+    $input.val("");
+    resetInquirySuggestions(pageState, $section);
+    $section.find("[data-inquiry-status]").text("Waiting for inquiry input.");
+    $section.find("[data-inquiry-result]").empty().attr("hidden", true);
+    resetInquiryAssist($section, "Generate a concise AI brief after resolving the inquiry.");
+    $input.trigger("focus");
+  }
+
+  function showInquiryAssistReady($section, result) {
+    const $wrap = $section.find("[data-inquiry-ai]");
+    const $status = $section.find("[data-inquiry-ai-status]");
+    const $content = $section.find("[data-inquiry-ai-content]");
+    const $button = $section.find("[data-inquiry-ai-generate]");
+    const primary = (result && result.primary_match) || {};
+    $content.empty();
+    $status.text(`Ready to summarize ${primary.doctype || "this chain"} ${primary.name || ""}.`);
+    const idleLabel = $button.attr("data-idle-label") || $button.text() || "Generate AI Brief";
+    $button.attr("data-idle-label", idleLabel).text(idleLabel).removeClass("is-busy").prop("disabled", false);
+    $wrap.removeAttr("hidden");
+  }
+
+  function renderInquiryAssist($section, payload) {
+    const assist = (payload && payload.assist) || {};
+    const source = String((payload && payload.source) || "fallback").trim();
+    const engine = String((payload && payload.engine) || (source === "ai" ? "qwen_runtime" : "structured_inquiry_brief")).trim();
+    const $wrap = $section.find("[data-inquiry-ai]");
+    const $status = $section.find("[data-inquiry-ai-status]");
+    const $content = $section.find("[data-inquiry-ai-content]");
+
+    const cards = [
+      { title: "Summary", value: assist.summary || "No summary is available." },
+      { title: "Blocker Explanation", value: assist.blocker_explanation || "No blocker explanation is available." },
+      { title: "Next Action", value: assist.next_action || "No next action is available." },
+      { title: "Customer Reply Draft", value: assist.customer_reply || "No customer reply draft is available." },
+    ];
+
+    $content.html(`
+      <div class="sales-console-inquiry-assist-grid">
+        ${cards.map((item) => `
+          <div class="sales-console-inquiry-assist-card">
+            <div class="sales-console-inquiry-assist-card-title">${escapeHtml(item.title)}</div>
+            <div class="sales-console-inquiry-assist-card-value">${escapeHtml(item.value)}</div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="sales-console-inquiry-assist-footnote">
+        ${escapeHtml(assist.confidence_note || "Generated from the visible ERP inquiry chain.")} (${escapeHtml(source)} via ${escapeHtml(engine)})
+      </div>
+    `);
+
+    $status.text(source === "ai" ? "AI brief generated from the visible inquiry chain." : "Structured fallback brief generated from the visible inquiry chain.");
+    const $button = $section.find("[data-inquiry-ai-generate]");
+    const idleLabel = $button.attr("data-idle-label") || "Generate AI Brief";
+    $button.text(idleLabel).removeClass("is-busy").prop("disabled", false);
+    $wrap.removeAttr("hidden");
+  }
+
+  async function runInquiryAssist(pageState, $section) {
+    const inquiry = pageState.inquiry || {};
+    if (!inquiry || inquiry.state !== "resolved") {
+      resetInquiryAssist($section, "Resolve a single customer chain before generating the AI brief.");
+      return;
+    }
+
+    const $status = $section.find("[data-inquiry-ai-status]");
+    const $button = $section.find("[data-inquiry-ai-generate]");
+    const idleLabel = $button.attr("data-idle-label") || $button.text() || "Generate AI Brief";
+    $button.attr("data-idle-label", idleLabel).text("Generating...").addClass("is-busy").prop("disabled", true);
+    $status.text("Generating concise AI brief from the visible inquiry chain...");
+
+    try {
+      const response = await frappe.call({
+        method: INQUIRY_AI_METHOD,
+        args: {
+          query: inquiry.query || "",
+          doctype: inquiry.anchor && inquiry.anchor.doctype,
+          name: inquiry.anchor && inquiry.anchor.name,
+        },
+      });
+      const payload = response && response.message ? response.message : {};
+      pageState.inquiryAssist = payload;
+      if (payload.state === "ready") {
+        renderInquiryAssist($section, payload);
+        return;
+      }
+      $status.text(payload.message || "AI brief is not available for this inquiry.");
+      $button.text(idleLabel).removeClass("is-busy").prop("disabled", false);
+    } catch (error) {
+      $status.text("AI brief is temporarily unavailable.");
+      $button.text(idleLabel).removeClass("is-busy").prop("disabled", false);
+    }
   }
 
   async function runInquirySearch(pageState, $section, forcedQuery) {
     const $input = $section.find("[data-inquiry-input]");
     const $status = $section.find("[data-inquiry-status]");
     const $result = $section.find("[data-inquiry-result]");
-    const query = String(forcedQuery != null ? forcedQuery : $input.val() || "").trim();
+    const lookup = forcedQuery && typeof forcedQuery === "object" && !Array.isArray(forcedQuery)
+      ? forcedQuery
+      : null;
+    const query = String(
+      lookup
+        ? (lookup.query != null ? lookup.query : (lookup.name || ""))
+        : (forcedQuery != null ? forcedQuery : ($input.val() || ""))
+    ).trim();
+    const selectedDoctype = lookup && lookup.doctype ? String(lookup.doctype).trim() : null;
+    const selectedName = lookup && lookup.name ? String(lookup.name).trim() : null;
 
     if (!query) {
       renderInquiryPlaceholder($result, "Enter a customer, quotation, sales order, invoice, or delivery reference.");
       $status.text("Waiting for inquiry input.");
+      resetInquirySuggestions(pageState, $section);
+      resetInquiryAssist($section, "Generate a concise AI brief after resolving the inquiry.");
       return;
     }
 
+    resetInquirySuggestions(pageState, $section);
     $status.text("Searching linked customer and document context...");
     renderInquiryPlaceholder($result, "Resolving the commercial chain...");
 
     try {
       const response = await frappe.call({
         method: INQUIRY_METHOD,
-        args: { query },
+        args: {
+          query,
+          doctype: selectedDoctype,
+          name: selectedName,
+        },
       });
       const result = response && response.message ? response.message : {};
       pageState.inquiry = result;
@@ -1383,20 +2191,24 @@
       if (result.state === "resolved") {
         renderInquiryResult($result, result);
         $status.text(`Showing linked result for ${query}.`);
+        showInquiryAssistReady($section, result);
         return;
       }
 
       if (result.state === "multiple_matches") {
         renderInquiryChoices($result, result, (choiceQuery) => runInquirySearch(pageState, $section, choiceQuery));
         $status.text("Multiple customer matches found.");
+        resetInquiryAssist($section, "Choose a single customer chain before generating the AI brief.");
         return;
       }
 
       renderInquiryPlaceholder($result, result.message || "No inquiry result is available.");
       $status.text(result.message || "No matching customer chain was found.");
+      resetInquiryAssist($section, result.message || "AI brief is available only after a visible customer chain is resolved.");
     } catch (error) {
       renderInquiryPlaceholder($result, "Customer inquiry is not available right now.");
       $status.text("Customer inquiry is temporarily unavailable.");
+      resetInquiryAssist($section, "AI brief is temporarily unavailable.");
     }
   }
 
@@ -1589,6 +2401,52 @@
     });
   }
 
+  function rebalanceActionStrips($root) {
+    const $primary = $root.find(".sales-console-action-strip.primary");
+    const $secondary = $root.find(".sales-console-action-strip.secondary");
+    const $actions = $root.find("[data-action-key]");
+    if (!$actions.length) return;
+
+    const visible = [];
+    const hidden = [];
+
+    $actions.each((_, element) => {
+      if ($(element).css("display") === "none") {
+        hidden.push(element);
+      } else {
+        visible.push(element);
+      }
+    });
+
+    $primary.empty();
+    $secondary.empty();
+
+    visible.forEach((element, index) => {
+      if (index < 3) {
+        $primary.append(element);
+      } else {
+        $secondary.append(element);
+      }
+    });
+    hidden.forEach((element) => {
+      $secondary.append(element);
+    });
+
+    const primaryVisibleCount = Math.min(visible.length, 3);
+    const secondaryVisibleCount = Math.max(visible.length - 3, 0);
+
+    const primaryColumns = Math.max(primaryVisibleCount, 1);
+    $primary.css("grid-template-columns", `repeat(${primaryColumns}, minmax(0, 1fr))`);
+
+    if (secondaryVisibleCount > 0) {
+      const secondaryColumns = Math.min(Math.max(secondaryVisibleCount, 1), 2);
+      $secondary.css("grid-template-columns", `repeat(${secondaryColumns}, minmax(0, 1fr))`);
+      $secondary.removeAttr("hidden");
+    } else {
+      $secondary.attr("hidden", true);
+    }
+  }
+
   function applyUiProfile($root, profile) {
     if (!profile) return;
 
@@ -1605,6 +2463,7 @@
       const key = $element.attr("data-action-key");
       $element.toggle(!hiddenActions.has(key));
     });
+    rebalanceActionStrips($root);
 
     const hiddenInsights = new Set(profile.hidden_insights || []);
     const $kpiCards = $root.find("[data-insight-key]");
@@ -1651,7 +2510,7 @@
           <h3 class="sales-console-guide-heading">How to work here</h3>
           <ul class="sales-console-guide-list">
             <li>Start with the queue, especially blocked orders and active quotation follow-up.</li>
-            <li>Use Customer Inquiry before hunting across lists when a customer asks for status.</li>
+            <li>Use Inquiry before hunting across lists when a customer asks for status.</li>
             <li>Use the action row to create documents quickly without broad module browsing.</li>
             <li>Use reports after operational work is under control, not before.</li>
           </ul>
@@ -1746,6 +2605,7 @@
       const payload = response && response.message ? response.message : {};
       pageState.payload = payload;
 
+      applyHeaderContent($root, payload);
       applyUiProfile($root, payload.ui_profile || {});
 
       [payload.work || {}, payload.lifecycle || {}, payload.blockers || {}, payload.queues || {}].forEach((group) => {
@@ -1777,6 +2637,39 @@
     }
   }
 
+  function renderFailureState(wrapper, error) {
+    try {
+      // Keep a browser-visible breadcrumb for debugging without trapping Desk boot.
+      console.error("Sales Console render failed", error);
+    } catch (consoleError) {
+      // Ignore console failures and continue with the fallback shell.
+    }
+
+    const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
+    const $host = $(host || []);
+    const detail = error && error.message ? String(error.message) : "Unexpected render error";
+
+    $host.empty().append(`
+      <div class="sales-console-shell">
+        <section class="sales-console-card sales-console-section">
+          <div class="sales-console-section-head">
+            <h2 class="sales-console-section-title">Sales Console Unavailable</h2>
+            <div class="sales-console-section-note">Fallback workspace state</div>
+          </div>
+          <div class="sales-console-inquiry-placeholder">
+            Sales Console could not finish loading, so Desk is staying available in a safe fallback state.
+            ${escapeHtml(detail)}
+          </div>
+        </section>
+      </div>
+    `);
+
+    frappe.show_alert({
+      message: __("Sales Console is temporarily unavailable."),
+      indicator: "orange",
+    });
+  }
+
   function render(wrapper) {
     ensureStyle();
 
@@ -1796,6 +2689,12 @@
         <div class="sales-console-header-row">
           <div class="sales-console-header-copy">
             <h1 class="sales-console-title">Sales Console</h1>
+            <div class="sales-console-header-note" data-header-note>Execution-first sales workspace for inquiry handling, approvals, and day-to-day control.</div>
+          </div>
+          <div class="sales-console-header-context">
+            <div class="sales-console-header-chip" data-header-mode>Sales Workspace</div>
+            <div class="sales-console-header-roleline" data-header-roleline>Sales · Controlled by permissions</div>
+            <div class="sales-console-header-context-note" data-header-branch hidden></div>
           </div>
         </div>
         <div class="sales-console-kpi-grid"></div>
@@ -1914,33 +2813,91 @@
     const $inquirySection = $(`
       <section class="sales-console-card sales-console-section" data-section-key="inquiry">
         <div class="sales-console-section-head">
-          <h2 class="sales-console-section-title">Customer Inquiry</h2>
-          <div class="sales-console-section-note" data-section-note="inquiry">Search once to answer customer questions across the full sales chain</div>
+          <h2 class="sales-console-section-title">Inquiry</h2>
+          <div class="sales-console-section-note" data-section-note="inquiry">Search once to answer questions across the full sales chain</div>
         </div>
         <div class="sales-console-inquiry">
           <div class="sales-console-inquiry-shell">
             <div class="sales-console-inquiry-intro">
-              <div class="sales-console-inquiry-title">Single-point customer and document lookup</div>
-              <p class="sales-console-inquiry-meta">Search by customer, quotation, sales order, invoice, or delivery note and trace the related commercial flow without opening multiple lists first.</p>
+              <div class="sales-console-inquiry-title">Single-point commercial lookup</div>
+              <p class="sales-console-inquiry-meta">Search by customer or commercial document. Suggestions appear while you type so the nearest visible chain can be opened without exact ID recall.</p>
             </div>
             <div class="sales-console-inquiry-form">
-              <input class="sales-console-inquiry-input" data-inquiry-input type="text" placeholder="Customer, quotation, sales order, invoice, or delivery note" />
-              <button class="sales-console-inquiry-submit" type="button" data-inquiry-submit>Search</button>
+              <div class="sales-console-inquiry-input-shell">
+                <input class="sales-console-inquiry-input" data-inquiry-input type="text" autocomplete="off" placeholder="Customer, quotation, sales order, invoice, or delivery note" />
+                <div class="sales-console-inquiry-suggestions" data-inquiry-suggestions hidden></div>
+              </div>
+              <div class="sales-console-inquiry-actions">
+                <button class="sales-console-inquiry-submit" type="button" data-inquiry-submit>Search</button>
+                <button class="sales-console-inquiry-clear" type="button" data-inquiry-clear>Clear</button>
+              </div>
             </div>
             <div class="sales-console-inquiry-status" data-inquiry-status>Waiting for inquiry input.</div>
           </div>
           <div class="sales-console-inquiry-result" data-inquiry-result hidden></div>
+          <div class="sales-console-inquiry-assist" data-inquiry-ai hidden>
+            <div class="sales-console-inquiry-block">
+              <div class="sales-console-inquiry-assist-head">
+                <div class="sales-console-inquiry-assist-copy">
+                  <div class="sales-console-inquiry-assist-title">AI Assist</div>
+                  <div class="sales-console-inquiry-meta">Generate a concise summary, blocker explanation, next action, and customer-facing reply draft from the resolved inquiry chain.</div>
+                </div>
+                <button class="sales-console-inquiry-submit" type="button" data-idle-label="Generate AI Brief" data-inquiry-ai-generate>Generate AI Brief</button>
+              </div>
+              <div class="sales-console-inquiry-assist-status" data-inquiry-ai-status>Generate a concise AI brief after resolving the inquiry.</div>
+              <div data-inquiry-ai-content></div>
+            </div>
+          </div>
         </div>
       </section>
     `);
 
-    $inquirySection.find("[data-inquiry-submit]").on("click", () => runInquirySearch(pageState, $inquirySection));
+    $inquirySection.find("[data-inquiry-submit]").on("click", () => {
+      if (maybeSelectActiveInquirySuggestion(pageState, $inquirySection)) return;
+      runInquirySearch(pageState, $inquirySection);
+    });
+    $inquirySection.find("[data-inquiry-clear]").on("click", () => resetInquiryView(pageState, $inquirySection));
+    $inquirySection.find("[data-inquiry-ai-generate]").on("click", () => runInquiryAssist(pageState, $inquirySection));
+    $inquirySection.find("[data-inquiry-input]").on("input", () => {
+      scheduleInquirySuggestions(pageState, $inquirySection);
+    });
+    $inquirySection.find("[data-inquiry-input]").on("focus", () => {
+      const state = getInquirySuggestState(pageState);
+      if (state.items.length) {
+        renderInquirySuggestions(pageState, $inquirySection, { suggestions: state.items });
+        return;
+      }
+      scheduleInquirySuggestions(pageState, $inquirySection);
+    });
     $inquirySection.find("[data-inquiry-input]").on("keydown", (event) => {
+      const state = getInquirySuggestState(pageState);
+      if (event.key === "ArrowDown" && state.items.length) {
+        event.preventDefault();
+        setInquirySuggestionActive(pageState, $inquirySection, state.activeIndex + 1);
+        return;
+      }
+      if (event.key === "ArrowUp" && state.items.length) {
+        event.preventDefault();
+        setInquirySuggestionActive(pageState, $inquirySection, state.activeIndex - 1);
+        return;
+      }
+      if (event.key === "Escape" && state.items.length) {
+        event.preventDefault();
+        resetInquirySuggestions(pageState, $inquirySection);
+        return;
+      }
       if (event.key === "Enter") {
         event.preventDefault();
+        if (maybeSelectActiveInquirySuggestion(pageState, $inquirySection)) return;
         runInquirySearch(pageState, $inquirySection);
       }
     });
+    $(document).off("mousedown.sales-console-inquiry-suggest").on("mousedown.sales-console-inquiry-suggest", (event) => {
+      if (!$inquirySection.get(0).contains(event.target)) {
+        resetInquirySuggestions(pageState, $inquirySection);
+      }
+    });
+    resetInquiryAssist($inquirySection, "Generate a concise AI brief after resolving the inquiry.");
 
     const $workSection = $(`
       <section class="sales-console-card sales-console-section" data-section-key="work">
@@ -2133,8 +3090,21 @@
     loadBootstrap($root, pageState);
   }
 
+  function renderSafely(wrapper) {
+    try {
+      render(wrapper);
+    } catch (error) {
+      renderFailureState(wrapper, error);
+    }
+  }
+
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) {
-    render(wrapper);
+    renderSafely(wrapper);
+  };
+  frappe.pages[PAGE_KEY].on_page_show = function (wrapper) {
+    const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
+    if ($(host || []).find(".sales-console-shell").length) return;
+    renderSafely(wrapper);
   };
 })();
