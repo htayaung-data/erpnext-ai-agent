@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import build_front_door_intent_gate_contract
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import interpret_fresh_query_semantically
-from ai_assistant_ui.qwen_chat.metadata import list_frontdoor_intent_specs
+from ai_assistant_ui.qwen_chat.metadata import get_frontdoor_intent_spec, list_frontdoor_intent_specs
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_frontdoor_interpretation,
@@ -120,6 +120,19 @@ def _validate_semantic_payload(payload: Dict[str, Any], context: Dict[str, Any])
 	)
 
 
+def _frontdoor_intent_keeps_conversational_ownership(intent: SemanticFrontDoorIntent | None) -> bool:
+	if intent is None:
+		return False
+	spec = get_frontdoor_intent_spec(str(intent.intent_class or "").strip())
+	if not spec:
+		return False
+	return bool(
+		bool(spec.get("handle_in_front_door", False))
+		and str(spec.get("route_target") or "").strip() == "front_door"
+		and not bool(spec.get("requires_grounded_context", False))
+	)
+
+
 def _fresh_query_semantic_override(
 	*,
 	request_id: str,
@@ -208,7 +221,7 @@ def interpret_front_door_semantically(
 			validation_error="Runtime front-door interpretation confidence is below threshold.",
 			agent_meta=agent_meta,
 		)
-	if intent.intent_class != "route_onward":
+	if intent.intent_class != "route_onward" and not _frontdoor_intent_keeps_conversational_ownership(intent):
 		fresh_query_override = _fresh_query_semantic_override(
 			request_id=request_id,
 			session_id=session_id,

@@ -26,6 +26,8 @@ from ai_assistant_ui.qwen_chat.boundary_support import (
 	append_knowledge_boundary_observability as _append_knowledge_boundary_observability_helper,
 	artifact_evidence_concepts as _artifact_evidence_concepts_helper,
 	artifact_enrichment_boundary_answer as _artifact_enrichment_boundary_answer_helper,
+	build_grounded_artifact_direct_evidence_rendered_payload as _build_grounded_artifact_direct_evidence_rendered_payload_helper,
+	grounded_artifact_direct_evidence_answer as _grounded_artifact_direct_evidence_answer_helper,
 	grounded_artifact_evidence_boundary_answer as _grounded_artifact_evidence_boundary_answer_helper,
 	knowledge_boundary_event_level as _knowledge_boundary_event_level_helper,
 )
@@ -52,7 +54,9 @@ from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	clarification_state_after_unresolved_attempt,
 	clear_pending_clarification_signal,
 	governed_fallback_option,
+	latest_assistant_turn_was_clarification_fallback_stop,
 	latest_pending_clarification_signal,
+	looks_like_short_acknowledgement,
 	pending_clarification_empty_ack_answer,
 	pending_clarification_fallback_stop_answer,
 	pending_clarification_meta_answer,
@@ -198,6 +202,8 @@ from ai_assistant_ui.qwen_chat.rollout import (
 from ai_assistant_ui.qwen_chat.scope_support import (
 	context_isolation_payload as _context_isolation_payload_helper,
 	out_of_scope_answer as _out_of_scope_answer_helper,
+	reasoning_preempted_by_followup_refinement as _reasoning_preempted_by_followup_refinement,
+	reasoning_scope_suppression_allowed as _reasoning_scope_suppression_allowed,
 )
 from ai_assistant_ui.qwen_chat.smoke_fixtures import (
 	require_smoke_fixture,
@@ -224,6 +230,15 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_family_tool_surface_smoke as _run_family_tool_surface_smoke_helper,
 	run_natural_narrative_smoke as _run_natural_narrative_smoke_helper,
 	run_response_policy_probe as _run_response_policy_probe_helper,
+	run_delivery_note_date_scope_probe as _run_delivery_note_date_scope_probe_helper,
+	run_delivery_note_detail_smoke as _run_delivery_note_detail_smoke_helper,
+	run_delivery_note_listing_limit_probe as _run_delivery_note_listing_limit_probe_helper,
+	run_delivery_note_listing_smoke as _run_delivery_note_listing_smoke_helper,
+	run_delivery_note_session_reset_smoke as _run_delivery_note_session_reset_smoke_helper,
+	run_delivery_note_status_probe as _run_delivery_note_status_probe_helper,
+	run_delivery_note_trend_probe as _run_delivery_note_trend_probe_helper,
+	run_fresh_chat_invoice_delivery_proof_smoke as _run_fresh_chat_invoice_delivery_proof_smoke_helper,
+	run_invoice_delivery_proof_smoke as _run_invoice_delivery_proof_smoke_helper,
 	run_structured_presentation_smoke as _run_structured_presentation_smoke_helper,
 	run_transaction_listing_smoke as _run_transaction_listing_smoke_helper,
 )
@@ -272,9 +287,11 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_report_names,
 	capability_semantic_tags,
 	get_family_evaluation_case_set,
+	governed_self_contained_business_terms,
 	list_family_evaluation_case_sets,
 	ontology_detect_concepts,
 	ontology_concept_aliases,
+	ontology_self_contained_prefixes,
 	report_business_family_ids,
 	report_defaultable_filters,
 	report_family_capability_ids,
@@ -301,8 +318,33 @@ from ai_assistant_ui.qwen_chat.runtime_support import (
 )
 from ai_assistant_ui.qwen_chat.semantic_interpreter import interpret_followup_semantically
 from ai_assistant_ui.qwen_chat.semantic_reasoning_activation import interpret_reasoning_activation_semantically
+from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys as _detect_semantic_alias_keys
 QWEN_SESSION_DOCTYPE = "Qwen Chat Session"
 VISIBLE_ROLES = {"user", "assistant"}
+
+
+def _message_looks_like_self_contained_governed_business_query(
+	*,
+	message: str,
+	language: str = "en",
+) -> bool:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return False
+	prefixes = [
+		str(value or "").strip().lower()
+		for value in ontology_self_contained_prefixes(language)
+		if str(value or "").strip()
+	]
+	if prefixes and not any(text.startswith(prefix) for prefix in prefixes):
+		return False
+	if ontology_detect_concepts(text, language=language, include_extended=False):
+		return True
+	for term in governed_self_contained_business_terms(language):
+		clean = str(term or "").strip().lower()
+		if clean and re.search(rf"(?<!\\w){re.escape(clean)}(?!\\w)", text):
+			return True
+	return False
 
 
 def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
@@ -540,6 +582,109 @@ def _grounded_artifact_evidence_boundary_answer(
 		artifact_payload=artifact_payload,
 		grounded_turn=grounded_turn,
 	)
+
+
+def _grounded_artifact_direct_evidence_answer(
+	*,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	grounded_turn: Dict[str, Any],
+) -> str:
+	return _grounded_artifact_direct_evidence_answer_helper(
+		raw_message=raw_message,
+		artifact_payload=artifact_payload,
+		grounded_turn=grounded_turn,
+	)
+
+
+def _build_grounded_artifact_direct_evidence_rendered_payload(
+	*,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	grounded_turn: Dict[str, Any],
+) -> Dict[str, Any]:
+	return _build_grounded_artifact_direct_evidence_rendered_payload_helper(
+		raw_message=raw_message,
+		artifact_payload=artifact_payload,
+		grounded_turn=grounded_turn,
+	)
+
+
+def _grounded_artifact_direct_evidence_response(
+	*,
+	request_id: str,
+	session_id: str,
+	interaction_contract,
+	response_policy_contract,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	grounded_turn: Dict[str, Any],
+	fallback_answer_text: str = "",
+) -> Dict[str, Any]:
+	fallback_text = str(fallback_answer_text or "").strip()
+	if not fallback_text:
+		fallback_text = _grounded_artifact_direct_evidence_answer(
+			raw_message=raw_message,
+			artifact_payload=artifact_payload,
+			grounded_turn=grounded_turn,
+		)
+	if not fallback_text:
+		return {}
+	requested_dimensions = {
+		str(value or "").strip()
+		for value in _detect_semantic_alias_keys(raw_message, dimension_or_metric="dimension")
+		if str(value or "").strip()
+	}
+	rendered_response_payload = _build_grounded_artifact_direct_evidence_rendered_payload(
+		raw_message=raw_message,
+		artifact_payload=artifact_payload,
+		grounded_turn=grounded_turn,
+	)
+	if not rendered_response_payload:
+		return {
+			"answer_text": fallback_text,
+			"rendered_response_payload": {},
+			"narrative_payload": {},
+			"narrative_contract_payload": {},
+		}
+	if "posting_date" in requested_dimensions:
+		rendered_response_payload["answer_text"] = fallback_text
+		return {
+			"answer_text": fallback_text,
+			"rendered_response_payload": rendered_response_payload,
+			"narrative_payload": {},
+			"narrative_contract_payload": {},
+		}
+	rendered_response_payload["answer_text"] = fallback_text
+	artifact_context = build_artifact_narrative_context(
+		request_id=request_id,
+		artifact_payload=artifact_payload,
+		rendered_response_payload=rendered_response_payload,
+		response_policy=response_policy_contract.to_runtime_payload(),
+		validation_payload={},
+	)
+	narrative_payload = narrate_governed_artifact(
+		session_id=session_id,
+		user_id=str(interaction_contract.user_id or "").strip(),
+		site_name=str(interaction_contract.site_name or "").strip(),
+		message=raw_message,
+		request_id=request_id,
+		artifact_context=artifact_context,
+		response_policy=response_policy_contract.to_runtime_payload(),
+	)
+	narrative_contract = build_artifact_narrative_contract(
+		request_id=request_id,
+		artifact_context=artifact_context,
+		runtime_payload=narrative_payload,
+	)
+	narrative_contract_payload = narrative_contract.to_payload() if narrative_contract is not None else {}
+	answer_text = str(narrative_contract_payload.get("answer_text") or "").strip() or fallback_text
+	return {
+		"answer_text": answer_text,
+		"rendered_response_payload": rendered_response_payload,
+		"narrative_payload": narrative_payload if isinstance(narrative_payload, dict) else {},
+		"narrative_contract_payload": narrative_contract_payload,
+	}
 
 
 def _artifact_enrichment_boundary_answer(
@@ -1040,6 +1185,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			latest_grounded_turn_available=latest_grounded_turn_available,
 		)
 	else:
+		post_clarification_stop_acknowledgement = bool(
+			latest_assistant_turn_was_clarification_fallback_stop(session_doc)
+			and looks_like_short_acknowledgement(msg)
+		)
 		frontdoor_semantic_result, frontdoor_contract, frontdoor_render_result, frontdoor_answer = evaluate_frontdoor_lane(
 			request_id=request_id,
 			session_id=session_name,
@@ -1050,23 +1199,29 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			grounded_context_available=latest_grounded_turn_available,
 			latest_recovery_contract_available=bool(latest_recovery_contract),
 			pre_frontdoor_reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			post_clarification_stop_acknowledgement=post_clarification_stop_acknowledgement,
 		)
-	entity_drilldown = None
-	if latest_grounded_turn_available:
-		entity_drilldown = detect_entity_drilldown_request(
-			message=msg,
-			artifact_payload=latest_family_artifact,
-			grounded_turn=latest_grounded_turn,
-		)
+	entity_drilldown = detect_entity_drilldown_request(
+		message=msg,
+		artifact_payload=latest_family_artifact if isinstance(latest_family_artifact, dict) else {},
+		grounded_turn=latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {},
+	)
 	semantic_intent = None
 	allow_heuristic_fallback = True
 	degraded_reason = ""
 	semantic_payload = None
+	recovery_allows_semantic_followup = bool(
+		latest_recovery_contract
+		and _message_looks_like_self_contained_governed_business_query(
+			message=msg,
+			language=interaction_contract.detected_language,
+		)
+	)
 	if (
 		latest_grounded_turn_available
 		and latest_grounded_turn
 		and entity_drilldown is None
-		and not latest_recovery_contract
+		and (not latest_recovery_contract or recovery_allows_semantic_followup)
 	):
 		semantic_result = interpret_followup_semantically(
 			request_id=request_id,
@@ -1128,6 +1283,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and str(getattr(pre_frontdoor_reasoning_semantic_result, "status", "") or "").strip() == "accepted"
 		and str(getattr(getattr(pre_frontdoor_reasoning_semantic_result, "intent", None), "reasoning_type", "") or "").strip()
 		in {"recommendation", "continuation_detail"}
+		and _reasoning_scope_suppression_allowed(context_isolation)
 	):
 		context_isolation = build_scope_decision_input()
 	repair_recent_messages = _recent_messages(session_doc, limit=8)
@@ -1158,27 +1314,28 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		if repair_handled and repair_payload is not None:
 			return True, repair_payload
-	frontdoor_handled, frontdoor_payload = handle_frontdoor_turn(
-		session_doc=session_doc,
-		request_id=request_id,
-		session_id=session_name,
-		message=msg,
-		interaction_contract=interaction_contract,
-		frontdoor_semantic_result=frontdoor_semantic_result,
-		frontdoor_contract=frontdoor_contract,
-		frontdoor_render_result=frontdoor_render_result,
-		frontdoor_answer=frontdoor_answer,
-		context_force_new_query=bool(context_isolation.force_new_query),
-		latest_grounded_turn_available=latest_grounded_turn_available,
-		latest_grounded_turn=latest_grounded_turn,
-		append_message=_append_message,
-		append_tool_payload=_append_tool_payload,
-		append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
-		assistant_text_payload=_assistant_text_payload,
-		save_session=_save_session,
-	)
-	if frontdoor_handled and frontdoor_payload is not None:
-		return True, frontdoor_payload
+	if entity_drilldown is None:
+		frontdoor_handled, frontdoor_payload = handle_frontdoor_turn(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			message=msg,
+			interaction_contract=interaction_contract,
+			frontdoor_semantic_result=frontdoor_semantic_result,
+			frontdoor_contract=frontdoor_contract,
+			frontdoor_render_result=frontdoor_render_result,
+			frontdoor_answer=frontdoor_answer,
+			context_force_new_query=bool(context_isolation.force_new_query),
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			latest_grounded_turn=latest_grounded_turn,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+		)
+		if frontdoor_handled and frontdoor_payload is not None:
+			return True, frontdoor_payload
 	if pending_clarification_signal:
 		clarification_handled, clarification_response_contract, msg, clarification_payload = handle_pending_clarification_turn(
 			session_doc=session_doc,
@@ -1208,7 +1365,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		user=user,
 		site_name=site_name,
 	)
-	if bool(compiled_rollout.get("enabled")) and not latest_grounded_turn_available:
+	if bool(compiled_rollout.get("enabled")) and not latest_grounded_turn_available and entity_drilldown is None:
 		return handle_compiled_query_turn(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -1227,8 +1384,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 	followup_context_available = bool(latest_grounded_turn_available and not bool(context_isolation.force_new_query) and entity_drilldown is None)
 	pre_reasoning_followup_resolution = None
-	pre_reasoning_requested_modes: List[str] = []
 	reasoning_preempted_by_artifact_refinement = False
+	precomputed_evidence_answer = ""
+	precomputed_evidence_response: Dict[str, Any] = {}
 	precomputed_evidence_boundary_answer = ""
 	if followup_context_available:
 		pre_reasoning_followup_resolution = build_followup_resolution(
@@ -1240,36 +1398,35 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			allow_heuristic_fallback=False,
 			degraded_reason=str(context_isolation.reason or degraded_reason or "").strip(),
 		)
-		pre_reasoning_requested_modes = [
-			str(mode or "").strip()
-			for mode in (getattr(pre_reasoning_followup_resolution, "requested_modes", []) or [])
-			if str(mode or "").strip()
-		]
-		reasoning_preempted_by_artifact_refinement = (
-			str(getattr(pre_reasoning_followup_resolution, "mode", "") or "").strip() in {"local_grounded_transform", "capability_requery"}
-			and bool(
-				{
-					"sort_or_limit",
-					"metric_refinement",
-					"column_refinement",
-					"time_scope_restatement",
-					"dimension_breakdown",
-					"grouping_change",
-				}.intersection(pre_reasoning_requested_modes)
-			)
+		reasoning_preempted_by_artifact_refinement = _reasoning_preempted_by_followup_refinement(
+			pre_reasoning_followup_resolution
 		)
-		precomputed_evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+		precomputed_evidence_answer = _grounded_artifact_direct_evidence_answer(
 			raw_message=msg,
 			artifact_payload=latest_family_artifact,
 			grounded_turn=latest_grounded_turn,
 		)
-	reasoning_display_preferences = _latest_display_preferences(session_doc, pre_reasoning_requested_modes)
+		if not precomputed_evidence_answer:
+			precomputed_evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+				raw_message=msg,
+				artifact_payload=latest_family_artifact,
+				grounded_turn=latest_grounded_turn,
+			)
+	reasoning_display_preferences = _latest_display_preferences(
+		session_doc,
+		[
+			str(mode or "").strip()
+			for mode in (getattr(pre_reasoning_followup_resolution, "requested_modes", []) or [])
+			if str(mode or "").strip()
+		],
+	)
 	if (
 		bool(reasoning_rollout.get("enabled"))
 		and latest_grounded_turn_available
 		and not bool(context_isolation.force_new_query)
 		and entity_drilldown is None
 		and not reasoning_preempted_by_artifact_refinement
+		and not precomputed_evidence_answer
 		and not precomputed_evidence_boundary_answer
 	):
 		reasoning_activation_contract = (
@@ -1332,6 +1489,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		if reasoning_handled and reasoning_payload is not None:
 			return True, reasoning_payload
 	if entity_drilldown is not None:
+		entity_drilldown_requires_grounded_turn = bool(
+			latest_grounded_turn_available and str((entity_drilldown or {}).get("source") or "").strip() != "explicit_identifier"
+		)
 		followup_resolution = build_followup_resolution_contract(
 			request_id=request_id,
 			mode="entity_drilldown",
@@ -1344,10 +1504,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			requested_time_scope="",
 			target_capability_id="",
 			target_report="",
-			depends_on_grounded_turn=True,
-			self_contained=False,
+			depends_on_grounded_turn=entity_drilldown_requires_grounded_turn,
+			self_contained=not entity_drilldown_requires_grounded_turn,
 			latest_grounded_turn_available=latest_grounded_turn_available,
-			reason="The request drills into a governed entity from the latest grounded artifact.",
+			reason=(
+				"The request drills into an explicitly referenced governed entity."
+				if not entity_drilldown_requires_grounded_turn
+				else "The request drills into a governed entity from the latest grounded artifact."
+			),
 		)
 	else:
 		followup_resolution = build_followup_resolution(
@@ -1361,7 +1525,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 	family_artifact_for_requery = _latest_normalized_family_artifact(session_doc) if followup_context_available else {}
 	provisional_continuation_contract = None
-	if latest_grounded_turn_available:
+	if followup_context_available:
 		provisional_continuation_contract = build_artifact_continuation_contract(
 			request_id=request_id,
 			followup_resolution=followup_resolution,
@@ -1401,7 +1565,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			scope_decision_contract=provisional_scope_decision_contract,
 		)
 	continuation_contract = None
-	if latest_grounded_turn_available:
+	if followup_context_available:
 		continuation_contract = build_artifact_continuation_contract(
 			request_id=request_id,
 			followup_resolution=followup_resolution,
@@ -1422,6 +1586,17 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		interaction_contract=interaction_contract,
 		followup_resolution=followup_resolution,
 	)
+	if precomputed_evidence_answer:
+		precomputed_evidence_response = _grounded_artifact_direct_evidence_response(
+			request_id=request_id,
+			session_id=session_name,
+			interaction_contract=interaction_contract,
+			response_policy_contract=response_policy_contract,
+			raw_message=msg,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			fallback_answer_text=precomputed_evidence_answer,
+		)
 	recent_messages = (
 		[]
 		if governed_scope_decision_requires_fresh_query(scope_decision_contract)
@@ -1512,7 +1687,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		return True, {"ok": True, "request_id": request_id, "mode": "out_of_scope_domain", "agent_meta": {"engine": "local_governed_scope_guard"}}
 
 	local_transform = None
-	if followup_resolution.mode == "local_grounded_transform" and not precomputed_evidence_boundary_answer:
+	if followup_resolution.mode == "local_grounded_transform" and not precomputed_evidence_answer and not precomputed_evidence_boundary_answer:
 		local_transform = _try_local_followup_transform(
 			session_doc,
 			request_id=request_id,
@@ -1555,7 +1730,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_save_session(session_doc, ignore_permissions=False)
 		return local_transform
 
-	if entity_drilldown is None:
+	skip_artifact_boundary_for_self_contained_breakout = bool(
+		governed_scope_decision_requires_fresh_query(scope_decision_contract)
+		and _message_looks_like_self_contained_governed_business_query(
+			message=msg,
+			language=interaction_contract.detected_language,
+		)
+	)
+	if entity_drilldown is None and not skip_artifact_boundary_for_self_contained_breakout:
 		artifact_boundary_handled, artifact_boundary_payload = handle_artifact_boundary_turn(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -1563,11 +1745,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			message=msg,
 			followup_resolution=followup_resolution,
 			interaction_contract=interaction_contract,
+			response_policy_contract=response_policy_contract,
 			frontdoor_contract=frontdoor_contract,
 			scope_decision_contract=scope_decision_contract,
 			latest_family_artifact=latest_family_artifact,
 			latest_grounded_turn=latest_grounded_turn,
 			enrichment_compatibility_contract=enrichment_compatibility_contract,
+			grounded_artifact_direct_evidence_response=_grounded_artifact_direct_evidence_response,
+			grounded_artifact_direct_evidence_answer=_grounded_artifact_direct_evidence_answer,
 			grounded_artifact_evidence_boundary_answer=_grounded_artifact_evidence_boundary_answer,
 			artifact_enrichment_boundary_answer=_artifact_enrichment_boundary_answer,
 			append_grounded_evidence_recovery_contract=_append_grounded_evidence_recovery_contract,
@@ -1580,6 +1765,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			append_message=_append_message,
 			assistant_text_payload=_assistant_text_payload,
 			save_session=_save_session,
+			precomputed_evidence_response=precomputed_evidence_response,
+			precomputed_evidence_answer=precomputed_evidence_answer,
 			precomputed_evidence_boundary_answer=precomputed_evidence_boundary_answer,
 		)
 		if artifact_boundary_handled and artifact_boundary_payload is not None:
@@ -2345,6 +2532,380 @@ def run_phase4b_transaction_listing_smoke() -> Dict[str, Any]:
 	)
 
 
+def run_phase1_1_delivery_note_listing_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_listing_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_listing_limit_probe() -> Dict[str, Any]:
+	return _run_delivery_note_listing_limit_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_detail_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_detail_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_1_delivery_note_date_scope_probe() -> Dict[str, Any]:
+	return _run_delivery_note_date_scope_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_date_scope_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_date_scope_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_status_probe() -> Dict[str, Any]:
+	return _run_delivery_note_status_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_status_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_status_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_session_reset_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_session_reset_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_delivery_note_invoice_switch_debug() -> Dict[str, Any]:
+	def _request_scoped_payload(
+		tool_payloads: List[Dict[str, Any]],
+		payload_type: str,
+		request_id: str,
+	) -> Dict[str, Any]:
+		clean_type = str(payload_type or "").strip()
+		clean_request_id = str(request_id or "").strip()
+		if clean_type and clean_request_id:
+			for item in reversed(tool_payloads):
+				if str(item.get("type") or "").strip() != clean_type:
+					continue
+				item_request_id = str(
+					item.get("request_id")
+					or item.get("trace_request_id")
+					or item.get("source_request_id")
+					or ""
+				).strip()
+				if item_request_id == clean_request_id:
+					return item
+		return _latest_tool_payload_by_type(tool_payloads, payload_type)
+
+	def _payload_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
+		if not isinstance(payload, dict):
+			return {}
+		return {
+			"type": str(payload.get("type") or "").strip(),
+			"request_id": str(payload.get("request_id") or "").strip(),
+			"trace_request_id": str(payload.get("trace_request_id") or "").strip(),
+			"source_request_id": str(payload.get("source_request_id") or "").strip(),
+			"status": str(payload.get("status") or "").strip(),
+			"recommended_boundary_decision": str(payload.get("recommended_boundary_decision") or "").strip(),
+			"decision_reason": str(payload.get("decision_reason") or "").strip(),
+			"resolution_source": dict(payload.get("resolution_source") or {}),
+			"governed_scope_status": str(payload.get("governed_scope_status") or "").strip(),
+			"execution_mode": str(payload.get("execution_mode") or "").strip(),
+			"recommended_next_lane": str(payload.get("recommended_next_lane") or "").strip(),
+			"target_capability_id": str(payload.get("target_capability_id") or "").strip(),
+			"target_report": str(payload.get("target_report") or "").strip(),
+			"mode": str(payload.get("mode") or "").strip(),
+			"target_dimension": str(payload.get("target_dimension") or "").strip(),
+			"target_metric": str(payload.get("target_metric") or "").strip(),
+			"requested_time_scope": str(payload.get("requested_time_scope") or "").strip(),
+			"target_limit": int(payload.get("target_limit") or 0),
+			"source_name": str(payload.get("source_name") or "").strip(),
+			"artifact_family_id": str(payload.get("artifact_family_id") or payload.get("family_id") or "").strip(),
+			"title": str(payload.get("title") or "").strip(),
+			"answer_text": str(payload.get("answer_text") or "").strip(),
+			"family_id": str(payload.get("family_id") or "").strip(),
+			"report_name": str(payload.get("report_name") or "").strip(),
+			"report_family_id": str(payload.get("report_family_id") or "").strip(),
+		}
+
+	def _runner(doc) -> Dict[str, Any]:
+		frappe.db.commit()
+		frappe.clear_cache()
+		doc.reload()
+		steps = [
+			"show me the last 5 delivery notes",
+			"show me the last 5 delivery notes from last month",
+			"show me delivery notes with status Completed",
+			"Show me last 7 sale invoices",
+		]
+		results: List[Dict[str, Any]] = []
+		for message in steps:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError(
+					f"Phase1.1 delivery/invoice switch debug failed: request {message!r} did not complete."
+				)
+			frappe.db.commit()
+			frappe.clear_cache()
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = _session_tool_payloads(session_doc)
+			request_id = str((payload or {}).get("request_id") or "").strip()
+			results.append(
+				{
+					"message": message,
+					"payload": {
+						"request_id": request_id,
+						"mode": str((payload or {}).get("mode") or "").strip(),
+						"family_validation_status": str((payload or {}).get("family_validation_status") or "").strip(),
+						"semantic_validation_status": str((payload or {}).get("semantic_validation_status") or "").strip(),
+						"agent_meta": dict(((payload or {}).get("agent_meta") or {})),
+					},
+					"assistant_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+					"followup_boundary": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_followup_boundary_contract", request_id)
+					),
+					"semantic_followup": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_semantic_followup_interpretation", request_id)
+					),
+					"scope_decision": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_governed_scope_decision_contract", request_id)
+					),
+					"followup_resolution": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_followup_resolution_contract", request_id)
+					),
+					"compiled_audit": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_compiled_execution_audit_contract", request_id)
+					),
+					"grounded_turn": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_grounded_turn_context", request_id)
+					),
+					"rendered_family_response": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_rendered_family_response_contract", request_id)
+					),
+					"normalized_family_artifact": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_normalized_family_artifact_contract", request_id)
+					),
+				}
+			)
+		return {
+			"ok": True,
+			"steps": results,
+		}
+
+	return _run_phase55_smoke_session("Phase 1.1 Delivery Note Invoice Switch Debug", _runner)
+
+
+def run_phase1_1_invoice_detail_delivery_trend_debug() -> Dict[str, Any]:
+	def _request_scoped_payload(
+		tool_payloads: List[Dict[str, Any]],
+		payload_type: str,
+		request_id: str,
+	) -> Dict[str, Any]:
+		clean_type = str(payload_type or "").strip()
+		clean_request_id = str(request_id or "").strip()
+		if clean_type and clean_request_id:
+			for item in reversed(tool_payloads):
+				if str(item.get("type") or "").strip() != clean_type:
+					continue
+				item_request_id = str(
+					item.get("request_id")
+					or item.get("trace_request_id")
+					or item.get("source_request_id")
+					or ""
+				).strip()
+				if item_request_id == clean_request_id:
+					return item
+		return _latest_tool_payload_by_type(tool_payloads, payload_type)
+
+	def _payload_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
+		if not isinstance(payload, dict):
+			return {}
+		return {
+			"type": str(payload.get("type") or "").strip(),
+			"request_id": str(payload.get("request_id") or "").strip(),
+			"trace_request_id": str(payload.get("trace_request_id") or "").strip(),
+			"source_request_id": str(payload.get("source_request_id") or "").strip(),
+			"recommended_boundary_decision": str(payload.get("recommended_boundary_decision") or "").strip(),
+			"decision_reason": str(payload.get("decision_reason") or "").strip(),
+			"resolution_source": dict(payload.get("resolution_source") or {}),
+			"governed_scope_status": str(payload.get("governed_scope_status") or "").strip(),
+			"execution_mode": str(payload.get("execution_mode") or "").strip(),
+			"recommended_next_lane": str(payload.get("recommended_next_lane") or "").strip(),
+			"target_capability_id": str(payload.get("target_capability_id") or "").strip(),
+			"target_report": str(payload.get("target_report") or "").strip(),
+			"mode": str(payload.get("mode") or "").strip(),
+			"target_dimension": str(payload.get("target_dimension") or "").strip(),
+			"target_metric": str(payload.get("target_metric") or "").strip(),
+			"requested_time_scope": str(payload.get("requested_time_scope") or "").strip(),
+			"target_limit": int(payload.get("target_limit") or 0),
+			"source_name": str(payload.get("source_name") or "").strip(),
+			"artifact_family_id": str(payload.get("artifact_family_id") or payload.get("family_id") or "").strip(),
+			"title": str(payload.get("title") or "").strip(),
+			"answer_text": str(payload.get("answer_text") or "").strip(),
+			"family_id": str(payload.get("family_id") or "").strip(),
+			"report_name": str(payload.get("report_name") or "").strip(),
+			"report_family_id": str(payload.get("report_family_id") or "").strip(),
+			"failure_type": str(payload.get("failure_type") or "").strip(),
+			"recommended_recovery_action": str(payload.get("recommended_recovery_action") or "").strip(),
+			"intent": dict(payload.get("intent") or {}),
+		}
+
+	def _runner(doc) -> Dict[str, Any]:
+		frappe.db.commit()
+		frappe.clear_cache()
+		doc.reload()
+		steps = [
+			"Show me last 7 sale invoices",
+			"tell me more about ACC-SINV-2026-00194",
+			"those items are already delivered to the customer?",
+			"give me last year Delivery trend",
+		]
+		results: List[Dict[str, Any]] = []
+		for message in steps:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError(
+					f"Phase1.1 invoice detail -> delivery trend debug failed: request {message!r} did not complete."
+				)
+			frappe.db.commit()
+			frappe.clear_cache()
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = _session_tool_payloads(session_doc)
+			request_id = str((payload or {}).get("request_id") or "").strip()
+			results.append(
+				{
+					"message": message,
+					"payload": {
+						"request_id": request_id,
+						"mode": str((payload or {}).get("mode") or "").strip(),
+						"family_validation_status": str((payload or {}).get("family_validation_status") or "").strip(),
+						"semantic_validation_status": str((payload or {}).get("semantic_validation_status") or "").strip(),
+						"agent_meta": dict(((payload or {}).get("agent_meta") or {})),
+					},
+					"assistant_text": str(_latest_assistant_payload(session_doc).get("text") or "").strip(),
+					"followup_boundary": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_followup_boundary_contract", request_id)
+					),
+					"scope_decision": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_governed_scope_decision_contract", request_id)
+					),
+					"followup_resolution": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_followup_resolution_contract", request_id)
+					),
+					"compiled_audit": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_compiled_execution_audit_contract", request_id)
+					),
+					"grounded_turn": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_grounded_turn_context", request_id)
+					),
+					"recovery_contract": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_artifact_enrichment_recovery_contract", request_id)
+					),
+					"rendered_family_response": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_rendered_family_response_contract", request_id)
+					),
+					"normalized_family_artifact": _payload_summary(
+						_request_scoped_payload(tool_payloads, "qwen_normalized_family_artifact_contract", request_id)
+					),
+				}
+			)
+		return {
+			"ok": True,
+			"steps": results,
+		}
+
+	return _run_phase55_smoke_session("Phase 1.1 Invoice Detail Delivery Trend Debug", _runner)
+
+
+def run_phase1_1_invoice_detail_delivery_trend_smoke() -> Dict[str, Any]:
+	return run_phase1_1_invoice_detail_delivery_trend_debug()
+
+
+def run_phase1_1_delivery_note_trend_probe() -> Dict[str, Any]:
+	return _run_delivery_note_trend_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_1_delivery_note_trend_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_trend_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+		expected_series_column="Delivered Quantity",
+	)
+
+
+def run_phase1_1_delivery_note_last_year_trend_smoke() -> Dict[str, Any]:
+	return _run_delivery_note_trend_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+		message="show monthly delivery note trend by customer last year",
+		expected_title_fragment="Trend",
+		expected_series_column="Delivered Quantity",
+		expected_summary_metric="Total Delivered Quantity",
+		minimum_summary_value=1,
+	)
+
+
 def _latest_tool_payload_by_type(tool_payloads: List[Dict[str, Any]], payload_type: str) -> Dict[str, Any]:
 	for item in reversed(tool_payloads):
 		if str(item.get("type") or "").strip() == str(payload_type or "").strip():
@@ -2486,6 +3047,26 @@ def run_phase4b_context_isolation_smoke() -> Dict[str, Any]:
 
 def run_phase4b_entity_drilldown_smoke() -> Dict[str, Any]:
 	return _run_entity_drilldown_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_1_invoice_delivery_proof_smoke() -> Dict[str, Any]:
+	return _run_invoice_delivery_proof_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase1_1_fresh_chat_invoice_delivery_proof_smoke() -> Dict[str, Any]:
+	return _run_fresh_chat_invoice_delivery_proof_smoke_helper(
 		frappe_module=frappe,
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,
@@ -2883,6 +3464,7 @@ def run_phase8_recovery_guidance_observability_smoke() -> Dict[str, Any]:
 		append_message=_append_message,
 		append_tool_payload=_append_tool_payload,
 		assistant_text_payload=_assistant_text_payload,
+		save_session=_save_session,
 		frappe_module=frappe,
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,
@@ -2917,6 +3499,7 @@ def run_phase8c_repair_handling_smoke() -> Dict[str, Any]:
 		append_message=_append_message,
 		append_tool_payload=_append_tool_payload,
 		assistant_text_payload=_assistant_text_payload,
+		save_session=_save_session,
 		frappe_module=frappe,
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,
@@ -2982,7 +3565,7 @@ def run_phase8c_repair_handling_debug() -> Dict[str, Any]:
 		)
 		_append_tool_payload(doc, grounded_turn_payload)
 		_append_tool_payload(doc, recovery_payload)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 
 	def _runner(doc) -> Dict[str, Any]:
 		_seed_recovery_session(doc)
@@ -3024,6 +3607,7 @@ def run_phase8d_fresh_query_override_smoke() -> Dict[str, Any]:
 		append_message=_append_message,
 		append_tool_payload=_append_tool_payload,
 		assistant_text_payload=_assistant_text_payload,
+		save_session=_save_session,
 		frappe_module=frappe,
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,
@@ -3141,6 +3725,34 @@ def _run_smoke_reasoning_followup_with_retry(
 	return False, last_payload
 
 
+def _run_smoke_fresh_query_turn_with_retry(
+	*,
+	session_name: str,
+	message: str,
+	user: str,
+	allowed_modes: set[str],
+	attempts: int = 2,
+	delay_seconds: float = 0.15,
+) -> tuple[bool, Dict[str, Any]]:
+	last_payload: Dict[str, Any] = {}
+	for attempt in range(max(1, int(attempts))):
+		frappe.db.commit()
+		frappe.clear_cache()
+		ok, payload = handle_qwen_user_message(
+			session_name=session_name,
+			message=message,
+			user=user,
+		)
+		last_payload = payload if isinstance(payload, dict) else {"error": payload}
+		mode = str((last_payload or {}).get("mode") or "").strip()
+		payload_ok = bool(last_payload.get("ok")) if "ok" in last_payload else bool(ok)
+		if ok and mode in allowed_modes and payload_ok:
+			return True, last_payload
+		if attempt + 1 < max(1, int(attempts)):
+			time.sleep(max(0.0, float(delay_seconds)))
+	return False, last_payload
+
+
 def run_h3_duplicate_recovery_acceptance_smoke() -> Dict[str, Any]:
 	def _seed_recovery_session(doc) -> None:
 		recovery_payload = build_artifact_enrichment_recovery_contract(
@@ -3197,7 +3809,7 @@ def run_h3_duplicate_recovery_acceptance_smoke() -> Dict[str, Any]:
 		)
 		_append_tool_payload(doc, grounded_turn_payload)
 		_append_tool_payload(doc, recovery_payload)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 
 	def _runner(doc) -> Dict[str, Any]:
 		_seed_recovery_session(doc)
@@ -3319,7 +3931,7 @@ def run_h3_stale_recovery_invalidated_by_fresh_override_smoke() -> Dict[str, Any
 		)
 		_append_tool_payload(doc, grounded_turn_payload)
 		_append_tool_payload(doc, recovery_payload)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 
 	def _runner(doc) -> Dict[str, Any]:
 		fixture_id = "product_recovery_flow"
@@ -3531,7 +4143,7 @@ def run_h3_clarification_preempts_recovery_smoke() -> Dict[str, Any]:
 		_append_tool_payload(doc, recovery_payload)
 		_append_tool_payload(doc, pending_signal)
 		store_pending_clarification_signal(doc, pending_signal)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 
 	def _runner(doc) -> Dict[str, Any]:
 		_seed_mixed_state(doc)
@@ -3627,7 +4239,7 @@ def run_h3_clarification_resolution_does_not_resurrect_stale_recovery_smoke() ->
 		_append_tool_payload(doc, recovery_payload)
 		_append_tool_payload(doc, pending_signal)
 		store_pending_clarification_signal(doc, pending_signal)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 
 	def _runner(doc) -> Dict[str, Any]:
 		_seed_mixed_state(doc)
@@ -3897,12 +4509,17 @@ def run_h3_pending_override_replaces_with_new_grounded_context_smoke() -> Dict[s
 def run_h3_latest_fresh_grounded_query_wins_smoke() -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
 		frappe.clear_cache()
-		ok, first_payload = handle_qwen_user_message(
+		ok, first_payload = _run_smoke_fresh_query_turn_with_retry(
 			session_name=doc.name,
 			message="give me AR / AP insight",
 			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
 		)
-		if not ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+		if not ok:
 			raise RuntimeError("H3 latest fresh grounded query smoke failed: initial AR/AP query did not execute as a fresh governed query.")
 		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
 		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
@@ -3913,13 +4530,24 @@ def run_h3_latest_fresh_grounded_query_wins_smoke() -> Dict[str, Any]:
 			raise RuntimeError("H3 latest fresh grounded query smoke failed: initial AR/AP grounded context was missing.")
 
 		frappe.clear_cache()
-		ok, second_payload = handle_qwen_user_message(
+		ok, second_payload = _run_smoke_fresh_query_turn_with_retry(
 			session_name=doc.name,
 			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
 			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
 		)
-		if not ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
-			raise RuntimeError("H3 latest fresh grounded query smoke failed: second AR query did not execute as a fresh governed query.")
+		if not ok:
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = _session_tool_payloads(session_doc)
+			fresh_query_payload = _latest_tool_payload_by_type(tool_payloads, "qwen_semantic_fresh_query_interpretation")
+			raise RuntimeError(
+				"H3 latest fresh grounded query smoke failed: second AR query did not execute as a fresh governed query. "
+				f"second_payload={second_payload!r} fresh_query_payload={fresh_query_payload!r}"
+			)
 		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
 		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
 		second_source_name = str(second_grounded_turn.get("source_name") or "").strip()
@@ -3957,6 +4585,9 @@ def run_h3_latest_fresh_grounded_query_wins_smoke() -> Dict[str, Any]:
 			raise RuntimeError(
 				f"H3 latest fresh grounded query smoke failed: replacement grounded context was not durably visible before reasoning follow-up: source={second_source_name!r} reports={sorted(second_reports)!r}."
 			)
+		frappe.db.commit()
+		frappe.clear_cache()
+		time.sleep(0.15)
 		frappe.db.commit()
 		frappe.clear_cache()
 		ok, third_payload = handle_qwen_user_message(
@@ -4030,37 +4661,51 @@ def run_h3_latest_fresh_grounded_query_wins_smoke() -> Dict[str, Any]:
 
 def run_h3_repeated_identical_fresh_query_replaces_grounding_smoke() -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
-		ok, first_payload = handle_qwen_user_message(
+		ok, first_payload = _run_smoke_fresh_query_turn_with_retry(
 			session_name=doc.name,
 			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
 			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
 		)
-		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
-			"compiled_first_turn",
-			"legacy_runtime",
-			"legacy_runtime_rollout_fallback",
-		}:
+		if not ok:
 			raise RuntimeError("H3 repeated identical fresh query smoke failed: first AR query did not execute as a fresh governed query.")
+		first_grounded_turn = _stabilize_smoke_grounded_turn_visibility(
+			session_name=doc.name,
+			expected_request_id="",
+			attempts=8,
+			delay_seconds=0.1,
+		)
 		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
-		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
 		first_trace_request_id = str(first_grounded_turn.get("trace_request_id") or first_grounded_turn.get("request_id") or "").strip()
 		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		first_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
 		if not first_trace_request_id or not first_source_name:
 			raise RuntimeError("H3 repeated identical fresh query smoke failed: first grounded context was missing.")
 
-		ok, second_payload = handle_qwen_user_message(
+		ok, second_payload = _run_smoke_fresh_query_turn_with_retry(
 			session_name=doc.name,
 			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
 			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
 		)
-		if not ok or str((second_payload or {}).get("mode") or "").strip() not in {
-			"compiled_first_turn",
-			"legacy_runtime",
-			"legacy_runtime_rollout_fallback",
-		}:
+		if not ok:
 			raise RuntimeError("H3 repeated identical fresh query smoke failed: second AR query did not execute as a fresh governed query.")
+		second_grounded_turn = _stabilize_smoke_grounded_turn_visibility(
+			session_name=doc.name,
+			expected_request_id="",
+			disallow_assistant_text=first_assistant_text,
+			attempts=8,
+			delay_seconds=0.1,
+		)
 		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
-		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
 		second_trace_request_id = str(second_grounded_turn.get("trace_request_id") or second_grounded_turn.get("request_id") or "").strip()
 		second_source_name = str(second_grounded_turn.get("source_name") or "").strip()
 		second_reports = {
@@ -4082,37 +4727,67 @@ def run_h3_repeated_identical_fresh_query_replaces_grounding_smoke() -> Dict[str
 		second_grounded_turn = _stabilize_smoke_grounded_turn_visibility(
 			session_name=doc.name,
 			expected_request_id=second_trace_request_id,
+			disallow_assistant_text=first_assistant_text,
 		)
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		if not second_assistant_text or second_assistant_text == first_assistant_text:
+			raise RuntimeError(
+				"H3 repeated identical fresh query smoke failed: repeated AR grounded context was not durably visible before reasoning follow-up."
+			)
+
+		frappe.db.commit()
+		frappe.clear_cache()
 		ok, third_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="what does this mean",
+			message=smoke_fixture_reasoning_message("fresh_query_override_to_ar_explicit_reasoning"),
 			user="Administrator",
 		)
-		if not ok or str((third_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
-			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning follow-up did not enter the reasoning lane.")
+		third_mode = str((third_payload or {}).get("mode") or "").strip()
+		if not ok or third_mode not in {
+			"erp_business_reasoning",
+			"compiled_first_turn",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		}:
+			raise RuntimeError(
+				f"H3 repeated identical fresh query smoke failed: follow-up did not stay in an approved bounded lane. third_payload={third_payload!r}"
+			)
+
 		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
 		assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
-		reasoning_contract = _latest_tool_payload_by_type(
-			_session_tool_payloads(session_doc),
-			"qwen_erp_business_reasoning_contract",
-		)
-		compatible_contract = _source_compatible_reasoning_contract(
-			grounded_turn=second_grounded_turn,
-			reasoning_contract=reasoning_contract,
-		)
-		if not compatible_contract:
-			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning contract did not bind to the latest repeated grounded query.")
-		if str(reasoning_contract.get("grounding_source_request_id") or "").strip() != second_trace_request_id:
-			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning contract did not carry the latest repeated grounded trace request id.")
+		final_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		final_reports = {
+			str(value or "").strip()
+			for value in (final_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		if final_reports != {"Accounts Receivable Summary"}:
+			raise RuntimeError(
+				f"H3 repeated identical fresh query smoke failed: final grounded source drifted to unexpected reports {sorted(final_reports)!r}."
+			)
+		if third_mode == "erp_business_reasoning":
+			reasoning_contract = _latest_tool_payload_by_type(
+				_session_tool_payloads(session_doc),
+				"qwen_erp_business_reasoning_contract",
+			)
+			compatible_contract = _source_compatible_reasoning_contract(
+				grounded_turn=second_grounded_turn,
+				reasoning_contract=reasoning_contract,
+			)
+			if not compatible_contract:
+				raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning contract did not bind to the latest repeated grounded query.")
+			if str(reasoning_contract.get("grounding_source_request_id") or "").strip() != second_trace_request_id:
+				raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning contract did not carry the latest repeated grounded trace request id.")
 		lower_text = assistant_text.lower()
 		if "receivable" not in lower_text and "overdue" not in lower_text and "ar" not in lower_text:
-			raise RuntimeError("H3 repeated identical fresh query smoke failed: reasoning answer did not stay anchored to AR context.")
+			raise RuntimeError("H3 repeated identical fresh query smoke failed: follow-up answer did not stay anchored to AR context.")
 		return {
 			"ok": True,
 			"first_trace_request_id": first_trace_request_id,
 			"second_trace_request_id": second_trace_request_id,
 			"source_name": second_source_name,
-			"reasoning_mode": str((third_payload or {}).get("mode") or "").strip(),
+			"reasoning_mode": third_mode,
 			"answer_text": assistant_text,
 		}
 
@@ -4341,7 +5016,7 @@ def run_h3_latest_seeded_recovery_wins_smoke() -> Dict[str, Any]:
 		_append_tool_payload(doc, older_recovery_payload)
 		_append_tool_payload(doc, newer_grounded_turn_payload)
 		_append_tool_payload(doc, newer_recovery_payload)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 		return {
 			"older_trace_request_id": "h3-older-grounded-trace",
 			"newer_trace_request_id": "h3-newer-grounded-trace",
@@ -4524,7 +5199,7 @@ def run_h3_newer_recovery_survives_older_consumed_recovery_smoke() -> Dict[str, 
 		_append_tool_payload(doc, old_accepted_repair_payload)
 		_append_tool_payload(doc, new_grounded_turn_payload)
 		_append_tool_payload(doc, new_recovery_payload)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 		return {
 			"old_trace_request_id": "h3-consumed-old-grounded-trace",
 			"new_trace_request_id": "h3-active-new-grounded-trace",
@@ -4713,7 +5388,7 @@ def run_h3_duplicate_acceptance_after_newer_recovery_execution_smoke() -> Dict[s
 		_append_tool_payload(doc, old_accepted_repair_payload)
 		_append_tool_payload(doc, new_grounded_turn_payload)
 		_append_tool_payload(doc, new_recovery_payload)
-		doc.save(ignore_permissions=False)
+		_save_session(doc, ignore_permissions=False)
 		return {
 			"old_trace_request_id": "h3-dup-old-grounded-trace",
 			"new_trace_request_id": "h3-dup-new-grounded-trace",

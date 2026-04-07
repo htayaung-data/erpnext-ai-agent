@@ -87,6 +87,35 @@ def latest_pending_clarification_signal(session_doc) -> Dict[str, Any]:
 	return latest_pending_clarification_signal_from_messages(session_doc)
 
 
+def latest_assistant_turn_was_clarification_fallback_stop(session_doc) -> bool:
+	messages = list(session_doc.get("messages") or [])
+	latest_assistant_index = -1
+	for idx in range(len(messages) - 1, -1, -1):
+		row = messages[idx]
+		if str(row.role or "").strip().lower() != "assistant":
+			continue
+		if not _visible_message_text("assistant", str(row.content or "")).strip():
+			continue
+		latest_assistant_index = idx
+		break
+	if latest_assistant_index < 0:
+		return False
+	for idx in range(latest_assistant_index - 1, -1, -1):
+		row = messages[idx]
+		role = str(row.role or "").strip().lower()
+		if role in {"user", "assistant"}:
+			break
+		if role != "tool":
+			continue
+		payload = _parse_payload(str(row.content or ""))
+		if str(payload.get("type") or "").strip() != "qwen_phase55_observability_event":
+			continue
+		if str(payload.get("event_family") or "").strip() != "clarification":
+			continue
+		return str(payload.get("event_name") or "").strip() == "fallback_stop"
+	return False
+
+
 def store_pending_clarification_signal(
 	session_doc,
 	signal_payload: Dict[str, Any],
@@ -135,6 +164,10 @@ def _looks_like_empty_ack(message: str) -> bool:
 	if "?" in text:
 		return False
 	return len(_word_tokens(text)) <= 2
+
+
+def looks_like_short_acknowledgement(message: str) -> bool:
+	return _looks_like_empty_ack(message)
 
 
 def _match_pending_clarification_option(message: str, options: List[str]) -> Tuple[str, str, float]:

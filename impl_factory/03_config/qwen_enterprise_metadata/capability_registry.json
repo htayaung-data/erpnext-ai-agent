@@ -268,6 +268,68 @@
       "default_validation_profile": "report_grounded_read"
     },
     {
+      "capability_id": "fulfillment_read",
+      "label": "Fulfillment Read",
+      "default_report_name": "Delivery Note List",
+      "report_families": [
+        "delivery_note_list",
+        "delivery_note_trends"
+      ],
+      "report_names": [
+        "Delivery Note List",
+        "Delivery Note Trends"
+      ],
+      "ontology_concepts": [
+        "fulfillment",
+        "customer"
+      ],
+      "intent_classes": [
+        "transaction_listing",
+        "trend_analysis"
+      ],
+      "semantic_tags": [
+        "fulfillment",
+        "delivery",
+        "shipment"
+      ],
+      "dimensions": [
+        "Delivery Note",
+        "Customer",
+        "Posting Date",
+        "Status",
+        "Monthly"
+      ],
+      "metrics": [
+        "Quantity",
+        "Grand Total",
+        "Delivered Amount",
+        "Delivered Quantity"
+      ],
+      "fresh_query_defaults": {
+        "transaction_listing": {
+          "default_report_name": "Delivery Note List",
+          "default_dimensions": ["Delivery Note"],
+          "default_metrics": ["Grand Total"],
+          "default_time_scope": "",
+          "metric_overrides_by_canonical_key": {
+            "grand_total": ["Grand Total"],
+            "quantity": ["Quantity"]
+          }
+        },
+        "trend_analysis": {
+          "default_report_name": "Delivery Note Trends",
+          "default_dimensions": ["Customer"],
+          "default_metrics": ["Delivered Amount"],
+          "default_time_scope": "current_fiscal_year_to_date",
+          "metric_overrides_by_canonical_key": {
+            "sales_amount": ["Delivered Amount"],
+            "quantity": ["Delivered Quantity"]
+          }
+        }
+      },
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
       "capability_id": "accounts_payable_read",
       "label": "Accounts Payable Read",
       "default_report_name": "Accounts Payable Summary",

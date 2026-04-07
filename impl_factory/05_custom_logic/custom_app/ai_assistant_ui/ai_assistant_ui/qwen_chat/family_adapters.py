@@ -10,7 +10,11 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	NormalizedFamilyArtifactContract,
 	build_normalized_family_artifact_contract,
 )
-from ai_assistant_ui.qwen_chat.metadata import report_business_family_ids, report_family_entity_dimension_label
+from ai_assistant_ui.qwen_chat.metadata import (
+	get_report_spec,
+	report_business_family_ids,
+	report_family_entity_dimension_label,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key
 
 
@@ -30,6 +34,12 @@ def _clean_rows(values: Any) -> List[Dict[str, Any]]:
 	if not isinstance(values, list):
 		return []
 	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def _clean_list(values: Any) -> List[str]:
+	if not isinstance(values, list):
+		return []
+	return [str(value or "").strip() for value in values if str(value or "").strip()]
 
 
 def _raw_report_data(result: Dict[str, Any]) -> List[Any]:
@@ -60,6 +70,16 @@ def _numeric_value(value: Any) -> float:
 		return float(text)
 	except Exception:
 		return 0.0
+
+
+def _is_total_like_row(row: Dict[str, Any]) -> bool:
+	if not isinstance(row, dict):
+		return False
+	for value in row.values():
+		text = _strip_quotes(value).strip().lower()
+		if text == "total":
+			return True
+	return False
 
 
 def _metric_label(metric_key: str, fallback: str = "Value") -> str:
@@ -172,9 +192,10 @@ def _period_from_filters(filters: Dict[str, Any]) -> Dict[str, Any]:
 			or filters.get("report_date")
 			or ""
 		).strip(),
-		"from_fiscal_year": str(filters.get("from_fiscal_year") or "").strip(),
-		"to_fiscal_year": str(filters.get("to_fiscal_year") or "").strip(),
-		"periodicity": str(filters.get("periodicity") or "").strip(),
+		"fiscal_year": str(filters.get("fiscal_year") or "").strip(),
+		"from_fiscal_year": str(filters.get("from_fiscal_year") or filters.get("fiscal_year") or "").strip(),
+		"to_fiscal_year": str(filters.get("to_fiscal_year") or filters.get("fiscal_year") or "").strip(),
+		"periodicity": str(filters.get("periodicity") or filters.get("period") or filters.get("range") or "").strip(),
 	}
 
 
@@ -282,6 +303,29 @@ def _requested_metric_key_from_contract(
 	return str(default_metric_key or "").strip()
 
 
+def _requested_metric_label_from_contract(
+	compiler_contract: Dict[str, Any],
+	metric_key: str,
+	fallback_label: str,
+) -> str:
+	values = compiler_contract.get("requested_metrics")
+	if isinstance(values, list):
+		capability_id = str(compiler_contract.get("capability_id") or "").strip() or None
+		target_key = _clean_metric_key(metric_key)
+		for raw in values:
+			label = str(raw or "").strip()
+			if not label:
+				continue
+			canonical = get_canonical_key(
+				label,
+				capability_id=capability_id,
+				dimension_or_metric="metric",
+			)
+			if _clean_metric_key(canonical or label) == target_key:
+				return label
+	return _metric_label(metric_key, fallback_label)
+
+
 def _requested_output_columns_from_contract(
 	compiler_contract: Dict[str, Any],
 	*,
@@ -365,20 +409,64 @@ def _add_contribution_percent(
 	return clean_rows
 
 
-def _period_field_specs(columns: List[Dict[str, Any]]) -> List[Tuple[str, str]]:
+def _looks_like_period_column(fieldname: str, label: str) -> bool:
+	field_key = _normalize_key(fieldname)
+	label_key = _normalize_key(label)
+	if not field_key:
+		return False
+	if field_key.startswith("total") or label_key.startswith("total"):
+		return False
+	period_prefixes = (
+		"jan",
+		"feb",
+		"mar",
+		"apr",
+		"may",
+		"jun",
+		"jul",
+		"aug",
+		"sep",
+		"oct",
+		"nov",
+		"dec",
+		"q1",
+		"q2",
+		"q3",
+		"q4",
+		"h1",
+		"h2",
+		"year",
+	)
+	return any(field_key.startswith(prefix) or label_key.startswith(prefix) for prefix in period_prefixes)
+
+
+def _period_field_specs(columns: List[Dict[str, Any]], metric_key: str = "") -> List[Tuple[str, str]]:
 	excluded = {"entity", "entity_name", "total", "item_code", "item_name"}
+	has_metric_suffixes = any(
+		_looks_like_period_column(str(item.get("fieldname") or "").strip(), str(item.get("label") or "").strip())
+		and _normalize_key(item.get("fieldname") or "").endswith(("qty", "amt"))
+		for item in columns
+		if isinstance(item, dict)
+	)
 	out: List[Tuple[str, str]] = []
 	for item in columns:
 		fieldname = str(item.get("fieldname") or "").strip()
 		label = str(item.get("label") or "").strip()
-		if not fieldname or fieldname in excluded:
+		field_key = _normalize_key(fieldname)
+		if not fieldname or fieldname in excluded or not _looks_like_period_column(fieldname, label):
 			continue
+		if has_metric_suffixes:
+			if metric_key == "quantity" and not field_key.endswith("qty"):
+				continue
+			if metric_key != "quantity" and not field_key.endswith("amt"):
+				continue
+			label = re.sub(r"\s*\((qty|amt)\)\s*$", "", label, flags=re.IGNORECASE).strip()
 		out.append((fieldname, label or fieldname))
 	return out
 
 
 def _time_grain_from_filters(filters: Dict[str, Any]) -> str:
-	range_value = _normalize_key(filters.get("range"))
+	range_value = _normalize_key(filters.get("range") or filters.get("period") or filters.get("periodicity"))
 	if range_value:
 		return range_value
 	return "monthly"
@@ -1436,10 +1524,31 @@ def _build_sales_analytics_trend(
 	request_id: str,
 	report_name: str,
 	report_tool: Dict[str, Any],
+	compiler_contract: Dict[str, Any],
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	columns = _report_columns(result)
-	period_fields = _period_field_specs(columns)
+	rows = [row for row in _report_rows(result) if isinstance(row, dict) and not _is_total_like_row(row)]
+	total_row = _report_total_row_map(result)
+	filters = _report_filters(report_tool, result)
+	requested_metrics = _requested_metric_keys(compiler_contract)
+	if _normalize_key(filters.get("value_quantity")) == "quantity" or requested_metrics & {"quantity", "qty", "delivered_quantity"}:
+		metric_key = "quantity"
+		metric_label = _requested_metric_label_from_contract(
+			compiler_contract,
+			metric_key,
+			"Quantity",
+		)
+		total_fields = ("total(qty)", "total_qty", "total")
+	else:
+		metric_key = "sales_amount"
+		metric_label = _requested_metric_label_from_contract(
+			compiler_contract,
+			metric_key,
+			"Sales Amount",
+		)
+		total_fields = ("total(amt)", "total_amt", "total")
+	period_fields = _period_field_specs(columns, metric_key=metric_key)
 	if not period_fields:
 		return FamilyArtifactOutcome(
 			status="adapter_error",
@@ -1447,9 +1556,6 @@ def _build_sales_analytics_trend(
 			report_name=report_name,
 			errors=[f"Trend adapter could not detect any governed period columns for `{report_name}`."],
 		)
-	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
-	total_row = _report_total_row_map(result)
-	filters = _report_filters(report_tool, result)
 	period_series: List[Dict[str, Any]] = []
 	for fieldname, label in period_fields:
 		value = _numeric_value(total_row.get(fieldname))
@@ -1462,9 +1568,13 @@ def _build_sales_analytics_trend(
 				"value": value,
 			}
 		)
-	metric_key = "quantity" if _normalize_key(filters.get("value_quantity")) == "quantity" else "sales_amount"
-	metric_label = "Quantity" if metric_key == "quantity" else "Sales Amount"
-	total_value = _numeric_value(total_row.get("total")) or sum(_numeric_value(item.get("value")) for item in period_series)
+	total_value = 0.0
+	for fieldname in total_fields:
+		total_value = _numeric_value(total_row.get(fieldname))
+		if total_value:
+			break
+	if total_value == 0.0:
+		total_value = sum(_numeric_value(item.get("value")) for item in period_series)
 	artifact = build_normalized_family_artifact_contract(
 		request_id=request_id,
 		family_id="trend_analytics",
@@ -1588,11 +1698,12 @@ def _build_trend_artifact(
 	compiler_contract: Dict[str, Any],
 ) -> FamilyArtifactOutcome:
 	report_key = _normalize_key(report_name)
-	if report_key == "sales_analytics":
+	if report_key in {"sales_analytics", "delivery_note_trends"}:
 		return _build_sales_analytics_trend(
 			request_id=request_id,
 			report_name=report_name,
 			report_tool=report_tool,
+			compiler_contract=compiler_contract,
 		)
 	if report_key == "item_wise_sales_history":
 		return _build_item_history_trend(
@@ -2157,11 +2268,34 @@ def _requested_transaction_columns(compiler_contract: Dict[str, Any]) -> List[st
 		columns.append("customer")
 	if requested_metrics.intersection({"grand_total", "sales_amount"}):
 		columns.append("grand_total")
+	if requested_metrics.intersection({"quantity"}):
+		columns.append("quantity")
 	if requested_metrics.intersection({"outstanding_amount", "outstanding_total"}):
 		columns.append("outstanding_amount")
 	if "document_status" in requested_dimensions:
 		columns.append("status")
 	return list(dict.fromkeys([value for value in columns if value]))
+
+
+def _transaction_listing_context(report_name: str, rows: List[Dict[str, Any]]) -> Dict[str, str]:
+	report_spec = get_report_spec(report_name)
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	doctype = str(direct_query.get("doctype") or "").strip()
+	document_label = doctype or str(report_name or "").replace(" List", "").strip()
+	transaction_type = _normalize_key(doctype) or _normalize_key(document_label)
+	party_field = ""
+	party_label = "Party"
+	for candidate, label in (("customer", "Customer"), ("supplier", "Supplier"), ("party", "Party")):
+		if any(str(row.get(candidate) or "").strip() for row in rows):
+			party_field = candidate
+			party_label = label
+			break
+	return {
+		"document_label": document_label or "Document",
+		"transaction_type": transaction_type or "document",
+		"party_field": party_field,
+		"party_label": party_label,
+	}
 
 
 def _build_transaction_listing_artifact(
@@ -2173,14 +2307,8 @@ def _build_transaction_listing_artifact(
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
-	if not rows:
-		return FamilyArtifactOutcome(
-			status="adapter_error",
-			family_id="transaction_listing",
-			report_name=report_name,
-			errors=[f"Transaction listing adapter received no rows for `{report_name}`."],
-		)
-	if report_name != "Sales Invoice List":
+	context = _transaction_listing_context(report_name, rows)
+	if not context.get("document_label"):
 		return FamilyArtifactOutcome(
 			status="unsupported_family_report",
 			family_id="transaction_listing",
@@ -2189,13 +2317,16 @@ def _build_transaction_listing_artifact(
 		)
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
+	party_field = str(context.get("party_field") or "").strip()
 	document_rows = [
 		{
 			"document_name": str(row.get("name") or "").strip(),
 			"posting_date": str(row.get("posting_date") or "").strip(),
 			"customer": str(row.get("customer") or "").strip(),
+			"party_name": str(row.get(party_field) or "").strip() if party_field else "",
 			"grand_total": _numeric_value(row.get("grand_total")),
 			"outstanding_amount": _numeric_value(row.get("outstanding_amount")),
+			"quantity": _numeric_value(row.get("total_qty") if row.get("total_qty") not in (None, "") else row.get("qty")),
 			"status": str(row.get("status") or "").strip(),
 			"docstatus": _numeric_value(row.get("docstatus")),
 		}
@@ -2207,7 +2338,29 @@ def _build_transaction_listing_artifact(
 		document_rows = document_rows[:requested_top_n]
 	total_amount = sum(_numeric_value(row.get("grand_total")) for row in document_rows)
 	total_outstanding = sum(_numeric_value(row.get("outstanding_amount")) for row in document_rows)
+	total_quantity = sum(_numeric_value(row.get("quantity")) for row in document_rows)
 	requested_columns = _requested_transaction_columns(compiler_contract)
+	metrics = {
+		"document_count": len(document_rows),
+		"total_amount": total_amount,
+	}
+	if any(_numeric_value(row.get("outstanding_amount")) for row in document_rows):
+		metrics["outstanding_amount"] = total_outstanding
+	if any(_numeric_value(row.get("quantity")) for row in document_rows):
+		metrics["quantity"] = total_quantity
+	summary = [
+		{"label": "Document Count", "metric_key": "document_count", "value": len(document_rows)},
+		{"label": "Total Amount", "metric_key": "total_amount", "amount": total_amount},
+	]
+	if "quantity" in metrics:
+		summary.insert(
+			1,
+			{"label": "Total Quantity", "metric_key": "quantity", "value": total_quantity},
+		)
+	if "outstanding_amount" in metrics:
+		summary.append(
+			{"label": "Outstanding Amount", "metric_key": "outstanding_amount", "amount": total_outstanding}
+		)
 	artifact = build_normalized_family_artifact_contract(
 		request_id=request_id,
 		family_id="transaction_listing",
@@ -2215,27 +2368,27 @@ def _build_transaction_listing_artifact(
 		period=period,
 		filters=filters,
 		dimensions={
-			"transaction_type": "sales_invoice",
-			"document_label": "Sales Invoice",
+			"transaction_type": context.get("transaction_type"),
+			"document_entity_type": context.get("transaction_type"),
+			"document_label": context.get("document_label"),
+			"party_field": party_field,
+			"party_label": context.get("party_label"),
 			"primary_metric_key": "grand_total",
 			"primary_metric_label": "Grand Total",
 			"requested_top_n": requested_top_n or len(document_rows),
 			"requested_columns": requested_columns,
 			"source_grain": "document_list",
 		},
-		metrics={
-			"document_count": len(document_rows),
-			"total_amount": total_amount,
-			"outstanding_amount": total_outstanding,
-		},
+		metrics=metrics,
 		sections={
 			"transaction_rows": document_rows,
-			"summary": [
-				{"label": "Document Count", "metric_key": "document_count", "value": len(document_rows)},
-				{"label": "Total Amount", "metric_key": "total_amount", "amount": total_amount},
-				{"label": "Outstanding Amount", "metric_key": "outstanding_amount", "amount": total_outstanding},
-			],
+			"summary": summary,
 		},
+		warnings=(
+			["No governed rows matched the requested filters for this transaction listing."]
+			if not document_rows
+			else []
+		),
 	)
 	return FamilyArtifactOutcome(
 		status="adapted",

@@ -74,6 +74,8 @@ def run_phase6_smoke_session(
 	originals = {key: conf.get(key) for key in keys}
 	presence = {key: key in conf for key in keys}
 	try:
+		frappe_module.db.commit()
+		frappe_module.clear_cache()
 		conf[compiled_flag_key] = True
 		conf[compiled_percent_key] = 0
 		conf[compiled_users_key] = ["Administrator"]
@@ -90,6 +92,7 @@ def run_phase6_smoke_session(
 		finally:
 			frappe_module.delete_doc(session_doctype, doc.name, ignore_permissions=False)
 			frappe_module.db.commit()
+			frappe_module.clear_cache()
 	finally:
 		for key, was_present in presence.items():
 			if was_present:

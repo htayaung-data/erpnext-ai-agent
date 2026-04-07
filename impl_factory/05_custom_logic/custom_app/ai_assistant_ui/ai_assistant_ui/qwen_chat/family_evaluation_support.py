@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
 import time
 import uuid
 from typing import Any, Dict, List
+
+from ai_assistant_ui.qwen_chat.smoke_fixtures import smoke_fixture_replacement_message
 
 
 def _with_compiled_first_turn_full_rollout(
@@ -25,9 +28,13 @@ def _with_compiled_first_turn_full_rollout(
 		users_key: users_key in conf,
 	}
 	try:
+		frappe_module.db.commit()
+		frappe_module.clear_cache()
 		conf[flag_key] = True
 		conf[percent_key] = 100
 		conf[users_key] = []
+		frappe_module.db.commit()
+		frappe_module.clear_cache()
 		return callback()
 	finally:
 		for key, was_present in presence.items():
@@ -38,6 +45,138 @@ def _with_compiled_first_turn_full_rollout(
 					conf.pop(key, None)
 				except Exception:
 					pass
+		try:
+			frappe_module.db.commit()
+			frappe_module.clear_cache()
+		except Exception:
+			pass
+
+
+def _create_committed_smoke_session_doc(
+	*,
+	frappe_module,
+	session_doctype: str,
+	title: str,
+):
+	doc = frappe_module.new_doc(session_doctype)
+	doc.title = str(title or "").strip()
+	doc.insert(ignore_permissions=False)
+	# Make the session durable before later save retries rollback transaction state.
+	frappe_module.db.commit()
+	return doc
+
+
+def _delete_committed_smoke_session_doc(
+	*,
+	frappe_module,
+	session_doctype: str,
+	doc_name: str,
+) -> None:
+	clean_name = str(doc_name or "").strip()
+	if not clean_name:
+		return
+	try:
+		frappe_module.delete_doc(session_doctype, clean_name, ignore_permissions=False)
+		frappe_module.db.commit()
+	except Exception:
+		pass
+
+
+def _latest_request_scoped_tool_payload_by_type(
+	tool_payloads: List[Dict[str, Any]],
+	payload_type: str,
+	request_id: str,
+	*,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	clean_type = str(payload_type or "").strip()
+	clean_request_id = str(request_id or "").strip()
+	if clean_type and clean_request_id:
+		for item in reversed(tool_payloads):
+			if str(item.get("type") or "").strip() != clean_type:
+				continue
+			item_request_id = str(
+				item.get("request_id")
+				or item.get("trace_request_id")
+				or item.get("source_request_id")
+				or ""
+			).strip()
+			if item_request_id == clean_request_id:
+				return item
+	return latest_tool_payload_by_type(tool_payloads, payload_type)
+
+
+def _stabilize_turn_family_visibility(
+	*,
+	frappe_module,
+	session_doctype: str,
+	session_name: str,
+	expected_request_id: str,
+	prior_rendered_answer_text: str,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	attempts: int = 4,
+	delay_seconds: float = 0.1,
+) -> Dict[str, Any]:
+	clean_request_id = str(expected_request_id or "").strip()
+	prior_answer_text = str(prior_rendered_answer_text or "").strip()
+	last_result = {
+		"session_doc": None,
+		"tool_payloads": [],
+		"grounded_turn": {},
+		"rendered": {},
+		"artifact": {},
+	}
+	for attempt in range(max(1, int(attempts))):
+		frappe_module.db.commit()
+		frappe_module.clear_cache()
+		session_doc = frappe_module.get_doc(session_doctype, session_name)
+		tool_payloads = session_tool_payloads(session_doc)
+		grounded_turn = _latest_request_scoped_tool_payload_by_type(
+			tool_payloads,
+			"qwen_grounded_turn_context",
+			clean_request_id,
+			latest_tool_payload_by_type=latest_tool_payload_by_type,
+		)
+		rendered = latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract")
+		artifact = latest_tool_payload_by_type(tool_payloads, "qwen_normalized_family_artifact_contract")
+		rendered_answer_text = str(rendered.get("answer_text") or "").strip()
+		grounded_request_id = str(
+			grounded_turn.get("trace_request_id") or grounded_turn.get("request_id") or ""
+		).strip()
+		grounded_source_name = str(grounded_turn.get("source_name") or "").strip()
+		rendered_source_reports = [
+			str(item or "").strip()
+			for item in (rendered.get("source_reports") or [])
+			if str(item or "").strip()
+		]
+		artifact_source_reports = [
+			str(item or "").strip()
+			for item in (artifact.get("source_reports") or [])
+			if str(item or "").strip()
+		]
+		report_coherent = (
+			not grounded_source_name
+			or grounded_source_name in rendered_source_reports
+			or grounded_source_name in artifact_source_reports
+		)
+		last_result = {
+			"session_doc": session_doc,
+			"tool_payloads": tool_payloads,
+			"grounded_turn": grounded_turn,
+			"rendered": rendered,
+			"artifact": artifact,
+		}
+		if (
+			grounded_request_id == clean_request_id
+			and rendered_answer_text
+			and rendered_answer_text != prior_answer_text
+			and report_coherent
+		):
+			return last_result
+		if attempt + 1 < max(1, int(attempts)):
+			time.sleep(max(0.0, float(delay_seconds)))
+	return last_result
 
 
 def run_followup_fidelity_smoke(
@@ -250,6 +389,375 @@ def run_followup_fidelity_smoke(
 	)
 
 
+def _run_document_listing_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	smoke_title: str,
+	request_message: str,
+	expected_row_count: int,
+	minimum_row_count: int = 0,
+	required_title_fragment: str,
+	required_column_groups: List[List[str]],
+) -> Dict[str, Any]:
+	def _transient_listing_retry_allowed(payload: Dict[str, Any], rows: List[Any], columns: List[Any], rendered_title: str) -> bool:
+		mode = str((payload or {}).get("mode") or "").strip()
+		family_status = str((payload or {}).get("family_validation_status") or "").strip()
+		semantic_status = str((payload or {}).get("semantic_validation_status") or "").strip()
+		return (
+			mode == "compiled_first_turn"
+			and not rows
+			and not columns
+			and not str(rendered_title or "").strip()
+			and family_status == "reject_family_inconsistent"
+			and semantic_status == "reject_semantically_inconsistent"
+		)
+
+	def _run() -> Dict[str, Any]:
+		last_error: RuntimeError | None = None
+		for attempt in range(4):
+			doc = _create_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				title=smoke_title,
+			)
+			try:
+				ok, payload = handle_qwen_user_message(
+					session_name=doc.name,
+					message=request_message,
+					user="Administrator",
+				)
+				if not ok:
+					raise RuntimeError(f"{smoke_title} failed: governed listing request did not complete.")
+				session_doc = frappe_module.get_doc(session_doctype, doc.name)
+				rendered = latest_tool_payload_by_type(session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+				blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+				data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+				rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+				columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
+				rendered_title = str(rendered.get("title") or "").strip()
+				if int(expected_row_count) > 0:
+					if len(rows) != int(expected_row_count):
+						raise RuntimeError(
+							f"{smoke_title} failed: expected {expected_row_count} rows, observed {len(rows)}. "
+							f"mode={str((payload or {}).get('mode') or '').strip()!r} title={rendered_title!r} columns={columns!r}"
+						)
+				elif len(rows) < int(max(1, minimum_row_count)):
+					raise RuntimeError(
+						f"{smoke_title} failed: expected at least {max(1, minimum_row_count)} rows, observed {len(rows)}. "
+						f"mode={str((payload or {}).get('mode') or '').strip()!r} title={rendered_title!r} columns={columns!r}"
+					)
+				if required_title_fragment and required_title_fragment not in rendered_title:
+					raise RuntimeError(
+						f"{smoke_title} failed: expected title fragment {required_title_fragment!r}, observed {rendered_title!r}."
+					)
+				for column_group in required_column_groups:
+					fragments = [str(item or "").strip() for item in (column_group or []) if str(item or "").strip()]
+					if not fragments:
+						continue
+					if not any(any(fragment in str(col or "") for fragment in fragments) for col in columns):
+						raise RuntimeError(
+							f"{smoke_title} failed: missing required column group {fragments!r}. Observed columns={columns!r}"
+						)
+				return {
+					"ok": True,
+					"mode": str((payload or {}).get("mode") or "").strip(),
+					"title": rendered_title,
+					"row_count": len(rows),
+					"columns": columns,
+				}
+			except RuntimeError as exc:
+				last_error = exc
+				if attempt >= 3 or not _transient_listing_retry_allowed(payload if isinstance(payload, dict) else {}, rows if 'rows' in locals() else [], columns if 'columns' in locals() else [], rendered_title if 'rendered_title' in locals() else ""):
+					raise
+				frappe_module.db.commit()
+				frappe_module.clear_cache()
+				time.sleep(0.25 * (attempt + 1))
+			finally:
+				_delete_committed_smoke_session_doc(
+					frappe_module=frappe_module,
+					session_doctype=session_doctype,
+					doc_name=doc.name,
+				)
+		if last_error is not None:
+			raise last_error
+		raise RuntimeError(f"{smoke_title} failed without an explicit error.")
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def _parse_rendered_iso_date(value: Any) -> date | None:
+	text = str(value or "").strip()
+	if not text:
+		return None
+	candidates = [text, text[:10]]
+	for candidate in candidates:
+		candidate = str(candidate or "").strip()
+		if not candidate:
+			continue
+		try:
+			return date.fromisoformat(candidate)
+		except Exception:
+			continue
+	return None
+
+
+def _last_month_window() -> tuple[date, date]:
+	today = date.today()
+	first_this_month = today.replace(day=1)
+	last_previous_month = first_this_month - timedelta(days=1)
+	first_previous_month = last_previous_month.replace(day=1)
+	return first_previous_month, last_previous_month
+
+
+def _select_delivery_note_status_probe_value(frappe_module) -> str:
+	rows = frappe_module.get_all(
+		"Delivery Note",
+		fields=["status"],
+		filters={"docstatus": 1},
+		order_by="modified desc",
+		limit_page_length=100,
+	)
+	counts: Dict[str, int] = {}
+	for row in rows or []:
+		if not isinstance(row, dict):
+			continue
+		status = str(row.get("status") or "").strip()
+		if not status:
+			continue
+		counts[status] = counts.get(status, 0) + 1
+	if not counts:
+		raise RuntimeError("Delivery Note status probe failed: no submitted Delivery Note statuses were available.")
+	preferred_order = [
+		"Completed",
+		"To Bill",
+		"To Deliver and Bill",
+		"To Bill and Deliver",
+		"Partially Billed",
+		"Return Issued",
+	]
+	for status in preferred_order:
+		if counts.get(status):
+			return status
+	return sorted(counts.items(), key=lambda item: (-int(item[1] or 0), str(item[0] or "")))[0][0]
+
+
+def _run_document_listing_date_scope_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	smoke_title: str,
+	request_message: str,
+	required_title_fragment: str,
+	required_column_groups: List[List[str]],
+	date_column_fragments: List[str],
+	expected_start_date: date,
+	expected_end_date: date,
+	minimum_row_count: int = 1,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title=smoke_title,
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=request_message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError(f"{smoke_title} failed: governed listing request did not complete.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			rendered = latest_tool_payload_by_type(session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+			rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+			columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
+			rendered_title = str(rendered.get("title") or "").strip()
+			if len(rows) < int(max(1, minimum_row_count)):
+				raise RuntimeError(
+					f"{smoke_title} failed: expected at least {max(1, minimum_row_count)} rows, observed {len(rows)}. "
+					f"mode={str((payload or {}).get('mode') or '').strip()!r} title={rendered_title!r} columns={columns!r}"
+				)
+			if required_title_fragment and required_title_fragment not in rendered_title:
+				raise RuntimeError(
+					f"{smoke_title} failed: expected title fragment {required_title_fragment!r}, observed {rendered_title!r}."
+				)
+			for column_group in required_column_groups:
+				fragments = [str(item or "").strip() for item in (column_group or []) if str(item or "").strip()]
+				if not fragments:
+					continue
+				if not any(any(fragment in str(col or "") for fragment in fragments) for col in columns):
+					raise RuntimeError(
+						f"{smoke_title} failed: missing required column group {fragments!r}. Observed columns={columns!r}"
+					)
+			date_index = next(
+				(
+					index
+					for index, column_name in enumerate(columns)
+					if any(str(fragment or "").strip() in str(column_name or "") for fragment in date_column_fragments)
+				),
+				-1,
+			)
+			if date_index < 0:
+				raise RuntimeError(
+					f"{smoke_title} failed: missing date column fragments {date_column_fragments!r}. Observed columns={columns!r}"
+				)
+			observed_dates: List[str] = []
+			for row_index, row in enumerate(rows):
+				if not isinstance(row, list) or date_index >= len(row):
+					raise RuntimeError(
+						f"{smoke_title} failed: row {row_index} does not contain date column index {date_index}. Row={row!r}"
+					)
+				rendered_date = _parse_rendered_iso_date(row[date_index])
+				if rendered_date is None:
+					raise RuntimeError(
+						f"{smoke_title} failed: could not parse rendered date {row[date_index]!r} from row {row_index}."
+					)
+				observed_dates.append(rendered_date.isoformat())
+				if rendered_date < expected_start_date or rendered_date > expected_end_date:
+					raise RuntimeError(
+						f"{smoke_title} failed: observed posting date {rendered_date.isoformat()} outside expected range "
+						f"{expected_start_date.isoformat()}..{expected_end_date.isoformat()}."
+					)
+			return {
+				"ok": True,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": rendered_title,
+				"row_count": len(rows),
+				"columns": columns,
+				"posting_dates": observed_dates,
+				"expected_start_date": expected_start_date.isoformat(),
+				"expected_end_date": expected_end_date.isoformat(),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def _run_document_listing_status_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	smoke_title: str,
+	required_title_fragment: str,
+	required_column_groups: List[List[str]],
+	status_column_fragments: List[str],
+	minimum_row_count: int = 1,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		expected_status = _select_delivery_note_status_probe_value(frappe_module)
+		request_message = f"show me delivery notes with status {expected_status}"
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title=smoke_title,
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=request_message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError(f"{smoke_title} failed: governed listing request did not complete.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			rendered = latest_tool_payload_by_type(session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+			rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
+			columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
+			rendered_title = str(rendered.get("title") or "").strip()
+			if len(rows) < int(max(1, minimum_row_count)):
+				raise RuntimeError(
+					f"{smoke_title} failed: expected at least {max(1, minimum_row_count)} rows, observed {len(rows)}. "
+					f"mode={str((payload or {}).get('mode') or '').strip()!r} title={rendered_title!r} columns={columns!r}"
+				)
+			if required_title_fragment and required_title_fragment not in rendered_title:
+				raise RuntimeError(
+					f"{smoke_title} failed: expected title fragment {required_title_fragment!r}, observed {rendered_title!r}."
+				)
+			for column_group in required_column_groups:
+				fragments = [str(item or "").strip() for item in (column_group or []) if str(item or "").strip()]
+				if not fragments:
+					continue
+				if not any(any(fragment in str(col or "") for fragment in fragments) for col in columns):
+					raise RuntimeError(
+						f"{smoke_title} failed: missing required column group {fragments!r}. Observed columns={columns!r}"
+					)
+			status_index = next(
+				(
+					index
+					for index, column_name in enumerate(columns)
+					if any(str(fragment or "").strip() in str(column_name or "") for fragment in status_column_fragments)
+				),
+				-1,
+			)
+			if status_index < 0:
+				raise RuntimeError(
+					f"{smoke_title} failed: missing status column fragments {status_column_fragments!r}. Observed columns={columns!r}"
+				)
+			observed_statuses: List[str] = []
+			for row_index, row in enumerate(rows):
+				if not isinstance(row, list) or status_index >= len(row):
+					raise RuntimeError(
+						f"{smoke_title} failed: row {row_index} does not contain status column index {status_index}. Row={row!r}"
+					)
+				observed_status = str(row[status_index] or "").strip()
+				if not observed_status:
+					raise RuntimeError(
+						f"{smoke_title} failed: row {row_index} did not contain a rendered status value. Row={row!r}"
+					)
+				observed_statuses.append(observed_status)
+				if observed_status != expected_status:
+					raise RuntimeError(
+						f"{smoke_title} failed: observed status {observed_status!r} did not match expected {expected_status!r}."
+					)
+			return {
+				"ok": True,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": rendered_title,
+				"row_count": len(rows),
+				"columns": columns,
+				"expected_status": expected_status,
+				"observed_statuses": observed_statuses,
+				"request_message": request_message,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_transaction_listing_smoke(
 	*,
 	frappe_module,
@@ -258,42 +766,426 @@ def run_transaction_listing_smoke(
 	session_tool_payloads,
 	latest_tool_payload_by_type,
 ) -> Dict[str, Any]:
+	return _run_document_listing_smoke(
+		frappe_module=frappe_module,
+		session_doctype=session_doctype,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=session_tool_payloads,
+		latest_tool_payload_by_type=latest_tool_payload_by_type,
+		smoke_title="Phase4B Transaction Listing Smoke",
+		request_message="show me the last 7 sale invoices",
+		expected_row_count=7,
+		minimum_row_count=0,
+		required_title_fragment="Sales Invoice",
+		required_column_groups=[["Invoice"], ["Customer"]],
+	)
+
+
+def run_delivery_note_listing_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	return _run_document_listing_smoke(
+		frappe_module=frappe_module,
+		session_doctype=session_doctype,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=session_tool_payloads,
+		latest_tool_payload_by_type=latest_tool_payload_by_type,
+		smoke_title="Phase1.1 Delivery Note Listing Smoke",
+		request_message="show me the last 5 delivery notes",
+		expected_row_count=5,
+		minimum_row_count=0,
+		required_title_fragment="Delivery Note",
+		required_column_groups=[["Delivery", "Note"], ["Customer"], ["Qty", "Quantity"]],
+	)
+
+
+def run_delivery_note_listing_limit_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	return _run_document_listing_smoke(
+		frappe_module=frappe_module,
+		session_doctype=session_doctype,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=session_tool_payloads,
+		latest_tool_payload_by_type=latest_tool_payload_by_type,
+		smoke_title="Phase1.1 Delivery Note Listing Limit Probe",
+		request_message="show me the last 5 delivery notes",
+		expected_row_count=5,
+		minimum_row_count=0,
+		required_title_fragment="Delivery Note",
+		required_column_groups=[["Delivery", "Note"], ["Customer"], ["Qty", "Quantity"]],
+	)
+
+
+def run_delivery_note_detail_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
 	def _run() -> Dict[str, Any]:
-		doc = frappe_module.new_doc(session_doctype)
-		doc.title = "Phase4B Transaction Listing Smoke"
-		doc.insert(ignore_permissions=False)
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.1 Delivery Note Detail Smoke",
+		)
 		try:
 			ok, payload = handle_qwen_user_message(
 				session_name=doc.name,
-				message="show me the last 7 sale invoices",
+				message="give me latest 5 delivery note",
 				user="Administrator",
 			)
 			if not ok:
-				raise RuntimeError("Transaction listing smoke failed on invoice-list request.")
+				raise RuntimeError("Phase1.1 Delivery Note Detail Smoke failed on delivery-note listing request.")
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about MAT-DN-2026-00016",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.1 Delivery Note Detail Smoke failed on delivery-note detail request.")
 			session_doc = frappe_module.get_doc(session_doctype, doc.name)
-			rendered = latest_tool_payload_by_type(session_tool_payloads(session_doc), "qwen_rendered_family_response_contract")
-			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
-			data_table = next((item for item in blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
-			rows = data_table.get("rows") if isinstance(data_table.get("rows"), list) else []
-			columns = data_table.get("columns") if isinstance(data_table.get("columns"), list) else []
-			if len(rows) != 7:
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "mat-dn-2026-00016" not in assistant_text.lower():
 				raise RuntimeError(
-					f"Transaction listing smoke failed: expected 7 invoice rows, observed {len(rows)}. "
-					f"mode={str((payload or {}).get('mode') or '').strip()!r} title={str(rendered.get('title') or '').strip()!r} columns={columns!r}"
+					"Phase1.1 Delivery Note Detail Smoke failed: detail answer did not switch to the requested delivery note."
 				)
-			if not any("Invoice" in str(col or "") for col in columns):
-				raise RuntimeError(f"Transaction listing smoke failed: invoice column missing. Observed columns={columns!r}")
-			if not any("Customer" in str(col or "") for col in columns):
-				raise RuntimeError(f"Transaction listing smoke failed: customer column missing. Observed columns={columns!r}")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.1 Delivery Note Detail Smoke failed: detail request did not use the governed entity-detail engine."
+				)
+			tool_payloads = session_tool_payloads(session_doc)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_entity_detail_artifact")
+			rendered_payload = latest_tool_payload_by_type(tool_payloads, "qwen_entity_detail_rendered_response")
+			entity_type = str((artifact_payload or {}).get("dimensions", {}).get("entity_type") or "").strip()
+			rendered_title = str((rendered_payload or {}).get("title") or "").strip()
+			if entity_type != "delivery_note":
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Detail Smoke failed: expected entity_type 'delivery_note', observed {entity_type!r}."
+				)
+			if "Delivery Note" not in rendered_title:
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Detail Smoke failed: expected rendered title to contain 'Delivery Note', observed {rendered_title!r}."
+				)
 			return {
 				"ok": True,
-				"mode": str((payload or {}).get("mode") or "").strip(),
-				"title": str(rendered.get("title") or "").strip(),
-				"row_count": len(rows),
-				"columns": columns,
+				"mode": str((detail_payload or {}).get("mode") or "").strip(),
+				"engine": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"title": rendered_title,
+				"entity_type": entity_type,
+				"answer_text": assistant_text,
 			}
 		finally:
-			frappe_module.delete_doc(session_doctype, doc.name, ignore_permissions=False)
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_delivery_note_date_scope_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	expected_start_date, expected_end_date = _last_month_window()
+	return _run_document_listing_date_scope_probe(
+		frappe_module=frappe_module,
+		session_doctype=session_doctype,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=session_tool_payloads,
+		latest_tool_payload_by_type=latest_tool_payload_by_type,
+		smoke_title="Phase1.1 Delivery Note Date Scope Probe",
+		request_message="show me delivery notes last month",
+		required_title_fragment="Delivery Note",
+		required_column_groups=[["Delivery", "Note"], ["Posting Date"]],
+		date_column_fragments=["Posting Date"],
+		expected_start_date=expected_start_date,
+		expected_end_date=expected_end_date,
+		minimum_row_count=1,
+	)
+
+
+def run_delivery_note_status_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	return _run_document_listing_status_probe(
+		frappe_module=frappe_module,
+		session_doctype=session_doctype,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=session_tool_payloads,
+		latest_tool_payload_by_type=latest_tool_payload_by_type,
+		smoke_title="Phase1.1 Delivery Note Status Probe",
+		required_title_fragment="Delivery Note",
+		required_column_groups=[["Delivery", "Note"], ["Status"]],
+		status_column_fragments=["Status"],
+		minimum_row_count=1,
+	)
+
+
+def run_delivery_note_session_reset_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.1 Delivery Note Session Reset Smoke",
+		)
+		try:
+			steps = [
+				("show me the last 5 delivery notes", "transaction_listing", "Delivery Note"),
+				("show me the last 5 delivery notes from last month", "transaction_listing", "Delivery Note"),
+				("show me delivery notes with status Completed", "transaction_listing", "Completed"),
+				("Show me last 7 sale invoices", "transaction_listing", "Sales Invoice"),
+				(
+					smoke_fixture_replacement_message("fresh_query_override_to_ar"),
+					"aging",
+					"receivable",
+				),
+			]
+			results: List[Dict[str, Any]] = []
+			previous_rendered_answer_text = ""
+			for message, expected_family_id, required_text in steps:
+				ok, payload = handle_qwen_user_message(
+					session_name=doc.name,
+					message=message,
+					user="Administrator",
+				)
+				if not ok:
+					raise RuntimeError(
+						f"Phase1.1 Delivery Note Session Reset Smoke failed: request {message!r} did not complete."
+					)
+				request_id = str((payload or {}).get("request_id") or "").strip()
+				turn_state = _stabilize_turn_family_visibility(
+					frappe_module=frappe_module,
+					session_doctype=session_doctype,
+					session_name=doc.name,
+					expected_request_id=request_id,
+					prior_rendered_answer_text=previous_rendered_answer_text,
+					session_tool_payloads=session_tool_payloads,
+					latest_tool_payload_by_type=latest_tool_payload_by_type,
+				)
+				rendered = dict(turn_state.get("rendered") or {})
+				artifact = dict(turn_state.get("artifact") or {})
+				assistant_text = str(rendered.get("answer_text") or "").strip()
+				mode = str((payload or {}).get("mode") or "").strip()
+				family_validation_status = str((payload or {}).get("family_validation_status") or "").strip()
+				artifact_family_id = str((artifact or {}).get("family_id") or "").strip()
+				if mode != "compiled_first_turn":
+					raise RuntimeError(
+						f"Phase1.1 Delivery Note Session Reset Smoke failed: request {message!r} used mode {mode!r}."
+					)
+				if family_validation_status != "pass":
+					raise RuntimeError(
+						f"Phase1.1 Delivery Note Session Reset Smoke failed: request {message!r} had family_validation_status "
+						f"{family_validation_status!r}."
+					)
+				if artifact_family_id != expected_family_id:
+					raise RuntimeError(
+						f"Phase1.1 Delivery Note Session Reset Smoke failed: request {message!r} expected family "
+						f"{expected_family_id!r}, observed {artifact_family_id!r}."
+					)
+				if required_text and required_text.lower() not in assistant_text.lower():
+					raise RuntimeError(
+						f"Phase1.1 Delivery Note Session Reset Smoke failed: request {message!r} did not contain "
+						f"required text {required_text!r}. Observed={assistant_text!r}"
+					)
+				previous_rendered_answer_text = assistant_text
+				results.append(
+					{
+						"message": message,
+						"mode": mode,
+						"family_validation_status": family_validation_status,
+						"artifact_family_id": artifact_family_id,
+					}
+				)
+			return {
+				"ok": True,
+				"steps": results,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_delivery_note_trend_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload=None,
+	message: str = "show monthly delivery note trend by customer this fiscal year",
+	expected_title_fragment: str = "Trend",
+	expected_series_column: str = "Delivered Quantity",
+	expected_answer_fragment: str = "",
+	expected_summary_metric: str = "",
+	minimum_summary_value: float | None = None,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.1 Delivery Note Trend Probe",
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.1 Delivery Note Trend Probe failed: governed trend request did not complete.")
+			if str((payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Trend Probe failed: expected compiled_first_turn, observed "
+					f"{str((payload or {}).get('mode') or '').strip()!r}."
+				)
+			if str((payload or {}).get("family_validation_status") or "").strip() != "pass":
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Trend Probe failed: family validation was "
+					f"{str((payload or {}).get('family_validation_status') or '').strip()!r}."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			rendered = latest_tool_payload_by_type(
+				session_tool_payloads(session_doc),
+				"qwen_rendered_family_response_contract",
+			)
+			title = str(rendered.get("title") or "").strip()
+			blocks = rendered.get("blocks") if isinstance(rendered.get("blocks"), list) else []
+			summary_block = next(
+				(
+					item
+					for item in blocks
+					if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "summary_table"
+				),
+				{},
+			)
+			series_block = next(
+				(
+					item
+					for item in blocks
+					if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"
+				),
+				{},
+			)
+			series_rows = series_block.get("rows") if isinstance(series_block.get("rows"), list) else []
+			if expected_title_fragment not in title:
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Trend Probe failed: expected title fragment "
+					f"{expected_title_fragment!r}, observed {title!r}."
+				)
+			if not isinstance(summary_block.get("rows"), list) or not summary_block.get("rows"):
+				raise RuntimeError("Phase1.1 Delivery Note Trend Probe failed: missing governed trend summary block.")
+			if not series_rows:
+				raise RuntimeError("Phase1.1 Delivery Note Trend Probe failed: missing governed period series rows.")
+			series_columns = [
+				str(value or "").strip()
+				for value in (series_block.get("columns") if isinstance(series_block.get("columns"), list) else [])
+				if str(value or "").strip()
+			]
+			if expected_series_column and expected_series_column not in series_columns:
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Trend Probe failed: expected period-series column "
+					f"{expected_series_column!r}, observed {series_columns!r}."
+				)
+			summary_rows = summary_block.get("rows") if isinstance(summary_block.get("rows"), list) else []
+			summary_pairs = {}
+			for row in summary_rows:
+				if not isinstance(row, list) or len(row) < 2:
+					continue
+				key = str(row[0] or "").strip()
+				value = str(row[1] or "").strip()
+				if key:
+					summary_pairs[key] = value
+			if expected_summary_metric:
+				observed_value = summary_pairs.get(expected_summary_metric)
+				if observed_value is None:
+					raise RuntimeError(
+						f"Phase1.1 Delivery Note Trend Probe failed: expected summary metric "
+						f"{expected_summary_metric!r}, observed {sorted(summary_pairs.keys())!r}."
+					)
+				if minimum_summary_value is not None:
+					try:
+						parsed_value = float(str(observed_value).replace(",", ""))
+					except ValueError as exc:
+						raise RuntimeError(
+							f"Phase1.1 Delivery Note Trend Probe failed: summary metric "
+							f"{expected_summary_metric!r} had non-numeric value {observed_value!r}."
+						) from exc
+					if parsed_value < float(minimum_summary_value):
+						raise RuntimeError(
+							f"Phase1.1 Delivery Note Trend Probe failed: summary metric "
+							f"{expected_summary_metric!r} expected >= {minimum_summary_value!r}, "
+							f"observed {parsed_value!r}."
+						)
+			answer_text = (
+				str(latest_assistant_payload(session_doc).get("text") or "").strip()
+				if callable(latest_assistant_payload)
+				else ""
+			)
+			if expected_answer_fragment and expected_answer_fragment.lower() not in answer_text.lower():
+				raise RuntimeError(
+					f"Phase1.1 Delivery Note Trend Probe failed: expected answer fragment "
+					f"{expected_answer_fragment!r}, observed {answer_text!r}."
+				)
+			return {
+				"ok": True,
+				"message": message,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"family_validation_status": str((payload or {}).get("family_validation_status") or "").strip(),
+				"title": title,
+				"answer_text": answer_text,
+				"series_row_count": len(series_rows),
+				"series_columns": series_columns,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
 
 	return _with_compiled_first_turn_full_rollout(
 		frappe_module=frappe_module,
@@ -1466,9 +2358,11 @@ def run_entity_drilldown_smoke(
 		conf[flag_key] = True
 		conf[percent_key] = 0
 		conf[users_key] = ["Administrator"]
-		doc = frappe_module.new_doc(session_doctype)
-		doc.title = "Phase 4B Entity Drilldown Smoke"
-		doc.insert(ignore_permissions=False)
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase 4B Entity Drilldown Smoke",
+		)
 		try:
 			ok, _ = handle_qwen_user_message(
 				session_name=doc.name,
@@ -1479,14 +2373,14 @@ def run_entity_drilldown_smoke(
 				raise RuntimeError("Entity drilldown smoke failed on invoice listing request.")
 			ok, invoice_payload = handle_qwen_user_message(
 				session_name=doc.name,
-				message="give me details of ACC-SINV-2026-00121",
+				message="give me details of ACC-SINV-2026-00192",
 				user="Administrator",
 			)
 			if not ok:
 				raise RuntimeError("Entity drilldown smoke failed on invoice detail request.")
 			session_doc = frappe_module.get_doc(session_doctype, doc.name)
 			invoice_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
-			if "acc-sinv-2026-00121" not in invoice_text.lower():
+			if "acc-sinv-2026-00192" not in invoice_text.lower():
 				raise RuntimeError("Entity drilldown smoke failed: invoice detail answer did not switch to the requested invoice.")
 			if str((invoice_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
 				raise RuntimeError("Entity drilldown smoke failed: invoice detail did not use the governed entity-detail engine.")
@@ -1535,7 +2429,232 @@ def run_entity_drilldown_smoke(
 				"customer_text": customer_text,
 			}
 		finally:
-			frappe_module.delete_doc(session_doctype, doc.name, ignore_permissions=False)
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_invoice_delivery_proof_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+	session_tool_payloads=None,
+	latest_tool_payload_by_type=None,
+) -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe_module, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase 1.1 Invoice Delivery Proof Smoke",
+		)
+		try:
+			ok, _ = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me 7 latest sale invoice",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Invoice delivery proof smoke failed on invoice listing request.")
+			ok, invoice_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about ACC-SINV-2026-00194",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Invoice delivery proof smoke failed on invoice detail request.")
+			if str((invoice_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError("Invoice delivery proof smoke failed: invoice detail did not use the governed entity-detail engine.")
+			ok, delivery_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="items from this invoices are already delivered?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Invoice delivery proof smoke failed on delivery-proof follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			answer_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			lower_text = answer_text.lower()
+			if str((delivery_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError("Invoice delivery proof smoke failed: delivery-proof follow-up did not use grounded evidence answer mode.")
+			if "delivered" not in lower_text:
+				raise RuntimeError(
+					"Invoice delivery proof smoke failed: user-facing answer did not confirm governed delivery proof. "
+					f"Observed={answer_text!r}"
+				)
+			if "delivery note" not in lower_text and "stock movement" not in lower_text and "stock-updating invoice" not in lower_text:
+				raise RuntimeError(
+					"Invoice delivery proof smoke failed: answer did not cite the governed proof basis. "
+					f"Observed={answer_text!r}"
+				)
+			ok, when_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what it was delivered",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Invoice delivery proof smoke failed on delivery-date follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			when_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			lower_when_text = when_text.lower()
+			narrative_payload = {}
+			if callable(session_tool_payloads) and callable(latest_tool_payload_by_type):
+				narrative_payload = latest_tool_payload_by_type(
+					session_tool_payloads(session_doc),
+					"qwen_artifact_narrative_response_contract",
+				)
+			if str((when_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError("Invoice delivery proof smoke failed: delivery-date follow-up did not use grounded evidence answer mode.")
+			if "2026-03-30" not in when_text:
+				raise RuntimeError(
+					"Invoice delivery proof smoke failed: delivery-date follow-up did not return the governed delivery date. "
+					f"Observed={when_text!r}"
+				)
+			if "delivery note" not in lower_when_text and "zegyo mobile supply house" not in lower_when_text:
+				raise RuntimeError(
+					"Invoice delivery proof smoke failed: delivery-date follow-up did not retain enough delivery context. "
+					f"Observed={when_text!r}"
+				)
+			return {
+				"ok": True,
+				"delivery_mode": str((delivery_payload or {}).get("mode") or "").strip(),
+				"delivery_text": answer_text,
+				"delivery_date_mode": str((when_payload or {}).get("mode") or "").strip(),
+				"delivery_date_text": when_text,
+				"narrative_contract_answer_text": str(narrative_payload.get("answer_text") or "").strip(),
+				"narrative_contract_engine": str(narrative_payload.get("narrative_engine") or "").strip(),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
+
+
+def run_fresh_chat_invoice_delivery_proof_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe_module, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase 1.1 Fresh Chat Invoice Delivery Proof Smoke",
+		)
+		try:
+			ok, invoice_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about ACC-SINV-2026-00194",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Fresh-chat invoice delivery proof smoke failed on invoice detail request.")
+			if str((invoice_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Fresh-chat invoice delivery proof smoke failed: explicit invoice request did not use governed entity-detail engine."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			invoice_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "acc-sinv-2026-00194" not in invoice_text.lower():
+				raise RuntimeError(
+					"Fresh-chat invoice delivery proof smoke failed: invoice detail answer did not anchor to the requested invoice."
+				)
+			if "document count" in invoice_text.lower():
+				raise RuntimeError(
+					"Fresh-chat invoice delivery proof smoke failed: invoice detail answer still looked like a list summary."
+				)
+
+			ok, delivery_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="that item is already delivered to the customer?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Fresh-chat invoice delivery proof smoke failed on delivery-proof follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			delivery_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			lower_delivery_text = delivery_text.lower()
+			if str((delivery_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Fresh-chat invoice delivery proof smoke failed: delivery-proof follow-up did not use grounded evidence answer mode."
+				)
+			if "delivered" not in lower_delivery_text or "zegyo mobile supply house" not in lower_delivery_text:
+				raise RuntimeError(
+					"Fresh-chat invoice delivery proof smoke failed: delivery-proof answer did not stay anchored to invoice evidence. "
+					f"Observed={delivery_text!r}"
+				)
+			return {
+				"ok": True,
+				"invoice_mode": str((invoice_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"invoice_text": invoice_text,
+				"delivery_mode": str((delivery_payload or {}).get("mode") or "").strip(),
+				"delivery_text": delivery_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
 	finally:
 		for key, was_present in presence.items():
 			if was_present:

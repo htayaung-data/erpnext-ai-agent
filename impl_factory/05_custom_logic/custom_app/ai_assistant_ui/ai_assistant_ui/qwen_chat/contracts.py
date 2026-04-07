@@ -3388,8 +3388,9 @@ def build_artifact_continuation_contract(
 	preserved_requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
 	if not preserved_requested_columns:
 		preserved_requested_columns = list(source_requested_columns)
+	rank_membership_eligible = source_family_id == "ranking_analytics"
 	preserved_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
-	if not preserved_limit:
+	if not preserved_limit and rank_membership_eligible:
 		preserved_limit = source_limit
 	preserved_sort_direction = str(
 		getattr(followup_resolution, "sort_direction", "")
@@ -3425,6 +3426,7 @@ def build_artifact_continuation_contract(
 	)
 	preserve_rank_membership = bool(
 		preserve_grounded_context
+		and rank_membership_eligible
 		and preserved_limit > 0
 		and not mode_set.intersection({"dimension_breakdown", "grouping_change", "time_scope_restatement"})
 	)
@@ -3627,6 +3629,45 @@ def coerce_followup_resolution_from_scope_decision(
 	)
 
 
+def _infer_followup_requested_time_scope(
+	*,
+	message: str,
+	requested_time_scope: str,
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if current:
+		return current
+	text = str(message or "").strip().lower()
+	if not text:
+		return ""
+	if re.search(r"\b(?:last|previous|prior)\s+month\b", text):
+		return "last_month"
+	if re.search(r"\b(?:this|current)\s+month\b", text):
+		return "current_period"
+	if re.search(r"\b(?:year\s+to\s+date|fiscal\s+year)\b", text):
+		return "current_fiscal_year_to_date"
+	if re.search(r"\b(?:today|as of today|as of now|now)\b", text):
+		return "as_of_today"
+	if re.search(r"\b(?:all\s+time|overall|full\s+available\s+time\s+range)\b", text):
+		return "all_period"
+	return ""
+
+
+def _message_has_structural_followup_limit(message: str) -> bool:
+	text = str(message or "").strip().lower()
+	if not text:
+		return False
+	match = re.search(r"\b(?:top|last|latest)\s+(\d{1,2})\b", text)
+	if not match:
+		return False
+	return not bool(
+		re.match(
+			r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+			text[match.end():],
+		)
+	)
+
+
 def build_followup_resolution(
 	*,
 	request_id: str,
@@ -3667,6 +3708,13 @@ def build_followup_resolution(
 		target_capability_id = ""
 		self_contained = False
 		semantic_reason = ""
+	original_requested_time_scope = str(requested_time_scope or "").strip()
+	requested_time_scope = _infer_followup_requested_time_scope(
+		message=message,
+		requested_time_scope=requested_time_scope,
+	)
+	if requested_time_scope and not original_requested_time_scope and target_limit > 0 and not _message_has_structural_followup_limit(message):
+		target_limit = 0
 	presentation_only_request = bool(set(requested_modes).intersection({"presentation_transform", "table_presentation", "bullet_presentation"})) and set(
 		str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()
 	).issubset({"presentation_transform", "table_presentation", "bullet_presentation"})
@@ -3721,12 +3769,15 @@ def build_followup_resolution(
 	target_report = ""
 	if latest_grounded_turn_available and target_capability_id:
 		target_report = resolve_target_report_for_capability(source_report, target_capability_id)
+	if latest_grounded_turn_available and not target_report and requested_mode_set.intersection({"filter_refinement"}):
+		target_report = source_report
 	if latest_grounded_turn_available and not target_report and requested_time_scope:
 		target_report = source_report
 	requery_requested = bool(
 		target_capability_id
 		or target_report
 		or switch
+		or requested_mode_set.intersection({"filter_refinement"})
 		or dimension_change_requested
 		or requested_time_scope
 		or (
@@ -3867,14 +3918,19 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			known_entities.append(payload)
 
 	if family_id == "transaction_listing":
+		document_entity_type = str(
+			dimensions.get("document_entity_type")
+			or dimensions.get("transaction_type")
+			or "sales_invoice"
+		).strip()
 		for row in sections.get("transaction_rows") or []:
 			if not isinstance(row, dict):
 				continue
 			document_name = str(row.get("document_name") or "").strip()
-			customer = str(row.get("customer") or "").strip()
+			customer = str(row.get("customer") or row.get("party_name") or "").strip()
 			if document_name:
 				known_documents.append(document_name)
-				_append_entity("sales_invoice", document_name)
+				_append_entity(document_entity_type, document_name)
 			if customer:
 				_append_entity("customer", customer)
 	elif family_id == "aging":
@@ -3907,6 +3963,29 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			known_documents.append(entity_key)
 
 	return known_entities[:25], list(dict.fromkeys(known_documents))[:25]
+
+
+def _artifact_matches_runtime_execution(
+	*,
+	artifact_payload: Dict[str, Any] | None,
+	request_id: str,
+	source_name: str,
+) -> bool:
+	artifact = dict(artifact_payload or {})
+	if not artifact:
+		return False
+	artifact_request_id = str(artifact.get("request_id") or "").strip()
+	if artifact_request_id:
+		return artifact_request_id == str(request_id or "").strip()
+	artifact_source_name = str(artifact.get("source_name") or artifact.get("title") or "").strip()
+	if artifact_source_name and artifact_source_name == str(source_name or "").strip():
+		return True
+	artifact_reports = {
+		str(item or "").strip()
+		for item in (artifact.get("source_reports") or [])
+		if str(item or "").strip()
+	}
+	return bool(source_name) and str(source_name or "").strip() in artifact_reports
 
 
 def build_grounded_turn_context(
@@ -3949,12 +4028,18 @@ def build_grounded_turn_context(
 	if not isinstance(filters, dict):
 		filters = {}
 
+	source_kind = "report" if tool_name == "erp_fac-generate_report" else "tool"
+	source_name = str(tool_args.get("report_name") or tool_name or "").strip()
 	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
+	if artifact and not _artifact_matches_runtime_execution(
+		artifact_payload=artifact,
+		request_id=request_id,
+		source_name=source_name,
+	):
+		artifact = {}
 	artifact_type = str(artifact.get("artifact_type") or artifact.get("type") or "").strip()
 	artifact_source_name = str(artifact.get("source_name") or artifact.get("title") or "").strip()
 	is_composite_artifact = artifact_type == "normalized_composite_family_artifact"
-	source_kind = "report" if tool_name == "erp_fac-generate_report" else "tool"
-	source_name = str(tool_args.get("report_name") or tool_name or "").strip()
 	if is_composite_artifact:
 		source_kind = "composite_artifact"
 		if artifact_source_name:

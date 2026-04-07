@@ -8,7 +8,9 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_semantic_tags,
 	capability_dimensions_for_report,
 	get_report_spec,
+	load_semantic_resolution_registry,
 	ontology_detect_concepts,
+	report_business_family_ids,
 	report_capability_ids,
 	report_approved_followup_modes,
 	report_family_semantic_tags,
@@ -30,6 +32,26 @@ from ai_assistant_ui.qwen_chat.scope_decision_input import (
 
 def _normalize_text(text: str) -> str:
 	return " ".join(str(text or "").strip().lower().split())
+
+
+def _singularize_token(token: str) -> str:
+	clean = str(token or "").strip().lower()
+	if len(clean) > 4 and clean.endswith("ies"):
+		return clean[:-3] + "y"
+	if len(clean) > 3 and clean.endswith("ses"):
+		return clean[:-2]
+	if len(clean) > 3 and clean.endswith("s") and not clean.endswith("ss"):
+		return clean[:-1]
+	return clean
+
+
+def _normalize_slot_phrase(text: str) -> str:
+	parts = [
+		_singularize_token(value)
+		for value in str(text or "").strip().lower().replace("/", " ").split()
+		if _singularize_token(value)
+	]
+	return " ".join(parts)
 
 
 _GOVERNED_DOMAIN_CONCEPTS = {
@@ -203,6 +225,8 @@ def _artifact_context_signal(grounded_turn: Dict[str, object] | None) -> Artifac
 	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
 	report_name = str(turn.get("source_name") or "").strip()
 	family_id = str(turn.get("artifact_family_id") or "").strip()
+	if not family_id and report_name:
+		family_id = str((report_business_family_ids(report_name) or [""])[0] or "").strip()
 	context_concepts = _report_domain_concepts(report_name, family_id)
 	if not context_concepts:
 		for source_report in (turn.get("artifact_source_reports") or []):
@@ -271,6 +295,59 @@ def _allow_message_domain_fallback(
 	if not context_domains:
 		return True
 	return message_concepts.isdisjoint(context_domains)
+
+
+def _semantic_resolution_alias_maps() -> Dict[str, List[Dict[str, Any]]]:
+	value = load_semantic_resolution_registry().get("alias_maps")
+	return value if isinstance(value, dict) else {}
+
+
+def _message_slot_value(slot_name: str, message: str) -> str:
+	normalized_message = _normalize_slot_phrase(message)
+	if not normalized_message:
+		return ""
+	alias_entries = _semantic_resolution_alias_maps().get(str(slot_name or "").strip())
+	if not isinstance(alias_entries, list):
+		return ""
+	for entry in alias_entries:
+		if not isinstance(entry, dict):
+			continue
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		aliases = [
+			_normalize_slot_phrase(alias)
+			for alias in (entry.get("aliases") or [])
+			if _normalize_slot_phrase(alias)
+		]
+		for alias in aliases:
+			if alias and alias in normalized_message:
+				return canonical_value
+	return ""
+
+
+def _transaction_listing_view_for_report(report_name: str) -> str:
+	report_spec = get_report_spec(report_name)
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	doctype = str(query_spec.get("doctype") or "").strip()
+	if not doctype:
+		return ""
+	candidate = "_".join(
+		part
+		for part in _normalize_text(doctype).replace("-", " ").split(" ")
+		if part
+	)
+	allowed = {
+		str(value or "").strip()
+		for value in (
+			load_semantic_resolution_registry()
+			.get("slot_definitions", [])
+		)
+		if isinstance(value, dict) and str(value.get("slot_name") or "").strip() == "listing_view"
+		for value in (value.get("allowed_values") or [])
+		if str(value or "").strip()
+	}
+	return candidate if candidate in allowed else ""
 
 
 def _degraded_message_fallback_concepts(message_concepts: Set[str]) -> Set[str]:
@@ -495,6 +572,11 @@ def build_followup_boundary_contract_from_context(
 
 	context_domains = set(artifact_signal.context_concepts)
 	affinity = _domain_affinity(requested_domains, context_domains)
+	source_listing_view = ""
+	requested_listing_view = ""
+	if artifact_signal.family_id == "transaction_listing":
+		source_listing_view = _transaction_listing_view_for_report(artifact_signal.report_name)
+		requested_listing_view = _message_slot_value("listing_view", message)
 	ranking_projection_safe = bool(
 		contradictory_presentation_payload
 		and artifact_signal.family_id == "ranking_analytics"
@@ -519,6 +601,14 @@ def build_followup_boundary_contract_from_context(
 		out_of_scope_signal = True
 		decision = "force_fresh_query"
 		reason = "The request asks for creative content generation rather than a governed ERP/business follow-up."
+	elif (
+		artifact_signal.family_id == "transaction_listing"
+		and source_listing_view
+		and requested_listing_view
+		and requested_listing_view != source_listing_view
+	):
+		decision = "force_fresh_query"
+		reason = "The request switches to a different governed document-listing target and should not inherit the prior transaction listing."
 	elif (
 		not semantic_grounded_followup
 		and not self_contained

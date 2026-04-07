@@ -101,6 +101,36 @@ def _normalized_lookup(values: List[str]) -> Dict[str, str]:
 	return out
 
 
+def _slot_allowed_values(context: Dict[str, Any], slot_name: str) -> List[str]:
+	target = str(slot_name or "").strip()
+	out: List[str] = []
+	for item in (context.get("slot_definitions") or []):
+		if not isinstance(item, dict):
+			continue
+		if str(item.get("slot_name") or "").strip() != target:
+			continue
+		out.extend(_clean_list(item.get("allowed_values")))
+		break
+	return list(dict.fromkeys(out))
+
+
+def _slot_alias_matches(*, context: Dict[str, Any], slot_name: str, text: str) -> List[str]:
+	alias_maps = context.get("alias_maps") if isinstance(context.get("alias_maps"), dict) else {}
+	entries = alias_maps.get(slot_name) if isinstance(alias_maps.get(slot_name), list) else []
+	matches: List[str] = []
+	for entry in entries:
+		if not isinstance(entry, dict):
+			continue
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		for alias in _clean_list(entry.get("aliases")):
+			if _message_contains_phrase(text, alias):
+				matches.append(canonical_value)
+				break
+	return list(dict.fromkeys(matches))
+
+
 def _capability_scope(
 	intent_class: str,
 	candidate_capability_ids: List[str],
@@ -127,10 +157,101 @@ def _capability_scope(
 	return capabilities
 
 
+def _report_specs(context: Dict[str, Any]) -> List[Dict[str, Any]]:
+	return [
+		dict(item)
+		for item in (context.get("reports") or [])
+		if isinstance(item, dict) and str(item.get("report_name") or "").strip()
+	]
+
+
+def _report_scope(
+	intent_class: str,
+	candidate_capability_ids: List[str],
+	context: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+	reports = _report_specs(context)
+	if candidate_capability_ids:
+		selected = {
+			str(capability_id or "").strip()
+			for capability_id in candidate_capability_ids
+			if str(capability_id or "").strip()
+		}
+		filtered = [
+			item
+			for item in reports
+			if selected & {value for value in _clean_list(item.get("capability_ids")) if value}
+		]
+		if filtered:
+			reports = filtered
+	if intent_class:
+		filtered = [
+			item
+			for item in reports
+			if not _clean_list(item.get("supported_intent_classes"))
+			or intent_class in _clean_list(item.get("supported_intent_classes"))
+		]
+		if filtered:
+			reports = filtered
+	return reports
+
+
+def _report_spec_by_name(report_name: str, context: Dict[str, Any]) -> Dict[str, Any]:
+	clean = str(report_name or "").strip()
+	if not clean:
+		return {}
+	for item in _report_specs(context):
+		if str(item.get("report_name") or "").strip() == clean:
+			return item
+	return {}
+
+
+def _normalized_keys(values: List[str]) -> set[str]:
+	return {_normalize_key(value) for value in _clean_list(values)}
+
+
+def _report_affinity_tokens(report_spec: Dict[str, Any]) -> set[str]:
+	tokens: set[str] = set()
+	report_name = str(report_spec.get("report_name") or "").strip()
+	if report_name:
+		tokens.update(_message_tokens(report_name))
+	semantic_tags = " ".join(_clean_list(report_spec.get("semantic_tags")))
+	if semantic_tags:
+		tokens.update(_message_tokens(semantic_tags))
+	return tokens
+
+
+def _trend_time_grain_terms() -> set[str]:
+	return {"daily", "weekly", "monthly", "quarterly", "half_yearly", "yearly", "history"}
+
+
+def _sanitize_requested_dimensions(*, intent_class: str, requested_dimensions: List[str]) -> List[str]:
+	if str(intent_class or "").strip() != "trend_analysis":
+		return list(dict.fromkeys(_clean_list(requested_dimensions)))
+	return [
+		value
+		for value in list(dict.fromkeys(_clean_list(requested_dimensions)))
+		if _normalize_key(value) not in _trend_time_grain_terms()
+	]
+
+
 def _message_tokens(value: str) -> set[str]:
 	text = str(value or "").strip().lower()
 	text = re.sub(r"[^a-z0-9]+", " ", text)
 	return {token for token in text.split() if token}
+
+
+def _normalized_message_phrase(value: str) -> str:
+	return " ".join(str(value or "").strip().lower().split())
+
+
+def _message_contains_phrase(value: str, phrase: str) -> bool:
+	text = _normalized_message_phrase(value)
+	target = _normalized_message_phrase(phrase)
+	if not text or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, text))
 
 
 def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
@@ -155,18 +276,21 @@ def _apply_governed_intent_bias(*, intent_class: str, message: str) -> str:
 	return str(intent_class or "").strip()
 
 
-def _infer_governed_time_scope(*, intent_class: str, message: str, requested_time_scope: str) -> str:
-	if str(requested_time_scope or "").strip():
-		return str(requested_time_scope or "").strip()
-	tokens = _message_tokens(message)
+def _infer_governed_time_scope(*, intent_class: str, message: str, requested_time_scope: str, context: Dict[str, Any]) -> str:
+	clean = str(requested_time_scope or "").strip()
+	allowed_values = {_normalize_key(value) for value in _slot_allowed_values(context, "time_scope")}
+	normalized_clean = _normalize_key(clean)
+	if normalized_clean in allowed_values:
+		return normalized_clean
+	clean_alias_matches = _slot_alias_matches(context=context, slot_name="time_scope", text=clean)
+	if clean_alias_matches:
+		return str(clean_alias_matches[0] or "").strip()
+	message_alias_matches = _slot_alias_matches(context=context, slot_name="time_scope", text=message)
+	if message_alias_matches:
+		return str(message_alias_matches[0] or "").strip()
+	tokens = _message_tokens(clean) or _message_tokens(message)
 	if not tokens:
-		return ""
-	if {"last", "month"}.issubset(tokens) or {"previous", "month"}.issubset(tokens) or {"prior", "month"}.issubset(tokens):
-		return "last_month"
-	if {"this", "month"}.issubset(tokens) or {"current", "month"}.issubset(tokens):
-		return "current_period"
-	if {"year", "date"}.issubset(tokens) or {"fiscal", "year"}.issubset(tokens):
-		return "current_fiscal_year_to_date"
+		return clean
 	if str(intent_class or "").strip() in {"trend_analysis", "product_performance"} and tokens & {
 		"trend",
 		"monthly",
@@ -175,7 +299,126 @@ def _infer_governed_time_scope(*, intent_class: str, message: str, requested_tim
 		"history",
 	}:
 		return "current_fiscal_year_to_date"
-	return ""
+	return clean
+
+
+def _score_report_fit(
+	*,
+	report_spec: Dict[str, Any],
+	message: str,
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+) -> int:
+	score = 0
+	report_dimension_keys = _normalized_keys(_clean_list(report_spec.get("supported_dimensions")))
+	report_metric_keys = _normalized_keys(_clean_list(report_spec.get("supported_metrics")))
+	requested_dimension_keys = _normalized_keys(requested_dimensions)
+	requested_metric_keys = _normalized_keys(requested_metrics)
+	if requested_dimension_keys:
+		score += 2 * len(requested_dimension_keys & report_dimension_keys)
+	if requested_metric_keys:
+		score += 3 * len(requested_metric_keys & report_metric_keys)
+	message_tokens = _message_tokens(message)
+	if message_tokens:
+		score += 3 * len(message_tokens & _report_affinity_tokens(report_spec))
+	return score
+
+
+def _reconcile_governed_report_scope(
+	*,
+	message: str,
+	intent_class: str,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+	context: Dict[str, Any],
+) -> tuple[List[str], List[str]]:
+	if not requested_dimensions and not requested_metrics:
+		return candidate_capability_ids, candidate_reports
+	scoped_reports = _report_scope(intent_class, [], context)
+	if not scoped_reports:
+		return candidate_capability_ids, candidate_reports
+
+	current_report = str((_clean_list(candidate_reports) or [""])[0] or "").strip()
+	current_score = -1
+	if current_report:
+		current_score = _score_report_fit(
+			report_spec=_report_spec_by_name(current_report, context),
+			message=message,
+			requested_dimensions=requested_dimensions,
+			requested_metrics=requested_metrics,
+		)
+
+	best_spec: Dict[str, Any] = {}
+	best_score = current_score
+	for report_spec in scoped_reports:
+		score = _score_report_fit(
+			report_spec=report_spec,
+			message=message,
+			requested_dimensions=requested_dimensions,
+			requested_metrics=requested_metrics,
+		)
+		if score > best_score:
+			best_spec = report_spec
+			best_score = score
+	if not best_spec or best_score <= current_score:
+		return candidate_capability_ids, candidate_reports
+
+	report_name = str(best_spec.get("report_name") or "").strip()
+	report_capability_ids = _clean_list(best_spec.get("capability_ids"))
+	if not report_name or not report_capability_ids:
+		return candidate_capability_ids, candidate_reports
+	return report_capability_ids[:1], [report_name]
+
+
+def _align_capabilities_to_selected_reports(
+	*,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+	context: Dict[str, Any],
+) -> List[str]:
+	aligned: List[str] = []
+	for report_name in _clean_list(candidate_reports):
+		report_spec = _report_spec_by_name(report_name, context)
+		for capability_id in _clean_list(report_spec.get("capability_ids")):
+			if capability_id not in aligned:
+				aligned.append(capability_id)
+	if aligned:
+		return aligned
+	return candidate_capability_ids
+
+
+def _stabilize_governed_contract(
+	*,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+	requested_dimensions: List[str],
+	requested_metrics: List[str],
+	requested_time_scope: str,
+	ambiguity_flags: List[str],
+	ambiguity_reason: str,
+	confidence: float,
+) -> tuple[List[str], str, float]:
+	flags = list(dict.fromkeys(_clean_list(ambiguity_flags)))
+	reason = str(ambiguity_reason or "").strip()
+	stable = (
+		len(_clean_list(candidate_capability_ids)) == 1
+		and len(_clean_list(candidate_reports)) == 1
+		and bool(_clean_list(requested_dimensions))
+		and bool(_clean_list(requested_metrics))
+		and bool(str(requested_time_scope or "").strip())
+	)
+	if not stable:
+		return flags, reason, confidence
+	flags = [
+		value
+		for value in flags
+		if value not in {"missing_dimension", "missing_metric", "missing_time_scope", "ambiguous_report"}
+	]
+	if not flags:
+		reason = ""
+	return flags, reason, max(float(confidence or 0.0), 0.82)
 
 
 def _apply_governed_interpretation_biases(
@@ -186,6 +429,7 @@ def _apply_governed_interpretation_biases(
 	candidate_reports: List[str],
 	requested_dimensions: List[str],
 	requested_metrics: List[str],
+	context: Dict[str, Any],
 ) -> tuple[List[str], List[str]]:
 	tokens = _message_tokens(message)
 	intent_key = str(intent_class or "").strip()
@@ -199,7 +443,15 @@ def _apply_governed_interpretation_biases(
 	if intent_key != "trend_analysis":
 		return candidate_capability_ids, candidate_reports
 	if not tokens:
-		return candidate_capability_ids, candidate_reports
+		return _reconcile_governed_report_scope(
+			message=message,
+			intent_class=intent_class,
+			candidate_capability_ids=candidate_capability_ids,
+			candidate_reports=candidate_reports,
+			requested_dimensions=requested_dimensions,
+			requested_metrics=requested_metrics,
+			context=context,
+		)
 	product_terms = {"product", "products", "item", "items", "sku", "brand", "gross", "margin"}
 	sales_terms = {"sale", "sales", "revenue", "customer", "territory", "trend", "monthly", "weekly", "daily"}
 	dimension_keys = {_normalize_key(value) for value in requested_dimensions if str(value or "").strip()}
@@ -209,7 +461,26 @@ def _apply_governed_interpretation_biases(
 	if dimension_keys & product_specific_dimensions:
 		return candidate_capability_ids, candidate_reports
 	if not (tokens & sales_terms):
-		return candidate_capability_ids, candidate_reports
+		return _reconcile_governed_report_scope(
+			message=message,
+			intent_class=intent_class,
+			candidate_capability_ids=candidate_capability_ids,
+			candidate_reports=candidate_reports,
+			requested_dimensions=requested_dimensions,
+			requested_metrics=requested_metrics,
+			context=context,
+		)
+	coherent_capability_ids, coherent_reports = _reconcile_governed_report_scope(
+		message=message,
+		intent_class=intent_class,
+		candidate_capability_ids=candidate_capability_ids or ["sales_read"],
+		candidate_reports=candidate_reports or ["Sales Analytics"],
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+		context=context,
+	)
+	if coherent_capability_ids and coherent_reports:
+		return coherent_capability_ids, coherent_reports
 	return ["sales_read"], ["Sales Analytics"]
 
 
@@ -222,6 +493,7 @@ def _apply_governed_request_defaults(
 	requested_dimensions: List[str],
 	requested_metrics: List[str],
 	requested_time_scope: str,
+	context: Dict[str, Any],
 ) -> tuple[List[str], List[str], str]:
 	tokens = _message_tokens(message)
 	capability_ids = {str(value or "").strip() for value in candidate_capability_ids if str(value or "").strip()}
@@ -264,8 +536,18 @@ def _apply_governed_request_defaults(
 			time_scope = "current_fiscal_year_to_date"
 
 	if str(intent_class or "").strip() == "trend_analysis":
+		report_spec = _report_spec_by_name(str((_clean_list(candidate_reports) or [""])[0] or "").strip(), context)
+		report_dimensions = _clean_list(report_spec.get("supported_dimensions"))
+		report_metrics = _clean_list(report_spec.get("supported_metrics"))
+		if not dimensions:
+			non_period_dimensions = [
+				value for value in report_dimensions if _normalize_key(value) not in {"period"}
+			]
+			dimensions = non_period_dimensions[:1] or report_dimensions[:1]
 		if not metrics:
-			if "sales_read" in capability_ids or "Sales Analytics" in report_names:
+			if report_metrics:
+				metrics = report_metrics[:1]
+			elif "sales_read" in capability_ids or "Sales Analytics" in report_names:
 				metrics = ["Revenue"]
 			elif "product_performance_read" in capability_ids or report_names & {"Gross Profit", "Item-wise Sales History"}:
 				metrics = ["Billed Amount"]
@@ -328,6 +610,7 @@ def _canonicalize_interpretation_obj(
 		for item in (context.get("capabilities") or [])
 		if isinstance(item, dict)
 	]
+	intent_scoped_capabilities = _capability_scope(intent_class, [], context)
 	capability_lookup = _normalized_lookup(
 		[str(item.get("capability_id") or "").strip() for item in capabilities]
 	)
@@ -358,6 +641,11 @@ def _canonicalize_interpretation_obj(
 			for capability in scoped_capabilities
 			for report_name in _clean_list(capability.get("report_names"))
 		]
+		+ [
+			str(item.get("report_name") or "").strip()
+			for item in _report_scope(intent_class, [], context)
+			if str(item.get("report_name") or "").strip()
+		]
 	)
 	if not report_lookup:
 		report_lookup = _normalized_lookup(
@@ -378,19 +666,33 @@ def _canonicalize_interpretation_obj(
 	dimension_lookup = _normalized_lookup(
 		[
 			dimension
-			for capability in scoped_capabilities
+			for capability in intent_scoped_capabilities
 			for dimension in _clean_list(capability.get("dimensions"))
+		]
+		+ [
+			dimension
+			for report in _report_scope(intent_class, [], context)
+			for dimension in _clean_list(report.get("supported_dimensions"))
 		]
 	)
 	metric_lookup = _normalized_lookup(
 		[
 			metric
-			for capability in scoped_capabilities
+			for capability in intent_scoped_capabilities
 			for metric in _clean_list(capability.get("metrics"))
 		]
+		+ [
+			metric
+			for report in _report_scope(intent_class, [], context)
+			for metric in _clean_list(report.get("supported_metrics"))
+		]
+	)
+	raw_requested_dimensions = _sanitize_requested_dimensions(
+		intent_class=intent_class,
+		requested_dimensions=_clean_list(obj.get("requested_dimensions")),
 	)
 	requested_dimensions: List[str] = []
-	for value in _clean_list(obj.get("requested_dimensions")):
+	for value in raw_requested_dimensions:
 		canonical = dimension_lookup.get(_normalize_key(value), "")
 		if not canonical:
 			return None
@@ -452,8 +754,8 @@ def _canonicalize_interpretation_obj(
 		intent_class=intent_class,
 		message=str(request.message or "").strip(),
 		requested_time_scope=requested_time_scope,
+		context=context,
 	)
-
 	if not any(
 		[
 			intent_class,
@@ -476,6 +778,12 @@ def _canonicalize_interpretation_obj(
 		candidate_reports=candidate_reports,
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
+		context=context,
+	)
+	candidate_capability_ids = _align_capabilities_to_selected_reports(
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		context=context,
 	)
 	requested_dimensions, requested_metrics, requested_time_scope = _apply_governed_request_defaults(
 		intent_class=intent_class,
@@ -485,6 +793,17 @@ def _canonicalize_interpretation_obj(
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 		requested_time_scope=requested_time_scope,
+		context=context,
+	)
+	ambiguity_flags, ambiguity_reason, confidence = _stabilize_governed_contract(
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+		requested_time_scope=requested_time_scope,
+		ambiguity_flags=ambiguity_flags,
+		ambiguity_reason=ambiguity_reason,
+		confidence=confidence,
 	)
 
 	return {

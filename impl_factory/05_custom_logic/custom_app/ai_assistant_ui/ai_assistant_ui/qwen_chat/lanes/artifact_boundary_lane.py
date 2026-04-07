@@ -15,11 +15,16 @@ def handle_artifact_boundary_turn(
 	message: str,
 	followup_resolution,
 	interaction_contract,
+	response_policy_contract,
 	frontdoor_contract,
 	scope_decision_contract,
 	latest_family_artifact: Dict[str, Any],
 	latest_grounded_turn: Dict[str, Any],
 	enrichment_compatibility_contract,
+	precomputed_evidence_response: Dict[str, Any] | None = None,
+	precomputed_evidence_answer: str = "",
+	grounded_artifact_direct_evidence_response: Callable[..., Dict[str, Any]],
+	grounded_artifact_direct_evidence_answer: Callable[..., str],
 	precomputed_evidence_boundary_answer: str = "",
 	grounded_artifact_evidence_boundary_answer: Callable[..., str],
 	artifact_enrichment_boundary_answer: Callable[..., str],
@@ -34,6 +39,67 @@ def handle_artifact_boundary_turn(
 	assistant_text_payload: Callable[[str], str],
 	save_session: Callable[..., None],
 ) -> Tuple[bool, Dict[str, Any] | None]:
+	evidence_response = dict(precomputed_evidence_response or {}) if isinstance(precomputed_evidence_response, dict) else {}
+	if not evidence_response:
+		evidence_response = grounded_artifact_direct_evidence_response(
+			request_id=request_id,
+			session_id=session_id,
+			interaction_contract=interaction_contract,
+			response_policy_contract=response_policy_contract,
+			raw_message=message,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			fallback_answer_text=str(precomputed_evidence_answer or "").strip(),
+		)
+	evidence_answer = str(
+		evidence_response.get("answer_text")
+		or precomputed_evidence_answer
+		or ""
+	).strip()
+	if not evidence_answer:
+		evidence_answer = grounded_artifact_direct_evidence_answer(
+			raw_message=message,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+		)
+	if evidence_answer:
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="grounded_evidence_answer",
+			reason="The current governed artifact contains direct ERP evidence for the requested operational status.",
+			requires_runtime=False,
+			grounded_required=True,
+		)
+		append_tool_payload(session_doc, execution_path.to_payload())
+		narrative_contract_payload = (
+			evidence_response.get("narrative_contract_payload")
+			if isinstance(evidence_response.get("narrative_contract_payload"), dict)
+			else {}
+		)
+		if narrative_contract_payload:
+			append_tool_payload(session_doc, narrative_contract_payload)
+		append_message(session_doc, "assistant", assistant_text_payload(evidence_answer))
+		append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=followup_resolution,
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context=latest_grounded_turn,
+				answer_text=evidence_answer,
+			).to_payload(),
+		)
+		save_session(session_doc, ignore_permissions=False)
+		return True, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "grounded_evidence_answer",
+			"agent_meta": {
+				"engine": str(narrative_contract_payload.get("narrative_engine") or "local_grounded_evidence").strip(),
+			},
+		}
+
 	evidence_boundary_answer = str(precomputed_evidence_boundary_answer or "").strip()
 	if not evidence_boundary_answer:
 		evidence_boundary_answer = grounded_artifact_evidence_boundary_answer(

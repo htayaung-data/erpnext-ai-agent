@@ -127,6 +127,8 @@ def _resolve_explicit_identifier(message: str) -> Optional[Dict[str, Any]]:
 			return {"entity_type": "sales_invoice", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		if frappe.db.exists("Purchase Invoice", candidate):
 			return {"entity_type": "purchase_invoice", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
+		if frappe.db.exists("Delivery Note", candidate):
+			return {"entity_type": "delivery_note", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		item_code, item_name = _resolve_item_name(candidate)
 		if item_code:
 			return {"entity_type": "item", "entity_key": item_code, "entity_label": item_name or item_code, "source": "explicit_identifier"}
@@ -167,11 +169,12 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 		return ""
 
 	if family_id == "transaction_listing":
+		document_entity_type = _clean_text(dimensions.get("document_entity_type") or dimensions.get("transaction_type")) or "sales_invoice"
 		for row in sections.get("transaction_rows") or []:
 			if not isinstance(row, dict):
 				continue
-			_append("sales_invoice", row.get("document_name"))
-			_append("customer", row.get("customer"))
+			_append(document_entity_type, row.get("document_name"))
+			_append("customer", row.get("customer") or row.get("party_name"))
 	elif family_id == "aging":
 		entity_type = "supplier" if _clean_text(dimensions.get("aging_type")) == "accounts_payable" else "customer"
 		for row in sections.get("parties") or []:
@@ -264,8 +267,95 @@ def _bullet_block(title: str, items: List[str]) -> Dict[str, Any]:
 	}
 
 
+def _sales_invoice_delivery_proof(doc) -> Dict[str, Any]:
+	items = list(doc.get("items") or [])
+	is_return = int(getattr(doc, "is_return", 0) or 0)
+	update_stock = int(getattr(doc, "update_stock", 0) or 0)
+	item_count = len(items)
+	linked_sales_orders = sorted(
+		{
+			_clean_text(getattr(row, "sales_order", ""))
+			for row in items
+			if _clean_text(getattr(row, "sales_order", ""))
+		}
+	)
+	linked_delivery_note_names = sorted(
+		{
+			_clean_text(getattr(row, "delivery_note", ""))
+			for row in items
+			if _clean_text(getattr(row, "delivery_note", "")) and _clean_text(getattr(row, "dn_detail", ""))
+		}
+	)
+	delivery_note_rows: List[Dict[str, Any]] = []
+	submitted_delivery_note_names: List[str] = []
+	for delivery_note_name in linked_delivery_note_names:
+		row = frappe.db.get_value(
+			"Delivery Note",
+			delivery_note_name,
+			["name", "docstatus", "status", "posting_date", "is_return", "return_against"],
+			as_dict=True,
+		)
+		row_payload = dict(row or {}) if isinstance(row, dict) else {}
+		row_docstatus = int(row_payload.get("docstatus") or 0)
+		delivery_note_rows.append(
+			{
+				"delivery_note": delivery_note_name,
+				"docstatus": row_docstatus,
+				"status": _clean_text(row_payload.get("status")),
+				"posting_date": _iso_date(row_payload.get("posting_date")),
+				"is_return": int(row_payload.get("is_return") or 0),
+				"return_against": _clean_text(row_payload.get("return_against")),
+			}
+		)
+		if row_docstatus == 1:
+			submitted_delivery_note_names.append(delivery_note_name)
+	submitted_delivery_note_names = sorted(dict.fromkeys(submitted_delivery_note_names))
+	submitted_linked_item_count = 0
+	for row in items:
+		delivery_note_name = _clean_text(getattr(row, "delivery_note", ""))
+		dn_detail = _clean_text(getattr(row, "dn_detail", ""))
+		if delivery_note_name and dn_detail and delivery_note_name in submitted_delivery_note_names:
+			submitted_linked_item_count += 1
+	proof_state = "insufficient_governed_delivery_evidence"
+	proof_method = ""
+	if update_stock:
+		proof_state = (
+			"direct_return_proven_via_invoice_stock"
+			if is_return
+			else "direct_delivery_proven_via_invoice_stock"
+		)
+		proof_method = "invoice_stock"
+	elif item_count > 0 and submitted_linked_item_count == item_count:
+		proof_state = (
+			"direct_return_proven_via_linked_delivery_note"
+			if is_return
+			else "direct_delivery_proven_via_linked_delivery_note"
+		)
+		proof_method = "linked_delivery_note"
+	return {
+		"proof_state": proof_state,
+		"proof_method": proof_method,
+		"is_return": is_return,
+		"update_stock": update_stock,
+		"item_count": item_count,
+		"submitted_linked_item_count": submitted_linked_item_count,
+		"linked_delivery_note_count": len(submitted_delivery_note_names),
+		"delivery_notes": delivery_note_rows,
+		"submitted_delivery_notes": submitted_delivery_note_names,
+		"submitted_delivery_dates": sorted(
+			{
+				str(row.get("posting_date") or "").strip()
+				for row in delivery_note_rows
+				if int(row.get("docstatus") or 0) == 1 and str(row.get("posting_date") or "").strip()
+			}
+		),
+		"sales_orders": linked_sales_orders,
+	}
+
+
 def _sales_invoice_detail(entity_key: str) -> Dict[str, Any]:
 	doc = frappe.get_doc("Sales Invoice", entity_key)
+	delivery_proof = _sales_invoice_delivery_proof(doc)
 	item_rows = [
 		[
 			_clean_text(row.item_code),
@@ -290,6 +380,26 @@ def _sales_invoice_detail(entity_key: str) -> Dict[str, Any]:
 		bullets.append(f"Outstanding balance remains {_money(doc.outstanding_amount)} MMK.")
 	if _clean_text(doc.status):
 		bullets.append(f"Current invoice status is {_clean_text(doc.status)}.")
+	if delivery_proof.get("proof_state") == "direct_delivery_proven_via_invoice_stock":
+		bullets.append("This submitted invoice posted stock movement directly, which provides governed delivery proof.")
+	elif delivery_proof.get("proof_state") == "direct_delivery_proven_via_linked_delivery_note":
+		submitted_delivery_notes = list(delivery_proof.get("submitted_delivery_notes") or [])
+		if submitted_delivery_notes:
+			bullets.append(
+				"All invoice items are linked to submitted delivery note(s): "
+				+ ", ".join(submitted_delivery_notes[:3])
+				+ ("." if len(submitted_delivery_notes) <= 3 else ", ...")
+			)
+	elif delivery_proof.get("proof_state") == "direct_return_proven_via_invoice_stock":
+		bullets.append("This is a return invoice with direct stock reversal posted on the submitted invoice.")
+	elif delivery_proof.get("proof_state") == "direct_return_proven_via_linked_delivery_note":
+		submitted_delivery_notes = list(delivery_proof.get("submitted_delivery_notes") or [])
+		if submitted_delivery_notes:
+			bullets.append(
+				"This return invoice is linked to submitted delivery note reversal evidence: "
+				+ ", ".join(submitted_delivery_notes[:3])
+				+ ("." if len(submitted_delivery_notes) <= 3 else ", ...")
+			)
 	rendered = {
 		"type": "qwen_entity_detail_rendered_response",
 		"request_id": "",
@@ -320,6 +430,7 @@ def _sales_invoice_detail(entity_key: str) -> Dict[str, Any]:
 			"grand_total": _numeric(doc.grand_total),
 			"outstanding_amount": _numeric(doc.outstanding_amount),
 			"item_count": len(item_rows),
+			"linked_delivery_note_count": int(delivery_proof.get("linked_delivery_note_count") or 0),
 		},
 		"sections": {
 			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
@@ -331,6 +442,8 @@ def _sales_invoice_detail(entity_key: str) -> Dict[str, Any]:
 					"grand_total": _numeric(doc.grand_total),
 					"outstanding_amount": _numeric(doc.outstanding_amount),
 					"status": _clean_text(doc.status),
+					"is_return": int(getattr(doc, "is_return", 0) or 0),
+					"update_stock": int(getattr(doc, "update_stock", 0) or 0),
 				}
 			],
 			"item_rows": [
@@ -339,9 +452,13 @@ def _sales_invoice_detail(entity_key: str) -> Dict[str, Any]:
 					"item_name": _clean_text(row.item_name),
 					"qty": _numeric(row.qty),
 					"amount": _numeric(row.net_amount or row.amount or 0),
+					"delivery_note": _clean_text(getattr(row, "delivery_note", "")),
+					"dn_detail": _clean_text(getattr(row, "dn_detail", "")),
+					"sales_order": _clean_text(getattr(row, "sales_order", "")),
 				}
 				for row in (doc.get("items") or [])[:25]
 			],
+			"delivery_proof": [delivery_proof],
 		},
 	}
 	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
@@ -422,6 +539,108 @@ def _purchase_invoice_detail(entity_key: str) -> Dict[str, Any]:
 					"item_name": _clean_text(row.item_name),
 					"qty": _numeric(row.qty),
 					"amount": _numeric(row.amount or row.base_amount or 0),
+				}
+				for row in (doc.get("items") or [])[:25]
+			],
+		},
+	}
+	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
+
+
+def _delivery_note_detail(entity_key: str) -> Dict[str, Any]:
+	doc = frappe.get_doc("Delivery Note", entity_key)
+	item_rows = [
+		[
+			_clean_text(row.item_code),
+			_clean_text(row.item_name),
+			_clean_text(row.qty),
+			_money(row.net_amount or row.amount or 0),
+		]
+		for row in (doc.get("items") or [])[:10]
+	]
+	linked_sales_orders = sorted(
+		{
+			_clean_text(row.against_sales_order)
+			for row in (doc.get("items") or [])
+			if _clean_text(row.against_sales_order)
+		}
+	)
+	summary = [
+		("Delivery Note", doc.name),
+		("Posting Date", _iso_date(doc.posting_date)),
+		("Customer", _clean_text(doc.customer)),
+		("Status", _clean_text(doc.status)),
+		("Return Against", _clean_text(getattr(doc, "return_against", ""))),
+		("Total Quantity", _clean_text(getattr(doc, "total_qty", ""))),
+		("Grand Total (MMK)", _money(doc.grand_total)),
+		("Delivery Trip", _clean_text(getattr(doc, "delivery_trip", ""))),
+		("Company", _clean_text(doc.company)),
+	]
+	bullets = []
+	if int(getattr(doc, "is_return", 0) or 0):
+		return_against = _clean_text(getattr(doc, "return_against", ""))
+		if return_against:
+			bullets.append(f"This delivery note is a return against {return_against}.")
+		else:
+			bullets.append("This delivery note is recorded as a return.")
+	if _clean_text(doc.status):
+		bullets.append(f"Current delivery note status is {_clean_text(doc.status)}.")
+	if _numeric(getattr(doc, "per_billed", 0)) > 0:
+		bullets.append(f"Billing completion is {_money(getattr(doc, 'per_billed', 0))}%.")
+	if linked_sales_orders:
+		bullets.append(f"Linked sales order reference starts from {linked_sales_orders[0]}.")
+	rendered = {
+		"type": "qwen_entity_detail_rendered_response",
+		"request_id": "",
+		"family_id": "entity_detail",
+		"title": f"Delivery Note {doc.name}",
+		"source_reports": ["Delivery Note"],
+		"blocks": [
+			_summary_block("Delivery Summary", summary),
+			_bullet_block("Key Facts", bullets),
+			_data_block("Items", ["Item Code", "Item Name", "Qty", "Amount (MMK)"], item_rows),
+		],
+	}
+	artifact = {
+		"type": "qwen_entity_detail_artifact",
+		"artifact_type": "entity_detail_artifact",
+		"family_id": "entity_detail",
+		"source_reports": ["Delivery Note"],
+		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
+		"dimensions": {
+			"entity_type": "delivery_note",
+			"entity_key": doc.name,
+			"entity_label": doc.name,
+			"primary_metric_key": "grand_total",
+			"primary_metric_label": "Grand Total",
+			"source_grain": "document_detail",
+		},
+		"metrics": {
+			"grand_total": _numeric(doc.grand_total),
+			"quantity": _numeric(getattr(doc, "total_qty", 0)),
+			"item_count": len(item_rows),
+		},
+		"sections": {
+			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+			"document_rows": [
+				{
+					"document_name": doc.name,
+					"posting_date": _iso_date(doc.posting_date),
+					"customer": _clean_text(doc.customer),
+					"grand_total": _numeric(doc.grand_total),
+					"quantity": _numeric(getattr(doc, "total_qty", 0)),
+					"status": _clean_text(doc.status),
+					"is_return": int(getattr(doc, "is_return", 0) or 0),
+					"return_against": _clean_text(getattr(doc, "return_against", "")),
+				}
+			],
+			"item_rows": [
+				{
+					"item_code": _clean_text(row.item_code),
+					"item_name": _clean_text(row.item_name),
+					"qty": _numeric(row.qty),
+					"amount": _numeric(row.net_amount or row.amount or 0),
+					"against_sales_order": _clean_text(row.against_sales_order),
 				}
 				for row in (doc.get("items") or [])[:25]
 			],
@@ -745,6 +964,8 @@ def execute_entity_drilldown(
 		detail = _sales_invoice_detail(entity_key)
 	elif entity_type == "purchase_invoice":
 		detail = _purchase_invoice_detail(entity_key)
+	elif entity_type == "delivery_note":
+		detail = _delivery_note_detail(entity_key)
 	elif entity_type == "customer":
 		detail = _customer_or_supplier_detail("customer", entity_key, company=company)
 	elif entity_type == "supplier":

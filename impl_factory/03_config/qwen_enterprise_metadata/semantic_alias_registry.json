@@ -10,16 +10,18 @@
         "selling_amount",
         "value",
         "billed_amount",
+        "delivered_amount",
         "invoiced_amount",
         "sales",
         "turnover"
       ],
-      "capability_scope": ["sales_read", "product_performance_read"],
+      "capability_scope": ["sales_read", "product_performance_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
         "Sales Analytics": ["Value", "Sales Amount"],
         "Gross Profit": ["Selling Amount"],
-        "Item-wise Sales History": ["Billed Amount"]
+        "Item-wise Sales History": ["Billed Amount"],
+        "Delivery Note Trends": ["Delivered Amount"]
       }
     },
     {
@@ -33,12 +35,14 @@
         "volume",
         "count"
       ],
-      "capability_scope": ["sales_read", "stock_read", "product_performance_read"],
+      "capability_scope": ["sales_read", "stock_read", "product_performance_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
         "Sales Analytics": ["Quantity"],
         "Stock Balance": ["Balance Qty"],
-        "Gross Profit": ["Qty"]
+        "Gross Profit": ["Qty"],
+        "Delivery Note List": ["Total Qty"],
+        "Delivery Note Trends": ["Delivered Quantity"]
       }
     },
     {
@@ -218,11 +222,12 @@
         "buyers",
         "party"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read"],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Analytics": ["Customer"],
-        "Accounts Receivable Summary": ["Party"]
+        "Accounts Receivable Summary": ["Party"],
+        "Delivery Note List": ["customer"]
       }
     },
     {
@@ -316,16 +321,20 @@
         "invoice name",
         "invoice no",
         "invoice number",
+        "delivery note",
+        "delivery note no",
+        "delivery note number",
         "document",
         "document no",
         "document number"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Register": ["Voucher No"],
         "Accounts Receivable Summary": ["Voucher No"],
-        "Accounts Payable Summary": ["Voucher No"]
+        "Accounts Payable Summary": ["Voucher No"],
+        "Delivery Note List": ["name"]
       }
     },
     {
@@ -335,14 +344,28 @@
         "posting date",
         "date",
         "invoice date",
-        "transaction date"
+        "transaction date",
+        "delivery date",
+        "delivered date",
+        "when delivered",
+        "when it was delivered",
+        "when was it delivered",
+        "when was this delivered",
+        "when was that delivered",
+        "what it was delivered",
+        "what was it delivered",
+        "what date it was delivered",
+        "what date was it delivered",
+        "what day it was delivered",
+        "what day was it delivered"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Register": ["Posting Date"],
         "Accounts Receivable Summary": ["Posting Date"],
-        "Accounts Payable Summary": ["Posting Date"]
+        "Accounts Payable Summary": ["Posting Date"],
+        "Delivery Note List": ["posting_date"]
       }
     },
     {
@@ -353,10 +376,11 @@
         "document status",
         "payment status"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
-        "Sales Register": ["Status"]
+        "Sales Register": ["Status"],
+        "Delivery Note List": ["status"]
       }
     },
     {
@@ -368,10 +392,11 @@
         "total amount",
         "invoice amount"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read"],
+      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
-        "Sales Register": ["Grand Total"]
+        "Sales Register": ["Grand Total"],
+        "Delivery Note List": ["grand_total"]
       }
     },
     {

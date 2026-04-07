@@ -17,6 +17,7 @@ def _seed_quantity_recovery_session(
 	append_tool_payload,
 	assistant_text_payload,
 	build_artifact_enrichment_recovery_contract,
+	save_session,
 ) -> None:
 	recovery_payload = build_artifact_enrichment_recovery_contract(
 		request_id=f"{request_prefix}-recovery",
@@ -72,7 +73,7 @@ def _seed_quantity_recovery_session(
 	)
 	append_tool_payload(doc, grounded_turn_payload)
 	append_tool_payload(doc, recovery_payload)
-	doc.save(ignore_permissions=False)
+	save_session(doc, ignore_permissions=False)
 
 
 def run_recovery_authority_smoke(
@@ -139,6 +140,7 @@ def run_recovery_guidance_observability_smoke(
 	append_message,
 	append_tool_payload,
 	assistant_text_payload,
+	save_session,
 	frappe_module,
 	session_doctype: str,
 	handle_qwen_user_message,
@@ -153,6 +155,7 @@ def run_recovery_guidance_observability_smoke(
 			append_tool_payload=append_tool_payload,
 			assistant_text_payload=assistant_text_payload,
 			build_artifact_enrichment_recovery_contract=build_artifact_enrichment_recovery_contract,
+			save_session=save_session,
 		)
 		ok, payload = handle_qwen_user_message(
 			session_name=doc.name,
@@ -386,6 +389,7 @@ def run_repair_handling_smoke(
 	append_message,
 	append_tool_payload,
 	assistant_text_payload,
+	save_session,
 	frappe_module,
 	session_doctype: str,
 	handle_qwen_user_message,
@@ -402,6 +406,7 @@ def run_repair_handling_smoke(
 			append_tool_payload=append_tool_payload,
 			assistant_text_payload=assistant_text_payload,
 			build_artifact_enrichment_recovery_contract=build_artifact_enrichment_recovery_contract,
+			save_session=save_session,
 		)
 		ok, guidance_payload = handle_qwen_user_message(
 			session_name=doc.name,
@@ -463,6 +468,7 @@ def run_fresh_query_override_smoke(
 	append_message,
 	append_tool_payload,
 	assistant_text_payload,
+	save_session,
 	frappe_module,
 	session_doctype: str,
 	handle_qwen_user_message,
@@ -479,6 +485,7 @@ def run_fresh_query_override_smoke(
 			append_tool_payload=append_tool_payload,
 			assistant_text_payload=assistant_text_payload,
 			build_artifact_enrichment_recovery_contract=build_artifact_enrichment_recovery_contract,
+			save_session=save_session,
 		)
 		ok, payload = handle_qwen_user_message(
 			session_name=doc.name,

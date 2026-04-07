@@ -6,6 +6,58 @@ from typing import Any, Dict
 from ai_assistant_ui.qwen_chat.contracts import normalize_scope_decision_input
 
 
+def reasoning_scope_suppression_allowed(decision: Dict[str, Any] | Any) -> bool:
+	normalized_decision = normalize_scope_decision_input(decision)
+	if not bool(normalized_decision.force_new_query) or bool(normalized_decision.out_of_scope):
+		return False
+	reason_text = str(normalized_decision.reason or "").strip().lower()
+	if (
+		"self-contained" in reason_text
+		or "different governed business area" in reason_text
+		or "fresh governed erp question" in reason_text
+	):
+		return False
+	requested_domains = {
+		str(value or "").strip()
+		for value in (normalized_decision.requested_domains or [])
+		if str(value or "").strip()
+	}
+	context_domains = {
+		str(value or "").strip()
+		for value in (normalized_decision.context_domains or [])
+		if str(value or "").strip()
+	}
+	if not requested_domains:
+		return True
+	if not context_domains:
+		return False
+	return requested_domains.issubset(context_domains)
+
+
+def reasoning_preempted_by_followup_refinement(followup_resolution: Dict[str, Any] | Any) -> bool:
+	mode = str(getattr(followup_resolution, "mode", "") or "").strip()
+	if mode not in {"local_grounded_transform", "capability_requery"}:
+		return False
+	requested_modes = {
+		str(mode_value or "").strip()
+		for mode_value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(mode_value or "").strip()
+	}
+	if not requested_modes:
+		return False
+	return bool(
+		{
+			"sort_or_limit",
+			"metric_refinement",
+			"column_refinement",
+			"time_scope_restatement",
+			"dimension_breakdown",
+			"grouping_change",
+			"filter_refinement",
+		}.intersection(requested_modes)
+	)
+
+
 def context_isolation_payload(*, request_id: str, decision: Dict[str, Any]) -> Dict[str, Any]:
 	return {
 		"type": "qwen_context_isolation_decision",

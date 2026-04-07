@@ -111,6 +111,9 @@
         "fixed_filters": {
           "docstatus": 1
         },
+        "filterable_fields": [
+          "status"
+        ],
         "date_field": "posting_date",
         "default_limit": 10
       },
@@ -141,6 +144,75 @@
       "supported_metrics": [
         "Grand Total",
         "Outstanding Amount"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
+      "report_name": "Delivery Note List",
+      "module": "Stock",
+      "family": "delivery_note_list",
+      "capability_ids": [
+        "fulfillment_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Delivery Note",
+        "fields": [
+          "name",
+          "posting_date",
+          "customer",
+          "status",
+          "company",
+          "grand_total",
+          "total_qty",
+          "docstatus",
+          "is_return"
+        ],
+        "order_by": "posting_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "filterable_fields": [
+          "status"
+        ],
+        "date_field": "posting_date",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "fulfillment",
+        "delivery",
+        "shipment",
+        "document"
+      ],
+      "supported_dimensions": [
+        "Delivery Note",
+        "Customer",
+        "Posting Date",
+        "Status"
+      ],
+      "supported_metrics": [
+        "Grand Total",
+        "Quantity"
       ],
       "approved_follow_up_modes": [
         "presentation_transform",
@@ -1057,6 +1129,67 @@
         "Delivered Quantity",
         "Billed Amount"
       ]
+    },
+    {
+      "report_name": "Delivery Note Trends",
+      "module": "Stock",
+      "family": "delivery_note_trends",
+      "capability_ids": [
+        "fulfillment_read"
+      ],
+      "grounding_mode": "report",
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "fiscal_year",
+        "period",
+        "based_on"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        },
+        {
+          "fieldname": "fiscal_year",
+          "strategy": "current_fiscal_year_name"
+        },
+        {
+          "fieldname": "period",
+          "strategy": "compiler_default",
+          "value": "Monthly"
+        },
+        {
+          "fieldname": "based_on",
+          "strategy": "compiler_default",
+          "value": "Customer"
+        }
+      ],
+      "supported_intent_classes": [
+        "trend_analysis"
+      ],
+      "semantic_tags": [
+        "fulfillment",
+        "delivery",
+        "shipment",
+        "trend"
+      ],
+      "supported_dimensions": [
+        "Customer",
+        "Period"
+      ],
+      "supported_metrics": [
+        "Delivered Amount",
+        "Delivered Quantity"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "filter_refinement",
+        "metric_change",
+        "new_query"
+      ],
+      "chartable_fields": []
     }
   ]
 }

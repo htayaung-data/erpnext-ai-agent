@@ -250,25 +250,30 @@
       "validation_profile": "report_grounded_read",
       "capability_ids": [
         "sales_read",
-        "product_performance_read"
+        "product_performance_read",
+        "fulfillment_read"
       ],
       "report_names": [
         "Sales Analytics",
-        "Item-wise Sales History"
+        "Item-wise Sales History",
+        "Delivery Note Trends"
       ],
       "source_report_families": [
         "sales_analytics",
-        "item_sales_history"
+        "item_sales_history",
+        "delivery_note_trends"
       ],
       "semantic_tags": [
         "trend",
         "time_series",
-        "analytics"
+        "analytics",
+        "fulfillment"
       ],
       "routing_hints": {
         "ontology_concepts": [
           "sales",
-          "product"
+          "product",
+          "fulfillment"
         ],
         "intent_markers": [
           "trend",
@@ -291,7 +296,8 @@
       "canonical_metrics": [
         "document_count",
         "total_amount",
-        "outstanding_amount"
+        "outstanding_amount",
+        "quantity"
       ],
       "canonical_dimensions": [
         "document",
@@ -301,28 +307,33 @@
       ],
       "adapter_id": "transaction_listing_adapter",
       "agent_tool_id": "get_transaction_listing",
-      "agent_prompt_hint": "Use the governed transaction-listing route for recent invoices, latest business documents, and transaction list questions.",
+      "agent_prompt_hint": "Use the governed transaction-listing route for governed business document-listing questions.",
       "renderer_id": "transaction_listing_renderer",
       "composite_allowed": false,
       "validation_profile": "report_grounded_read",
       "capability_ids": [
-        "sales_read"
+        "sales_read",
+        "fulfillment_read"
       ],
       "report_names": [
-        "Sales Invoice List"
+        "Sales Invoice List",
+        "Delivery Note List"
       ],
       "source_report_families": [
-        "sales_invoice_list"
+        "sales_invoice_list",
+        "delivery_note_list"
       ],
       "semantic_tags": [
         "transaction",
         "invoice",
+        "fulfillment",
         "document"
       ],
       "routing_hints": {
         "ontology_concepts": [
           "sales",
-          "sales_invoice"
+          "sales_invoice",
+          "fulfillment"
         ],
         "intent_markers": [
           "invoice list",

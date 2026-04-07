@@ -409,6 +409,12 @@ def run_grounded_source_reset_smoke(
 	latest_tool_payload_by_type,
 ) -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
+		fixture = require_smoke_fixture("fresh_query_override_to_ar_ap_health")
+		expected_replacement_source_names = {
+			str(value or "").strip()
+			for value in (fixture.get("expected_replacement_source_names") or [])
+			if str(value or "").strip()
+		}
 		ok, _ = handle_qwen_user_message(
 			session_name=doc.name,
 			message="Top 7 customers by revenue",
@@ -423,13 +429,38 @@ def run_grounded_source_reset_smoke(
 		)
 		if not ok:
 			raise RuntimeError("Phase 6 grounded-source reset smoke failed on top-3 refinement.")
-		ok, _ = handle_qwen_user_message(
-			session_name=doc.name,
-			message="give me AR / AP insight",
-			user="Administrator",
-		)
-		if not ok:
-			raise RuntimeError("Phase 6 grounded-source reset smoke failed on AR/AP insight.")
+		ok = False
+		replacement_payload: Dict[str, Any] = {}
+		replacement_reports: set[str] = set()
+		for _attempt in range(2):
+			frappe_module.db.commit()
+			frappe_module.clear_cache()
+			ok, candidate_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=smoke_fixture_replacement_message("fresh_query_override_to_ar_ap_health"),
+				user="Administrator",
+			)
+			replacement_payload = candidate_payload if isinstance(candidate_payload, dict) else {"error": candidate_payload}
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			tool_payloads = session_tool_payloads(session_doc)
+			grounded_turn = latest_tool_payload_by_type(tool_payloads, "qwen_grounded_turn_context")
+			replacement_reports = {
+				str(value or "").strip()
+				for value in (grounded_turn.get("artifact_source_reports") or [])
+				if str(value or "").strip()
+			}
+			replacement_mode = str((replacement_payload or {}).get("mode") or "").strip()
+			if ok and replacement_mode in {
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			} and replacement_reports == expected_replacement_source_names:
+				break
+		if not ok or replacement_reports != expected_replacement_source_names:
+			raise RuntimeError(
+				"Phase 6 grounded-source reset smoke failed: AR/AP reset did not land on the expected grounded reports. "
+				f"payload={replacement_payload!r} reports={sorted(replacement_reports)!r}"
+			)
 		ok = False
 		payload: Dict[str, Any] = {}
 		for _attempt in range(2):
@@ -494,6 +525,8 @@ def run_observability_smoke(
 			"legacy_runtime_rollout_fallback",
 		}:
 			raise RuntimeError("Phase 6 observability smoke failed: first turn did not produce grounded ERP output.")
+		frappe_module.db.commit()
+		frappe_module.clear_cache()
 		ok, second_payload = handle_qwen_user_message(
 			session_name=doc.name,
 			message="what does this mean",

@@ -4,6 +4,16 @@ from typing import Any, Dict
 from ai_assistant_ui.qwen_chat.service import (
 	run_h5_release_gate_rollout_probe,
 	run_h5_release_gate_sanity_pack,
+	run_phase1_1_delivery_note_last_year_trend_smoke,
+	run_phase1_1_delivery_note_date_scope_smoke,
+	run_phase1_1_delivery_note_detail_smoke,
+	run_phase1_1_delivery_note_listing_smoke,
+	run_phase1_1_delivery_note_session_reset_smoke,
+	run_phase1_1_delivery_note_status_smoke,
+	run_phase1_1_delivery_note_trend_smoke,
+	run_phase1_1_fresh_chat_invoice_delivery_proof_smoke,
+	run_phase1_1_invoice_delivery_proof_smoke,
+	run_phase1_1_invoice_detail_delivery_trend_smoke,
 )
 
 
@@ -27,4 +37,64 @@ class TestPostContractReleaseGates(unittest.TestCase):
 		self._assert_ok_tree(
 			run_h5_release_gate_sanity_pack(),
 			"h5_release_gate_sanity_pack",
+		)
+
+	def test_phase1_1a_delivery_note_listing_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_listing_smoke(),
+			"phase1_1_delivery_note_listing_smoke",
+		)
+
+	def test_phase1_1a_delivery_note_detail_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_detail_smoke(),
+			"phase1_1_delivery_note_detail_smoke",
+		)
+
+	def test_phase1_1b_delivery_note_date_scope_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_date_scope_smoke(),
+			"phase1_1_delivery_note_date_scope_smoke",
+		)
+
+	def test_phase1_1b_delivery_note_status_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_status_smoke(),
+			"phase1_1_delivery_note_status_smoke",
+		)
+
+	def test_phase1_1b_delivery_note_session_reset_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_session_reset_smoke(),
+			"phase1_1_delivery_note_session_reset_smoke",
+		)
+
+	def test_phase1_1c_delivery_note_trend_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_trend_smoke(),
+			"phase1_1_delivery_note_trend_smoke",
+		)
+
+	def test_phase1_1c_delivery_note_last_year_trend_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_delivery_note_last_year_trend_smoke(),
+			"phase1_1_delivery_note_last_year_trend_smoke",
+		)
+
+	def test_phase1_1c_invoice_detail_delivery_trend_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_invoice_detail_delivery_trend_smoke(),
+			"phase1_1_invoice_detail_delivery_trend_smoke",
+		)
+
+	def test_phase1_1d_invoice_delivery_proof_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_invoice_delivery_proof_smoke(),
+			"phase1_1_invoice_delivery_proof_smoke",
+		)
+
+	def test_phase1_1d_fresh_chat_invoice_delivery_proof_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_1_fresh_chat_invoice_delivery_proof_smoke(),
+			"phase1_1_fresh_chat_invoice_delivery_proof_smoke",
 		)

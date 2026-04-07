@@ -26,12 +26,18 @@ def handle_entity_drilldown_turn(
 	build_latest_assistant_payload: Callable[..., Dict[str, Any]],
 	save_session: Callable[..., None],
 ) -> Tuple[bool, Dict[str, Any] | None]:
+	explicit_entity_reference = str((entity_reference or {}).get("source") or "").strip() == "explicit_identifier"
+	grounded_required = bool(latest_grounded_turn) and not explicit_entity_reference
 	execution_path = ExecutionPath(
 		request_id=request_id,
 		path="entity_drilldown",
-		reason="The request was resolved through a governed entity drilldown over the latest artifact.",
+		reason=(
+			"The request was resolved through a governed entity drilldown over an explicitly referenced entity."
+			if explicit_entity_reference
+			else "The request was resolved through a governed entity drilldown over the latest artifact."
+		),
 		requires_runtime=True,
-		grounded_required=True,
+		grounded_required=grounded_required,
 	)
 	append_tool_payload(session_doc, execution_path.to_payload())
 	entity_result = try_entity_detail_followup(

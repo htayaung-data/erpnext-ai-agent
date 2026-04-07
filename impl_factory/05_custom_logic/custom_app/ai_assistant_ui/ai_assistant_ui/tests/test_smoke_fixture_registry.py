@@ -140,6 +140,14 @@ class TestSmokeFixtureRegistry(unittest.TestCase):
 			"explain this accounts receivable summary",
 		)
 		self.assertEqual(
+			smoke_fixture_replacement_message("fresh_query_override_to_ar_ap_health"),
+			"forget that, analyze AR and AP and evaluate business health",
+		)
+		self.assertEqual(
+			smoke_fixture_reasoning_message("fresh_query_override_to_ar_ap_health"),
+			"what should management do next",
+		)
+		self.assertEqual(
 			smoke_fixture_action_message("recovery_interaction_defaults", "guidance"),
 			"how do I ask for qty",
 		)

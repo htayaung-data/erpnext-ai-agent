@@ -638,7 +638,6 @@ def _product_blocks(
 
 def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
 	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
-	metrics = artifact.metrics if isinstance(artifact.metrics, dict) else {}
 	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
 	document_rows = _clean_rows(sections.get("transaction_rows"))
 	summary = _clean_rows(sections.get("summary"))
@@ -646,17 +645,33 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 	document_label = _clean_text(dimensions.get("document_label")) or "Transactions"
 	title = _title_with_period(f"Last {top_n} {document_label}s", artifact.period)
 	requested_columns = _requested_columns(dimensions, None)
+	party_field = _clean_text(dimensions.get("party_field")) or ("customer" if any(_clean_text(row.get("customer")) for row in document_rows) else "party_name")
+	party_label = _clean_text(dimensions.get("party_label")) or "Party"
 	column_map = {
-		"document_name": "Invoice",
+		"document_name": document_label,
 		"posting_date": "Posting Date",
-		"customer": "Customer",
+		"customer": party_label,
+		"party_name": party_label,
 		"grand_total": "Grand Total",
+		"quantity": "Quantity",
 		"outstanding_amount": "Outstanding Amount",
 		"status": "Status",
 	}
-	selected_columns = requested_columns or ["document_name", "posting_date", "customer", "grand_total", "outstanding_amount", "status"]
+	available_columns = ["document_name", "posting_date"]
+	if any(_clean_text(row.get(party_field) or row.get("party_name")) for row in document_rows):
+		available_columns.append(party_field if party_field in {"customer", "party_name"} else "party_name")
+	if any(row.get("quantity") not in (None, "", 0) for row in document_rows):
+		available_columns.append("quantity")
+	if any(row.get("grand_total") not in (None, "", 0) for row in document_rows):
+		available_columns.append("grand_total")
+	if any(row.get("outstanding_amount") not in (None, "", 0) for row in document_rows):
+		available_columns.append("outstanding_amount")
+	available_columns.append("status")
+	selected_columns = requested_columns or available_columns
 	selected_columns = [value for value in selected_columns if value in column_map]
-	base_columns = ["document_name", "posting_date", "customer"]
+	base_columns = ["document_name", "posting_date"]
+	if party_field in {"customer", "party_name"}:
+		base_columns.append(party_field)
 	for key in reversed(base_columns):
 		if key not in selected_columns:
 			selected_columns.insert(0, key)
@@ -684,8 +699,8 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 					out.append(_clean_text(row.get(key)))
 				elif key == "status":
 					out.append(_clean_text(row.get(key)))
-				elif key == "customer":
-					out.append(_clean_text(row.get(key)))
+				elif key in {"customer", "party_name"}:
+					out.append(_clean_text(row.get(key) or row.get("party_name") or row.get("customer")))
 				elif key == "document_name":
 					out.append(_clean_text(row.get(key)))
 				else:
@@ -697,6 +712,14 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 				"title": "Documents",
 				"columns": [column_map[key] for key in selected_columns],
 				"rows": table_rows,
+			}
+		)
+	else:
+		blocks.append(
+			{
+				"block_type": "bullet_list",
+				"title": "Result",
+				"items": ["No matching governed documents were found for the current filters."],
 			}
 		)
 	return title, blocks

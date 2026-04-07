@@ -79,6 +79,39 @@ def _json_safe_row(row: Dict[str, Any]) -> Dict[str, Any]:
 	}
 
 
+def _direct_query_filterable_fields(report_spec: Dict[str, Any]) -> set[str]:
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	fields = {
+		str(value or "").strip()
+		for value in (query_spec.get("fields") or [])
+		if str(value or "").strip()
+	}
+	defaultable_filters = {
+		str(item.get("fieldname") or "").strip()
+		for item in (report_spec.get("defaultable_filters") or [])
+		if isinstance(item, dict) and str(item.get("fieldname") or "").strip()
+	}
+	required_filters = {
+		str(value or "").strip()
+		for value in (report_spec.get("required_filters") or [])
+		if str(value or "").strip()
+	}
+	return fields | defaultable_filters | required_filters
+
+
+def _normalize_direct_query_filter_value(value: Any) -> Any:
+	if value is None:
+		return None
+	if isinstance(value, str):
+		clean = value.strip()
+		return clean or None
+	if isinstance(value, (bool, int, float)):
+		return value
+	if isinstance(value, (dt.date, dt.datetime, dt.time)):
+		return value.isoformat()
+	return None
+
+
 def _execute_direct_query(
 	*,
 	report_name: str,
@@ -108,6 +141,7 @@ def _execute_direct_query(
 	applied_filters: Dict[str, Any] = {}
 	fixed_filters = query_spec.get("fixed_filters") if isinstance(query_spec.get("fixed_filters"), dict) else {}
 	applied_filters.update({str(k): v for k, v in fixed_filters.items() if str(k or "").strip()})
+	allowed_filter_fields = _direct_query_filterable_fields(report_spec)
 	if str(filters.get("company") or "").strip():
 		applied_filters["company"] = str(filters.get("company") or "").strip()
 	from_date = str(filters.get("from_date") or "").strip()
@@ -116,6 +150,30 @@ def _execute_direct_query(
 		applied_filters[date_field] = ["between", [from_date, to_date]]
 	elif date_field and to_date:
 		applied_filters[date_field] = ["<=", to_date]
+	reserved_filter_keys = {
+		"from_date",
+		"to_date",
+		"report_date",
+		"period_start_date",
+		"period_end_date",
+		"limit",
+	}
+	fixed_filter_keys = {str(key or "").strip() for key in fixed_filters}
+	for raw_key, raw_value in (filters or {}).items():
+		key = str(raw_key or "").strip()
+		if (
+			not key
+			or key in reserved_filter_keys
+			or key == date_field
+			or key in fixed_filter_keys
+			or key not in allowed_filter_fields
+			or key in applied_filters
+		):
+			continue
+		value = _normalize_direct_query_filter_value(raw_value)
+		if value is None:
+			continue
+		applied_filters[key] = value
 
 	started = time.perf_counter()
 	try:

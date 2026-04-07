@@ -150,53 +150,93 @@ def _single_company_name() -> str:
 	return ""
 
 
-def _current_fiscal_year_bounds() -> Tuple[str, str]:
-	today = _today_date()
+def _fiscal_year_rows() -> List[Dict[str, str]]:
 	rows = frappe.get_all(
 		"Fiscal Year",
 		fields=["name", "year_start_date", "year_end_date"],
-		order_by="year_start_date desc",
-		limit=10,
+		order_by="year_start_date asc",
+		limit=20,
 	)
-	fallback_start = ""
-	fallback_end = ""
+	out: List[Dict[str, str]] = []
 	for row in rows or []:
-		start_value = row.get("year_start_date")
-		end_value = row.get("year_end_date")
-		start = dt.date.fromisoformat(str(start_value)) if start_value else None
-		end = dt.date.fromisoformat(str(end_value)) if end_value else None
-		if not start or not end:
+		if not isinstance(row, dict):
 			continue
-		if not fallback_start:
-			fallback_start = start.isoformat()
-			fallback_end = end.isoformat()
-		if start <= today <= end:
-			return start.isoformat(), end.isoformat()
-	return fallback_start, fallback_end
-
-
-def _current_fiscal_year_name() -> str:
-	today = _today_date()
-	rows = frappe.get_all(
-		"Fiscal Year",
-		fields=["name", "year_start_date", "year_end_date"],
-		order_by="year_start_date desc",
-		limit=10,
-	)
-	fallback_name = ""
-	for row in rows or []:
 		name = str(row.get("name") or "").strip()
 		start_value = row.get("year_start_date")
 		end_value = row.get("year_end_date")
-		start = dt.date.fromisoformat(str(start_value)) if start_value else None
-		end = dt.date.fromisoformat(str(end_value)) if end_value else None
+		try:
+			start = dt.date.fromisoformat(str(start_value)) if start_value else None
+			end = dt.date.fromisoformat(str(end_value)) if end_value else None
+		except Exception:
+			start = None
+			end = None
 		if not name or not start or not end:
 			continue
-		if not fallback_name:
-			fallback_name = name
+		out.append(
+			{
+				"name": name,
+				"year_start_date": start.isoformat(),
+				"year_end_date": end.isoformat(),
+			}
+		)
+	return out
+
+
+def _current_fiscal_year_row() -> Dict[str, str]:
+	today = _today_date()
+	rows = _fiscal_year_rows()
+	fallback: Dict[str, str] = {}
+	for row in rows:
+		start = dt.date.fromisoformat(row["year_start_date"])
+		end = dt.date.fromisoformat(row["year_end_date"])
+		if not fallback:
+			fallback = dict(row)
 		if start <= today <= end:
-			return name
-	return fallback_name
+			return dict(row)
+	return fallback
+
+
+def _previous_fiscal_year_row() -> Dict[str, str]:
+	rows = _fiscal_year_rows()
+	if not rows:
+		return {}
+	current_name = str(_current_fiscal_year_row().get("name") or "").strip()
+	for index, row in enumerate(rows):
+		if str(row.get("name") or "").strip() != current_name:
+			continue
+		if index > 0:
+			return dict(rows[index - 1])
+		break
+	return {}
+
+
+def _matching_fiscal_year_row_for_range(from_date: str, to_date: str) -> Dict[str, str]:
+	start = str(from_date or "").strip()
+	end = str(to_date or "").strip()
+	if not start or not end:
+		return {}
+	for row in _fiscal_year_rows():
+		if row.get("year_start_date") == start and row.get("year_end_date") == end:
+			return dict(row)
+	return {}
+
+
+def _current_fiscal_year_bounds() -> Tuple[str, str]:
+	row = _current_fiscal_year_row()
+	return str(row.get("year_start_date") or "").strip(), str(row.get("year_end_date") or "").strip()
+
+
+def _previous_fiscal_year_bounds() -> Tuple[str, str]:
+	row = _previous_fiscal_year_row()
+	return str(row.get("year_start_date") or "").strip(), str(row.get("year_end_date") or "").strip()
+
+
+def _current_fiscal_year_name() -> str:
+	return str(_current_fiscal_year_row().get("name") or "").strip()
+
+
+def _previous_fiscal_year_name() -> str:
+	return str(_previous_fiscal_year_row().get("name") or "").strip()
 
 
 def _valid_intent_classes() -> set[str]:
@@ -257,7 +297,20 @@ def _date_range_from_time_scope(requested_time_scope: str) -> Tuple[str, str]:
 		start, _ = _current_fiscal_year_bounds()
 		if start:
 			return start, today.isoformat()
+	if scope == "last_year":
+		return _previous_fiscal_year_bounds()
 	return "", ""
+
+
+def _scoped_fiscal_year_row(*, requested_time_scope: str, filters: Dict[str, Any]) -> Dict[str, str]:
+	scope = str(requested_time_scope or "").strip()
+	if scope == "last_year":
+		return _previous_fiscal_year_row()
+	if scope == "current_fiscal_year_to_date":
+		return _current_fiscal_year_row()
+	start = str(filters.get("period_start_date") or filters.get("from_date") or "").strip()
+	end = str(filters.get("period_end_date") or filters.get("to_date") or "").strip()
+	return _matching_fiscal_year_row_for_range(start, end)
 
 
 def _resolve_capability(interpretation: FreshQueryInterpretationContract) -> Tuple[str, str]:
@@ -385,15 +438,20 @@ def _extract_candidate_filters(
 
 	report_spec = get_report_spec(report_name)
 	required_filters = set(_clean_list(report_spec.get("required_filters")))
-	if allow_slot_dates and "report_date" in required_filters and not filters.get("report_date"):
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	optional_date_filters: set[str] = set()
+	if str(direct_query.get("date_field") or "").strip():
+		optional_date_filters = {"report_date", "from_date", "to_date"}
+	date_filter_fields = required_filters | optional_date_filters
+	if allow_slot_dates and "report_date" in date_filter_fields and not filters.get("report_date"):
 		slot_value = slots.get("report_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["report_date"] = slot_value.strip()
-	if allow_slot_dates and "from_date" in required_filters and not filters.get("from_date"):
+	if allow_slot_dates and "from_date" in date_filter_fields and not filters.get("from_date"):
 		slot_value = slots.get("from_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["from_date"] = slot_value.strip()
-	if allow_slot_dates and "to_date" in required_filters and not filters.get("to_date"):
+	if allow_slot_dates and "to_date" in date_filter_fields and not filters.get("to_date"):
 		slot_value = slots.get("to_date")
 		if isinstance(slot_value, str) and slot_value.strip():
 			filters["to_date"] = slot_value.strip()
@@ -407,15 +465,15 @@ def _extract_candidate_filters(
 			filters["period_end_date"] = slot_value.strip()
 
 	date_from, date_to = _date_range_from_time_scope(interpretation.requested_time_scope)
-	if "from_date" in required_filters and not filters.get("from_date") and date_from:
+	if "from_date" in date_filter_fields and not filters.get("from_date") and date_from:
 		filters["from_date"] = date_from
-	if "to_date" in required_filters and not filters.get("to_date") and date_to:
+	if "to_date" in date_filter_fields and not filters.get("to_date") and date_to:
 		filters["to_date"] = date_to
 	if "period_start_date" in required_filters and not filters.get("period_start_date") and date_from:
 		filters["period_start_date"] = date_from
 	if "period_end_date" in required_filters and not filters.get("period_end_date") and date_to:
 		filters["period_end_date"] = date_to
-	if "report_date" in required_filters and not filters.get("report_date"):
+	if "report_date" in date_filter_fields and not filters.get("report_date"):
 		if date_to:
 			filters["report_date"] = date_to
 		elif interpretation.requested_time_scope == "as_of_today":
@@ -438,8 +496,17 @@ def _extract_candidate_filters(
 	return filters
 
 
-def _apply_defaultable_filters(report_name: str, filters: Dict[str, Any]) -> Dict[str, Any]:
+def _apply_defaultable_filters(
+	report_name: str,
+	filters: Dict[str, Any],
+	*,
+	requested_time_scope: str = "",
+) -> Dict[str, Any]:
 	updated = dict(filters or {})
+	scoped_fiscal_year = _scoped_fiscal_year_row(
+		requested_time_scope=requested_time_scope,
+		filters=updated,
+	)
 	for item in report_defaultable_filters(report_name):
 		fieldname = str(item.get("fieldname") or "").strip()
 		strategy = str(item.get("strategy") or "").strip()
@@ -450,13 +517,20 @@ def _apply_defaultable_filters(report_name: str, filters: Dict[str, Any]) -> Dic
 			if company:
 				updated[fieldname] = company
 		elif strategy == "current_date":
-			updated[fieldname] = _today_iso()
+			if fieldname in {"to_date", "period_end_date"} and scoped_fiscal_year:
+				updated[fieldname] = str(scoped_fiscal_year.get("year_end_date") or "").strip()
+			else:
+				updated[fieldname] = _today_iso()
 		elif strategy == "fiscal_year_start_date":
-			start, _ = _current_fiscal_year_bounds()
+			start = str(scoped_fiscal_year.get("year_start_date") or "").strip()
+			if not start:
+				start, _ = _current_fiscal_year_bounds()
 			if start:
 				updated[fieldname] = start
 		elif strategy == "current_fiscal_year_name":
-			fiscal_year_name = _current_fiscal_year_name()
+			fiscal_year_name = str(scoped_fiscal_year.get("name") or "").strip()
+			if not fiscal_year_name:
+				fiscal_year_name = _current_fiscal_year_name()
 			if fiscal_year_name:
 				updated[fieldname] = fiscal_year_name
 		elif strategy == "compiler_default":
@@ -617,7 +691,11 @@ def compile_fresh_query(
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
 
 	filters = _extract_candidate_filters(interpretation, report_name)
-	filters = _apply_defaultable_filters(report_name, filters)
+	filters = _apply_defaultable_filters(
+		report_name,
+		filters,
+		requested_time_scope=interpretation.requested_time_scope,
+	)
 	missing_filters = _missing_required_filters(report_name, filters)
 	ambiguity_decision = _ambiguity_rule_decision(interpretation)
 	report_spec = get_report_spec(report_name)

@@ -1,7 +1,7 @@
 import sys
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 def _fake_get_all(doctype, *args, **kwargs):
@@ -29,6 +29,7 @@ sys.modules.setdefault("frappe", fake_frappe)
 from ai_assistant_ui.qwen_chat.compiler import compile_fresh_query
 from ai_assistant_ui.qwen_chat.clarification_translation import _translate_compiler_signal
 from ai_assistant_ui.qwen_chat.contracts import (
+	build_artifact_continuation_contract,
 	build_compiled_query_request_contract,
 	build_composite_read_plan_contract,
 	build_followup_boundary_contract,
@@ -36,6 +37,8 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_fresh_query_compiler_contract,
 	build_fresh_query_interpretation_contract,
 	build_followup_resolution,
+	build_grounded_turn_context,
+	build_scope_decision_input,
 )
 from ai_assistant_ui.qwen_chat.composite_reads import (
 	CompositePlanOutcome,
@@ -46,8 +49,11 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	FrontDoorRenderResult,
 	SemanticFrontDoorIntent,
 	SemanticFrontDoorResult,
+	interpret_front_door_semantically,
 )
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
+from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 	_allow_deterministic_family_surface_fallback,
@@ -57,7 +63,15 @@ from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 	compile_from_fresh_query_message,
 	execute_compiled_fresh_query_message,
 	_deterministic_family_surface_interpretation,
+	_recover_pipeline_with_deterministic_surface_fallback,
 	_validate_semantic_payload,
+)
+from ai_assistant_ui.qwen_chat.metadata import (
+	capability_fresh_query_defaults,
+	get_report_spec,
+	get_report_family_spec,
+	load_business_ontology,
+	load_semantic_resolution_registry,
 )
 from ai_assistant_ui.qwen_chat.semantic_interpreter import (
 	_build_interpretation_context as _build_semantic_followup_context,
@@ -75,6 +89,9 @@ from ai_assistant_ui.qwen_chat.lanes.runtime_gate_lane import handle_runtime_gat
 from ai_assistant_ui.qwen_chat.requery_message_support import (
 	compile_capability_requery_message,
 )
+from ai_assistant_ui.qwen_chat.phase8_hardening_support import (
+	_seed_quantity_recovery_session,
+)
 from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
 	semantic_resolution_governs_intent,
 	semantic_resolution_intent_classes,
@@ -90,9 +107,30 @@ from ai_assistant_ui.qwen_chat.semantic_resolution import (
 	resolve_transaction_listing_interpretation,
 )
 from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_lane
+from ai_assistant_ui.qwen_chat.scope_support import (
+	reasoning_preempted_by_followup_refinement,
+	reasoning_scope_suppression_allowed,
+)
+from ai_assistant_ui.qwen_chat.service import (
+	_message_looks_like_self_contained_governed_business_query,
+)
 
 
 class TestSemanticFinancialResolution(unittest.TestCase):
+	def test_recovery_semantic_bypass_detects_self_contained_governed_business_query(self):
+		self.assertTrue(
+			_message_looks_like_self_contained_governed_business_query(
+				message="give me last year delivery trend",
+			)
+		)
+
+	def test_recovery_semantic_bypass_does_not_trigger_on_short_acknowledgement(self):
+		self.assertFalse(
+			_message_looks_like_self_contained_governed_business_query(
+				message="yes",
+			)
+		)
+
 	def test_evaluate_frontdoor_lane_preserves_non_business_frontdoor_intent_despite_reasoning_acceptance(self):
 		with patch(
 			"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically",
@@ -162,6 +200,76 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(frontdoor_contract.intent_class, "route_onward")
 		self.assertFalse(frontdoor_contract.handle_in_front_door)
 		self.assertEqual(frontdoor_answer, "")
+
+	def test_frontdoor_semantic_keeps_thanks_in_front_door_despite_fresh_query_acceptance(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.call_qwen_runtime_frontdoor_interpretation",
+			return_value={
+				"interpretation": {
+					"intent_class": "thanks",
+					"confidence": 0.97,
+					"reason": "The message is clearly appreciative and requests no ERP data.",
+				},
+				"agent_meta": {},
+			},
+		), patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.interpret_fresh_query_semantically",
+			return_value=types.SimpleNamespace(
+				status="accepted",
+				confidence_threshold=0.72,
+				interpretation=types.SimpleNamespace(
+					candidate_capability_ids=["receivable_summary"],
+					candidate_reports=["Accounts Receivable Summary"],
+					confidence=0.93,
+				),
+			),
+		):
+			result = interpret_front_door_semantically(
+				request_id="frontdoor-thanks",
+				session_id="session-thanks",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="Really Great, thank you",
+				recent_messages=[],
+				grounded_context_available=True,
+			)
+		self.assertEqual(result.status, "accepted")
+		self.assertEqual(result.intent.intent_class, "thanks")
+
+	def test_frontdoor_semantic_can_still_override_session_flow_with_fresh_query_acceptance(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.call_qwen_runtime_frontdoor_interpretation",
+			return_value={
+				"interpretation": {
+					"intent_class": "session_flow",
+					"confidence": 0.95,
+					"reason": "The message looks like a continuation turn.",
+				},
+				"agent_meta": {},
+			},
+		), patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.interpret_fresh_query_semantically",
+			return_value=types.SimpleNamespace(
+				status="accepted",
+				confidence_threshold=0.72,
+				interpretation=types.SimpleNamespace(
+					candidate_capability_ids=["receivable_summary"],
+					candidate_reports=["Accounts Receivable Summary"],
+					confidence=0.93,
+				),
+			),
+		):
+			result = interpret_front_door_semantically(
+				request_id="frontdoor-session-flow",
+				session_id="session-flow",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="what does this mean",
+				recent_messages=[],
+				grounded_context_available=True,
+			)
+		self.assertEqual(result.status, "guardrailed_to_route_onward")
+		self.assertEqual(result.intent.intent_class, "route_onward")
 
 	def test_runtime_gate_honors_governed_uncovered_scope_without_new_query_mode(self):
 		appended_messages = []
@@ -387,6 +495,69 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.mode, "grounded_follow_up")
 		self.assertEqual(outcome.target_limit, 0)
 		self.assertEqual(outcome.requested_modes, [])
+
+	def test_build_followup_resolution_upgrades_filter_refinement_to_capability_requery(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["filter_refinement"],
+			target_dimension="Status",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User asked to filter the current grounded listing by status.",
+		)
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-filter-requery",
+			message="show only completed delivery notes",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "Delivery Note List",
+				"artifact_family_id": "transaction_listing",
+				"dimensions": ["Invoice", "Posting Date", "Customer", "Status"],
+				"returned_schema": ["Invoice", "Posting Date", "Customer", "Status"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+		self.assertEqual(outcome.mode, "capability_requery")
+		self.assertEqual(outcome.target_report, "Delivery Note List")
+		self.assertEqual(outcome.target_dimension, "Status")
+
+	def test_build_followup_resolution_infers_time_scope_for_grounded_temporal_refinement(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["presentation_transform"],
+			target_dimension="Posting Date",
+			target_limit=1,
+			sort_direction="desc",
+			target_metric="grand total",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User asked for delivery notes from last month, which aligns with the existing grounded data.",
+		)
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-time-scope-inference",
+			message="show me delivery notes from last month",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "Delivery Note List",
+				"artifact_family_id": "transaction_listing",
+				"dimensions": ["Invoice", "Posting Date", "Customer", "Status"],
+				"returned_schema": ["Invoice", "Posting Date", "Customer", "Status"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+		self.assertEqual(outcome.mode, "capability_requery")
+		self.assertEqual(outcome.target_report, "Delivery Note List")
+		self.assertEqual(outcome.requested_time_scope, "last_month")
+		self.assertEqual(outcome.target_limit, 0)
 
 	def test_build_followup_boundary_contract_normalizes_and_serializes(self):
 		contract = build_followup_boundary_contract(
@@ -757,6 +928,67 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertTrue(payload["contradictory_payload"])
 		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
+	def test_build_followup_boundary_contract_forces_fresh_query_on_transaction_listing_view_switch(self):
+		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
+			"show me last 7 sale invoices",
+			request_id="followup-boundary-from-context-6e",
+			session_id="session-ctx-6e",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Delivery Note List",
+				"artifact_family_id": "transaction_listing",
+				"dimensions": ["Posting Date"],
+				"metrics": ["Grand Total", "Quantity"],
+				"returned_schema": ["Delivery Note", "Posting Date", "Customer", "Grand Total", "Quantity", "Status"],
+			},
+			semantic_intent=types.SimpleNamespace(
+				requested_modes=["filter_refinement"],
+				target_dimension="Posting Date",
+				target_limit=7,
+				sort_direction="desc",
+				target_metric="grand total",
+				requested_columns=["grand_total", "status"],
+				requested_time_scope="",
+				target_capability_id="",
+				self_contained=False,
+				reason="User is asking for last 7 sale invoices, which is a refinement of the previous delivery notes query.",
+			),
+		)
+		payload = contract.to_payload()
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
+		self.assertIn("different governed document-listing target", payload["decision_reason"])
+
+	def test_build_followup_boundary_contract_infers_transaction_listing_family_from_report_when_missing(self):
+		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
+			"show me last 7 sale invoices",
+			request_id="followup-boundary-from-context-6f",
+			session_id="session-ctx-6f",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Delivery Note List",
+				"artifact_family_id": "",
+				"dimensions": ["Posting Date"],
+				"metrics": ["Grand Total", "Quantity"],
+				"returned_schema": ["Delivery Note", "Posting Date", "Customer", "Grand Total", "Quantity", "Status"],
+			},
+			semantic_intent=types.SimpleNamespace(
+				requested_modes=["filter_refinement"],
+				target_dimension="Posting Date",
+				target_limit=7,
+				sort_direction="desc",
+				target_metric="grand total",
+				requested_columns=["grand_total", "status"],
+				requested_time_scope="",
+				target_capability_id="",
+				self_contained=False,
+				reason="User is asking for last 7 sale invoices, which changes the governed listing target.",
+			),
+		)
+		payload = contract.to_payload()
+		self.assertEqual(payload["source_family_id"], "transaction_listing")
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
+		self.assertIn("different governed document-listing target", payload["decision_reason"])
+
 	def test_evaluate_followup_boundary_contract_forces_new_query(self):
 		decision = followup_interpreter_module.evaluate_followup_boundary_contract(
 			build_followup_boundary_contract(
@@ -904,6 +1136,59 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertFalse(result.force_new_query)
 		self.assertFalse(result.out_of_scope)
 		self.assertEqual(result.reason, "")
+
+	def test_reasoning_scope_suppression_allowed_for_same_domain_breakout(self):
+		decision = build_scope_decision_input(
+			force_new_query=True,
+			requested_domains=["sales"],
+			context_domains=["sales", "customer"],
+			primary_domain="sales",
+			reason="The request stays within the current governed sales area.",
+		)
+		self.assertTrue(reasoning_scope_suppression_allowed(decision))
+
+	def test_reasoning_scope_suppression_denied_for_cross_domain_reset(self):
+		decision = assess_context_isolation(
+			"give me AR / AP insight",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Sales Invoice List",
+				"artifact_family_id": "transaction_listing",
+				"dimensions": ["Invoice"],
+				"metrics": ["Grand Total"],
+				"returned_schema": ["Invoice", "Grand Total"],
+			},
+		)
+		self.assertTrue(decision.force_new_query)
+		self.assertFalse(reasoning_scope_suppression_allowed(decision))
+
+	def test_reasoning_scope_suppression_denied_for_self_contained_reason_without_domains(self):
+		decision = build_scope_decision_input(
+			force_new_query=True,
+			requested_domains=[],
+			context_domains=["sales"],
+			primary_domain="sales",
+			reason="The request is self-contained and should be treated as a fresh governed ERP question.",
+		)
+		self.assertFalse(reasoning_scope_suppression_allowed(decision))
+
+	def test_reasoning_preempted_by_followup_refinement_includes_filter_refinement(self):
+		self.assertTrue(
+			reasoning_preempted_by_followup_refinement(
+				types.SimpleNamespace(
+					mode="capability_requery",
+					requested_modes=["filter_refinement", "table_presentation"],
+				)
+			)
+		)
+		self.assertFalse(
+			reasoning_preempted_by_followup_refinement(
+				types.SimpleNamespace(
+					mode="capability_requery",
+					requested_modes=["table_presentation"],
+				)
+			)
+		)
 
 	def test_assess_context_isolation_ignores_unstructured_semantic_self_contained_flag(self):
 		result = assess_context_isolation(
@@ -1401,6 +1686,140 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertIn("top 3 customers", message.lower())
 		self.assertIn("by quantity", message.lower())
 
+	def test_compile_capability_requery_message_describes_filter_refinement_as_filter(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="filter-requery-message",
+			mode="capability_requery",
+			requested_modes=["filter_refinement"],
+			target_dimension="Status",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="Delivery Note List",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Apply a governed status filter to the current listing.",
+		)
+		session_doc = types.SimpleNamespace(get=lambda key, default=None: [])
+		message = compile_capability_requery_message(
+			session_doc,
+			raw_message="show me delivery notes with status Completed",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Delivery Note List",
+				"filters": {"company": "Enterprise Co"},
+				"date_range": {},
+				"artifact_family_id": "transaction_listing",
+			},
+			continuation_contract=types.SimpleNamespace(
+				preserve_projection_shape=True,
+				preserved_requested_columns=["document_name", "posting_date", "customer", "status"],
+				source_requested_columns=["document_name", "posting_date", "customer", "status"],
+				preserve_date_context=False,
+				source_family_id="transaction_listing",
+			),
+		)
+		self.assertIn("apply a governed filter refinement on `status`", message.lower())
+		self.assertNotIn("grouped or broken down by `status`", message.lower())
+		self.assertNotIn("requested follow-up transforms", message.lower())
+
+	def test_compile_capability_requery_message_uses_minimal_listing_shape_for_temporal_limit_followup(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="listing-requery-message",
+			mode="capability_requery",
+			requested_modes=["sort_or_limit"],
+			target_dimension="Posting Date",
+			target_limit=5,
+			sort_direction="desc",
+			target_metric="Posting Date",
+			requested_columns=[],
+			requested_time_scope="last_month",
+			target_capability_id="fulfillment_read",
+			target_report="Delivery Note List",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Requery the current delivery note listing for last month with the requested row limit.",
+		)
+		session_doc = types.SimpleNamespace(get=lambda key, default=None: [])
+		message = compile_capability_requery_message(
+			session_doc,
+			raw_message="show me the last 5 delivery notes from last month",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Delivery Note List",
+				"filters": {"company": "Enterprise Co"},
+				"date_range": {},
+				"artifact_family_id": "transaction_listing",
+			},
+			continuation_contract=types.SimpleNamespace(
+				preserve_projection_shape=True,
+				preserved_requested_columns=["document_name", "posting_date", "customer", "status"],
+				source_requested_columns=["document_name", "posting_date", "customer", "status"],
+				preserved_limit=5,
+				preserve_rank_membership=True,
+				preserve_rank_order=True,
+				preserved_entities=["DN-0001", "DN-0002"],
+				preserve_date_context=False,
+				source_family_id="transaction_listing",
+			),
+		)
+		lower_message = message.lower()
+		self.assertIn("use the report `delivery note list`.", lower_message)
+		self.assertIn("use the last month date range.", lower_message)
+		self.assertIn("use a row limit of 5 rows.", lower_message)
+		self.assertIn("user request: show me the last 5 delivery notes from last month", lower_message)
+		self.assertNotIn("grouped or broken down", lower_message)
+		self.assertNotIn("ranking scope", lower_message)
+		self.assertNotIn("prioritize the metric", lower_message)
+		self.assertNotIn("preserve the exact current ranked entities", lower_message)
+		self.assertNotIn("requested follow-up transforms", lower_message)
+
+	def test_compile_capability_requery_message_prefers_preserved_date_range_over_report_date_for_transaction_listing(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="listing-requery-message-date-range",
+			mode="capability_requery",
+			requested_modes=["filter_refinement"],
+			target_dimension="Status",
+			target_limit=5,
+			sort_direction="",
+			target_metric="grand total",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="Delivery Note List",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Apply a governed status filter on the current delivery note listing.",
+		)
+		session_doc = types.SimpleNamespace(get=lambda key, default=None: [])
+		message = compile_capability_requery_message(
+			session_doc,
+			raw_message="show me delivery notes with status Completed",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Delivery Note List",
+				"filters": {"company": "Enterprise Co", "report_date": "2026-03-06"},
+				"date_range": {"report_date": "2026-03-06", "from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"artifact_family_id": "transaction_listing",
+			},
+			continuation_contract=types.SimpleNamespace(
+				preserve_projection_shape=True,
+				preserved_requested_columns=["document_name", "posting_date", "customer", "grand_total", "status"],
+				source_requested_columns=["document_name", "posting_date", "customer", "grand_total", "status"],
+				preserve_date_context=True,
+				source_family_id="transaction_listing",
+			),
+		)
+		lower_message = message.lower()
+		self.assertIn("use the date range from 2026-03-01 to 2026-03-31.", lower_message)
+		self.assertNotIn("use report_date 2026-03-06.", lower_message)
+
 	def test_compile_from_fresh_query_message_preserves_governed_target_limit_seed(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="seeded-target-limit",
@@ -1443,6 +1862,458 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(
 			int(((pipeline.get("compiled_query_request") or {}).get("target_limit") or 0)),
 			3,
+		)
+
+	def test_compile_from_fresh_query_message_seeds_transaction_listing_limit_from_structural_scope(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-limit-seed",
+			session_id="delivery-note-limit-seed-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.93,
+			target_limit=0,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-limit-seed-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me the last 5 delivery notes",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			5,
+		)
+		self.assertEqual(
+			int(((pipeline.get("compiled_query_request") or {}).get("target_limit") or 0)),
+			5,
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("requested_time_scope") or "")),
+			"",
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("selected_report") or "")),
+			"Delivery Note List",
+		)
+
+	def test_compile_from_fresh_query_message_clears_synthetic_last_n_days_when_limit_is_structural(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-limit-time-conflict",
+			session_id="delivery-note-limit-time-conflict-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="last_5_days",
+			requested_presentation=[],
+			extracted_slots={
+				"from_date": "2026-04-02",
+				"to_date": "2026-04-06",
+				"filters": {
+					"from_date": "2026-04-02",
+					"to_date": "2026-04-06",
+				},
+			},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.93,
+			target_limit=0,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-limit-time-conflict-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me the last 5 delivery notes",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			5,
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("requested_time_scope") or "")),
+			"",
+		)
+		self.assertNotIn("from_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("to_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+
+	def test_compile_from_fresh_query_message_clears_latest_time_scope_when_limit_is_document_scope(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="sales-invoice-latest-limit-time-conflict",
+			session_id="sales-invoice-latest-limit-time-conflict-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["sales_read"],
+			candidate_reports=["Sales Invoice List"],
+			requested_dimensions=["Invoice", "Customer", "Posting Date"],
+			requested_metrics=["Grand Total", "Outstanding Amount"],
+			requested_time_scope="latest",
+			requested_presentation=[],
+			extracted_slots={
+				"report_date": "2026-04-07",
+				"from_date": "2026-04-07",
+				"to_date": "2026-04-07",
+				"filters": {
+					"report_date": "2026-04-07",
+					"from_date": "2026-04-07",
+					"to_date": "2026-04-07",
+				},
+			},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.9,
+			target_limit=7,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="sales-invoice-latest-limit-time-conflict-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me latest 7 sale invoices",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			7,
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("requested_time_scope") or "")),
+			"",
+		)
+		self.assertNotIn("report_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("from_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("to_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+
+	def test_compile_from_fresh_query_message_clears_latest_n_time_scope_when_limit_matches_document_scope(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="sales-invoice-latest-n-limit-time-conflict",
+			session_id="sales-invoice-latest-n-limit-time-conflict-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["sales_read"],
+			candidate_reports=["Sales Invoice List"],
+			requested_dimensions=["Invoice", "Customer", "Posting Date"],
+			requested_metrics=["Grand Total", "Outstanding Amount"],
+			requested_time_scope="latest_7",
+			requested_presentation=[],
+			extracted_slots={
+				"report_date": "2026-04-07",
+				"from_date": "2026-03-31",
+				"to_date": "2026-04-07",
+				"filters": {
+					"report_date": "2026-04-07",
+					"from_date": "2026-03-31",
+					"to_date": "2026-04-07",
+				},
+			},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.9,
+			target_limit=7,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="sales-invoice-latest-n-limit-time-conflict-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me latest 7 sale invoices",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			7,
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("requested_time_scope") or "")),
+			"",
+		)
+		self.assertNotIn("report_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("from_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("to_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+
+	def test_compile_from_fresh_query_message_clears_as_of_today_when_latest_n_is_structural_document_scope(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-latest-structural-limit",
+			session_id="delivery-note-latest-structural-limit-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note", "Posting Date", "Customer"],
+			requested_metrics=["Grand Total", "Quantity"],
+			requested_time_scope="as_of_today",
+			requested_presentation=[],
+			extracted_slots={
+				"report_date": "2026-04-07",
+				"from_date": "2026-04-07",
+				"to_date": "2026-04-07",
+				"filters": {
+					"report_date": "2026-04-07",
+					"from_date": "2026-04-07",
+					"to_date": "2026-04-07",
+				},
+			},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.9,
+			target_limit=5,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-latest-structural-limit-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="give me latest 5 delivery note",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			5,
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("requested_time_scope") or "")),
+			"",
+		)
+		self.assertNotIn("report_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("from_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+		self.assertNotIn("to_date", ((pipeline.get("compiled_query_request") or {}).get("filters") or {}))
+
+	def test_compile_from_fresh_query_message_preserves_explicit_last_n_days_without_limit_seed(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-explicit-time-scope",
+			session_id="delivery-note-explicit-time-scope-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="last_5_days",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.93,
+			target_limit=0,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-explicit-time-scope-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me delivery notes from last 5 days",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			0,
+		)
+		self.assertEqual(
+			str(((pipeline.get("fresh_query_compiler") or {}).get("requested_time_scope") or "")),
+			"last_5_days",
+		)
+
+	def test_compile_from_fresh_query_message_keeps_explicit_transaction_listing_limit(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-limit-explicit",
+			session_id="delivery-note-limit-explicit-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.93,
+			target_limit=7,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-limit-explicit-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me the last 5 delivery notes",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			int(((pipeline.get("fresh_query_compiler") or {}).get("target_limit") or 0)),
+			7,
+		)
+		self.assertEqual(
+			int(((pipeline.get("compiled_query_request") or {}).get("target_limit") or 0)),
+			7,
+		)
+
+	def test_compile_from_fresh_query_message_grounds_delivery_note_status_filter_from_message(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-status-grounding",
+			session_id="delivery-note-status-grounding-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.93,
+			target_limit=0,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		mocked_frappe = Mock()
+		mocked_frappe.get_all.return_value = [
+			{"status": "Completed"},
+			{"status": "Partially Billed"},
+		]
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		), patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.frappe",
+			mocked_frappe,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-status-grounding-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me delivery notes with status Completed",
+				recent_messages=[],
+			)
+		self.assertEqual(
+			((pipeline.get("fresh_query_interpretation") or {}).get("interpretation") or {}).get("extracted_slots", {}).get("filters", {}).get("status"),
+			"Completed",
+		)
+		self.assertEqual(
+			((pipeline.get("compiled_query_request") or {}).get("filters") or {}).get("status"),
+			"Completed",
+		)
+
+	def test_compile_from_fresh_query_message_does_not_ground_unfilterable_customer_value(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="delivery-note-customer-boundary",
+			session_id="delivery-note-customer-boundary-session",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.93,
+			target_limit=0,
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status="accepted",
+			interpretation=interpretation,
+			confidence_threshold=0.72,
+			agent_meta={"engine": "semantic_runtime"},
+		)
+		mocked_frappe = Mock()
+		mocked_frappe.get_all.return_value = [
+			{"customer": "Acme Trading"},
+			{"customer": "Beta Stores"},
+		]
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=semantic_result,
+		), patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.frappe",
+			mocked_frappe,
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="delivery-note-customer-boundary-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me delivery notes for customer Acme Trading",
+				recent_messages=[],
+			)
+		self.assertNotIn(
+			"customer",
+			((pipeline.get("compiled_query_request") or {}).get("filters") or {}),
 		)
 
 	def test_financial_summary_normalizes_payable_into_aging(self):
@@ -2451,6 +3322,161 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.interpretation.candidate_reports, ["Sales Invoice List"])
 		self.assertEqual(outcome.interpretation.requested_metrics, ["Outstanding Amount"])
 
+	def test_transaction_listing_resolution_uses_structured_fulfillment_capability(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-2b",
+			session_id="semantic-listing",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=[],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.89,
+		)
+		outcome = resolve_transaction_listing_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.governed_decision, "execute")
+		self.assertEqual(outcome.contract.resolved_slots.get("listing_view"), "delivery_note")
+		self.assertEqual(outcome.contract.resolution_source.get("listing_view"), "semantic_runtime")
+		self.assertEqual(outcome.interpretation.candidate_capability_ids, ["fulfillment_read"])
+		self.assertEqual(outcome.interpretation.candidate_reports, ["Delivery Note List"])
+		self.assertEqual(outcome.interpretation.requested_dimensions, ["Delivery Note"])
+		self.assertEqual(outcome.interpretation.requested_metrics, ["Grand Total"])
+
+	def test_fulfillment_transaction_listing_defaults_do_not_use_concept_report_override(self):
+		defaults = capability_fresh_query_defaults("fulfillment_read", intent_class="transaction_listing")
+		self.assertEqual(defaults.get("default_report_name"), "Delivery Note List")
+		self.assertFalse(
+			isinstance(defaults.get("report_overrides_by_concept"), dict)
+			and defaults.get("report_overrides_by_concept"),
+			"Fulfillment transaction-listing defaults must not steer report selection from broad message concepts.",
+		)
+
+	def test_fulfillment_trend_defaults_admit_delivery_note_trends_narrowly(self):
+		defaults = capability_fresh_query_defaults("fulfillment_read", intent_class="trend_analysis")
+		self.assertEqual(defaults.get("default_report_name"), "Delivery Note Trends")
+		self.assertEqual(defaults.get("default_dimensions"), ["Customer"])
+		self.assertEqual(defaults.get("default_metrics"), ["Delivered Amount"])
+		self.assertEqual(defaults.get("default_time_scope"), "current_fiscal_year_to_date")
+		self.assertEqual(
+			defaults.get("metric_overrides_by_canonical_key", {}).get("sales_amount"),
+			["Delivered Amount"],
+		)
+		self.assertEqual(
+			defaults.get("metric_overrides_by_canonical_key", {}).get("quantity"),
+			["Delivered Quantity"],
+		)
+
+	def test_semantic_resolution_registry_time_scope_admits_last_year(self):
+		registry = load_semantic_resolution_registry()
+		slot_definitions = registry.get("slot_definitions") if isinstance(registry.get("slot_definitions"), list) else []
+		time_scope_values = []
+		for item in slot_definitions:
+			if not isinstance(item, dict):
+				continue
+			if str(item.get("slot_name") or "").strip() == "time_scope":
+				time_scope_values = [
+					str(value or "").strip()
+					for value in (item.get("allowed_values") or [])
+					if str(value or "").strip()
+				]
+				break
+		self.assertIn("last_year", time_scope_values)
+
+	def test_trend_analytics_family_admits_delivery_note_trends_and_fulfillment_capability(self):
+		spec = get_report_family_spec("trend_analytics")
+		self.assertIn("fulfillment_read", spec.get("capability_ids") or [])
+		self.assertIn("Delivery Note Trends", spec.get("report_names") or [])
+		self.assertIn("delivery_note_trends", spec.get("source_report_families") or [])
+
+	def test_delivery_note_trends_report_contract_is_explicit(self):
+		spec = get_report_spec("Delivery Note Trends")
+		self.assertEqual(
+			spec.get("required_filters"),
+			["company", "fiscal_year", "period", "based_on"],
+		)
+		defaultable = {
+			str(item.get("fieldname") or "").strip(): str(item.get("strategy") or "").strip()
+			for item in (spec.get("defaultable_filters") or [])
+			if isinstance(item, dict)
+		}
+		self.assertEqual(defaultable.get("company"), "single_company_invariant")
+		self.assertEqual(defaultable.get("fiscal_year"), "current_fiscal_year_name")
+		self.assertEqual(defaultable.get("period"), "compiler_default")
+		self.assertEqual(defaultable.get("based_on"), "compiler_default")
+		self.assertEqual(spec.get("supported_intent_classes"), ["trend_analysis"])
+		self.assertEqual(spec.get("supported_dimensions"), ["Customer", "Period"])
+		self.assertEqual(spec.get("supported_metrics"), ["Delivered Amount", "Delivered Quantity"])
+		self.assertIn("fulfillment", spec.get("semantic_tags") or [])
+		self.assertIn("delivery", spec.get("semantic_tags") or [])
+		self.assertIn("shipment", spec.get("semantic_tags") or [])
+		self.assertIn("trend", spec.get("semantic_tags") or [])
+
+	def test_transaction_listing_delivery_note_slot_aliases_stay_explicit(self):
+		registry = load_semantic_resolution_registry()
+		alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
+		listing_aliases = alias_maps.get("listing_view") if isinstance(alias_maps.get("listing_view"), list) else []
+		delivery_aliases = []
+		for entry in listing_aliases:
+			if not isinstance(entry, dict):
+				continue
+			if str(entry.get("canonical_value") or "").strip() == "delivery_note":
+				delivery_aliases = [str(value or "").strip() for value in (entry.get("aliases") or []) if str(value or "").strip()]
+				break
+		self.assertEqual(delivery_aliases, ["delivery note", "delivery notes"])
+
+	def test_transaction_listing_family_markers_do_not_add_delivery_phrase_routing(self):
+		spec = get_report_family_spec("transaction_listing")
+		routing_hints = spec.get("routing_hints") if isinstance(spec.get("routing_hints"), dict) else {}
+		markers = {
+			str(value or "").strip()
+			for value in (routing_hints.get("intent_markers") or [])
+			if str(value or "").strip()
+		}
+		self.assertFalse(
+			{"delivery list", "recent deliveries", "latest deliveries", "delivery notes"} & markers
+		)
+
+	def test_phase8_quantity_recovery_seed_uses_retry_safe_session_save(self):
+		doc = types.SimpleNamespace(name="phase8-doc")
+		calls = {"save_session": 0}
+
+		def _build_recovery_contract(**kwargs):
+			return types.SimpleNamespace(to_payload=lambda: {"type": "qwen_artifact_enrichment_recovery_contract", **kwargs})
+
+		def _append_message(_doc, _role, _content):
+			return None
+
+		def _append_tool_payload(_doc, _payload):
+			return None
+
+		def _assistant_text_payload(text):
+			return text
+
+		def _save_session(target_doc, *, ignore_permissions=False):
+			self.assertIs(target_doc, doc)
+			self.assertFalse(ignore_permissions)
+			calls["save_session"] += 1
+
+		doc.save = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("raw doc.save must not be called"))
+
+		_seed_quantity_recovery_session(
+			doc,
+			request_prefix="phase8-seed-test",
+			top_n=5,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			build_artifact_enrichment_recovery_contract=_build_recovery_contract,
+			save_session=_save_session,
+		)
+		self.assertEqual(calls["save_session"], 1)
+
 	def test_compiler_executes_transaction_listing_default(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="semantic-listing-3",
@@ -2485,6 +3511,115 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				"semantic_resolution_contract", {}
 			).get("governed_decision"),
 			"execute",
+		)
+
+	def test_compiler_executes_transaction_listing_delivery_note(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-3b",
+			session_id="semantic-listing",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=[],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.86,
+		)
+		outcome = compile_fresh_query(
+			request_id="semantic-listing-3b",
+			session_id="semantic-listing",
+			interpretation=interpretation,
+			response_policy={},
+		)
+		self.assertEqual(outcome.compiler_contract.decision, "execute")
+		self.assertEqual(outcome.compiler_contract.selected_report, "Delivery Note List")
+		self.assertEqual(outcome.compiler_contract.capability_id, "fulfillment_read")
+		self.assertEqual(
+			outcome.compiler_contract.governed_resolution_details.get(
+				"semantic_resolution_contract", {}
+			).get("resolved_slots", {}).get("listing_view"),
+			"delivery_note",
+		)
+
+	def test_compiler_applies_last_month_time_scope_to_direct_query_delivery_note_listing(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-date-1",
+			session_id="semantic-listing-date",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note List"],
+			requested_dimensions=["Delivery Note"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="last_month",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.9,
+		)
+		outcome = compile_fresh_query(
+			request_id="semantic-listing-date-1",
+			session_id="semantic-listing-date",
+			interpretation=interpretation,
+			response_policy={},
+		)
+		self.assertEqual(outcome.compiler_contract.decision, "execute")
+		self.assertEqual(outcome.compiler_contract.selected_report, "Delivery Note List")
+		self.assertEqual(
+			outcome.compiler_contract.completed_filters.get("from_date"),
+			"2026-03-01",
+		)
+		self.assertEqual(
+			outcome.compiler_contract.completed_filters.get("to_date"),
+			"2026-03-31",
+		)
+		self.assertEqual(
+			(outcome.compiled_request_contract.to_payload() if outcome.compiled_request_contract else {}).get("filters", {}).get("from_date"),
+			"2026-03-01",
+		)
+		self.assertEqual(
+			(outcome.compiled_request_contract.to_payload() if outcome.compiled_request_contract else {}).get("filters", {}).get("to_date"),
+			"2026-03-31",
+		)
+
+	def test_compiler_applies_explicit_slot_dates_to_direct_query_sales_invoice_listing(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-date-2",
+			session_id="semantic-listing-date",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["sales_read"],
+			candidate_reports=["Sales Invoice List"],
+			requested_dimensions=["Invoice"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={
+				"from_date": "2026-03-01",
+				"to_date": "2026-03-15",
+			},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.9,
+		)
+		outcome = compile_fresh_query(
+			request_id="semantic-listing-date-2",
+			session_id="semantic-listing-date",
+			interpretation=interpretation,
+			response_policy={},
+		)
+		self.assertEqual(outcome.compiler_contract.decision, "execute")
+		self.assertEqual(outcome.compiler_contract.selected_report, "Sales Invoice List")
+		self.assertEqual(
+			outcome.compiler_contract.completed_filters.get("from_date"),
+			"2026-03-01",
+		)
+		self.assertEqual(
+			outcome.compiler_contract.completed_filters.get("to_date"),
+			"2026-03-15",
 		)
 
 	def test_financial_statement_resolution_clarifies_missing_variant(self):
@@ -2779,6 +3914,325 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.interpretation.candidate_reports, ["Sales Analytics"])
 		self.assertEqual(outcome.interpretation.requested_metrics, ["Quantity"])
 
+	def test_trend_resolution_prefers_fulfillment_capability_defaults_genericly(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-trend-fulfillment-1",
+			session_id="semantic-trend-fulfillment",
+			intent_class="trend_analysis",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=[],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="current_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.8,
+		)
+		outcome = resolve_trend_analysis_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.governed_decision, "execute")
+		self.assertEqual(outcome.contract.resolved_slots.get("trend_metric"), "sales_amount")
+		self.assertEqual(outcome.interpretation.candidate_capability_ids, ["fulfillment_read"])
+		self.assertEqual(outcome.interpretation.candidate_reports, ["Delivery Note Trends"])
+		self.assertEqual(outcome.interpretation.requested_metrics, ["Delivered Amount"])
+
+	def test_trend_resolution_maps_quantity_to_fulfillment_trend_metric(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-trend-fulfillment-2",
+			session_id="semantic-trend-fulfillment",
+			intent_class="trend_analysis",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=[],
+			requested_dimensions=[],
+			requested_metrics=["Quantity"],
+			requested_time_scope="current_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.86,
+		)
+		outcome = resolve_trend_analysis_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.resolved_slots.get("trend_metric"), "quantity")
+		self.assertEqual(outcome.interpretation.candidate_reports, ["Delivery Note Trends"])
+		self.assertEqual(outcome.interpretation.requested_metrics, ["Delivered Quantity"])
+
+	def test_delivery_note_trends_family_adapter_uses_existing_trend_family_contract(self):
+		compiler_contract = {
+			"request_id": "adapter-trend-fulfillment-1",
+			"capability_id": "fulfillment_read",
+			"selected_report": "Delivery Note Trends",
+			"requested_dimensions": ["Customer"],
+			"requested_metrics": ["Delivered Amount"],
+			"requested_time_scope": "current_fiscal_year_to_date",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Delivery Note Trends",
+						"filters": {
+							"company": "Enterprise Co",
+							"fiscal_year": "FY-2026",
+							"period": "Monthly",
+							"based_on": "Customer",
+						},
+					},
+					"output_obj": {
+						"result": {
+							"columns": [
+								{"fieldname": "customer", "label": "Customer"},
+								{"fieldname": "currency", "label": "Currency"},
+								{"fieldname": "jan_(qty)", "label": "Jan (Qty)"},
+								{"fieldname": "jan_(amt)", "label": "Jan (Amt)"},
+								{"fieldname": "feb_(qty)", "label": "Feb (Qty)"},
+								{"fieldname": "feb_(amt)", "label": "Feb (Amt)"},
+								{"fieldname": "total(qty)", "label": "Total(Qty)"},
+								{"fieldname": "total(amt)", "label": "Total(Amt)"},
+							],
+							"data": [
+								{
+									"customer": "Alpha",
+									"currency": "MMK",
+									"jan_(qty)": 5,
+									"jan_(amt)": 500,
+									"feb_(qty)": 3,
+									"feb_(amt)": 300,
+									"total(qty)": 8,
+									"total(amt)": 800,
+								},
+								{
+									"customer": "'Total'",
+									"currency": None,
+									"jan_(qty)": 5,
+									"jan_(amt)": 500,
+									"feb_(qty)": 3,
+									"feb_(amt)": 300,
+									"total(qty)": 8,
+									"total(amt)": 800,
+								},
+							],
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-trend-fulfillment-1",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="trend_analysis",
+			preferred_family_id="trend_analytics",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertIsNotNone(outcome.artifact_contract)
+		dimensions = dict(outcome.artifact_contract.dimensions)
+		metrics = dict(outcome.artifact_contract.metrics)
+		sections = dict(outcome.artifact_contract.sections)
+		period = dict(outcome.artifact_contract.period)
+		self.assertEqual(dimensions.get("primary_metric_key"), "sales_amount")
+		self.assertEqual(dimensions.get("primary_metric_label"), "Delivered Amount")
+		self.assertEqual(dimensions.get("time_grain"), "monthly")
+		self.assertEqual(metrics.get("sales_amount"), 800.0)
+		self.assertEqual(period.get("fiscal_year"), "FY-2026")
+		self.assertEqual(period.get("from_fiscal_year"), "FY-2026")
+		self.assertEqual(period.get("to_fiscal_year"), "FY-2026")
+		self.assertEqual(len(sections.get("period_series") or []), 2)
+
+	def test_delivery_note_trends_family_adapter_uses_matching_quantity_label_when_quantity_selected(self):
+		compiler_contract = {
+			"request_id": "adapter-trend-fulfillment-1b",
+			"capability_id": "fulfillment_read",
+			"selected_report": "Delivery Note Trends",
+			"requested_dimensions": ["Customer", "Period"],
+			"requested_metrics": ["Delivered Amount", "Delivered Quantity"],
+			"requested_time_scope": "last_year",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Delivery Note Trends",
+						"filters": {
+							"company": "Enterprise Co",
+							"fiscal_year": "FY-2025",
+							"period": "Monthly",
+							"based_on": "Customer",
+						},
+					},
+					"output_obj": {
+						"result": {
+							"columns": [
+								{"fieldname": "customer", "label": "Customer"},
+								{"fieldname": "mar_(qty)", "label": "Mar (Qty)"},
+								{"fieldname": "mar_(amt)", "label": "Mar (Amt)"},
+								{"fieldname": "total(qty)", "label": "Total(Qty)"},
+								{"fieldname": "total(amt)", "label": "Total(Amt)"},
+							],
+							"data": [
+								{
+									"customer": "Alpha",
+									"mar_(qty)": 41,
+									"mar_(amt)": 2446000,
+									"total(qty)": 41,
+									"total(amt)": 2446000,
+								},
+								{
+									"customer": "'Total'",
+									"mar_(qty)": 41,
+									"mar_(amt)": 2446000,
+									"total(qty)": 41,
+									"total(amt)": 2446000,
+								},
+							],
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-trend-fulfillment-1b",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="trend_analysis",
+			preferred_family_id="trend_analytics",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertIsNotNone(outcome.artifact_contract)
+		dimensions = dict(outcome.artifact_contract.dimensions)
+		metrics = dict(outcome.artifact_contract.metrics)
+		sections = dict(outcome.artifact_contract.sections)
+		self.assertEqual(dimensions.get("primary_metric_key"), "quantity")
+		self.assertEqual(dimensions.get("primary_metric_label"), "Delivered Quantity")
+		self.assertEqual(metrics.get("quantity"), 41.0)
+		self.assertEqual((sections.get("summary") or [])[0].get("label"), "Total Delivered Quantity")
+
+	def test_trend_family_validation_accepts_current_fiscal_year_name_without_date_range(self):
+		artifact = build_normalized_family_artifact(
+			request_id="adapter-trend-fulfillment-validate",
+			compiler_contract={
+				"request_id": "adapter-trend-fulfillment-validate",
+				"capability_id": "fulfillment_read",
+				"selected_report": "Delivery Note Trends",
+				"requested_dimensions": ["Customer"],
+				"requested_metrics": ["Delivered Amount"],
+				"requested_time_scope": "current_fiscal_year_to_date",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Delivery Note Trends",
+							"filters": {
+								"company": "Enterprise Co",
+								"fiscal_year": "FY-2026",
+								"period": "Monthly",
+								"based_on": "Customer",
+							},
+						},
+						"output_obj": {
+						"result": {
+							"columns": [
+								{"fieldname": "customer", "label": "Customer"},
+								{"fieldname": "jan_(amt)", "label": "Jan (Amt)"},
+								{"fieldname": "total(amt)", "label": "Total(Amt)"},
+							],
+							"data": [
+								{"customer": "Alpha", "jan_(amt)": 500, "total(amt)": 500},
+								{"customer": "'Total'", "jan_(amt)": 500, "total(amt)": 500},
+							],
+						}
+						},
+					}
+				]
+			},
+			intent_class="trend_analysis",
+			preferred_family_id="trend_analytics",
+		).artifact_contract
+		validation = validate_normalized_family_artifact(
+			request_id="adapter-trend-fulfillment-validate",
+			compiler_contract={
+				"request_id": "adapter-trend-fulfillment-validate",
+				"capability_id": "fulfillment_read",
+				"selected_report": "Delivery Note Trends",
+				"requested_dimensions": ["Customer"],
+				"requested_metrics": ["Delivered Amount"],
+				"requested_time_scope": "current_fiscal_year_to_date",
+			},
+			artifact_contract=artifact,
+			family_id="trend_analytics",
+			adapter_errors=[],
+			adapter_warnings=[],
+		)
+		self.assertEqual(validation.status, "pass")
+
+	def test_trend_family_validation_accepts_previous_fiscal_year_name_for_last_year(self):
+		with patch("ai_assistant_ui.qwen_chat.family_validator._previous_fiscal_year_name", return_value="FY-2025"):
+			artifact = build_normalized_family_artifact(
+				request_id="adapter-trend-fulfillment-validate-last-year",
+				compiler_contract={
+					"request_id": "adapter-trend-fulfillment-validate-last-year",
+					"capability_id": "fulfillment_read",
+					"selected_report": "Delivery Note Trends",
+					"requested_dimensions": ["Customer"],
+					"requested_metrics": ["Delivered Amount"],
+					"requested_time_scope": "last_year",
+				},
+				runtime_payload={
+					"tool_trace": [
+						{
+							"tool": "erp_fac-generate_report",
+							"detail_obj": {
+								"report_name": "Delivery Note Trends",
+								"filters": {
+									"company": "Enterprise Co",
+									"fiscal_year": "FY-2025",
+									"period": "Monthly",
+									"based_on": "Customer",
+								},
+							},
+							"output_obj": {
+								"result": {
+									"columns": [
+										{"fieldname": "customer", "label": "Customer"},
+										{"fieldname": "jan_(amt)", "label": "Jan (Amt)"},
+										{"fieldname": "total(amt)", "label": "Total(Amt)"},
+									],
+									"data": [
+										{"customer": "Alpha", "jan_(amt)": 500, "total(amt)": 500},
+										{"customer": "'Total'", "jan_(amt)": 500, "total(amt)": 500},
+									],
+								}
+							},
+						}
+					]
+				},
+				intent_class="trend_analysis",
+				preferred_family_id="trend_analytics",
+			).artifact_contract
+			validation = validate_normalized_family_artifact(
+				request_id="adapter-trend-fulfillment-validate-last-year",
+				compiler_contract={
+					"request_id": "adapter-trend-fulfillment-validate-last-year",
+					"capability_id": "fulfillment_read",
+					"selected_report": "Delivery Note Trends",
+					"requested_dimensions": ["Customer"],
+					"requested_metrics": ["Delivered Amount"],
+					"requested_time_scope": "last_year",
+				},
+				artifact_contract=artifact,
+				family_id="trend_analytics",
+				adapter_errors=[],
+				adapter_warnings=[],
+			)
+		self.assertEqual(validation.status, "pass")
+
 	def test_trend_resolution_defaults_sales_amount_when_metric_missing(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="semantic-trend-2",
@@ -2827,6 +4281,43 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.compiler_contract.decision, "execute")
 		self.assertEqual(outcome.compiler_contract.selected_report, "Sales Analytics")
 		self.assertEqual(outcome.compiler_contract.capability_id, "sales_read")
+
+	def test_compiler_uses_previous_fiscal_year_for_last_year_delivery_trend(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-trend-last-year",
+			session_id="semantic-trend",
+			intent_class="trend_analysis",
+			candidate_capability_ids=["fulfillment_read"],
+			candidate_reports=["Delivery Note Trends"],
+			requested_dimensions=["Customer"],
+			requested_metrics=["Delivered Amount"],
+			requested_time_scope="last_year",
+			requested_presentation=[],
+			extracted_slots={
+				"from_date": "2025-04-01",
+				"to_date": "2026-03-31",
+			},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.92,
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.compiler._previous_fiscal_year_row",
+			return_value={
+				"name": "FY-2025",
+				"year_start_date": "2025-04-01",
+				"year_end_date": "2026-03-31",
+			},
+		):
+			outcome = compile_fresh_query(
+				request_id="semantic-trend-last-year",
+				session_id="semantic-trend",
+				interpretation=interpretation,
+				response_policy={},
+			)
+		self.assertEqual(outcome.compiler_contract.decision, "execute")
+		self.assertEqual(outcome.compiler_contract.selected_report, "Delivery Note Trends")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("fiscal_year"), "FY-2025")
 
 	def test_ranking_resolution_executes_product_gross_profit(self):
 		interpretation = build_fresh_query_interpretation_contract(
@@ -3070,6 +4561,135 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(list(outcome.requested_columns), ["quantity"])
 		self.assertEqual(outcome.target_metric, "sales_amount")
 
+	def test_transaction_listing_time_scope_restatement_upgrades_to_capability_requery(self):
+		resolution = build_followup_resolution_contract(
+			request_id="continuation-transaction-time-scope",
+			mode="grounded_follow_up",
+			requested_modes=["filter_refinement", "time_scope_restatement"],
+			target_dimension="Posting Date",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="last_month",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			reason="User asked for the same governed listing for last month.",
+		)
+		continuation_contract = types.SimpleNamespace(
+			preserve_grounded_context=True,
+			source_family_id="transaction_listing",
+			source_capability_id="fulfillment_read",
+			source_report="Delivery Note List",
+			preserved_dimension="Posting Date",
+			source_dimension="Posting Date",
+			preserved_metric_key="grand_total",
+			source_metric_key="grand_total",
+			preserve_projection_shape=True,
+			preserved_requested_columns=["document_name", "posting_date", "customer", "grand_total", "quantity", "status"],
+			source_requested_columns=["document_name", "posting_date", "customer", "grand_total", "quantity", "status"],
+			preserve_rank_membership=False,
+			preserved_limit=5,
+			source_limit=5,
+			preserve_rank_order=False,
+			preserved_sort_direction="",
+			source_sort_direction="",
+			preserved_time_scope="",
+			source_time_scope="",
+		)
+		outcome = authoritative_continuation_resolution(
+			request_id="continuation-transaction-time-scope",
+			followup_resolution=resolution,
+			continuation_contract=continuation_contract,
+			artifact_payload={"sections": {"transaction_rows": [{"document_name": "MAT-DN-2026-00015"}]}},
+			grounded_turn={},
+		)
+		self.assertEqual(outcome.mode, "capability_requery")
+		self.assertEqual(outcome.target_capability_id, "fulfillment_read")
+		self.assertEqual(outcome.target_report, "Delivery Note List")
+		self.assertEqual(outcome.requested_time_scope, "last_month")
+
+	def test_build_artifact_continuation_contract_does_not_mark_transaction_listing_as_rank_membership(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="listing-contract-no-rank-membership",
+			mode="grounded_follow_up",
+			requested_modes=[],
+			target_dimension="Posting Date",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			reason="Keep the current listing context.",
+		)
+		contract = build_artifact_continuation_contract(
+			request_id="listing-contract-no-rank-membership",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Delivery Note List",
+				"artifact_family_id": "transaction_listing",
+			},
+			artifact_payload={
+				"family_id": "transaction_listing",
+				"dimensions": {"requested_top_n": 5},
+				"sections": {"transaction_rows": [{"document_name": "MAT-DN-2026-00015"}]},
+			},
+		)
+		self.assertFalse(contract.preserve_rank_membership)
+		self.assertFalse(contract.preserve_rank_order)
+		self.assertEqual(contract.preserved_limit, 0)
+
+	def test_transaction_listing_time_scope_restatement_drops_legacy_preserved_limit(self):
+		resolution = build_followup_resolution_contract(
+			request_id="continuation-transaction-time-scope-legacy-limit",
+			mode="grounded_follow_up",
+			requested_modes=["filter_refinement", "time_scope_restatement"],
+			target_dimension="Posting Date",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="last_month",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			reason="User asked for the same governed listing for last month.",
+		)
+		continuation_contract = types.SimpleNamespace(
+			preserve_grounded_context=True,
+			source_family_id="transaction_listing",
+			source_capability_id="fulfillment_read",
+			source_report="Delivery Note List",
+			preserved_dimension="Posting Date",
+			source_dimension="Posting Date",
+			preserved_metric_key="grand_total",
+			source_metric_key="grand_total",
+			preserve_projection_shape=True,
+			preserved_requested_columns=["document_name", "posting_date", "customer", "grand_total", "quantity", "status"],
+			source_requested_columns=["document_name", "posting_date", "customer", "grand_total", "quantity", "status"],
+			preserve_rank_membership=True,
+			preserved_limit=5,
+			source_limit=5,
+			preserve_rank_order=True,
+			preserved_sort_direction="desc",
+			source_sort_direction="desc",
+			preserved_time_scope="",
+			source_time_scope="",
+		)
+		outcome = authoritative_continuation_resolution(
+			request_id="continuation-transaction-time-scope-legacy-limit",
+			followup_resolution=resolution,
+			continuation_contract=continuation_contract,
+			artifact_payload={"sections": {"transaction_rows": [{"document_name": "MAT-DN-2026-00015"}]}},
+			grounded_turn={},
+		)
+		self.assertEqual(outcome.mode, "capability_requery")
+		self.assertEqual(outcome.target_capability_id, "fulfillment_read")
+		self.assertEqual(outcome.target_report, "Delivery Note List")
+		self.assertEqual(outcome.requested_time_scope, "last_month")
+		self.assertEqual(outcome.target_limit, 0)
+
 	def test_product_performance_resolution_executes_profitability_view(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="semantic-product-1",
@@ -3190,21 +4810,143 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(candidate_reports, [])
 
 	def test_deterministic_family_surface_fallback_is_disabled_for_semantic_intent(self):
-		self.assertFalse(_allow_deterministic_family_surface_fallback("transaction_listing"))
-		self.assertFalse(_allow_deterministic_family_surface_fallback("financial_statement"))
-		self.assertFalse(_allow_deterministic_family_surface_fallback("inventory_summary"))
-		self.assertFalse(_allow_deterministic_family_surface_fallback("aging_analysis"))
+		self.assertTrue(_allow_deterministic_family_surface_fallback("transaction_listing"))
+		self.assertTrue(_allow_deterministic_family_surface_fallback("financial_statement"))
+		self.assertTrue(_allow_deterministic_family_surface_fallback("inventory_summary"))
+		self.assertTrue(_allow_deterministic_family_surface_fallback("aging_analysis"))
 		self.assertFalse(_allow_deterministic_family_surface_fallback("trend_analysis"))
 		self.assertFalse(_allow_deterministic_family_surface_fallback("financial_summary"))
+		self.assertTrue(_allow_deterministic_family_surface_fallback("ranked_entities"))
+		self.assertTrue(_allow_deterministic_family_surface_fallback("product_performance"))
 
-	def test_deterministic_family_surface_interpretation_is_retired(self):
+	def test_deterministic_family_surface_interpretation_builds_aging_route_from_governed_registry(self):
 		outcome = _deterministic_family_surface_interpretation(
 			request_id="semantic-det-1",
 			session_id="semantic-det",
-			message="show me p and l",
+			message="show accounts receivable summary as of today",
+			confidence_threshold=0.8,
+		)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.intent_class, "aging_analysis")
+		self.assertEqual(list(outcome.candidate_capability_ids), ["accounts_receivable_read"])
+		self.assertEqual(list(outcome.candidate_reports), ["Accounts Receivable Summary"])
+		self.assertEqual(outcome.requested_time_scope, "as_of_today")
+		self.assertEqual(dict(outcome.extracted_slots), {"aging_view": "receivable"})
+
+	def test_deterministic_family_surface_interpretation_stays_disabled_for_ambiguous_trend_rules(self):
+		outcome = _deterministic_family_surface_interpretation(
+			request_id="semantic-det-2",
+			session_id="semantic-det",
+			message="show monthly sales trend this fiscal year",
 			confidence_threshold=0.8,
 		)
 		self.assertIsNone(outcome)
+
+	def test_semantic_resolution_registry_loader_returns_defensive_copy(self):
+		first = load_semantic_resolution_registry()
+		second = load_semantic_resolution_registry()
+		self.assertIsNot(first, second)
+		first_rules = first.get("family_resolution_rules") if isinstance(first.get("family_resolution_rules"), list) else []
+		second_rules = second.get("family_resolution_rules") if isinstance(second.get("family_resolution_rules"), list) else []
+		self.assertTrue(first_rules)
+		self.assertTrue(second_rules)
+		self.assertIsNot(first_rules, second_rules)
+		first_rules.pop()
+		self.assertGreater(len(second_rules), len(first_rules))
+
+	def test_business_ontology_loader_returns_defensive_copy(self):
+		first = load_business_ontology()
+		second = load_business_ontology()
+		self.assertIsNot(first, second)
+		first_concepts = first.get("concepts") if isinstance(first.get("concepts"), list) else []
+		second_concepts = second.get("concepts") if isinstance(second.get("concepts"), list) else []
+		self.assertTrue(first_concepts)
+		self.assertTrue(second_concepts)
+		self.assertIsNot(first_concepts, second_concepts)
+		first_aliases = first_concepts[0].get("aliases") if isinstance(first_concepts[0], dict) else {}
+		second_aliases = second_concepts[0].get("aliases") if isinstance(second_concepts[0], dict) else {}
+		self.assertIsInstance(first_aliases, dict)
+		self.assertIsInstance(second_aliases, dict)
+		self.assertIsNot(first_aliases, second_aliases)
+		first_en_aliases = first_aliases.get("en") if isinstance(first_aliases.get("en"), list) else []
+		second_en_aliases = second_aliases.get("en") if isinstance(second_aliases.get("en"), list) else []
+		self.assertTrue(first_en_aliases)
+		self.assertTrue(second_en_aliases)
+		first_en_aliases.pop()
+		self.assertGreater(len(second_en_aliases), len(first_en_aliases))
+
+	def test_compile_from_fresh_query_message_uses_deterministic_surface_fallback_after_runtime_error(self):
+		runtime_error = SemanticFreshQueryResult(
+			status="runtime_error",
+			confidence_threshold=0.72,
+			runtime_error="provider timeout",
+			agent_meta={},
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			side_effect=[runtime_error, runtime_error],
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="deterministic-fallback-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show accounts receivable summary as of today",
+			)
+		semantic_payload = pipeline.get("fresh_query_interpretation") if isinstance(pipeline.get("fresh_query_interpretation"), dict) else {}
+		compiler_payload = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+		compiled_request = pipeline.get("compiled_query_request") if isinstance(pipeline.get("compiled_query_request"), dict) else {}
+		self.assertEqual(semantic_payload.get("status"), "semantic_resolution_applied")
+		self.assertTrue(bool((semantic_payload.get("agent_meta") or {}).get("deterministic_surface_fallback")))
+		self.assertEqual(compiler_payload.get("decision"), "execute")
+		self.assertEqual(compiled_request.get("selected_report"), "Accounts Receivable Summary")
+
+	def test_pipeline_recover_with_deterministic_surface_fallback_rebuilds_compiled_request(self):
+		pipeline = {
+			"request_id": "deterministic-pipeline-rescue",
+			"fresh_query_interpretation": {
+				"type": "qwen_semantic_fresh_query_interpretation",
+				"contract_version": "1.0",
+				"status": "runtime_error",
+				"confidence_threshold": 0.72,
+				"runtime_error": "Semantic fresh-query response did not pass governed runtime validation.",
+				"validation_error": "",
+				"interpretation": {},
+				"agent_meta": {"engine": "semantic_fresh_query"},
+			},
+			"phase4_latency_breakdown": {
+				"proposal_generation_latency_ms": 17,
+				"compilation_latency_ms": 0,
+			},
+		}
+
+		recovered = _recover_pipeline_with_deterministic_surface_fallback(
+			pipeline=pipeline,
+			session_id="deterministic-pipeline-rescue-session",
+			user_id="Administrator",
+			site_name="erpai_prj1",
+			message="show accounts receivable summary as of today",
+			clarification_resolution=None,
+		)
+		semantic_payload = (
+			recovered.get("fresh_query_interpretation")
+			if isinstance(recovered.get("fresh_query_interpretation"), dict)
+			else {}
+		)
+		compiler_payload = (
+			recovered.get("fresh_query_compiler")
+			if isinstance(recovered.get("fresh_query_compiler"), dict)
+			else {}
+		)
+		compiled_request = (
+			recovered.get("compiled_query_request")
+			if isinstance(recovered.get("compiled_query_request"), dict)
+			else {}
+		)
+		self.assertEqual(semantic_payload.get("status"), "semantic_resolution_applied")
+		self.assertTrue(bool((semantic_payload.get("agent_meta") or {}).get("deterministic_surface_fallback")))
+		self.assertTrue(bool((semantic_payload.get("agent_meta") or {}).get("deterministic_surface_pipeline_rescue")))
+		self.assertEqual(compiler_payload.get("decision"), "execute")
+		self.assertEqual(compiled_request.get("selected_report"), "Accounts Receivable Summary")
 
 	def test_legacy_runtime_family_surface_disabled_for_semantic_rollout_fallback(self):
 		self.assertFalse(_legacy_runtime_family_tool_surface_allowed(None))
@@ -3229,6 +4971,47 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		)
 		self.assertFalse(_legacy_runtime_family_tool_surface_allowed({}))
+
+	def test_build_grounded_turn_context_ignores_stale_artifact_metadata_from_prior_request(self):
+		grounded = build_grounded_turn_context(
+			request_id="current-request",
+			interaction_contract=types.SimpleNamespace(detected_language="en"),
+			assistant_payload={
+				"tables": [
+					{
+						"headers": ["Customer", "Outstanding Amount"],
+						"rows": [["Customer A", "100,000"]],
+					}
+				]
+			},
+			runtime_payload={
+				"ok": True,
+				"request_id": "current-request",
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Accounts Receivable Summary",
+							"filters": {
+								"company": "Enterprise Co",
+								"report_date": "2026-04-06",
+							},
+						},
+					}
+				],
+			},
+			artifact_payload={
+				"request_id": "prior-request",
+				"family_id": "aging",
+				"artifact_type": "normalized_family_artifact",
+				"source_name": "Accounts Payable",
+				"source_reports": ["Accounts Payable Summary"],
+			},
+		)
+		self.assertIsNotNone(grounded)
+		self.assertEqual(grounded.source_name, "Accounts Receivable Summary")
+		self.assertEqual(list(grounded.artifact_source_reports or []), [])
+		self.assertEqual(str(grounded.artifact_family_id or ""), "")
 
 	def test_legacy_runtime_success_payload_includes_mode(self):
 		with patch(
@@ -3469,6 +5252,377 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			["posting_date", "customer", "outstanding_amount"],
 		)
 
+	def test_transaction_listing_family_adapter_generalizes_delivery_note_list(self):
+		compiler_contract = {
+			"request_id": "adapter-structured-2b",
+			"capability_id": "fulfillment_read",
+			"selected_report": "Delivery Note List",
+			"requested_dimensions": ["Posting Date", "Customer"],
+			"requested_metrics": ["Quantity"],
+			"requested_time_scope": "last_month",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Delivery Note List",
+						"filters": {
+							"from_date": "2026-03-01",
+							"to_date": "2026-03-31",
+						},
+					},
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"name": "MAT-DN-2026-00015",
+									"posting_date": "2026-03-30",
+									"customer": "Thaketa Mobile Exchange",
+									"status": "Partially Billed",
+									"company": "Enterprise Co",
+									"grand_total": 200000,
+									"total_qty": 5,
+									"docstatus": 1,
+									"is_return": 0,
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-structured-2b",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertIsNotNone(outcome.artifact_contract)
+		dimensions = dict(outcome.artifact_contract.dimensions)
+		metrics = dict(outcome.artifact_contract.metrics)
+		summary = list((outcome.artifact_contract.sections or {}).get("summary") or [])
+		self.assertEqual(dimensions.get("transaction_type"), "delivery_note")
+		self.assertEqual(dimensions.get("document_label"), "Delivery Note")
+		self.assertEqual(
+			dimensions.get("requested_columns"),
+			["posting_date", "customer", "quantity"],
+		)
+		self.assertEqual(metrics.get("document_count"), 1)
+		self.assertEqual(metrics.get("total_amount"), 200000.0)
+		self.assertEqual(metrics.get("quantity"), 5.0)
+		self.assertNotIn("outstanding_amount", metrics)
+		self.assertTrue(any(str(item.get("metric_key") or "").strip() == "quantity" for item in summary))
+
+	def test_transaction_listing_family_validation_does_not_require_outstanding_for_delivery_note_shape(self):
+		compiler_contract = {
+			"request_id": "adapter-structured-2c",
+			"capability_id": "fulfillment_read",
+			"selected_report": "Delivery Note List",
+			"requested_dimensions": ["Posting Date", "Customer"],
+			"requested_metrics": ["Quantity"],
+			"requested_time_scope": "",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Delivery Note List",
+						"filters": {"company": "Enterprise Co"},
+					},
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"name": "MAT-DN-2026-00015",
+									"posting_date": "2026-03-30",
+									"customer": "Thaketa Mobile Exchange",
+									"status": "Partially Billed",
+									"company": "Enterprise Co",
+									"grand_total": 200000,
+									"total_qty": 5,
+									"docstatus": 1,
+									"is_return": 0,
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-structured-2c",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		validation = validate_normalized_family_artifact(
+			request_id="adapter-structured-2c",
+			compiler_contract=compiler_contract,
+			artifact_contract=outcome.artifact_contract,
+			family_id=outcome.family_id,
+			adapter_errors=outcome.errors,
+			adapter_warnings=outcome.warnings,
+		)
+		self.assertIsNotNone(validation)
+		self.assertEqual(validation.status, "pass")
+		self.assertNotIn(
+			"Missing normalized transaction metrics: outstanding_amount",
+			list(validation.errors),
+		)
+
+	def test_transaction_listing_family_validation_does_not_require_quantity_for_invoice_shape(self):
+		compiler_contract = {
+			"request_id": "adapter-structured-2d",
+			"capability_id": "sales_read",
+			"selected_report": "Sales Invoice List",
+			"requested_dimensions": ["Posting Date", "Customer"],
+			"requested_metrics": ["Grand Total"],
+			"requested_time_scope": "",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Sales Invoice List",
+						"filters": {"company": "Enterprise Co"},
+					},
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"name": "SINV-0001",
+									"posting_date": "2026-03-05",
+									"customer": "Alpha",
+									"grand_total": 1200,
+									"outstanding_amount": 400,
+									"status": "Overdue",
+									"docstatus": 1,
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-structured-2d",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		validation = validate_normalized_family_artifact(
+			request_id="adapter-structured-2d",
+			compiler_contract=compiler_contract,
+			artifact_contract=outcome.artifact_contract,
+			family_id=outcome.family_id,
+			adapter_errors=outcome.errors,
+			adapter_warnings=outcome.warnings,
+		)
+		self.assertIsNotNone(validation)
+		self.assertEqual(validation.status, "pass")
+		self.assertNotIn(
+			"Missing normalized transaction metrics: quantity",
+			list(validation.errors),
+		)
+
+	def test_transaction_listing_family_adapter_preserves_empty_governed_result(self):
+		compiler_contract = {
+			"request_id": "adapter-structured-empty-1",
+			"capability_id": "fulfillment_read",
+			"selected_report": "Delivery Note List",
+			"requested_dimensions": ["Posting Date", "Customer", "Document Status"],
+			"requested_metrics": ["Grand Total"],
+			"requested_time_scope": "last_month",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Delivery Note List",
+						"filters": {
+							"company": "Enterprise Co",
+							"from_date": "2026-03-01",
+							"to_date": "2026-03-31",
+							"status": "Completed",
+						},
+					},
+					"output_obj": {"result": {"data": []}},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-structured-empty-1",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertIsNotNone(outcome.artifact_contract)
+		self.assertEqual(outcome.artifact_contract.metrics.get("document_count"), 0)
+		self.assertEqual((outcome.artifact_contract.sections or {}).get("transaction_rows"), [])
+		self.assertIn(
+			"No governed rows matched the requested filters for this transaction listing.",
+			list(outcome.artifact_contract.warnings),
+		)
+
+	def test_transaction_listing_family_validation_accepts_empty_governed_result(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-structured-empty-2",
+			compiler_contract={
+				"request_id": "adapter-structured-empty-2",
+				"capability_id": "fulfillment_read",
+				"selected_report": "Delivery Note List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Grand Total"],
+				"requested_time_scope": "last_month",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Delivery Note List",
+							"filters": {
+								"company": "Enterprise Co",
+								"from_date": "2026-03-01",
+								"to_date": "2026-03-31",
+								"status": "Completed",
+							},
+						},
+						"output_obj": {"result": {"data": []}},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		validation = validate_normalized_family_artifact(
+			request_id="adapter-structured-empty-2",
+			compiler_contract={
+				"request_id": "adapter-structured-empty-2",
+				"capability_id": "fulfillment_read",
+				"selected_report": "Delivery Note List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Grand Total"],
+				"requested_time_scope": "last_month",
+			},
+			artifact_contract=artifact_contract,
+			family_id="transaction_listing",
+			adapter_errors=[],
+			adapter_warnings=list(artifact_contract.warnings),
+		)
+		self.assertIsNotNone(validation)
+		self.assertEqual(validation.status, "pass")
+		self.assertEqual(list(validation.errors), [])
+		self.assertIn(
+			"Normalized transaction listing artifact contains no matching document rows for the current governed filters.",
+			list(validation.warnings),
+		)
+
+	def test_transaction_listing_family_validation_accepts_empty_invoice_result_with_outstanding_metric(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-structured-empty-3",
+			compiler_contract={
+				"request_id": "adapter-structured-empty-3",
+				"capability_id": "sales_read",
+				"selected_report": "Sales Invoice List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Grand Total", "Outstanding Amount"],
+				"requested_time_scope": "latest",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Sales Invoice List",
+							"filters": {
+								"company": "Enterprise Co",
+								"from_date": "2026-04-07",
+								"to_date": "2026-04-07",
+							},
+						},
+						"output_obj": {"result": {"data": []}},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		validation = validate_normalized_family_artifact(
+			request_id="adapter-structured-empty-3",
+			compiler_contract={
+				"request_id": "adapter-structured-empty-3",
+				"capability_id": "sales_read",
+				"selected_report": "Sales Invoice List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Grand Total", "Outstanding Amount"],
+				"requested_time_scope": "latest",
+			},
+			artifact_contract=artifact_contract,
+			family_id="transaction_listing",
+			adapter_errors=[],
+			adapter_warnings=list(artifact_contract.warnings),
+		)
+		self.assertIsNotNone(validation)
+		self.assertEqual(validation.status, "pass")
+		self.assertNotIn(
+			"Missing normalized transaction metrics: outstanding_amount",
+			list(validation.errors),
+		)
+		self.assertIn(
+			"Normalized transaction listing artifact contains no matching document rows for the current governed filters.",
+			list(validation.warnings),
+		)
+
+	def test_transaction_listing_renderer_explains_empty_governed_result(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-structured-empty-3",
+			compiler_contract={
+				"request_id": "adapter-structured-empty-3",
+				"capability_id": "fulfillment_read",
+				"selected_report": "Delivery Note List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Grand Total"],
+				"requested_time_scope": "last_month",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Delivery Note List",
+							"filters": {
+								"company": "Enterprise Co",
+								"from_date": "2026-03-01",
+								"to_date": "2026-03-31",
+								"status": "Completed",
+							},
+						},
+						"output_obj": {"result": {"data": []}},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="adapter-structured-empty-3",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		answer_text = str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("answer_text") or "")
+		self.assertIn("No matching governed documents were found for the current filters.", answer_text)
+
 	def test_direct_query_execution_uses_governed_default_limit(self):
 		report_spec = {
 			"grounding_mode": "direct_query",
@@ -3492,3 +5646,79 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		self.assertTrue(payload.get("ok"))
 		self.assertEqual(mocked_get_all.call_args.kwargs.get("limit_page_length"), 7)
+
+	def test_direct_query_execution_applies_governed_scalar_status_filter(self):
+		report_spec = {
+			"grounding_mode": "direct_query",
+			"direct_query": {
+				"doctype": "Delivery Note",
+				"fields": ["name", "posting_date", "customer", "status", "company"],
+				"fixed_filters": {"docstatus": 1},
+				"date_field": "posting_date",
+				"default_limit": 8,
+			},
+			"required_filters": ["company"],
+			"defaultable_filters": [{"fieldname": "company", "strategy": "single_company_invariant"}],
+		}
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_report_executor.get_report_spec",
+			return_value=report_spec,
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_report_executor.frappe.get_all",
+			return_value=[{"name": "DN-0001", "status": "Completed"}],
+		) as mocked_get_all:
+			payload = execute_governed_report(
+				report_name="Delivery Note List",
+				filters={
+					"company": "Enterprise Co",
+					"from_date": "2026-03-01",
+					"to_date": "2026-03-31",
+					"status": "Completed",
+					"unexpected_filter": "ignore-me",
+				},
+				user="Administrator",
+			)
+		self.assertTrue(payload.get("ok"))
+		self.assertEqual(
+			mocked_get_all.call_args.kwargs.get("filters"),
+			{
+				"docstatus": 1,
+				"company": "Enterprise Co",
+				"posting_date": ["between", ["2026-03-01", "2026-03-31"]],
+				"status": "Completed",
+			},
+		)
+
+	def test_direct_query_execution_ignores_nonscalar_dynamic_filter_values(self):
+		report_spec = {
+			"grounding_mode": "direct_query",
+			"direct_query": {
+				"doctype": "Delivery Note",
+				"fields": ["name", "status", "company"],
+				"fixed_filters": {"docstatus": 1},
+			},
+			"required_filters": ["company"],
+		}
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_report_executor.get_report_spec",
+			return_value=report_spec,
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_report_executor.frappe.get_all",
+			return_value=[{"name": "DN-0001"}],
+		) as mocked_get_all:
+			payload = execute_governed_report(
+				report_name="Delivery Note List",
+				filters={
+					"company": "Enterprise Co",
+					"status": ["in", ["Completed", "To Bill"]],
+				},
+				user="Administrator",
+			)
+		self.assertTrue(payload.get("ok"))
+		self.assertEqual(
+			mocked_get_all.call_args.kwargs.get("filters"),
+			{
+				"docstatus": 1,
+				"company": "Enterprise Co",
+			},
+		)

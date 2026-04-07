@@ -5,7 +5,8 @@
     {
       "slot_name": "listing_view",
       "allowed_values": [
-        "sales_invoice"
+        "sales_invoice",
+        "delivery_note"
       ],
       "required_for_intent_classes": [
         "transaction_listing"
@@ -110,6 +111,7 @@
         "today",
         "this_month",
         "last_month",
+        "last_year",
         "current_fiscal_year_to_date",
         "as_of_today"
       ],
@@ -118,6 +120,24 @@
     }
   ],
   "alias_maps": {
+    "listing_view": [
+      {
+        "canonical_value": "sales_invoice",
+        "aliases": [
+          "sales invoice",
+          "sales invoices",
+          "invoice",
+          "invoices"
+        ]
+      },
+      {
+        "canonical_value": "delivery_note",
+        "aliases": [
+          "delivery note",
+          "delivery notes"
+        ]
+      }
+    ],
     "statement_variant": [
       {
         "canonical_value": "profit_and_loss",
@@ -225,6 +245,48 @@
           "amount due"
         ]
       }
+    ],
+    "time_scope": [
+      {
+        "canonical_value": "current_fiscal_year_to_date",
+        "aliases": [
+          "this fiscal year",
+          "current fiscal year",
+          "this year",
+          "current year",
+          "year to date",
+          "fiscal year to date"
+        ]
+      },
+      {
+        "canonical_value": "last_month",
+        "aliases": [
+          "last month",
+          "previous month",
+          "prior month"
+        ]
+      },
+      {
+        "canonical_value": "last_year",
+        "aliases": [
+          "last year",
+          "previous year",
+          "prior year",
+          "last fiscal year",
+          "previous fiscal year",
+          "prior fiscal year"
+        ]
+      },
+      {
+        "canonical_value": "as_of_today",
+        "aliases": [
+          "today",
+          "as of today",
+          "as of now",
+          "now",
+          "current date"
+        ]
+      }
     ]
   },
   "family_resolution_rules": [
@@ -245,6 +307,24 @@
       ],
       "governed_decision": "execute",
       "ambiguity_policy": "transaction_listing_default"
+    },
+    {
+      "rule_id": "transaction_listing_delivery_note",
+      "intent_class": "transaction_listing",
+      "required_slots": {
+        "listing_view": "delivery_note"
+      },
+      "candidate_family_ids": [
+        "transaction_listing"
+      ],
+      "candidate_capability_ids": [
+        "fulfillment_read"
+      ],
+      "candidate_reports": [
+        "Delivery Note List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
     },
     {
       "rule_id": "financial_statement_profit_and_loss",
@@ -391,6 +471,24 @@
       "ambiguity_policy": "trend_metric_default"
     },
     {
+      "rule_id": "trend_sales_amount_fulfillment",
+      "intent_class": "trend_analysis",
+      "required_slots": {
+        "trend_metric": "sales_amount"
+      },
+      "candidate_family_ids": [
+        "trend_analytics"
+      ],
+      "candidate_capability_ids": [
+        "fulfillment_read"
+      ],
+      "candidate_reports": [
+        "Delivery Note Trends"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "trend_metric_default"
+    },
+    {
       "rule_id": "trend_quantity",
       "intent_class": "trend_analysis",
       "required_slots": {
@@ -404,6 +502,24 @@
       ],
       "candidate_reports": [
         "Sales Analytics"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "trend_quantity_fulfillment",
+      "intent_class": "trend_analysis",
+      "required_slots": {
+        "trend_metric": "quantity"
+      },
+      "candidate_family_ids": [
+        "trend_analytics"
+      ],
+      "candidate_capability_ids": [
+        "fulfillment_read"
+      ],
+      "candidate_reports": [
+        "Delivery Note Trends"
       ],
       "governed_decision": "execute",
       "ambiguity_policy": "none"

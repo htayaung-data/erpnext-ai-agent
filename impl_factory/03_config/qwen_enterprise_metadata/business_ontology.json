@@ -340,7 +340,7 @@
         "my": []
       },
       "last_year": {
-        "en": ["last year", "previous year", "prior year"],
+        "en": ["last year", "previous year", "prior year", "last fiscal year", "previous fiscal year", "prior fiscal year"],
         "my": []
       }
     }

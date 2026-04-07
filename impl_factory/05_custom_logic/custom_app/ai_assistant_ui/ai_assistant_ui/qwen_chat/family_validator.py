@@ -5,6 +5,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+try:
+	import frappe  # type: ignore
+except Exception:  # pragma: no cover
+	frappe = None  # type: ignore
+
 from ai_assistant_ui.qwen_chat.contracts import (
 	NormalizedFamilyArtifactContract,
 	build_family_validation_contract,
@@ -141,11 +146,14 @@ def _time_scope_matches(requested_time_scope: str, period: Dict[str, Any]) -> bo
 		return True
 	from_date = str(period.get("from_date") or "").strip()
 	to_date = str(period.get("to_date") or "").strip()
+	fiscal_year = str(period.get("fiscal_year") or period.get("from_fiscal_year") or "").strip()
 	today = _today_iso()
 	if scope in {"as_of_today", "current_date_utc"}:
 		return to_date == today
 	if scope == "current_fiscal_year_to_date":
-		return bool(from_date and to_date == today)
+		return bool((from_date and to_date == today) or (fiscal_year and fiscal_year == _current_fiscal_year_name()))
+	if scope == "last_year":
+		return bool(fiscal_year and fiscal_year == _previous_fiscal_year_name())
 	if scope == "last_month":
 		if not from_date or not to_date:
 			return False
@@ -162,6 +170,76 @@ def _time_scope_matches(requested_time_scope: str, period: Dict[str, Any]) -> bo
 
 def _today_date() -> dt.date:
 	return dt.datetime.now(dt.timezone.utc).date()
+
+
+def _current_fiscal_year_name() -> str:
+	if frappe is None:
+		return ""
+	try:
+		today = _today_date()
+		rows = frappe.get_all(
+			"Fiscal Year",
+			fields=["name", "year_start_date", "year_end_date"],
+			order_by="year_start_date desc",
+			limit=10,
+		)
+	except Exception:
+		return ""
+	fallback_name = ""
+	for row in rows or []:
+		if not isinstance(row, dict):
+			continue
+		name = str(row.get("name") or "").strip()
+		start_value = row.get("year_start_date")
+		end_value = row.get("year_end_date")
+		try:
+			start = dt.date.fromisoformat(str(start_value)) if start_value else None
+			end = dt.date.fromisoformat(str(end_value)) if end_value else None
+		except Exception:
+			start = None
+			end = None
+		if name and not fallback_name:
+			fallback_name = name
+		if name and start and end and start <= today <= end:
+			return name
+	return fallback_name
+
+
+def _previous_fiscal_year_name() -> str:
+	if frappe is None:
+		return ""
+	try:
+		rows = frappe.get_all(
+			"Fiscal Year",
+			fields=["name", "year_start_date", "year_end_date"],
+			order_by="year_start_date asc",
+			limit=20,
+		)
+	except Exception:
+		return ""
+	today = _today_date()
+	valid_rows: List[Dict[str, str]] = []
+	current_index = -1
+	for row in rows or []:
+		if not isinstance(row, dict):
+			continue
+		name = str(row.get("name") or "").strip()
+		start_value = row.get("year_start_date")
+		end_value = row.get("year_end_date")
+		try:
+			start = dt.date.fromisoformat(str(start_value)) if start_value else None
+			end = dt.date.fromisoformat(str(end_value)) if end_value else None
+		except Exception:
+			start = None
+			end = None
+		if not name or not start or not end:
+			continue
+		valid_rows.append({"name": name})
+		if start <= today <= end:
+			current_index = len(valid_rows) - 1
+	if current_index > 0:
+		return str(valid_rows[current_index - 1].get("name") or "").strip()
+	return ""
 
 
 @dataclass(frozen=True)
@@ -865,14 +943,31 @@ def _validate_transaction_listing_artifact(
 		for key, value in metrics.items()
 		if str(key or "").strip() and value not in (None, "")
 	]
-	required_metrics = requested_metrics or ["document_count", "total_amount", "outstanding_amount"]
-	missing_metrics = [metric for metric in required_metrics if metric not in observed_metrics]
-	if missing_metrics:
-		errors.append(f"Missing normalized transaction metrics: {', '.join(missing_metrics)}")
 	if not _has_source_reports(artifact_contract):
 		errors.append("Normalized transaction listing artifact did not preserve governed source reports.")
+	try:
+		document_count = int(max(0, metrics.get("document_count") or 0))
+	except Exception:
+		document_count = 0
+	is_empty_governed_result = bool(document_count == 0 and not transaction_rows)
+	required_metrics = ["document_count"] if is_empty_governed_result else list(requested_metrics) or ["document_count"]
+	if "total_amount" in observed_metrics:
+		required_metrics.append("total_amount")
+	if "outstanding_amount" in observed_metrics:
+		required_metrics.append("outstanding_amount")
+	if "quantity" in observed_metrics:
+		required_metrics.append("quantity")
+	required_metrics = list(dict.fromkeys(required_metrics))
+	missing_metrics = [] if is_empty_governed_result else [
+		metric for metric in required_metrics if metric not in observed_metrics
+	]
+	if missing_metrics:
+		errors.append(f"Missing normalized transaction metrics: {', '.join(missing_metrics)}")
 	if not transaction_rows:
-		errors.append("Normalized transaction listing artifact contains no document rows.")
+		if document_count > 0:
+			errors.append("Normalized transaction listing artifact contains no document rows.")
+		else:
+			warnings.append("Normalized transaction listing artifact contains no matching document rows for the current governed filters.")
 	else:
 		first_row = transaction_rows[0] if isinstance(transaction_rows[0], dict) else {}
 		if not str(first_row.get("document_name") or "").strip():
@@ -887,7 +982,10 @@ def _validate_transaction_listing_artifact(
 	if not time_scope_match and str(compiler_contract.get("requested_time_scope") or "").strip():
 		warnings.append("Normalized transaction listing period did not match the requested time scope cleanly.")
 
-	family_schema_match = bool(str(dimensions.get("transaction_type") or "").strip() and transaction_rows)
+	family_schema_match = bool(
+		str(dimensions.get("transaction_type") or "").strip()
+		and (transaction_rows or document_count == 0)
+	)
 	decision = "pass"
 	if errors:
 		decision = "reject_family_inconsistent"

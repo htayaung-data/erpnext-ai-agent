@@ -36,14 +36,17 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_fresh_query_defaults,
 	capability_intent_classes,
 	capability_ontology_concepts,
+	get_report_spec,
 	list_capability_specs,
 	list_composite_read_specs,
 	list_intent_class_specs,
+	load_semantic_resolution_registry,
 	ontology_detect_concepts,
 	report_business_family_ids,
 	report_capability_ids,
 	report_family_capability_ids,
 	report_family_ids_for_intent_class,
+	report_semantic_tags,
 	report_supported_dimensions,
 	report_supported_intent_classes,
 	report_supported_metrics,
@@ -118,6 +121,24 @@ def _normalize_key(value: Any) -> str:
 	return text.strip("_")
 
 
+def _extract_structural_target_limit_seed(message: str) -> int:
+	text = str(message or "").strip().lower()
+	if not text:
+		return 0
+	match = re.search(r"\b(?:top|last|latest)\s+(\d{1,2})\b", text)
+	if not match:
+		return 0
+	if re.match(
+		r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+		text[match.end():],
+	):
+		return 0
+	try:
+		return max(0, min(50, int(match.group(1) or 0)))
+	except Exception:
+		return 0
+
+
 def _normalized_lookup(values: List[str]) -> Dict[str, str]:
 	out: Dict[str, str] = {}
 	for value in values:
@@ -126,6 +147,108 @@ def _normalized_lookup(values: List[str]) -> Dict[str, str]:
 			continue
 		out[_normalize_key(clean)] = clean
 	return out
+
+
+def _governed_time_scope_aliases(canonical_scope: str) -> List[str]:
+	scope = _normalize_time_scope(canonical_scope)
+	if not scope:
+		return []
+	out: List[str] = []
+	registry = load_semantic_resolution_registry()
+	alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
+	entries = alias_maps.get("time_scope") if isinstance(alias_maps.get("time_scope"), list) else []
+	for entry in entries:
+		if not isinstance(entry, dict):
+			continue
+		if _normalize_time_scope(entry.get("canonical_value")) != scope:
+			continue
+		out.extend(str(value or "").strip() for value in (entry.get("aliases") or []) if str(value or "").strip())
+	return list(dict.fromkeys(out))
+
+
+def _message_explicitly_requests_time_scope(message: str, canonical_scope: str) -> bool:
+	return any(_message_contains_phrase(message, alias) for alias in _governed_time_scope_aliases(canonical_scope))
+
+
+def _strip_structural_limit_time_scope_conflict(
+	*,
+	message: str,
+	intent_class: str,
+	requested_time_scope: str,
+	target_limit: int,
+) -> str:
+	current = str(requested_time_scope or "").strip()
+	if intent_class not in {"ranked_entities", "transaction_listing"}:
+		return current
+	limit = int(max(0, target_limit or 0))
+	if not current or limit <= 0:
+		return current
+	normalized_scope = _normalize_key(current)
+	message_text = str(message or "").strip().lower()
+	if normalized_scope == "as_of_today":
+		if _message_explicitly_requests_time_scope(message, normalized_scope):
+			return current
+		if _extract_structural_target_limit_seed(message_text) == limit:
+			return ""
+	if normalized_scope == "latest":
+		if re.search(
+			r"\b(?:last|latest)\s+"
+			+ re.escape(str(limit))
+			+ r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+			message_text,
+		):
+			return current
+		return ""
+	latest_limit_match = re.fullmatch(r"latest_(\d{1,2})", normalized_scope)
+	if latest_limit_match:
+		try:
+			latest_count = int(latest_limit_match.group(1) or 0)
+		except Exception:
+			latest_count = 0
+		if latest_count == limit:
+			if re.search(
+				r"\b(?:last|latest)\s+"
+				+ re.escape(str(limit))
+				+ r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+				message_text,
+			):
+				return current
+			return ""
+	match = re.fullmatch(
+		r"last_(\d{1,2})_(days|weeks|months|years|quarters)",
+		normalized_scope,
+	)
+	if not match:
+		return current
+	try:
+		scope_count = int(match.group(1) or 0)
+	except Exception:
+		return current
+	if scope_count != limit:
+		return current
+	if re.search(
+		r"\b(?:last|past|previous|prior)\s+"
+		+ re.escape(str(limit))
+		+ r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
+		message_text,
+	):
+		return current
+	return ""
+
+
+def _clear_time_scope_slots(extracted_slots: Dict[str, Any]) -> Dict[str, Any]:
+	if not isinstance(extracted_slots, dict):
+		return {}
+	cleaned = dict(extracted_slots)
+	for fieldname in ("report_date", "from_date", "to_date", "period_start_date", "period_end_date"):
+		cleaned.pop(fieldname, None)
+	slot_filters = cleaned.get("filters")
+	if isinstance(slot_filters, dict):
+		cleaned_filters = dict(slot_filters)
+		for fieldname in ("report_date", "from_date", "to_date", "period_start_date", "period_end_date"):
+			cleaned_filters.pop(fieldname, None)
+		cleaned["filters"] = cleaned_filters
+	return cleaned
 
 
 def _normalize_time_scope(value: Any) -> str:
@@ -142,6 +265,8 @@ def _normalize_time_scope(value: Any) -> str:
 		return "current_period"
 	if key in {"last_month", "previous_month", "prior_month"}:
 		return "last_month"
+	if key == "last_year":
+		return "last_year"
 	if key in {"current_fiscal_year_to_date", "fiscal_year_to_date", "year_to_date", "this_fiscal_year"}:
 		return "current_fiscal_year_to_date"
 	if key in {"all_period", "all_time", "overall"}:
@@ -207,6 +332,20 @@ def _sanitize_extracted_slots(
 
 
 def _build_interpretation_context() -> Dict[str, Any]:
+	registry = load_semantic_resolution_registry()
+	slot_definitions = [
+		{
+			"slot_name": str(item.get("slot_name") or "").strip(),
+			"allowed_values": _clean_list(item.get("allowed_values")),
+		}
+		for item in (registry.get("slot_definitions") or [])
+		if isinstance(item, dict) and str(item.get("slot_name") or "").strip()
+	]
+	alias_maps = (
+		{str(key): value for key, value in registry.get("alias_maps", {}).items()}
+		if isinstance(registry.get("alias_maps"), dict)
+		else {}
+	)
 	intent_classes = [
 		{
 			"intent_class_id": str(item.get("intent_class_id") or "").strip(),
@@ -237,13 +376,33 @@ def _build_interpretation_context() -> Dict[str, Any]:
 		for item in list_composite_read_specs()
 		if isinstance(item, dict) and str(item.get("plan_id") or "").strip()
 	]
+	report_names: List[str] = []
+	for capability in capabilities:
+		for report_name in _clean_list(capability.get("report_names")):
+			if report_name not in report_names:
+				report_names.append(report_name)
+	reports = [
+		{
+			"report_name": report_name,
+			"capability_ids": _clean_list(report_capability_ids(report_name)),
+			"supported_intent_classes": _clean_list(report_supported_intent_classes(report_name)),
+			"supported_dimensions": _clean_list(report_supported_dimensions(report_name)),
+			"supported_metrics": _clean_list(report_supported_metrics(report_name)),
+			"semantic_tags": _clean_list(report_semantic_tags(report_name)),
+		}
+		for report_name in report_names
+		if str(report_name or "").strip()
+	]
 	return {
 		"current_date_utc": _current_date_iso(),
 		"single_company_mode": True,
 		"company_handling": "compiler_injected_invariant",
 		"intent_classes": intent_classes,
 		"capabilities": capabilities,
+		"reports": reports,
 		"composite_profiles": composite_profiles,
+		"slot_definitions": slot_definitions,
+		"alias_maps": alias_maps,
 		"allowed_presentations": sorted(_ALLOWED_PRESENTATION_MODES),
 		"allowed_ambiguity_flags": sorted(_ALLOWED_AMBIGUITY_FLAGS),
 	}
@@ -569,7 +728,72 @@ def _apply_governed_request_defaults(
 
 
 def _allow_deterministic_family_surface_fallback(intent_class: str) -> bool:
-	return False
+	target_intent = str(intent_class or "").strip()
+	if not target_intent:
+		return False
+	rules = load_semantic_resolution_registry().get("family_resolution_rules")
+	if not isinstance(rules, list):
+		return False
+	signatures: Dict[tuple[str, tuple[tuple[str, str], ...]], int] = {}
+	for rule in rules:
+		if not isinstance(rule, dict):
+			continue
+		rule_intent = str(rule.get("intent_class") or "").strip()
+		required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+		if not rule_intent or not required_slots:
+			continue
+		signature = (
+			rule_intent,
+			tuple(
+				sorted(
+					(
+						str(key or "").strip(),
+						str(value or "").strip(),
+					)
+					for key, value in required_slots.items()
+					if str(key or "").strip() and str(value or "").strip()
+				)
+			),
+		)
+		if signature[1]:
+			signatures[signature] = int(signatures.get(signature, 0) or 0) + 1
+	for (rule_intent, _signature), count in signatures.items():
+		if rule_intent == target_intent and count > 1:
+			return False
+	return any(rule_intent == target_intent for rule_intent, _signature in signatures)
+
+
+def _slot_alias_matches(slot_name: str, message: str) -> List[str]:
+	registry = load_semantic_resolution_registry()
+	alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
+	entries = alias_maps.get(slot_name) if isinstance(alias_maps.get(slot_name), list) else []
+	out: List[str] = []
+	for entry in entries:
+		if not isinstance(entry, dict):
+			continue
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		for alias in _clean_list(entry.get("aliases")):
+			if _message_contains_phrase(message, alias):
+				out.append(canonical_value)
+				break
+	return list(dict.fromkeys(out))
+
+
+def _slot_value_matches_message(
+	*,
+	slot_name: str,
+	required_value: str,
+	message: str,
+	message_concepts: set[str],
+) -> bool:
+	target = str(required_value or "").strip()
+	if not target:
+		return False
+	if target in _slot_alias_matches(slot_name, message):
+		return True
+	return target in message_concepts
 
 
 def _apply_governed_time_scope_default(
@@ -586,6 +810,153 @@ def _apply_governed_time_scope_default(
 		return ""
 	spec = capability_fresh_query_defaults(capability_id, intent_class=intent_class)
 	return str(spec.get("default_time_scope") or "").strip()
+
+
+def _normalized_message_phrase(value: Any) -> str:
+	return " ".join(str(value or "").strip().lower().split())
+
+
+def _message_contains_phrase(value: str, phrase: str) -> bool:
+	text = _normalized_message_phrase(value)
+	target = _normalized_message_phrase(phrase)
+	if not text or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, text))
+
+
+def _direct_query_filterable_fields(report_name: str) -> List[str]:
+	report_spec = get_report_spec(report_name)
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	fields = {
+		str(value or "").strip()
+		for value in (query_spec.get("fields") or [])
+		if str(value or "").strip()
+	}
+	filterable_fields = [
+		str(value or "").strip()
+		for value in (query_spec.get("filterable_fields") or [])
+		if str(value or "").strip()
+	]
+	return [field for field in filterable_fields if field in fields]
+
+
+def _direct_query_distinct_scalar_values(
+	*,
+	report_name: str,
+	field_name: str,
+) -> List[str]:
+	if frappe is None:
+		return []
+	report_spec = get_report_spec(report_name)
+	query_spec = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	doctype = str(query_spec.get("doctype") or "").strip()
+	if not doctype or not str(field_name or "").strip():
+		return []
+	fixed_filters = query_spec.get("fixed_filters") if isinstance(query_spec.get("fixed_filters"), dict) else {}
+	try:
+		rows = frappe.get_all(
+			doctype,
+			fields=[str(field_name or "").strip()],
+			filters={str(key): value for key, value in fixed_filters.items() if str(key or "").strip()},
+			order_by="modified desc",
+			limit_page_length=200,
+		)
+	except Exception:
+		return []
+	out: List[str] = []
+	for row in rows or []:
+		if not isinstance(row, dict):
+			continue
+		value = str(row.get(field_name) or "").strip()
+		if value and value not in out:
+			out.append(value)
+	return out
+
+
+def _match_message_to_direct_query_value(
+	*,
+	message: str,
+	candidate_values: List[str],
+) -> str:
+	scored: List[tuple[int, str]] = []
+	for value in _clean_list(candidate_values):
+		if _message_contains_phrase(message, value):
+			scored.append((len(_normalized_message_phrase(value)), value))
+	if not scored:
+		return ""
+	scored.sort(key=lambda item: (-int(item[0] or 0), str(item[1] or "")))
+	return str(scored[0][1] or "").strip()
+
+
+def _augment_direct_query_scalar_filters_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract,
+) -> FreshQueryInterpretationContract:
+	report_name = str((_clean_list(interpretation.candidate_reports) or [""])[0] or "").strip()
+	capability_id = str((_clean_list(interpretation.candidate_capability_ids) or [""])[0] or "").strip()
+	if not report_name or not capability_id or not str(message or "").strip():
+		return interpretation
+	filterable_fields = _direct_query_filterable_fields(report_name)
+	if not filterable_fields:
+		return interpretation
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	existing_filters = (
+		dict(extracted_slots.get("filters"))
+		if isinstance(extracted_slots.get("filters"), dict)
+		else {}
+	)
+	dimension_keys = detect_canonical_keys(
+		message,
+		capability_id=capability_id,
+		dimension_or_metric="dimension",
+	)
+	if not dimension_keys:
+		return interpretation
+	updated_filters = dict(existing_filters)
+	for canonical_key in dimension_keys:
+		mapped_fields = [
+			str(field_name or "").strip()
+			for field_name in get_erp_field_mapping(canonical_key, report_name)
+			if str(field_name or "").strip()
+		]
+		for field_name in mapped_fields:
+			if field_name not in filterable_fields or updated_filters.get(field_name):
+				continue
+			candidate_values = _direct_query_distinct_scalar_values(
+				report_name=report_name,
+				field_name=field_name,
+			)
+			matched_value = _match_message_to_direct_query_value(
+				message=message,
+				candidate_values=candidate_values,
+			)
+			if matched_value:
+				updated_filters[field_name] = matched_value
+	if updated_filters == existing_filters:
+		return interpretation
+	extracted_slots["filters"] = updated_filters
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=extracted_slots,
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
 
 
 def _preferred_family_id_for_message(
@@ -960,20 +1331,80 @@ def _deterministic_family_surface_interpretation(
 	message: str,
 	confidence_threshold: float,
 ) -> FreshQueryInterpretationContract | None:
-	return None
+	registry = load_semantic_resolution_registry()
+	rules = registry.get("family_resolution_rules")
+	if not isinstance(rules, list):
+		return None
+	message_concepts = {
+		str(value or "").strip()
+		for value in ontology_detect_concepts(message)
+		if str(value or "").strip()
+	}
+	matched_rules: List[Dict[str, Any]] = []
+	for rule in rules:
+		if not isinstance(rule, dict):
+			continue
+		intent_class = str(rule.get("intent_class") or "").strip()
+		required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+		if not intent_class or not required_slots:
+			continue
+		if not _allow_deterministic_family_surface_fallback(intent_class):
+			continue
+		if not all(
+			_slot_value_matches_message(
+				slot_name=str(slot_name or "").strip(),
+				required_value=str(slot_value or "").strip(),
+				message=message,
+				message_concepts=message_concepts,
+			)
+			for slot_name, slot_value in required_slots.items()
+			if str(slot_name or "").strip() and str(slot_value or "").strip()
+		):
+			continue
+		matched_rules.append(rule)
+	if len(matched_rules) != 1:
+		return None
+	selected_rule = matched_rules[0]
+	intent_class = str(selected_rule.get("intent_class") or "").strip()
+	candidate_capability_ids = _clean_list(selected_rule.get("candidate_capability_ids"))
+	candidate_reports = _clean_list(selected_rule.get("candidate_reports"))
+	primary_capability_id = str((candidate_capability_ids or [""])[0] or "").strip()
+	defaults = capability_fresh_query_defaults(primary_capability_id, intent_class=intent_class)
+	return build_fresh_query_interpretation_contract(
+		request_id=request_id,
+		session_id=session_id,
+		intent_class=intent_class,
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=_clean_list(defaults.get("default_dimensions")),
+		requested_metrics=_clean_list(defaults.get("default_metrics")),
+		requested_time_scope=str(defaults.get("default_time_scope") or "").strip(),
+		target_limit=0,
+		requested_presentation=[],
+		extracted_slots={
+			str(slot_name or "").strip(): str(slot_value or "").strip()
+			for slot_name, slot_value in (
+				(selected_rule.get("required_slots") if isinstance(selected_rule.get("required_slots"), dict) else {}).items()
+			)
+			if str(slot_name or "").strip() and str(slot_value or "").strip()
+		},
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		confidence=max(float(confidence_threshold or 0.0), 0.9),
+	)
 
 
-def compile_from_fresh_query_message(
+def _compile_pipeline_from_semantic_result(
 	*,
+	request_id: str,
 	session_id: str,
 	user_id: str,
 	site_name: str,
 	message: str,
-	recent_messages: List[Dict[str, str]] | None = None,
-	clarification_resolution: Dict[str, Any] | None = None,
-	governed_target_limit: int = 0,
+	clarification_resolution: Dict[str, Any] | None,
+	semantic_result: SemanticFreshQueryResult,
+	proposal_generation_latency_ms: int,
 ) -> Dict[str, Any]:
-	request_id = uuid.uuid4().hex
 	interaction_contract = build_interaction_contract(
 		request_id=request_id,
 		session_id=session_id,
@@ -984,70 +1415,6 @@ def compile_from_fresh_query_message(
 	response_policy = build_response_policy_contract(
 		interaction_contract=interaction_contract,
 	)
-	proposal_started = time.perf_counter()
-	semantic_result = interpret_fresh_query_semantically(
-		request_id=request_id,
-		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
-		message=message,
-		recent_messages=list(recent_messages or []),
-	)
-	if _should_retry_with_runtime_default(semantic_result, ""):
-		fallback_result = interpret_fresh_query_semantically(
-			request_id=request_id,
-			session_id=session_id,
-			user_id=user_id,
-			site_name=site_name,
-			message=message,
-			recent_messages=list(recent_messages or []),
-			model_override=_RUNTIME_DEFAULT_MODEL_OVERRIDE,
-		)
-		if fallback_result.interpretation is not None:
-			fallback_result = SemanticFreshQueryResult(
-				status=fallback_result.status,
-				interpretation=fallback_result.interpretation,
-				confidence_threshold=fallback_result.confidence_threshold,
-				runtime_error=fallback_result.runtime_error,
-				validation_error=fallback_result.validation_error,
-				agent_meta=_merge_fallback_agent_meta(
-					semantic_result.agent_meta,
-					fallback_result.agent_meta,
-					semantic_result.status,
-				),
-			)
-			semantic_result = fallback_result
-	governed_target_limit = int(max(0, governed_target_limit or 0))
-	if (
-		governed_target_limit > 0
-		and semantic_result.interpretation is not None
-		and int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)) == 0
-	):
-		seeded_interpretation = build_fresh_query_interpretation_contract(
-			request_id=str(getattr(semantic_result.interpretation, "request_id", "") or request_id).strip(),
-			session_id=str(getattr(semantic_result.interpretation, "session_id", "") or session_id).strip(),
-			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
-			candidate_capability_ids=list(getattr(semantic_result.interpretation, "candidate_capability_ids", []) or []),
-			candidate_reports=list(getattr(semantic_result.interpretation, "candidate_reports", []) or []),
-			requested_dimensions=list(getattr(semantic_result.interpretation, "requested_dimensions", []) or []),
-			requested_metrics=list(getattr(semantic_result.interpretation, "requested_metrics", []) or []),
-			requested_time_scope=str(getattr(semantic_result.interpretation, "requested_time_scope", "") or "").strip(),
-			target_limit=governed_target_limit,
-			requested_presentation=list(getattr(semantic_result.interpretation, "requested_presentation", []) or []),
-			extracted_slots=dict(getattr(semantic_result.interpretation, "extracted_slots", {}) or {}),
-			ambiguity_flags=list(getattr(semantic_result.interpretation, "ambiguity_flags", []) or []),
-			ambiguity_reason=str(getattr(semantic_result.interpretation, "ambiguity_reason", "") or "").strip(),
-			confidence=float(getattr(semantic_result.interpretation, "confidence", 0.0) or 0.0),
-		)
-		semantic_result = SemanticFreshQueryResult(
-			status=semantic_result.status,
-			interpretation=seeded_interpretation,
-			confidence_threshold=semantic_result.confidence_threshold,
-			runtime_error=semantic_result.runtime_error,
-			validation_error=semantic_result.validation_error,
-			agent_meta=dict(semantic_result.agent_meta or {}),
-		)
-	proposal_generation_latency_ms = int((time.perf_counter() - proposal_started) * 1000)
 	compilation_latency_ms = 0
 	out: Dict[str, Any] = {
 		"request_id": request_id,
@@ -1093,6 +1460,19 @@ def compile_from_fresh_query_message(
 				"semantic_resolution_applied": True,
 			},
 		)
+	augmented_interpretation = _augment_direct_query_scalar_filters_from_message(
+		message=message,
+		interpretation=semantic_result.interpretation,
+	)
+	if augmented_interpretation != semantic_result.interpretation:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=augmented_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
+		)
 	compilation_started = time.perf_counter()
 	compiler_outcome: CompilerOutcome = compile_fresh_query(
 		request_id=request_id,
@@ -1110,6 +1490,239 @@ def compile_from_fresh_query_message(
 		"compilation_latency_ms": compilation_latency_ms,
 	}
 	return out
+
+
+def _pipeline_requires_deterministic_surface_rescue(pipeline: Dict[str, Any]) -> bool:
+	fresh_query_payload = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	interpretation_payload = (
+		fresh_query_payload.get("interpretation")
+		if isinstance(fresh_query_payload.get("interpretation"), dict)
+		else {}
+	)
+	if interpretation_payload:
+		return False
+	status = str(fresh_query_payload.get("status") or "").strip()
+	return status in {"runtime_error", "invalid_response"}
+
+
+def _recover_pipeline_with_deterministic_surface_fallback(
+	*,
+	pipeline: Dict[str, Any],
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	clarification_resolution: Dict[str, Any] | None,
+) -> Dict[str, Any]:
+	if not _pipeline_requires_deterministic_surface_rescue(pipeline):
+		return pipeline
+	fresh_query_payload = (
+		pipeline.get("fresh_query_interpretation")
+		if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+		else {}
+	)
+	try:
+		confidence_threshold = float(fresh_query_payload.get("confidence_threshold") or _confidence_threshold())
+	except Exception:
+		confidence_threshold = _confidence_threshold()
+	request_id = str(pipeline.get("request_id") or uuid.uuid4().hex).strip()
+	deterministic_interpretation = _deterministic_family_surface_interpretation(
+		request_id=request_id,
+		session_id=session_id,
+		message=message,
+		confidence_threshold=confidence_threshold,
+	)
+	if deterministic_interpretation is None:
+		return pipeline
+	latency_breakdown = (
+		pipeline.get("phase4_latency_breakdown")
+		if isinstance(pipeline.get("phase4_latency_breakdown"), dict)
+		else {}
+	)
+	semantic_result = SemanticFreshQueryResult(
+		status="deterministic_surface_fallback",
+		interpretation=deterministic_interpretation,
+		confidence_threshold=confidence_threshold,
+		runtime_error=str(fresh_query_payload.get("runtime_error") or "").strip(),
+		validation_error=str(fresh_query_payload.get("validation_error") or "").strip(),
+		agent_meta={
+			**(
+				fresh_query_payload.get("agent_meta")
+				if isinstance(fresh_query_payload.get("agent_meta"), dict)
+				else {}
+			),
+			"deterministic_surface_fallback": True,
+			"deterministic_surface_pipeline_rescue": True,
+		},
+	)
+	return _compile_pipeline_from_semantic_result(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		clarification_resolution=clarification_resolution,
+		semantic_result=semantic_result,
+		proposal_generation_latency_ms=int(
+			max(0, (latency_breakdown.get("proposal_generation_latency_ms") or 0))
+		),
+	)
+
+
+def compile_from_fresh_query_message(
+	*,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]] | None = None,
+	clarification_resolution: Dict[str, Any] | None = None,
+	governed_target_limit: int = 0,
+) -> Dict[str, Any]:
+	request_id = uuid.uuid4().hex
+	proposal_started = time.perf_counter()
+	semantic_result = interpret_fresh_query_semantically(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		recent_messages=list(recent_messages or []),
+	)
+	if _should_retry_with_runtime_default(semantic_result, ""):
+		fallback_result = interpret_fresh_query_semantically(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+			recent_messages=list(recent_messages or []),
+			model_override=_RUNTIME_DEFAULT_MODEL_OVERRIDE,
+		)
+		if fallback_result.interpretation is not None:
+			fallback_result = SemanticFreshQueryResult(
+				status=fallback_result.status,
+				interpretation=fallback_result.interpretation,
+				confidence_threshold=fallback_result.confidence_threshold,
+				runtime_error=fallback_result.runtime_error,
+				validation_error=fallback_result.validation_error,
+				agent_meta=_merge_fallback_agent_meta(
+					semantic_result.agent_meta,
+					fallback_result.agent_meta,
+					semantic_result.status,
+				),
+			)
+			semantic_result = fallback_result
+	governed_target_limit = int(max(0, governed_target_limit or 0))
+	semantic_status = str(getattr(semantic_result, "status", "") or "").strip()
+	semantic_intent_class = str(
+		getattr(getattr(semantic_result, "interpretation", None), "intent_class", "") or ""
+	).strip()
+	if (
+		governed_target_limit == 0
+		and semantic_status == "accepted"
+		and semantic_intent_class in {"ranked_entities", "transaction_listing"}
+	):
+		governed_target_limit = _extract_structural_target_limit_seed(message)
+	if (
+		governed_target_limit > 0
+		and semantic_result.interpretation is not None
+		and int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)) == 0
+	):
+		seeded_interpretation = build_fresh_query_interpretation_contract(
+			request_id=str(getattr(semantic_result.interpretation, "request_id", "") or request_id).strip(),
+			session_id=str(getattr(semantic_result.interpretation, "session_id", "") or session_id).strip(),
+			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+			candidate_capability_ids=list(getattr(semantic_result.interpretation, "candidate_capability_ids", []) or []),
+			candidate_reports=list(getattr(semantic_result.interpretation, "candidate_reports", []) or []),
+			requested_dimensions=list(getattr(semantic_result.interpretation, "requested_dimensions", []) or []),
+			requested_metrics=list(getattr(semantic_result.interpretation, "requested_metrics", []) or []),
+			requested_time_scope=str(getattr(semantic_result.interpretation, "requested_time_scope", "") or "").strip(),
+			target_limit=governed_target_limit,
+			requested_presentation=list(getattr(semantic_result.interpretation, "requested_presentation", []) or []),
+			extracted_slots=dict(getattr(semantic_result.interpretation, "extracted_slots", {}) or {}),
+			ambiguity_flags=list(getattr(semantic_result.interpretation, "ambiguity_flags", []) or []),
+			ambiguity_reason=str(getattr(semantic_result.interpretation, "ambiguity_reason", "") or "").strip(),
+			confidence=float(getattr(semantic_result.interpretation, "confidence", 0.0) or 0.0),
+		)
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=seeded_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta=dict(semantic_result.agent_meta or {}),
+		)
+	if semantic_result.interpretation is not None:
+		current_time_scope = str(getattr(semantic_result.interpretation, "requested_time_scope", "") or "").strip()
+		reconciled_time_scope = _strip_structural_limit_time_scope_conflict(
+			message=message,
+			intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+			requested_time_scope=current_time_scope,
+			target_limit=int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)),
+		)
+		if reconciled_time_scope != current_time_scope:
+			reconciled_slots = dict(getattr(semantic_result.interpretation, "extracted_slots", {}) or {})
+			if not reconciled_time_scope:
+				reconciled_slots = _clear_time_scope_slots(reconciled_slots)
+			reconciled_interpretation = build_fresh_query_interpretation_contract(
+				request_id=str(getattr(semantic_result.interpretation, "request_id", "") or request_id).strip(),
+				session_id=str(getattr(semantic_result.interpretation, "session_id", "") or session_id).strip(),
+				intent_class=str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip(),
+				candidate_capability_ids=list(getattr(semantic_result.interpretation, "candidate_capability_ids", []) or []),
+				candidate_reports=list(getattr(semantic_result.interpretation, "candidate_reports", []) or []),
+				requested_dimensions=list(getattr(semantic_result.interpretation, "requested_dimensions", []) or []),
+				requested_metrics=list(getattr(semantic_result.interpretation, "requested_metrics", []) or []),
+				requested_time_scope=reconciled_time_scope,
+				target_limit=int(max(0, getattr(semantic_result.interpretation, "target_limit", 0) or 0)),
+				requested_presentation=list(getattr(semantic_result.interpretation, "requested_presentation", []) or []),
+				extracted_slots=reconciled_slots,
+				ambiguity_flags=list(getattr(semantic_result.interpretation, "ambiguity_flags", []) or []),
+				ambiguity_reason=str(getattr(semantic_result.interpretation, "ambiguity_reason", "") or "").strip(),
+				confidence=float(getattr(semantic_result.interpretation, "confidence", 0.0) or 0.0),
+			)
+			semantic_result = SemanticFreshQueryResult(
+				status=semantic_result.status,
+				interpretation=reconciled_interpretation,
+				confidence_threshold=semantic_result.confidence_threshold,
+				runtime_error=semantic_result.runtime_error,
+				validation_error=semantic_result.validation_error,
+				agent_meta=dict(semantic_result.agent_meta or {}),
+			)
+	if semantic_result.interpretation is None and semantic_status == "runtime_error":
+		deterministic_interpretation = _deterministic_family_surface_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			message=message,
+			confidence_threshold=semantic_result.confidence_threshold,
+		)
+		if deterministic_interpretation is not None:
+			semantic_result = SemanticFreshQueryResult(
+				status="deterministic_surface_fallback",
+				interpretation=deterministic_interpretation,
+				confidence_threshold=semantic_result.confidence_threshold,
+				runtime_error=semantic_result.runtime_error,
+				validation_error=semantic_result.validation_error,
+				agent_meta={
+					**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+					"deterministic_surface_fallback": True,
+				},
+			)
+	proposal_generation_latency_ms = int((time.perf_counter() - proposal_started) * 1000)
+	return _compile_pipeline_from_semantic_result(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		clarification_resolution=clarification_resolution,
+		semantic_result=semantic_result,
+		proposal_generation_latency_ms=proposal_generation_latency_ms,
+	)
 
 
 def _proposal_cache_hit_from_pipeline(pipeline: Dict[str, Any]) -> bool:
@@ -2514,6 +3127,14 @@ def execute_compiled_fresh_query_message(
 		recent_messages=list(recent_messages or []),
 		clarification_resolution=clarification_resolution,
 		governed_target_limit=governed_target_limit,
+	)
+	pipeline = _recover_pipeline_with_deterministic_surface_fallback(
+		pipeline=pipeline,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		clarification_resolution=clarification_resolution,
 	)
 	latency_breakdown = (
 		dict(pipeline.get("phase4_latency_breakdown"))

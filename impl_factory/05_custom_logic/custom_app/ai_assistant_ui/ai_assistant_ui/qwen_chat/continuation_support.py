@@ -62,6 +62,11 @@ def authoritative_continuation_resolution(
 	target_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
 	sort_direction = str(getattr(followup_resolution, "sort_direction", "") or "").strip()
 	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
+	preserve_rank_membership = bool(getattr(continuation_contract, "preserve_rank_membership", False))
+	preserve_rank_order = bool(getattr(continuation_contract, "preserve_rank_order", False))
+	if source_family_id != "ranking_analytics":
+		preserve_rank_membership = False
+		preserve_rank_order = False
 
 	if not target_dimension:
 		target_dimension = str(
@@ -85,7 +90,7 @@ def authoritative_continuation_resolution(
 			)
 			if str(value or "").strip()
 		]
-	if not target_limit and bool(getattr(continuation_contract, "preserve_rank_membership", False)):
+	if not target_limit and preserve_rank_membership:
 		target_limit = int(
 			max(
 				0,
@@ -94,7 +99,7 @@ def authoritative_continuation_resolution(
 				or 0,
 			)
 		)
-	if not sort_direction and bool(getattr(continuation_contract, "preserve_rank_order", False)):
+	if not sort_direction and preserve_rank_order:
 		sort_direction = str(
 			getattr(continuation_contract, "preserved_sort_direction", "")
 			or getattr(continuation_contract, "source_sort_direction", "")
@@ -106,6 +111,11 @@ def authoritative_continuation_resolution(
 			or getattr(continuation_contract, "source_time_scope", "")
 			or ""
 		).strip()
+	source_time_scope = str(
+		getattr(continuation_contract, "preserved_time_scope", "")
+		or getattr(continuation_contract, "source_time_scope", "")
+		or ""
+	).strip()
 
 	mode = str(getattr(followup_resolution, "mode", "") or "").strip()
 	if (
@@ -145,6 +155,27 @@ def authoritative_continuation_resolution(
 			depends_on_grounded_turn=True,
 			self_contained=False,
 			reason="Ranking follow-up transforms are governed through continuation requery so scope and metric stay anchored to the prior artifact.",
+		)
+	if (
+		mode in {"local_grounded_transform", "grounded_follow_up"}
+		and requested_time_scope
+		and requested_time_scope != source_time_scope
+	):
+		return clone_followup_resolution(
+			followup_resolution,
+			request_id=request_id,
+			mode="capability_requery",
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
+			target_capability_id=source_capability_id,
+			target_report=source_report,
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			reason="The requested time scope changes the governed data window and requires requery against the preserved capability.",
 		)
 	if (
 		mode in {"local_grounded_transform", "grounded_follow_up"}

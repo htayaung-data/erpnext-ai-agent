@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 import re
@@ -34,56 +35,60 @@ def _load_json(name: str) -> Dict[str, Any]:
 	return obj if isinstance(obj, dict) else {}
 
 
+def _load_json_copy(name: str) -> Dict[str, Any]:
+	return deepcopy(_load_json(name))
+
+
 def load_business_ontology() -> Dict[str, Any]:
-	return _load_json("business_ontology.json")
+	return _load_json_copy("business_ontology.json")
 
 
 def load_capability_registry() -> Dict[str, Any]:
-	return _load_json("capability_registry.json")
+	return _load_json_copy("capability_registry.json")
 
 
 def load_report_registry() -> Dict[str, Any]:
-	return _load_json("report_registry.json")
+	return _load_json_copy("report_registry.json")
 
 
 def load_report_family_registry() -> Dict[str, Any]:
-	return _load_json("report_family_registry.json")
+	return _load_json_copy("report_family_registry.json")
 
 
 def load_composite_read_registry() -> Dict[str, Any]:
-	return _load_json("composite_read_registry.json")
+	return _load_json_copy("composite_read_registry.json")
 
 
 def load_family_evaluation_registry() -> Dict[str, Any]:
-	return _load_json("family_evaluation_registry.json")
+	return _load_json_copy("family_evaluation_registry.json")
 
 
 def load_frontdoor_intent_registry() -> Dict[str, Any]:
-	return _load_json("frontdoor_intent_registry.json")
+	return _load_json_copy("frontdoor_intent_registry.json")
 
 
 def load_report_surface_evidence_registry() -> Dict[str, Any]:
-	return _load_json("report_surface_evidence_registry.json")
+	return _load_json_copy("report_surface_evidence_registry.json")
 
 
 def load_validation_rules() -> Dict[str, Any]:
-	return _load_json("validation_rules.json")
+	return _load_json_copy("validation_rules.json")
 
 
 def load_semantic_resolution_registry() -> Dict[str, Any]:
-	return _load_json("semantic_resolution_registry.json")
+	return _load_json_copy("semantic_resolution_registry.json")
 
 
 def load_financial_summary_clarification_registry() -> Dict[str, Any]:
-	return _load_json("financial_summary_clarification_registry.json")
+	return _load_json_copy("financial_summary_clarification_registry.json")
 
 
 def load_financial_summary_resolution_registry() -> Dict[str, Any]:
-	return _load_json("financial_summary_resolution_registry.json")
+	return _load_json_copy("financial_summary_resolution_registry.json")
 
 
 def load_smoke_fixture_registry() -> Dict[str, Any]:
-	return _load_json("smoke_fixture_registry.json")
+	return _load_json_copy("smoke_fixture_registry.json")
 
 
 def get_capability_spec(capability_id: str) -> Dict[str, Any]:

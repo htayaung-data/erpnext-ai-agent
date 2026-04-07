@@ -8,6 +8,56 @@ from ai_assistant_ui.qwen_chat.recovery_support import structured_governed_query
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key, get_metric_label
 
 
+def _compile_transaction_listing_requery_message(
+	*,
+	raw_message: str,
+	source_report: str,
+	target_report: str,
+	target_capability_id: str,
+	company: str,
+	requested_time_scope: str,
+	preserve_prior_date_scope: bool,
+	report_date: str,
+	from_date: str,
+	to_date: str,
+	target_dimension: str,
+	target_limit: int,
+	requested_modes: List[str],
+	prefs: Dict[str, Any],
+) -> str:
+	parts: List[str] = []
+	if target_report:
+		parts.append(f"Use the report `{target_report}`.")
+	else:
+		parts.append("Keep the governed business context from the latest grounded answer.")
+		if source_report:
+			parts.append(f"Latest grounded report: `{source_report}`.")
+		if target_capability_id:
+			parts.append(f"Use the governed capability `{target_capability_id}` if needed to satisfy the request.")
+	if company:
+		parts.append(f'Use company "{company}".')
+	if requested_time_scope == "last_month":
+		parts.append("Use the last month date range.")
+	elif requested_time_scope == "current_period":
+		parts.append("Use the current month to date.")
+	elif requested_time_scope == "all_period":
+		parts.append("Use the full available time range.")
+	elif preserve_prior_date_scope and from_date and to_date:
+		parts.append(f"Use the date range from {from_date} to {to_date}.")
+	elif preserve_prior_date_scope and report_date:
+		parts.append(f"Use report_date {report_date}.")
+	if "filter_refinement" in set(requested_modes) and target_dimension:
+		parts.append(f"Apply a governed filter refinement on `{target_dimension}` if the report exposes it.")
+	if target_limit > 0:
+		parts.append(f"Use a row limit of {target_limit} rows.")
+	if prefs.get("million"):
+		parts.append("Present monetary amounts in MMK Million.")
+	if prefs.get("table"):
+		parts.append("Present the result as a table.")
+	parts.append(f"User request: {str(raw_message or '').strip()}")
+	return " ".join(part for part in parts if part).strip()
+
+
 def compile_capability_requery_message(
 	session_doc,
 	*,
@@ -137,6 +187,23 @@ def compile_capability_requery_message(
 		)
 		if structured_query:
 			return structured_query
+	if source_family_id == "transaction_listing":
+		return _compile_transaction_listing_requery_message(
+			raw_message=raw_message,
+			source_report=source_report,
+			target_report=target_report,
+			target_capability_id=target_capability_id,
+			company=company,
+			requested_time_scope=requested_time_scope,
+			preserve_prior_date_scope=preserve_prior_date_scope,
+			report_date=report_date,
+			from_date=from_date,
+			to_date=to_date,
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			requested_modes=requested_modes,
+			prefs=prefs,
+		)
 
 	parts: List[str] = []
 	if target_report:
@@ -155,12 +222,15 @@ def compile_capability_requery_message(
 		parts.append("Use the current month to date.")
 	elif requested_time_scope == "all_period":
 		parts.append("Use the full available time range.")
-	elif preserve_prior_date_scope and report_date:
-		parts.append(f"Use report_date {report_date}.")
 	elif preserve_prior_date_scope and from_date and to_date:
 		parts.append(f"Use the date range from {from_date} to {to_date}.")
+	elif preserve_prior_date_scope and report_date:
+		parts.append(f"Use report_date {report_date}.")
 	if target_dimension:
-		parts.append(f"Return the result grouped or broken down by `{target_dimension}` if supported.")
+		if "filter_refinement" in set(requested_modes):
+			parts.append(f"Apply a governed filter refinement on `{target_dimension}` if the report exposes it.")
+		else:
+			parts.append(f"Return the result grouped or broken down by `{target_dimension}` if supported.")
 	elif preserved_dimension:
 		parts.append(f"Preserve the current entity dimension `{preserved_dimension}`.")
 	if target_limit > 0:

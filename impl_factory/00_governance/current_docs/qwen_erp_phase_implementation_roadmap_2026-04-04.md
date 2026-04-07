@@ -1,0 +1,548 @@
+# Qwen ERP Phase Implementation Roadmap
+
+Status: active implementation roadmap  
+Date: 2026-04-04  
+Scope: enterprise implementation order after refactor, hardening, and follow-up-boundary closure
+
+## 1. Executive Summary
+
+The current refactor and hardening chapter is sufficiently closed for now.
+
+That means the project should move from:
+
+1. architecture cleanup
+2. verification hardening
+3. lexical-boundary removal
+
+to:
+
+1. governed business-surface expansion
+2. richer governed artifact capability
+3. business-definition governance
+4. later multilingual, visual, OCR, and controlled action expansion
+
+This roadmap replaces scattered wave notes with one active phase-by-phase delivery order.
+
+## 2. Current Starting Point
+
+The following are already materially complete for the current surface:
+
+1. enterprise contract foundation
+2. read-query hardening
+3. semantic family layer and governed fresh-query compilation
+4. post-contract hardening and full release-gate validation
+5. bounded `financial_summary` second-wave rollout
+6. `FollowUpBoundaryContract` redesign and closure
+
+The release gate remains:
+
+```bash
+scripts/qwen_verify_enterprise_matrix.sh full
+```
+
+## 3. Delivery Principles
+
+Every new phase must follow these rules:
+
+1. implement one domain or one governed capability slice at a time
+2. metadata and contracts own business policy
+3. runtime consumes typed contracts and fails closed when evidence is insufficient
+4. no phrase-specific routing or prompt-led business logic
+5. full release gate must be green at each phase checkpoint
+
+## 4. Phase Preflight And Debt Rule
+
+The roadmap is product-first, but it must stay debt-aware.
+
+That means each phase must begin with a short preflight review:
+
+1. which debts are true blockers for this phase
+2. which debts are near-blockers and may become expensive during this phase
+3. which debts should be monitored but not solved now
+
+Use the active debt register:
+
+1. [qwen_erp_enterprise_tech_debt_register_2026-04-04.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_enterprise_tech_debt_register_2026-04-04.md)
+
+Rules:
+
+1. do not stop a phase for non-blocking debt
+2. do not defer blocker debt into “later”
+3. do not turn the roadmap into a cleanup-only plan
+4. solve debt gradually when it is phase-relevant
+5. if a phase reveals that a monitored debt is now a blocker, update the register and pause only that phase
+
+### 4.1 Phase Debt Classification
+
+Use these categories:
+
+1. `blocker`
+   - must be resolved or explicitly governed before the phase starts
+2. `near_blocker`
+   - does not stop the phase immediately, but must be watched during the phase and may need a bounded fix
+3. `monitor`
+   - real debt, but not worth stopping current delivery for
+
+### 4.2 Current Standing Preflight For The Next Chapter
+
+Before Phase 1.1:
+
+1. confirm the governance status of the external Qwen runtime dependency
+2. confirm whether service-user / Administrator usage is production debt or test/support-only debt
+3. keep `service.py` and lane-shape debt tracked as near-blockers, not stop-work blockers
+4. prefer delivery progress over speculative pre-refactor unless a real blocker is proven
+
+Current preflight note:
+
+1. [qwen_erp_phase1_1_preflight_note_2026-04-04.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_1_preflight_note_2026-04-04.md)
+
+## 5. Phase 1: Operational Coverage Expansion
+
+Goal: expand governed read coverage across high-value operational business asks.
+
+This is the next implementation chapter.
+
+### Mini-phase 1.1: Delivery / Fulfillment
+
+Deliver:
+
+1. governed capability metadata for fulfillment visibility
+2. report-family mapping for delivery / shipment / fulfillment status
+3. clarification rules for missing scope such as company, date, or status basis
+4. bounded reasoning support where grounded facts are sufficient
+5. regression and live verification
+
+Current checkpoint:
+
+1. the first strict `Delivery Note List` checkpoint is green
+2. exact numeric scope is proven for:
+   - `show me the last 5 delivery notes`
+3. browser/UAT is now green for:
+   - `show me the last 5 delivery notes`
+   - `show me the last 5 delivery notes from last month`
+   - `show me delivery notes with status Completed`
+4. `Show me last 7 sale invoices` and invoice-detail follow-up still work after the Delivery Note sequence
+5. the remaining `Top 5 customers by revenue last month` clarification should be treated as a separate governed ranking item, not as a Delivery / Fulfillment blocker
+6. the next Phase 1.1 step should remain bounded and should not widen into broad fulfillment expansion without another explicit checkpoint decision
+7. `1.1C` discovery should begin with `Delivery Note Trends`, while `Delivery Trip` remains deferred until live records exist in the deployment
+8. `Delivery Note Trends` is now active through the existing governed `trend_analytics` family with the explicit contract:
+   - required filters: `company`, `fiscal_year`, `period`, `based_on`
+   - trusted scope: `Customer` + `Monthly`
+   - no delivery-specific runtime branch was introduced
+9. current `1.1C` checkpoint is now validated for:
+   - `show monthly delivery note trend by customer this fiscal year`
+   - `show monthly delivery note trend by customer last year`
+   - invoice-detail to delivery-trend breakout continuity
+10. current `1.1C` operational note:
+   - `last_year` support was restored by propagating the existing governed time-scope contract through metadata, compiler fiscal-year resolution, and validator behavior
+   - the external Qwen runtime required an image rebuild because runtime code changes are not mounted live into the container
+11. `Delivery Trip` remains deferred until live records exist in the deployment
+12. browser/UAT is now also green for governed `Delivery Note` detail continuity:
+   - `give me latest 5 delivery note`
+   - `tell me more about MAT-DN-2026-00016`
+13. the release-gate module is green with the new `Delivery Note` detail smoke included
+
+Current correction-track note:
+
+1. the bounded `1.1R` Delivery correction track is now closed
+2. what it restored:
+   - shared `latest N` document-listing inheritance
+   - shared transaction-listing continuation behavior during time-scope refinement
+   - governed `Delivery Note` detail drilldown parity from the listing surface
+3. `Top 5 customers by revenue last month` remains a separate live-path ranking issue and should not be bundled into Delivery acceptance
+4. the next bounded Phase `1.1` slice should be `1.1D` Invoice-to-Delivery Proof
+5. `1.1D` should stay a narrow operational evidence chain, not a general composite reconciliation engine
+
+Current `1.1D-0` foundation note:
+
+1. the live deployment already exposes the right evidence links through `Sales Invoice Item`:
+   - `delivery_note`
+   - `dn_detail`
+   - `sales_order`
+   - `so_detail`
+2. the first trusted proof slice can stay narrower than expected:
+   - `update_stock = 1` invoices
+   - invoices whose items are all linked to submitted `Delivery Note` rows
+   - otherwise fail closed
+3. direct live census did not find any current `sales_order only` invoice bucket in this deployment
+4. `Sales Invoice Item.delivered_qty` should not be used as the primary proof signal
+5. return invoices must be handled explicitly as reversal context, not as ordinary outbound delivery confirmation
+
+Current `1.1D-1` implementation note:
+
+1. the narrow invoice-to-delivery proof path now reuses the existing `entity_detail` and artifact-boundary contracts
+2. direct proof is currently admitted only for:
+   - submitted invoices with `update_stock = 1`
+   - invoices whose items are all linked to submitted `Delivery Note` rows
+3. unsupported invoices still fail closed at the governed evidence boundary
+4. targeted live smokes are green for:
+   - supported invoice proof
+   - unsupported invoice fail-closed behavior
+5. the same governed proof path now answers the bounded date follow-up `when it was delivered?` from linked delivery-note posting dates
+6. browser/UAT revalidation is the next required step before release-gate promotion
+
+Current `1.1D-2` closure note:
+
+1. supported invoice proof is now browser-valid in fresh chat and continued chat:
+   - `tell me more about ACC-SINV-2026-00194`
+   - `that item already delivered to the customer?`
+   - `when it was delivered?`
+2. explicit invoice identifiers now route through the shared governed `entity_detail` path even in a new chat
+3. both the standard invoice-delivery proof smoke and the fresh-chat parity smoke are release-gated
+4. the release-gate module is green with those smokes included
+5. `1.1D` should now be treated as closed
+
+Phase `1.1` closure note:
+
+1. the bounded Delivery / Fulfillment chapter is now checkpoint-complete
+2. what is closed inside `1.1`:
+   - `1.1A` Delivery Note listing
+   - `1.1B` date-scope and status enrichment
+   - `1.1C` Delivery Note trend checkpoint
+   - `1.1R` Delivery correction track
+   - `1.1D` invoice-to-delivery proof
+3. current next operational expansion should move to `1.2` Sales Order Status
+
+Phase 1.1 preflight:
+
+1. verify which ERPNext delivery / fulfillment doctypes and reports are truly active in this deployment
+2. verify whether the external Qwen runtime dependency is governed enough for another compiled capability slice
+3. measure whether Delivery / Fulfillment can be added metadata-first or whether Python routing debt is still too high
+4. do not refactor `service.py` as part of this slice unless a real blocker appears
+
+Current design note:
+
+1. [qwen_erp_phase1_1_delivery_fulfillment_design_2026-04-04.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_1_delivery_fulfillment_design_2026-04-04.md)
+
+### Mini-phase 1.2: Sales Order Status
+
+Deliver:
+
+1. governed sales-order tracking capability
+2. status-driven summary and detail paths
+3. blocked clarification behavior for ambiguous order scope
+4. bounded follow-up support from grounded order-status artifacts
+5. regression and live verification
+
+### Mini-phase 1.3: Purchase Order Tracking
+
+Deliver:
+
+1. governed purchase-order tracking capability
+2. procurement visibility surface
+3. safe clarification and status normalization
+4. bounded reasoning over grounded procurement artifacts
+5. regression and live verification
+
+### Mini-phase 1.4: Customer Credit Status
+
+Deliver:
+
+1. governed credit-status capability
+2. safe read-only credit risk surface
+3. clarification for scope and thresholds where needed
+4. bounded reasoning over grounded customer credit outputs
+5. regression and live verification
+
+### Mini-phase 1.5: Operational Phase Closure
+
+Deliver:
+
+1. full-gate pass with all Wave 1 operational slices active
+2. updated metadata audit
+3. updated active baseline docs
+
+## 6. Phase 2: Business Definition and Formula Registry
+
+Goal: prevent KPI drift before composite expansion and more ambitious decomposition.
+
+This phase intentionally comes before composite governed artifacts.
+
+Why:
+
+1. composite metrics should not be built on undefined business semantics
+2. company-specific KPI and threshold meaning must be governed before multi-metric composition grows
+3. this reduces migration debt later
+
+### Mini-phase 2.1: Registry Contracts
+
+Deliver:
+
+1. `BusinessDefinitionRegistry`
+2. `GovernedFormulaRegistry`
+3. metadata schema for ownership, scope, formula, and threshold logic
+
+### Mini-phase 2.2: Core KPI Definitions
+
+Deliver:
+
+1. tenure
+2. average order value
+3. collection ratio
+4. credit utilization
+
+### Mini-phase 2.3: Threshold and Risk Semantics
+
+Deliver:
+
+1. overdue severity thresholds
+2. customer credit-risk thresholds
+3. company-specific business-rule registry
+
+### Mini-phase 2.4: Formula Phase Closure
+
+Deliver:
+
+1. registry-backed runtime usage
+2. blocked-safe behavior for undefined KPIs
+3. full-gate pass and doc refresh
+
+## 7. Phase 3: Composite Governed Artifact Expansion
+
+Goal: support richer multi-metric governed business questions without loosening authority boundaries.
+
+### Mini-phase 3.1: Composite Artifact Contract
+
+Deliver:
+
+1. `CompositeRankingArtifactContract`
+2. governed compatibility rules for multi-metric joins
+3. blocked-safe behavior when scope compatibility is unproven
+
+### Mini-phase 3.2: Customer Ranking Composites
+
+Deliver:
+
+1. customer revenue + quantity + AOV composite
+2. explicit primary metric rule
+3. governed same-grain validation
+
+### Mini-phase 3.3: Product Ranking Composites
+
+Deliver:
+
+1. product revenue + quantity + average selling price composite
+2. governed scope compatibility checks
+3. bounded render and follow-up support
+
+### Mini-phase 3.4: Overdue Customer Composite
+
+Deliver:
+
+1. overdue customer + overdue amount + last payment date composite
+2. governed join and freshness rules
+3. safe clarify or block behavior if compatibility is weak
+
+### Mini-phase 3.5: Composite Phase Closure
+
+Deliver:
+
+1. full-gate pass
+2. composite artifact checkpoint docs
+3. updated current baseline docs
+
+## 8. Phase 4: Complex Business Question Decomposition
+
+Goal: support larger business asks only after enough governed endpoints exist.
+
+### Mini-phase 4.1: Decomposition Contract
+
+Deliver:
+
+1. typed decomposition request contract
+2. bounded sub-question planning
+3. auditability for sub-plan generation
+
+### Mini-phase 4.2: Governed Read-Only Planner
+
+Deliver:
+
+1. decomposition only into governed read capabilities
+2. no free-form agent synthesis as business authority
+3. explicit block/clarify behavior for unsupported plans
+
+### Mini-phase 4.3: Composite Execution and Merge Policy
+
+Deliver:
+
+1. safe merge rules for decomposed outputs
+2. governed synthesis policy
+3. structured answer provenance
+
+### Mini-phase 4.4: Decomposition Phase Closure
+
+Deliver:
+
+1. replay packs for long/complex business prompts
+2. full-gate pass
+3. enterprise checkpoint docs
+
+## 9. Phase 5: Multilingual Enterprise UX
+
+Goal: make Burmese and English first-class product behavior, not UI translation afterthoughts.
+
+### Mini-phase 5.1: Language Layer
+
+Deliver:
+
+1. language detection contract
+2. Burmese Unicode normalization
+3. language-aware audit envelope
+
+### Mini-phase 5.2: Business Glossary Layer
+
+Deliver:
+
+1. bilingual governed glossary
+2. business-label localization policy
+3. clarification-safe multilingual rendering
+
+### Mini-phase 5.3: Same-Language Reply Policy
+
+Deliver:
+
+1. Burmese input -> Burmese reply
+2. English input -> English reply
+3. no fact drift across language transformation
+
+### Mini-phase 5.4: Multilingual Verification
+
+Deliver:
+
+1. multilingual replay packs
+2. validation support
+3. full-gate pass with multilingual additions
+
+## 10. Phase 6: Chart, Graph, Dashboard, and Export Artifacts
+
+Goal: deliver governed visual artifacts from grounded structured data.
+
+### Mini-phase 6.1: Chart Artifact Contract
+
+Deliver:
+
+1. chart artifact contract
+2. chartable-field policy from report metadata
+3. grounded chart generation path
+
+### Mini-phase 6.2: Dashboard Proposal Layer
+
+Deliver:
+
+1. dashboard proposal contract
+2. governed dashboard composition rules
+3. save/proposal UX contract
+
+### Mini-phase 6.3: Export Artifacts
+
+Deliver:
+
+1. PNG download path
+2. CSV export
+3. Excel export
+4. export auditability
+
+### Mini-phase 6.4: Visual Phase Closure
+
+Deliver:
+
+1. chart/dashboard/export replay packs
+2. full-gate pass
+3. updated current baseline docs
+
+## 11. Phase 7: OCR and Document Ingestion
+
+Goal: support governed OCR-driven read workflows only after the read and artifact surface is strong.
+
+### Mini-phase 7.1: OCR Input Contract
+
+Deliver:
+
+1. OCR ingestion contract
+2. document-source metadata
+3. extraction confidence and audit fields
+
+### Mini-phase 7.2: Extraction Validation
+
+Deliver:
+
+1. grounded validation rules for OCR output
+2. reject/clarify behavior for low-confidence extraction
+3. deterministic field normalization
+
+### Mini-phase 7.3: OCR-to-ERP Read Flow
+
+Deliver:
+
+1. OCR-assisted read/query path
+2. bounded document-to-ERP interpretation
+3. no silent fact invention from OCR text
+
+### Mini-phase 7.4: OCR Phase Closure
+
+Deliver:
+
+1. replay packs
+2. full-gate pass
+3. updated baseline docs
+
+## 12. Phase 8: Controlled Write and Approval Layer
+
+Goal: add enterprise write capability last, under strict preview and confirmation control.
+
+### Mini-phase 8.1: Action Proposal Contracts
+
+Deliver:
+
+1. `ActionProposalContract`
+2. preview card contract
+3. propose -> preview -> confirm state model
+
+### Mini-phase 8.2: Controlled CRUD Paths
+
+Deliver:
+
+1. safe create/update/delete paths
+2. destructive-action policies
+3. approval-aware write boundaries
+
+### Mini-phase 8.3: Write Audit and Security
+
+Deliver:
+
+1. dedicated write audit trail
+2. permission and secret isolation
+3. least-privilege execution path
+
+### Mini-phase 8.4: Write Phase Closure
+
+Deliver:
+
+1. full-gate pass
+2. write-specific replay and approval tests
+3. updated enterprise baseline docs
+
+## 13. Recommended Immediate Next Slice
+
+Start with:
+
+1. Phase 1
+2. Mini-phase 1.1
+3. Delivery / Fulfillment
+
+Why:
+
+1. highest-value next business expansion from the written roadmap
+2. read-only and low-risk relative to OCR or CRUD
+3. fits the current contract-governed runtime cleanly
+4. expands enterprise usefulness without reopening finished hardening chapters
+
+## 14. Stop Rule For The Current Chapter
+
+Do not reopen refactor/hardening by default while executing this roadmap.
+
+Only reopen old cleanup chapters when:
+
+1. a real regression appears
+2. the full gate points to a genuine architectural red
+3. a new phase cannot proceed safely without a bounded fix

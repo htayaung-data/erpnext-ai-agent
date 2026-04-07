@@ -11,6 +11,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_fresh_query_interpretation_contract,
 )
 from ai_assistant_ui.qwen_chat.metadata import (
+	capability_fresh_query_defaults,
 	capability_ontology_concepts,
 	list_financial_summary_clarification_rules,
 	list_financial_summary_domain_rules,
@@ -183,14 +184,23 @@ def resolve_transaction_listing_interpretation(
 
 	rules = _transaction_listing_rules()
 	report_to_rule: Dict[str, Dict[str, Any]] = {}
+	capability_to_rule: Dict[str, Dict[str, Any]] = {}
 	for rule in rules:
 		report_names = _clean_list(rule.get("candidate_reports"))
 		if len(report_names) != 1:
 			continue
 		report_to_rule[report_names[0]] = rule
+		candidate_capability_ids = _clean_list(rule.get("candidate_capability_ids"))
+		if len(candidate_capability_ids) == 1:
+			capability_to_rule[candidate_capability_ids[0]] = rule
 
 	selected_rule: Dict[str, Any] | None = None
 	resolution_source = "metadata_default"
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
 	current_reports = [
 		report_name
 		for report_name in _clean_list(interpretation.candidate_reports)
@@ -201,6 +211,25 @@ def resolve_transaction_listing_interpretation(
 		selected_rule = report_to_rule[current_reports[0]]
 		resolution_source = "semantic_runtime"
 	else:
+		listing_view = str(extracted_slots.get("listing_view") or "").strip()
+		if listing_view:
+			for rule in rules:
+				required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+				if str(required_slots.get("listing_view") or "").strip() == listing_view:
+					selected_rule = rule
+					resolution_source = "semantic_runtime"
+					break
+	if selected_rule is None:
+		current_capability_ids = [
+			capability_id
+			for capability_id in _clean_list(interpretation.candidate_capability_ids)
+			if capability_id in capability_to_rule
+		]
+		current_capability_ids = list(dict.fromkeys(current_capability_ids))
+		if len(current_capability_ids) == 1:
+			selected_rule = capability_to_rule[current_capability_ids[0]]
+			resolution_source = "semantic_runtime"
+	if selected_rule is None:
 		for rule in rules:
 			required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
 			if str(required_slots.get("listing_view") or "").strip() == "sales_invoice":
@@ -210,14 +239,29 @@ def resolve_transaction_listing_interpretation(
 	if selected_rule is None:
 		return None
 
-	requested_dimensions = list(interpretation.requested_dimensions) or ["Invoice"]
-	requested_metrics = list(interpretation.requested_metrics) or ["Grand Total"]
+	selected_capability_ids = _clean_list(selected_rule.get("candidate_capability_ids"))
+	selected_reports = _clean_list(selected_rule.get("candidate_reports"))
+	selected_capability_id = selected_capability_ids[0] if selected_capability_ids else ""
+	selected_report = selected_reports[0] if selected_reports else ""
+	defaults = capability_fresh_query_defaults(selected_capability_id, intent_class="transaction_listing")
+	requested_dimensions = (
+		list(interpretation.requested_dimensions)
+		or _clean_list(defaults.get("default_dimensions"))
+		or report_supported_dimensions(selected_report)[:1]
+	)
+	requested_metrics = (
+		list(interpretation.requested_metrics)
+		or _clean_list(defaults.get("default_metrics"))
+		or report_supported_metrics(selected_report)[:1]
+	)
+	required_slots = selected_rule.get("required_slots") if isinstance(selected_rule.get("required_slots"), dict) else {}
+	listing_view = str(required_slots.get("listing_view") or "").strip()
 	resolved_interpretation = build_fresh_query_interpretation_contract(
 		request_id=interpretation.request_id,
 		session_id=interpretation.session_id,
 		intent_class=interpretation.intent_class,
-		candidate_capability_ids=_clean_list(selected_rule.get("candidate_capability_ids")),
-		candidate_reports=_clean_list(selected_rule.get("candidate_reports")),
+		candidate_capability_ids=selected_capability_ids,
+		candidate_reports=selected_reports,
 		requested_dimensions=requested_dimensions,
 		requested_metrics=requested_metrics,
 		requested_time_scope=interpretation.requested_time_scope,
@@ -235,13 +279,13 @@ def resolve_transaction_listing_interpretation(
 		session_id=interpretation.session_id,
 		intent_class="transaction_listing",
 		primary_business_area="transaction",
-		resolved_slots={"listing_view": "sales_invoice"},
+		resolved_slots={"listing_view": listing_view},
 		slot_confidence={
 			"listing_view": float(interpretation.confidence or 0.0) if resolution_source == "semantic_runtime" else 1.0
 		},
 		candidate_family_ids=_clean_list(selected_rule.get("candidate_family_ids")),
-		candidate_capability_ids=_clean_list(selected_rule.get("candidate_capability_ids")),
-		candidate_reports=_clean_list(selected_rule.get("candidate_reports")),
+		candidate_capability_ids=selected_capability_ids,
+		candidate_reports=selected_reports,
 		ambiguity_flags=[],
 		ambiguity_reason="",
 		resolution_source={
@@ -252,7 +296,7 @@ def resolve_transaction_listing_interpretation(
 		governed_reason=(
 			"Transaction-listing view resolved from the governed fresh-query interpretation contract."
 			if resolution_source == "semantic_runtime"
-			else "Transaction-listing view defaulted through governed metadata because the interpretation targets the canonical sales-invoice listing."
+			else "Transaction-listing view defaulted through governed metadata because the interpretation did not resolve a single governed document-listing target."
 		),
 	)
 	return SemanticResolutionOutcome(
@@ -292,6 +336,100 @@ def _trend_analysis_rules() -> List[Dict[str, Any]]:
 		for rule in rules
 		if isinstance(rule, dict) and str(rule.get("intent_class") or "").strip() == "trend_analysis"
 	]
+
+
+def _trend_rule_metric(rule: Dict[str, Any]) -> str:
+	required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+	return str(required_slots.get("trend_metric") or "").strip()
+
+
+def _trend_rule_reports(rule: Dict[str, Any]) -> List[str]:
+	return _clean_list(rule.get("candidate_reports"))
+
+
+def _trend_rule_capabilities(rule: Dict[str, Any]) -> List[str]:
+	return _clean_list(rule.get("candidate_capability_ids"))
+
+
+def _select_trend_rule(
+	*,
+	rules: List[Dict[str, Any]],
+	interpretation: FreshQueryInterpretationContract,
+	trend_metric: str,
+) -> tuple[Dict[str, Any] | None, str]:
+	current_reports = list(dict.fromkeys(_clean_list(interpretation.candidate_reports)))
+	current_capabilities = list(dict.fromkeys(_clean_list(interpretation.candidate_capability_ids)))
+	default_reports_by_capability: Dict[str, str] = {}
+	for capability_id in current_capabilities:
+		defaults = capability_fresh_query_defaults(capability_id, intent_class="trend_analysis")
+		default_report = str(defaults.get("default_report_name") or "").strip()
+		if default_report:
+			default_reports_by_capability[capability_id] = default_report
+
+	def _score(rule: Dict[str, Any]) -> tuple[int, int, int, int]:
+		rule_reports = set(_trend_rule_reports(rule))
+		rule_capabilities = set(_trend_rule_capabilities(rule))
+		report_match = int(bool(rule_reports & set(current_reports)))
+		capability_match = int(bool(rule_capabilities & set(current_capabilities)))
+		default_report_match = int(
+			any(
+				capability_id in rule_capabilities and report_name in rule_reports
+				for capability_id, report_name in default_reports_by_capability.items()
+			)
+		)
+		metric_default_match = int(_trend_rule_metric(rule) == "sales_amount")
+		return (report_match, capability_match, default_report_match, metric_default_match)
+
+	eligible = rules
+	resolution_source = "metadata_default"
+	if trend_metric:
+		eligible = [rule for rule in rules if _trend_rule_metric(rule) == trend_metric]
+		resolution_source = "semantic_runtime"
+	if not eligible:
+		return None, "unresolved"
+	best_rule = max(eligible, key=_score)
+	return best_rule, resolution_source
+
+
+def _trend_requested_metrics(
+	*,
+	interpretation: FreshQueryInterpretationContract,
+	selected_rule: Dict[str, Any],
+	trend_metric: str,
+) -> List[str]:
+	report_name = str((_trend_rule_reports(selected_rule) or [""])[0] or "").strip()
+	capability_id = str((_trend_rule_capabilities(selected_rule) or [""])[0] or "").strip()
+	report_metrics = _clean_list(report_supported_metrics(report_name))
+	requested_metrics = [
+		metric for metric in list(interpretation.requested_metrics) if metric in report_metrics
+	]
+	if requested_metrics:
+		return requested_metrics
+
+	defaults = capability_fresh_query_defaults(capability_id, intent_class="trend_analysis")
+	metric_overrides = (
+		defaults.get("metric_overrides_by_canonical_key")
+		if isinstance(defaults.get("metric_overrides_by_canonical_key"), dict)
+		else {}
+	)
+	metric_candidates = _clean_list(metric_overrides.get(trend_metric))
+	for metric in metric_candidates:
+		if metric in report_metrics:
+			return [metric]
+
+	for metric in _clean_list(defaults.get("default_metrics")):
+		if metric in report_metrics:
+			return [metric]
+
+	if trend_metric == "quantity":
+		for metric in report_metrics:
+			if "quantity" in metric.lower() or metric.lower() == "qty":
+				return [metric]
+	else:
+		for metric in report_metrics:
+			if "amount" in metric.lower() or "sales" in metric.lower() or "value" in metric.lower():
+				return [metric]
+	return report_metrics[:1]
 
 
 def _ranking_rules() -> List[Dict[str, Any]]:
@@ -990,56 +1128,22 @@ def resolve_trend_analysis_interpretation(
 		return None
 
 	rules = _trend_analysis_rules()
-	report_to_rule: Dict[str, Dict[str, Any]] = {}
-	for rule in rules:
-		report_names = _clean_list(rule.get("candidate_reports"))
-		if len(report_names) != 1:
-			continue
-		report_to_rule[report_names[0]] = rule
-
-	current_reports = [
-		report_name
-		for report_name in _clean_list(interpretation.candidate_reports)
-		if report_name in report_to_rule
-	]
-	current_reports = list(dict.fromkeys(current_reports))
 	trend_metric = _resolve_ranking_metric(list(interpretation.requested_metrics))
-	selected_rule: Dict[str, Any] | None = None
-	resolution_source = "unresolved"
-
-	if trend_metric:
-		for rule in rules:
-			required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
-			if str(required_slots.get("trend_metric") or "").strip() == trend_metric:
-				selected_rule = rule
-				resolution_source = "semantic_runtime"
-				break
-
-	if selected_rule is None and len(current_reports) == 1:
-		selected_rule = report_to_rule[current_reports[0]]
-		required_slots = selected_rule.get("required_slots") if isinstance(selected_rule.get("required_slots"), dict) else {}
-		trend_metric = str(required_slots.get("trend_metric") or "").strip()
-		resolution_source = "metadata_default"
-
-	if selected_rule is None:
-		for rule in rules:
-			required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
-			if str(required_slots.get("trend_metric") or "").strip() == "sales_amount":
-				selected_rule = rule
-				trend_metric = "sales_amount"
-				resolution_source = "metadata_default"
-				break
+	selected_rule, resolution_source = _select_trend_rule(
+		rules=rules,
+		interpretation=interpretation,
+		trend_metric=trend_metric,
+	)
 
 	if selected_rule is None:
 		return None
 
-	report_metrics = _clean_list(report_supported_metrics("Sales Analytics"))
-	requested_metrics = list(interpretation.requested_metrics)
-	if not requested_metrics:
-		if trend_metric == "quantity" and "Quantity" in report_metrics:
-			requested_metrics = ["Quantity"]
-		elif "Sales Amount" in report_metrics:
-			requested_metrics = ["Sales Amount"]
+	trend_metric = trend_metric or _trend_rule_metric(selected_rule) or "sales_amount"
+	requested_metrics = _trend_requested_metrics(
+		interpretation=interpretation,
+		selected_rule=selected_rule,
+		trend_metric=trend_metric,
+	)
 
 	resolved_interpretation = build_fresh_query_interpretation_contract(
 		request_id=interpretation.request_id,
