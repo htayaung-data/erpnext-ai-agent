@@ -2281,6 +2281,7 @@ def _transaction_listing_context(report_name: str, rows: List[Dict[str, Any]]) -
 	report_spec = get_report_spec(report_name)
 	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
 	doctype = str(direct_query.get("doctype") or "").strip()
+	date_field = str(direct_query.get("date_field") or "").strip()
 	document_label = doctype or str(report_name or "").replace(" List", "").strip()
 	transaction_type = _normalize_key(doctype) or _normalize_key(document_label)
 	party_field = ""
@@ -2295,6 +2296,7 @@ def _transaction_listing_context(report_name: str, rows: List[Dict[str, Any]]) -
 		"transaction_type": transaction_type or "document",
 		"party_field": party_field,
 		"party_label": party_label,
+		"date_label": "Transaction Date" if date_field == "transaction_date" else "Posting Date",
 	}
 
 
@@ -2318,21 +2320,27 @@ def _build_transaction_listing_artifact(
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
 	party_field = str(context.get("party_field") or "").strip()
-	document_rows = [
-		{
+	source_has_outstanding = any(isinstance(row, dict) and "outstanding_amount" in row for row in rows)
+	document_rows = []
+	for row in rows:
+		if not isinstance(row, dict):
+			continue
+		document_name = str(row.get("name") or "").strip()
+		if not document_name:
+			continue
+		document_row = {
 			"document_name": str(row.get("name") or "").strip(),
-			"posting_date": str(row.get("posting_date") or "").strip(),
+			"posting_date": str(row.get("posting_date") or row.get("transaction_date") or "").strip(),
 			"customer": str(row.get("customer") or "").strip(),
 			"party_name": str(row.get(party_field) or "").strip() if party_field else "",
 			"grand_total": _numeric_value(row.get("grand_total")),
-			"outstanding_amount": _numeric_value(row.get("outstanding_amount")),
 			"quantity": _numeric_value(row.get("total_qty") if row.get("total_qty") not in (None, "") else row.get("qty")),
 			"status": str(row.get("status") or "").strip(),
 			"docstatus": _numeric_value(row.get("docstatus")),
 		}
-		for row in rows
-		if str(row.get("name") or "").strip()
-	]
+		if source_has_outstanding:
+			document_row["outstanding_amount"] = _numeric_value(row.get("outstanding_amount"))
+		document_rows.append(document_row)
 	requested_top_n = _requested_top_n_from_contract(compiler_contract)
 	if requested_top_n > 0:
 		document_rows = document_rows[:requested_top_n]
@@ -2373,6 +2381,7 @@ def _build_transaction_listing_artifact(
 			"document_label": context.get("document_label"),
 			"party_field": party_field,
 			"party_label": context.get("party_label"),
+			"date_label": context.get("date_label") or "Posting Date",
 			"primary_metric_key": "grand_total",
 			"primary_metric_label": "Grand Total",
 			"requested_top_n": requested_top_n or len(document_rows),

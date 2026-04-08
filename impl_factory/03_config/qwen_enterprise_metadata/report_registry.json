@@ -224,6 +224,122 @@
       "chartable_fields": []
     },
     {
+      "report_name": "Sales Order List",
+      "module": "Selling",
+      "family": "sales_order_list",
+      "capability_ids": [
+        "sales_order_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Sales Order",
+        "fields": [
+          "name",
+          "transaction_date",
+          "customer",
+          "status",
+          "company",
+          "grand_total",
+          "total_qty",
+          "per_delivered",
+          "per_billed",
+          "delivery_date",
+          "docstatus"
+        ],
+        "order_by": "transaction_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "filterable_fields": [
+          "status"
+        ],
+        "filter_value_aliases": {
+          "status": [
+            {
+              "value": "To Deliver",
+              "aliases": [
+                "to deliver",
+                "deliver pending",
+                "pending delivery"
+              ]
+            },
+            {
+              "value": "To Bill",
+              "aliases": [
+                "to bill",
+                "bill pending",
+                "pending billing"
+              ]
+            },
+            {
+              "value": "To Deliver and Bill",
+              "aliases": [
+                "to deliver and bill",
+                "to bill and deliver",
+                "deliver and bill",
+                "bill and deliver"
+              ]
+            },
+            {
+              "value": "Completed",
+              "aliases": [
+                "completed",
+                "complete",
+                "fully completed"
+              ]
+            },
+            {
+              "value": "Closed",
+              "aliases": [
+                "closed",
+                "close"
+              ]
+            }
+          ]
+        },
+        "date_field": "transaction_date",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "sales",
+        "order",
+        "transaction",
+        "document"
+      ],
+      "supported_dimensions": [
+        "Sales Order",
+        "Customer",
+        "Transaction Date",
+        "Status",
+        "Delivery Date"
+      ],
+      "supported_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Stock Balance",
       "module": "Stock",
       "family": "stock_balance",

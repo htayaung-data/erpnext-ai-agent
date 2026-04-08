@@ -901,6 +901,200 @@ def run_delivery_note_detail_smoke(
 	)
 
 
+def run_sales_order_detail_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.2 Sales Order Detail Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about SAL-ORD-2026-00022",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.2 Sales Order Detail Smoke failed on sales-order detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.2 Sales Order Detail Smoke failed: explicit sales-order request did not use the governed entity-detail engine."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "sal-ord-2026-00022" not in assistant_text.lower():
+				raise RuntimeError(
+					"Phase1.2 Sales Order Detail Smoke failed: detail answer did not anchor to the requested sales order."
+				)
+			if "document count" in assistant_text.lower():
+				raise RuntimeError(
+					"Phase1.2 Sales Order Detail Smoke failed: detail answer still looked like a list summary."
+				)
+			tool_payloads = session_tool_payloads(session_doc)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_entity_detail_artifact")
+			rendered_payload = latest_tool_payload_by_type(tool_payloads, "qwen_entity_detail_rendered_response")
+			entity_type = str((artifact_payload or {}).get("dimensions", {}).get("entity_type") or "").strip()
+			rendered_title = str((rendered_payload or {}).get("title") or "").strip()
+			if entity_type != "sales_order":
+				raise RuntimeError(
+					f"Phase1.2 Sales Order Detail Smoke failed: expected entity_type 'sales_order', observed {entity_type!r}."
+				)
+			if "Sales Order" not in rendered_title:
+				raise RuntimeError(
+					f"Phase1.2 Sales Order Detail Smoke failed: expected rendered title to contain 'Sales Order', observed {rendered_title!r}."
+				)
+			return {
+				"ok": True,
+				"mode": str((detail_payload or {}).get("mode") or "").strip(),
+				"engine": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"title": rendered_title,
+				"entity_type": entity_type,
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_sales_order_status_followup_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.2 Sales Order Status Followup Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about SAL-ORD-2026-00022",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.2 Sales Order Status Followup Smoke failed on sales-order detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: explicit sales-order request did not use governed entity-detail engine."
+				)
+
+			ok, delivered_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="is it delivered?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.2 Sales Order Status Followup Smoke failed on delivery-status follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			delivered_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((delivered_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: delivery-status follow-up did not use grounded evidence mode."
+				)
+			if "50%" not in delivered_text or "sal-ord-2026-00022" not in delivered_text.lower():
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: delivery-status answer did not stay anchored to order evidence."
+				)
+
+			ok, billed_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="how much is billed?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.2 Sales Order Status Followup Smoke failed on billing follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			billed_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((billed_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: billing follow-up did not use grounded evidence mode."
+				)
+			if "10.46%" not in billed_text and "795,000" not in billed_text:
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: billing answer did not surface the grounded order progress."
+				)
+
+			ok, due_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="when is delivery due?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.2 Sales Order Status Followup Smoke failed on planned-date follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			due_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((due_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: planned-date follow-up did not use grounded evidence mode."
+				)
+			if "2026-04-02" not in due_text:
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: planned-date answer did not expose the governed delivery date."
+				)
+
+			ok, boundary_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="when was it delivered?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.2 Sales Order Status Followup Smoke failed on actual-delivery-date boundary follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			boundary_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((boundary_payload or {}).get("mode") or "").strip() != "grounded_evidence_boundary":
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: actual-delivery-date follow-up did not stop at the grounded boundary."
+				)
+			if "actual shipment event date" not in boundary_text.lower():
+				raise RuntimeError(
+					"Phase1.2 Sales Order Status Followup Smoke failed: boundary answer did not explain the missing downstream evidence."
+				)
+
+			return {
+				"ok": True,
+				"detail_mode": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"delivery_mode": str((delivered_payload or {}).get("mode") or "").strip(),
+				"billing_mode": str((billed_payload or {}).get("mode") or "").strip(),
+				"due_mode": str((due_payload or {}).get("mode") or "").strip(),
+				"boundary_mode": str((boundary_payload or {}).get("mode") or "").strip(),
+				"delivery_text": delivered_text,
+				"billing_text": billed_text,
+				"due_text": due_text,
+				"boundary_text": boundary_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_delivery_note_date_scope_probe(
 	*,
 	frappe_module,

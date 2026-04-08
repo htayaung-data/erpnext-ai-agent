@@ -41,13 +41,19 @@ def _default_limit(default_limit: int) -> int:
 	return max(1, min(100, int(default_limit or 10)))
 
 
-def _direct_query_columns(fields: list[str]) -> list[dict[str, Any]]:
+def _direct_query_columns(fields: list[str], *, doctype: str = "") -> list[dict[str, Any]]:
+	document_label = str(doctype or "").strip() or "Document"
 	label_map = {
-		"name": "Invoice",
+		"name": document_label,
 		"posting_date": "Posting Date",
+		"transaction_date": "Transaction Date",
+		"delivery_date": "Delivery Date",
 		"customer": "Customer",
 		"grand_total": "Grand Total",
 		"outstanding_amount": "Outstanding Amount",
+		"total_qty": "Quantity",
+		"per_delivered": "Delivered %",
+		"per_billed": "Billed %",
 		"status": "Status",
 		"docstatus": "Docstatus",
 	}
@@ -190,7 +196,7 @@ def _execute_direct_query(
 			"result": {
 				"success": True,
 				"report_name": report_name,
-				"columns": _direct_query_columns(fields),
+				"columns": _direct_query_columns(fields, doctype=doctype),
 				"data": [_json_safe_row(row) for row in rows if isinstance(row, dict)],
 				"message": "",
 				"filters_applied": {

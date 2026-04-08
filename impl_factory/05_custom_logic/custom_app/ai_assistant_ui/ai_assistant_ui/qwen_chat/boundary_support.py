@@ -77,6 +77,17 @@ def _delivery_date_phrase(delivery_dates: List[str]) -> str:
 	return ", ".join(delivery_dates[:-1]) + f", and {delivery_dates[-1]}"
 
 
+def _numeric(value: Any) -> float:
+	try:
+		return float(value or 0.0)
+	except Exception:
+		return 0.0
+
+
+def _money(value: Any) -> str:
+	return f"{_numeric(value):,.2f}".rstrip("0").rstrip(".")
+
+
 def _summary_block(title: str, rows: List[List[str]]) -> Dict[str, Any]:
 	return {
 		"block_type": "summary_table",
@@ -132,7 +143,116 @@ def build_grounded_artifact_direct_evidence_rendered_payload(
 	if str(artifact.get("family_id") or "").strip() != "entity_detail":
 		return {}
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	if str(dimensions.get("entity_type") or "").strip().lower() != "sales_invoice":
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	if entity_type == "sales_order":
+		request_concepts = {
+			str(value or "").strip()
+			for value in ontology_detect_concepts(raw_message)
+			if str(value or "").strip()
+		}
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="sales_order_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		requested_metrics = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="sales_order_read",
+				dimension_or_metric="metric",
+			)
+		)
+		if "posting_date" in requested_dimensions and "planned_delivery_date" not in requested_dimensions and "fulfillment" in request_concepts:
+			return {}
+		if not requested_dimensions.intersection({"document_status", "planned_delivery_date"}) and not requested_metrics.intersection(
+			{"delivery_progress_percent", "billing_progress_percent"}
+		) and "fulfillment" not in request_concepts:
+			return {}
+		document_row = _artifact_document_row(artifact)
+		item_rows = _artifact_item_rows(artifact)
+		entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "Sales Order").strip()
+		customer = str(document_row.get("customer") or "").strip()
+		status = str(document_row.get("status") or "").strip()
+		delivery_status = str(document_row.get("delivery_status") or "").strip()
+		billing_status = str(document_row.get("billing_status") or "").strip()
+		planned_delivery_date = str(document_row.get("delivery_date") or "").strip()
+		per_delivered = _numeric(document_row.get("per_delivered"))
+		per_billed = _numeric(document_row.get("per_billed"))
+		total_qty = _numeric(document_row.get("quantity"))
+		delivered_qty = sum(_numeric(row.get("delivered_qty")) for row in item_rows)
+		billed_amount = sum(_numeric(row.get("billed_amount")) for row in item_rows)
+		evidence_rows = [
+			["Sales Order", entity_label],
+			["Customer", customer],
+			["Current Status", status],
+			["Delivery Status", delivery_status],
+			["Billing Status", billing_status],
+			["Planned Delivery Date", planned_delivery_date],
+			["Delivered (%)", _money(per_delivered)],
+			["Billed (%)", _money(per_billed)],
+		]
+		evidence_items: List[str] = []
+		if "document_status" in requested_dimensions:
+			evidence_items.append(
+				f"The current sales order status is {status}, with delivery status {delivery_status or 'Unknown'} and billing status {billing_status or 'Unknown'}."
+			)
+		if "planned_delivery_date" in requested_dimensions and planned_delivery_date:
+			evidence_items.append(f"The planned delivery date recorded on the sales order is {planned_delivery_date}.")
+		if "delivery_progress_percent" in requested_metrics or "fulfillment" in request_concepts:
+			delivery_item = f"Delivery progress is {_money(per_delivered)}%"
+			if delivery_status:
+				delivery_item += f" ({delivery_status})"
+			if total_qty > 0:
+				delivery_item += f", with { _money(delivered_qty) } of { _money(total_qty) } units delivered on the current order lines"
+			evidence_items.append(delivery_item + ".")
+		if "billing_progress_percent" in requested_metrics:
+			billing_item = f"Billing progress is {_money(per_billed)}%"
+			if billing_status:
+				billing_item += f" ({billing_status})"
+			if billed_amount > 0:
+				billing_item += f", with {_money(billed_amount)} MMK billed on the current order lines"
+			evidence_items.append(billing_item + ".")
+		item_table_rows = [
+			[
+				str(row.get("item_code") or "").strip(),
+				str(row.get("item_name") or "").strip(),
+				_money(row.get("qty")),
+				_money(row.get("delivered_qty")),
+				_money(row.get("billed_amount")),
+			]
+			for row in item_rows
+		]
+		return {
+			"type": "qwen_rendered_family_response_contract",
+			"contract_version": "1.0",
+			"request_id": str(artifact.get("request_id") or "").strip(),
+			"family_id": str(artifact.get("family_id") or "").strip(),
+			"renderer_id": "grounded_artifact_direct_evidence",
+			"title": f"Order Status Evidence for {entity_label}",
+			"answer_text": "",
+			"source_reports": [
+				str(value or "").strip()
+				for value in (artifact.get("source_reports") or [])
+				if str(value or "").strip()
+			],
+			"blocks": [
+				_summary_block("Order Status Evidence", evidence_rows),
+				_data_block(
+					"Order Items",
+					["Item Code", "Item Name", "Qty", "Delivered Qty", "Billed Amount (MMK)"],
+					item_table_rows,
+				),
+				_bullet_block("Evidence Highlights", evidence_items),
+			],
+			"warnings": [
+				str(value or "").strip()
+				for value in (artifact.get("warnings") or [])
+				if str(value or "").strip()
+			],
+		}
+	if entity_type != "sales_invoice":
 		return {}
 	delivery_proof = _artifact_delivery_proof(artifact)
 	proof_state = str(delivery_proof.get("proof_state") or "").strip()
@@ -264,10 +384,84 @@ def grounded_artifact_direct_evidence_answer(
 		for value in ontology_detect_concepts(raw_message)
 		if str(value or "").strip()
 	}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	if entity_type == "sales_order":
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="sales_order_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		requested_metrics = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="sales_order_read",
+				dimension_or_metric="metric",
+			)
+		)
+		if "posting_date" in requested_dimensions and "planned_delivery_date" not in requested_dimensions and "fulfillment" in request_concepts:
+			return ""
+		if not requested_dimensions.intersection({"document_status", "planned_delivery_date"}) and not requested_metrics.intersection(
+			{"delivery_progress_percent", "billing_progress_percent"}
+		) and "fulfillment" not in request_concepts:
+			return ""
+		document_row = _artifact_document_row(artifact)
+		item_rows = _artifact_item_rows(artifact)
+		entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this sales order").strip()
+		customer = str(document_row.get("customer") or "").strip()
+		customer_phrase = f" for {customer}" if customer else ""
+		status = str(document_row.get("status") or "").strip()
+		delivery_status = str(document_row.get("delivery_status") or "").strip()
+		billing_status = str(document_row.get("billing_status") or "").strip()
+		planned_delivery_date = str(document_row.get("delivery_date") or "").strip()
+		per_delivered = _numeric(document_row.get("per_delivered"))
+		per_billed = _numeric(document_row.get("per_billed"))
+		total_qty = _numeric(document_row.get("quantity"))
+		delivered_qty = sum(_numeric(row.get("delivered_qty")) for row in item_rows)
+		billed_amount = sum(_numeric(row.get("billed_amount")) for row in item_rows)
+		if "planned_delivery_date" in requested_dimensions and planned_delivery_date:
+			return f"The planned delivery date for {entity_label}{customer_phrase} is {planned_delivery_date}."
+		if "billing_progress_percent" in requested_metrics:
+			if per_billed >= 100:
+				return (
+					f"Yes. {entity_label} is fully billed{customer_phrase}.\n\n"
+					f"Billing progress is {_money(per_billed)}% ({billing_status or 'Fully Billed'})."
+				)
+			if per_billed <= 0:
+				return (
+					f"No. {entity_label} has not been billed yet{customer_phrase}.\n\n"
+					f"Billing progress is {_money(per_billed)}% ({billing_status or 'Not Billed'})."
+				)
+			detail = f"Only {_money(per_billed)}% has been billed so far"
+			if billed_amount > 0:
+				detail += f", which is {_money(billed_amount)} MMK on the current order lines"
+			return f"Partly. {entity_label} is not fully billed yet{customer_phrase}.\n\n{detail} ({billing_status or 'Partly Billed'})."
+		if "document_status" in requested_dimensions:
+			return (
+				f"The current status of {entity_label}{customer_phrase} is {status}.\n\n"
+				f"Delivery status is {delivery_status or 'Unknown'}, and billing status is {billing_status or 'Unknown'}."
+			)
+		if "delivery_progress_percent" in requested_metrics or "fulfillment" in request_concepts:
+			if per_delivered >= 100:
+				return (
+					f"Yes. {entity_label} is fully delivered{customer_phrase}.\n\n"
+					f"Delivery progress is {_money(per_delivered)}% ({delivery_status or 'Fully Delivered'})."
+				)
+			if per_delivered <= 0:
+				return (
+					f"No. {entity_label} has not been delivered yet{customer_phrase}.\n\n"
+					f"Delivery progress is {_money(per_delivered)}% ({delivery_status or 'Not Delivered'})."
+				)
+			detail = f"It is {_money(per_delivered)}% delivered so far"
+			if total_qty > 0:
+				detail += f", with {_money(delivered_qty)} of {_money(total_qty)} units delivered on the current order lines"
+			return f"Partly. {entity_label} is not fully delivered yet{customer_phrase}.\n\n{detail} ({delivery_status or 'Partly Delivered'})."
+		return ""
 	if "fulfillment" not in request_concepts:
 		return ""
-	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	if str(dimensions.get("entity_type") or "").strip().lower() != "sales_invoice":
+	if entity_type != "sales_invoice":
 		return ""
 	delivery_proof = _artifact_delivery_proof(artifact)
 	proof_state = str(delivery_proof.get("proof_state") or "").strip()
@@ -349,6 +543,24 @@ def grounded_artifact_evidence_boundary_answer(
 	entity_type = ""
 	if isinstance(artifact.get("dimensions"), dict):
 		entity_type = str((artifact.get("dimensions") or {}).get("entity_type") or "").strip().lower()
+	if entity_type == "sales_order":
+		request_concepts = {
+			str(value or "").strip()
+			for value in ontology_detect_concepts(raw_message)
+			if str(value or "").strip()
+		}
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="sales_order_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		if "posting_date" in requested_dimensions and "planned_delivery_date" not in requested_dimensions and "fulfillment" in request_concepts:
+			return (
+				"The current sales order shows planned delivery date and delivery progress, but it does not prove the actual shipment event date.\n\n"
+				"To answer when it was actually delivered, I need governed downstream fulfillment evidence such as linked delivery-note records."
+			)
 	request_concepts = {
 		str(value or "").strip()
 		for value in ontology_detect_concepts(raw_message)

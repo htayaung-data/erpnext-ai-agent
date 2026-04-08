@@ -60,6 +60,21 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertEqual(outcome["entity_key"], "MAT-DN-2026-00016")
 		self.assertEqual(outcome["source"], "explicit_identifier")
 
+	def test_detect_entity_drilldown_request_resolves_explicit_sales_order_identifier(self):
+		with patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			side_effect=lambda doctype, name: doctype == "Sales Order" and name == "SAL-ORD-2026-00022",
+		), patch.object(entity_detail_module, "_resolve_item_name", return_value=("", "")):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about SAL-ORD-2026-00022",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "sales_order")
+		self.assertEqual(outcome["entity_key"], "SAL-ORD-2026-00022")
+		self.assertEqual(outcome["source"], "explicit_identifier")
+
 	def test_detect_entity_drilldown_request_uses_transaction_listing_delivery_note_context(self):
 		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
 			outcome = entity_detail_module.detect_entity_drilldown_request(
@@ -128,6 +143,65 @@ class TestEntityDetailContracts(unittest.TestCase):
 		grounded = outcome["grounded_turn_payload"]
 		self.assertEqual(grounded["known_entities"][0]["entity_type"], "delivery_note")
 		self.assertIn("MAT-DN-2026-00016", grounded["known_documents"])
+
+	def test_execute_entity_drilldown_supports_sales_order(self):
+		fake_doc = _FakeDoc(
+			name="SAL-ORD-2026-00022",
+			transaction_date="2026-03-30",
+			delivery_date="2026-04-02",
+			customer="Zegyo Mobile Supply House",
+			status="To Deliver and Bill",
+			delivery_status="Partly Delivered",
+			billing_status="Partly Billed",
+			total_qty=2,
+			grand_total=7600000,
+			per_delivered=50,
+			per_billed=10.460526,
+			company="Mingalar Mobile Distribution Co., Ltd.",
+			items=[
+				types.SimpleNamespace(
+					item_code="SPH-OPP-A58-6/128",
+					item_name="OPPO A58 (6GB 128GB)",
+					qty=2,
+					delivered_qty=1,
+					billed_amt=795000,
+					amount=7600000,
+					net_amount=7600000,
+					delivery_date="2026-04-02",
+				)
+			],
+		)
+		with patch.object(entity_detail_module.frappe, "get_doc", return_value=fake_doc), patch.object(
+			entity_detail_module,
+			"narrate_governed_artifact",
+			return_value={
+				"ok": True,
+				"answer_text": "SAL-ORD-2026-00022 is a sales order for Zegyo Mobile Supply House.",
+				"agent_meta": {"engine": "artifact_narrative"},
+			},
+		):
+			outcome = entity_detail_module.execute_entity_drilldown(
+				request_id="sales-order-detail",
+				session_id="session-1",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="tell me more about SAL-ORD-2026-00022",
+				entity_reference={"entity_type": "sales_order", "entity_key": "SAL-ORD-2026-00022"},
+				response_policy={},
+				grounded_turn={"company": "Mingalar Mobile Distribution Co., Ltd."},
+			)
+		self.assertTrue(outcome["ok"])
+		self.assertIn("SAL-ORD-2026-00022", outcome["answer_text"])
+		artifact = outcome["artifact_payload"]
+		self.assertEqual(artifact["dimensions"]["entity_type"], "sales_order")
+		self.assertEqual(artifact["sections"]["document_rows"][0]["delivery_date"], "2026-04-02")
+		self.assertEqual(artifact["sections"]["document_rows"][0]["per_delivered"], 50.0)
+		self.assertEqual(artifact["sections"]["item_rows"][0]["delivered_qty"], 1.0)
+		self.assertEqual(artifact["sections"]["item_rows"][0]["billed_amount"], 795000.0)
+		self.assertEqual(outcome["rendered_response_payload"]["source_reports"], ["Sales Order"])
+		grounded = outcome["grounded_turn_payload"]
+		self.assertEqual(grounded["known_entities"][0]["entity_type"], "sales_order")
+		self.assertIn("SAL-ORD-2026-00022", grounded["known_documents"])
 
 	def test_execute_entity_drilldown_populates_sales_invoice_delivery_proof(self):
 		fake_doc = _FakeDoc(
@@ -305,3 +379,126 @@ class TestEntityDetailContracts(unittest.TestCase):
 			grounded_turn={"source_name": "ACC-SINV-2026-00192 Detail"},
 		)
 		self.assertEqual(answer, "")
+
+	def test_grounded_artifact_direct_evidence_answer_confirms_sales_order_delivery_progress(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="is it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "sales_order", "entity_label": "SAL-ORD-2026-00022"},
+				"sections": {
+					"document_rows": [
+						{
+							"customer": "Zegyo Mobile Supply House",
+							"status": "To Deliver and Bill",
+							"delivery_status": "Partly Delivered",
+							"billing_status": "Partly Billed",
+							"delivery_date": "2026-04-02",
+							"quantity": 2,
+							"per_delivered": 50,
+							"per_billed": 10.460526,
+						}
+					],
+					"item_rows": [
+						{
+							"item_name": "OPPO A58 (6GB 128GB)",
+							"qty": 2,
+							"delivered_qty": 1,
+							"billed_amount": 795000,
+						}
+					],
+				},
+			},
+			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+		)
+		self.assertIn("Partly.", answer)
+		self.assertIn("50%", answer)
+		self.assertIn("1 of 2 units", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_sales_order_billing_progress(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="how much is billed?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "sales_order", "entity_label": "SAL-ORD-2026-00022"},
+				"sections": {
+					"document_rows": [
+						{
+							"customer": "Zegyo Mobile Supply House",
+							"status": "To Deliver and Bill",
+							"delivery_status": "Partly Delivered",
+							"billing_status": "Partly Billed",
+							"delivery_date": "2026-04-02",
+							"quantity": 2,
+							"per_delivered": 50,
+							"per_billed": 10.460526,
+						}
+					],
+					"item_rows": [
+						{
+							"qty": 2,
+							"delivered_qty": 1,
+							"billed_amount": 795000,
+						}
+					],
+				},
+			},
+			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+		)
+		self.assertIn("10.46%", answer)
+		self.assertIn("795,000 MMK", answer)
+		self.assertIn("Partly Billed", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_sales_order_planned_delivery_date(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="when is delivery due?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "sales_order", "entity_label": "SAL-ORD-2026-00022"},
+				"sections": {
+					"document_rows": [
+						{
+							"customer": "Zegyo Mobile Supply House",
+							"status": "To Deliver and Bill",
+							"delivery_status": "Partly Delivered",
+							"billing_status": "Partly Billed",
+							"delivery_date": "2026-04-02",
+							"quantity": 2,
+							"per_delivered": 50,
+							"per_billed": 10.460526,
+						}
+					],
+					"item_rows": [],
+				},
+			},
+			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+		)
+		self.assertIn("2026-04-02", answer)
+		self.assertIn("planned delivery date", answer.lower())
+
+	def test_grounded_artifact_evidence_boundary_answer_blocks_actual_sales_order_delivery_event_date(self):
+		answer = boundary_support_module.grounded_artifact_evidence_boundary_answer(
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "sales_order", "entity_label": "SAL-ORD-2026-00022"},
+				"sections": {
+					"document_rows": [
+						{
+							"customer": "Zegyo Mobile Supply House",
+							"status": "To Deliver and Bill",
+							"delivery_status": "Partly Delivered",
+							"billing_status": "Partly Billed",
+							"delivery_date": "2026-04-02",
+							"quantity": 2,
+							"per_delivered": 50,
+							"per_billed": 10.460526,
+						}
+					],
+					"item_rows": [],
+				},
+			},
+			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+		)
+		self.assertIn("does not prove the actual shipment event date", answer)
+		self.assertIn("delivery-note", answer.lower())

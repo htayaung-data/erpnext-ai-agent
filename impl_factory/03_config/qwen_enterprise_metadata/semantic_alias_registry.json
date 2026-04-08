@@ -35,10 +35,11 @@
         "volume",
         "count"
       ],
-      "capability_scope": ["sales_read", "stock_read", "product_performance_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "stock_read", "product_performance_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
         "Sales Analytics": ["Quantity"],
+        "Sales Order List": ["total_qty"],
         "Stock Balance": ["Balance Qty"],
         "Gross Profit": ["Qty"],
         "Delivery Note List": ["Total Qty"],
@@ -222,10 +223,11 @@
         "buyers",
         "party"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Analytics": ["Customer"],
+        "Sales Order List": ["customer"],
         "Accounts Receivable Summary": ["Party"],
         "Delivery Note List": ["customer"]
       }
@@ -321,6 +323,10 @@
         "invoice name",
         "invoice no",
         "invoice number",
+        "sales order",
+        "sales orders",
+        "sales order no",
+        "sales order number",
         "delivery note",
         "delivery note no",
         "delivery note number",
@@ -328,9 +334,10 @@
         "document no",
         "document number"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
+        "Sales Order List": ["name"],
         "Sales Register": ["Voucher No"],
         "Accounts Receivable Summary": ["Voucher No"],
         "Accounts Payable Summary": ["Voucher No"],
@@ -344,6 +351,7 @@
         "posting date",
         "date",
         "invoice date",
+        "order date",
         "transaction date",
         "delivery date",
         "delivered date",
@@ -359,13 +367,69 @@
         "what day it was delivered",
         "what day was it delivered"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
+        "Sales Order List": ["transaction_date"],
         "Sales Register": ["Posting Date"],
         "Accounts Receivable Summary": ["Posting Date"],
         "Accounts Payable Summary": ["Posting Date"],
         "Delivery Note List": ["posting_date"]
+      }
+    },
+    {
+      "canonical_key": "planned_delivery_date",
+      "label": "Planned Delivery Date",
+      "aliases": [
+        "planned delivery date",
+        "delivery due",
+        "delivery due date",
+        "when is delivery due",
+        "when is it due",
+        "when is this due",
+        "when is that due",
+        "delivery date"
+      ],
+      "capability_scope": ["sales_order_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Sales Order List": ["delivery_date"]
+      }
+    },
+    {
+      "canonical_key": "delivery_progress_percent",
+      "label": "Delivered Percent",
+      "aliases": [
+        "delivery progress",
+        "delivered percentage",
+        "delivered percent",
+        "delivery completion",
+        "fulfilled percentage",
+        "fulfillment status",
+        "how much is delivered",
+        "is it delivered"
+      ],
+      "capability_scope": ["sales_order_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Sales Order List": ["per_delivered"]
+      }
+    },
+    {
+      "canonical_key": "billing_progress_percent",
+      "label": "Billed Percent",
+      "aliases": [
+        "billing progress",
+        "billed percentage",
+        "billed percent",
+        "billing completion",
+        "how much is billed",
+        "is it billed"
+      ],
+      "capability_scope": ["sales_order_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Sales Order List": ["per_billed"]
       }
     },
     {
@@ -376,9 +440,10 @@
         "document status",
         "payment status"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
+        "Sales Order List": ["status"],
         "Sales Register": ["Status"],
         "Delivery Note List": ["status"]
       }
@@ -392,9 +457,10 @@
         "total amount",
         "invoice amount"
       ],
-      "capability_scope": ["sales_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
+        "Sales Order List": ["grand_total"],
         "Sales Register": ["Grand Total"],
         "Delivery Note List": ["grand_total"]
       }

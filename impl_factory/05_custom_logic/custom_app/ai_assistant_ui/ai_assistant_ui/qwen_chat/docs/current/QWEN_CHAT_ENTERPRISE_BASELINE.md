@@ -77,6 +77,51 @@ As of this checkpoint:
    - critical shared-core boundary behavior is now asserted directly in [test_knowledge_boundary_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_knowledge_boundary_contracts.py)
    - the bounded assertions cover front-door route ownership, clarification preemption, valid-ERP uncovered reasoning fallback, unsupported non-ERP blocking, and artifact-lane boundary messaging
    - the site-backed release-gate module remains green after adding those assertions, so `1.1.5` is closure-ready
+24. Phase `1.2A` Sales Order listing baseline is now implemented at the governed contract level:
+   - capability `sales_order_read` and report `Sales Order List` are now active
+   - `transaction_listing` now admits submitted `Sales Order` rows without a new family or lane
+   - shared direct-query column labeling and transaction-listing date handling were generalized to support `transaction_date`
+   - targeted `Sales Order` listing coverage now lives in [test_sales_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_sales_order_listing_contracts.py)
+   - guardrails and the combined semantic plus Sales Order contract suites are green
+   - browser/UAT is still the next required gate before widening into `1.2B`
+25. Phase `1.2B` Sales Order status normalization is now browser-valid and ERP-validated:
+   - governed Sales Order status values and aliases are active for `Sales Order List`
+   - shared direct-query scalar-filter grounding consumes governed filter-value aliases generically, without Sales-Order-only branching
+   - browser/UAT prompts and direct ERP validation matched for:
+     - `show sales orders to bill`
+     - `show sales orders to deliver last month`
+     - `show completed sales orders`
+26. Phase `1.2C` Sales Order detail drilldown parity is now browser-valid:
+   - explicit `SAL-ORD-...` identifiers now resolve through the existing governed `entity_detail` path
+   - governed `Sales Order` detail rendering stays bounded to order authority, including status, delivery status, billing status, planned delivery date, percentages, totals, and item rows
+   - targeted entity-detail coverage is green in [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+   - a bounded live/site smoke is green via `run_phase1_2_sales_order_detail_smoke`
+   - browser/UAT matched the governed single-order detail behavior on exact prompts
+27. Phase `1.2D` Sales Order status follow-up is now browser-valid:
+   - the follow-up stays on the existing grounded artifact evidence path, not a new lane
+   - governed aliases now cover:
+     - `delivery_progress_percent`
+     - `billing_progress_percent`
+     - `planned_delivery_date`
+   - supported order-authority follow-ups now answer directly from the grounded `Sales Order` artifact:
+     - delivered?
+     - how much delivered?
+     - billed?
+     - how much billed?
+     - delivery due date
+   - unsupported widening like actual delivery-event date now stops at the governed boundary and asks for downstream fulfillment evidence
+   - targeted local and site validation is green:
+     - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+     - [test_sales_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_sales_order_listing_contracts.py)
+     - `run_phase1_2_sales_order_status_followup_smoke`
+   - browser/UAT matched the intended order-authority / downstream-evidence boundary
+28. Phase `1.2` is now checkpoint-complete:
+   - `1.2A` listing baseline is browser-valid
+   - `1.2B` status normalization is browser-valid and ERP-validated
+   - `1.2C` detail drilldown parity is browser-valid
+   - `1.2D` order-status follow-up is browser-valid
+   - `1.2C` and `1.2D` are now promoted into the release-gate module
+   - the site-backed release-gate module remains green after that promotion
 
 ## 2. Release-Gate Command
 
@@ -175,7 +220,7 @@ Protected smoke-support files should not inline shared governed setup prompts ag
 
 Preferred next work after this checkpoint:
 
-1. move to `1.2` Sales Order Status from the now-closed `1.1.5` stabilization checkpoint
+1. move to `1.3` Purchase Order Tracking from the now-closed `1.2` Sales Order Status checkpoint
 2. keep future stabilization slices bounded to shared-core risk, not broad architecture churn
 3. keep the `1.1D` invoice-to-delivery proof slice narrow and evidence-based if it is later expanded
 4. verification burn-down only when a real red appears

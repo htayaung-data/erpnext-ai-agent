@@ -124,6 +124,20 @@ def get_report_spec(report_name: str) -> Dict[str, Any]:
 	return {}
 
 
+def report_direct_query_filter_value_aliases(report_name: str, field_name: str) -> List[Dict[str, Any]]:
+	report_spec = get_report_spec(report_name)
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	filter_value_aliases = (
+		direct_query.get("filter_value_aliases")
+		if isinstance(direct_query.get("filter_value_aliases"), dict)
+		else {}
+	)
+	values = filter_value_aliases.get(str(field_name or "").strip())
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
 def list_report_surface_evidence_specs() -> List[Dict[str, Any]]:
 	values = load_report_surface_evidence_registry().get("report_surface_evidence")
 	if not isinstance(values, list):

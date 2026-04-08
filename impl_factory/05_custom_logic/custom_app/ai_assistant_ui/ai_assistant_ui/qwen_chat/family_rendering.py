@@ -647,9 +647,10 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 	requested_columns = _requested_columns(dimensions, None)
 	party_field = _clean_text(dimensions.get("party_field")) or ("customer" if any(_clean_text(row.get("customer")) for row in document_rows) else "party_name")
 	party_label = _clean_text(dimensions.get("party_label")) or "Party"
+	date_label = _clean_text(dimensions.get("date_label")) or "Posting Date"
 	column_map = {
 		"document_name": document_label,
-		"posting_date": "Posting Date",
+		"posting_date": date_label,
 		"customer": party_label,
 		"party_name": party_label,
 		"grand_total": "Grand Total",

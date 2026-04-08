@@ -127,6 +127,8 @@ def _resolve_explicit_identifier(message: str) -> Optional[Dict[str, Any]]:
 			return {"entity_type": "sales_invoice", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		if frappe.db.exists("Purchase Invoice", candidate):
 			return {"entity_type": "purchase_invoice", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
+		if frappe.db.exists("Sales Order", candidate):
+			return {"entity_type": "sales_order", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		if frappe.db.exists("Delivery Note", candidate):
 			return {"entity_type": "delivery_note", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		item_code, item_name = _resolve_item_name(candidate)
@@ -649,6 +651,113 @@ def _delivery_note_detail(entity_key: str) -> Dict[str, Any]:
 	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
 
 
+def _sales_order_detail(entity_key: str) -> Dict[str, Any]:
+	doc = frappe.get_doc("Sales Order", entity_key)
+	item_rows = [
+		[
+			_clean_text(row.item_code),
+			_clean_text(row.item_name),
+			_clean_text(row.qty),
+			_clean_text(getattr(row, "delivered_qty", "")),
+			_money(getattr(row, "billed_amt", 0)),
+			_money(row.net_amount or row.amount or 0),
+		]
+		for row in (doc.get("items") or [])[:10]
+	]
+	summary = [
+		("Sales Order", doc.name),
+		("Transaction Date", _iso_date(getattr(doc, "transaction_date", ""))),
+		("Customer", _clean_text(doc.customer)),
+		("Status", _clean_text(doc.status)),
+		("Delivery Status", _clean_text(getattr(doc, "delivery_status", ""))),
+		("Billing Status", _clean_text(getattr(doc, "billing_status", ""))),
+		("Planned Delivery Date", _iso_date(getattr(doc, "delivery_date", ""))),
+		("Total Quantity", _clean_text(getattr(doc, "total_qty", ""))),
+		("Grand Total (MMK)", _money(doc.grand_total)),
+		("Delivered (%)", _money(getattr(doc, "per_delivered", 0))),
+		("Billed (%)", _money(getattr(doc, "per_billed", 0))),
+		("Company", _clean_text(doc.company)),
+	]
+	bullets = []
+	if _clean_text(doc.status):
+		bullets.append(f"Current sales order status is {_clean_text(doc.status)}.")
+	if _clean_text(getattr(doc, "delivery_status", "")):
+		bullets.append(f"Delivery progress is {_money(getattr(doc, 'per_delivered', 0))}% ({_clean_text(getattr(doc, 'delivery_status', ''))}).")
+	if _clean_text(getattr(doc, "billing_status", "")):
+		bullets.append(f"Billing progress is {_money(getattr(doc, 'per_billed', 0))}% ({_clean_text(getattr(doc, 'billing_status', ''))}).")
+	if _clean_text(getattr(doc, "delivery_date", "")):
+		bullets.append(f"Planned delivery date is {_iso_date(getattr(doc, 'delivery_date', ''))}.")
+	rendered = {
+		"type": "qwen_entity_detail_rendered_response",
+		"request_id": "",
+		"family_id": "entity_detail",
+		"title": f"Sales Order {doc.name}",
+		"source_reports": ["Sales Order"],
+		"blocks": [
+			_summary_block("Order Summary", summary),
+			_bullet_block("Key Facts", bullets),
+			_data_block(
+				"Items",
+				["Item Code", "Item Name", "Qty", "Delivered Qty", "Billed Amount (MMK)", "Amount (MMK)"],
+				item_rows,
+			),
+		],
+	}
+	artifact = {
+		"type": "qwen_entity_detail_artifact",
+		"artifact_type": "entity_detail_artifact",
+		"family_id": "entity_detail",
+		"source_reports": ["Sales Order"],
+		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
+		"dimensions": {
+			"entity_type": "sales_order",
+			"entity_key": doc.name,
+			"entity_label": doc.name,
+			"primary_metric_key": "grand_total",
+			"primary_metric_label": "Grand Total",
+			"source_grain": "document_detail",
+		},
+		"metrics": {
+			"grand_total": _numeric(doc.grand_total),
+			"quantity": _numeric(getattr(doc, "total_qty", 0)),
+			"per_delivered": _numeric(getattr(doc, "per_delivered", 0)),
+			"per_billed": _numeric(getattr(doc, "per_billed", 0)),
+			"item_count": len(item_rows),
+		},
+		"sections": {
+			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+			"document_rows": [
+				{
+					"document_name": doc.name,
+					"transaction_date": _iso_date(getattr(doc, "transaction_date", "")),
+					"customer": _clean_text(doc.customer),
+					"status": _clean_text(doc.status),
+					"delivery_status": _clean_text(getattr(doc, "delivery_status", "")),
+					"billing_status": _clean_text(getattr(doc, "billing_status", "")),
+					"delivery_date": _iso_date(getattr(doc, "delivery_date", "")),
+					"grand_total": _numeric(doc.grand_total),
+					"quantity": _numeric(getattr(doc, "total_qty", 0)),
+					"per_delivered": _numeric(getattr(doc, "per_delivered", 0)),
+					"per_billed": _numeric(getattr(doc, "per_billed", 0)),
+				}
+			],
+			"item_rows": [
+				{
+					"item_code": _clean_text(row.item_code),
+					"item_name": _clean_text(row.item_name),
+					"qty": _numeric(row.qty),
+					"delivered_qty": _numeric(getattr(row, "delivered_qty", 0)),
+					"billed_amount": _numeric(getattr(row, "billed_amt", 0)),
+					"amount": _numeric(row.net_amount or row.amount or 0),
+					"delivery_date": _iso_date(getattr(row, "delivery_date", "")),
+				}
+				for row in (doc.get("items") or [])[:25]
+			],
+		},
+	}
+	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
+
+
 def _aggregate_invoice_stats(doctype: str, party_field: str, party_value: str, company: str) -> Dict[str, Any]:
 	conditions = [f"{party_field}=%s", "docstatus=1"]
 	values: List[Any] = [party_value]
@@ -964,6 +1073,8 @@ def execute_entity_drilldown(
 		detail = _sales_invoice_detail(entity_key)
 	elif entity_type == "purchase_invoice":
 		detail = _purchase_invoice_detail(entity_key)
+	elif entity_type == "sales_order":
+		detail = _sales_order_detail(entity_key)
 	elif entity_type == "delivery_note":
 		detail = _delivery_note_detail(entity_key)
 	elif entity_type == "customer":

@@ -239,6 +239,8 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_delivery_note_trend_probe as _run_delivery_note_trend_probe_helper,
 	run_fresh_chat_invoice_delivery_proof_smoke as _run_fresh_chat_invoice_delivery_proof_smoke_helper,
 	run_invoice_delivery_proof_smoke as _run_invoice_delivery_proof_smoke_helper,
+	run_sales_order_detail_smoke as _run_sales_order_detail_smoke_helper,
+	run_sales_order_status_followup_smoke as _run_sales_order_status_followup_smoke_helper,
 	run_structured_presentation_smoke as _run_structured_presentation_smoke_helper,
 	run_transaction_listing_smoke as _run_transaction_listing_smoke_helper,
 )
@@ -645,6 +647,7 @@ def _grounded_artifact_direct_evidence_response(
 		for value in _detect_semantic_alias_keys(raw_message, dimension_or_metric="dimension")
 		if str(value or "").strip()
 	}
+	entity_type = str((artifact_payload.get("dimensions") or {}).get("entity_type") or "").strip().lower()
 	rendered_response_payload = _build_grounded_artifact_direct_evidence_rendered_payload(
 		raw_message=raw_message,
 		artifact_payload=artifact_payload,
@@ -657,7 +660,9 @@ def _grounded_artifact_direct_evidence_response(
 			"narrative_payload": {},
 			"narrative_contract_payload": {},
 		}
-	if "posting_date" in requested_dimensions:
+	if "posting_date" in requested_dimensions or (
+		entity_type == "sales_order" and "planned_delivery_date" in requested_dimensions
+	):
 		rendered_response_payload["answer_text"] = fallback_text
 		return {
 			"answer_text": fallback_text,
@@ -1953,6 +1958,26 @@ def run_phase1_1_delivery_note_detail_smoke() -> Dict[str, Any]:
 		handle_qwen_user_message=handle_qwen_user_message,
 		session_tool_payloads=_session_tool_payloads,
 		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_2_sales_order_detail_smoke() -> Dict[str, Any]:
+	return _run_sales_order_detail_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_2_sales_order_status_followup_smoke() -> Dict[str, Any]:
+	return _run_sales_order_status_followup_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
 		latest_assistant_payload=_latest_assistant_payload,
 	)
 

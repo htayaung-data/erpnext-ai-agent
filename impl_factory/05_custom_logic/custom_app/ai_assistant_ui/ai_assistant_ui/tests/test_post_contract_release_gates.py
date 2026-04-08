@@ -14,6 +14,8 @@ from ai_assistant_ui.qwen_chat.service import (
 	run_phase1_1_fresh_chat_invoice_delivery_proof_smoke,
 	run_phase1_1_invoice_delivery_proof_smoke,
 	run_phase1_1_invoice_detail_delivery_trend_smoke,
+	run_phase1_2_sales_order_detail_smoke,
+	run_phase1_2_sales_order_status_followup_smoke,
 )
 
 
@@ -97,4 +99,16 @@ class TestPostContractReleaseGates(unittest.TestCase):
 		self._assert_ok_tree(
 			run_phase1_1_fresh_chat_invoice_delivery_proof_smoke(),
 			"phase1_1_fresh_chat_invoice_delivery_proof_smoke",
+		)
+
+	def test_phase1_2c_sales_order_detail_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_2_sales_order_detail_smoke(),
+			"phase1_2_sales_order_detail_smoke",
+		)
+
+	def test_phase1_2d_sales_order_status_followup_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_2_sales_order_status_followup_smoke(),
+			"phase1_2_sales_order_status_followup_smoke",
 		)

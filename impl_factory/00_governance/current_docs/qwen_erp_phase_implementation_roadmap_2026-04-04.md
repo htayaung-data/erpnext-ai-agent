@@ -268,6 +268,77 @@ Current design note:
 
 1. [qwen_erp_phase1_2_sales_order_status_design_2026-04-08.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_2_sales_order_status_design_2026-04-08.md)
 
+Current checkpoint:
+
+1. `1.2A` Sales Order listing baseline is now implemented at the governed contract level
+2. the assistant now has:
+   - capability `sales_order_read`
+   - report `Sales Order List`
+   - `transaction_listing` family admission for submitted sales orders
+3. shared-core reuse stayed bounded:
+   - no new lane
+   - no sales-order-specific routing patch
+   - shared direct-query and transaction-listing adapters were generalized where needed
+4. deterministic validation is green:
+   - guardrails
+   - [test_sales_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_sales_order_listing_contracts.py)
+   - `test_semantic_financial_resolution`
+5. browser/UAT is the next gate before widening scope
+6. the next planned slice remains `1.2B` Status Normalization And Date-Scope Enrichment
+7. `1.2B` is now browser-valid and ERP-validated:
+   - Sales Order status values and aliases are now governed in metadata for `Sales Order List`
+   - shared direct-query scalar-filter grounding now consumes governed filter-value aliases generically
+   - bounded prompts like `show sales orders to bill` and `show sales orders to deliver last month` compile correctly in deterministic validation
+   - browser/UAT and direct ERP record checks both matched the governed Sales Order results
+8. `1.2C` Sales Order detail drilldown parity is now browser-valid:
+   - explicit `SAL-ORD-...` identifiers now route through the existing governed `entity_detail` path
+   - governed `Sales Order` detail rendering stays bounded to order authority:
+     - status
+     - delivery status
+     - billing status
+     - planned delivery date
+     - delivered percentage
+     - billed percentage
+     - totals and item rows
+   - deterministic validation is green:
+     - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+     - [test_sales_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_sales_order_listing_contracts.py)
+   - bounded live/site smoke is green:
+     - `run_phase1_2_sales_order_detail_smoke`
+   - browser/UAT matched the governed single-order detail behavior on exact prompts
+9. `1.2D` Sales Order status follow-up is now browser-valid:
+   - the follow-up stays on the existing grounded artifact evidence path, not a new lane
+   - governed aliases now cover the bounded follow-up classes:
+     - delivered progress
+     - billed progress
+     - planned delivery date
+   - supported follow-ups now answer from Sales Order authority:
+     - `is it delivered?`
+     - `how much is delivered?`
+     - `is it billed?`
+     - `how much is billed?`
+     - `when is delivery due?`
+   - unsupported widening now fails closed:
+     - `when was it delivered?` requires downstream fulfillment evidence and now stops at the governed boundary
+   - deterministic validation is green:
+     - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+     - [test_sales_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_sales_order_listing_contracts.py)
+   - site-backed validation is green:
+     - `run_phase1_2_sales_order_status_followup_smoke`
+     - site `test_entity_detail_contracts`
+     - site `test_sales_order_listing_contracts`
+   - browser/UAT matched the intended authority split:
+     - delivered / billed / due-date asks answer from `Sales Order`
+     - actual shipment-event date still fails closed and asks for downstream fulfillment evidence
+10. Phase `1.2` is now checkpoint-complete:
+   - `1.2A` listing baseline is browser-valid
+   - `1.2B` status normalization is browser-valid and ERP-validated
+   - `1.2C` detail drilldown parity is browser-valid
+   - `1.2D` order-status follow-up is browser-valid
+   - `1.2C` and `1.2D` are now promoted into [test_post_contract_release_gates.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_post_contract_release_gates.py)
+   - the site-backed release-gate module is green after the promotion
+11. the next approved phase step is `1.3` Purchase Order Tracking
+
 ### Mini-phase 1.3: Purchase Order Tracking
 
 Deliver:

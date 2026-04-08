@@ -39,6 +39,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	ontology_detect_concepts,
 	report_business_family_ids,
 	report_capability_ids,
+	report_direct_query_filter_value_aliases,
 	report_family_capability_ids,
 	report_family_ids_for_intent_class,
 	report_semantic_tags,
@@ -907,6 +908,46 @@ def _match_message_to_direct_query_value(
 	return str(scored[0][1] or "").strip()
 
 
+def _match_message_to_governed_filter_value(
+	*,
+	message: str,
+	value_specs: List[Dict[str, Any]],
+) -> str:
+	scored: List[tuple[int, str]] = []
+	for spec in value_specs:
+		if not isinstance(spec, dict):
+			continue
+		value = str(spec.get("value") or "").strip()
+		if not value:
+			continue
+		phrases = [value]
+		phrases.extend(
+			str(alias or "").strip()
+			for alias in (spec.get("aliases") or [])
+			if str(alias or "").strip()
+		)
+		best_len = 0
+		for phrase in phrases:
+			if _message_contains_phrase(message, phrase):
+				best_len = max(best_len, len(_normalized_message_phrase(phrase)))
+		if best_len > 0:
+			scored.append((best_len, value))
+	if not scored:
+		return ""
+	scored.sort(key=lambda item: (-int(item[0] or 0), str(item[1] or "")))
+	best_len = int(scored[0][0] or 0)
+	best_values = list(
+		dict.fromkeys(
+			str(value or "").strip()
+			for length, value in scored
+			if int(length or 0) == best_len and str(value or "").strip()
+		)
+	)
+	if len(best_values) != 1:
+		return ""
+	return best_values[0]
+
+
 def _augment_direct_query_scalar_filters_from_message(
 	*,
 	message: str,
@@ -956,6 +997,18 @@ def _augment_direct_query_scalar_filters_from_message(
 			)
 			if matched_value:
 				updated_filters[field_name] = matched_value
+	for field_name in filterable_fields:
+		if updated_filters.get(field_name):
+			continue
+		governed_value_specs = report_direct_query_filter_value_aliases(report_name, field_name)
+		if not governed_value_specs:
+			continue
+		matched_value = _match_message_to_governed_filter_value(
+			message=message,
+			value_specs=governed_value_specs,
+		)
+		if matched_value:
+			updated_filters[field_name] = matched_value
 	if updated_filters == existing_filters:
 		return interpretation
 	extracted_slots["filters"] = updated_filters
@@ -2225,4 +2278,3 @@ def execute_compiled_fresh_query_message(
 			"total_pipeline_latency_ms": total_pipeline_latency_ms,
 		},
 	}
-
