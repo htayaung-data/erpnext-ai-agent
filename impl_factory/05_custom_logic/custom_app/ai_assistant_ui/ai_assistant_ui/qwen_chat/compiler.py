@@ -5,14 +5,23 @@ import datetime as dt
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
-import frappe
-
 from ai_assistant_ui.qwen_chat.contracts import (
 	CompiledQueryRequestContract,
 	FreshQueryCompilerContract,
 	FreshQueryInterpretationContract,
 	build_compiled_query_request_contract,
 	build_fresh_query_compiler_contract,
+)
+from ai_assistant_ui.qwen_chat.defaults_repository import (
+	current_fiscal_year_bounds as defaults_current_fiscal_year_bounds,
+	current_fiscal_year_name as defaults_current_fiscal_year_name,
+	current_fiscal_year_row as defaults_current_fiscal_year_row,
+	fiscal_year_rows as defaults_fiscal_year_rows,
+	matching_fiscal_year_row_for_range as defaults_matching_fiscal_year_row_for_range,
+	previous_fiscal_year_bounds as defaults_previous_fiscal_year_bounds,
+	previous_fiscal_year_name as defaults_previous_fiscal_year_name,
+	previous_fiscal_year_row as defaults_previous_fiscal_year_row,
+	single_company_name as defaults_single_company_name,
 )
 from ai_assistant_ui.qwen_chat.metadata import (
 	ambiguity_rules,
@@ -144,99 +153,39 @@ def _first_supported_value_match(requested_values: List[str], supported_values: 
 
 
 def _single_company_name() -> str:
-	companies = frappe.get_all("Company", pluck="name", limit=2)
-	if isinstance(companies, list) and len(companies) == 1:
-		return str(companies[0] or "").strip()
-	return ""
+	return defaults_single_company_name()
 
 
 def _fiscal_year_rows() -> List[Dict[str, str]]:
-	rows = frappe.get_all(
-		"Fiscal Year",
-		fields=["name", "year_start_date", "year_end_date"],
-		order_by="year_start_date asc",
-		limit=20,
-	)
-	out: List[Dict[str, str]] = []
-	for row in rows or []:
-		if not isinstance(row, dict):
-			continue
-		name = str(row.get("name") or "").strip()
-		start_value = row.get("year_start_date")
-		end_value = row.get("year_end_date")
-		try:
-			start = dt.date.fromisoformat(str(start_value)) if start_value else None
-			end = dt.date.fromisoformat(str(end_value)) if end_value else None
-		except Exception:
-			start = None
-			end = None
-		if not name or not start or not end:
-			continue
-		out.append(
-			{
-				"name": name,
-				"year_start_date": start.isoformat(),
-				"year_end_date": end.isoformat(),
-			}
-		)
-	return out
+	return defaults_fiscal_year_rows()
 
 
 def _current_fiscal_year_row() -> Dict[str, str]:
-	today = _today_date()
-	rows = _fiscal_year_rows()
-	fallback: Dict[str, str] = {}
-	for row in rows:
-		start = dt.date.fromisoformat(row["year_start_date"])
-		end = dt.date.fromisoformat(row["year_end_date"])
-		if not fallback:
-			fallback = dict(row)
-		if start <= today <= end:
-			return dict(row)
-	return fallback
+	return defaults_current_fiscal_year_row(today=_today_date())
 
 
 def _previous_fiscal_year_row() -> Dict[str, str]:
-	rows = _fiscal_year_rows()
-	if not rows:
-		return {}
-	current_name = str(_current_fiscal_year_row().get("name") or "").strip()
-	for index, row in enumerate(rows):
-		if str(row.get("name") or "").strip() != current_name:
-			continue
-		if index > 0:
-			return dict(rows[index - 1])
-		break
-	return {}
+	return defaults_previous_fiscal_year_row(today=_today_date())
 
 
 def _matching_fiscal_year_row_for_range(from_date: str, to_date: str) -> Dict[str, str]:
-	start = str(from_date or "").strip()
-	end = str(to_date or "").strip()
-	if not start or not end:
-		return {}
-	for row in _fiscal_year_rows():
-		if row.get("year_start_date") == start and row.get("year_end_date") == end:
-			return dict(row)
-	return {}
+	return defaults_matching_fiscal_year_row_for_range(from_date, to_date)
 
 
 def _current_fiscal_year_bounds() -> Tuple[str, str]:
-	row = _current_fiscal_year_row()
-	return str(row.get("year_start_date") or "").strip(), str(row.get("year_end_date") or "").strip()
+	return defaults_current_fiscal_year_bounds(today=_today_date())
 
 
 def _previous_fiscal_year_bounds() -> Tuple[str, str]:
-	row = _previous_fiscal_year_row()
-	return str(row.get("year_start_date") or "").strip(), str(row.get("year_end_date") or "").strip()
+	return defaults_previous_fiscal_year_bounds(today=_today_date())
 
 
 def _current_fiscal_year_name() -> str:
-	return str(_current_fiscal_year_row().get("name") or "").strip()
+	return defaults_current_fiscal_year_name(today=_today_date())
 
 
 def _previous_fiscal_year_name() -> str:
-	return str(_previous_fiscal_year_row().get("name") or "").strip()
+	return defaults_previous_fiscal_year_name(today=_today_date())
 
 
 def _valid_intent_classes() -> set[str]:

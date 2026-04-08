@@ -203,6 +203,46 @@ Phase `1.1` closure note:
    - `1.1D` invoice-to-delivery proof
 3. current next operational expansion should move to `1.2` Sales Order Status
 
+Phase `1.1.5` stabilization note:
+
+1. a medium stabilization slice is approved before `1.2`, but it must stay bounded and non-redesign
+2. `1.1.5A` is now complete:
+   - the heaviest non-production compiled-rollout and Phase `1.1` diagnostic helpers were extracted out of [service.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py)
+   - those helpers now live in [service_diagnostics.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/probes/service_diagnostics.py)
+   - public helper names exported from `service.py` remain compatibility-stable
+   - live production turn orchestration was not redesigned in this slice
+3. `1.1.5B` is now complete:
+   - the non-production Phase `4` / `4B` probe, smoke, and selftest helpers were extracted out of [fresh_query_interpreter.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/fresh_query_interpreter.py)
+   - those helpers now live in [fresh_query_diagnostics.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/probes/fresh_query_diagnostics.py)
+   - `fresh_query_interpreter.py` now focuses on production fresh-query compilation and execution, while keeping compatibility-stable public helper names through imports
+   - production `execute_compiled_fresh_query_message(...)` was not repartitioned in this slice
+4. `1.1.5C` is now complete:
+   - compiler defaults and fiscal-year/company lookups are now isolated behind [defaults_repository.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/defaults_repository.py) and the Frappe adapter [frappe_defaults_repository.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/framework/frappe_defaults_repository.py)
+   - [compiler.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/compiler.py) no longer imports `frappe` directly for company and fiscal-year defaults
+   - [runtime_client.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/runtime_client.py) now centralizes repeated HTTP/JSON/error handling through one shared request primitive while preserving endpoint-specific error labels
+   - new targeted contract coverage was added in [test_runtime_client_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_runtime_client_contracts.py)
+5. bounded revalidation is green after the stabilization pass:
+   - `py_compile`
+   - enterprise guardrails
+   - `test_runtime_client_contracts`
+   - `test_semantic_financial_resolution`
+   - site `test_post_contract_release_gates`
+6. one release-gate rerun was required after a transient `last year delivery trend` red; the exact site-backed smoke passed immediately after, and the full site release-gate rerun finished green
+7. `1.1.5D` is now complete:
+   - direct knowledge-boundary semantics are now asserted in [test_knowledge_boundary_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_knowledge_boundary_contracts.py)
+   - the slice covers front-door lane ownership, clarification preemption, valid-ERP uncovered reasoning fallback, unsupported non-ERP blocking, and user-facing artifact-lane boundary messaging
+   - this converts critical shared-core boundary behavior from probe-only confidence into direct contract assertions
+8. bounded revalidation remains green after `1.1.5D`:
+   - enterprise guardrails
+   - `test_knowledge_boundary_contracts`
+   - `test_post_contract_state_integrity`
+   - `test_post_contract_guard_probes`
+   - `test_semantic_financial_resolution`
+   - site `test_post_contract_release_gates`
+9. `1.1.5` is now closure-ready:
+   - the medium stabilization slice stayed bounded and non-redesign
+   - the next planned implementation move should now be `1.2` Sales Order Status
+
 Phase 1.1 preflight:
 
 1. verify which ERPNext delivery / fulfillment doctypes and reports are truly active in this deployment
@@ -223,6 +263,10 @@ Deliver:
 3. blocked clarification behavior for ambiguous order scope
 4. bounded follow-up support from grounded order-status artifacts
 5. regression and live verification
+
+Current design note:
+
+1. [qwen_erp_phase1_2_sales_order_status_design_2026-04-08.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_2_sales_order_status_design_2026-04-08.md)
 
 ### Mini-phase 1.3: Purchase Order Tracking
 

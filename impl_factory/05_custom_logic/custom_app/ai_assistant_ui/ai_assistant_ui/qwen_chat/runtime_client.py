@@ -66,6 +66,68 @@ def build_qwen_runtime_chat_request_config() -> Dict[str, Any]:
 	}
 
 
+def _resolve_request_config(
+	request_config: Dict[str, Any] | None = None,
+	*,
+	timeout_seconds: float | None = None,
+) -> Dict[str, Any]:
+	config = request_config if isinstance(request_config, dict) else {}
+	base_url = str(config.get("base_url") or "").strip().rstrip("/") or _base_url()
+	if not base_url:
+		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
+	headers = config.get("headers") if isinstance(config.get("headers"), dict) else _auth_headers()
+	timeout_value = timeout_seconds if timeout_seconds is not None else config.get("timeout_seconds")
+	try:
+		timeout = max(3.0, float(timeout_value))
+	except Exception:
+		timeout = _timeout_seconds()
+	return {
+		"base_url": base_url,
+		"headers": headers,
+		"timeout_seconds": timeout,
+	}
+
+
+def _post_json(
+	*,
+	path: str,
+	payload: Dict[str, Any],
+	request_error_prefix: str,
+	non_json_prefix: str,
+	http_error_prefix: str,
+	invalid_payload_message: str,
+	timeout_seconds: float | None = None,
+	request_config: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	config = _resolve_request_config(request_config, timeout_seconds=timeout_seconds)
+	url = f"{str(config.get('base_url') or '').rstrip('/')}/{str(path or '').lstrip('/')}"
+	try:
+		resp = requests.post(
+			url,
+			headers=config.get("headers") if isinstance(config.get("headers"), dict) else _auth_headers(),
+			data=json.dumps(payload),
+			timeout=float(config.get("timeout_seconds") or _timeout_seconds()),
+		)
+	except requests.RequestException as exc:
+		raise QwenRuntimeClientError(f"{request_error_prefix}: {exc}") from exc
+
+	try:
+		data = resp.json()
+	except Exception as exc:
+		raise QwenRuntimeClientError(f"{non_json_prefix} ({resp.status_code}).") from exc
+
+	if resp.status_code >= 400:
+		message = ""
+		if isinstance(data, dict):
+			message = str(data.get("error") or data.get("detail") or "").strip()
+		raise QwenRuntimeClientError(message or f"{http_error_prefix} ({resp.status_code}).")
+
+	if not isinstance(data, dict):
+		raise QwenRuntimeClientError(invalid_payload_message)
+
+	return data
+
+
 def call_qwen_runtime_chat(
 	*,
 	session_id: str,
@@ -81,17 +143,6 @@ def call_qwen_runtime_chat(
 	request_id: str,
 	request_config: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-	config = request_config if isinstance(request_config, dict) else {}
-	base_url = str(config.get("base_url") or "").strip().rstrip("/") or _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-	headers = config.get("headers") if isinstance(config.get("headers"), dict) else _auth_headers()
-	timeout_seconds = config.get("timeout_seconds")
-	try:
-		timeout = max(3.0, float(timeout_seconds))
-	except Exception:
-		timeout = _timeout_seconds()
-
 	payload = {
 		"session_id": str(session_id or "").strip(),
 		"user_id": str(user_id or "").strip(),
@@ -105,35 +156,15 @@ def call_qwen_runtime_chat(
 		"artifact_context": artifact_context if isinstance(artifact_context, dict) else {},
 		"request_id": str(request_id or "").strip(),
 	}
-
-	url = f"{base_url}/chat"
-	try:
-		resp = requests.post(
-			url,
-			headers=headers,
-			data=json.dumps(payload),
-			timeout=timeout,
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime request failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(msg or f"Qwen runtime error ({resp.status_code}).")
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/chat",
+		payload=payload,
+		request_error_prefix="Qwen runtime request failed",
+		non_json_prefix="Qwen runtime returned non-JSON response",
+		http_error_prefix="Qwen runtime error",
+		invalid_payload_message="Qwen runtime returned invalid payload.",
+		request_config=request_config,
+	)
 
 
 def call_qwen_runtime_followup_interpretation(
@@ -148,10 +179,6 @@ def call_qwen_runtime_followup_interpretation(
 	latest_assistant_payload: Dict[str, Any],
 	interpretation_context: Dict[str, Any],
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -163,35 +190,15 @@ def call_qwen_runtime_followup_interpretation(
 		"latest_assistant_payload": latest_assistant_payload if isinstance(latest_assistant_payload, dict) else {},
 		"interpretation_context": interpretation_context if isinstance(interpretation_context, dict) else {},
 	}
-
-	url = f"{base_url}/interpret-followup"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime follow-up interpretation failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime follow-up interpreter returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(msg or f"Qwen runtime follow-up interpreter error ({resp.status_code}).")
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime follow-up interpreter returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/interpret-followup",
+		payload=payload,
+		request_error_prefix="Qwen runtime follow-up interpretation failed",
+		non_json_prefix="Qwen runtime follow-up interpreter returned non-JSON response",
+		http_error_prefix="Qwen runtime follow-up interpreter error",
+		invalid_payload_message="Qwen runtime follow-up interpreter returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
 
 
 def call_qwen_runtime_frontdoor_interpretation(
@@ -205,10 +212,6 @@ def call_qwen_runtime_frontdoor_interpretation(
 	grounded_context_available: bool,
 	interpretation_context: Dict[str, Any],
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -219,37 +222,15 @@ def call_qwen_runtime_frontdoor_interpretation(
 		"grounded_context_available": bool(grounded_context_available),
 		"interpretation_context": interpretation_context if isinstance(interpretation_context, dict) else {},
 	}
-
-	url = f"{base_url}/interpret-front-door"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime front-door interpretation failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime front-door interpreter returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(
-			msg or f"Qwen runtime front-door interpreter error ({resp.status_code})."
-		)
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime front-door interpreter returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/interpret-front-door",
+		payload=payload,
+		request_error_prefix="Qwen runtime front-door interpretation failed",
+		non_json_prefix="Qwen runtime front-door interpreter returned non-JSON response",
+		http_error_prefix="Qwen runtime front-door interpreter error",
+		invalid_payload_message="Qwen runtime front-door interpreter returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
 
 
 def call_qwen_runtime_reasoning_activation_interpretation(
@@ -265,10 +246,6 @@ def call_qwen_runtime_reasoning_activation_interpretation(
 	latest_assistant_payload: Dict[str, Any],
 	activation_context: Dict[str, Any],
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -281,35 +258,15 @@ def call_qwen_runtime_reasoning_activation_interpretation(
 		"latest_assistant_payload": latest_assistant_payload if isinstance(latest_assistant_payload, dict) else {},
 		"activation_context": activation_context if isinstance(activation_context, dict) else {},
 	}
-
-	url = f"{base_url}/interpret-reasoning-activation"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime reasoning activation interpretation failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime reasoning activation interpreter returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(msg or f"Qwen runtime reasoning activation interpreter error ({resp.status_code}).")
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime reasoning activation interpreter returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/interpret-reasoning-activation",
+		payload=payload,
+		request_error_prefix="Qwen runtime reasoning activation interpretation failed",
+		non_json_prefix="Qwen runtime reasoning activation interpreter returned non-JSON response",
+		http_error_prefix="Qwen runtime reasoning activation interpreter error",
+		invalid_payload_message="Qwen runtime reasoning activation interpreter returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
 
 
 def call_qwen_runtime_repair_intent_interpretation(
@@ -325,10 +282,6 @@ def call_qwen_runtime_repair_intent_interpretation(
 	latest_assistant_payload: Dict[str, Any],
 	interpretation_context: Dict[str, Any],
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -341,35 +294,15 @@ def call_qwen_runtime_repair_intent_interpretation(
 		"latest_assistant_payload": latest_assistant_payload if isinstance(latest_assistant_payload, dict) else {},
 		"interpretation_context": interpretation_context if isinstance(interpretation_context, dict) else {},
 	}
-
-	url = f"{base_url}/interpret-repair-intent"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime repair interpretation failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime repair interpreter returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(msg or f"Qwen runtime repair interpreter error ({resp.status_code}).")
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime repair interpreter returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/interpret-repair-intent",
+		payload=payload,
+		request_error_prefix="Qwen runtime repair interpretation failed",
+		non_json_prefix="Qwen runtime repair interpreter returned non-JSON response",
+		http_error_prefix="Qwen runtime repair interpreter error",
+		invalid_payload_message="Qwen runtime repair interpreter returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
 
 
 def call_qwen_runtime_reasoning_render(
@@ -382,10 +315,6 @@ def call_qwen_runtime_reasoning_render(
 	recent_messages: List[Dict[str, str]],
 	reasoning_context: Dict[str, Any],
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -395,35 +324,15 @@ def call_qwen_runtime_reasoning_render(
 		"recent_messages": list(recent_messages or []),
 		"reasoning_context": reasoning_context if isinstance(reasoning_context, dict) else {},
 	}
-
-	url = f"{base_url}/render-erp-business-reasoning"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime ERP business reasoning request failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime ERP business reasoning returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(msg or f"Qwen runtime ERP business reasoning error ({resp.status_code}).")
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime ERP business reasoning returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/render-erp-business-reasoning",
+		payload=payload,
+		request_error_prefix="Qwen runtime ERP business reasoning request failed",
+		non_json_prefix="Qwen runtime ERP business reasoning returned non-JSON response",
+		http_error_prefix="Qwen runtime ERP business reasoning error",
+		invalid_payload_message="Qwen runtime ERP business reasoning returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
 
 
 def call_qwen_runtime_frontdoor_render(
@@ -440,10 +349,6 @@ def call_qwen_runtime_frontdoor_render(
 	response_payload: Dict[str, Any],
 	reason: str,
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -457,37 +362,15 @@ def call_qwen_runtime_frontdoor_render(
 		"response_payload": response_payload if isinstance(response_payload, dict) else {},
 		"reason": str(reason or "").strip(),
 	}
-
-	url = f"{base_url}/render-front-door"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime front-door render failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime front-door renderer returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(
-			msg or f"Qwen runtime front-door renderer error ({resp.status_code})."
-		)
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime front-door renderer returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/render-front-door",
+		payload=payload,
+		request_error_prefix="Qwen runtime front-door render failed",
+		non_json_prefix="Qwen runtime front-door renderer returned non-JSON response",
+		http_error_prefix="Qwen runtime front-door renderer error",
+		invalid_payload_message="Qwen runtime front-door renderer returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
 
 
 def call_qwen_runtime_fresh_query_interpretation(
@@ -501,10 +384,6 @@ def call_qwen_runtime_fresh_query_interpretation(
 	interpretation_context: Dict[str, Any],
 	model_override: str = "",
 ) -> Dict[str, Any]:
-	base_url = _base_url()
-	if not base_url:
-		raise QwenRuntimeClientError("Qwen runtime base URL is not configured.")
-
 	payload = {
 		"request_id": str(request_id or "").strip(),
 		"session_id": str(session_id or "").strip(),
@@ -515,34 +394,12 @@ def call_qwen_runtime_fresh_query_interpretation(
 		"interpretation_context": interpretation_context if isinstance(interpretation_context, dict) else {},
 		"model_override": str(model_override or "").strip(),
 	}
-
-	url = f"{base_url}/interpret-fresh-query"
-	try:
-		resp = requests.post(
-			url,
-			headers=_auth_headers(),
-			data=json.dumps(payload),
-			timeout=_fresh_query_timeout_seconds(),
-		)
-	except requests.RequestException as exc:
-		raise QwenRuntimeClientError(f"Qwen runtime fresh-query interpretation failed: {exc}") from exc
-
-	try:
-		data = resp.json()
-	except Exception as exc:
-		raise QwenRuntimeClientError(
-			f"Qwen runtime fresh-query interpreter returned non-JSON response ({resp.status_code})."
-		) from exc
-
-	if resp.status_code >= 400:
-		msg = ""
-		if isinstance(data, dict):
-			msg = str(data.get("error") or data.get("detail") or "").strip()
-		raise QwenRuntimeClientError(
-			msg or f"Qwen runtime fresh-query interpreter error ({resp.status_code})."
-		)
-
-	if not isinstance(data, dict):
-		raise QwenRuntimeClientError("Qwen runtime fresh-query interpreter returned invalid payload.")
-
-	return data
+	return _post_json(
+		path="/interpret-fresh-query",
+		payload=payload,
+		request_error_prefix="Qwen runtime fresh-query interpretation failed",
+		non_json_prefix="Qwen runtime fresh-query interpreter returned non-JSON response",
+		http_error_prefix="Qwen runtime fresh-query interpreter error",
+		invalid_payload_message="Qwen runtime fresh-query interpreter returned invalid payload.",
+		timeout_seconds=_fresh_query_timeout_seconds(),
+	)

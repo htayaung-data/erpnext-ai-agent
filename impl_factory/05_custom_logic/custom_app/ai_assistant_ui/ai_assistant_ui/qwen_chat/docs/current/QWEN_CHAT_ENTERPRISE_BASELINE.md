@@ -57,7 +57,26 @@ As of this checkpoint:
    - both the standard and fresh-chat invoice proof smokes are release-gated
 19. Phase `1.1` is now checkpoint-complete:
    - Delivery Note listing, date-scope, status, trend, detail, and invoice-to-delivery proof are release-gated
-   - the next bounded operational expansion should move to `1.2` Sales Order Status
+   - the next bounded operational expansion remains `1.2` Sales Order Status
+20. Phase `1.1.5A` stabilization is now complete:
+   - the heaviest non-production compiled-rollout and Phase `1.1` diagnostic helpers no longer live inline inside `service.py`
+   - those helpers were moved into the dedicated probes module [service_diagnostics.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/probes/service_diagnostics.py)
+   - `service.py` keeps compatibility-stable exports for those helpers, while production turn orchestration remains in place
+   - guardrails and the site release-gate module are green after the extraction
+21. Phase `1.1.5B` stabilization is now complete:
+   - the non-production Phase `4` / `4B` probe, smoke, and selftest helpers no longer live inline inside [fresh_query_interpreter.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/fresh_query_interpreter.py)
+   - those helpers were moved into [fresh_query_diagnostics.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/probes/fresh_query_diagnostics.py)
+   - `fresh_query_interpreter.py` dropped from `3588` lines to `2230` lines without repartitioning the live execution path
+   - guardrails, the semantic suite, and the site release-gate module are green after the extraction
+22. Phase `1.1.5C` stabilization is now complete:
+   - compiler defaults and fiscal-year/company lookups are now isolated behind [defaults_repository.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/defaults_repository.py) and the Frappe adapter [frappe_defaults_repository.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/framework/frappe_defaults_repository.py)
+   - [compiler.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/compiler.py) no longer imports `frappe` directly for company and fiscal-year defaults
+   - [runtime_client.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/runtime_client.py) now centralizes repeated HTTP/JSON/error handling through one shared request primitive while preserving endpoint-specific error labels
+   - targeted transport/defaults coverage now lives in [test_runtime_client_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_runtime_client_contracts.py)
+23. Phase `1.1.5D` stabilization is now complete:
+   - critical shared-core boundary behavior is now asserted directly in [test_knowledge_boundary_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_knowledge_boundary_contracts.py)
+   - the bounded assertions cover front-door route ownership, clarification preemption, valid-ERP uncovered reasoning fallback, unsupported non-ERP blocking, and artifact-lane boundary messaging
+   - the site-backed release-gate module remains green after adding those assertions, so `1.1.5` is closure-ready
 
 ## 2. Release-Gate Command
 
@@ -156,9 +175,10 @@ Protected smoke-support files should not inline shared governed setup prompts ag
 
 Preferred next work after this checkpoint:
 
-1. move to `1.2` Sales Order Status as the next bounded operational phase
-2. keep the `1.1D` invoice-to-delivery proof slice narrow and evidence-based if it is later expanded
-3. verification burn-down only when a real red appears
+1. move to `1.2` Sales Order Status from the now-closed `1.1.5` stabilization checkpoint
+2. keep future stabilization slices bounded to shared-core risk, not broad architecture churn
+3. keep the `1.1D` invoice-to-delivery proof slice narrow and evidence-based if it is later expanded
+4. verification burn-down only when a real red appears
 
 Avoid:
 
