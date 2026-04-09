@@ -103,7 +103,10 @@
         "outstanding amount",
         "amount outstanding",
         "due",
-        "amount due"
+        "amount due",
+        "receivable",
+        "receivables",
+        "accounts receivable"
       ],
       "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
       "dimension_or_metric": "metric",
@@ -111,6 +114,97 @@
         "Accounts Receivable Summary": ["Outstanding Amount"],
         "Accounts Payable Summary": ["Outstanding Amount"]
       }
+    },
+    {
+      "canonical_key": "overdue_only",
+      "label": "Overdue Customers",
+      "aliases": [
+        "overdue customers",
+        "overdue customer",
+        "overdue accounts",
+        "past due customers",
+        "past due customer",
+        "past due accounts",
+        "overdue receivables",
+        "overdue balances"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "credit_balance_only",
+      "label": "Credit Balance Customers",
+      "aliases": [
+        "credit balance",
+        "credit balances",
+        "negative balance",
+        "negative balances",
+        "customers with credit balance",
+        "customers with negative balance",
+        "overpaid customers",
+        "credit customer balance"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "credit_limit_amount",
+      "label": "Credit Limit",
+      "aliases": [
+        "credit limit",
+        "customer credit limit",
+        "configured credit limit",
+        "limit amount"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "credit_limit_available",
+      "label": "Available Credit",
+      "aliases": [
+        "available credit",
+        "remaining credit",
+        "credit remaining",
+        "credit available",
+        "remaining limit"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "credit_limit_status",
+      "label": "Credit Limit Status",
+      "aliases": [
+        "credit limit status",
+        "credit limit exceeded",
+        "exceeded credit limit",
+        "over credit limit",
+        "over the credit limit",
+        "within credit limit",
+        "within the credit limit"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "credit_limit_utilization",
+      "label": "Credit Limit Utilization",
+      "aliases": [
+        "credit utilization",
+        "credit limit utilization",
+        "credit usage",
+        "credit used",
+        "limit used"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
     },
     {
       "canonical_key": "total_due",
@@ -389,6 +483,31 @@
         "Accounts Payable Summary": ["Posting Date"],
         "Delivery Note List": ["posting_date"]
       }
+    },
+    {
+      "canonical_key": "payment_terms_template",
+      "label": "Payment Terms",
+      "aliases": [
+        "payment terms",
+        "payment term",
+        "default payment terms",
+        "payment terms template"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "default_price_list",
+      "label": "Default Price List",
+      "aliases": [
+        "default price list",
+        "customer price list",
+        "selling price list"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {}
     },
     {
       "canonical_key": "planned_delivery_date",

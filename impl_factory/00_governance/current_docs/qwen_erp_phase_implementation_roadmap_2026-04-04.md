@@ -467,7 +467,7 @@ Current approved preflight:
 3. live ERP evidence shows the strongest first authority seam is receivable exposure, not configured credit-limit policy:
    - governed `Accounts Receivable Summary` data is rich and already active
    - current phase customers already show meaningful outstanding, overdue, and negative-balance variation
-   - live `Customer Credit Limit` rows are currently empty
+   - configured credit policy can be added only after live master data exists and the basis is explicitly approved
 4. the codebase already has strong reuse candidates:
    - governed `accounts_receivable_read`
    - governed aging and ranking support over `Accounts Receivable Summary`
@@ -479,7 +479,7 @@ Current approved preflight:
    - `1.4D` Credit-Status Follow-Up From Detail
    - `1.4E` Optional Configured Credit-Limit Extension Checkpoint
    - `1.4F` Closure And Stop Rule
-6. `1.4A` and `1.4B` are complete, `1.4C` and `1.4D` are complete, `1.4E` is deferred, and `1.4F` is complete:
+6. `1.4A` and `1.4B` are complete, `1.4C` and `1.4D` are complete, `1.4E` is complete, and `1.4F` is complete:
    - bounded customer-credit phrasing now resolves to `Accounts Receivable Summary` through the existing `aging` family, not a new lane
    - the first slice is intentionally limited to customer credit exposure / status visibility
    - overdue-only and negative-balance-only filtered asks now resolve through governed metadata (no keyword routing)
@@ -496,7 +496,18 @@ Current approved preflight:
      - then `show me customer credit exposure`
      - now resolves as `followup_mode = new_query` with governed scope status `fresh_query_breakout`, instead of drifting into `erp_business_reasoning`
    - browser/UAT confirmed overdue-only and credit-balance-only filters in fresh sessions
-7. `1.4E` is deferred for the current tenant because configured credit-limit rows are absent; Phase `1.4` is now closed pending future credit-limit activation
+   - `1.4E` now extends the same customer detail surface with configured commercial policy:
+     - configured credit limit
+     - remaining available credit
+     - utilization
+     - payment terms
+     - default price list
+   - approved `1.4E` basis is explicit:
+     - `Outstanding Amount > Configured Credit Limit`
+   - same-session deictic follow-ups such as `what is this customer's credit limit?` now stay on the grounded artifact path instead of breaking out as self-contained fresh queries
+   - targeted live/site smoke now exists via `run_phase1_4_customer_credit_policy_followup_smoke`
+   - the site-backed `test_post_contract_release_gates` module is green after promoting the new `1.4E` smoke
+7. Phase `1.4` is now closed with the configured credit-policy visibility extension active for the current tenant; approval logic and broader credit-control policy remain deferred
 
 ### Mini-phase 1.5: Operational Phase Closure
 
@@ -523,6 +534,8 @@ Current closure checkpoint:
 5. the former `H5` reasoning-lane blocker is now green through direct site smoke and instrumented sanity-pack reruns
 6. Phase `1.5` is now closure-complete:
    - [qwen_erp_phase1_5_operational_phase_closure_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_5_operational_phase_closure_2026-04-09.md)
+7. active deferred implementation register:
+   - [qwen_erp_deferred_implementation_register_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_deferred_implementation_register_2026-04-09.md)
 
 ## 6. Phase 2: Business Definition and Formula Registry
 
@@ -535,6 +548,10 @@ Why:
 1. composite metrics should not be built on undefined business semantics
 2. company-specific KPI and threshold meaning must be governed before multi-metric composition grows
 3. this reduces migration debt later
+
+Current design note:
+
+1. [qwen_erp_phase2_business_definition_formula_registry_design_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase2_business_definition_formula_registry_design_2026-04-09.md)
 
 ### Mini-phase 2.1: Registry Contracts
 

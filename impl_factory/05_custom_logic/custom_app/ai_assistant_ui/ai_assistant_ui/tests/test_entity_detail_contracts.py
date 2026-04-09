@@ -49,6 +49,96 @@ class _FakeDoc:
 
 
 class TestEntityDetailContracts(unittest.TestCase):
+	def test_customer_detail_enriches_credit_status_from_receivable_summary(self):
+		master = {
+			"name": "CUST-0001",
+			"customer_name": "Zegyo Mobile Supply House",
+			"customer_group": "Wholesale",
+			"territory": "Yangon",
+			"default_price_list": "Wholesale Selling - MMOB",
+			"payment_terms": "15 Days - MMOB",
+			"mobile_no": "",
+			"email_id": "",
+			"disabled": 0,
+			"is_frozen": 0,
+		}
+		report_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"party": "Zegyo Mobile Supply House",
+									"outstanding": 500000,
+									"total_due": 450000,
+									"future_amount": 0,
+									"range1": 50000,
+									"range2": 100000,
+									"range3": 50000,
+									"range4": 0,
+									"range5": 250000,
+									"currency": "MMK",
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		with patch.object(entity_detail_module.frappe.db, "get_value", return_value=master), patch.object(
+			entity_detail_module.frappe,
+			"get_all",
+			return_value=[
+				{
+					"company": "Enterprise Co",
+					"credit_limit": 10000000,
+					"bypass_credit_limit_check": 0,
+				}
+			],
+		), patch.object(
+			entity_detail_module,
+			"_aggregate_invoice_stats",
+			return_value={"invoice_count": 0, "total_amount": 0, "outstanding_amount": 0, "latest_date": ""},
+		), patch.object(entity_detail_module, "_recent_invoices", return_value=[]), patch.object(
+			entity_detail_module,
+			"execute_governed_report",
+			return_value=report_payload,
+		):
+			detail = entity_detail_module._customer_or_supplier_detail(
+				"customer",
+				"Zegyo Mobile Supply House",
+				company="Enterprise Co",
+			)
+		rendered = detail.get("rendered") or {}
+		blocks = list(rendered.get("blocks") or [])
+		credit_block = next(
+			(block for block in blocks if str(block.get("title") or "").startswith("Credit Status")),
+			{},
+		)
+		self.assertTrue(credit_block)
+		self.assertTrue(any(row[0] == "Outstanding (MMK)" for row in credit_block.get("rows") or []))
+		artifact = detail.get("artifact") or {}
+		self.assertIn("Accounts Receivable Summary", artifact.get("source_reports") or [])
+		self.assertIn("Customer Credit Limit", artifact.get("source_reports") or [])
+		self.assertIn("outstanding_total", artifact.get("metrics") or {})
+		self.assertEqual((artifact.get("metrics") or {}).get("credit_limit"), 10000000)
+		buckets = (artifact.get("sections") or {}).get("credit_buckets") or []
+		self.assertEqual(len(buckets), 6)
+		policy_rows = (artifact.get("sections") or {}).get("credit_policy") or []
+		self.assertTrue(any(row.get("label") == "Payment Terms" and row.get("value") == "15 Days - MMOB" for row in policy_rows))
+		self.assertTrue(any(row.get("label") == "Credit Limit (MMK)" and row.get("value") == "10,000,000" for row in policy_rows))
+		policy_block = next(
+			(block for block in blocks if str(block.get("title") or "").strip() == "Commercial Policy"),
+			{},
+		)
+		self.assertTrue(policy_block)
+		highlight_block = next(
+			(block for block in blocks if str(block.get("block_type") or "") == "bullet_list"),
+			{},
+		)
+		self.assertFalse(bool(highlight_block))
 	def test_detect_entity_drilldown_request_resolves_explicit_sales_invoice_identifier(self):
 		with patch.object(
 			entity_detail_module.frappe.db,
@@ -93,6 +183,39 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertEqual(outcome["entity_type"], "sales_order")
 		self.assertEqual(outcome["entity_key"], "SAL-ORD-2026-00022")
 		self.assertEqual(outcome["source"], "explicit_identifier")
+
+	def test_detect_entity_drilldown_request_resolves_explicit_customer_name(self):
+		with patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			side_effect=lambda doctype, name=None: doctype == "Customer" and name == "Zegyo Mobile Supply House",
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value="Zegyo Mobile Supply House",
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Zegyo Mobile Supply House",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Zegyo Mobile Supply House")
+		self.assertEqual(outcome["source"], "explicit_name")
+
+	def test_customer_detail_narrative_blocks_explanatory_credit_balance_language(self):
+		self.assertFalse(
+			entity_detail_module._entity_detail_narrative_is_safe(
+				"customer",
+				"Current outstanding balance is –249,000 MMK, reflecting net credit (i.e., overpayment).",
+			)
+		)
+		self.assertFalse(
+			entity_detail_module._entity_detail_narrative_is_safe(
+				"customer",
+				"Zegyo Mobile Supply House is a wholesale customer based in Mandalay.",
+			)
+		)
 
 	def test_detect_entity_drilldown_request_resolves_explicit_purchase_order_identifier(self):
 		with patch.object(
@@ -628,6 +751,120 @@ class TestEntityDetailContracts(unittest.TestCase):
 		)
 		self.assertIn("2026-04-02", answer)
 		self.assertIn("planned delivery date", answer.lower())
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_overdue_status(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="is this customer overdue?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {"overdue_total": 450000, "outstanding_total": 600000},
+				"sections": {"credit_buckets": [{"bucket": "31-60", "amount": 450000}]},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("Yes", answer)
+		self.assertIn("450,000", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_credit_balance(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="does this customer have a credit balance?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Thaketa Mobile Exchange"},
+				"metrics": {"outstanding_total": -249000},
+				"sections": {"credit_buckets": [{"bucket": "0-30", "amount": -249000}]},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("Yes", answer)
+		self.assertIn("249,000", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_highest_bucket(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="which aging bucket is highest?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {"outstanding_total": 600000},
+				"sections": {
+					"credit_buckets": [
+						{"bucket": "0-30", "amount": 100000},
+						{"bucket": "31-60", "amount": 200000},
+						{"bucket": "61-90", "amount": 300000},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("61-90", answer)
+		self.assertIn("300,000", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_credit_limit_status(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="has this customer exceeded credit limit?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {
+					"outstanding_total": 495000,
+					"credit_limit": 10000000,
+					"credit_limit_available": 9505000,
+					"credit_limit_excess": 0,
+					"credit_limit_configured": True,
+					"credit_limit_exceeded": False,
+				},
+				"sections": {
+					"credit_policy": [
+						{"label": "Company", "value": "Enterprise Co"},
+						{"label": "Payment Terms", "value": "15 Days - MMOB"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("No.", answer)
+		self.assertIn("10,000,000", answer)
+		self.assertIn("9,505,000", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_payment_terms(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="what are this customer's payment terms?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {},
+				"sections": {
+					"credit_policy": [
+						{"label": "Company", "value": "Enterprise Co"},
+						{"label": "Payment Terms", "value": "15 Days - MMOB"},
+						{"label": "Default Price List", "value": "Wholesale Selling - MMOB"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("15 Days - MMOB", answer)
+		self.assertIn("payment terms", answer.lower())
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_default_price_list(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="what is this customer's default price list?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {},
+				"sections": {
+					"credit_policy": [
+						{"label": "Company", "value": "Enterprise Co"},
+						{"label": "Default Price List", "value": "Wholesale Selling - MMOB"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("Wholesale Selling - MMOB", answer)
+		self.assertIn("default price list", answer.lower())
 
 	def test_grounded_artifact_evidence_boundary_answer_blocks_actual_sales_order_delivery_event_date(self):
 		answer = boundary_support_module.grounded_artifact_evidence_boundary_answer(

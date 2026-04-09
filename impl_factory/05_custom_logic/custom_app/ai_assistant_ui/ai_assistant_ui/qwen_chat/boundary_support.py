@@ -482,6 +482,7 @@ def grounded_artifact_direct_evidence_answer(
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	if str(artifact.get("family_id") or "").strip() != "entity_detail":
 		return ""
+	text = " ".join(str(raw_message or "").strip().lower().split())
 	request_concepts = {
 		str(value or "").strip()
 		for value in ontology_detect_concepts(raw_message)
@@ -632,6 +633,126 @@ def grounded_artifact_direct_evidence_answer(
 			if total_qty > 0:
 				detail += f", with {_money(delivered_qty)} of {_money(total_qty)} units delivered on the current order lines"
 			return f"Partly. {entity_label} is not fully delivered yet{customer_phrase}.\n\n{detail} ({delivery_status or 'Partly Delivered'})."
+		return ""
+	if entity_type == "customer":
+		requested_metrics = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="accounts_receivable_read",
+				dimension_or_metric="metric",
+			)
+		)
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="accounts_receivable_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+		metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
+		credit_buckets = sections.get("credit_buckets") if isinstance(sections.get("credit_buckets"), list) else []
+		credit_policy = sections.get("credit_policy") if isinstance(sections.get("credit_policy"), list) else []
+		outstanding_total = _numeric(metrics.get("outstanding_total"))
+		total_due = _numeric(metrics.get("total_due"))
+		overdue_total = _numeric(metrics.get("overdue_total"))
+		overdue_ratio = _numeric(metrics.get("overdue_ratio"))
+		credit_limit = _numeric(metrics.get("credit_limit"))
+		credit_limit_available = _numeric(metrics.get("credit_limit_available"))
+		credit_limit_excess = _numeric(metrics.get("credit_limit_excess"))
+		credit_limit_utilization = _numeric(metrics.get("credit_limit_utilization_ratio"))
+		credit_limit_configured = bool(metrics.get("credit_limit_configured")) or credit_limit > 0
+		credit_limit_exceeded = bool(metrics.get("credit_limit_exceeded")) or credit_limit_excess > 0
+		credit_limit_bypass = bool(metrics.get("credit_limit_bypass_sales_order"))
+		entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this customer").strip()
+		policy_values = {
+			str(item.get("label") or "").strip().lower(): str(item.get("value") or "").strip()
+			for item in credit_policy
+			if isinstance(item, dict) and str(item.get("label") or "").strip()
+		}
+		policy_company = policy_values.get("company", "")
+		company_phrase = f" for {policy_company}" if policy_company else ""
+		payment_terms = policy_values.get("payment terms", "")
+		default_price_list = policy_values.get("default price list", "")
+		if "credit_limit_status" in requested_metrics:
+			if not credit_limit_configured:
+				return (
+					f"{entity_label} does not have a configured credit limit{company_phrase}, "
+					"so I can't determine limit status from governed policy data."
+				)
+			if credit_limit_exceeded:
+				answer = (
+					f"Yes. {entity_label} has exceeded the configured credit limit{company_phrase}.\n\n"
+					f"Current outstanding is {_money(outstanding_total)} MMK against a credit limit of {_money(credit_limit)} MMK, "
+					f"so it is over by {_money(credit_limit_excess)} MMK."
+				)
+			else:
+				answer = (
+					f"No. {entity_label} is still within the configured credit limit{company_phrase}.\n\n"
+					f"Current outstanding is {_money(outstanding_total)} MMK against a credit limit of {_money(credit_limit)} MMK, "
+					f"leaving {_money(credit_limit_available)} MMK available."
+				)
+			if credit_limit_bypass:
+				answer += "\n\nSales-order credit-limit check is currently bypassed in master data."
+			return answer
+		if "credit_limit_available" in requested_metrics:
+			if not credit_limit_configured:
+				return (
+					f"{entity_label} does not have a configured credit limit{company_phrase}, "
+					"so available credit cannot be calculated from governed policy data."
+				)
+			if credit_limit_exceeded:
+				return (
+					f"{entity_label} has no remaining configured credit{company_phrase}.\n\n"
+					f"Current outstanding exceeds the limit by {_money(credit_limit_excess)} MMK."
+				)
+			return (
+				f"The remaining available credit for {entity_label}{company_phrase} is {_money(credit_limit_available)} MMK.\n\n"
+				f"Configured credit limit is {_money(credit_limit)} MMK and current outstanding is {_money(outstanding_total)} MMK."
+			)
+		if "credit_limit_utilization" in requested_metrics:
+			if not credit_limit_configured:
+				return (
+					f"{entity_label} does not have a configured credit limit{company_phrase}, "
+					"so utilization cannot be calculated from governed policy data."
+				)
+			return (
+				f"{entity_label} is currently using {credit_limit_utilization * 100:.1f}% of the configured credit limit{company_phrase}.\n\n"
+				f"This is based on outstanding amount {_money(outstanding_total)} MMK against credit limit {_money(credit_limit)} MMK."
+			)
+		if "payment_terms_template" in requested_dimensions:
+			if payment_terms:
+				return f"The configured payment terms for {entity_label}{company_phrase} are {payment_terms}."
+			return f"{entity_label} does not have configured payment terms{company_phrase}."
+		if "default_price_list" in requested_dimensions:
+			if default_price_list:
+				return f"The default price list for {entity_label}{company_phrase} is {default_price_list}."
+			return f"{entity_label} does not have a configured default price list{company_phrase}."
+		if "credit_limit_amount" in requested_metrics:
+			if credit_limit_configured:
+				return f"The configured credit limit for {entity_label}{company_phrase} is {_money(credit_limit)} MMK."
+			return f"{entity_label} does not have a configured credit limit{company_phrase}."
+		if "credit_balance_only" in requested_metrics or "credit balance" in text or "negative balance" in text:
+			if outstanding_total < 0:
+				return f"Yes. {entity_label} has a credit balance of {_money(abs(outstanding_total))} MMK."
+			return f"No. {entity_label} does not have a credit balance."
+		if "overdue_only" in requested_metrics or "overdue" in text:
+			if "how much" in text or "amount" in text:
+				return f"The overdue amount for {entity_label} is {_money(overdue_total)} MMK."
+			if overdue_total > 0:
+				return f"Yes. {entity_label} is overdue with {_money(overdue_total)} MMK past due."
+			return f"No. {entity_label} is not overdue."
+		if "outstanding" in text:
+			return f"The outstanding balance for {entity_label} is {_money(outstanding_total)} MMK."
+		if "bucket" in text or "aging" in text:
+			if credit_buckets:
+				top_bucket = max(credit_buckets, key=lambda row: _numeric(row.get("amount")))
+				bucket_label = str(top_bucket.get("bucket") or "").strip()
+				amount = _numeric(top_bucket.get("amount"))
+				if bucket_label:
+					return f"The highest aging bucket for {entity_label} is {bucket_label} with {_money(amount)} MMK."
+		if "total due" in text:
+			return f"The total due amount for {entity_label} is {_money(total_due)} MMK."
 		return ""
 	if "fulfillment" not in request_concepts:
 		return ""

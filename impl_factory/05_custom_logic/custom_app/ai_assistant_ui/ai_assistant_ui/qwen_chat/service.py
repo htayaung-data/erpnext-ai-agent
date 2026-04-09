@@ -244,6 +244,7 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_customer_credit_overdue_smoke as _run_customer_credit_overdue_smoke_helper,
 	run_customer_credit_balance_smoke as _run_customer_credit_balance_smoke_helper,
 	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
+	run_customer_credit_policy_followup_smoke as _run_customer_credit_policy_followup_smoke_helper,
 	run_customer_credit_overdue_probe as _run_customer_credit_overdue_probe_helper,
 	run_customer_credit_balance_probe as _run_customer_credit_balance_probe_helper,
 	run_customer_credit_scope_reset_probe as _run_customer_credit_scope_reset_probe_helper,
@@ -370,6 +371,18 @@ def _message_looks_like_self_contained_governed_business_query(
 		if clean and re.search(rf"(?<!\\w){re.escape(clean)}(?!\\w)", text):
 			return True
 	return False
+
+
+def _message_has_grounded_context_anchor(message: str) -> bool:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return False
+	return bool(
+		re.search(
+			r"\b(this|that|these|those|it|its|they|their|them)\b",
+			text,
+		)
+	)
 
 
 def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
@@ -1769,6 +1782,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			message=msg,
 			language=interaction_contract.detected_language,
 		)
+		and not _message_has_grounded_context_anchor(msg)
 	)
 	if entity_drilldown is None and not skip_artifact_boundary_for_self_contained_breakout:
 		artifact_boundary_handled, artifact_boundary_payload = handle_artifact_boundary_turn(
@@ -2087,6 +2101,15 @@ def run_phase1_4_customer_credit_balance_smoke() -> Dict[str, Any]:
 
 def run_phase1_4_customer_credit_detail_followup_smoke() -> Dict[str, Any]:
 	return _run_customer_credit_detail_followup_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_policy_followup_smoke() -> Dict[str, Any]:
+	return _run_customer_credit_policy_followup_smoke_helper(
 		frappe_module=frappe,
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,

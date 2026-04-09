@@ -172,7 +172,14 @@ As of this checkpoint:
    - `1.4B` overdue / credit-balance normalization is browser-valid
    - `1.4C` customer credit detail parity is browser-valid
    - `1.4D` customer credit detail follow-up is browser-valid
-   - `1.4E` remains explicitly deferred because configured `Customer Credit Limit` rows are absent in the tenant
+   - `1.4E` configured credit-policy visibility is now live for the current tenant:
+     - configured credit limit
+     - available credit
+     - utilization
+     - payment terms
+     - default price list
+   - `1.4E` uses the explicitly approved basis only:
+     - `Outstanding Amount > Configured Credit Limit`
    - targeted contract coverage now lives in:
      - [test_customer_credit_status_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_customer_credit_status_contracts.py)
      - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
@@ -180,6 +187,8 @@ As of this checkpoint:
      - exposure
      - overdue-only
      - credit-balance-only
+     - configured credit-policy follow-up
+   - the site-backed release-gate module is green after the `1.4E` promotion
      - scope-reset
      - customer detail follow-up
 35. Phase `1.5` operational closure is now complete:

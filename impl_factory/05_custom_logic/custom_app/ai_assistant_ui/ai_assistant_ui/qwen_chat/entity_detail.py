@@ -11,6 +11,12 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 	build_artifact_narrative_contract,
 	narrate_governed_artifact,
 )
+from ai_assistant_ui.qwen_chat.family_adapters import (
+	_report_result,
+	_report_rows,
+	_report_tool,
+)
+from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
@@ -84,6 +90,17 @@ def _render_blocks_markdown(rendered_payload: Dict[str, Any], *, include_title: 
 
 def _entity_detail_narrative_validation_payload(entity_type: str) -> Dict[str, Any]:
 	clean_type = _clean_text(entity_type).lower()
+	if clean_type == "customer":
+		return {
+			"authority_boundary": "customer_receivable_summary_only",
+			"forbidden_claims": [
+				"credit limit exceeded",
+				"credit approval decision",
+				"collections recommendation",
+				"payment prediction",
+				"chronic delinquency analysis",
+			],
+		}
 	if clean_type == "purchase_order":
 		return {
 			"authority_boundary": "purchase_order_authority_only",
@@ -99,6 +116,8 @@ def _entity_detail_narrative_validation_payload(entity_type: str) -> Dict[str, A
 
 def _entity_detail_narrative_is_safe(entity_type: str, answer_text: str) -> bool:
 	clean_type = _clean_text(entity_type).lower()
+	if clean_type == "customer":
+		return False
 	if clean_type != "purchase_order":
 		return True
 	text = _normalize_text(answer_text)
@@ -146,6 +165,61 @@ def _explicit_detail_request(message: str) -> bool:
 			"purchasing pattern",
 		)
 	)
+
+
+def _detail_target_from_message(message: str) -> str:
+	text = str(message or "").strip()
+	if not text:
+		return ""
+	lower = text.lower()
+	for phrase in (
+		"give me details about",
+		"give me detail about",
+		"tell me more about",
+		"show details for",
+		"show detail for",
+		"show details about",
+		"show detail about",
+	):
+		if phrase in lower:
+			start = lower.find(phrase) + len(phrase)
+			return text[start:].strip(" :.-\n\t")
+	return ""
+
+
+def _resolve_named_entity_from_detail_request(message: str) -> Optional[Dict[str, Any]]:
+	target = _detail_target_from_message(message)
+	if not target:
+		return None
+	target_clean = _clean_text(target)
+	if not target_clean:
+		return None
+	if frappe.db.exists("Customer", target_clean):
+		label = _clean_text(frappe.db.get_value("Customer", target_clean, "customer_name"))
+		return {"entity_type": "customer", "entity_key": target_clean, "entity_label": label or target_clean, "source": "explicit_name"}
+	row = frappe.db.get_value("Customer", {"customer_name": target_clean}, ["name", "customer_name"], as_dict=True)
+	if isinstance(row, dict) and _clean_text(row.get("name")):
+		return {
+			"entity_type": "customer",
+			"entity_key": _clean_text(row.get("name")),
+			"entity_label": _clean_text(row.get("customer_name")) or target_clean,
+			"source": "explicit_name",
+		}
+	if frappe.db.exists("Supplier", target_clean):
+		label = _clean_text(frappe.db.get_value("Supplier", target_clean, "supplier_name"))
+		return {"entity_type": "supplier", "entity_key": target_clean, "entity_label": label or target_clean, "source": "explicit_name"}
+	row = frappe.db.get_value("Supplier", {"supplier_name": target_clean}, ["name", "supplier_name"], as_dict=True)
+	if isinstance(row, dict) and _clean_text(row.get("name")):
+		return {
+			"entity_type": "supplier",
+			"entity_key": _clean_text(row.get("name")),
+			"entity_label": _clean_text(row.get("supplier_name")) or target_clean,
+			"source": "explicit_name",
+		}
+	item_code, item_name = _resolve_item_name(target_clean)
+	if item_code:
+		return {"entity_type": "item", "entity_key": item_code, "entity_label": item_name or item_code, "source": "explicit_name"}
+	return None
 
 
 def _resolve_item_name(name_or_code: str) -> Tuple[str, str]:
@@ -253,6 +327,9 @@ def detect_entity_drilldown_request(
 	explicit = _resolve_explicit_identifier(message)
 	if explicit:
 		return explicit
+	explicit_name = _resolve_named_entity_from_detail_request(message)
+	if explicit_name:
+		return explicit_name
 
 	text = _normalize_text(message)
 	for candidate in sorted(
@@ -308,6 +385,143 @@ def _bullet_block(title: str, items: List[str]) -> Dict[str, Any]:
 		"block_type": "bullet_list",
 		"title": title,
 		"items": [_clean_text(item) for item in items if _clean_text(item)],
+	}
+
+
+def _current_date_iso() -> str:
+	return dt.datetime.now(dt.timezone.utc).date().isoformat()
+
+
+def _resolve_company_name(company: str) -> str:
+	company_name = _clean_text(company)
+	if company_name:
+		return company_name
+	try:
+		candidates = frappe.get_all("Company", pluck="name")
+		if isinstance(candidates, list) and candidates:
+			return _clean_text(candidates[0])
+	except Exception:
+		return ""
+	return ""
+
+
+def _match_party_row(row: Dict[str, Any], entity_name: str, entity_label: str) -> bool:
+	targets = {_normalize_text(entity_name), _normalize_text(entity_label)}
+	for field in ("party", "customer", "party_name", "customer_name"):
+		value = _normalize_text(row.get(field))
+		if value and value in targets:
+			return True
+	return False
+
+
+def _customer_receivable_snapshot(entity_name: str, entity_label: str, company: str) -> Dict[str, Any]:
+	company_name = _resolve_company_name(company)
+	if not company_name:
+		return {}
+	report_date = _current_date_iso()
+	runtime_payload = execute_governed_report(
+		report_name="Accounts Receivable Summary",
+		filters={"company": company_name, "report_date": report_date},
+		user="Administrator",
+		mode="entity_detail",
+		target_limit=0,
+	)
+	report_tool = _report_tool(runtime_payload if isinstance(runtime_payload, dict) else {})
+	result = _report_result(report_tool)
+	rows = _report_rows(result)
+	target_row = next(
+		(row for row in rows if isinstance(row, dict) and _match_party_row(row, entity_name, entity_label)),
+		{},
+	)
+	if not target_row:
+		return {}
+	outstanding = _numeric(target_row.get("outstanding"))
+	total_due = _numeric(target_row.get("total_due"))
+	future_amount = _numeric(target_row.get("future_amount"))
+	range1 = _numeric(target_row.get("range1"))
+	range2 = _numeric(target_row.get("range2"))
+	range3 = _numeric(target_row.get("range3"))
+	range4 = _numeric(target_row.get("range4"))
+	range5 = _numeric(target_row.get("range5"))
+	overdue_total = range2 + range3 + range4 + range5
+	overdue_ratio = (overdue_total / outstanding) if outstanding > 0 else 0.0
+	return {
+		"report_date": report_date,
+		"company": company_name,
+		"currency": _clean_text(target_row.get("currency")),
+		"summary": [
+			("Outstanding (MMK)", _money(outstanding)),
+			("Total Due (MMK)", _money(total_due)),
+			("Overdue Total (MMK)", _money(overdue_total)),
+			("Overdue Ratio", f"{overdue_ratio * 100:.1f}%"),
+		],
+		"bucket_rows": [
+			("<0", future_amount),
+			("0-30", range1),
+			("31-60", range2),
+			("61-90", range3),
+			("91-120", range4),
+			("121-Above", range5),
+		],
+		"metrics": {
+			"outstanding_total": outstanding,
+			"total_due": total_due,
+			"future_bucket_total": future_amount,
+			"current_bucket_total": range1,
+			"bucket_31_60_total": range2,
+			"bucket_61_90_total": range3,
+			"bucket_91_120_total": range4,
+			"bucket_121_above_total": range5,
+			"overdue_total": overdue_total,
+			"overdue_ratio": overdue_ratio,
+		},
+	}
+
+
+def _customer_credit_policy_snapshot(entity_name: str, company: str, outstanding_total: float) -> Dict[str, Any]:
+	company_name = _resolve_company_name(company)
+	filters: Dict[str, Any] = {"parent": entity_name}
+	if company_name:
+		filters["company"] = company_name
+	rows = frappe.get_all(
+		"Customer Credit Limit",
+		fields=["company", "credit_limit", "bypass_credit_limit_check"],
+		filters=filters,
+		limit_page_length=20,
+	)
+	if not rows and company_name:
+		rows = frappe.get_all(
+			"Customer Credit Limit",
+			fields=["company", "credit_limit", "bypass_credit_limit_check"],
+			filters={"parent": entity_name},
+			limit_page_length=20,
+		)
+	target_row = next(
+		(
+			row
+			for row in (rows or [])
+			if isinstance(row, dict) and _clean_text(row.get("company")) == company_name
+		),
+		(rows[0] if isinstance(rows, list) and rows else {}),
+	)
+	if not isinstance(target_row, dict):
+		target_row = {}
+	credit_limit = _numeric(target_row.get("credit_limit"))
+	configured = credit_limit > 0
+	outstanding_for_limit = max(_numeric(outstanding_total), 0.0)
+	available_credit = max(credit_limit - outstanding_for_limit, 0.0) if configured else 0.0
+	exceeded_amount = max(outstanding_for_limit - credit_limit, 0.0) if configured else 0.0
+	utilization_ratio = (outstanding_for_limit / credit_limit) if configured else 0.0
+	return {
+		"company": _clean_text(target_row.get("company")) or company_name,
+		"has_row": bool(target_row),
+		"configured": configured,
+		"credit_limit": credit_limit,
+		"available_credit": available_credit,
+		"exceeded_amount": exceeded_amount,
+		"utilization_ratio": utilization_ratio,
+		"exceeded": bool(configured and exceeded_amount > 0),
+		"bypass_credit_limit_check": bool(int(target_row.get("bypass_credit_limit_check") or 0)),
 	}
 
 
@@ -993,18 +1207,56 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 	name_field = "customer_name" if entity_type == "customer" else "supplier_name"
 	group_field = "customer_group" if entity_type == "customer" else "supplier_group"
 	territory_field = "territory" if entity_type == "customer" else "country"
+	detail_company = _resolve_company_name(company) if entity_type == "customer" else _clean_text(company)
 	master = frappe.db.get_value(
 		doctype,
 		entity_key,
-		["name", name_field, group_field, territory_field, "mobile_no", "email_id"],
+		[
+			"name",
+			name_field,
+			group_field,
+			territory_field,
+			"mobile_no",
+			"email_id",
+			"default_price_list",
+			"payment_terms",
+			"disabled",
+			"is_frozen",
+		],
 		as_dict=True,
 	)
 	if not isinstance(master, dict):
-		master = frappe.db.get_value(doctype, {name_field: entity_key}, ["name", name_field, group_field, territory_field, "mobile_no", "email_id"], as_dict=True) or {}
+		master = frappe.db.get_value(
+			doctype,
+			{name_field: entity_key},
+			[
+				"name",
+				name_field,
+				group_field,
+				territory_field,
+				"mobile_no",
+				"email_id",
+				"default_price_list",
+				"payment_terms",
+				"disabled",
+				"is_frozen",
+			],
+			as_dict=True,
+		) or {}
 	entity_name = _clean_text(master.get("name")) or entity_key
 	entity_label = _clean_text(master.get(name_field)) or entity_name
-	stats = _aggregate_invoice_stats(invoice_doctype, party_field, entity_name, company)
-	recent = _recent_invoices(invoice_doctype, party_field, entity_name, company)
+	stats = _aggregate_invoice_stats(invoice_doctype, party_field, entity_name, detail_company)
+	recent = _recent_invoices(invoice_doctype, party_field, entity_name, detail_company)
+	credit_snapshot = {}
+	policy_snapshot = {}
+	if entity_type == "customer":
+		credit_snapshot = _customer_receivable_snapshot(entity_name, entity_label, detail_company)
+		outstanding_for_policy = _numeric(
+			(credit_snapshot.get("metrics") or {}).get("outstanding_total")
+			if isinstance(credit_snapshot.get("metrics"), dict)
+			else stats.get("outstanding_amount")
+		)
+		policy_snapshot = _customer_credit_policy_snapshot(entity_name, detail_company, outstanding_for_policy)
 	summary = [
 		("Name", entity_label),
 		("Code", entity_name),
@@ -1012,18 +1264,21 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 		("Territory / Region", _clean_text(master.get(territory_field))),
 		("Mobile", _clean_text(master.get("mobile_no"))),
 		("Email", _clean_text(master.get("email_id"))),
+		("Disabled", "Yes" if master.get("disabled") else "No"),
+		("Frozen", "Yes" if master.get("is_frozen") else "No"),
 		("Invoice Count", int(stats.get("invoice_count") or 0)),
 		("Total Amount (MMK)", _money(stats.get("total_amount"))),
 		("Outstanding (MMK)", _money(stats.get("outstanding_amount"))),
 		("Latest Invoice Date", _iso_date(stats.get("latest_date"))),
 	]
 	bullets = []
-	if int(stats.get("invoice_count") or 0) > 0:
-		bullets.append(f"{entity_label} has {int(stats.get('invoice_count') or 0)} posted {invoice_doctype.lower()} records in the governed history.")
-	if _numeric(stats.get("outstanding_amount")) > 0:
-		bullets.append(f"Current outstanding balance is {_money(stats.get('outstanding_amount'))} MMK.")
-	if _clean_text(stats.get("latest_date")):
-		bullets.append(f"Most recent governed transaction was on {_iso_date(stats.get('latest_date'))}.")
+	if entity_type != "customer":
+		if int(stats.get("invoice_count") or 0) > 0:
+			bullets.append(f"{entity_label} has {int(stats.get('invoice_count') or 0)} posted {invoice_doctype.lower()} records in the governed history.")
+		if _numeric(stats.get("outstanding_amount")) > 0:
+			bullets.append(f"Current outstanding balance is {_money(stats.get('outstanding_amount'))} MMK.")
+		if _clean_text(stats.get("latest_date")):
+			bullets.append(f"Most recent governed transaction was on {_iso_date(stats.get('latest_date'))}.")
 	recent_rows = [
 		[
 			_clean_text(row.get("name")),
@@ -1034,24 +1289,93 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 		]
 		for row in recent
 	]
+	credit_blocks: List[Dict[str, Any]] = []
+	if credit_snapshot:
+		credit_title = "Credit Status"
+		report_date = _clean_text(credit_snapshot.get("report_date"))
+		if report_date:
+			credit_title = f"{credit_title} (As of {report_date})"
+		credit_blocks = [
+			_summary_block(credit_title, credit_snapshot.get("summary") or []),
+			_data_block(
+				"Aging Buckets",
+				["Bucket", "Amount (MMK)"],
+				[
+					[_clean_text(bucket), _money(amount)]
+					for bucket, amount in (credit_snapshot.get("bucket_rows") or [])
+					if _clean_text(bucket)
+				],
+			),
+		]
+	policy_rows: List[Tuple[str, str]] = []
+	if entity_type == "customer":
+		policy_company = _clean_text(policy_snapshot.get("company")) or detail_company
+		if policy_company:
+			policy_rows.append(("Company", policy_company))
+		if _clean_text(master.get("default_price_list")):
+			policy_rows.append(("Default Price List", _clean_text(master.get("default_price_list"))))
+		if _clean_text(master.get("payment_terms")):
+			policy_rows.append(("Payment Terms", _clean_text(master.get("payment_terms"))))
+		if bool(policy_snapshot.get("configured")):
+			policy_rows.append(("Credit Limit (MMK)", _money(policy_snapshot.get("credit_limit"))))
+			policy_rows.append(
+				(
+					"Credit Limit Status",
+					"Exceeded" if bool(policy_snapshot.get("exceeded")) else "Within Limit",
+				)
+			)
+			if bool(policy_snapshot.get("exceeded")):
+				policy_rows.append(("Exceeded By (MMK)", _money(policy_snapshot.get("exceeded_amount"))))
+			else:
+				policy_rows.append(("Available Credit (MMK)", _money(policy_snapshot.get("available_credit"))))
+			policy_rows.append(("Credit Used (%)", f"{_numeric(policy_snapshot.get('utilization_ratio')) * 100:.1f}%"))
+			if bool(policy_snapshot.get("bypass_credit_limit_check")):
+				policy_rows.append(("Sales Order Credit Check", "Bypassed"))
+		elif bool(policy_snapshot.get("has_row")) or detail_company:
+			policy_rows.append(("Credit Limit", "Not Configured"))
 	rendered = {
 		"type": "qwen_entity_detail_rendered_response",
 		"request_id": "",
 		"family_id": "entity_detail",
 		"title": f"{entity_label} Details",
-		"source_reports": [doctype, invoice_doctype],
+		"source_reports": [doctype, invoice_doctype]
+		+ (["Accounts Receivable Summary"] if credit_snapshot else [])
+		+ (["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []),
 		"blocks": [
 			_summary_block("Profile", summary),
-			_bullet_block("Highlights", bullets),
+			*credit_blocks,
+			*([_summary_block("Commercial Policy", policy_rows)] if policy_rows else []),
+			*([_bullet_block("Highlights", bullets)] if bullets else []),
 			_data_block(f"Recent {invoice_doctype}s", ["Invoice", "Posting Date", "Amount (MMK)", "Outstanding (MMK)", "Status"], recent_rows),
 		],
 	}
+	artifact_metrics = {
+		"invoice_count": int(stats.get("invoice_count") or 0),
+		"total_amount": _numeric(stats.get("total_amount")),
+		"outstanding_amount": _numeric(stats.get("outstanding_amount")),
+	}
+	if credit_snapshot:
+		artifact_metrics.update(credit_snapshot.get("metrics") or {})
+	if policy_snapshot:
+		artifact_metrics.update(
+			{
+				"credit_limit": _numeric(policy_snapshot.get("credit_limit")),
+				"credit_limit_available": _numeric(policy_snapshot.get("available_credit")),
+				"credit_limit_excess": _numeric(policy_snapshot.get("exceeded_amount")),
+				"credit_limit_utilization_ratio": _numeric(policy_snapshot.get("utilization_ratio")),
+				"credit_limit_configured": bool(policy_snapshot.get("configured")),
+				"credit_limit_exceeded": bool(policy_snapshot.get("exceeded")),
+				"credit_limit_bypass_sales_order": bool(policy_snapshot.get("bypass_credit_limit_check")),
+			}
+		)
 	artifact = {
 		"type": "qwen_entity_detail_artifact",
 		"artifact_type": "entity_detail_artifact",
 		"family_id": "entity_detail",
-		"source_reports": [doctype, invoice_doctype],
-		"filters": {"company": company, "entity_key": entity_name},
+		"source_reports": [doctype, invoice_doctype]
+		+ (["Accounts Receivable Summary"] if credit_snapshot else [])
+		+ (["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []),
+		"filters": {"company": detail_company, "entity_key": entity_name},
 		"dimensions": {
 			"entity_type": entity_type,
 			"entity_key": entity_name,
@@ -1060,13 +1384,24 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 			"primary_metric_label": "Total Amount",
 			"source_grain": "party_detail",
 		},
-		"metrics": {
-			"invoice_count": int(stats.get("invoice_count") or 0),
-			"total_amount": _numeric(stats.get("total_amount")),
-			"outstanding_amount": _numeric(stats.get("outstanding_amount")),
-		},
+		"metrics": artifact_metrics,
 		"sections": {
 			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+			"credit_status": [
+				{"label": _clean_text(label), "value": _clean_text(value)}
+				for label, value in (credit_snapshot.get("summary") or [])
+				if _clean_text(label) and _clean_text(value)
+			],
+			"credit_buckets": [
+				{"bucket": _clean_text(bucket), "amount": _numeric(amount)}
+				for bucket, amount in (credit_snapshot.get("bucket_rows") or [])
+				if _clean_text(bucket)
+			],
+			"credit_policy": [
+				{"label": _clean_text(label), "value": _clean_text(value)}
+				for label, value in policy_rows
+				if _clean_text(label) and _clean_text(value)
+			],
 			"recent_transactions": [
 				{
 					"document_name": _clean_text(row.get("name")),
@@ -1079,7 +1414,7 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 			],
 		},
 	}
-	return {"artifact": artifact, "rendered": rendered, "company": company, "entity_label": entity_label}
+	return {"artifact": artifact, "rendered": rendered, "company": detail_company, "entity_label": entity_label}
 
 
 def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:

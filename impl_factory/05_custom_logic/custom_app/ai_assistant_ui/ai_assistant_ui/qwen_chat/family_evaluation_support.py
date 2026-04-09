@@ -1356,6 +1356,141 @@ def run_customer_credit_detail_followup_smoke(
 	)
 
 
+def run_customer_credit_policy_followup_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Policy Followup Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about Zegyo Mobile Supply House",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Policy Followup Smoke failed on customer detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: explicit customer request did not use governed entity-detail engine."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			detail_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			detail_lower = detail_text.lower()
+			if "commercial policy" not in detail_lower or "10,000,000" not in detail_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: customer detail did not expose the configured policy block."
+				)
+			if "15 Days - MMOB" not in detail_text or "Wholesale Selling - MMOB" not in detail_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: customer detail did not expose live payment terms and default price list."
+				)
+
+			ok, status_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="has this customer exceeded credit limit?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Policy Followup Smoke failed on credit-limit-status follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			status_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((status_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: credit-limit-status follow-up did not use grounded evidence mode."
+				)
+			if "within the configured credit limit" not in status_text.lower() or "10,000,000" not in status_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: credit-limit-status answer did not stay anchored to configured policy evidence."
+				)
+
+			ok, limit_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is this customer's credit limit?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Policy Followup Smoke failed on credit-limit follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			limit_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((limit_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: credit-limit follow-up did not use grounded evidence mode."
+				)
+			if "10,000,000" not in limit_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: credit-limit answer did not surface the governed configured limit."
+				)
+
+			ok, payment_terms_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what are this customer's payment terms?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Policy Followup Smoke failed on payment-terms follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			payment_terms_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((payment_terms_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: payment-terms follow-up did not use grounded evidence mode."
+				)
+			if "15 Days - MMOB" not in payment_terms_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: payment-terms answer did not expose the governed customer policy."
+				)
+
+			ok, price_list_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is this customer's default price list?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Policy Followup Smoke failed on default-price-list follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			price_list_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((price_list_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: default-price-list follow-up did not use grounded evidence mode."
+				)
+			if "Wholesale Selling - MMOB" not in price_list_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Policy Followup Smoke failed: default-price-list answer did not expose the governed customer policy."
+				)
+
+			return {
+				"ok": True,
+				"detail_mode": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"status_mode": str((status_payload or {}).get("mode") or "").strip(),
+				"limit_mode": str((limit_payload or {}).get("mode") or "").strip(),
+				"payment_terms_mode": str((payment_terms_payload or {}).get("mode") or "").strip(),
+				"price_list_mode": str((price_list_payload or {}).get("mode") or "").strip(),
+				"detail_text": detail_text,
+				"status_text": status_text,
+				"limit_text": limit_text,
+				"payment_terms_text": payment_terms_text,
+				"price_list_text": price_list_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_customer_credit_balance_probe(
 	*,
 	frappe_module,
