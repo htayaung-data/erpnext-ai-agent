@@ -51,6 +51,8 @@ from ai_assistant_ui.qwen_chat.clarification_translation import (
 	translate_clarification_signal,
 )
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
+	clarification_continuation_lane,
+	clarification_resolved_continuation_message,
 	clarification_state_after_unresolved_attempt,
 	clear_pending_clarification_signal,
 	governed_fallback_option,
@@ -245,6 +247,7 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_customer_credit_balance_smoke as _run_customer_credit_balance_smoke_helper,
 	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
 	run_customer_credit_policy_followup_smoke as _run_customer_credit_policy_followup_smoke_helper,
+	run_governed_kpi_frontdoor_smoke as _run_governed_kpi_frontdoor_smoke_helper,
 	run_customer_credit_overdue_probe as _run_customer_credit_overdue_probe_helper,
 	run_customer_credit_balance_probe as _run_customer_credit_balance_probe_helper,
 	run_customer_credit_scope_reset_probe as _run_customer_credit_scope_reset_probe_helper,
@@ -331,6 +334,9 @@ from ai_assistant_ui.qwen_chat.metric_union_support import (
 	normalized_key_fallback as _normalized_key_fallback_helper,
 	report_can_project_metric_union as _report_can_project_metric_union_helper,
 	resolve_metric_union_requery_target as _resolve_metric_union_requery_target_helper,
+)
+from ai_assistant_ui.qwen_chat.governed_kpi_support import (
+	run_governed_kpi_frontdoor_probe as _run_governed_kpi_frontdoor_probe_helper,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
 from ai_assistant_ui.qwen_chat.runtime_support import (
@@ -1378,7 +1384,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			append_tool_payload=_append_tool_payload,
 			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
 			assistant_text_payload=_assistant_text_payload,
+			store_pending_clarification_signal=store_pending_clarification_signal,
 			save_session=_save_session,
+			raw_message=raw_msg,
 		)
 		if frontdoor_handled and frontdoor_payload is not None:
 			return True, frontdoor_payload
@@ -1406,6 +1414,57 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		if clarification_handled and clarification_payload is not None:
 			return True, clarification_payload
+		clarified_frontdoor_message = ""
+		if (
+			clarification_response_contract is not None
+			and str(clarification_response_contract.decision or "").strip() == "resolved_option"
+			and clarification_continuation_lane(pending_clarification_signal) == "front_door"
+		):
+			clarified_frontdoor_message = clarification_resolved_continuation_message(
+				signal_payload=pending_clarification_signal,
+				resolved_option=str(clarification_response_contract.resolved_option or "").strip(),
+			)
+		if clarified_frontdoor_message and entity_drilldown is None:
+			(
+				clarified_frontdoor_semantic_result,
+				clarified_frontdoor_contract,
+				clarified_frontdoor_render_result,
+				clarified_frontdoor_answer,
+			) = evaluate_frontdoor_lane(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=clarified_frontdoor_message,
+				recent_messages=repair_recent_messages,
+				grounded_context_available=latest_grounded_turn_available,
+				latest_recovery_contract_available=bool(latest_recovery_contract),
+				pre_frontdoor_reasoning_semantic_result=None,
+			)
+			frontdoor_handled, frontdoor_payload = handle_frontdoor_turn(
+				session_doc=session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				message=clarified_frontdoor_message,
+				interaction_contract=interaction_contract,
+				frontdoor_semantic_result=clarified_frontdoor_semantic_result,
+				frontdoor_contract=clarified_frontdoor_contract,
+				frontdoor_render_result=clarified_frontdoor_render_result,
+				frontdoor_answer=clarified_frontdoor_answer,
+				context_force_new_query=False,
+				latest_grounded_turn_available=latest_grounded_turn_available,
+				latest_grounded_turn=latest_grounded_turn,
+				append_message=_append_message,
+				append_tool_payload=_append_tool_payload,
+				append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
+				assistant_text_payload=_assistant_text_payload,
+				store_pending_clarification_signal=store_pending_clarification_signal,
+				save_session=_save_session,
+				raw_message=raw_msg,
+				clarification_response_contract=clarification_response_contract,
+			)
+			if frontdoor_handled and frontdoor_payload is not None:
+				return True, frontdoor_payload
 	compiled_rollout = _compiled_first_turn_rollout_decision(
 		session_name=session_name,
 		user=user,
@@ -2150,6 +2209,19 @@ def run_phase1_4_customer_credit_scope_reset_probe() -> Dict[str, Any]:
 		latest_qwen_trace_payload=_latest_qwen_trace_payload,
 		latest_grounded_turn_contract=_latest_grounded_turn_contract,
 	)
+
+
+def run_phase2_4_governed_kpi_frontdoor_smoke() -> Dict[str, Any]:
+	return _run_governed_kpi_frontdoor_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase2_4_governed_kpi_frontdoor_probe() -> Dict[str, Any]:
+	return _run_governed_kpi_frontdoor_probe_helper()
 
 
 def run_phase1_1_delivery_note_date_scope_probe() -> Dict[str, Any]:

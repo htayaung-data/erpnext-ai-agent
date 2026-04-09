@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import json
 import time
 import uuid
 from typing import Any, Dict, List
@@ -1477,6 +1478,189 @@ def run_customer_credit_policy_followup_smoke(
 				"limit_text": limit_text,
 				"payment_terms_text": payment_terms_text,
 				"price_list_text": price_list_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_governed_kpi_frontdoor_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		def _visible_message_text(content: Any) -> str:
+			text = str(content or "").strip()
+			if not text:
+				return ""
+			try:
+				payload = json.loads(text)
+			except Exception:
+				return text
+			if isinstance(payload, dict):
+				payload_text = str(payload.get("text") or "").strip()
+				if payload_text:
+					return payload_text
+			return text
+
+		def _visible_messages(session_doc) -> List[Dict[str, Any]]:
+			return [
+				{
+					"role": str(row.role or "").strip().lower(),
+					"content": _visible_message_text(row.content),
+				}
+				for row in (session_doc.get("messages") or [])
+				if str(row.role or "").strip().lower() in {"user", "assistant"}
+			]
+
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase2.4 Governed KPI Frontdoor Smoke",
+		)
+		try:
+			ok, active_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is customer credit utilization and why does it matter",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on active KPI definition request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			active_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			active_visible_messages = _visible_messages(session_doc)
+			if str((active_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI request did not stay in front door.")
+			if str((active_payload or {}).get("agent_meta", {}).get("intent_class") or "").strip() != "governed_kpi_definition":
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI request did not use governed_kpi_definition intent."
+				)
+			if "configured customer credit limit" not in active_text.lower() or "it matters because" not in active_text.lower():
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI answer did not expose the governed formula basis and business purpose."
+				)
+			if len(active_visible_messages) != 2:
+				raise RuntimeError(
+					f"Phase2.4 Governed KPI Frontdoor Smoke failed: expected exactly 2 visible messages after first KPI turn, observed {len(active_visible_messages)}."
+				)
+
+			ok, ambiguous_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what does average order value mean in this ERP",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on ambiguous KPI definition request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			ambiguous_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((ambiguous_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: ambiguous KPI request did not stay in front door.")
+			if "Average Order Value by Sales Order" not in ambiguous_text or "Average Order Value by Sales Invoice" not in ambiguous_text:
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: ambiguous KPI answer did not ask for governed basis clarification."
+				)
+			ambiguous_visible_messages = _visible_messages(session_doc)
+			if len(ambiguous_visible_messages) != 4:
+				raise RuntimeError(
+					f"Phase2.4 Governed KPI Frontdoor Smoke failed: expected exactly 4 visible messages after second KPI turn, observed {len(ambiguous_visible_messages)}."
+				)
+			if ambiguous_visible_messages[-1].get("role") != "assistant":
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: last visible message after ambiguous KPI turn was not assistant-owned."
+				)
+			if str(ambiguous_visible_messages[-1].get("content") or "").strip() != ambiguous_text:
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: latest assistant payload and last visible assistant message diverged."
+				)
+			lower_ambiguous_text = ambiguous_text.lower()
+			if "one sales order was processed" in lower_ambiguous_text or "document count" in lower_ambiguous_text:
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: ambiguous KPI clarification leaked transaction-listing narrative text."
+				)
+
+			ok, clarified_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Sales Order",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on governed KPI clarification follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			clarified_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((clarified_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up did not re-enter the front-door lane."
+				)
+			if "Average Order Value by Sales Order" not in clarified_text or "Formula basis" not in clarified_text:
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up did not return the governed sales-order AOV definition."
+				)
+			lower_clarified_text = clarified_text.lower()
+			if "one sales order was processed" in lower_clarified_text or "document count" in lower_clarified_text:
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up leaked sales-order listing narrative text."
+				)
+			clarified_visible_messages = _visible_messages(session_doc)
+			if len(clarified_visible_messages) != 6:
+				raise RuntimeError(
+					f"Phase2.4 Governed KPI Frontdoor Smoke failed: expected exactly 6 visible messages after clarification resolution, observed {len(clarified_visible_messages)}."
+				)
+
+			ok, blocked_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is collection ratio",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on blocked KPI definition request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			blocked_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((blocked_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: blocked KPI request did not stay in front door.")
+			if "not runtime-active yet" not in blocked_text.lower() or "collected-amount" not in blocked_text.lower():
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: blocked KPI answer did not stay blocked-safe."
+				)
+
+			ok, undefined_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="define gross margin",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on undefined KPI definition request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			undefined_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((undefined_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: undefined KPI request did not stay in front door.")
+			if "no governed kpi definition is currently registered" not in undefined_text.lower():
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: undefined KPI answer did not explain the governed registry boundary."
+				)
+
+			return {
+				"ok": True,
+				"active_mode": str((active_payload or {}).get("mode") or "").strip(),
+				"ambiguous_mode": str((ambiguous_payload or {}).get("mode") or "").strip(),
+				"clarified_mode": str((clarified_payload or {}).get("mode") or "").strip(),
+				"blocked_mode": str((blocked_payload or {}).get("mode") or "").strip(),
+				"undefined_mode": str((undefined_payload or {}).get("mode") or "").strip(),
+				"active_text": active_text,
+				"ambiguous_text": ambiguous_text,
+				"clarified_text": clarified_text,
+				"blocked_text": blocked_text,
+				"undefined_text": undefined_text,
 			}
 		finally:
 			_delete_committed_smoke_session_doc(

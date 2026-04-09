@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
+	clarification_continuation_lane,
+	clarification_resolved_continuation_message,
 	clear_pending_clarification_signal,
 	latest_assistant_turn_was_clarification_fallback_stop,
 	latest_pending_clarification_signal,
@@ -107,6 +109,25 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(session_doc.pending_clarification_state_json, "")
 		self.assertFalse(get_clarification_state(session_doc).has_pending)
 		self.assertEqual(latest_pending_clarification_signal(session_doc), {})
+
+	def test_pending_clarification_can_carry_frontdoor_continuation_message(self):
+		signal = _clarification_signal(request_id="clarify-4c", user_question="Choose one KPI basis.")
+		signal["reason_type"] = "governed_kpi_definition_ambiguity"
+		signal["internal_details"] = {
+			"continuation_lane": "front_door",
+			"resolved_message_by_option": {
+				"Average Order Value by Sales Order": "what is Average Order Value by Sales Order",
+			},
+		}
+
+		self.assertEqual(clarification_continuation_lane(signal), "front_door")
+		self.assertEqual(
+			clarification_resolved_continuation_message(
+				signal_payload=signal,
+				resolved_option="Average Order Value by Sales Order",
+			),
+			"what is Average Order Value by Sales Order",
+		)
 
 	def test_message_history_pending_clarification_ignores_superseded_signal_after_later_visible_turn(self):
 		signal = _clarification_signal(

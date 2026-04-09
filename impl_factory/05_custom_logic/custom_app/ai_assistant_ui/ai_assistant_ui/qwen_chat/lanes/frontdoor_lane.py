@@ -10,6 +10,7 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	interpret_front_door_semantically,
 	render_front_door_answer,
 )
+from ai_assistant_ui.qwen_chat.governed_kpi_support import maybe_build_governed_kpi_frontdoor_response
 from ai_assistant_ui.qwen_chat.observability import record_phase55_observability_event
 
 
@@ -20,6 +21,16 @@ def _front_door_answer_text(frontdoor_contract: Any) -> str:
 	if not isinstance(response_payload, dict):
 		return ""
 	return str(response_payload.get("text") or "").strip()
+
+
+def _front_door_clarification_signal(frontdoor_contract: Any) -> Dict[str, Any]:
+	if frontdoor_contract is None:
+		return {}
+	response_payload = getattr(frontdoor_contract, "response_payload", {})
+	if not isinstance(response_payload, dict):
+		return {}
+	payload = response_payload.get("clarification_signal_payload")
+	return dict(payload) if isinstance(payload, dict) else {}
 
 
 def _frontdoor_response_engine(frontdoor_render_result: Any) -> str:
@@ -33,6 +44,7 @@ _FRONTDOOR_INTENTS_THAT_OVERRIDE_REASONING = {
 	"acknowledgement",
 	"closure_signoff",
 	"capability_question",
+	"governed_kpi_definition",
 }
 
 
@@ -75,6 +87,14 @@ def evaluate_frontdoor_lane(
 			),
 			confidence_threshold=1.0,
 		)
+	elif governed_kpi_frontdoor := maybe_build_governed_kpi_frontdoor_response(
+		request_id=request_id,
+		message=message,
+	):
+		frontdoor_semantic_result = governed_kpi_frontdoor.get("semantic_result")
+		frontdoor_contract = governed_kpi_frontdoor.get("frontdoor_contract")
+		frontdoor_answer = str(governed_kpi_frontdoor.get("frontdoor_answer") or "").strip()
+		return frontdoor_semantic_result, frontdoor_contract, frontdoor_render_result, frontdoor_answer
 	elif (
 		pre_frontdoor_reasoning_semantic_result is not None
 		and str(pre_frontdoor_reasoning_semantic_result.status or "").strip() == "accepted"
@@ -159,7 +179,10 @@ def handle_frontdoor_turn(
 	append_tool_payload: Callable[..., None],
 	append_knowledge_boundary_contract: Callable[..., Dict[str, Any]],
 	assistant_text_payload: Callable[[str], str],
+	store_pending_clarification_signal: Callable[..., None],
 	save_session: Callable[..., None],
+	raw_message: str = "",
+	clarification_response_contract=None,
 ) -> Tuple[bool, Dict[str, Any] | None]:
 	if not (
 		bool(getattr(frontdoor_contract, "handle_in_front_door", False))
@@ -194,8 +217,11 @@ def handle_frontdoor_turn(
 		grounded_required=False,
 	)
 	response_engine = _frontdoor_response_engine(frontdoor_render_result)
-	append_message(session_doc, "user", message)
+	clarification_signal_payload = _front_door_clarification_signal(frontdoor_contract)
+	append_message(session_doc, "user", raw_message or message)
 	append_tool_payload(session_doc, interaction_contract.to_payload())
+	if clarification_response_contract is not None:
+		append_tool_payload(session_doc, clarification_response_contract.to_payload())
 	append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
 	append_tool_payload(session_doc, frontdoor_contract.to_payload())
 	if frontdoor_render_result is not None:
@@ -210,6 +236,7 @@ def handle_frontdoor_turn(
 			details={
 				"intent_class": str(getattr(frontdoor_contract, "intent_class", "") or "").strip(),
 				"response_engine": response_engine,
+				"pending_clarification": bool(clarification_signal_payload),
 			},
 		),
 	)
@@ -218,11 +245,15 @@ def handle_frontdoor_turn(
 		request_id=request_id,
 		session_id=session_id,
 		proposed_lane="front_door",
+		clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else {},
 		front_door_contract=frontdoor_contract.to_payload(),
 		grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
 	)
 	append_tool_payload(session_doc, execution_path.to_payload())
 	append_message(session_doc, "assistant", assistant_text_payload(frontdoor_answer))
+	if clarification_signal_payload:
+		append_tool_payload(session_doc, clarification_signal_payload)
+		store_pending_clarification_signal(session_doc, clarification_signal_payload)
 	append_tool_payload(
 		session_doc,
 		build_audit_envelope(

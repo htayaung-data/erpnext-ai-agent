@@ -316,6 +316,41 @@ def _normalized_values(values: List[str]) -> List[str]:
 	return out
 
 
+def clarification_continuation_lane(signal_payload: Dict[str, Any]) -> str:
+	internal_details = signal_payload.get("internal_details")
+	if not isinstance(internal_details, dict):
+		return ""
+	return str(internal_details.get("continuation_lane") or "").strip()
+
+
+def clarification_resolved_continuation_message(
+	*,
+	signal_payload: Dict[str, Any],
+	resolved_option: str,
+) -> str:
+	option = str(resolved_option or "").strip()
+	if not option:
+		return ""
+	internal_details = signal_payload.get("internal_details")
+	if not isinstance(internal_details, dict):
+		return ""
+	resolved_message_by_option = (
+		internal_details.get("resolved_message_by_option")
+		if isinstance(internal_details.get("resolved_message_by_option"), dict)
+		else {}
+	)
+	if not resolved_message_by_option:
+		return ""
+	exact_message = str(resolved_message_by_option.get(option) or "").strip()
+	if exact_message:
+		return exact_message
+	normalized_target = _normalize_text(option)
+	for key, value in resolved_message_by_option.items():
+		if _normalize_text(key) == normalized_target:
+			return str(value or "").strip()
+	return ""
+
+
 def _same_pending_clarification(
 	*,
 	compiler_contract: Any,
