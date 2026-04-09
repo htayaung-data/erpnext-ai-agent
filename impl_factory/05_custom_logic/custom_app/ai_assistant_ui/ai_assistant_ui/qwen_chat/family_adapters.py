@@ -2266,13 +2266,15 @@ def _requested_transaction_columns(compiler_contract: Dict[str, Any]) -> List[st
 		columns.append("posting_date")
 	if "customer" in requested_dimensions:
 		columns.append("customer")
+	elif requested_dimensions.intersection({"supplier", "party"}):
+		columns.append("party_name")
 	if requested_metrics.intersection({"grand_total", "sales_amount"}):
 		columns.append("grand_total")
 	if requested_metrics.intersection({"quantity"}):
 		columns.append("quantity")
 	if requested_metrics.intersection({"outstanding_amount", "outstanding_total"}):
 		columns.append("outstanding_amount")
-	if "document_status" in requested_dimensions:
+	if requested_dimensions.intersection({"document_status", "status"}):
 		columns.append("status")
 	return list(dict.fromkeys([value for value in columns if value]))
 

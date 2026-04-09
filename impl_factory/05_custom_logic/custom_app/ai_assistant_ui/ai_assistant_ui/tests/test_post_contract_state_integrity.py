@@ -5,8 +5,10 @@ from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	clear_pending_clarification_signal,
+	latest_assistant_turn_was_clarification_fallback_stop,
 	latest_pending_clarification_signal,
 	latest_pending_clarification_signal_from_messages,
+	looks_like_short_acknowledgement,
 	store_pending_clarification_signal,
 )
 from ai_assistant_ui.qwen_chat.clarification_state import (
@@ -57,6 +59,12 @@ class _FakeSessionDoc:
 
 
 class TestPostContractStateIntegrity(unittest.TestCase):
+	def test_short_acknowledgement_detection_is_bounded(self):
+		self.assertTrue(looks_like_short_acknowledgement("yes"))
+		self.assertTrue(looks_like_short_acknowledgement("okay"))
+		self.assertFalse(looks_like_short_acknowledgement("what do you mean?"))
+		self.assertFalse(looks_like_short_acknowledgement("yes show me AR"))
+
 	def test_pending_clarification_store_roundtrip_preserves_latest_signal(self):
 		session_doc = _FakeSessionDoc()
 		first_signal = _clarification_signal(request_id="clarify-1", user_question="Which report do you want?")
@@ -115,6 +123,67 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		)
 
 		self.assertEqual(latest_pending_clarification_signal_from_messages(session_doc), {})
+
+	def test_latest_assistant_turn_detects_clarification_fallback_stop(self):
+		session_doc = _FakeSessionDoc(
+			[
+				_FakeMessage(role="user", content="yes"),
+				_FakeMessage(
+					role="tool",
+					content=json.dumps(
+						{
+							"type": "qwen_phase55_observability_event",
+							"event_family": "clarification",
+							"event_name": "fallback_stop",
+						}
+					),
+				),
+				_FakeMessage(
+					role="assistant",
+					content=json.dumps({"type": "text", "text": "I'll pause here rather than guess."}),
+				),
+			]
+		)
+
+		self.assertTrue(latest_assistant_turn_was_clarification_fallback_stop(session_doc))
+
+	def test_latest_assistant_turn_ignores_older_clarification_fallback_stop(self):
+		session_doc = _FakeSessionDoc(
+			[
+				_FakeMessage(role="user", content="yes"),
+				_FakeMessage(
+					role="tool",
+					content=json.dumps(
+						{
+							"type": "qwen_phase55_observability_event",
+							"event_family": "clarification",
+							"event_name": "fallback_stop",
+						}
+					),
+				),
+				_FakeMessage(
+					role="assistant",
+					content=json.dumps({"type": "text", "text": "I'll pause here rather than guess."}),
+				),
+				_FakeMessage(role="user", content="show accounts receivable summary"),
+				_FakeMessage(
+					role="tool",
+					content=json.dumps(
+						{
+							"type": "qwen_phase55_observability_event",
+							"event_family": "front_door",
+							"event_name": "handled",
+						}
+					),
+				),
+				_FakeMessage(
+					role="assistant",
+					content=json.dumps({"type": "text", "text": "Accounts Receivable Summary"}),
+				),
+			]
+		)
+
+		self.assertFalse(latest_assistant_turn_was_clarification_fallback_stop(session_doc))
 
 	def test_malformed_clarification_storage_fails_closed_to_empty_state(self):
 		session_doc = _FakeSessionDoc()

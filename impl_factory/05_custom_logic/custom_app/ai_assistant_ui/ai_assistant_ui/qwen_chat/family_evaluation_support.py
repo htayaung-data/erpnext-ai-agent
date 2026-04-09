@@ -804,6 +804,107 @@ def run_delivery_note_listing_smoke(
 	)
 
 
+def run_purchase_order_listing_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	return _run_document_listing_smoke(
+		frappe_module=frappe_module,
+		session_doctype=session_doctype,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=session_tool_payloads,
+		latest_tool_payload_by_type=latest_tool_payload_by_type,
+		smoke_title="Phase1.3 Purchase Order Listing Smoke",
+		request_message="show me latest 5 purchase orders",
+		expected_row_count=5,
+		minimum_row_count=0,
+		required_title_fragment="Purchase Order",
+		required_column_groups=[["Purchase", "Order"], ["Supplier"], ["Qty", "Quantity"]],
+	)
+
+
+def run_purchase_order_status_scope_reset_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.3 Purchase Order Status Scope Reset Smoke",
+		)
+		try:
+			ok, first_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me submitted purchase orders from last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Scope Reset Smoke failed on last-month listing request.")
+			ok, second_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me purchase orders with status To Bill",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Scope Reset Smoke failed on status listing request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			assistant_lower = assistant_text.lower()
+			if "march 2026" in assistant_lower or "2026-03-01 to 2026-03-31" in assistant_lower:
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Scope Reset Smoke failed: status re-ask still inherited the prior March date window."
+				)
+			if "pur-ord-2026-00008" not in assistant_lower and "2026-01-30" not in assistant_lower:
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Scope Reset Smoke failed: status re-ask did not break out to the January Purchase Order result set."
+				)
+			if "pur-ord-2026-00004" in assistant_lower or "pur-ord-2026-00002" in assistant_lower:
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Scope Reset Smoke failed: status re-ask still included non-'To Bill' purchase orders."
+				)
+			tool_payloads = session_tool_payloads(session_doc)
+			scope_payload = latest_tool_payload_by_type(tool_payloads, "qwen_governed_scope_decision_contract")
+			followup_payload = latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution")
+			scope_status = str((scope_payload or {}).get("governed_scope_status") or "").strip()
+			followup_mode = str((followup_payload or {}).get("mode") or "").strip()
+			if scope_status != "fresh_query_breakout":
+				raise RuntimeError(
+					f"Phase1.3 Purchase Order Status Scope Reset Smoke failed: expected governed scope status 'fresh_query_breakout', observed {scope_status!r}."
+				)
+			if followup_mode != "new_query":
+				raise RuntimeError(
+					f"Phase1.3 Purchase Order Status Scope Reset Smoke failed: expected follow-up mode 'new_query', observed {followup_mode!r}."
+				)
+			return {
+				"ok": True,
+				"initial_mode": str((first_payload or {}).get("mode") or "").strip(),
+				"followup_mode": followup_mode,
+				"governed_scope_status": scope_status,
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_delivery_note_listing_limit_probe(
 	*,
 	frappe_module,
@@ -958,6 +1059,200 @@ def run_sales_order_detail_smoke(
 				"title": rendered_title,
 				"entity_type": entity_type,
 				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_purchase_order_detail_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.3 Purchase Order Detail Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about PUR-ORD-2026-00008",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Detail Smoke failed on purchase-order detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Detail Smoke failed: explicit purchase-order request did not use the governed entity-detail engine."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "pur-ord-2026-00008" not in assistant_text.lower():
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Detail Smoke failed: detail answer did not anchor to the requested purchase order."
+				)
+			if "document count" in assistant_text.lower():
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Detail Smoke failed: detail answer still looked like a list summary."
+				)
+			tool_payloads = session_tool_payloads(session_doc)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_entity_detail_artifact")
+			rendered_payload = latest_tool_payload_by_type(tool_payloads, "qwen_entity_detail_rendered_response")
+			entity_type = str((artifact_payload or {}).get("dimensions", {}).get("entity_type") or "").strip()
+			rendered_title = str((rendered_payload or {}).get("title") or "").strip()
+			if entity_type != "purchase_order":
+				raise RuntimeError(
+					f"Phase1.3 Purchase Order Detail Smoke failed: expected entity_type 'purchase_order', observed {entity_type!r}."
+				)
+			if "Purchase Order" not in rendered_title:
+				raise RuntimeError(
+					f"Phase1.3 Purchase Order Detail Smoke failed: expected rendered title to contain 'Purchase Order', observed {rendered_title!r}."
+				)
+			return {
+				"ok": True,
+				"mode": str((detail_payload or {}).get("mode") or "").strip(),
+				"engine": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"title": rendered_title,
+				"entity_type": entity_type,
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_purchase_order_status_followup_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.3 Purchase Order Status Followup Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about PUR-ORD-2026-00004",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Followup Smoke failed on purchase-order detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: explicit purchase-order request did not use governed entity-detail engine."
+				)
+
+			ok, received_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="is it received?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Followup Smoke failed on receipt-status follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			received_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((received_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: receipt-status follow-up did not use grounded evidence mode."
+				)
+			if "79.96%" not in received_text or "pur-ord-2026-00004" not in received_text.lower():
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: receipt-status answer did not stay anchored to order evidence."
+				)
+
+			ok, billed_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="how much is billed?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Followup Smoke failed on billing follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			billed_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((billed_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: billing follow-up did not use grounded evidence mode."
+				)
+			if "0%" not in billed_text or "not been billed yet" not in billed_text.lower():
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: billing answer did not surface the governed order progress."
+				)
+
+			ok, due_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="when is receipt due?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Followup Smoke failed on planned-date follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			due_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((due_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: planned-date follow-up did not use grounded evidence mode."
+				)
+			if "2026-01-20" not in due_text:
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: planned-date answer did not expose the governed receipt date."
+				)
+
+			ok, boundary_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="when was it received?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.3 Purchase Order Status Followup Smoke failed on actual-receipt-date boundary follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			boundary_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((boundary_payload or {}).get("mode") or "").strip() != "grounded_evidence_boundary":
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: actual-receipt-date follow-up did not stop at the grounded boundary."
+				)
+			if "actual receipt event date" not in boundary_text.lower():
+				raise RuntimeError(
+					"Phase1.3 Purchase Order Status Followup Smoke failed: boundary answer did not explain the missing downstream evidence."
+				)
+
+			return {
+				"ok": True,
+				"detail_mode": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"receipt_mode": str((received_payload or {}).get("mode") or "").strip(),
+				"billing_mode": str((billed_payload or {}).get("mode") or "").strip(),
+				"due_mode": str((due_payload or {}).get("mode") or "").strip(),
+				"boundary_mode": str((boundary_payload or {}).get("mode") or "").strip(),
+				"receipt_text": received_text,
+				"billing_text": billed_text,
+				"due_text": due_text,
+				"boundary_text": boundary_text,
 			}
 		finally:
 			_delete_committed_smoke_session_doc(

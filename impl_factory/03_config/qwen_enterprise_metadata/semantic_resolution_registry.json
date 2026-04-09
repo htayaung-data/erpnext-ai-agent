@@ -7,7 +7,8 @@
       "allowed_values": [
         "sales_invoice",
         "delivery_note",
-        "sales_order"
+        "sales_order",
+        "purchase_order"
       ],
       "required_for_intent_classes": [
         "transaction_listing"
@@ -145,6 +146,15 @@
           "sales orders",
           "customer order",
           "customer orders"
+        ]
+      },
+      {
+        "canonical_value": "purchase_order",
+        "aliases": [
+          "purchase order",
+          "purchase orders",
+          "vendor order",
+          "vendor orders"
         ]
       }
     ],
@@ -350,6 +360,24 @@
       ],
       "candidate_reports": [
         "Sales Order List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "transaction_listing_purchase_order",
+      "intent_class": "transaction_listing",
+      "required_slots": {
+        "listing_view": "purchase_order"
+      },
+      "candidate_family_ids": [
+        "transaction_listing"
+      ],
+      "candidate_capability_ids": [
+        "purchase_order_read"
+      ],
+      "candidate_reports": [
+        "Purchase Order List"
       ],
       "governed_decision": "execute",
       "ambiguity_policy": "none"

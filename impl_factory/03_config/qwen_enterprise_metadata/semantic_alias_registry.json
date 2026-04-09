@@ -365,12 +365,25 @@
         "what date it was delivered",
         "what date was it delivered",
         "what day it was delivered",
-        "what day was it delivered"
+        "what day was it delivered",
+        "received date",
+        "when received",
+        "when it was received",
+        "when was it received",
+        "when was this received",
+        "when was that received",
+        "what it was received",
+        "what was it received",
+        "what date it was received",
+        "what date was it received",
+        "what day it was received",
+        "what day was it received"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "purchase_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Order List": ["transaction_date"],
+        "Purchase Order List": ["transaction_date"],
         "Sales Register": ["Posting Date"],
         "Accounts Receivable Summary": ["Posting Date"],
         "Accounts Payable Summary": ["Posting Date"],
@@ -416,6 +429,43 @@
       }
     },
     {
+      "canonical_key": "planned_receipt_date",
+      "label": "Planned Receipt Date",
+      "aliases": [
+        "planned receipt date",
+        "receipt due",
+        "receipt due date",
+        "when is receipt due",
+        "when is it due",
+        "when is this due",
+        "when is that due",
+        "receipt date"
+      ],
+      "capability_scope": ["purchase_order_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {
+        "Purchase Order List": ["schedule_date"]
+      }
+    },
+    {
+      "canonical_key": "receipt_progress_percent",
+      "label": "Received Percent",
+      "aliases": [
+        "receipt progress",
+        "received percentage",
+        "received percent",
+        "receipt completion",
+        "receiving status",
+        "how much is received",
+        "is it received"
+      ],
+      "capability_scope": ["purchase_order_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {
+        "Purchase Order List": ["per_received"]
+      }
+    },
+    {
       "canonical_key": "billing_progress_percent",
       "label": "Billed Percent",
       "aliases": [
@@ -426,10 +476,11 @@
         "how much is billed",
         "is it billed"
       ],
-      "capability_scope": ["sales_order_read"],
+      "capability_scope": ["sales_order_read", "purchase_order_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
-        "Sales Order List": ["per_billed"]
+        "Sales Order List": ["per_billed"],
+        "Purchase Order List": ["per_billed"]
       }
     },
     {

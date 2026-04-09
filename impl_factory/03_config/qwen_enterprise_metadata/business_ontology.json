@@ -99,6 +99,20 @@
       }
     },
     {
+      "concept_id": "sales_order",
+      "aliases": {
+        "en": ["sales order", "sales orders", "customer order", "customer orders"],
+        "my": []
+      }
+    },
+    {
+      "concept_id": "purchase_order",
+      "aliases": {
+        "en": ["purchase order", "purchase orders", "vendor order", "vendor orders"],
+        "my": []
+      }
+    },
+    {
       "concept_id": "fulfillment",
       "aliases": {
         "en": [

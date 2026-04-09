@@ -144,6 +144,109 @@ def build_grounded_artifact_direct_evidence_rendered_payload(
 		return {}
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	if entity_type == "purchase_order":
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="purchase_order_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		requested_metrics = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="purchase_order_read",
+				dimension_or_metric="metric",
+			)
+		)
+		if "posting_date" in requested_dimensions and "planned_receipt_date" not in requested_dimensions:
+			return {}
+		if not requested_dimensions.intersection({"document_status", "planned_receipt_date"}) and not requested_metrics.intersection(
+			{"receipt_progress_percent", "billing_progress_percent"}
+		):
+			return {}
+		document_row = _artifact_document_row(artifact)
+		item_rows = _artifact_item_rows(artifact)
+		entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "Purchase Order").strip()
+		supplier = str(document_row.get("supplier") or "").strip()
+		status = str(document_row.get("status") or "").strip()
+		receipt_status = str(document_row.get("receipt_status") or "").strip()
+		billing_status = str(document_row.get("billing_status") or "").strip()
+		planned_receipt_date = str(document_row.get("schedule_date") or "").strip()
+		per_received = _numeric(document_row.get("per_received"))
+		per_billed = _numeric(document_row.get("per_billed"))
+		total_qty = _numeric(document_row.get("quantity"))
+		received_qty = sum(_numeric(row.get("received_qty")) for row in item_rows)
+		billed_amount = sum(_numeric(row.get("billed_amount")) for row in item_rows)
+		evidence_rows = [
+			["Purchase Order", entity_label],
+			["Supplier", supplier],
+			["Current Status", status],
+			["Receipt Status", receipt_status],
+			["Billing Status", billing_status],
+			["Planned Receipt Date", planned_receipt_date],
+			["Received (%)", _money(per_received)],
+			["Billed (%)", _money(per_billed)],
+		]
+		evidence_items: List[str] = []
+		if "document_status" in requested_dimensions:
+			evidence_items.append(
+				f"The current purchase order status is {status}, with receipt status {receipt_status or 'Unknown'} and billing status {billing_status or 'Unknown'}."
+			)
+		if "planned_receipt_date" in requested_dimensions and planned_receipt_date:
+			evidence_items.append(f"The planned receipt date recorded on the purchase order is {planned_receipt_date}.")
+		if "receipt_progress_percent" in requested_metrics:
+			receipt_item = f"Receipt progress is {_money(per_received)}%"
+			if receipt_status:
+				receipt_item += f" ({receipt_status})"
+			if total_qty > 0:
+				receipt_item += f", with {_money(received_qty)} of {_money(total_qty)} units received on the current order lines"
+			evidence_items.append(receipt_item + ".")
+		if "billing_progress_percent" in requested_metrics:
+			billing_item = f"Billing progress is {_money(per_billed)}%"
+			if billing_status:
+				billing_item += f" ({billing_status})"
+			if billed_amount > 0:
+				billing_item += f", with {_money(billed_amount)} MMK billed on the current order lines"
+			evidence_items.append(billing_item + ".")
+		item_table_rows = [
+			[
+				str(row.get("item_code") or "").strip(),
+				str(row.get("item_name") or "").strip(),
+				_money(row.get("qty")),
+				_money(row.get("received_qty")),
+				_money(row.get("billed_amount")),
+			]
+			for row in item_rows
+		]
+		return {
+			"type": "qwen_rendered_family_response_contract",
+			"contract_version": "1.0",
+			"request_id": str(artifact.get("request_id") or "").strip(),
+			"family_id": str(artifact.get("family_id") or "").strip(),
+			"renderer_id": "grounded_artifact_direct_evidence",
+			"title": f"Order Status Evidence for {entity_label}",
+			"answer_text": "",
+			"source_reports": [
+				str(value or "").strip()
+				for value in (artifact.get("source_reports") or [])
+				if str(value or "").strip()
+			],
+			"blocks": [
+				_summary_block("Order Status Evidence", evidence_rows),
+				_data_block(
+					"Order Items",
+					["Item Code", "Item Name", "Qty", "Received Qty", "Billed Amount (MMK)"],
+					item_table_rows,
+				),
+				_bullet_block("Evidence Highlights", evidence_items),
+			],
+			"warnings": [
+				str(value or "").strip()
+				for value in (artifact.get("warnings") or [])
+				if str(value or "").strip()
+			],
+		}
 	if entity_type == "sales_order":
 		request_concepts = {
 			str(value or "").strip()
@@ -386,6 +489,77 @@ def grounded_artifact_direct_evidence_answer(
 	}
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	if entity_type == "purchase_order":
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="purchase_order_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		requested_metrics = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="purchase_order_read",
+				dimension_or_metric="metric",
+			)
+		)
+		if "posting_date" in requested_dimensions and "planned_receipt_date" not in requested_dimensions:
+			return ""
+		if not requested_dimensions.intersection({"document_status", "planned_receipt_date"}) and not requested_metrics.intersection(
+			{"receipt_progress_percent", "billing_progress_percent"}
+		):
+			return ""
+		document_row = _artifact_document_row(artifact)
+		item_rows = _artifact_item_rows(artifact)
+		entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this purchase order").strip()
+		status = str(document_row.get("status") or "").strip()
+		receipt_status = str(document_row.get("receipt_status") or "").strip()
+		billing_status = str(document_row.get("billing_status") or "").strip()
+		planned_receipt_date = str(document_row.get("schedule_date") or "").strip()
+		per_received = _numeric(document_row.get("per_received"))
+		per_billed = _numeric(document_row.get("per_billed"))
+		total_qty = _numeric(document_row.get("quantity"))
+		received_qty = sum(_numeric(row.get("received_qty")) for row in item_rows)
+		billed_amount = sum(_numeric(row.get("billed_amount")) for row in item_rows)
+		if "planned_receipt_date" in requested_dimensions and planned_receipt_date:
+			return f"The planned receipt date for {entity_label} is {planned_receipt_date}."
+		if "billing_progress_percent" in requested_metrics:
+			if per_billed >= 100:
+				return (
+					f"Yes. {entity_label} is fully billed.\n\n"
+					f"Billing progress is {_money(per_billed)}% ({billing_status or 'Fully Billed'})."
+				)
+			if per_billed <= 0:
+				return (
+					f"No. {entity_label} has not been billed yet.\n\n"
+					f"Billing progress is {_money(per_billed)}% ({billing_status or 'Not Billed'})."
+				)
+			detail = f"It is {_money(per_billed)}% billed so far"
+			if billed_amount > 0:
+				detail += f", which is {_money(billed_amount)} MMK on the current order lines"
+			return f"Partly. {entity_label} is not fully billed yet.\n\n{detail} ({billing_status or 'Partly Billed'})."
+		if "document_status" in requested_dimensions:
+			return (
+				f"The current status of {entity_label} is {status}.\n\n"
+				f"Receipt status is {receipt_status or 'Unknown'}, and billing status is {billing_status or 'Unknown'}."
+			)
+		if "receipt_progress_percent" in requested_metrics:
+			if per_received >= 100:
+				return (
+					f"Yes. {entity_label} is fully received.\n\n"
+					f"Receipt progress is {_money(per_received)}% ({receipt_status or 'Fully Received'})."
+				)
+			if per_received <= 0:
+				return (
+					f"No. {entity_label} has not been received yet.\n\n"
+					f"Receipt progress is {_money(per_received)}% ({receipt_status or 'Not Received'})."
+				)
+			detail = f"It is {_money(per_received)}% received so far"
+			if total_qty > 0:
+				detail += f", with {_money(received_qty)} of {_money(total_qty)} units received on the current order lines"
+			return f"Partly. {entity_label} is not fully received yet.\n\n{detail} ({receipt_status or 'Partly Received'})."
+		return ""
 	if entity_type == "sales_order":
 		requested_dimensions = set(
 			detect_canonical_keys(
@@ -543,6 +717,19 @@ def grounded_artifact_evidence_boundary_answer(
 	entity_type = ""
 	if isinstance(artifact.get("dimensions"), dict):
 		entity_type = str((artifact.get("dimensions") or {}).get("entity_type") or "").strip().lower()
+	if entity_type == "purchase_order":
+		requested_dimensions = set(
+			detect_canonical_keys(
+				raw_message,
+				capability_id="purchase_order_read",
+				dimension_or_metric="dimension",
+			)
+		)
+		if "posting_date" in requested_dimensions and "planned_receipt_date" not in requested_dimensions:
+			return (
+				"The current purchase order shows planned receipt date and receipt progress, but it does not prove the actual receipt event date.\n\n"
+				"To answer when it was actually received, I need governed downstream receipt evidence such as linked purchase-receipt records."
+			)
 	if entity_type == "sales_order":
 		request_concepts = {
 			str(value or "").strip()

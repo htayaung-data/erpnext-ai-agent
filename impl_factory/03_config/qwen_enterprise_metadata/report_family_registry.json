@@ -313,26 +313,35 @@
       "validation_profile": "report_grounded_read",
       "capability_ids": [
         "sales_read",
-        "fulfillment_read"
+        "fulfillment_read",
+        "sales_order_read",
+        "purchase_order_read"
       ],
       "report_names": [
         "Sales Invoice List",
-        "Delivery Note List"
+        "Delivery Note List",
+        "Sales Order List",
+        "Purchase Order List"
       ],
       "source_report_families": [
         "sales_invoice_list",
-        "delivery_note_list"
+        "delivery_note_list",
+        "sales_order_list",
+        "purchase_order_list"
       ],
       "semantic_tags": [
         "transaction",
         "invoice",
         "fulfillment",
+        "purchase",
+        "order",
         "document"
       ],
       "routing_hints": {
         "ontology_concepts": [
           "sales",
           "sales_invoice",
+          "sales_order",
           "fulfillment"
         ],
         "intent_markers": [
@@ -340,7 +349,12 @@
           "recent invoices",
           "latest invoices",
           "last invoice",
-          "last invoices"
+          "last invoices",
+          "sales order list",
+          "recent sales orders",
+          "latest sales orders",
+          "last sales order",
+          "last sales orders"
         ]
       },
       "coverage_status": "active"

@@ -82,6 +82,57 @@
       "recommended_runtime_posture": "treat_as_expected_direct_query_surface_not_as_missing_erp_report"
     },
     {
+      "report_name": "Delivery Note List",
+      "evidence_class": "governed_direct_query",
+      "discovery_proves": [
+        "governed_surface_presence",
+        "direct_query_doctype",
+        "direct_query_fields",
+        "direct_query_ordering"
+      ],
+      "discovery_does_not_prove": [
+        "live_erp_report_doc_presence"
+      ],
+      "runtime_semantic_assumptions": [
+        "this governed surface is intentionally direct-query backed rather than ERP-report-doc backed"
+      ],
+      "recommended_runtime_posture": "treat_as_expected_direct_query_surface_not_as_missing_erp_report"
+    },
+    {
+      "report_name": "Sales Order List",
+      "evidence_class": "governed_direct_query",
+      "discovery_proves": [
+        "governed_surface_presence",
+        "direct_query_doctype",
+        "direct_query_fields",
+        "direct_query_ordering"
+      ],
+      "discovery_does_not_prove": [
+        "live_erp_report_doc_presence"
+      ],
+      "runtime_semantic_assumptions": [
+        "this governed surface is intentionally direct-query backed rather than ERP-report-doc backed"
+      ],
+      "recommended_runtime_posture": "treat_as_expected_direct_query_surface_not_as_missing_erp_report"
+    },
+    {
+      "report_name": "Purchase Order List",
+      "evidence_class": "governed_direct_query",
+      "discovery_proves": [
+        "governed_surface_presence",
+        "direct_query_doctype",
+        "direct_query_fields",
+        "direct_query_ordering"
+      ],
+      "discovery_does_not_prove": [
+        "live_erp_report_doc_presence"
+      ],
+      "runtime_semantic_assumptions": [
+        "this governed surface is intentionally direct-query backed rather than ERP-report-doc backed"
+      ],
+      "recommended_runtime_posture": "treat_as_expected_direct_query_surface_not_as_missing_erp_report"
+    },
+    {
       "report_name": "Accounts Receivable",
       "evidence_class": "script_report_governed_hint_only",
       "discovery_proves": [

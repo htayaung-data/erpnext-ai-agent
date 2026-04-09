@@ -559,6 +559,42 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.requested_time_scope, "last_month")
 		self.assertEqual(outcome.target_limit, 0)
 
+	def test_build_followup_resolution_treats_self_contained_transaction_listing_reask_as_new_query(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["filter_refinement"],
+			target_dimension="Status",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User restated a full purchase-order query with an explicit status filter.",
+		)
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-purchase-order-self-contained-reask",
+			message="show me purchase orders with status To Bill",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "Purchase Order List",
+				"artifact_family_id": "transaction_listing",
+				"date_range": {
+					"from_date": "2026-03-01",
+					"to_date": "2026-03-31",
+				},
+				"dimensions": ["Purchase Order", "Transaction Date", "Supplier", "Status"],
+				"returned_schema": ["Purchase Order", "Transaction Date", "Supplier", "Grand Total", "Quantity", "Status"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+		self.assertEqual(outcome.mode, "new_query")
+		self.assertTrue(outcome.self_contained)
+		self.assertFalse(outcome.depends_on_grounded_turn)
+		self.assertEqual(outcome.requested_time_scope, "")
+
 	def test_build_followup_boundary_contract_normalizes_and_serializes(self):
 		contract = build_followup_boundary_contract(
 			request_id="followup-boundary-1",
@@ -5622,6 +5658,52 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(rendered.status, "rendered")
 		answer_text = str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("answer_text") or "")
 		self.assertIn("No matching governed documents were found for the current filters.", answer_text)
+
+	def test_transaction_listing_renderer_preserves_zero_summary_values(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-structured-empty-4",
+			compiler_contract={
+				"request_id": "adapter-structured-empty-4",
+				"capability_id": "purchasing_read",
+				"selected_report": "Purchase Order List",
+				"requested_dimensions": ["Transaction Date", "Supplier"],
+				"requested_metrics": ["Grand Total", "Quantity"],
+				"requested_time_scope": "last_month",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Purchase Order List",
+							"filters": {
+								"company": "Enterprise Co",
+								"from_date": "2026-03-01",
+								"to_date": "2026-03-31",
+							},
+						},
+						"output_obj": {"result": {"data": []}},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="adapter-structured-empty-4",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		blocks = list((rendered.contract.to_payload() if rendered.contract is not None else {}).get("blocks") or [])
+		summary_block = next(
+			(
+				block
+				for block in blocks
+				if isinstance(block, dict) and str(block.get("title") or "").strip() == "Summary"
+			),
+			{},
+		)
+		self.assertIn(["Document Count", "0"], list(summary_block.get("rows") or []))
 
 	def test_direct_query_execution_uses_governed_default_limit(self):
 		report_spec = {

@@ -228,6 +228,53 @@
       "default_validation_profile": "report_grounded_read"
     },
     {
+      "capability_id": "purchase_order_read",
+      "label": "Purchase Order Read",
+      "default_report_name": "Purchase Order List",
+      "report_families": [
+        "purchase_order_list"
+      ],
+      "report_names": [
+        "Purchase Order List"
+      ],
+      "ontology_concepts": [
+        "purchase_order",
+        "supplier"
+      ],
+      "intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "purchase",
+        "order",
+        "document"
+      ],
+      "dimensions": [
+        "Purchase Order",
+        "Supplier",
+        "Transaction Date",
+        "Status",
+        "Schedule Date"
+      ],
+      "metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "fresh_query_defaults": {
+        "transaction_listing": {
+          "default_report_name": "Purchase Order List",
+          "default_dimensions": ["Purchase Order", "Supplier", "Status"],
+          "default_metrics": ["Grand Total", "Quantity"],
+          "default_time_scope": "",
+          "metric_overrides_by_canonical_key": {
+            "grand_total": ["Grand Total"],
+            "quantity": ["Quantity"]
+          }
+        }
+      },
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
       "capability_id": "stock_read",
       "label": "Stock Read",
       "default_report_name": "Warehouse Wise Stock Balance",

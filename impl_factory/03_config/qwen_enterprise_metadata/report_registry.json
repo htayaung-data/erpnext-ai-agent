@@ -340,6 +340,123 @@
       "chartable_fields": []
     },
     {
+      "report_name": "Purchase Order List",
+      "module": "Buying",
+      "family": "purchase_order_list",
+      "capability_ids": [
+        "purchase_order_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Purchase Order",
+        "fields": [
+          "name",
+          "transaction_date",
+          "supplier",
+          "status",
+          "company",
+          "grand_total",
+          "total_qty",
+          "per_received",
+          "per_billed",
+          "schedule_date",
+          "docstatus"
+        ],
+        "order_by": "transaction_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "filterable_fields": [
+          "status"
+        ],
+        "filter_value_aliases": {
+          "status": [
+            {
+              "value": "To Receive",
+              "aliases": [
+                "to receive",
+                "receive pending",
+                "pending receipt",
+                "pending receiving"
+              ]
+            },
+            {
+              "value": "To Bill",
+              "aliases": [
+                "to bill",
+                "bill pending",
+                "pending billing"
+              ]
+            },
+            {
+              "value": "To Receive and Bill",
+              "aliases": [
+                "to receive and bill",
+                "to bill and receive",
+                "receive and bill",
+                "bill and receive"
+              ]
+            },
+            {
+              "value": "Completed",
+              "aliases": [
+                "completed",
+                "complete",
+                "fully completed"
+              ]
+            },
+            {
+              "value": "Closed",
+              "aliases": [
+                "closed",
+                "close"
+              ]
+            }
+          ]
+        },
+        "date_field": "transaction_date",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "purchase",
+        "order",
+        "transaction",
+        "document"
+      ],
+      "supported_dimensions": [
+        "Purchase Order",
+        "Supplier",
+        "Transaction Date",
+        "Status",
+        "Schedule Date"
+      ],
+      "supported_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Stock Balance",
       "module": "Stock",
       "family": "stock_balance",

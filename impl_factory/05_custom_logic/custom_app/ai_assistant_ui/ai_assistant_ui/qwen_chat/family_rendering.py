@@ -24,7 +24,9 @@ def _clean_list(values: Any) -> List[str]:
 
 
 def _clean_text(value: Any) -> str:
-	return str(value or "").strip()
+	if value is None:
+		return ""
+	return str(value).strip()
 
 
 def _float_value(value: Any) -> float:
@@ -151,8 +153,21 @@ def _requested_sort_direction(
 def _requested_columns(dimensions: Dict[str, Any], response_overrides: Dict[str, Any] | None) -> List[str]:
 	override_values = _clean_list((response_overrides or {}).get("requested_columns"))
 	if override_values:
-		return override_values
-	return _clean_list(dimensions.get("requested_columns"))
+		values = override_values
+	else:
+		values = _clean_list(dimensions.get("requested_columns"))
+	normalized: List[str] = []
+	for value in values:
+		key = _clean_text(value).lower().replace(" ", "_")
+		if key in {"transaction_date", "posting_date"}:
+			normalized.append("posting_date")
+		elif key in {"customer", "supplier", "party", "party_name"}:
+			normalized.append("party_name")
+		elif key in {"status", "document_status"}:
+			normalized.append("status")
+		else:
+			normalized.append(value)
+	return list(dict.fromkeys([value for value in normalized if _clean_text(value)]))
 
 
 def _preferred_metric_key(
@@ -648,10 +663,12 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 	party_field = _clean_text(dimensions.get("party_field")) or ("customer" if any(_clean_text(row.get("customer")) for row in document_rows) else "party_name")
 	party_label = _clean_text(dimensions.get("party_label")) or "Party"
 	date_label = _clean_text(dimensions.get("date_label")) or "Posting Date"
+	has_party_column = any(_clean_text(row.get(party_field) or row.get("party_name")) for row in document_rows)
 	column_map = {
 		"document_name": document_label,
 		"posting_date": date_label,
 		"customer": party_label,
+		"supplier": party_label,
 		"party_name": party_label,
 		"grand_total": "Grand Total",
 		"quantity": "Quantity",
@@ -659,8 +676,8 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 		"status": "Status",
 	}
 	available_columns = ["document_name", "posting_date"]
-	if any(_clean_text(row.get(party_field) or row.get("party_name")) for row in document_rows):
-		available_columns.append(party_field if party_field in {"customer", "party_name"} else "party_name")
+	if has_party_column:
+		available_columns.append("party_name")
 	if any(row.get("quantity") not in (None, "", 0) for row in document_rows):
 		available_columns.append("quantity")
 	if any(row.get("grand_total") not in (None, "", 0) for row in document_rows):
@@ -671,8 +688,8 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 	selected_columns = requested_columns or available_columns
 	selected_columns = [value for value in selected_columns if value in column_map]
 	base_columns = ["document_name", "posting_date"]
-	if party_field in {"customer", "party_name"}:
-		base_columns.append(party_field)
+	if has_party_column:
+		base_columns.append("party_name")
 	for key in reversed(base_columns):
 		if key not in selected_columns:
 			selected_columns.insert(0, key)

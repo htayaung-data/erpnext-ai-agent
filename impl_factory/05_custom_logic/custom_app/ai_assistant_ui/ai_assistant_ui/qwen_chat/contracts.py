@@ -16,7 +16,10 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_default_report_name,
 	capability_report_names,
 	capability_semantic_tags,
+	governed_self_contained_business_terms,
 	get_frontdoor_intent_spec,
+	ontology_detect_concepts,
+	ontology_self_contained_prefixes,
 	report_capability_ids,
 	report_family_report_names,
 	report_semantic_tags,
@@ -74,6 +77,30 @@ def detect_explicit_analysis_request(text: str) -> bool:
 			value,
 		)
 	)
+
+
+def _message_looks_like_self_contained_governed_business_query(
+	*,
+	message: str,
+	language: str = "en",
+) -> bool:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return False
+	prefixes = [
+		str(value or "").strip().lower()
+		for value in ontology_self_contained_prefixes(language)
+		if str(value or "").strip()
+	]
+	if prefixes and not any(text.startswith(prefix) for prefix in prefixes):
+		return False
+	if ontology_detect_concepts(text, language=language, include_extended=False):
+		return True
+	for term in governed_self_contained_business_terms(language):
+		clean = str(term or "").strip().lower()
+		if clean and re.search(rf"(?<!\\w){re.escape(clean)}(?!\\w)", text):
+			return True
+	return False
 
 @dataclass(frozen=True)
 class InteractionContract:
@@ -3678,6 +3705,7 @@ def build_followup_resolution(
 	allow_heuristic_fallback: bool = True,
 	degraded_reason: str = "",
 ) -> FollowUpResolution:
+	message_language = detect_language(message)
 	if semantic_intent is not None:
 		requested_modes = [
 			"column_refinement" if str(mode or "").strip() == "column_projection" else str(mode or "").strip()
@@ -3715,6 +3743,44 @@ def build_followup_resolution(
 	)
 	if requested_time_scope and not original_requested_time_scope and target_limit > 0 and not _message_has_structural_followup_limit(message):
 		target_limit = 0
+	non_presentation_requested_modes = {
+		str(mode or "").strip()
+		for mode in (requested_modes or [])
+		if str(mode or "").strip() and str(mode or "").strip() not in {"presentation_transform", "table_presentation", "bullet_presentation"}
+	}
+	explicit_query_shape = bool(
+		target_capability_id
+		or requested_time_scope
+		or target_metric
+		or requested_columns
+		or target_dimension
+		or target_limit
+		or sort_direction
+		or non_presentation_requested_modes
+	)
+	grounded_turn_payload = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	grounded_date_range = grounded_turn_payload.get("date_range") if isinstance(grounded_turn_payload.get("date_range"), dict) else {}
+	grounded_filters = grounded_turn_payload.get("filters") if isinstance(grounded_turn_payload.get("filters"), dict) else {}
+	inherited_date_context_present = bool(
+		str(grounded_date_range.get("from_date") or "").strip()
+		or str(grounded_date_range.get("to_date") or "").strip()
+		or str(grounded_date_range.get("report_date") or "").strip()
+		or str(grounded_filters.get("from_date") or "").strip()
+		or str(grounded_filters.get("to_date") or "").strip()
+		or str(grounded_filters.get("report_date") or "").strip()
+	)
+	if (
+		latest_grounded_turn_available
+		and explicit_query_shape
+		and inherited_date_context_present
+		and not requested_time_scope
+		and not self_contained
+		and _message_looks_like_self_contained_governed_business_query(
+			message=message,
+			language=message_language,
+		)
+	):
+		self_contained = True
 	presentation_only_request = bool(set(requested_modes).intersection({"presentation_transform", "table_presentation", "bullet_presentation"})) and set(
 		str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()
 	).issubset({"presentation_transform", "table_presentation", "bullet_presentation"})
@@ -3786,6 +3852,24 @@ def build_followup_resolution(
 			and bool(requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
 		)
 	)
+	if latest_grounded_turn_available and self_contained and explicit_query_shape:
+		return build_followup_resolution_contract(
+			request_id=request_id,
+			mode="new_query",
+			requested_modes=requested_modes,
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=False,
+			self_contained=True,
+			latest_grounded_turn_available=True,
+			reason=semantic_reason or "The request restates a full governed ERP query and should not inherit the prior grounded date context implicitly.",
+		)
 
 	if latest_grounded_turn_available and local_transform_only and not target_capability_id and not requested_time_scope and not self_contained:
 		return build_followup_resolution_contract(

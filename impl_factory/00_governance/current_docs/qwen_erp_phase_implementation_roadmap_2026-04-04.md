@@ -349,6 +349,106 @@ Deliver:
 4. bounded reasoning over grounded procurement artifacts
 5. regression and live verification
 
+Current approved preflight:
+
+1. do not open a `1.2.5` stabilization slice by default
+2. use a design-first readiness step instead:
+   - [qwen_erp_phase1_3_purchase_order_tracking_design_2026-04-08.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_3_purchase_order_tracking_design_2026-04-08.md)
+3. live ERP evidence confirms the first bounded chapter is viable:
+   - `Purchase Order` count is `8`
+   - all current live rows are submitted
+   - current live statuses include `To Bill` and `To Receive and Bill`
+   - the order authority fields already exist for the intended first chapter:
+     - `status`
+     - `docstatus`
+     - `transaction_date`
+     - `schedule_date`
+     - `per_received`
+     - `per_billed`
+4. the next approved implementation order is:
+   - `1.3A` submitted purchase-order listing baseline
+   - `1.3B` status normalization and date-scope enrichment
+   - `1.3C` purchase-order detail drilldown parity
+   - `1.3D` order-status follow-up from detail
+   - `1.3E` optional draft / receipt extension only if justified
+   - `1.3F` closure
+5. `1.3A` Purchase Order listing baseline is now implemented at the governed contract level:
+   - capability `purchase_order_read`
+   - report `Purchase Order List`
+   - `transaction_listing` family admission for submitted purchase orders
+6. shared-core reuse stayed bounded:
+   - no new lane
+   - no purchase-order-specific routing patch
+   - no status-alias widening yet
+7. deterministic validation is green:
+   - guardrails
+   - [test_purchase_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_purchase_order_listing_contracts.py)
+   - `test_semantic_financial_resolution`
+8. bounded live/site smoke is green:
+   - `run_phase1_3_purchase_order_listing_smoke`
+9. browser/UAT exposed a real shared follow-up seam:
+   - a full re-ask like `show me purchase orders with status To Bill` could inherit the prior March date scope implicitly
+10. that seam is now corrected generically:
+   - self-contained governed re-asks break out of prior date context before continuation backfill
+   - zero-row transaction summaries now preserve `Document Count = 0`
+11. `1.3A` is now closure-ready
+12. `1.3B` is now partially implemented at the governed contract level:
+   - `Purchase Order List` now owns governed status aliases
+   - the shared fresh-query filter-alias bridge no longer depends on prior dimension-key detection
+13. bounded live/site regression coverage is green:
+   - `run_phase1_3_purchase_order_status_scope_reset_smoke`
+14. shared transaction-listing projection is now corrected for status-filtered purchase-order lists:
+   - `Supplier` is preserved as the party column
+   - `Status` is preserved as the filtered status column
+15. browser/UAT is now green for `1.3B`:
+   - month-scoped zero-row listing stays bounded to March
+   - full re-ask status listing correctly breaks out of March
+   - filtered purchase-order listing now preserves both `Supplier` and `Status`
+16. `1.3C` Purchase Order detail drilldown parity is now implemented at the governed contract level:
+   - explicit `PUR-ORD-...` identifiers now resolve through the shared `entity_detail` path
+   - detail authority stays on purchase-order fields and derived order-level status only
+   - Purchase Order detail now uses governed local narration for this slice after AI narrative overreach was observed in browser/UAT
+17. deterministic and site-backed validation are green for `1.3C`:
+   - `test_entity_detail_contracts`
+   - `test_purchase_order_listing_contracts`
+   - `run_phase1_3_purchase_order_detail_smoke`
+18. browser/UAT is now green for `1.3C`:
+   - explicit `PUR-ORD-...` drilldowns stay on single-document purchase-order detail
+   - detail remains bounded to purchase-order authority only
+   - unsupported receipt-event and payable-style claims are no longer present
+19. `1.3D` Purchase Order status follow-up is now implemented at the governed contract level:
+   - the follow-up stays on the existing grounded artifact evidence path, not a new lane
+   - governed aliases now cover:
+     - received progress
+     - billed progress
+     - planned receipt date
+   - supported follow-ups now answer from Purchase Order authority:
+     - `is it received?`
+     - `how much is received?`
+     - `is it billed?`
+     - `how much is billed?`
+     - `when is receipt due?`
+20. unsupported widening now fails closed:
+   - `when was it received?` requires downstream purchase-receipt evidence and now stops at the governed boundary
+21. deterministic and site-backed validation are green for `1.3D`:
+   - `test_entity_detail_contracts`
+   - `test_purchase_order_listing_contracts`
+   - `test_semantic_financial_resolution`
+   - `run_phase1_3_purchase_order_status_followup_smoke`
+22. browser/UAT is now green for `1.3D`:
+   - receipt-progress follow-up stays anchored to the current purchase-order detail artifact
+   - billed-progress and planned-receipt-date follow-ups answer from purchase-order authority only
+   - actual receipt-event date still stops safely at the governed boundary
+23. `1.3C` and `1.3D` are now promoted into [test_post_contract_release_gates.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_post_contract_release_gates.py)
+24. the site-backed release-gate module is green after that promotion
+25. Phase `1.3` is now checkpoint-complete:
+   - `1.3A` listing baseline is browser-valid
+   - `1.3B` status normalization and date-scope enrichment are browser-valid
+   - `1.3C` detail drilldown parity is browser-valid
+   - `1.3D` order-status follow-up is browser-valid
+   - `1.3E` remained intentionally closed because no justified draft/receipt-widening need appeared
+   - the `1.3` stop rule is now met without keyword routing or single-case purchase-order fixes
+
 ### Mini-phase 1.4: Customer Credit Status
 
 Deliver:

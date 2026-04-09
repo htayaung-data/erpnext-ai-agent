@@ -122,6 +122,51 @@ As of this checkpoint:
    - `1.2D` order-status follow-up is browser-valid
    - `1.2C` and `1.2D` are now promoted into the release-gate module
    - the site-backed release-gate module remains green after that promotion
+29. Phase `1.3A` Purchase Order listing baseline is now implemented and locally/site validated:
+   - capability `purchase_order_read` and report `Purchase Order List` now exist as governed direct-query surfaces
+   - `transaction_listing` now admits submitted `Purchase Order` rows without a new family or lane
+   - listing-view metadata now explicitly admits `purchase_order`
+   - targeted `Purchase Order` listing coverage now lives in [test_purchase_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_purchase_order_listing_contracts.py)
+   - a bounded live/site smoke is green via `run_phase1_3_purchase_order_listing_smoke`
+   - browser/UAT uncovered and closed a shared continuation seam where a full re-ask could inherit the prior date window implicitly
+   - `1.3A` is now closure-ready
+30. Phase `1.3B` has now started at the governed metadata/shared-runtime seam:
+   - `Purchase Order List` now owns governed status aliases
+   - the shared fresh-query filter-alias bridge now grounds scalar status values without requiring prior dimension-key detection
+   - the exact two-turn regression path is green via `run_phase1_3_purchase_order_status_scope_reset_smoke`
+   - shared transaction-listing projection now preserves `Supplier` and `Status` on status-filtered Purchase Order lists
+   - browser/UAT is now green for the scoped month-boundary and status-filtered Purchase Order listing prompts
+31. Phase `1.3C` Purchase Order detail drilldown parity is now implemented and locally/site validated:
+   - explicit `PUR-ORD-...` identifiers now resolve through the shared governed `entity_detail` path
+   - Purchase Order detail stays on order authority only and does not inject downstream receipt-proof language
+   - the current `1.3C` detail answer uses governed local narration for this slice because free AI narration leaked unsupported receipt-event and payable-style implications
+   - targeted detail coverage is now included in [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+   - a bounded live/site smoke is green via `run_phase1_3_purchase_order_detail_smoke`
+   - browser/UAT is now green for `1.3C`
+32. Phase `1.3D` Purchase Order status follow-up is now implemented and locally/site validated:
+   - the follow-up stays on the existing grounded artifact evidence path, not a new lane
+   - governed semantic aliases now cover:
+     - `receipt_progress_percent`
+     - `billing_progress_percent`
+     - `planned_receipt_date`
+   - supported follow-ups now answer from Purchase Order authority:
+     - `is it received?`
+     - `how much is received?`
+     - `is it billed?`
+     - `how much is billed?`
+     - `when is receipt due?`
+   - unsupported widening like actual receipt-event date now stops at the governed boundary and asks for downstream purchase-receipt evidence
+   - targeted follow-up coverage is now included in [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+   - a bounded live/site smoke is green via `run_phase1_3_purchase_order_status_followup_smoke`
+   - browser/UAT is now green for `1.3D`
+33. Phase `1.3` is now checkpoint-complete:
+   - `1.3A` listing baseline is browser-valid
+   - `1.3B` status normalization and date-scope enrichment are browser-valid
+   - `1.3C` detail drilldown parity is browser-valid
+   - `1.3D` order-status follow-up is browser-valid
+   - `1.3C` and `1.3D` are now promoted into the site release-gate module
+   - the site-backed release-gate module is green after that promotion
+   - `1.3E` remained intentionally closed because no justified widening need appeared
 
 ## 2. Release-Gate Command
 
@@ -220,7 +265,7 @@ Protected smoke-support files should not inline shared governed setup prompts ag
 
 Preferred next work after this checkpoint:
 
-1. move to `1.3` Purchase Order Tracking from the now-closed `1.2` Sales Order Status checkpoint
+1. finish browser/UAT for `1.3B` Purchase Order status normalization before widening into `1.3C`
 2. keep future stabilization slices bounded to shared-core risk, not broad architecture churn
 3. keep the `1.1D` invoice-to-delivery proof slice narrow and evidence-based if it is later expanded
 4. verification burn-down only when a real red appears

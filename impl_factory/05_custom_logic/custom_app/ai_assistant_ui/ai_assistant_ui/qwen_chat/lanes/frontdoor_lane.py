@@ -57,10 +57,25 @@ def evaluate_frontdoor_lane(
 	grounded_context_available: bool,
 	latest_recovery_contract_available: bool,
 	pre_frontdoor_reasoning_semantic_result,
+	post_clarification_stop_acknowledgement: bool = False,
 ) -> Tuple[Any, Any, Any, str]:
 	frontdoor_render_result = None
 	frontdoor_answer = ""
-	if (
+	if post_clarification_stop_acknowledgement:
+		frontdoor_semantic_result = SemanticFrontDoorResult(
+			status="accepted",
+			intent=SemanticFrontDoorIntent(
+				intent_class="acknowledgement",
+				confidence=1.0,
+				reason=(
+					"The immediately preceding clarification turn ended with fallback_stop, "
+					"so a short acknowledgement should remain in the front-door lane until "
+					"the user starts a new substantive ERP request."
+				),
+			),
+			confidence_threshold=1.0,
+		)
+	elif (
 		pre_frontdoor_reasoning_semantic_result is not None
 		and str(pre_frontdoor_reasoning_semantic_result.status or "").strip() == "accepted"
 		and getattr(pre_frontdoor_reasoning_semantic_result, "intent", None) is not None
@@ -105,7 +120,9 @@ def evaluate_frontdoor_lane(
 		semantic_result=frontdoor_semantic_result,
 		grounded_context_available=grounded_context_available,
 	)
-	if bool(getattr(frontdoor_contract, "handle_in_front_door", False)):
+	if post_clarification_stop_acknowledgement:
+		frontdoor_answer = _front_door_answer_text(frontdoor_contract)
+	elif bool(getattr(frontdoor_contract, "handle_in_front_door", False)):
 		intent_class = str(getattr(frontdoor_contract, "intent_class", "") or "").strip()
 		if intent_class == "session_flow" and not latest_recovery_contract_available:
 			frontdoor_answer = _front_door_answer_text(frontdoor_contract)

@@ -51,11 +51,11 @@ def _markdown_table(columns: List[str], rows: List[List[str]]) -> str:
 	return "\n".join(lines).strip()
 
 
-def _render_blocks_markdown(rendered_payload: Dict[str, Any]) -> str:
+def _render_blocks_markdown(rendered_payload: Dict[str, Any], *, include_title: bool = True) -> str:
 	blocks = rendered_payload.get("blocks") if isinstance(rendered_payload.get("blocks"), list) else []
 	lines: List[str] = []
 	title = _clean_text(rendered_payload.get("title"))
-	if title:
+	if include_title and title:
 		lines.append(f"## {title}")
 	for block in blocks:
 		if not isinstance(block, dict):
@@ -80,6 +80,46 @@ def _render_blocks_markdown(rendered_payload: Dict[str, Any]) -> str:
 				if value:
 					lines.append(f"- {value}")
 	return "\n\n".join(part for part in lines if part).strip()
+
+
+def _entity_detail_narrative_validation_payload(entity_type: str) -> Dict[str, Any]:
+	clean_type = _clean_text(entity_type).lower()
+	if clean_type == "purchase_order":
+		return {
+			"authority_boundary": "purchase_order_authority_only",
+			"forbidden_claims": [
+				"actual receipt event date",
+				"planned versus actual receipt alignment",
+				"purchase receipt proof",
+				"downstream receipt-document inference",
+			],
+		}
+	return {}
+
+
+def _entity_detail_narrative_is_safe(entity_type: str, answer_text: str) -> bool:
+	clean_type = _clean_text(entity_type).lower()
+	if clean_type != "purchase_order":
+		return True
+	text = _normalize_text(answer_text)
+	forbidden_phrases = (
+		"planned vs. actual receipt",
+		"planned vs actual receipt",
+		"actual receipt date",
+		"deadline met",
+		"against the planned receipt date",
+		"met the planned receipt date",
+		"purchase receipt",
+		"physical receipt",
+		"supplier invoice",
+		"accounts payable",
+		"invoice is pending",
+	)
+	if any(phrase in text for phrase in forbidden_phrases):
+		return False
+	if re.search(r"received\s+as\s+of\s+\d{4}-\d{2}-\d{2}", text):
+		return False
+	return True
 
 
 def _identifier_candidates(message: str) -> List[str]:
@@ -129,6 +169,8 @@ def _resolve_explicit_identifier(message: str) -> Optional[Dict[str, Any]]:
 			return {"entity_type": "purchase_invoice", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		if frappe.db.exists("Sales Order", candidate):
 			return {"entity_type": "sales_order", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
+		if frappe.db.exists("Purchase Order", candidate):
+			return {"entity_type": "purchase_order", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		if frappe.db.exists("Delivery Note", candidate):
 			return {"entity_type": "delivery_note", "entity_key": candidate, "entity_label": candidate, "source": "explicit_identifier"}
 		item_code, item_name = _resolve_item_name(candidate)
@@ -758,6 +800,157 @@ def _sales_order_detail(entity_key: str) -> Dict[str, Any]:
 	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
 
 
+def _purchase_order_receipt_status(percent_received: Any) -> str:
+	received = _numeric(percent_received)
+	if received >= 99.995:
+		return "Fully Received"
+	if received > 0:
+		return "Partly Received"
+	return "Not Received"
+
+
+def _purchase_order_billing_status(percent_billed: Any) -> str:
+	billed = _numeric(percent_billed)
+	if billed >= 99.995:
+		return "Fully Billed"
+	if billed > 0:
+		return "Partly Billed"
+	return "Not Billed"
+
+
+def _purchase_order_detail(entity_key: str) -> Dict[str, Any]:
+	doc = frappe.get_doc("Purchase Order", entity_key)
+	per_received = _numeric(getattr(doc, "per_received", 0))
+	per_billed = _numeric(getattr(doc, "per_billed", 0))
+	receipt_status = _purchase_order_receipt_status(per_received)
+	billing_status = _purchase_order_billing_status(per_billed)
+	item_rows = [
+		[
+			_clean_text(row.item_code),
+			_clean_text(row.item_name),
+			_clean_text(row.qty),
+			_clean_text(getattr(row, "received_qty", "")),
+			_money(getattr(row, "billed_amt", 0)),
+			_money(row.net_amount or row.amount or 0),
+		]
+		for row in (doc.get("items") or [])[:10]
+	]
+	summary = [
+		("Purchase Order", doc.name),
+		("Transaction Date", _iso_date(getattr(doc, "transaction_date", ""))),
+		("Supplier", _clean_text(doc.supplier)),
+		("Status", _clean_text(doc.status)),
+		("Receipt Status", receipt_status),
+		("Billing Status", billing_status),
+		("Planned Receipt Date", _iso_date(getattr(doc, "schedule_date", ""))),
+		("Total Quantity", _clean_text(getattr(doc, "total_qty", ""))),
+		("Grand Total (MMK)", _money(doc.grand_total)),
+		("Received (%)", _money(per_received)),
+		("Billed (%)", _money(per_billed)),
+		("Company", _clean_text(doc.company)),
+	]
+	bullets = []
+	if _clean_text(doc.status):
+		bullets.append(f"Current purchase order status is {_clean_text(doc.status)}.")
+	bullets.append(f"Receipt progress is {_money(per_received)}% ({receipt_status}).")
+	bullets.append(f"Billing progress is {_money(per_billed)}% ({billing_status}).")
+	if _clean_text(getattr(doc, "schedule_date", "")):
+		bullets.append(f"Planned receipt date is {_iso_date(getattr(doc, 'schedule_date', ''))}.")
+	rendered = {
+		"type": "qwen_entity_detail_rendered_response",
+		"request_id": "",
+		"family_id": "entity_detail",
+		"title": f"Purchase Order {doc.name}",
+		"source_reports": ["Purchase Order"],
+		"blocks": [
+			_summary_block("Order Summary", summary),
+			_bullet_block("Key Facts", bullets),
+			_data_block(
+				"Items",
+				["Item Code", "Item Name", "Qty", "Received Qty", "Billed Amount (MMK)", "Amount (MMK)"],
+				item_rows,
+			),
+		],
+	}
+	artifact = {
+		"type": "qwen_entity_detail_artifact",
+		"artifact_type": "entity_detail_artifact",
+		"family_id": "entity_detail",
+		"source_reports": ["Purchase Order"],
+		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
+		"dimensions": {
+			"entity_type": "purchase_order",
+			"entity_key": doc.name,
+			"entity_label": doc.name,
+			"primary_metric_key": "grand_total",
+			"primary_metric_label": "Grand Total",
+			"source_grain": "document_detail",
+		},
+		"metrics": {
+			"grand_total": _numeric(doc.grand_total),
+			"quantity": _numeric(getattr(doc, "total_qty", 0)),
+			"per_received": per_received,
+			"per_billed": per_billed,
+			"item_count": len(item_rows),
+		},
+		"sections": {
+			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+			"document_rows": [
+				{
+					"document_name": doc.name,
+					"transaction_date": _iso_date(getattr(doc, "transaction_date", "")),
+					"supplier": _clean_text(doc.supplier),
+					"status": _clean_text(doc.status),
+					"receipt_status": receipt_status,
+					"billing_status": billing_status,
+					"schedule_date": _iso_date(getattr(doc, "schedule_date", "")),
+					"grand_total": _numeric(doc.grand_total),
+					"quantity": _numeric(getattr(doc, "total_qty", 0)),
+					"per_received": per_received,
+					"per_billed": per_billed,
+				}
+			],
+			"item_rows": [
+				{
+					"item_code": _clean_text(row.item_code),
+					"item_name": _clean_text(row.item_name),
+					"qty": _numeric(row.qty),
+					"received_qty": _numeric(getattr(row, "received_qty", 0)),
+					"billed_amount": _numeric(getattr(row, "billed_amt", 0)),
+					"amount": _numeric(row.net_amount or row.amount or 0),
+					"schedule_date": _iso_date(getattr(row, "schedule_date", "")),
+				}
+				for row in (doc.get("items") or [])[:25]
+			],
+		},
+	}
+	intro = (
+		f"{doc.name} is a purchase order from {_clean_text(doc.supplier)} dated "
+		f"{_iso_date(getattr(doc, 'transaction_date', ''))}, with a grand total of "
+		f"{_money(doc.grand_total)} MMK across {_money(getattr(doc, 'total_qty', 0))} units."
+	)
+	status_sentence = (
+		f"It is currently {_clean_text(doc.status)}, with receipt progress at {_money(per_received)}% "
+		f"({receipt_status}) and billing progress at {_money(per_billed)}% ({billing_status})."
+	)
+	if _clean_text(getattr(doc, "schedule_date", "")):
+		status_sentence += f" The planned receipt date on the order is {_iso_date(getattr(doc, 'schedule_date', ''))}."
+	preferred_answer_text = (
+		intro
+		+ "\n\n"
+		+ status_sentence
+		+ "\n\n"
+		+ _render_blocks_markdown(rendered, include_title=False)
+	).strip()
+	return {
+		"artifact": artifact,
+		"rendered": rendered,
+		"company": _clean_text(doc.company),
+		"entity_label": doc.name,
+		"preferred_answer_text": preferred_answer_text,
+	}
+
+
 def _aggregate_invoice_stats(doctype: str, party_field: str, party_value: str, company: str) -> Dict[str, Any]:
 	conditions = [f"{party_field}=%s", "docstatus=1"]
 	values: List[Any] = [party_value]
@@ -1075,6 +1268,8 @@ def execute_entity_drilldown(
 		detail = _purchase_invoice_detail(entity_key)
 	elif entity_type == "sales_order":
 		detail = _sales_order_detail(entity_key)
+	elif entity_type == "purchase_order":
+		detail = _purchase_order_detail(entity_key)
 	elif entity_type == "delivery_note":
 		detail = _delivery_note_detail(entity_key)
 	elif entity_type == "customer":
@@ -1092,12 +1287,41 @@ def execute_entity_drilldown(
 	rendered_payload["request_id"] = request_id
 	entity_label = _clean_text(detail.get("entity_label")) or entity_key
 	company = _clean_text(detail.get("company")) or company
+	preferred_answer_text = _clean_text(detail.get("preferred_answer_text"))
+	if preferred_answer_text:
+		answer_text = preferred_answer_text
+		narrative_payload = {}
+		narrative_contract_payload = {}
+		if entity_label and _normalize_text(entity_label) not in _normalize_text(answer_text):
+			prefix = f"Here are the details for {entity_label}."
+			answer_text = f"{prefix}\n\n{answer_text}".strip() if answer_text else prefix
+		return {
+			"ok": bool(answer_text),
+			"answer_text": answer_text,
+			"artifact_payload": artifact_payload,
+			"rendered_response_payload": rendered_payload,
+			"narrative_payload": narrative_payload,
+			"narrative_contract_payload": narrative_contract_payload,
+			"entity_reference": {
+				"entity_type": entity_type,
+				"entity_key": entity_key,
+				"entity_label": entity_label,
+			},
+			"grounded_turn_payload": _entity_grounded_turn_payload(
+				request_id=request_id,
+				entity_type=entity_type,
+				entity_key=entity_key,
+				entity_label=entity_label,
+				company=company,
+				artifact_payload=artifact_payload,
+			),
+		}
 	artifact_context = build_artifact_narrative_context(
 		request_id=request_id,
 		artifact_payload=artifact_payload,
 		rendered_response_payload=rendered_payload,
 		response_policy=response_policy,
-		validation_payload={},
+		validation_payload=_entity_detail_narrative_validation_payload(entity_type),
 	)
 	narrative_payload = narrate_governed_artifact(
 		session_id=session_id,
@@ -1113,7 +1337,12 @@ def execute_entity_drilldown(
 		artifact_context=artifact_context,
 		runtime_payload=narrative_payload,
 	)
-	answer_text = _clean_text((narrative_contract.to_payload() if narrative_contract else {}).get("answer_text"))
+	narrative_contract_payload = narrative_contract.to_payload() if narrative_contract is not None else {}
+	answer_text = _clean_text(narrative_contract_payload.get("answer_text"))
+	if answer_text and not _entity_detail_narrative_is_safe(entity_type, answer_text):
+		answer_text = ""
+		narrative_payload = {}
+		narrative_contract_payload = {}
 	if not answer_text:
 		answer_text = _render_blocks_markdown(rendered_payload)
 	if entity_label and _normalize_text(entity_label) not in _normalize_text(answer_text):
@@ -1125,7 +1354,7 @@ def execute_entity_drilldown(
 		"artifact_payload": artifact_payload,
 		"rendered_response_payload": rendered_payload,
 		"narrative_payload": narrative_payload,
-		"narrative_contract_payload": narrative_contract.to_payload() if narrative_contract is not None else {},
+		"narrative_contract_payload": narrative_contract_payload,
 		"entity_reference": {
 			"entity_type": entity_type,
 			"entity_key": entity_key,

@@ -41,6 +41,18 @@
       ]
     },
     {
+      "fixture_id": "fresh_query_override_to_ar_ap_health",
+      "fixture_family": "post_contract_live_smoke",
+      "initial_message": "Top 7 customers by quantity sold last month",
+      "replacement_message": "forget that, analyze AR and AP and evaluate business health",
+      "reasoning_message": "what should management do next",
+      "expected_initial_source_name": "Sales Analytics",
+      "expected_replacement_source_names": [
+        "Accounts Receivable Summary",
+        "Accounts Payable Summary"
+      ]
+    },
+    {
       "fixture_id": "product_recovery_flow",
       "fixture_family": "post_contract_live_smoke",
       "fixture_kind": "recovery_flow",

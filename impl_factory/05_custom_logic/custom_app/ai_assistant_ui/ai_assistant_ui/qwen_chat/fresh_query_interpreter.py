@@ -975,8 +975,6 @@ def _augment_direct_query_scalar_filters_from_message(
 		capability_id=capability_id,
 		dimension_or_metric="dimension",
 	)
-	if not dimension_keys:
-		return interpretation
 	updated_filters = dict(existing_filters)
 	for canonical_key in dimension_keys:
 		mapped_fields = [
