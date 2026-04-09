@@ -110,6 +110,7 @@ from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_la
 from ai_assistant_ui.qwen_chat.scope_support import (
 	reasoning_preempted_by_followup_refinement,
 	reasoning_scope_suppression_allowed,
+	reasoning_supersedes_contradictory_presentation_followup,
 )
 from ai_assistant_ui.qwen_chat.service import (
 	_message_looks_like_self_contained_governed_business_query,
@@ -117,6 +118,50 @@ from ai_assistant_ui.qwen_chat.service import (
 
 
 class TestSemanticFinancialResolution(unittest.TestCase):
+	def test_reasoning_supersedes_contradictory_presentation_only_followup(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["presentation_transform"],
+			target_dimension="Customer",
+			target_limit=10,
+			sort_direction="desc",
+			target_metric="outstanding",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+		)
+		reasoning_result = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="explanation"),
+		)
+		self.assertTrue(
+			reasoning_supersedes_contradictory_presentation_followup(
+				semantic_intent=semantic_intent,
+				reasoning_semantic_result=reasoning_result,
+			)
+		)
+
+	def test_reasoning_does_not_supersede_legitimate_structured_followup(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["dimension_breakdown"],
+			target_dimension="Customer",
+			target_limit=10,
+			sort_direction="desc",
+			target_metric="outstanding",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+		)
+		reasoning_result = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="explanation"),
+		)
+		self.assertFalse(
+			reasoning_supersedes_contradictory_presentation_followup(
+				semantic_intent=semantic_intent,
+				reasoning_semantic_result=reasoning_result,
+			)
+		)
+
 	def test_recovery_semantic_bypass_detects_self_contained_governed_business_query(self):
 		self.assertTrue(
 			_message_looks_like_self_contained_governed_business_query(
@@ -1222,6 +1267,26 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				types.SimpleNamespace(
 					mode="capability_requery",
 					requested_modes=["table_presentation"],
+				)
+			)
+		)
+
+	def test_reasoning_preempted_by_followup_refinement_for_self_contained_new_query(self):
+		self.assertTrue(
+			reasoning_preempted_by_followup_refinement(
+				types.SimpleNamespace(
+					mode="new_query",
+					self_contained=True,
+					requested_modes=[],
+				)
+			)
+		)
+		self.assertFalse(
+			reasoning_preempted_by_followup_refinement(
+				types.SimpleNamespace(
+					mode="new_query",
+					self_contained=False,
+					requested_modes=[],
 				)
 			)
 		)
@@ -5465,6 +5530,63 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(validation.status, "pass")
 		self.assertNotIn(
 			"Missing normalized transaction metrics: quantity",
+			list(validation.errors),
+		)
+
+	def test_transaction_listing_family_validation_accepts_outstanding_total_canonical_request(self):
+		compiler_contract = {
+			"request_id": "adapter-structured-2e",
+			"capability_id": "sales_read",
+			"selected_report": "Sales Invoice List",
+			"requested_dimensions": ["Posting Date", "Customer"],
+			"requested_metrics": ["Outstanding Amount"],
+			"requested_time_scope": "",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Sales Invoice List",
+						"filters": {"company": "Enterprise Co"},
+					},
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"name": "SINV-0001",
+									"posting_date": "2026-03-05",
+									"customer": "Alpha",
+									"grand_total": 1200,
+									"outstanding_amount": 400,
+									"status": "Overdue",
+									"docstatus": 1,
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-structured-2e",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		validation = validate_normalized_family_artifact(
+			request_id="adapter-structured-2e",
+			compiler_contract=compiler_contract,
+			artifact_contract=outcome.artifact_contract,
+			family_id=outcome.family_id,
+			adapter_errors=outcome.errors,
+			adapter_warnings=outcome.warnings,
+		)
+		self.assertIsNotNone(validation)
+		self.assertEqual(validation.status, "pass")
+		self.assertNotIn(
+			"Missing normalized transaction metrics: outstanding_total",
 			list(validation.errors),
 		)
 

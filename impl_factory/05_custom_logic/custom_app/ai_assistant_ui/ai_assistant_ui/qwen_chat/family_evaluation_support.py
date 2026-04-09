@@ -827,6 +827,655 @@ def run_purchase_order_listing_smoke(
 	)
 
 
+def run_customer_credit_exposure_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+	) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Exposure Smoke",
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me customer credit exposure",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Exposure Smoke failed on customer-credit request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			tool_payloads = session_tool_payloads(session_doc)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_normalized_family_artifact_contract")
+			rendered_payload = latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract")
+			family_id = str((artifact_payload or {}).get("family_id") or "").strip()
+			source_reports = [
+				str(item or "").strip()
+				for item in ((artifact_payload or {}).get("source_reports") or [])
+				if str(item or "").strip()
+			]
+			parties = [
+				item
+				for item in (((artifact_payload or {}).get("sections") or {}).get("parties") or [])
+				if isinstance(item, dict)
+			]
+			party_names = {
+				str(item.get("party") or "").strip().lower()
+				for item in parties
+				if str(item.get("party") or "").strip()
+			}
+			title = str((rendered_payload or {}).get("title") or "").strip()
+			lower_text = assistant_text.lower()
+			if family_id != "aging":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Exposure Smoke failed: expected family 'aging', observed {family_id!r}."
+				)
+			if source_reports != ["Accounts Receivable Summary"]:
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Exposure Smoke failed: expected Accounts Receivable Summary, observed {source_reports!r}."
+				)
+			if "Accounts Receivable Aging" not in title:
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Exposure Smoke failed: rendered title did not expose receivable aging. Observed={title!r}"
+				)
+			if "pazundaung mobile distribution" not in party_names:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Exposure Smoke failed: governed artifact did not include the expected leading customer exposure row."
+				)
+			if "thaketa mobile exchange" not in party_names:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Exposure Smoke failed: negative-balance customer was not preserved in the governed exposure artifact."
+				)
+			if "credit limit" in lower_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Exposure Smoke failed: answer overreached into credit-limit policy."
+				)
+			if "chronic" in lower_text or "short-term delay" in lower_text or "collection issue" in lower_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Exposure Smoke failed: answer overreached into interpretive collection commentary."
+				)
+			return {
+				"ok": True,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"title": title,
+				"family_id": family_id,
+				"source_reports": source_reports,
+				"party_names": sorted(party_names),
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_scope_reset_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Scope Reset Smoke",
+		)
+		try:
+			ok, first_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show customer credit status as of today",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Scope Reset Smoke failed on credit-status request.")
+			ok, second_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me customer credit exposure",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Scope Reset Smoke failed on customer-credit exposure request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			assistant_lower = assistant_text.lower()
+			if "collection risk" in assistant_lower or "chronic" in assistant_lower or "temporary delays" in assistant_lower:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Scope Reset Smoke failed: customer-credit re-ask still drifted into unsupported collection-behavior commentary."
+				)
+			if "accounts receivable aging as of 2026-04-09" not in assistant_lower:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Scope Reset Smoke failed: customer-credit re-ask did not return the governed aging artifact."
+				)
+			tool_payloads = session_tool_payloads(session_doc)
+			scope_payload = latest_tool_payload_by_type(tool_payloads, "qwen_governed_scope_decision_contract")
+			followup_payload = latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution")
+			scope_status = str((scope_payload or {}).get("governed_scope_status") or "").strip()
+			followup_mode = str((followup_payload or {}).get("mode") or "").strip()
+			if scope_status != "fresh_query_breakout":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Scope Reset Smoke failed: expected governed scope status 'fresh_query_breakout', observed {scope_status!r}."
+				)
+			if followup_mode != "new_query":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Scope Reset Smoke failed: expected follow-up mode 'new_query', observed {followup_mode!r}."
+				)
+			return {
+				"ok": True,
+				"mode": str((second_payload or {}).get("mode") or "").strip(),
+				"scope_status": scope_status,
+				"followup_mode": followup_mode,
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_scope_reset_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+	latest_qwen_trace_payload,
+	latest_grounded_turn_contract,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Scope Reset Probe",
+		)
+		try:
+			first_ok, first_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show customer credit status as of today",
+				user="Administrator",
+			)
+			second_ok, second_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me customer credit exposure",
+				user="Administrator",
+			)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_payload = latest_assistant_payload(session_doc)
+			tool_payloads = session_tool_payloads(session_doc)
+			scope_payload = latest_tool_payload_by_type(tool_payloads, "qwen_governed_scope_decision_contract")
+			followup_payload = latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution")
+			narrative_payload = latest_tool_payload_by_type(tool_payloads, "qwen_artifact_narrative_response_contract")
+			rendered_payload = latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract")
+			return {
+				"ok": True,
+				"first_ok": bool(first_ok),
+				"second_ok": bool(second_ok),
+				"first_payload": first_payload,
+				"second_payload": second_payload,
+				"assistant_text": str(assistant_payload.get("text") or "").strip(),
+				"scope_status": str((scope_payload or {}).get("governed_scope_status") or "").strip(),
+				"followup_mode": str((followup_payload or {}).get("mode") or "").strip(),
+				"narrative_answer_text": str((narrative_payload or {}).get("answer_text") or "").strip(),
+				"rendered_answer_text": str((rendered_payload or {}).get("answer_text") or "").strip(),
+				"recent_tool_types": [str(item.get("type") or "").strip() for item in tool_payloads[-12:]],
+				"latest_trace": latest_qwen_trace_payload(session_doc),
+				"latest_grounded_turn": latest_grounded_turn_contract(session_doc),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_overdue_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Overdue Smoke",
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show overdue customers as of today",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Overdue Smoke failed on overdue request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			tool_payloads = session_tool_payloads(session_doc)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_normalized_family_artifact_contract")
+			family_id = str((artifact_payload or {}).get("family_id") or "").strip()
+			source_reports = [
+				str(item or "").strip()
+				for item in ((artifact_payload or {}).get("source_reports") or [])
+				if str(item or "").strip()
+			]
+			filter_mode = str(((artifact_payload or {}).get("dimensions") or {}).get("filter_mode") or "").strip()
+			if family_id != "aging":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Overdue Smoke failed: expected family 'aging', observed {family_id!r}."
+				)
+			if source_reports != ["Accounts Receivable Summary"]:
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Overdue Smoke failed: expected Accounts Receivable Summary, observed {source_reports!r}."
+				)
+			if filter_mode != "overdue_only":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Overdue Smoke failed: expected filter_mode 'overdue_only', observed {filter_mode!r}."
+				)
+			return {
+				"ok": True,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"filter_mode": filter_mode,
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_balance_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Balance Smoke",
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show customers with credit balance",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Balance Smoke failed on credit-balance request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			assistant_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			tool_payloads = session_tool_payloads(session_doc)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_normalized_family_artifact_contract")
+			family_id = str((artifact_payload or {}).get("family_id") or "").strip()
+			source_reports = [
+				str(item or "").strip()
+				for item in ((artifact_payload or {}).get("source_reports") or [])
+				if str(item or "").strip()
+			]
+			filter_mode = str(((artifact_payload or {}).get("dimensions") or {}).get("filter_mode") or "").strip()
+			parties = [
+				item
+				for item in (((artifact_payload or {}).get("sections") or {}).get("parties") or [])
+				if isinstance(item, dict)
+			]
+			party_names = {
+				str(item.get("party") or "").strip().lower()
+				for item in parties
+				if str(item.get("party") or "").strip()
+			}
+			if family_id != "aging":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Balance Smoke failed: expected family 'aging', observed {family_id!r}."
+				)
+			if source_reports != ["Accounts Receivable Summary"]:
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Balance Smoke failed: expected Accounts Receivable Summary, observed {source_reports!r}."
+				)
+			if filter_mode != "credit_balance_only":
+				raise RuntimeError(
+					f"Phase1.4 Customer Credit Balance Smoke failed: expected filter_mode 'credit_balance_only', observed {filter_mode!r}."
+				)
+			if "thaketa mobile exchange" not in party_names:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Balance Smoke failed: expected negative-balance customer was not present."
+				)
+			return {
+				"ok": True,
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"filter_mode": filter_mode,
+				"party_names": sorted(party_names),
+				"answer_text": assistant_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_detail_followup_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Detail Followup Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about Zegyo Mobile Supply House",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Detail Followup Smoke failed on customer detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: explicit customer request did not use governed entity-detail engine."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			detail_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			detail_lower = detail_text.lower()
+			if "zegyo mobile supply house" not in detail_lower or "credit status" not in detail_lower:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: customer detail did not expose the governed credit blocks."
+				)
+
+			ok, overdue_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="is this customer overdue?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Detail Followup Smoke failed on overdue follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			overdue_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((overdue_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: overdue follow-up did not use grounded evidence mode."
+				)
+			if "not overdue" not in overdue_text.lower():
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: overdue follow-up did not stay anchored to customer credit evidence."
+				)
+
+			ok, credit_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="does this customer have a credit balance?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Detail Followup Smoke failed on credit-balance follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			credit_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((credit_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: credit-balance follow-up did not use grounded evidence mode."
+				)
+			if "does not have a credit balance" not in credit_text.lower():
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: non-credit-balance follow-up did not stay grounded."
+				)
+
+			ok, bucket_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="which aging bucket is highest?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Detail Followup Smoke failed on aging-bucket follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			bucket_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((bucket_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: aging-bucket follow-up did not use grounded evidence mode."
+				)
+			if "0-30" not in bucket_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: aging-bucket answer did not expose the governed dominant bucket."
+				)
+
+			ok, second_detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about Thaketa Mobile Exchange",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Detail Followup Smoke failed on second customer detail request.")
+			if str((second_detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: second customer request did not use governed entity-detail engine."
+				)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			second_detail_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "thaketa mobile exchange" not in second_detail_text.lower():
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: customer detail did not switch to the requested negative-balance customer."
+				)
+
+			ok, second_credit_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="does this customer have a credit balance?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase1.4 Customer Credit Detail Followup Smoke failed on positive credit-balance follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			second_credit_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((second_credit_payload or {}).get("mode") or "").strip() != "grounded_evidence_answer":
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: positive credit-balance follow-up did not use grounded evidence mode."
+				)
+			if "has a credit balance" not in second_credit_text.lower() or "249,000" not in second_credit_text:
+				raise RuntimeError(
+					"Phase1.4 Customer Credit Detail Followup Smoke failed: positive credit-balance follow-up did not stay grounded to the negative-balance customer."
+				)
+
+			return {
+				"ok": True,
+				"detail_mode": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"overdue_mode": str((overdue_payload or {}).get("mode") or "").strip(),
+				"credit_mode": str((credit_payload or {}).get("mode") or "").strip(),
+				"bucket_mode": str((bucket_payload or {}).get("mode") or "").strip(),
+				"second_detail_mode": str((second_detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"second_credit_mode": str((second_credit_payload or {}).get("mode") or "").strip(),
+				"detail_text": detail_text,
+				"overdue_text": overdue_text,
+				"credit_text": credit_text,
+				"bucket_text": bucket_text,
+				"second_detail_text": second_detail_text,
+				"second_credit_text": second_credit_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_balance_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Balance Probe",
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show customers with credit balance",
+				user="Administrator",
+			)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			tool_payloads = session_tool_payloads(session_doc)
+			compiler_payload = latest_tool_payload_by_type(tool_payloads, "qwen_fresh_query_compiler_contract")
+			semantic_payload = latest_tool_payload_by_type(tool_payloads, "qwen_semantic_fresh_query_interpretation")
+			interpretation_payload = (
+				(semantic_payload or {}).get("interpretation")
+				if isinstance((semantic_payload or {}).get("interpretation"), dict)
+				else {}
+			)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_normalized_family_artifact_contract")
+			compiler_details = (
+				compiler_payload.get("governed_resolution_details")
+				if isinstance(compiler_payload, dict)
+				else {}
+			)
+			return {
+				"ok": bool(ok),
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"semantic_status": str((semantic_payload or {}).get("status") or "").strip(),
+				"candidate_capability_ids": list((interpretation_payload or {}).get("candidate_capability_ids") or []),
+				"requested_metrics": list((interpretation_payload or {}).get("requested_metrics") or []),
+				"compiler_requested_metrics": list((compiler_payload or {}).get("requested_metrics") or []),
+				"compiler_requested_metric_keys": list((compiler_details or {}).get("requested_metric_keys") or []),
+				"filter_mode": str(((artifact_payload or {}).get("dimensions") or {}).get("filter_mode") or "").strip(),
+				"answer_text": str(latest_assistant_payload(session_doc).get("text") or "").strip(),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_customer_credit_overdue_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Overdue Probe",
+		)
+		try:
+			ok, payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show overdue customers",
+				user="Administrator",
+			)
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			tool_payloads = session_tool_payloads(session_doc)
+			compiler_payload = latest_tool_payload_by_type(tool_payloads, "qwen_fresh_query_compiler_contract")
+			semantic_payload = latest_tool_payload_by_type(tool_payloads, "qwen_semantic_fresh_query_interpretation")
+			interpretation_payload = (
+				(semantic_payload or {}).get("interpretation")
+				if isinstance((semantic_payload or {}).get("interpretation"), dict)
+				else {}
+			)
+			artifact_payload = latest_tool_payload_by_type(tool_payloads, "qwen_normalized_family_artifact_contract")
+			compiler_details = (
+				compiler_payload.get("governed_resolution_details")
+				if isinstance(compiler_payload, dict)
+				else {}
+			)
+			return {
+				"ok": bool(ok),
+				"mode": str((payload or {}).get("mode") or "").strip(),
+				"semantic_status": str((semantic_payload or {}).get("status") or "").strip(),
+				"candidate_capability_ids": list((interpretation_payload or {}).get("candidate_capability_ids") or []),
+				"requested_metrics": list((interpretation_payload or {}).get("requested_metrics") or []),
+				"compiler_requested_metrics": list((compiler_payload or {}).get("requested_metrics") or []),
+				"compiler_requested_metric_keys": list((compiler_details or {}).get("requested_metric_keys") or []),
+				"filter_mode": str(((artifact_payload or {}).get("dimensions") or {}).get("filter_mode") or "").strip(),
+				"answer_text": str(latest_assistant_payload(session_doc).get("text") or "").strip(),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_purchase_order_status_scope_reset_smoke(
 	*,
 	frappe_module,

@@ -459,6 +459,45 @@ Deliver:
 4. bounded reasoning over grounded customer credit outputs
 5. regression and live verification
 
+Current approved preflight:
+
+1. do not open a `1.3.5` stabilization slice by default
+2. use a design-first readiness step instead:
+   - [qwen_erp_phase1_4_customer_credit_status_design_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_4_customer_credit_status_design_2026-04-09.md)
+3. live ERP evidence shows the strongest first authority seam is receivable exposure, not configured credit-limit policy:
+   - governed `Accounts Receivable Summary` data is rich and already active
+   - current phase customers already show meaningful outstanding, overdue, and negative-balance variation
+   - live `Customer Credit Limit` rows are currently empty
+4. the codebase already has strong reuse candidates:
+   - governed `accounts_receivable_read`
+   - governed aging and ranking support over `Accounts Receivable Summary`
+   - the existing customer detail seam in [entity_detail.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_detail.py)
+5. the approved `1.4` implementation order is:
+   - `1.4A` Customer Credit Exposure Baseline
+   - `1.4B` Status Normalization And As-Of-Date Enrichment
+   - `1.4C` Customer Credit Detail Parity
+   - `1.4D` Credit-Status Follow-Up From Detail
+   - `1.4E` Optional Configured Credit-Limit Extension Checkpoint
+   - `1.4F` Closure And Stop Rule
+6. `1.4A` and `1.4B` are complete, `1.4C` and `1.4D` are complete, `1.4E` is deferred, and `1.4F` is complete:
+   - bounded customer-credit phrasing now resolves to `Accounts Receivable Summary` through the existing `aging` family, not a new lane
+   - the first slice is intentionally limited to customer credit exposure / status visibility
+   - overdue-only and negative-balance-only filtered asks now resolve through governed metadata (no keyword routing)
+   - shared aging rendering is being tightened to show customer exposure columns that better fit credit visibility:
+     - Outstanding
+     - Total Due
+     - Overdue (31+)
+   - governed artifact narration for `1.4A` is now explicitly constrained to factual exposure description, so aging answers do not drift into collection-behavior or credit-policy commentary
+   - non-analysis aging reads now prefer the governed rendered response when that is the safer way to stay within receivable authority
+   - targeted contract coverage now lives in [test_customer_credit_status_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_customer_credit_status_contracts.py)
+   - a bounded live/site smoke now exists via `run_phase1_4_customer_credit_exposure_smoke`
+   - the same-session scope-reset seam is now fixed for `1.4A`:
+     - `show customer credit status as of today`
+     - then `show me customer credit exposure`
+     - now resolves as `followup_mode = new_query` with governed scope status `fresh_query_breakout`, instead of drifting into `erp_business_reasoning`
+   - browser/UAT confirmed overdue-only and credit-balance-only filters in fresh sessions
+7. `1.4E` is deferred for the current tenant because configured credit-limit rows are absent; Phase `1.4` is now closed pending future credit-limit activation
+
 ### Mini-phase 1.5: Operational Phase Closure
 
 Deliver:
@@ -466,6 +505,24 @@ Deliver:
 1. full-gate pass with all Wave 1 operational slices active
 2. updated metadata audit
 3. updated active baseline docs
+
+Current closure checkpoint:
+
+1. active closure note:
+   - [qwen_erp_phase1_5_operational_phase_closure_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_5_operational_phase_closure_2026-04-09.md)
+2. the site release-gate module now includes the promoted `1.4` operational smokes:
+   - exposure
+   - overdue-only
+   - credit-balance-only
+   - scope-reset
+   - customer detail follow-up
+3. closure verification exposed and fixed one shared transaction-listing validator drift:
+   - canonical outstanding requests now validate correctly against document-list `outstanding_amount`
+4. closure verification also exposed and fixed one shared reasoning-lane orchestration drift:
+   - contradictory presentation-only follow-up payloads are now suppressed when grounded reasoning is already the accepted lane
+5. the former `H5` reasoning-lane blocker is now green through direct site smoke and instrumented sanity-pack reruns
+6. Phase `1.5` is now closure-complete:
+   - [qwen_erp_phase1_5_operational_phase_closure_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_5_operational_phase_closure_2026-04-09.md)
 
 ## 6. Phase 2: Business Definition and Formula Registry
 

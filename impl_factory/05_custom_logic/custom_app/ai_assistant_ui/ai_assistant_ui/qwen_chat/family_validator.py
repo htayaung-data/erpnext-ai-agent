@@ -126,7 +126,6 @@ def _canonical_metric(requested_metric: str) -> str:
 		"grand_total": "total_amount",
 		"invoice_amount": "total_amount",
 		"total_amount": "total_amount",
-		"outstanding_amount": "outstanding_amount",
 		"document_count": "document_count",
 	}
 	return mapping.get(key, "")
@@ -906,6 +905,10 @@ def _validate_transaction_listing_artifact(
 ) -> FamilyValidationOutcome:
 	requested_metrics = [_canonical_metric(value) for value in _clean_list(compiler_contract.get("requested_metrics"))]
 	requested_metrics = [value for value in requested_metrics if value]
+	requested_metrics = [
+		"outstanding_amount" if value == "outstanding_total" else value
+		for value in requested_metrics
+	]
 	errors: List[str] = list(adapter_errors or [])
 	warnings: List[str] = list(adapter_warnings or [])
 

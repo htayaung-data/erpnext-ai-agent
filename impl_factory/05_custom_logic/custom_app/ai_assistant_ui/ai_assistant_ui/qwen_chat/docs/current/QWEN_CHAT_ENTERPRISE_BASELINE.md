@@ -167,6 +167,30 @@ As of this checkpoint:
    - `1.3C` and `1.3D` are now promoted into the site release-gate module
    - the site-backed release-gate module is green after that promotion
    - `1.3E` remained intentionally closed because no justified widening need appeared
+34. Phase `1.4` is now checkpoint-complete:
+   - `1.4A` customer credit exposure is browser-valid
+   - `1.4B` overdue / credit-balance normalization is browser-valid
+   - `1.4C` customer credit detail parity is browser-valid
+   - `1.4D` customer credit detail follow-up is browser-valid
+   - `1.4E` remains explicitly deferred because configured `Customer Credit Limit` rows are absent in the tenant
+   - targeted contract coverage now lives in:
+     - [test_customer_credit_status_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_customer_credit_status_contracts.py)
+     - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+   - the site release-gate module now includes the promoted `1.4` smokes:
+     - exposure
+     - overdue-only
+     - credit-balance-only
+     - scope-reset
+     - customer detail follow-up
+35. Phase `1.5` operational closure is now complete:
+   - Wave 1 operational seams from `1.1` through `1.4` are now materially represented together in the site release-gate pack
+   - closure verification exposed one shared validator drift where canonical outstanding requests were being checked as `outstanding_total` against document-list artifacts that correctly emit `outstanding_amount`
+   - that drift is now fixed in [family_validator.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/family_validator.py)
+   - closure verification also exposed one shared reasoning-orchestration drift where contradictory presentation-only follow-up payloads could preempt an already-accepted grounded reasoning lane
+   - that drift is now fixed in [scope_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/scope_support.py) and wired through [service.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py)
+   - targeted regression coverage now lives in [test_semantic_financial_resolution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py)
+   - the direct site reruns of `run_phase1_1_delivery_note_session_reset_smoke` and `run_h4_recommendation_guarantee_stays_bounded_smoke` are green after the fixes
+   - the instrumented `H5` sanity components now run green end to end, so `1.5` is now globally closure-ready for the next phase
 
 ## 2. Release-Gate Command
 

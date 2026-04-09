@@ -18,6 +18,11 @@ from ai_assistant_ui.qwen_chat.service import (
 	run_phase1_2_sales_order_status_followup_smoke,
 	run_phase1_3_purchase_order_detail_smoke,
 	run_phase1_3_purchase_order_status_followup_smoke,
+	run_phase1_4_customer_credit_balance_smoke,
+	run_phase1_4_customer_credit_detail_followup_smoke,
+	run_phase1_4_customer_credit_exposure_smoke,
+	run_phase1_4_customer_credit_overdue_smoke,
+	run_phase1_4_customer_credit_scope_reset_smoke,
 )
 
 
@@ -125,4 +130,34 @@ class TestPostContractReleaseGates(unittest.TestCase):
 		self._assert_ok_tree(
 			run_phase1_3_purchase_order_status_followup_smoke(),
 			"phase1_3_purchase_order_status_followup_smoke",
+		)
+
+	def test_phase1_4a_customer_credit_exposure_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_4_customer_credit_exposure_smoke(),
+			"phase1_4_customer_credit_exposure_smoke",
+		)
+
+	def test_phase1_4b_customer_credit_overdue_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_4_customer_credit_overdue_smoke(),
+			"phase1_4_customer_credit_overdue_smoke",
+		)
+
+	def test_phase1_4b_customer_credit_balance_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_4_customer_credit_balance_smoke(),
+			"phase1_4_customer_credit_balance_smoke",
+		)
+
+	def test_phase1_4b_customer_credit_scope_reset_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_4_customer_credit_scope_reset_smoke(),
+			"phase1_4_customer_credit_scope_reset_smoke",
+		)
+
+	def test_phase1_4d_customer_credit_detail_followup_smoke(self):
+		self._assert_ok_tree(
+			run_phase1_4_customer_credit_detail_followup_smoke(),
+			"phase1_4_customer_credit_detail_followup_smoke",
 		)

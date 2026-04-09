@@ -204,6 +204,7 @@ from ai_assistant_ui.qwen_chat.scope_support import (
 	out_of_scope_answer as _out_of_scope_answer_helper,
 	reasoning_preempted_by_followup_refinement as _reasoning_preempted_by_followup_refinement,
 	reasoning_scope_suppression_allowed as _reasoning_scope_suppression_allowed,
+	reasoning_supersedes_contradictory_presentation_followup as _reasoning_supersedes_contradictory_presentation_followup,
 )
 from ai_assistant_ui.qwen_chat.smoke_fixtures import (
 	require_smoke_fixture,
@@ -239,6 +240,14 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_delivery_note_trend_probe as _run_delivery_note_trend_probe_helper,
 	run_fresh_chat_invoice_delivery_proof_smoke as _run_fresh_chat_invoice_delivery_proof_smoke_helper,
 	run_invoice_delivery_proof_smoke as _run_invoice_delivery_proof_smoke_helper,
+	run_customer_credit_exposure_smoke as _run_customer_credit_exposure_smoke_helper,
+	run_customer_credit_overdue_smoke as _run_customer_credit_overdue_smoke_helper,
+	run_customer_credit_balance_smoke as _run_customer_credit_balance_smoke_helper,
+	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
+	run_customer_credit_overdue_probe as _run_customer_credit_overdue_probe_helper,
+	run_customer_credit_balance_probe as _run_customer_credit_balance_probe_helper,
+	run_customer_credit_scope_reset_probe as _run_customer_credit_scope_reset_probe_helper,
+	run_customer_credit_scope_reset_smoke as _run_customer_credit_scope_reset_smoke_helper,
 	run_purchase_order_detail_smoke as _run_purchase_order_detail_smoke_helper,
 	run_purchase_order_listing_smoke as _run_purchase_order_listing_smoke_helper,
 	run_purchase_order_status_followup_smoke as _run_purchase_order_status_followup_smoke_helper,
@@ -1267,6 +1276,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and str(getattr(getattr(pre_frontdoor_reasoning_semantic_result, "intent", None), "reasoning_type", "") or "").strip()
 		in {"recommendation", "continuation_detail"}
 	)
+	if _reasoning_supersedes_contradictory_presentation_followup(
+		semantic_intent=semantic_intent,
+		reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+	):
+		semantic_intent = None
 	semantic_intent_has_explicit_query_shape = bool(
 		semantic_intent is not None
 		and (
@@ -2024,6 +2038,94 @@ def run_phase1_3_purchase_order_status_followup_smoke() -> Dict[str, Any]:
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,
 		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_exposure_smoke() -> Dict[str, Any]:
+	return _run_customer_credit_exposure_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_overdue_smoke() -> Dict[str, Any]:
+	return _run_customer_credit_overdue_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_overdue_probe() -> Dict[str, Any]:
+	return _run_customer_credit_overdue_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_balance_smoke() -> Dict[str, Any]:
+	return _run_customer_credit_balance_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_detail_followup_smoke() -> Dict[str, Any]:
+	return _run_customer_credit_detail_followup_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_balance_probe() -> Dict[str, Any]:
+	return _run_customer_credit_balance_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_scope_reset_smoke() -> Dict[str, Any]:
+	return _run_customer_credit_scope_reset_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_scope_reset_probe() -> Dict[str, Any]:
+	return _run_customer_credit_scope_reset_probe_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+		latest_assistant_payload=_latest_assistant_payload,
+		latest_qwen_trace_payload=_latest_qwen_trace_payload,
+		latest_grounded_turn_contract=_latest_grounded_turn_contract,
 	)
 
 
@@ -4980,9 +5082,9 @@ def run_h4_creative_followup_after_reasoning_is_refused_smoke() -> Dict[str, Any
 			"legacy_runtime_rollout_fallback",
 		}:
 			raise RuntimeError("H4 creative follow-up smoke failed: setup artifact turn did not complete.")
-		ok, second_payload = handle_qwen_user_message(
+		ok, second_payload = _run_smoke_reasoning_followup_with_retry(
 			session_name=doc.name,
-			message="what does this mean",
+			message=smoke_fixture_reasoning_message("fresh_query_override_to_ar_explicit_reasoning"),
 			user="Administrator",
 		)
 		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
@@ -5061,9 +5163,11 @@ def run_h4_recommendation_guarantee_stays_bounded_smoke() -> Dict[str, Any]:
 			"legacy_runtime_rollout_fallback",
 		}:
 			raise RuntimeError("H4 recommendation guarantee smoke failed: setup artifact turn did not complete.")
+		frappe.db.commit()
+		frappe.clear_cache()
 		ok, second_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="what does this mean",
+			message=smoke_fixture_reasoning_message("fresh_query_override_to_ar_explicit_reasoning"),
 			user="Administrator",
 		)
 		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
@@ -5138,7 +5242,48 @@ def run_h4_recommendation_guarantee_stays_bounded_smoke() -> Dict[str, Any]:
 			"execution_path": execution_path,
 		}
 
-	return _run_phase55_smoke_session("H4 Recommendation Guarantee Stays Bounded Smoke", _runner)
+	flag_key = "qwen_enable_erp_business_reasoning"
+	percent_key = "qwen_erp_business_reasoning_rollout_percentage"
+	users_key = "qwen_erp_business_reasoning_rollout_users"
+	compiled_flag_key = "qwen_enable_compiled_first_turn"
+	compiled_percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	compiled_users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	keys = [
+		flag_key,
+		percent_key,
+		users_key,
+		compiled_flag_key,
+		compiled_percent_key,
+		compiled_users_key,
+	]
+	originals = {key: conf.get(key) for key in keys}
+	presence = {key: key in conf for key in keys}
+	try:
+		conf[compiled_flag_key] = True
+		conf[compiled_percent_key] = 0
+		conf[compiled_users_key] = ["Administrator"]
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+		doc = frappe.new_doc(QWEN_SESSION_DOCTYPE)
+		doc.title = "H4 Recommendation Guarantee Stays Bounded Smoke"
+		doc.insert(ignore_permissions=False)
+		frappe.db.commit()
+		try:
+			return _runner(doc)
+		finally:
+			frappe.delete_doc(QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+			frappe.db.commit()
+	finally:
+		for key, was_present in presence.items():
+			if was_present:
+				conf[key] = originals.get(key)
+			else:
+				try:
+					conf.pop(key, None)
+				except Exception:
+					pass
 
 
 def run_h4_adversarial_suite() -> Dict[str, Any]:
