@@ -12,7 +12,12 @@ from ai_assistant_ui.qwen_chat.clarification_state import (
 	store_clarification_state,
 )
 from ai_assistant_ui.qwen_chat.contracts import build_clarification_resolution_contract
+from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import resolve_customer_scope_from_message
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import interpret_fresh_query_semantically
+from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
+	maybe_build_governed_kpi_value_frontdoor_response,
+)
+from ai_assistant_ui.qwen_chat.governed_kpi_support import maybe_build_governed_kpi_frontdoor_response
 from ai_assistant_ui.qwen_chat.metadata import ontology_detect_concepts
 
 
@@ -170,7 +175,11 @@ def looks_like_short_acknowledgement(message: str) -> bool:
 	return _looks_like_empty_ack(message)
 
 
-def _match_pending_clarification_option(message: str, options: List[str]) -> Tuple[str, str, float]:
+def _match_pending_clarification_option(
+	message: str,
+	options: List[str],
+	option_aliases_by_option: Dict[str, List[str]] | None = None,
+) -> Tuple[str, str, float]:
 	normalized_message = _normalize_text(message)
 	if not normalized_message:
 		return "", "", 0.0
@@ -180,6 +189,11 @@ def _match_pending_clarification_option(message: str, options: List[str]) -> Tup
 	normalized_options = {_normalize_text(option): option for option in unique_options}
 	if normalized_message in normalized_options:
 		return normalized_options[normalized_message], "exact", 1.0
+	option_aliases_by_option = dict(option_aliases_by_option or {})
+	for option in unique_options:
+		for alias in (option_aliases_by_option.get(option) or []):
+			if normalized_message == _normalize_text(alias):
+				return option, "exact_alias", 0.97
 	if len(unique_options) == 1:
 		return unique_options[0], "single_option", 0.95
 
@@ -192,16 +206,24 @@ def _match_pending_clarification_option(message: str, options: List[str]) -> Tup
 		normalized_option = _normalize_text(option)
 		score = 0.0
 		mode = ""
-		if normalized_message and (normalized_message in normalized_option or normalized_option in normalized_message):
-			score = 0.86
-			mode = "substring"
+		candidate_phrases = [normalized_option] + [
+			_normalize_text(alias)
+			for alias in (option_aliases_by_option.get(option) or [])
+			if _normalize_text(alias)
+		]
+		for candidate in candidate_phrases:
+			if normalized_message and (normalized_message in candidate or candidate in normalized_message):
+				if 0.86 > score:
+					score = 0.86
+					mode = "substring"
 		if message_concepts:
-			option_concepts = set(ontology_detect_concepts(option))
-			if option_concepts:
-				overlap = len(message_concepts & option_concepts) / float(len(option_concepts))
-				if overlap > score:
-					score = overlap
-					mode = "concept_overlap"
+			for phrase in [option] + list(option_aliases_by_option.get(option) or []):
+				option_concepts = set(ontology_detect_concepts(phrase))
+				if option_concepts:
+					overlap = len(message_concepts & option_concepts) / float(len(option_concepts))
+					if overlap > score:
+						score = overlap
+						mode = "concept_overlap"
 		if score > best_score:
 			second_score = best_score
 			best_score = score
@@ -283,6 +305,8 @@ def _resolved_slot(reason_type: str, matched_option: str) -> Dict[str, Any]:
 		return {"selected_business_area": matched_option}
 	if reason_type in {"time_scope_missing", "time_scope_clarification"}:
 		return {"selected_time_scope": matched_option}
+	if reason_type == "customer_scope_missing":
+		return {"selected_customer": matched_option}
 	return {"selected_option": matched_option}
 
 
@@ -339,15 +363,17 @@ def clarification_resolved_continuation_message(
 		if isinstance(internal_details.get("resolved_message_by_option"), dict)
 		else {}
 	)
-	if not resolved_message_by_option:
-		return ""
-	exact_message = str(resolved_message_by_option.get(option) or "").strip()
-	if exact_message:
-		return exact_message
-	normalized_target = _normalize_text(option)
-	for key, value in resolved_message_by_option.items():
-		if _normalize_text(key) == normalized_target:
-			return str(value or "").strip()
+	if resolved_message_by_option:
+		exact_message = str(resolved_message_by_option.get(option) or "").strip()
+		if exact_message:
+			return exact_message
+		normalized_target = _normalize_text(option)
+		for key, value in resolved_message_by_option.items():
+			if _normalize_text(key) == normalized_target:
+				return str(value or "").strip()
+	resolved_message_template = str(internal_details.get("resolved_message_template") or "").strip()
+	if resolved_message_template and "{customer}" in resolved_message_template:
+		return resolved_message_template.replace("{customer}", option)
 	return ""
 
 
@@ -428,6 +454,25 @@ def _semantic_new_request_detected(
 	return True
 
 
+def _frontdoor_new_request_detected(
+	*,
+	request_id: str,
+	message: str,
+	grounded_turn: Dict[str, Any] | None = None,
+) -> bool:
+	return bool(
+		maybe_build_governed_kpi_frontdoor_response(
+			request_id=request_id,
+			message=message,
+		)
+		or maybe_build_governed_kpi_value_frontdoor_response(
+			request_id=request_id,
+			message=message,
+			grounded_turn=grounded_turn,
+		)
+	)
+
+
 def resolve_pending_clarification_response(
 	*,
 	request_id: str,
@@ -438,6 +483,7 @@ def resolve_pending_clarification_response(
 	signal_payload: Dict[str, Any],
 	clarification_attempt_count: int = 0,
 	max_attempts: int = 3,
+	grounded_turn: Dict[str, Any] | None = None,
 ) -> Any:
 	stage = str(signal_payload.get("stage") or "").strip()
 	reason_type = str(signal_payload.get("reason_type") or "").strip()
@@ -447,8 +493,55 @@ def resolve_pending_clarification_response(
 		for value in (signal_payload.get("suggested_options") or [])
 		if str(value or "").strip()
 	]
-	matched_option, matched_by, confidence = _match_pending_clarification_option(message, options)
-	if matched_option:
+	internal_details = signal_payload.get("internal_details")
+	option_aliases_by_option = (
+		internal_details.get("option_aliases_by_option")
+		if isinstance(internal_details, dict) and isinstance(internal_details.get("option_aliases_by_option"), dict)
+		else {}
+	)
+	matched_option, matched_by, confidence = _match_pending_clarification_option(
+		message,
+		options,
+		option_aliases_by_option=option_aliases_by_option,
+	)
+	if reason_type == "customer_scope_missing":
+		customer_scope = resolve_customer_scope_from_message(message)
+		resolved_customer = str(
+			customer_scope.get("customer_name")
+			or customer_scope.get("entity_label")
+			or customer_scope.get("customer")
+			or ""
+		).strip()
+		if resolved_customer:
+			return build_clarification_resolution_contract(
+				request_id=request_id,
+				session_id=session_id,
+				pending_stage=stage,
+				pending_reason_type=reason_type,
+				pending_user_question=user_question,
+				pending_suggested_options=options,
+				decision="resolved_option",
+				resolved_option=resolved_customer,
+				matched_by="customer_scope",
+				confidence=0.95,
+				reason="The user supplied a governed customer scope for the pending customer KPI request.",
+				resolved_slot=_resolved_slot(reason_type, resolved_customer),
+				clarification_attempt_count=int(max(0, clarification_attempt_count)),
+				is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
+			)
+	new_request_detected = _semantic_new_request_detected(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		signal_payload=signal_payload,
+	) or _frontdoor_new_request_detected(
+		request_id=request_id,
+		message=message,
+		grounded_turn=grounded_turn,
+	)
+	if matched_option and (matched_by in {"exact", "exact_alias", "single_option"} or not new_request_detected):
 		return build_clarification_resolution_contract(
 			request_id=request_id,
 			session_id=session_id,
@@ -495,14 +588,7 @@ def resolve_pending_clarification_response(
 			clarification_attempt_count=int(max(0, clarification_attempt_count)),
 			is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 		)
-	if _semantic_new_request_detected(
-		request_id=request_id,
-		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
-		message=message,
-		signal_payload=signal_payload,
-	):
+	if new_request_detected:
 		return build_clarification_resolution_contract(
 			request_id=request_id,
 			session_id=session_id,

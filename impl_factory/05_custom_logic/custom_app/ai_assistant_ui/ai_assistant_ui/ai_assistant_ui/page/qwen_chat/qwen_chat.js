@@ -49,6 +49,8 @@
       const $sessions = $root.find(".qwen-sessions");
       const $messages = $root.find(".qwen-messages");
       const $input = $root.find(".qwen-input");
+      const $send = $root.find(".qwen-send");
+      const $newChat = $root.find(".qwen-new-chat");
 
       function escapeHtml(s) {
         return String(s)
@@ -314,6 +316,22 @@
           $messages.append(renderTypingIndicator());
         }
         $messages.scrollTop($messages.prop("scrollHeight"));
+        syncComposerState();
+      }
+
+      function syncComposerState() {
+        const busy = state.pendingRequests > 0;
+        $input.prop("disabled", busy);
+        $send.prop("disabled", busy);
+        $newChat.prop("disabled", busy);
+        $input.attr("placeholder", busy ? "Qwen is answering..." : "Ask ERP with Qwen…");
+      }
+
+      function showPendingRequestAlert(actionLabel) {
+        frappe.show_alert({
+          message: `Please wait for the current Qwen response to finish before ${actionLabel}.`,
+          indicator: "orange",
+        });
       }
 
       function removePopover() {
@@ -453,6 +471,10 @@
           $row.on("click", e => {
             if ($(e.target).closest("button").length) return;
             if ($(e.target).closest("input").length) return;
+            if (state.pendingRequests > 0) {
+              showPendingRequestAlert("switching chats");
+              return;
+            }
             state.session = s.name;
             localStorage.setItem("qwen_chat_session", state.session);
             redrawSessions();
@@ -462,6 +484,10 @@
           $row.find(".qwen-ellipsis").on("click", e => {
             e.preventDefault();
             e.stopPropagation();
+            if (state.pendingRequests > 0) {
+              showPendingRequestAlert("opening chat actions");
+              return;
+            }
             const btn = e.currentTarget;
             if (state.menuOpenFor === s.name && $("#" + MENU_ID).length) {
               removePopover();
@@ -553,6 +579,10 @@
       }
 
       async function sendMessage() {
+        if (state.pendingRequests > 0) {
+          showPendingRequestAlert("sending another message in this chat");
+          return;
+        }
         const text = ($input.val() || "").trim();
         if (!text) return;
         if (!state.session) {
@@ -589,10 +619,14 @@
       }
 
       ensureTypingStyle();
-      $root.find(".qwen-new-chat").on("click", async () => {
+      $newChat.on("click", async () => {
+        if (state.pendingRequests > 0) {
+          showPendingRequestAlert("starting a new chat");
+          return;
+        }
         await createSession();
       });
-      $root.find(".qwen-send").on("click", sendMessage);
+      $send.on("click", sendMessage);
       $input.on("keydown", e => {
         if (e.key === "Enter") {
           e.preventDefault();

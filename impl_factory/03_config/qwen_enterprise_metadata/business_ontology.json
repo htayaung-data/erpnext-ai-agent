@@ -25,7 +25,16 @@
     {
       "concept_id": "receivable",
       "aliases": {
-        "en": ["receivable", "accounts receivable", "ar", "customer receivable"],
+        "en": [
+          "receivable",
+          "receivables",
+          "accounts receivable",
+          "ar",
+          "customer receivable",
+          "customer credit status",
+          "customer credit exposure",
+          "credit exposure"
+        ],
         "my": []
       }
     },

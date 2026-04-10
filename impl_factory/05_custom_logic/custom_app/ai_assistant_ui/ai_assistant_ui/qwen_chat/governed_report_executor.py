@@ -148,7 +148,7 @@ def _execute_direct_query(
 	fixed_filters = query_spec.get("fixed_filters") if isinstance(query_spec.get("fixed_filters"), dict) else {}
 	applied_filters.update({str(k): v for k, v in fixed_filters.items() if str(k or "").strip()})
 	allowed_filter_fields = _direct_query_filterable_fields(report_spec)
-	if str(filters.get("company") or "").strip():
+	if "company" in allowed_filter_fields and str(filters.get("company") or "").strip():
 		applied_filters["company"] = str(filters.get("company") or "").strip()
 	from_date = str(filters.get("from_date") or "").strip()
 	to_date = str(filters.get("to_date") or filters.get("report_date") or "").strip()

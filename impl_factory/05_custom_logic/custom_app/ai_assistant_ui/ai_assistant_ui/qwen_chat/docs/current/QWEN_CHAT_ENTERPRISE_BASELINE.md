@@ -200,6 +200,63 @@ As of this checkpoint:
    - targeted regression coverage now lives in [test_semantic_financial_resolution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py)
    - the direct site reruns of `run_phase1_1_delivery_note_session_reset_smoke` and `run_h4_recommendation_guarantee_stays_bounded_smoke` are green after the fixes
    - the instrumented `H5` sanity components now run green end to end, so `1.5` is now globally closure-ready for the next phase
+36. Phase `2.1` registry foundation is now complete:
+   - governed metadata homes now exist for business definitions, formulas, thresholds, and company-specific rule semantics
+   - typed definition and formula state resolution is active in [business_definition_state.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/business_definition_state.py)
+   - deterministic registry validation is active in [business_definition_formula_registry.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/business_definition_formula_registry.py)
+37. Phase `2.2` first governed KPI definitions are now complete:
+   - active KPI definitions now include average order value by sales order, average order value by sales invoice, customer overdue ratio as of date, customer credit utilization as of date, collection ratio by sales invoice period, and customer tenure by customer created date / first sales order / first sales invoice
+   - generic `tenure` remains clarification-gated across multiple approved bases instead of silently defaulting
+38. Phase `2.3` threshold and company-rule semantics are now complete:
+   - threshold semantics now exist for credit-utilization policy bands plus blocked-safe overdue-severity and collection-ratio health presentation
+   - company-specific policy rules now live in [business_rule_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/business_rule_registry.json)
+39. Phase `2.4` formula phase closure is now complete:
+   - governed KPI-definition runtime behavior now lives in [governed_kpi_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/governed_kpi_support.py) and is wired through [frontdoor_lane.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py)
+   - the frontdoor lane now answers governed KPI-definition asks safely for active, blocked, ambiguous, and explicit-definition undefined KPI states
+   - customer detail now exposes governed lifecycle evidence through [customer_lifecycle_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/customer_lifecycle_support.py) and [entity_detail.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_detail.py)
+   - deterministic coverage now lives in [test_governed_kpi_frontdoor.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_governed_kpi_frontdoor.py)
+   - the site release-gate module now includes `run_phase2_4_governed_kpi_frontdoor_smoke`
+   - the callable seam `run_governed_kpi_frontdoor_probe` and the live smoke `run_phase2_4_governed_kpi_frontdoor_smoke` are green
+40. Phase `2.5A` KPI value artifact contract is now complete:
+   - governed KPI execution metadata now exists in [governed_kpi_execution_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/governed_kpi_execution_registry.json)
+   - typed execution-state and KPI-value artifact contracts are active in [governed_kpi_execution_state.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/governed_kpi_execution_state.py)
+   - deterministic registry validation is active in [governed_kpi_execution_registry.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/governed_kpi_execution_registry.py)
+   - deterministic coverage now lives in [test_governed_kpi_execution_state.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_governed_kpi_execution_state.py)
+   - callable seam verification is green through:
+     - `run_governed_kpi_execution_registry_probe`
+     - `run_governed_kpi_execution_contract_probe`
+41. Phase `2.5B` period KPI execution is now complete:
+   - governed KPI value execution now lives in [governed_kpi_runtime_execution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/governed_kpi_runtime_execution.py) and is wired through [frontdoor_lane.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/lanes/frontdoor_lane.py)
+   - the frontdoor now distinguishes KPI definition asks from KPI value asks without widening into phrase-specific business routing
+   - active runtime coverage now includes:
+     - average order value by sales order
+     - average order value by sales invoice
+     - collection ratio by approved period basis
+   - bounded clarification is active for ambiguous basis and missing required period scope, and clarification continuation re-enters the governed KPI runtime path instead of transaction listing execution
+   - explicit document-basis asks such as `sales orders` and `sales invoices` now resolve directly without unnecessary basis clarification
+   - missing-period KPI asks no longer reuse the prior KPI period from the same session; they stop at governed period clarification instead
+   - governed clarification signals now include alias-aware option metadata, so shorthand replies like `Sales Order` resolve as first-class governed basis selections instead of being misread as new listing requests
+   - deterministic coverage now lives in [test_governed_kpi_runtime_execution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_governed_kpi_runtime_execution.py)
+   - the site release-gate module now includes `run_phase2_5_governed_kpi_period_execution_smoke`
+   - the callable seam `run_phase2_5_governed_kpi_period_execution_probe` and the live smoke `run_phase2_5_governed_kpi_period_execution_smoke` are green
+
+42. Phase `2.5C` customer-scoped KPI execution is now complete:
+   - shared customer KPI runtime support now lives in [customer_kpi_runtime_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/customer_kpi_runtime_support.py)
+   - active customer-scoped KPI runtime coverage now includes:
+     - customer credit utilization as of date
+     - customer overdue ratio as of date
+     - customer tenure by customer created date
+     - customer tenure by first sales order
+     - customer tenure by first sales invoice
+     - single-metric customer ranking by credit utilization
+   - governed customer KPI execution now reuses the same receivable, policy, and lifecycle snapshot support across runtime execution and entity detail enrichment
+   - scalar-vs-ranking detection now fails closed, so singular customer KPI asks do not drift into ranking execution
+   - deterministic coverage now lives in:
+     - [test_customer_kpi_runtime_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_customer_kpi_runtime_support.py)
+     - [test_governed_kpi_runtime_execution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_governed_kpi_runtime_execution.py)
+     - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
+   - the site release-gate module now includes `run_phase2_5_governed_kpi_customer_execution_smoke`
+   - the callable seam `run_phase2_5_governed_kpi_customer_execution_probe` and the live smoke `run_phase2_5_governed_kpi_customer_execution_smoke` are green
 
 ## 2. Release-Gate Command
 

@@ -38,6 +38,24 @@
       "requires_grounded_context": false
     },
     {
+      "intent_class_id": "governed_kpi_definition",
+      "label": "Governed KPI Definition",
+      "description": "A request to explain a governed KPI definition or approved formula basis from the business-definition registry.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "governed_kpi_value",
+      "label": "Governed KPI Value",
+      "description": "A request to execute an approved governed KPI value from the KPI execution registry for an explicit scope or period.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
       "intent_class_id": "session_flow",
       "label": "Session Flow",
       "description": "A request to continue or advance the current grounded session flow.",

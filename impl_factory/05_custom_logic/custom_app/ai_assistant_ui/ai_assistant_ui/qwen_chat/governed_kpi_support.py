@@ -21,8 +21,10 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 )
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_frontdoor_intent_spec,
+	get_report_spec,
 	list_business_definition_specs,
 	list_business_rule_specs,
+	list_semantic_resolution_alias_entries,
 	list_business_threshold_specs_for_formula,
 )
 
@@ -162,6 +164,13 @@ def _lower_first(text: str) -> str:
 	return value[:1].lower() + value[1:]
 
 
+def _sentence(text: Any) -> str:
+	value = str(text or "").strip()
+	if not value:
+		return ""
+	return value if value.endswith((".", "!", "?")) else f"{value}."
+
+
 def _join_clean(values: List[str]) -> str:
 	items = [str(value or "").strip() for value in (values or []) if str(value or "").strip()]
 	if not items:
@@ -197,6 +206,20 @@ def _definition_business_purpose(definition_id: str) -> str:
 	return ""
 
 
+def _naturalize_definition_text(text: Any) -> str:
+	value = str(text or "").strip()
+	if not value:
+		return ""
+	replacements = (
+		("configured customer credit limit", "approved credit limit"),
+		("governed as-of date", "requested as-of date"),
+		("customer created date", "customer creation date"),
+	)
+	for old, new in replacements:
+		value = re.sub(re.escape(old), new, value, flags=re.IGNORECASE)
+	return re.sub(r"\s+", " ", value).strip()
+
+
 def _definition_specific_lookup_term(
 	definition_id: str,
 	*,
@@ -227,6 +250,54 @@ def _definition_specific_lookup_term(
 				best_length = len(normalized_term)
 		break
 	return best_term or _clean_subject(fallback_label)
+
+
+def _definition_listing_view_canonical(definition_id: str) -> str:
+	for item in list_business_definition_specs():
+		if str(item.get("definition_id") or "").strip() != str(definition_id or "").strip():
+			continue
+		source_of_truth = dict(item.get("source_of_truth") or {})
+		report_names: List[str] = []
+		for key in ("report_name", "report_names"):
+			value = source_of_truth.get(key)
+			if isinstance(value, list):
+				report_names.extend(str(entry or "").strip() for entry in value if str(entry or "").strip())
+			elif str(value or "").strip():
+				report_names.append(str(value or "").strip())
+		for report_name in report_names:
+			report_spec = get_report_spec(report_name)
+			direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+			doctype = str(direct_query.get("doctype") or "").strip()
+			if doctype:
+				return _normalize_phrase(doctype).replace(" ", "_")
+		break
+	return ""
+
+
+def _listing_view_aliases_for_canonical(canonical_value: str) -> List[str]:
+	clean_canonical = str(canonical_value or "").strip()
+	if not clean_canonical:
+		return []
+	aliases: List[str] = []
+	canonical_phrase = clean_canonical.replace("_", " ")
+	for entry in list_semantic_resolution_alias_entries("listing_view"):
+		if str(entry.get("canonical_value") or "").strip() != clean_canonical:
+			continue
+		aliases.append(canonical_phrase)
+		for alias in (entry.get("aliases") or []):
+			alias_text = str(alias or "").strip()
+			if alias_text:
+				aliases.append(alias_text)
+		break
+	seen: set[str] = set()
+	unique_aliases: List[str] = []
+	for alias in aliases:
+		normalized = _normalize_phrase(alias)
+		if not normalized or normalized in seen:
+			continue
+		seen.add(normalized)
+		unique_aliases.append(alias)
+	return unique_aliases
 
 
 def _source_report_phrase(definition_state: BusinessDefinitionStateContract, formula_state: GovernedFormulaStateContract) -> str:
@@ -302,6 +373,39 @@ def _threshold_notes(formula_id: str) -> List[str]:
 	return notes
 
 
+def _definition_detail_requested(query_kind: str) -> bool:
+	return str(query_kind or "").strip() in {"formula", "calculation"}
+
+
+def _natural_threshold_summary(formula_id: str) -> str:
+	for note in _threshold_notes(formula_id):
+		blocked_prefix = "Threshold semantics remain blocked for user-facing runtime use:"
+		if note.startswith(blocked_prefix):
+			reason = str(note.split(":", 1)[1] if ":" in note else "").strip()
+			if reason:
+				return _sentence(reason[:1].upper() + reason[1:])
+	return ""
+
+
+def _naturalize_policy_note(text: Any) -> str:
+	value = _naturalize_definition_text(text)
+	if not value:
+		return ""
+	match = re.match(r"^(?P<label>.+?)\s+must use\s+(?P<basis>.+?)\s+as the governed primary basis\.?$", value, re.IGNORECASE)
+	if match:
+		basis = str(match.group("basis") or "").strip()
+		if basis:
+			return _sentence(f"The approved basis is {basis}")
+	return _sentence(value)
+
+
+def _natural_policy_summary(definition_id: str, formula_id: str, company_name: str) -> str:
+	notes = _definition_rule_notes(definition_id, formula_id, company_name)
+	if not notes:
+		return ""
+	return _naturalize_policy_note(notes[0])
+
+
 def _build_formula_state_for_display(
 	definition_state: BusinessDefinitionStateContract,
 	company_name: str,
@@ -327,35 +431,48 @@ def _render_active_answer(
 	formula_state: GovernedFormulaStateContract,
 	company_name: str,
 	include_business_purpose: bool = False,
+	query_kind: str = "",
 ) -> str:
 	definition_description = _definition_description(definition_state.definition_id)
 	if not definition_description:
 		definition_description = str(definition_state.reason or "").strip()
-	answer_lines = [f"`{definition_state.label}` is defined here as {_lower_first(definition_description)}"]
+	definition_description = _naturalize_definition_text(definition_description)
+	answer_lines: List[str] = []
+	formula_basis = _formula_basis_phrase(definition_state, formula_state)
+	source_report_phrase = _source_report_phrase(definition_state, formula_state)
+	detail_requested = _definition_detail_requested(query_kind)
+	if detail_requested and formula_basis:
+		answer_lines.append(
+			_sentence(f"The approved formula for {definition_state.label.lower()} is {formula_basis}")
+		)
+		if source_report_phrase:
+			answer_lines.append(_sentence(f"It uses {source_report_phrase} as the governed source"))
+	else:
+		answer_lines.append(
+			_sentence(f"{definition_state.label} measures {_lower_first(definition_description)}")
+		)
 	business_purpose = _definition_business_purpose(definition_state.definition_id)
 	if include_business_purpose and business_purpose:
+		answer_lines.append(_sentence(f"It matters because {business_purpose}"))
+	policy_summary = _natural_policy_summary(definition_state.definition_id, formula_state.formula_id, company_name)
+	threshold_summary = _natural_threshold_summary(formula_state.formula_id)
+	if policy_summary and detail_requested:
+		answer_lines.append(policy_summary)
+	if threshold_summary:
+		answer_lines.append(threshold_summary)
+	if detail_requested:
+		detail_lines: List[str] = []
+		detail_lines.append("Governed basis:")
+		detail_lines.append(f"- Entity grain: {_format_governed_phrase(definition_state.entity_grain)}")
+		detail_lines.append(f"- Time basis: {_format_governed_phrase(definition_state.time_basis)}")
+		if source_report_phrase:
+			detail_lines.append(f"- Source: {source_report_phrase}")
+		if formula_basis:
+			detail_lines.append(f"- Formula basis: {formula_basis}")
+		if str(formula_state.aggregation_rule or "").strip():
+			detail_lines.append(f"- Aggregation rule: {_format_governed_phrase(formula_state.aggregation_rule)}")
 		answer_lines.append("")
-		answer_lines.append(f"It matters because {business_purpose}")
-	answer_lines.append("")
-	answer_lines.append("Governed Basis")
-	answer_lines.append(f"- Definition status: `{definition_state.activation_state or 'active'}`")
-	answer_lines.append(f"- Entity grain: {_format_governed_phrase(definition_state.entity_grain)}")
-	answer_lines.append(f"- Time basis: {_format_governed_phrase(definition_state.time_basis)}")
-	source_report_phrase = _source_report_phrase(definition_state, formula_state)
-	if source_report_phrase:
-		answer_lines.append(f"- Source reports: {source_report_phrase}")
-	formula_basis = _formula_basis_phrase(definition_state, formula_state)
-	if formula_basis:
-		answer_lines.append(f"- Formula basis: {formula_basis}")
-	if str(formula_state.aggregation_rule or "").strip():
-		answer_lines.append(f"- Aggregation rule: {_format_governed_phrase(formula_state.aggregation_rule)}")
-	policy_notes = _definition_rule_notes(definition_state.definition_id, formula_state.formula_id, company_name)
-	threshold_notes = _threshold_notes(formula_state.formula_id)
-	if policy_notes or threshold_notes:
-		answer_lines.append("")
-		answer_lines.append("Policy Notes")
-		for item in policy_notes + threshold_notes:
-			answer_lines.append(f"- {item}")
+		answer_lines.extend(detail_lines)
 	return "\n".join(answer_lines).strip()
 
 
@@ -365,45 +482,41 @@ def _render_blocked_answer(
 	formula_state: GovernedFormulaStateContract,
 	company_name: str,
 	include_business_purpose: bool = False,
+	query_kind: str = "",
 ) -> str:
 	definition_description = _definition_description(definition_state.definition_id)
+	definition_description = _naturalize_definition_text(definition_description)
+	blocked_reason = definition_state.blocked_reason or formula_state.blocked_reason or "This KPI is not yet approved for runtime use."
 	answer_lines = [
-		f"`{definition_state.label}` is defined here, but it is not runtime-active yet.",
-		"",
-		"Blocked Reason",
-		f"- {definition_state.blocked_reason or formula_state.blocked_reason or 'This KPI is not yet approved for runtime use.'}",
+		_sentence(f"{definition_state.label} is defined, but it is not active for live calculation yet because {blocked_reason}"),
 	]
-	answer_lines.append("")
-	answer_lines.append("Intended Governed Basis")
-	answer_lines.append(f"- Definition status: `{definition_state.activation_state or 'blocked'}`")
 	if definition_description:
-		answer_lines.append(f"- Definition: {definition_description}")
+		answer_lines.append(_sentence(f"It is intended to mean {_lower_first(definition_description)}"))
 	business_purpose = _definition_business_purpose(definition_state.definition_id)
 	if include_business_purpose and business_purpose:
-		answer_lines.append(f"- Business purpose: {business_purpose}")
-	answer_lines.append(f"- Entity grain: {_format_governed_phrase(definition_state.entity_grain)}")
-	answer_lines.append(f"- Time basis: {_format_governed_phrase(definition_state.time_basis)}")
+		answer_lines.append(_sentence(f"It matters because {business_purpose}"))
 	source_report_phrase = _source_report_phrase(definition_state, formula_state)
-	if source_report_phrase:
-		answer_lines.append(f"- Source reports: {source_report_phrase}")
 	formula_basis = _formula_basis_phrase(definition_state, formula_state)
 	if formula_basis:
-		answer_lines.append(f"- Intended formula basis: {formula_basis}")
-	policy_notes = _definition_rule_notes(definition_state.definition_id, formula_state.formula_id, company_name)
-	threshold_notes = _threshold_notes(formula_state.formula_id)
-	if policy_notes or threshold_notes:
-		answer_lines.append("")
-		answer_lines.append("Policy Notes")
-		for item in policy_notes + threshold_notes:
-			answer_lines.append(f"- {item}")
+		answer_lines.append(_sentence(f"When activated, it will use {formula_basis}"))
+	if source_report_phrase:
+		answer_lines.append(_sentence(f"The governed source will be {source_report_phrase}"))
+	if _definition_detail_requested(query_kind):
+		detail_lines = [
+			"",
+			"Governed basis:",
+			f"- Entity grain: {_format_governed_phrase(definition_state.entity_grain)}",
+			f"- Time basis: {_format_governed_phrase(definition_state.time_basis)}",
+		]
+		answer_lines.extend(detail_lines)
 	return "\n".join(answer_lines).strip()
 
 
 def _render_ambiguous_answer(definition_state: BusinessDefinitionStateContract) -> str:
 	answer_lines = [
-		f"`{definition_state.lookup_value}` is not a single governed KPI here yet. The approved basis must be clarified first.",
+		f"{definition_state.lookup_value} is not a single governed KPI here yet. Please choose the approved basis first.",
 		"",
-		"Choose One Governed Definition",
+		"Choose one:",
 	]
 	for item in definition_state.candidate_definitions:
 		label = str(item.get("label") or "").strip()
@@ -414,14 +527,12 @@ def _render_ambiguous_answer(definition_state: BusinessDefinitionStateContract) 
 
 def _render_undefined_answer(subject: str) -> str:
 	answer_lines = [
-		f"No governed KPI definition is currently registered for `{subject}`.",
+		f"I don't have a governed KPI definition for {subject} yet.",
 	]
 	examples = _generic_kpi_examples()
 	if examples:
 		answer_lines.append("")
-		answer_lines.append("Current Governed KPI Examples")
-		for item in examples:
-			answer_lines.append(f"- {item}")
+		answer_lines.append(f"Current governed examples include: {', '.join(examples)}.")
 	return "\n".join(answer_lines).strip()
 
 
@@ -472,6 +583,14 @@ def _build_ambiguous_clarification_signal(
 		if isinstance(item, dict) and str(item.get("label") or "").strip()
 		for option in [str(item.get("label") or "").strip()]
 	}
+	option_aliases_by_option = {
+		option: aliases
+		for item in (definition_state.candidate_definitions or [])
+		if isinstance(item, dict)
+		for option in [str(item.get("label") or "").strip()]
+		for aliases in [_listing_view_aliases_for_canonical(_definition_listing_view_canonical(str(item.get("definition_id") or "").strip()))]
+		if option and aliases
+	}
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage="frontdoor",
@@ -486,6 +605,7 @@ def _build_ambiguous_clarification_signal(
 			"continuation_lane": "front_door",
 			"continuation_intent_class": "governed_kpi_definition",
 			"resolved_message_by_option": resolved_message_by_option,
+			"option_aliases_by_option": option_aliases_by_option,
 			"lookup_value": str(definition_state.lookup_value or "").strip(),
 			"query_kind": str(query_kind or "").strip(),
 			"include_business_purpose": bool(include_business_purpose),
@@ -536,6 +656,7 @@ def maybe_build_governed_kpi_frontdoor_response(
 			formula_state=formula_state,
 			company_name=resolved_company_name,
 			include_business_purpose=include_business_purpose,
+			query_kind=query_kind,
 		)
 	elif definition_state.resolution_state == "blocked":
 		answer_text = _render_blocked_answer(
@@ -543,6 +664,7 @@ def maybe_build_governed_kpi_frontdoor_response(
 			formula_state=formula_state,
 			company_name=resolved_company_name,
 			include_business_purpose=include_business_purpose,
+			query_kind=query_kind,
 		)
 	elif definition_state.resolution_state == "ambiguous":
 		answer_text = _render_ambiguous_answer(definition_state)
@@ -643,8 +765,13 @@ def run_governed_kpi_frontdoor_probe() -> Dict[str, Any]:
 		company_name=company_name,
 	)
 	blocked = maybe_build_governed_kpi_frontdoor_response(
-		request_id="phase2-4-blocked",
+		request_id="phase2-4-collection-ratio",
 		message="what is collection ratio",
+		company_name=company_name,
+	)
+	active_tenure = maybe_build_governed_kpi_frontdoor_response(
+		request_id="phase2-4-tenure-created",
+		message="what is customer tenure by customer created date",
 		company_name=company_name,
 	)
 	undefined = maybe_build_governed_kpi_frontdoor_response(
@@ -663,7 +790,8 @@ def run_governed_kpi_frontdoor_probe() -> Dict[str, Any]:
 		and str(((ambiguous.get("definition_state") or {}).get("resolution_state") if isinstance(ambiguous, dict) else "") or "").strip() == "ambiguous"
 		and str((((ambiguous.get("clarification_signal_payload") or {}).get("reason_type")) if isinstance(ambiguous, dict) else "") or "").strip() == "governed_kpi_definition_ambiguity"
 		and str(((meaning_with_context.get("definition_state") or {}).get("resolution_state") if isinstance(meaning_with_context, dict) else "") or "").strip() == "ambiguous"
-		and str(((blocked.get("definition_state") or {}).get("resolution_state") if isinstance(blocked, dict) else "") or "").strip() == "blocked"
+		and str(((blocked.get("definition_state") or {}).get("resolution_state") if isinstance(blocked, dict) else "") or "").strip() == "active"
+		and str(((active_tenure.get("definition_state") or {}).get("resolution_state") if isinstance(active_tenure, dict) else "") or "").strip() == "active"
 		and str(((undefined.get("definition_state") or {}).get("resolution_state") if isinstance(undefined, dict) else "") or "").strip() == "undefined"
 		and not deictic_passthrough
 	)
@@ -674,6 +802,7 @@ def run_governed_kpi_frontdoor_probe() -> Dict[str, Any]:
 		"ambiguous": _probe_safe_response(ambiguous),
 		"meaning_with_context": _probe_safe_response(meaning_with_context),
 		"blocked": _probe_safe_response(blocked),
+		"active_tenure": _probe_safe_response(active_tenure),
 		"undefined": _probe_safe_response(undefined),
 		"deictic_passthrough": _probe_safe_response(deictic_passthrough),
 	}

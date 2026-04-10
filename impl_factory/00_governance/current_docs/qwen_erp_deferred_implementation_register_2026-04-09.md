@@ -207,6 +207,78 @@ Recommended future home:
 
 1. later advisory layer after formula and threshold governance, not before
 
+### 3.7 Customer-Created Tenure Basis
+
+Origin:
+
+1. Phase `2.2A` Core KPI Definitions
+
+Current state:
+
+1. resolved on 2026-04-10
+2. active in the governed KPI registry and customer lifecycle support
+
+Resolution note:
+
+1. a governed customer-master read capability now exists
+2. customer creation date is now exposed through governed metadata and customer lifecycle support
+3. the basis is active without silently overriding generic tenure clarification
+
+Recommended future home:
+
+1. closed as part of the 2026-04-10 blocked-item reactivation slice
+
+### 3.8 User-Facing Overdue Severity Activation
+
+Origin:
+
+1. Phase `2.3` Threshold And Risk Semantics
+
+Current state:
+
+1. deferred for user-facing activation
+2. threshold metadata exists, but activation remains blocked by policy
+3. approval-pack note now exists:
+   - [qwen_erp_overdue_severity_policy_pack_2026-04-10.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_overdue_severity_policy_pack_2026-04-10.md)
+
+Why deferred:
+
+1. AR aging authority is strong enough to support overdue-ratio calculation
+2. however labels such as `watch`, `elevated`, and `critical` are still business-policy claims
+3. those labels should not reach runtime answers until finance explicitly approves the policy bands
+
+Reopen trigger:
+
+1. finance approves overdue severity labels and numeric bands explicitly
+2. the approved labels are confirmed for user-facing wording
+3. browser/UAT confirms blocked-safe behavior can widen without advisory drift
+
+Recommended future home:
+
+1. later Phase `2` or post-Phase `2` risk-presentation activation slice
+
+### 3.9 Collection Ratio Runtime Activation
+
+Origin:
+
+1. Phase `2.2A` Core KPI Definitions
+2. Phase `2.3` Threshold And Risk Semantics
+
+Current state:
+
+1. resolved on 2026-04-10 for definition and formula activation
+2. collection-ratio threshold labels remain separately deferred by policy
+
+Resolution note:
+
+1. an approved governed source basis now exists using allocated customer receipt amounts against submitted sales invoices for the requested invoice period
+2. capability and report metadata now record the finance authority path explicitly
+3. threshold labels remain blocked-safe until finance approves user-facing wording
+
+Recommended future home:
+
+1. closed for KPI activation; threshold presentation remains deferred under user-facing policy control
+
 ## 4. How Future Work Should Use This Register
 
 Before starting a new phase:
@@ -225,6 +297,7 @@ When a deferred item is reopened:
 
 The current decision is:
 
-1. keep these items deferred and visible
-2. do not widen Phase `2` to absorb them casually
-3. move next into Phase `2` business-definition and formula governance
+1. keep the remaining deferred items visible
+2. treat overdue severity as the remaining Phase `2` blocked item pending explicit finance policy
+3. use the overdue-severity policy pack as the central approval and future-adjustment note for label or band changes
+4. move next into governed KPI execution or the next approved phase using the now-activated registry foundations

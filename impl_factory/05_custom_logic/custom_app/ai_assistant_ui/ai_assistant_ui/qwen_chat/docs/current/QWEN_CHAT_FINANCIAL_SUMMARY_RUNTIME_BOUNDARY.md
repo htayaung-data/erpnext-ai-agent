@@ -149,9 +149,9 @@ Current checkpoint:
    `receivable` + `payable` + `cross_domain_health` -> `working_capital_health`
 3. further expansion should stop here unless a new design checkpoint explicitly approves it
 
-See:
+Historical checkpoint:
 
-1. [QWEN_CHAT_FINANCIAL_SUMMARY_SECOND_WAVE_CHECKPOINT.md](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/QWEN_CHAT_FINANCIAL_SUMMARY_SECOND_WAVE_CHECKPOINT.md)
+1. [QWEN_CHAT_FINANCIAL_SUMMARY_SECOND_WAVE_CHECKPOINT.md](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/docs/archive/QWEN_CHAT_FINANCIAL_SUMMARY_SECOND_WAVE_CHECKPOINT.md)
 
 ## 8. Review Rule
 

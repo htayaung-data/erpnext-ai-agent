@@ -228,6 +228,69 @@
       "default_validation_profile": "report_grounded_read"
     },
     {
+      "capability_id": "customer_master_read",
+      "label": "Customer Master Read",
+      "default_report_name": "Customer Master List",
+      "report_families": [
+        "customer_master_list"
+      ],
+      "report_names": [
+        "Customer Master List"
+      ],
+      "ontology_concepts": [
+        "customer"
+      ],
+      "intent_classes": [],
+      "semantic_tags": [
+        "customer",
+        "master_data",
+        "lifecycle"
+      ],
+      "dimensions": [
+        "Customer",
+        "Creation",
+        "Territory",
+        "Customer Group"
+      ],
+      "metrics": [],
+      "fresh_query_defaults": {},
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
+      "capability_id": "collections_read",
+      "label": "Collections Read",
+      "default_report_name": "Payment Entry List",
+      "report_families": [
+        "payment_entry_list"
+      ],
+      "report_names": [
+        "Payment Entry List",
+        "Sales Payment Summary"
+      ],
+      "ontology_concepts": [
+        "receivable",
+        "customer",
+        "sales_invoice"
+      ],
+      "intent_classes": [],
+      "semantic_tags": [
+        "collections",
+        "payments",
+        "receipts"
+      ],
+      "dimensions": [
+        "Payment Entry",
+        "Posting Date",
+        "Customer"
+      ],
+      "metrics": [
+        "Total Allocated Amount",
+        "Received Amount"
+      ],
+      "fresh_query_defaults": {},
+      "default_validation_profile": "report_grounded_read"
+    },
+    {
       "capability_id": "purchase_order_read",
       "label": "Purchase Order Read",
       "default_report_name": "Purchase Order List",

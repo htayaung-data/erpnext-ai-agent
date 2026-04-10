@@ -392,6 +392,13 @@ def _aging_title(artifact: NormalizedFamilyArtifactContract) -> str:
 	return _title_with_period(title, artifact.period)
 
 
+def _aging_overdue_31_plus(item: Dict[str, Any]) -> float:
+	return sum(
+		_float_value(item.get(key))
+		for key in ("bucket_31_60", "bucket_61_90", "bucket_91_120", "bucket_121_above")
+	)
+
+
 def _aging_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
 	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
 	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
@@ -428,12 +435,13 @@ def _aging_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List
 			{
 				"block_type": "data_table",
 				"title": f"Top {party_label}s",
-				"columns": [party_label, "Outstanding", "Over 121 Days"],
+				"columns": [party_label, "Outstanding", "Total Due", "Overdue (31+)"],
 				"rows": [
 					[
 						_clean_text(item.get("party")),
 						_amount_text(item.get("outstanding"), _clean_text(item.get("currency") or currency)),
-						_amount_text(item.get("bucket_121_above"), _clean_text(item.get("currency") or currency)),
+						_amount_text(item.get("total_due"), _clean_text(item.get("currency") or currency)),
+						_amount_text(_aging_overdue_31_plus(item), _clean_text(item.get("currency") or currency)),
 					]
 					for item in top_parties
 				],

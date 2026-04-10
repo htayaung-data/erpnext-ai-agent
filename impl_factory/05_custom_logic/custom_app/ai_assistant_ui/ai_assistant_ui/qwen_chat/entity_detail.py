@@ -11,6 +11,12 @@ from ai_assistant_ui.qwen_chat.artifact_narrative import (
 	build_artifact_narrative_contract,
 	narrate_governed_artifact,
 )
+from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import (
+	get_customer_credit_policy_snapshot,
+	get_customer_receivable_snapshot,
+	resolve_company_name,
+)
+from ai_assistant_ui.qwen_chat.customer_lifecycle_support import get_customer_lifecycle_snapshot
 from ai_assistant_ui.qwen_chat.family_adapters import (
 	_report_result,
 	_report_rows,
@@ -43,6 +49,11 @@ def _numeric(value: Any) -> float:
 
 def _money(value: Any) -> str:
 	return f"{_numeric(value):,.2f}".rstrip("0").rstrip(".")
+
+
+def _days_text(value: Any) -> str:
+	days = int(max(_numeric(value), 0))
+	return f"{days} day" if days == 1 else f"{days} days"
 
 
 def _markdown_table(columns: List[str], rows: List[List[str]]) -> str:
@@ -393,16 +404,7 @@ def _current_date_iso() -> str:
 
 
 def _resolve_company_name(company: str) -> str:
-	company_name = _clean_text(company)
-	if company_name:
-		return company_name
-	try:
-		candidates = frappe.get_all("Company", pluck="name")
-		if isinstance(candidates, list) and candidates:
-			return _clean_text(candidates[0])
-	except Exception:
-		return ""
-	return ""
+	return resolve_company_name(company)
 
 
 def _match_party_row(row: Dict[str, Any], entity_name: str, entity_label: str) -> bool:
@@ -415,114 +417,20 @@ def _match_party_row(row: Dict[str, Any], entity_name: str, entity_label: str) -
 
 
 def _customer_receivable_snapshot(entity_name: str, entity_label: str, company: str) -> Dict[str, Any]:
-	company_name = _resolve_company_name(company)
-	if not company_name:
-		return {}
-	report_date = _current_date_iso()
-	runtime_payload = execute_governed_report(
-		report_name="Accounts Receivable Summary",
-		filters={"company": company_name, "report_date": report_date},
-		user="Administrator",
-		mode="entity_detail",
-		target_limit=0,
+	return get_customer_receivable_snapshot(
+		entity_name,
+		customer_label=entity_label,
+		company=company,
+		as_of_date=_current_date_iso(),
 	)
-	report_tool = _report_tool(runtime_payload if isinstance(runtime_payload, dict) else {})
-	result = _report_result(report_tool)
-	rows = _report_rows(result)
-	target_row = next(
-		(row for row in rows if isinstance(row, dict) and _match_party_row(row, entity_name, entity_label)),
-		{},
-	)
-	if not target_row:
-		return {}
-	outstanding = _numeric(target_row.get("outstanding"))
-	total_due = _numeric(target_row.get("total_due"))
-	future_amount = _numeric(target_row.get("future_amount"))
-	range1 = _numeric(target_row.get("range1"))
-	range2 = _numeric(target_row.get("range2"))
-	range3 = _numeric(target_row.get("range3"))
-	range4 = _numeric(target_row.get("range4"))
-	range5 = _numeric(target_row.get("range5"))
-	overdue_total = range2 + range3 + range4 + range5
-	overdue_ratio = (overdue_total / outstanding) if outstanding > 0 else 0.0
-	return {
-		"report_date": report_date,
-		"company": company_name,
-		"currency": _clean_text(target_row.get("currency")),
-		"summary": [
-			("Outstanding (MMK)", _money(outstanding)),
-			("Total Due (MMK)", _money(total_due)),
-			("Overdue Total (MMK)", _money(overdue_total)),
-			("Overdue Ratio", f"{overdue_ratio * 100:.1f}%"),
-		],
-		"bucket_rows": [
-			("<0", future_amount),
-			("0-30", range1),
-			("31-60", range2),
-			("61-90", range3),
-			("91-120", range4),
-			("121-Above", range5),
-		],
-		"metrics": {
-			"outstanding_total": outstanding,
-			"total_due": total_due,
-			"future_bucket_total": future_amount,
-			"current_bucket_total": range1,
-			"bucket_31_60_total": range2,
-			"bucket_61_90_total": range3,
-			"bucket_91_120_total": range4,
-			"bucket_121_above_total": range5,
-			"overdue_total": overdue_total,
-			"overdue_ratio": overdue_ratio,
-		},
-	}
 
 
 def _customer_credit_policy_snapshot(entity_name: str, company: str, outstanding_total: float) -> Dict[str, Any]:
-	company_name = _resolve_company_name(company)
-	filters: Dict[str, Any] = {"parent": entity_name}
-	if company_name:
-		filters["company"] = company_name
-	rows = frappe.get_all(
-		"Customer Credit Limit",
-		fields=["company", "credit_limit", "bypass_credit_limit_check"],
-		filters=filters,
-		limit_page_length=20,
+	return get_customer_credit_policy_snapshot(
+		entity_name,
+		company=company,
+		outstanding_total=outstanding_total,
 	)
-	if not rows and company_name:
-		rows = frappe.get_all(
-			"Customer Credit Limit",
-			fields=["company", "credit_limit", "bypass_credit_limit_check"],
-			filters={"parent": entity_name},
-			limit_page_length=20,
-		)
-	target_row = next(
-		(
-			row
-			for row in (rows or [])
-			if isinstance(row, dict) and _clean_text(row.get("company")) == company_name
-		),
-		(rows[0] if isinstance(rows, list) and rows else {}),
-	)
-	if not isinstance(target_row, dict):
-		target_row = {}
-	credit_limit = _numeric(target_row.get("credit_limit"))
-	configured = credit_limit > 0
-	outstanding_for_limit = max(_numeric(outstanding_total), 0.0)
-	available_credit = max(credit_limit - outstanding_for_limit, 0.0) if configured else 0.0
-	exceeded_amount = max(outstanding_for_limit - credit_limit, 0.0) if configured else 0.0
-	utilization_ratio = (outstanding_for_limit / credit_limit) if configured else 0.0
-	return {
-		"company": _clean_text(target_row.get("company")) or company_name,
-		"has_row": bool(target_row),
-		"configured": configured,
-		"credit_limit": credit_limit,
-		"available_credit": available_credit,
-		"exceeded_amount": exceeded_amount,
-		"utilization_ratio": utilization_ratio,
-		"exceeded": bool(configured and exceeded_amount > 0),
-		"bypass_credit_limit_check": bool(int(target_row.get("bypass_credit_limit_check") or 0)),
-	}
 
 
 def _sales_invoice_delivery_proof(doc) -> Dict[str, Any]:
@@ -1249,6 +1157,7 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 	recent = _recent_invoices(invoice_doctype, party_field, entity_name, detail_company)
 	credit_snapshot = {}
 	policy_snapshot = {}
+	lifecycle_snapshot = {}
 	if entity_type == "customer":
 		credit_snapshot = _customer_receivable_snapshot(entity_name, entity_label, detail_company)
 		outstanding_for_policy = _numeric(
@@ -1257,6 +1166,7 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 			else stats.get("outstanding_amount")
 		)
 		policy_snapshot = _customer_credit_policy_snapshot(entity_name, detail_company, outstanding_for_policy)
+		lifecycle_snapshot = get_customer_lifecycle_snapshot(entity_name, company=detail_company)
 	summary = [
 		("Name", entity_label),
 		("Code", entity_name),
@@ -1307,6 +1217,36 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 				],
 			),
 		]
+	lifecycle_rows: List[Tuple[str, str]] = []
+	if entity_type == "customer":
+		customer_created_date = _clean_text(lifecycle_snapshot.get("customer_created_date"))
+		first_sales_order_date = _clean_text(lifecycle_snapshot.get("first_sales_order_date"))
+		first_sales_invoice_date = _clean_text(lifecycle_snapshot.get("first_sales_invoice_date"))
+		as_of_date = _clean_text(lifecycle_snapshot.get("as_of_date"))
+		if customer_created_date:
+			lifecycle_rows.append(("Customer Created Date", customer_created_date))
+			lifecycle_rows.append(
+				(
+					f"Tenure from Customer Created ({as_of_date or 'As Of'})",
+					_days_text(lifecycle_snapshot.get("customer_created_tenure_days")),
+				)
+			)
+		if first_sales_order_date:
+			lifecycle_rows.append(("First Sales Order Date", first_sales_order_date))
+			lifecycle_rows.append(
+				(
+					f"Tenure from First Sales Order ({as_of_date or 'As Of'})",
+					_days_text(lifecycle_snapshot.get("first_sales_order_tenure_days")),
+				)
+			)
+		if first_sales_invoice_date:
+			lifecycle_rows.append(("First Sales Invoice Date", first_sales_invoice_date))
+			lifecycle_rows.append(
+				(
+					f"Tenure from First Sales Invoice ({as_of_date or 'As Of'})",
+					_days_text(lifecycle_snapshot.get("first_sales_invoice_tenure_days")),
+				)
+			)
 	policy_rows: List[Tuple[str, str]] = []
 	if entity_type == "customer":
 		policy_company = _clean_text(policy_snapshot.get("company")) or detail_company
@@ -1339,10 +1279,12 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 		"family_id": "entity_detail",
 		"title": f"{entity_label} Details",
 		"source_reports": [doctype, invoice_doctype]
+		+ (["Sales Order"] if entity_type == "customer" and _clean_text(lifecycle_snapshot.get("first_sales_order_date")) else [])
 		+ (["Accounts Receivable Summary"] if credit_snapshot else [])
 		+ (["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []),
 		"blocks": [
 			_summary_block("Profile", summary),
+			*([_summary_block("Lifecycle", lifecycle_rows)] if lifecycle_rows else []),
 			*credit_blocks,
 			*([_summary_block("Commercial Policy", policy_rows)] if policy_rows else []),
 			*([_bullet_block("Highlights", bullets)] if bullets else []),
@@ -1368,11 +1310,20 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 				"credit_limit_bypass_sales_order": bool(policy_snapshot.get("bypass_credit_limit_check")),
 			}
 		)
+	if lifecycle_snapshot:
+		artifact_metrics.update(
+			{
+				"customer_created_tenure_days": int(_numeric(lifecycle_snapshot.get("customer_created_tenure_days"))),
+				"first_sales_order_tenure_days": int(_numeric(lifecycle_snapshot.get("first_sales_order_tenure_days"))),
+				"first_sales_invoice_tenure_days": int(_numeric(lifecycle_snapshot.get("first_sales_invoice_tenure_days"))),
+			}
+		)
 	artifact = {
 		"type": "qwen_entity_detail_artifact",
 		"artifact_type": "entity_detail_artifact",
 		"family_id": "entity_detail",
 		"source_reports": [doctype, invoice_doctype]
+		+ (["Sales Order"] if entity_type == "customer" and _clean_text(lifecycle_snapshot.get("first_sales_order_date")) else [])
 		+ (["Accounts Receivable Summary"] if credit_snapshot else [])
 		+ (["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []),
 		"filters": {"company": detail_company, "entity_key": entity_name},
@@ -1400,6 +1351,11 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 			"credit_policy": [
 				{"label": _clean_text(label), "value": _clean_text(value)}
 				for label, value in policy_rows
+				if _clean_text(label) and _clean_text(value)
+			],
+			"lifecycle": [
+				{"label": _clean_text(label), "value": _clean_text(value)}
+				for label, value in lifecycle_rows
 				if _clean_text(label) and _clean_text(value)
 			],
 			"recent_transactions": [

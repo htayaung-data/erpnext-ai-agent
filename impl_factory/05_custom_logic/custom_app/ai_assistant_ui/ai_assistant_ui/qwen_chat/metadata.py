@@ -87,6 +87,26 @@ def load_financial_summary_resolution_registry() -> Dict[str, Any]:
 	return _load_json_copy("financial_summary_resolution_registry.json")
 
 
+def load_business_definition_registry() -> Dict[str, Any]:
+	return _load_json_copy("business_definition_registry.json")
+
+
+def load_governed_formula_registry() -> Dict[str, Any]:
+	return _load_json_copy("governed_formula_registry.json")
+
+
+def load_business_threshold_registry() -> Dict[str, Any]:
+	return _load_json_copy("business_threshold_registry.json")
+
+
+def load_business_rule_registry() -> Dict[str, Any]:
+	return _load_json_copy("business_rule_registry.json")
+
+
+def load_governed_kpi_execution_registry() -> Dict[str, Any]:
+	return _load_json_copy("governed_kpi_execution_registry.json")
+
+
 def load_smoke_fixture_registry() -> Dict[str, Any]:
 	return _load_json_copy("smoke_fixture_registry.json")
 
@@ -243,6 +263,16 @@ def get_semantic_resolution_slot_definition(slot_name: str) -> Dict[str, Any]:
 	return {}
 
 
+def list_semantic_resolution_alias_entries(slot_name: str) -> List[Dict[str, Any]]:
+	alias_maps = load_semantic_resolution_registry().get("alias_maps")
+	if not isinstance(alias_maps, dict):
+		return []
+	values = alias_maps.get(str(slot_name or "").strip())
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
 def list_financial_summary_clarification_specs() -> List[Dict[str, Any]]:
 	values = load_financial_summary_clarification_registry().get("reason_types")
 	if not isinstance(values, list):
@@ -255,6 +285,147 @@ def list_smoke_fixture_specs() -> List[Dict[str, Any]]:
 	if not isinstance(values, list):
 		return []
 	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_business_definition_specs() -> List[Dict[str, Any]]:
+	values = load_business_definition_registry().get("definitions")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_business_definition_spec(definition_id: str) -> Dict[str, Any]:
+	target = str(definition_id or "").strip()
+	for item in list_business_definition_specs():
+		if str(item.get("definition_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_governed_formula_specs() -> List[Dict[str, Any]]:
+	values = load_governed_formula_registry().get("formulas")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_governed_formula_spec(formula_id: str) -> Dict[str, Any]:
+	target = str(formula_id or "").strip()
+	for item in list_governed_formula_specs():
+		if str(item.get("formula_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_governed_formula_specs_for_definition(definition_id: str) -> List[Dict[str, Any]]:
+	target = str(definition_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_governed_formula_specs()
+		if str(item.get("definition_id") or "").strip() == target
+	]
+
+
+def list_business_threshold_specs() -> List[Dict[str, Any]]:
+	values = load_business_threshold_registry().get("threshold_sets")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_business_threshold_spec(threshold_id: str) -> Dict[str, Any]:
+	target = str(threshold_id or "").strip()
+	for item in list_business_threshold_specs():
+		if str(item.get("threshold_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_business_threshold_specs_for_definition(definition_id: str) -> List[Dict[str, Any]]:
+	target = str(definition_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_business_threshold_specs()
+		if str(item.get("definition_id") or "").strip() == target
+	]
+
+
+def list_business_threshold_specs_for_formula(formula_id: str) -> List[Dict[str, Any]]:
+	target = str(formula_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_business_threshold_specs()
+		if str(item.get("formula_id") or "").strip() == target
+	]
+
+
+def list_business_rule_specs() -> List[Dict[str, Any]]:
+	values = load_business_rule_registry().get("rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_business_rule_spec(rule_id: str) -> Dict[str, Any]:
+	target = str(rule_id or "").strip()
+	for item in list_business_rule_specs():
+		if str(item.get("rule_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_governed_kpi_execution_specs() -> List[Dict[str, Any]]:
+	values = load_governed_kpi_execution_registry().get("executions")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_governed_kpi_execution_spec(execution_id: str) -> Dict[str, Any]:
+	target = str(execution_id or "").strip()
+	for item in list_governed_kpi_execution_specs():
+		if str(item.get("execution_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_governed_kpi_execution_specs_for_definition(definition_id: str) -> List[Dict[str, Any]]:
+	target = str(definition_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_governed_kpi_execution_specs()
+		if str(item.get("definition_id") or "").strip() == target
+	]
+
+
+def list_governed_kpi_execution_specs_for_formula(formula_id: str) -> List[Dict[str, Any]]:
+	target = str(formula_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_governed_kpi_execution_specs()
+		if str(item.get("formula_id") or "").strip() == target
+	]
+
+
+def list_governed_kpi_execution_specs_for_shape(execution_shape: str) -> List[Dict[str, Any]]:
+	target = str(execution_shape or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_governed_kpi_execution_specs()
+		if str(item.get("execution_shape") or "").strip() == target
+	]
 
 
 def get_smoke_fixture_spec(fixture_id: str) -> Dict[str, Any]:

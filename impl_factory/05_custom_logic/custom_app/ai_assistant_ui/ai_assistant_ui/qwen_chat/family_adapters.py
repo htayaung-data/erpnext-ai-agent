@@ -232,11 +232,24 @@ def _clean_metric_key(value: Any) -> str:
 
 
 def _requested_metric_keys(compiler_contract: Dict[str, Any]) -> set[str]:
-	return {
+	requested = {
 		_clean_metric_key(value)
 		for value in (compiler_contract.get("requested_metrics") or [])
 		if str(value or "").strip()
 	}
+	governed_details = (
+		compiler_contract.get("governed_resolution_details")
+		if isinstance(compiler_contract.get("governed_resolution_details"), dict)
+		else {}
+	)
+	requested.update(
+		{
+			_clean_metric_key(value)
+			for value in (governed_details.get("requested_metric_keys") or [])
+			if str(value or "").strip()
+		}
+	)
+	return requested
 
 
 def _requested_dimension_keys(compiler_contract: Dict[str, Any]) -> set[str]:
@@ -788,6 +801,44 @@ def _aging_bucket_value(row: Dict[str, Any], field_candidates: Tuple[str, ...]) 
 		if fieldname in row:
 			return _numeric_value(row.get(fieldname))
 	return 0.0
+
+
+def _aging_row_overdue_total(row: Dict[str, Any]) -> float:
+	return (
+		_aging_bucket_value(row, ("range2",))
+		+ _aging_bucket_value(row, ("range3",))
+		+ _aging_bucket_value(row, ("range4",))
+		+ _aging_bucket_value(row, ("range5",))
+	)
+
+
+def _aging_filter_mode(compiler_contract: Dict[str, Any]) -> str:
+	requested = _requested_metric_keys(compiler_contract)
+	if "overdue_only" in requested:
+		return "overdue_only"
+	if "credit_balance_only" in requested:
+		return "credit_balance_only"
+	return ""
+
+
+def _filter_aging_rows(rows: List[Dict[str, Any]], *, filter_mode: str) -> List[Dict[str, Any]]:
+	if not filter_mode:
+		return rows
+	filtered: List[Dict[str, Any]] = []
+	for row in rows:
+		if not isinstance(row, dict):
+			continue
+		outstanding = _numeric_value(row.get("outstanding"))
+		if filter_mode == "credit_balance_only":
+			if outstanding < 0:
+				filtered.append(row)
+			continue
+		if filter_mode == "overdue_only":
+			if _aging_row_overdue_total(row) > 0:
+				filtered.append(row)
+			continue
+		filtered.append(row)
+	return filtered
 
 
 def _aging_party_entry(row: Dict[str, Any], aging_type: str) -> Dict[str, Any]:
@@ -2195,6 +2246,7 @@ def _build_aging_artifact(
 	request_id: str,
 	report_name: str,
 	report_tool: Dict[str, Any],
+	compiler_contract: Dict[str, Any],
 ) -> FamilyArtifactOutcome:
 	result = _report_result(report_tool)
 	rows = _report_rows(result)
@@ -2215,6 +2267,9 @@ def _build_aging_artifact(
 		)
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
+	filter_mode = _aging_filter_mode(compiler_contract)
+	if filter_mode:
+		rows = _filter_aging_rows(rows, filter_mode=filter_mode)
 	currency = ""
 	for row in rows:
 		currency = str(row.get("currency") or "").strip()
@@ -2232,6 +2287,7 @@ def _build_aging_artifact(
 			"party_dimension_label": _aging_party_dimension_label(aging_type),
 			"source_grain": "summary" if "summary" in _normalize_key(report_name) else "detail",
 			"bucket_labels": [label for _, label, _ in _aging_bucket_specs()],
+			"filter_mode": filter_mode,
 		},
 		metrics=_aging_metrics(rows, aging_type),
 		sections=_aging_sections(rows, aging_type, currency),
@@ -2447,6 +2503,7 @@ def build_normalized_family_artifact(
 			request_id=request_id,
 			report_name=report_name,
 			report_tool=report_tool,
+			compiler_contract=compiler_contract,
 		)
 	if target_family_id == "ranking_analytics":
 		return _build_ranking_artifact(

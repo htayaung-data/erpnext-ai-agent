@@ -101,10 +101,18 @@ class TestEntityDetailContracts(unittest.TestCase):
 			entity_detail_module,
 			"_aggregate_invoice_stats",
 			return_value={"invoice_count": 0, "total_amount": 0, "outstanding_amount": 0, "latest_date": ""},
-		), patch.object(entity_detail_module, "_recent_invoices", return_value=[]), patch.object(
-			entity_detail_module,
-			"execute_governed_report",
+		), patch.object(entity_detail_module, "_recent_invoices", return_value=[]), patch(
+			"ai_assistant_ui.qwen_chat.customer_kpi_runtime_support.execute_governed_report",
 			return_value=report_payload,
+		), patch(
+			"ai_assistant_ui.qwen_chat.customer_kpi_runtime_support._report_tool",
+			return_value={},
+		), patch(
+			"ai_assistant_ui.qwen_chat.customer_kpi_runtime_support._report_result",
+			return_value={},
+		), patch(
+			"ai_assistant_ui.qwen_chat.customer_kpi_runtime_support._report_rows",
+			return_value=report_payload["tool_trace"][0]["output_obj"]["result"]["data"],
 		):
 			detail = entity_detail_module._customer_or_supplier_detail(
 				"customer",
@@ -800,6 +808,29 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertIn("61-90", answer)
 		self.assertIn("300,000", answer)
 
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_overdue_ratio(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="what is this customer's overdue ratio?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Bayint Naung Wholesale Mobile"},
+				"metrics": {
+					"outstanding_total": 12000000,
+					"overdue_total": 10000000,
+					"overdue_ratio": 0.8333333333333334,
+				},
+				"sections": {
+					"credit_policy": [
+						{"label": "Company", "value": "Enterprise Co"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("83.3%", answer)
+		self.assertIn("10,000,000", answer)
+		self.assertIn("12,000,000", answer)
+
 	def test_grounded_artifact_direct_evidence_answer_returns_customer_credit_limit_status(self):
 		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
 			raw_message="has this customer exceeded credit limit?",
@@ -865,6 +896,67 @@ class TestEntityDetailContracts(unittest.TestCase):
 		)
 		self.assertIn("Wholesale Selling - MMOB", answer)
 		self.assertIn("default price list", answer.lower())
+
+	def test_grounded_artifact_direct_evidence_answer_returns_customer_created_tenure(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="what is this customer's tenure by customer created date?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {"customer_created_tenure_days": 11},
+				"sections": {
+					"lifecycle": [
+						{"label": "Customer Created Date", "value": "2026-03-30"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("11 days", answer.lower())
+		self.assertIn("2026-03-30", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_clarifies_generic_customer_tenure_basis(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="what is this customer's tenure?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {
+					"customer_created_tenure_days": 11,
+					"first_sales_order_tenure_days": 11,
+					"first_sales_invoice_tenure_days": 11,
+				},
+				"sections": {
+					"lifecycle": [
+						{"label": "Customer Created Date", "value": "2026-03-30"},
+						{"label": "First Sales Order Date", "value": "2026-03-30"},
+						{"label": "First Sales Invoice Date", "value": "2026-03-30"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("three approved bases", answer.lower())
+		self.assertIn("customer created date", answer.lower())
+		self.assertIn("first submitted sales order date", answer.lower())
+
+	def test_grounded_artifact_direct_evidence_answer_returns_first_sales_invoice_date(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="when was the first sales invoice for this customer?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Zegyo Mobile Supply House"},
+				"metrics": {"first_sales_invoice_tenure_days": 11},
+				"sections": {
+					"lifecycle": [
+						{"label": "First Sales Invoice Date", "value": "2026-03-30"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("2026-03-30", answer)
+		self.assertIn("first observed submitted sales invoice", answer.lower())
 
 	def test_grounded_artifact_evidence_boundary_answer_blocks_actual_sales_order_delivery_event_date(self):
 		answer = boundary_support_module.grounded_artifact_evidence_boundary_answer(

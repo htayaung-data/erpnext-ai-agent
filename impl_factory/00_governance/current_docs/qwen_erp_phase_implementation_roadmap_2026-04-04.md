@@ -561,6 +561,22 @@ Deliver:
 2. `GovernedFormulaRegistry`
 3. metadata schema for ownership, scope, formula, and threshold logic
 
+Current checkpoint:
+
+1. `2.1A` is complete:
+   - metadata homes now exist for business definitions, formulas, and thresholds
+   - loader/accessor scaffolding is active in `metadata.py`
+   - deterministic validation is active in `business_definition_formula_registry.py`
+   - deterministic contract coverage is active in `test_business_definition_formula_registry.py`
+2. `2.1B` is complete:
+   - typed definition-state contracts are active in `business_definition_state.py`
+   - blocked-vs-active normalization helpers are active
+   - deterministic state-contract coverage is active in `test_business_definition_state.py`
+   - callable seam verification is active through `run_business_definition_state_probe`
+3. `2.2A` is next:
+   - first governed KPI definition entries
+   - honest activation states for active versus blocked candidates
+
 ### Mini-phase 2.2: Core KPI Definitions
 
 Deliver:
@@ -570,6 +586,30 @@ Deliver:
 3. collection ratio
 4. credit utilization
 
+Current checkpoint:
+
+1. `2.2A` is complete:
+   - first governed KPI definitions are now encoded in business-definition metadata
+   - first governed formulas are now encoded in formula metadata
+   - active definitions now include:
+     - average order value by sales order
+     - average order value by sales invoice
+     - customer credit utilization as of date
+     - customer tenure by customer created date
+     - customer tenure by first sales order
+     - customer tenure by first sales invoice
+     - collection ratio by sales invoice period
+   - generic KPI names now resolve honestly:
+     - `average order value` is ambiguous until document basis is clarified
+     - `tenure` is ambiguous until basis is clarified
+     - `collection ratio` is defined and active
+     - `credit utilization` is defined and active
+2. customer lifecycle authority is now widened intentionally:
+   - customer-created tenure now uses governed customer-master creation date
+   - first-sales-order and first-sales-invoice tenure bases now use governed customer lifecycle evidence
+3. `2.3` is next:
+   - threshold and risk semantics
+
 ### Mini-phase 2.3: Threshold and Risk Semantics
 
 Deliver:
@@ -578,6 +618,20 @@ Deliver:
 2. customer credit-risk thresholds
 3. company-specific business-rule registry
 
+Current checkpoint:
+
+1. `2.3` is complete:
+   - threshold semantics are now encoded in `business_threshold_registry.json`
+   - company-specific policy rules are now encoded in `business_rule_registry.json`
+   - active threshold set now exists for customer credit utilization policy bands
+   - blocked threshold sets now exist for overdue severity labels and collection-ratio health bands
+   - supporting overdue-ratio definition and formula were added to keep threshold ownership auditable
+   - deterministic validation and callable probes are active for threshold and rule semantics
+2. `2.4` is complete:
+   - formula phase closure is active
+   - blocked-safe runtime behavior for undefined or blocked KPIs is active
+   - doc refresh and release-gate promotion are active
+
 ### Mini-phase 2.4: Formula Phase Closure
 
 Deliver:
@@ -585,6 +639,102 @@ Deliver:
 1. registry-backed runtime usage
 2. blocked-safe behavior for undefined KPIs
 3. full-gate pass and doc refresh
+
+Current checkpoint:
+
+1. `2.4` is complete:
+   - governed KPI-definition runtime behavior is now active in the frontdoor lane through `governed_kpi_support.py`
+   - the runtime now answers active, blocked, ambiguous, and explicit-definition undefined KPI asks from governed metadata
+   - threshold semantics now flow through the governed KPI-definition answer path:
+     - credit-utilization policy bands render as active notes
+     - overdue severity remains blocked-safe until policy approval
+     - collection-ratio health labels remain blocked-safe until policy approval
+   - deterministic contract coverage now includes `test_governed_kpi_frontdoor.py`
+   - the site release-gate module now includes `run_phase2_4_governed_kpi_frontdoor_smoke`
+   - callable seam verification is green through `run_governed_kpi_frontdoor_probe`
+2. Phase `2` is now checkpoint-complete:
+   - `2.1` registry scaffolding and typed state contracts are complete
+   - `2.2` first governed KPI definitions and formulas are complete
+   - `2.3` threshold and company-rule semantics are complete
+   - `2.4` runtime closure is complete
+3. the next approved bridge phase is now `Phase 2.5`:
+   - governed KPI runtime execution
+   - typed KPI value artifacts
+   - period and as-of KPI execution before composite expansion
+
+## 6.5 Phase 2.5: Governed KPI Runtime Execution
+
+Goal: execute approved KPI values from live ERP authority without bypassing metadata, typed contracts, or blocked-safe policy.
+
+Current design note:
+
+1. [qwen_erp_phase2_5_governed_kpi_runtime_execution_design_2026-04-10.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase2_5_governed_kpi_runtime_execution_design_2026-04-10.md)
+
+### Mini-phase 2.5A: KPI Value Artifact Contract
+
+Deliver:
+
+1. `GovernedKpiExecutionRegistry`
+2. `GovernedKpiValueArtifactContract`
+3. typed execution-state handling for executable versus blocked KPI asks
+
+Current checkpoint:
+
+1. `2.5A` is complete:
+   - `governed_kpi_execution_registry.json` now owns approved KPI execution shapes
+   - metadata loader and accessor support are active for governed KPI execution specs
+   - deterministic registry validation is active in `governed_kpi_execution_registry.py`
+   - typed execution-state and KPI-value artifact contracts are active in `governed_kpi_execution_state.py`
+   - deterministic coverage is active in `test_governed_kpi_execution_state.py`
+   - callable seam verification is green through:
+     - `run_governed_kpi_execution_registry_probe`
+     - `run_governed_kpi_execution_contract_probe`
+2. `2.5B` is now complete:
+   - governed period KPI value execution is active through `governed_kpi_runtime_execution.py`
+   - active runtime coverage now includes:
+     - average order value by sales order
+     - average order value by sales invoice
+     - collection ratio by approved period basis
+   - the frontdoor now distinguishes KPI definition asks from KPI value asks without widening into ad hoc business routing
+   - ambiguous basis and missing period scope now clarify through governed continuation, not transaction-listing fallback
+   - deterministic coverage is active in `test_governed_kpi_runtime_execution.py`
+   - live/site verification is green through:
+     - `run_phase2_5_governed_kpi_period_execution_probe`
+     - `run_phase2_5_governed_kpi_period_execution_smoke`
+3. `2.5C` is now complete:
+   - as-of and entity KPI execution is now active
+   - first live customer-scoped KPI values from approved as-of authority are now active
+   - live/site verification is green through:
+     - `run_phase2_5_governed_kpi_customer_execution_probe`
+     - `run_phase2_5_governed_kpi_customer_execution_smoke`
+4. `2.5D` is next:
+   - KPI runtime closure
+   - release-gate promotion and final browser/UAT pack
+
+### Mini-phase 2.5B: Period KPI Execution
+
+Deliver:
+
+1. average order value by sales order
+2. average order value by sales invoice
+3. collection ratio by approved period basis
+
+### Mini-phase 2.5C: As-Of And Entity KPI Execution
+
+Deliver:
+
+1. customer credit utilization as of date
+2. customer overdue ratio as of date
+3. customer tenure by approved basis
+4. single-metric customer rankings such as customers above credit limit
+
+### Mini-phase 2.5D: KPI Runtime Closure
+
+Deliver:
+
+1. release-gate promotion
+2. live smokes and browser/UAT pack
+3. baseline and roadmap refresh
 
 ## 7. Phase 3: Composite Governed Artifact Expansion
 

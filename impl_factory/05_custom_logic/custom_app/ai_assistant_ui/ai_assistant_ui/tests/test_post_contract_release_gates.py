@@ -24,6 +24,9 @@ from ai_assistant_ui.qwen_chat.service import (
 	run_phase1_4_customer_credit_overdue_smoke,
 	run_phase1_4_customer_credit_policy_followup_smoke,
 	run_phase1_4_customer_credit_scope_reset_smoke,
+	run_phase2_4_governed_kpi_frontdoor_smoke,
+	run_phase2_5_governed_kpi_customer_execution_smoke,
+	run_phase2_5_governed_kpi_period_execution_smoke,
 )
 
 
@@ -167,4 +170,22 @@ class TestPostContractReleaseGates(unittest.TestCase):
 		self._assert_ok_tree(
 			run_phase1_4_customer_credit_policy_followup_smoke(),
 			"phase1_4_customer_credit_policy_followup_smoke",
+		)
+
+	def test_phase2_4_governed_kpi_frontdoor_smoke(self):
+		self._assert_ok_tree(
+			run_phase2_4_governed_kpi_frontdoor_smoke(),
+			"phase2_4_governed_kpi_frontdoor_smoke",
+		)
+
+	def test_phase2_5_governed_kpi_period_execution_smoke(self):
+		self._assert_ok_tree(
+			run_phase2_5_governed_kpi_period_execution_smoke(),
+			"phase2_5_governed_kpi_period_execution_smoke",
+		)
+
+	def test_phase2_5_governed_kpi_customer_execution_smoke(self):
+		self._assert_ok_tree(
+			run_phase2_5_governed_kpi_customer_execution_smoke(),
+			"phase2_5_governed_kpi_customer_execution_smoke",
 		)

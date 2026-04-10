@@ -7,6 +7,11 @@ import uuid
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.smoke_fixtures import smoke_fixture_replacement_message
+from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import (
+	current_date_iso,
+	get_customer_kpi_scalar_snapshot,
+	list_customer_kpi_rows,
+)
 
 
 def _with_compiled_first_turn_full_rollout(
@@ -1407,7 +1412,7 @@ def run_customer_credit_policy_followup_smoke(
 				raise RuntimeError(
 					"Phase1.4 Customer Credit Policy Followup Smoke failed: credit-limit-status follow-up did not use grounded evidence mode."
 				)
-			if "within the configured credit limit" not in status_text.lower() or "10,000,000" not in status_text:
+			if "within the approved credit limit" not in status_text.lower() or "10,000,000" not in status_text:
 				raise RuntimeError(
 					"Phase1.4 Customer Credit Policy Followup Smoke failed: credit-limit-status answer did not stay anchored to configured policy evidence."
 				)
@@ -1546,9 +1551,13 @@ def run_governed_kpi_frontdoor_smoke(
 				raise RuntimeError(
 					"Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI request did not use governed_kpi_definition intent."
 				)
-			if "configured customer credit limit" not in active_text.lower() or "it matters because" not in active_text.lower():
+			if "approved credit" not in active_text.lower() or "it matters because" not in active_text.lower():
 				raise RuntimeError(
-					"Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI answer did not expose the governed formula basis and business purpose."
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI answer did not return the expected natural business definition and purpose."
+				)
+			if "entity grain:" in active_text.lower() or "source:" in active_text.lower():
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: active KPI answer exposed detailed governed metadata by default."
 				)
 			if len(active_visible_messages) != 2:
 				raise RuntimeError(
@@ -1602,11 +1611,15 @@ def run_governed_kpi_frontdoor_smoke(
 				raise RuntimeError(
 					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up did not re-enter the front-door lane."
 				)
-			if "Average Order Value by Sales Order" not in clarified_text or "Formula basis" not in clarified_text:
+			if "Average Order Value by Sales Order" not in clarified_text:
 				raise RuntimeError(
 					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up did not return the governed sales-order AOV definition."
 				)
 			lower_clarified_text = clarified_text.lower()
+			if "governed basis:" in lower_clarified_text:
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up exposed detailed governed basis without being asked."
+				)
 			if "one sales order was processed" in lower_clarified_text or "document count" in lower_clarified_text:
 				raise RuntimeError(
 					"Phase2.4 Governed KPI Frontdoor Smoke failed: clarified KPI follow-up leaked sales-order listing narrative text."
@@ -1617,20 +1630,24 @@ def run_governed_kpi_frontdoor_smoke(
 					f"Phase2.4 Governed KPI Frontdoor Smoke failed: expected exactly 6 visible messages after clarification resolution, observed {len(clarified_visible_messages)}."
 				)
 
-			ok, blocked_payload = handle_qwen_user_message(
+			ok, collection_payload = handle_qwen_user_message(
 				session_name=doc.name,
 				message="what is collection ratio",
 				user="Administrator",
 			)
 			if not ok:
-				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on blocked KPI definition request.")
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed on collection-ratio KPI definition request.")
 			session_doc = frappe_module.get_doc(session_doctype, doc.name)
-			blocked_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
-			if str((blocked_payload or {}).get("mode") or "").strip() != "front_door":
-				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: blocked KPI request did not stay in front door.")
-			if "not runtime-active yet" not in blocked_text.lower() or "collected-amount" not in blocked_text.lower():
+			collection_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((collection_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: collection-ratio KPI request did not stay in front door.")
+			if "collected cash against submitted sales invoices" not in collection_text.lower() or "health labels are not yet approved" not in collection_text.lower():
 				raise RuntimeError(
-					"Phase2.4 Governed KPI Frontdoor Smoke failed: blocked KPI answer did not stay blocked-safe."
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: collection-ratio KPI answer did not expose the expected natural definition and blocked-safe threshold note."
+				)
+			if "governed basis:" in collection_text.lower():
+				raise RuntimeError(
+					"Phase2.4 Governed KPI Frontdoor Smoke failed: collection-ratio KPI answer exposed detailed governed basis without being asked."
 				)
 
 			ok, undefined_payload = handle_qwen_user_message(
@@ -1644,7 +1661,7 @@ def run_governed_kpi_frontdoor_smoke(
 			undefined_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
 			if str((undefined_payload or {}).get("mode") or "").strip() != "front_door":
 				raise RuntimeError("Phase2.4 Governed KPI Frontdoor Smoke failed: undefined KPI request did not stay in front door.")
-			if "no governed kpi definition is currently registered" not in undefined_text.lower():
+			if "i don't have a governed kpi definition for gross margin yet" not in undefined_text.lower():
 				raise RuntimeError(
 					"Phase2.4 Governed KPI Frontdoor Smoke failed: undefined KPI answer did not explain the governed registry boundary."
 				)
@@ -1654,13 +1671,465 @@ def run_governed_kpi_frontdoor_smoke(
 				"active_mode": str((active_payload or {}).get("mode") or "").strip(),
 				"ambiguous_mode": str((ambiguous_payload or {}).get("mode") or "").strip(),
 				"clarified_mode": str((clarified_payload or {}).get("mode") or "").strip(),
-				"blocked_mode": str((blocked_payload or {}).get("mode") or "").strip(),
+				"collection_mode": str((collection_payload or {}).get("mode") or "").strip(),
 				"undefined_mode": str((undefined_payload or {}).get("mode") or "").strip(),
 				"active_text": active_text,
 				"ambiguous_text": ambiguous_text,
 				"clarified_text": clarified_text,
-				"blocked_text": blocked_text,
+				"collection_text": collection_text,
 				"undefined_text": undefined_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_governed_kpi_period_execution_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _money(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		return f"{numeric:,.2f}".rstrip("0").rstrip(".")
+
+	def _percent(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		return f"{numeric * 100:,.2f}".rstrip("0").rstrip(".")
+
+	def _last_month_bounds() -> tuple[str, str]:
+		today = date.today()
+		first_day_current_month = today.replace(day=1)
+		last_day_previous_month = first_day_current_month - timedelta(days=1)
+		first_day_previous_month = last_day_previous_month.replace(day=1)
+		return first_day_previous_month.isoformat(), last_day_previous_month.isoformat()
+
+	def _sales_order_aov_last_month() -> Dict[str, Any]:
+		start_date, end_date = _last_month_bounds()
+		rows = frappe_module.db.sql(
+			"""
+			select
+				count(`name`) as document_count,
+				coalesce(sum(`grand_total`), 0) as grand_total_sum
+			from `tabSales Order`
+			where `docstatus` = 1
+			  and `company` = %s
+			  and `transaction_date` between %s and %s
+			""",
+			("Mingalar Mobile Distribution Co., Ltd.", start_date, end_date),
+			as_dict=True,
+		)
+		row = dict(rows[0] or {}) if rows else {}
+		document_count = int(float(row.get("document_count") or 0))
+		grand_total_sum = float(row.get("grand_total_sum") or 0.0)
+		return {
+			"period_start": start_date,
+			"period_end": end_date,
+			"document_count": document_count,
+			"grand_total_sum": grand_total_sum,
+			"aov": (grand_total_sum / document_count) if document_count > 0 else 0.0,
+		}
+
+	def _collection_ratio_last_month() -> Dict[str, Any]:
+		start_date, end_date = _last_month_bounds()
+		sales_rows = frappe_module.db.sql(
+			"""
+			select
+				coalesce(sum(si.grand_total), 0) as sales_invoice_grand_total
+			from `tabSales Invoice` si
+			where si.docstatus = 1
+			  and coalesce(si.is_return, 0) = 0
+			  and si.company = %s
+			  and si.posting_date between %s and %s
+			""",
+			("Mingalar Mobile Distribution Co., Ltd.", start_date, end_date),
+			as_dict=True,
+		)
+		collection_rows = frappe_module.db.sql(
+			"""
+			select
+				coalesce(sum(per.allocated_amount), 0) as allocated_customer_receipt_amount
+			from `tabPayment Entry Reference` per
+			inner join `tabSales Invoice` si
+				on si.name = per.reference_name
+			inner join `tabPayment Entry` pe
+				on pe.name = per.parent
+			where per.reference_doctype = 'Sales Invoice'
+			  and si.docstatus = 1
+			  and coalesce(si.is_return, 0) = 0
+			  and pe.docstatus = 1
+			  and pe.payment_type = 'Receive'
+			  and pe.party_type = 'Customer'
+			  and si.company = %s
+			  and pe.company = %s
+			  and si.posting_date between %s and %s
+			""",
+			(
+				"Mingalar Mobile Distribution Co., Ltd.",
+				"Mingalar Mobile Distribution Co., Ltd.",
+				start_date,
+				end_date,
+			),
+			as_dict=True,
+		)
+		sales_invoice_grand_total = float((sales_rows[0] or {}).get("sales_invoice_grand_total") or 0.0) if sales_rows else 0.0
+		allocated_customer_receipt_amount = float((collection_rows[0] or {}).get("allocated_customer_receipt_amount") or 0.0) if collection_rows else 0.0
+		return {
+			"period_start": start_date,
+			"period_end": end_date,
+			"sales_invoice_grand_total": sales_invoice_grand_total,
+			"allocated_customer_receipt_amount": allocated_customer_receipt_amount,
+			"collection_ratio": (
+				allocated_customer_receipt_amount / sales_invoice_grand_total
+				if sales_invoice_grand_total > 0
+				else 0.0
+			),
+		}
+
+	def _run() -> Dict[str, Any]:
+		aov_expected = _sales_order_aov_last_month()
+		collection_expected = _collection_ratio_last_month()
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase2.5 Governed KPI Period Execution Smoke",
+		)
+		try:
+			ok, aov_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is average order value for sales orders last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed on direct AOV runtime request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			aov_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((aov_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: AOV runtime request did not stay in front door.")
+			if str((aov_payload or {}).get("agent_meta", {}).get("intent_class") or "").strip() != "governed_kpi_value":
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: AOV runtime request did not use governed_kpi_value intent.")
+			expected_aov_text = f"{_money(aov_expected.get('aov'))} MMK"
+			if expected_aov_text not in aov_text:
+				raise RuntimeError(
+					f"Phase2.5 Governed KPI Period Execution Smoke failed: expected AOV text {expected_aov_text!r}, observed {aov_text!r}."
+				)
+			if str(aov_expected.get("period_start")) not in aov_text or str(aov_expected.get("period_end")) not in aov_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: AOV answer did not expose the governed last-month period bounds.")
+			if "governed value" in aov_text.lower() or "formula basis:" in aov_text.lower():
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: default AOV answer exposed detailed governed metadata.")
+
+			ok, ambiguous_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show average order value last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed on ambiguous KPI runtime request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			ambiguous_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((ambiguous_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: ambiguous KPI runtime request did not stay in front door.")
+			if "Average Order Value by Sales Order" not in ambiguous_text or "Average Order Value by Sales Invoice" not in ambiguous_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: ambiguous KPI runtime request did not ask for governed basis clarification.")
+
+			ok, clarified_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Sales Order",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed on governed KPI basis clarification follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			clarified_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((clarified_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: clarified KPI runtime follow-up did not stay in front door.")
+			if expected_aov_text not in clarified_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: clarified KPI runtime follow-up did not return the expected AOV value.")
+
+			ok, missing_period_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is average order value for sales orders",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed on explicit-basis missing-period KPI runtime request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			missing_period_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((missing_period_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: explicit-basis missing-period request did not stay in front door.")
+			if "Choose one:" not in missing_period_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: explicit-basis missing-period request did not ask for period clarification.")
+			if expected_aov_text in missing_period_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: missing-period request incorrectly reused the prior period value.")
+
+			ok, collection_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show collection ratio last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed on collection-ratio runtime request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			collection_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((collection_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: collection-ratio runtime request did not stay in front door.")
+			expected_ratio_text = f"{_percent(collection_expected.get('collection_ratio'))}%"
+			if expected_ratio_text not in collection_text:
+				raise RuntimeError(
+					f"Phase2.5 Governed KPI Period Execution Smoke failed: expected collection ratio {expected_ratio_text!r}, observed {collection_text!r}."
+				)
+			if f"{_money(collection_expected.get('sales_invoice_grand_total'))} MMK" not in collection_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: collection-ratio answer did not expose the governed sales-invoice denominator.")
+			if f"{_money(collection_expected.get('allocated_customer_receipt_amount'))} MMK" not in collection_text:
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: collection-ratio answer did not expose the governed allocated-receipt numerator.")
+			if "governed value" in collection_text.lower() or "formula basis:" in collection_text.lower():
+				raise RuntimeError("Phase2.5 Governed KPI Period Execution Smoke failed: default collection-ratio answer exposed detailed governed metadata.")
+
+			return {
+				"ok": True,
+				"aov_value_text": expected_aov_text,
+				"collection_ratio_text": expected_ratio_text,
+				"period_start": str(aov_expected.get("period_start") or ""),
+				"period_end": str(aov_expected.get("period_end") or ""),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_governed_kpi_customer_execution_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _money(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		return f"{numeric:,.2f}".rstrip("0").rstrip(".")
+
+	def _percent(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		return f"{numeric * 100:,.2f}".rstrip("0").rstrip(".")
+
+	def _days_text(value: Any) -> str:
+		try:
+			numeric = int(float(value or 0))
+		except Exception:
+			numeric = 0
+		return f"{numeric:,} day" if numeric == 1 else f"{numeric:,} days"
+
+	def _clean_text(value: Any) -> str:
+		return str(value or "").strip()
+
+	def _top_credit_utilization_row(company_name: str, as_of_date: str) -> Dict[str, Any]:
+		rows = [
+			row
+			for row in list_customer_kpi_rows(company=company_name, as_of_date=as_of_date)
+			if bool(row.get("credit_limit_configured"))
+		]
+		rows = sorted(
+			rows,
+			key=lambda row: (
+				float(row.get("credit_limit_utilization_ratio") or 0.0),
+				float(row.get("outstanding_total") or 0.0),
+			),
+			reverse=True,
+		)
+		return dict(rows[0] or {}) if rows else {}
+
+	def _above_credit_limit_rows(company_name: str, as_of_date: str) -> List[Dict[str, Any]]:
+		return [
+			dict(row or {})
+			for row in list_customer_kpi_rows(company=company_name, as_of_date=as_of_date)
+			if _clean_text(((row.get("credit_threshold_state") or {}).get("matched_band_label"))) == "limit_exceeded"
+		]
+
+	def _run() -> Dict[str, Any]:
+		company_name = "Mingalar Mobile Distribution Co., Ltd."
+		customer_name = "Zegyo Mobile Supply House"
+		as_of_date = current_date_iso()
+		customer_snapshot = get_customer_kpi_scalar_snapshot(
+			customer_name,
+			customer_label=customer_name,
+			company=company_name,
+			as_of_date=as_of_date,
+		)
+		policy_snapshot = dict(customer_snapshot.get("policy_snapshot") or {})
+		receivable_snapshot = dict(customer_snapshot.get("receivable_snapshot") or {})
+		receivable_metrics = dict(receivable_snapshot.get("metrics") or {})
+		lifecycle_snapshot = dict(customer_snapshot.get("lifecycle_snapshot") or {})
+		top_credit_row = _top_credit_utilization_row(company_name, as_of_date)
+		exceeded_rows = _above_credit_limit_rows(company_name, as_of_date)
+		if not top_credit_row:
+			raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: no governed customer credit-utilization ranking rows were available.")
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase2.5 Governed KPI Customer Execution Smoke",
+		)
+		try:
+			ok, utilization_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=f"what is customer credit utilization for {customer_name} as of today",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on customer credit-utilization request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			utilization_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((utilization_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customer credit-utilization request did not stay in front door.")
+			expected_utilization_text = f"{_percent(policy_snapshot.get('utilization_ratio'))}%"
+			if expected_utilization_text not in utilization_text:
+				raise RuntimeError(
+					f"Phase2.5 Governed KPI Customer Execution Smoke failed: expected utilization {expected_utilization_text!r}, observed {utilization_text!r}."
+				)
+			if f"{_money(receivable_metrics.get('outstanding_total'))} MMK" not in utilization_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: utilization answer did not expose the governed outstanding amount.")
+			if f"{_money(policy_snapshot.get('credit_limit'))} MMK" not in utilization_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: utilization answer did not expose the governed credit limit.")
+			if "governed value" in utilization_text.lower() or "formula basis:" in utilization_text.lower():
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: default customer utilization answer exposed detailed governed metadata.")
+
+			ok, missing_customer_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show customer tenure by first sales order as of today",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on missing-customer tenure request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			missing_customer_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((missing_customer_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: missing-customer tenure request did not stay in front door.")
+			if "still need the customer" not in missing_customer_text.lower():
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: missing-customer tenure request did not ask for customer scope clarification.")
+
+			ok, tenure_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=f"what is customer tenure by customer created date for {customer_name} as of today",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on direct customer-tenure request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			tenure_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((tenure_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: direct customer-tenure request did not stay in front door.")
+			expected_tenure_text = _days_text(lifecycle_snapshot.get("customer_created_tenure_days"))
+			if expected_tenure_text not in tenure_text:
+				raise RuntimeError(
+					f"Phase2.5 Governed KPI Customer Execution Smoke failed: expected tenure text {expected_tenure_text!r}, observed {tenure_text!r}."
+				)
+			if "governed value" in tenure_text.lower() or "source:" in tenure_text.lower():
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: default customer tenure answer exposed detailed governed metadata.")
+
+			ok, ranking_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show top 5 customers by credit utilization as of today",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on customer credit-utilization ranking request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			ranking_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((ranking_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customer credit-utilization ranking request did not stay in front door.")
+			if _clean_text(top_credit_row.get("customer_label")) not in ranking_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customer credit-utilization ranking answer did not include the live top-ranked customer.")
+			expected_top_ratio = f"{_percent(top_credit_row.get('credit_limit_utilization_ratio'))}%"
+			if expected_top_ratio not in ranking_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customer credit-utilization ranking answer did not expose the top-ranked utilization ratio.")
+
+			ok, above_limit_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show customers above credit limit",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on customers-above-credit-limit request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			above_limit_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((above_limit_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customers-above-credit-limit request did not stay in front door.")
+			expected_count_phrase = (
+				"As of " + as_of_date + ", no customers were above the approved credit limit."
+				if len(exceeded_rows) == 0
+				else f"{len(exceeded_rows)} customers were above the approved credit limit"
+			)
+			if expected_count_phrase not in above_limit_text:
+				raise RuntimeError(
+					f"Phase2.5 Governed KPI Customer Execution Smoke failed: expected threshold-match summary {expected_count_phrase!r}, observed {above_limit_text!r}."
+				)
+			if "Accounts Receivable Aging" in above_limit_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customers-above-credit-limit request escaped to the generic aging artifact.")
+
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=f"tell me more about {customer_name}",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on customer detail request before deictic follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			detail_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if customer_name not in detail_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: customer detail request did not ground the expected customer context.")
+
+			ok, deictic_tenure_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is this customer's tenure by customer created date?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed on deictic customer-tenure follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			deictic_tenure_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((deictic_tenure_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: deictic customer-tenure follow-up did not stay in front door.")
+			if customer_name not in deictic_tenure_text or expected_tenure_text not in deictic_tenure_text:
+				raise RuntimeError("Phase2.5 Governed KPI Customer Execution Smoke failed: deictic customer-tenure follow-up did not reuse the grounded customer context correctly.")
+
+			return {
+				"ok": True,
+				"customer_name": customer_name,
+				"as_of_date": as_of_date,
+				"utilization_text": expected_utilization_text,
+				"tenure_text": expected_tenure_text,
+				"top_customer": _clean_text(top_credit_row.get("customer_label")),
+				"top_utilization_text": expected_top_ratio,
+				"above_limit_count": len(exceeded_rows),
 			}
 		finally:
 			_delete_committed_smoke_session_doc(

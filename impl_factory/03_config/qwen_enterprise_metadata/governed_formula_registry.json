@@ -1,0 +1,340 @@
+{
+  "contract_version": "1.0",
+  "status": "phase2_core_definitions_active",
+  "description": "Governed formula registry for approved KPI computation basis, source authority, and activation state.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_formula_types": [
+    "ratio",
+    "average",
+    "duration",
+    "sum_divided_by_count",
+    "policy_comparison"
+  ],
+  "allowed_aggregation_rules": [
+    "sum",
+    "count",
+    "average",
+    "ratio_of_sums",
+    "days_between",
+    "latest_value"
+  ],
+  "allowed_input_requirement_types": [
+    "required",
+    "optional",
+    "tenant_master_data",
+    "approved_policy_mapping"
+  ],
+  "allowed_time_scope_requirements": [
+    "as_of_date_required",
+    "period_required",
+    "rolling_window_required",
+    "document_date_basis",
+    "fiscal_period_basis"
+  ],
+  "formulas": [
+    {
+      "formula_id": "average_order_value_sales_order_period_formula",
+      "definition_id": "average_order_value_sales_order_period",
+      "label": "Average Order Value by Sales Order Formula",
+      "formula_type": "sum_divided_by_count",
+      "input_metrics": [
+        "grand_total",
+        "document_count"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "grand_total",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "document_count",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "aggregation_rule": "average",
+      "grain_requirements": [
+        "company"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "sales order aov",
+        "average order value sales order"
+      ]
+    },
+    {
+      "formula_id": "average_order_value_sales_invoice_period_formula",
+      "definition_id": "average_order_value_sales_invoice_period",
+      "label": "Average Order Value by Sales Invoice Formula",
+      "formula_type": "sum_divided_by_count",
+      "input_metrics": [
+        "grand_total",
+        "document_count"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "grand_total",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "document_count",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "aggregation_rule": "average",
+      "grain_requirements": [
+        "company"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "sales invoice aov",
+        "average order value sales invoice"
+      ]
+    },
+    {
+      "formula_id": "customer_tenure_first_sales_order_date_formula",
+      "definition_id": "customer_tenure_first_sales_order_date",
+      "label": "Customer Tenure by First Sales Order Formula",
+      "formula_type": "duration",
+      "input_metrics": [
+        "first_sales_order_date",
+        "as_of_date"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "first_sales_order_date",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "as_of_date",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "aggregation_rule": "days_between",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "as_of_date_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_tenure_first_sales_invoice_date_formula",
+      "definition_id": "customer_tenure_first_sales_invoice_date",
+      "label": "Customer Tenure by First Sales Invoice Formula",
+      "formula_type": "duration",
+      "input_metrics": [
+        "first_sales_invoice_date",
+        "as_of_date"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "first_sales_invoice_date",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "as_of_date",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "aggregation_rule": "days_between",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "as_of_date_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_tenure_customer_created_at_formula",
+      "definition_id": "customer_tenure_customer_created_at",
+      "label": "Customer Tenure by Customer Created Date Formula",
+      "formula_type": "duration",
+      "input_metrics": [
+        "customer_created_date",
+        "as_of_date"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "customer_created_date",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "as_of_date",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "customer_master_read"
+      ],
+      "source_reports": [
+        "Customer Master List"
+      ],
+      "aggregation_rule": "days_between",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "as_of_date_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "collection_ratio_sales_invoice_period_formula",
+      "definition_id": "collection_ratio_sales_invoice_period",
+      "label": "Collection Ratio by Sales Invoice Period Formula",
+      "formula_type": "ratio",
+      "input_metrics": [
+        "allocated_customer_receipt_amount",
+        "sales_invoice_grand_total"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "allocated_customer_receipt_amount",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "sales_invoice_grand_total",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read",
+        "collections_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List",
+        "Payment Entry List"
+      ],
+      "aggregation_rule": "ratio_of_sums",
+      "grain_requirements": [
+        "company"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_overdue_ratio_as_of_date_formula",
+      "definition_id": "customer_overdue_ratio_as_of_date",
+      "label": "Customer Overdue Ratio as of Date Formula",
+      "formula_type": "ratio",
+      "input_metrics": [
+        "overdue_amount",
+        "outstanding_amount"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "overdue_amount",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "outstanding_amount",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "aggregation_rule": "latest_value",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "as_of_date_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "overdue ratio",
+        "customer overdue ratio"
+      ]
+    },
+    {
+      "formula_id": "credit_utilization_customer_as_of_date_formula",
+      "definition_id": "credit_utilization_customer_as_of_date",
+      "label": "Customer Credit Utilization as of Date Formula",
+      "formula_type": "ratio",
+      "input_metrics": [
+        "outstanding_amount",
+        "credit_limit"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "outstanding_amount",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "credit_limit",
+          "requirement_type": "tenant_master_data"
+        }
+      ],
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "aggregation_rule": "latest_value",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "as_of_date_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "credit utilization",
+        "customer credit utilization"
+      ]
+    }
+  ]
+}

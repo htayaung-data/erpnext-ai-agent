@@ -2,6 +2,7 @@ import json
 import unittest
 from dataclasses import dataclass
 from typing import Any, Dict, List
+from unittest.mock import patch
 
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	clarification_continuation_lane,
@@ -11,6 +12,7 @@ from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	latest_pending_clarification_signal,
 	latest_pending_clarification_signal_from_messages,
 	looks_like_short_acknowledgement,
+	resolve_pending_clarification_response,
 	store_pending_clarification_signal,
 )
 from ai_assistant_ui.qwen_chat.clarification_state import (
@@ -127,6 +129,109 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 				resolved_option="Average Order Value by Sales Order",
 			),
 			"what is Average Order Value by Sales Order",
+		)
+
+	def test_pending_clarification_resolves_alias_option_for_governed_kpi_basis(self):
+		signal = _clarification_signal(request_id="clarify-4c-alias", user_question="Choose one KPI basis.")
+		signal["reason_type"] = "governed_kpi_definition_ambiguity"
+		signal["suggested_options"] = [
+			"Average Order Value by Sales Order",
+			"Average Order Value by Sales Invoice",
+		]
+		signal["internal_details"] = {
+			"continuation_lane": "front_door",
+			"resolved_message_by_option": {
+				"Average Order Value by Sales Order": "show average order value sales order last month",
+				"Average Order Value by Sales Invoice": "show average order value sales invoice last month",
+			},
+			"option_aliases_by_option": {
+				"Average Order Value by Sales Order": ["Sales Order", "Sales Orders"],
+				"Average Order Value by Sales Invoice": ["Sales Invoice", "Sales Invoices"],
+			},
+		}
+
+		contract = resolve_pending_clarification_response(
+			request_id="clarify-4c-alias-response",
+			session_id="clarify-session",
+			user_id="Administrator",
+			site_name="erpai_prj1",
+			message="Sales Order",
+			signal_payload=signal,
+			clarification_attempt_count=0,
+			max_attempts=3,
+		)
+
+		self.assertEqual(str(contract.decision or "").strip(), "resolved_option")
+		self.assertEqual(str(contract.resolved_option or "").strip(), "Average Order Value by Sales Order")
+		self.assertEqual(str(contract.matched_by or "").strip(), "exact_alias")
+
+	def test_pending_clarification_allows_new_frontdoor_kpi_request_to_break_out(self):
+		signal = _clarification_signal(request_id="clarify-4d", user_question="Choose one period.")
+		signal["reason_type"] = "time_scope_missing"
+		signal["suggested_options"] = ["Last Month", "Current Fiscal Year to Date", "Last Year"]
+		signal["internal_details"] = {
+			"continuation_lane": "front_door",
+			"continuation_intent_class": "governed_kpi_value",
+			"resolved_message_by_option": {
+				"Last Month": "show average order value sales order last month",
+				"Current Fiscal Year to Date": "show average order value sales order current fiscal year to date",
+				"Last Year": "show average order value sales order last year",
+			},
+		}
+
+		contract = resolve_pending_clarification_response(
+			request_id="clarify-4d-response",
+			session_id="clarify-session",
+			user_id="Administrator",
+			site_name="erpai_prj1",
+			message="show collection ratio last month",
+			signal_payload=signal,
+			clarification_attempt_count=0,
+			max_attempts=3,
+		)
+
+		self.assertEqual(str(contract.decision or "").strip(), "new_request")
+
+	def test_customer_scope_clarification_can_resume_from_customer_name(self):
+		signal = _clarification_signal(request_id="clarify-customer-scope", user_question="Which customer do you want?")
+		signal["reason_type"] = "customer_scope_missing"
+		signal["suggested_options"] = []
+		signal["internal_details"] = {
+			"continuation_lane": "front_door",
+			"continuation_intent_class": "governed_kpi_value",
+			"resolved_message_template": "show customer tenure by customer created date for {customer} as of 2026-04-10",
+		}
+
+		with patch(
+			"ai_assistant_ui.qwen_chat.clarification_resolution.resolve_customer_scope_from_message",
+			return_value={
+				"customer": "Zegyo Mobile Supply House",
+				"customer_name": "Zegyo Mobile Supply House",
+				"entity_name": "Zegyo Mobile Supply House",
+				"entity_label": "Zegyo Mobile Supply House",
+				"has_customer_scope": True,
+			},
+		):
+			contract = resolve_pending_clarification_response(
+				request_id="clarify-customer-scope-response",
+				session_id="clarify-session",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="Zegyo Mobile Supply House",
+				signal_payload=signal,
+				clarification_attempt_count=0,
+				max_attempts=3,
+			)
+
+		self.assertEqual(str(contract.decision or "").strip(), "resolved_option")
+		self.assertEqual(str(contract.resolved_option or "").strip(), "Zegyo Mobile Supply House")
+		self.assertEqual(str(contract.matched_by or "").strip(), "customer_scope")
+		self.assertEqual(
+			clarification_resolved_continuation_message(
+				signal_payload=signal,
+				resolved_option=str(contract.resolved_option or "").strip(),
+			),
+			"show customer tenure by customer created date for Zegyo Mobile Supply House as of 2026-04-10",
 		)
 
 	def test_message_history_pending_clarification_ignores_superseded_signal_after_later_visible_turn(self):

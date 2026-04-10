@@ -45,6 +45,7 @@ from ai_assistant_ui.qwen_chat.semantic_resolution import (
 from ai_assistant_ui.qwen_chat.semantic_aliases import (
 	get_canonical_key,
 	get_aliases,
+	get_all_canonical_keys,
 )
 
 
@@ -105,6 +106,36 @@ def _semantic_alias_keys(value: Any) -> set[str]:
 	
 	# Fallback: return the key itself if not found in registry
 	return {key}
+
+
+def _canonical_requested_metric_keys(
+	values: List[Any] | None,
+	*,
+	capability_id: str,
+) -> List[str]:
+	if not values:
+		return []
+	clean_capability = str(capability_id or "").strip() or None
+	out: List[str] = []
+	for value in _clean_list(values):
+		canonical = get_canonical_key(
+			value,
+			capability_id=clean_capability,
+			dimension_or_metric="metric",
+		)
+		if canonical:
+			out.append(str(canonical).strip())
+			continue
+		normalized = _normalize_key(value)
+		if normalized and normalized in {
+			_normalize_key(key)
+			for key in get_all_canonical_keys(
+				capability_id=clean_capability,
+				dimension_or_metric="metric",
+			)
+		}:
+			out.append(normalized)
+	return list(dict.fromkeys([value for value in out if value]))
 
 
 def _tokenize(value: Any) -> set[str]:
@@ -544,6 +575,7 @@ def compile_fresh_query(
 	response_policy: Dict[str, Any] | None = None,
 ) -> CompilerOutcome:
 	governed_resolution_details: Dict[str, Any] = {}
+	requested_metric_seed = list(interpretation.requested_metrics)
 	semantic_resolution = resolve_interpretation_semantically(interpretation)
 	if semantic_resolution is not None:
 		governed_resolution_details = {
@@ -619,6 +651,16 @@ def compile_fresh_query(
 			clarification_details=reason_details if decision == "clarify" else {},
 		)
 		return CompilerOutcome(compiler_contract=compiler_contract, compiled_request_contract=None)
+
+	requested_metric_keys = _canonical_requested_metric_keys(
+		requested_metric_seed + list(interpretation.requested_metrics),
+		capability_id=capability_id,
+	)
+	if requested_metric_keys:
+		governed_resolution_details = {
+			**governed_resolution_details,
+			"requested_metric_keys": requested_metric_keys,
+		}
 
 	report_name, report_reason = _select_report(capability_id, interpretation)
 	if not report_name:

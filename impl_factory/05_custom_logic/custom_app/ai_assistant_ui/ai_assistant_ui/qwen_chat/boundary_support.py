@@ -88,6 +88,11 @@ def _money(value: Any) -> str:
 	return f"{_numeric(value):,.2f}".rstrip("0").rstrip(".")
 
 
+def _days_text(value: Any) -> str:
+	days = int(max(_numeric(value), 0))
+	return f"{days} day" if days == 1 else f"{days} days"
+
+
 def _summary_block(title: str, rows: List[List[str]]) -> Dict[str, Any]:
 	return {
 		"block_type": "summary_table",
@@ -653,6 +658,7 @@ def grounded_artifact_direct_evidence_answer(
 		metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
 		credit_buckets = sections.get("credit_buckets") if isinstance(sections.get("credit_buckets"), list) else []
 		credit_policy = sections.get("credit_policy") if isinstance(sections.get("credit_policy"), list) else []
+		lifecycle_rows = sections.get("lifecycle") if isinstance(sections.get("lifecycle"), list) else []
 		outstanding_total = _numeric(metrics.get("outstanding_total"))
 		total_due = _numeric(metrics.get("total_due"))
 		overdue_total = _numeric(metrics.get("overdue_total"))
@@ -670,10 +676,59 @@ def grounded_artifact_direct_evidence_answer(
 			for item in credit_policy
 			if isinstance(item, dict) and str(item.get("label") or "").strip()
 		}
+		lifecycle_values = {
+			str(item.get("label") or "").strip().lower(): str(item.get("value") or "").strip()
+			for item in lifecycle_rows
+			if isinstance(item, dict) and str(item.get("label") or "").strip()
+		}
 		policy_company = policy_values.get("company", "")
 		company_phrase = f" for {policy_company}" if policy_company else ""
 		payment_terms = policy_values.get("payment terms", "")
 		default_price_list = policy_values.get("default price list", "")
+		customer_created_date = lifecycle_values.get("customer created date", "")
+		first_sales_order_date = lifecycle_values.get("first sales order date", "")
+		first_sales_invoice_date = lifecycle_values.get("first sales invoice date", "")
+		customer_created_tenure_days = int(_numeric(metrics.get("customer_created_tenure_days")))
+		first_sales_order_tenure_days = int(_numeric(metrics.get("first_sales_order_tenure_days")))
+		first_sales_invoice_tenure_days = int(_numeric(metrics.get("first_sales_invoice_tenure_days")))
+		if "tenure" in text or "how long" in text:
+			if "created" in text:
+				if customer_created_date:
+					return (
+						f"{entity_label} has a governed tenure of {_days_text(customer_created_tenure_days)}"
+						f"{company_phrase}, measured from customer created date {customer_created_date}."
+					)
+				return f"I couldn't find a governed customer created date for {entity_label}{company_phrase}."
+			if "sales order" in text or "first order" in text:
+				if first_sales_order_date:
+					return (
+						f"{entity_label} has a governed tenure of {_days_text(first_sales_order_tenure_days)}"
+						f"{company_phrase}, measured from first submitted sales order date {first_sales_order_date}."
+					)
+				return f"I couldn't find a governed first submitted sales order date for {entity_label}{company_phrase}."
+			if "sales invoice" in text or "first invoice" in text:
+				if first_sales_invoice_date:
+					return (
+						f"{entity_label} has a governed tenure of {_days_text(first_sales_invoice_tenure_days)}"
+						f"{company_phrase}, measured from first submitted sales invoice date {first_sales_invoice_date}."
+					)
+				return f"I couldn't find a governed first submitted sales invoice date for {entity_label}{company_phrase}."
+			return (
+				f"I can provide governed tenure for {entity_label}{company_phrase} using one of three approved bases: "
+				"customer created date, first submitted sales order date, or first submitted sales invoice date."
+			)
+		if "created" in text and "customer" in text:
+			if customer_created_date:
+				return f"{entity_label} was created on {customer_created_date}{company_phrase}."
+			return f"I couldn't find a governed customer created date for {entity_label}{company_phrase}."
+		if ("first sales order" in text or "first order" in text) and ("date" in text or "when" in text or "since" in text):
+			if first_sales_order_date:
+				return f"The first observed submitted sales order for {entity_label}{company_phrase} was on {first_sales_order_date}."
+			return f"I couldn't find a governed first submitted sales order date for {entity_label}{company_phrase}."
+		if ("first sales invoice" in text or "first invoice" in text) and ("date" in text or "when" in text or "since" in text):
+			if first_sales_invoice_date:
+				return f"The first observed submitted sales invoice for {entity_label}{company_phrase} was on {first_sales_invoice_date}."
+			return f"I couldn't find a governed first submitted sales invoice date for {entity_label}{company_phrase}."
 		if "credit_limit_status" in requested_metrics:
 			if not credit_limit_configured:
 				return (
@@ -736,6 +791,16 @@ def grounded_artifact_direct_evidence_answer(
 			if outstanding_total < 0:
 				return f"Yes. {entity_label} has a credit balance of {_money(abs(outstanding_total))} MMK."
 			return f"No. {entity_label} does not have a credit balance."
+		if "overdue_ratio" in requested_metrics or "overdue ratio" in text:
+			if outstanding_total <= 0:
+				return (
+					f"As of the current governed receivable snapshot, {entity_label} has an overdue ratio of 0.0%{company_phrase}.\n\n"
+					"There is no positive outstanding balance in the current governed artifact."
+				)
+			return (
+				f"As of the current governed receivable snapshot, {entity_label} has an overdue ratio of {overdue_ratio * 100:.1f}%{company_phrase}.\n\n"
+				f"This is based on overdue amount {_money(overdue_total)} MMK against outstanding amount {_money(outstanding_total)} MMK."
+			)
 		if "overdue_only" in requested_metrics or "overdue" in text:
 			if "how much" in text or "amount" in text:
 				return f"The overdue amount for {entity_label} is {_money(overdue_total)} MMK."

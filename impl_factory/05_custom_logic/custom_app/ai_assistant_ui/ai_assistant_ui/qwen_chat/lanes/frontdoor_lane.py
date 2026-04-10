@@ -10,6 +10,9 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	interpret_front_door_semantically,
 	render_front_door_answer,
 )
+from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
+	maybe_build_governed_kpi_value_frontdoor_response,
+)
 from ai_assistant_ui.qwen_chat.governed_kpi_support import maybe_build_governed_kpi_frontdoor_response
 from ai_assistant_ui.qwen_chat.observability import record_phase55_observability_event
 
@@ -45,6 +48,7 @@ _FRONTDOOR_INTENTS_THAT_OVERRIDE_REASONING = {
 	"closure_signoff",
 	"capability_question",
 	"governed_kpi_definition",
+	"governed_kpi_value",
 }
 
 
@@ -67,6 +71,7 @@ def evaluate_frontdoor_lane(
 	message: str,
 	recent_messages,
 	grounded_context_available: bool,
+	latest_grounded_turn: Dict[str, Any] | None = None,
 	latest_recovery_contract_available: bool,
 	pre_frontdoor_reasoning_semantic_result,
 	post_clarification_stop_acknowledgement: bool = False,
@@ -94,6 +99,15 @@ def evaluate_frontdoor_lane(
 		frontdoor_semantic_result = governed_kpi_frontdoor.get("semantic_result")
 		frontdoor_contract = governed_kpi_frontdoor.get("frontdoor_contract")
 		frontdoor_answer = str(governed_kpi_frontdoor.get("frontdoor_answer") or "").strip()
+		return frontdoor_semantic_result, frontdoor_contract, frontdoor_render_result, frontdoor_answer
+	elif governed_kpi_value_frontdoor := maybe_build_governed_kpi_value_frontdoor_response(
+		request_id=request_id,
+		message=message,
+		grounded_turn=latest_grounded_turn,
+	):
+		frontdoor_semantic_result = governed_kpi_value_frontdoor.get("semantic_result")
+		frontdoor_contract = governed_kpi_value_frontdoor.get("frontdoor_contract")
+		frontdoor_answer = str(governed_kpi_value_frontdoor.get("frontdoor_answer") or "").strip()
 		return frontdoor_semantic_result, frontdoor_contract, frontdoor_render_result, frontdoor_answer
 	elif (
 		pre_frontdoor_reasoning_semantic_result is not None

@@ -1769,6 +1769,7 @@ def translate_front_door_intent_gate_contract(
 		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new governed query.",
 		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new governed query.",
 		"closure_signoff": "Understood. Feel free to come back anytime, and we can pick up from a new ERP question or continue from there.",
+		"governed_kpi_definition": "I can explain governed KPI definitions and approved formula bases from the active business-definition registry.",
 		"low_signal_non_business": "That request is outside this ERP/business assistant. I’m ready when you want to return to the current ERP analysis or continue with an ERP question or follow-up.",
 		"route_onward": "",
 	}
@@ -3769,21 +3770,21 @@ def build_followup_resolution(
 		or str(grounded_filters.get("to_date") or "").strip()
 		or str(grounded_filters.get("report_date") or "").strip()
 	)
-	if (
-		latest_grounded_turn_available
-		and explicit_query_shape
-		and inherited_date_context_present
-		and not requested_time_scope
-		and not self_contained
-		and _message_looks_like_self_contained_governed_business_query(
-			message=message,
-			language=message_language,
-		)
-	):
-		self_contained = True
+	message_looks_self_contained_business_query = _message_looks_like_self_contained_governed_business_query(
+		message=message,
+		language=message_language,
+	)
 	presentation_only_request = bool(set(requested_modes).intersection({"presentation_transform", "table_presentation", "bullet_presentation"})) and set(
 		str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()
 	).issubset({"presentation_transform", "table_presentation", "bullet_presentation"})
+	if (
+		latest_grounded_turn_available
+		and inherited_date_context_present
+		and not requested_time_scope
+		and not self_contained
+		and message_looks_self_contained_business_query
+	):
+		self_contained = True
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
 	local_grounded_modes = {
 		"presentation_transform",
@@ -3852,7 +3853,9 @@ def build_followup_resolution(
 			and bool(requested_mode_set.intersection({"dimension_breakdown", "grouping_change"}))
 		)
 	)
-	if latest_grounded_turn_available and self_contained and explicit_query_shape:
+	if latest_grounded_turn_available and self_contained and (
+		explicit_query_shape or message_looks_self_contained_business_query
+	):
 		return build_followup_resolution_contract(
 			request_id=request_id,
 			mode="new_query",

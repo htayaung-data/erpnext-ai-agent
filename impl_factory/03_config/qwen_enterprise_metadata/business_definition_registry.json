@@ -1,0 +1,278 @@
+{
+  "contract_version": "1.0",
+  "status": "phase2_core_definitions_active",
+  "description": "Governed business-definition registry for KPI meaning ownership, scope, and activation state.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_semantic_categories": [
+    "customer_lifecycle",
+    "sales_efficiency",
+    "collections",
+    "credit_policy",
+    "risk_semantics",
+    "finance_operations"
+  ],
+  "allowed_entity_grains": [
+    "customer",
+    "supplier",
+    "sales_order",
+    "sales_invoice",
+    "purchase_order",
+    "purchase_invoice",
+    "company",
+    "account",
+    "item",
+    "global"
+  ],
+  "allowed_time_bases": [
+    "as_of_date",
+    "transaction_period",
+    "customer_created_at",
+    "first_sales_order_date",
+    "first_sales_invoice_date",
+    "fiscal_period",
+    "rolling_window"
+  ],
+  "allowed_clarify_policies": [
+    "clarify_basis",
+    "clarify_time_basis",
+    "clarify_document_basis",
+    "block_until_policy_approved",
+    "block_until_tenant_data_available"
+  ],
+  "definitions": [
+    {
+      "definition_id": "average_order_value_sales_order_period",
+      "label": "Average Order Value by Sales Order",
+      "description": "Average submitted sales-order grand total over an explicitly requested business period.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "company",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order List",
+        "date_field": "Transaction Date",
+        "numerator_metric": "Grand Total",
+        "denominator_basis": "submitted_sales_order_count"
+      },
+      "business_purpose": "it helps sales leadership monitor order quality, pricing discipline, and upsell effectiveness at sales-order level.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "average order value",
+        "aov",
+        "sales order aov",
+        "average order value sales order"
+      ]
+    },
+    {
+      "definition_id": "average_order_value_sales_invoice_period",
+      "label": "Average Order Value by Sales Invoice",
+      "description": "Average submitted sales-invoice grand total over an explicitly requested business period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "company",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice List",
+        "date_field": "Posting Date",
+        "numerator_metric": "Grand Total",
+        "denominator_basis": "submitted_sales_invoice_count"
+      },
+      "business_purpose": "it helps finance and sales teams monitor invoice mix, realized selling value, and changes in billing quality over time.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "average order value",
+        "aov",
+        "sales invoice aov",
+        "average order value sales invoice"
+      ]
+    },
+    {
+      "definition_id": "customer_tenure_first_sales_order_date",
+      "label": "Customer Tenure by First Sales Order",
+      "description": "Customer tenure measured from the first observed submitted sales order date to the as-of date.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "first_sales_order_date",
+      "semantic_category": "customer_lifecycle",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order List",
+        "date_field": "Transaction Date"
+      },
+      "clarify_policy": "clarify_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "tenure",
+        "customer tenure",
+        "customer tenure by sales order",
+        "tenure by first sales order"
+      ]
+    },
+    {
+      "definition_id": "customer_tenure_first_sales_invoice_date",
+      "label": "Customer Tenure by First Sales Invoice",
+      "description": "Customer tenure measured from the first observed submitted sales invoice date to the as-of date.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "first_sales_invoice_date",
+      "semantic_category": "customer_lifecycle",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice List",
+        "date_field": "Posting Date"
+      },
+      "clarify_policy": "clarify_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "tenure",
+        "customer tenure",
+        "customer tenure by sales invoice",
+        "tenure by first sales invoice"
+      ]
+    },
+    {
+      "definition_id": "customer_tenure_customer_created_at",
+      "label": "Customer Tenure by Customer Created Date",
+      "description": "Customer tenure measured from the governed customer created date to the as-of date.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "customer_created_at",
+      "semantic_category": "customer_lifecycle",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "customer_master_read",
+        "report_name": "Customer Master List",
+        "date_field": "Creation"
+      },
+      "business_purpose": "it helps account management and finance teams distinguish customer-master age from trading age when reviewing customer lifecycle maturity.",
+      "clarify_policy": "clarify_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "tenure",
+        "customer tenure",
+        "customer created tenure",
+        "customer tenure by customer created date",
+        "tenure by customer created date"
+      ]
+    },
+    {
+      "definition_id": "collection_ratio_sales_invoice_period",
+      "label": "Collection Ratio by Sales Invoice Period",
+      "description": "Collected cash against submitted sales invoices divided by submitted sales-invoice grand total for an explicitly requested period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "company",
+      "time_basis": "transaction_period",
+      "semantic_category": "collections",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_ids": [
+          "sales_read",
+          "collections_read"
+        ],
+        "report_names": [
+          "Sales Invoice List",
+          "Payment Entry List"
+        ],
+        "numerator_metric": "Allocated Customer Receipt Amount",
+        "denominator_metric": "Sales Invoice Grand Total",
+        "allocation_rule": "Sum submitted customer receipt allocations linked to submitted sales invoices in the requested invoice period."
+      },
+      "business_purpose": "it shows how much invoiced value has actually been collected for the governed invoice period, which supports cash conversion review and collections performance management.",
+      "clarify_policy": "clarify_time_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "collection ratio",
+        "ar collection ratio",
+        "invoice collection ratio"
+      ]
+    },
+    {
+      "definition_id": "customer_overdue_ratio_as_of_date",
+      "label": "Customer Overdue Ratio as of Date",
+      "description": "Customer overdue amount divided by outstanding amount as of a governed report date.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "as_of_date",
+      "semantic_category": "risk_semantics",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "accounts_receivable_read",
+        "report_name": "Accounts Receivable Summary",
+        "required_followup_mode": "aging_bucket_view",
+        "numerator_basis": "31+ aging buckets total",
+        "denominator_metric": "Outstanding Amount"
+      },
+      "business_purpose": "it shows how much of a customer's open balance is already overdue, which helps collections and risk review prioritize the right accounts.",
+      "clarify_policy": "clarify_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "overdue ratio",
+        "customer overdue ratio",
+        "receivable overdue ratio"
+      ]
+    },
+    {
+      "definition_id": "credit_utilization_customer_as_of_date",
+      "label": "Customer Credit Utilization as of Date",
+      "description": "Customer outstanding amount divided by configured customer credit limit as of a governed as-of date.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "as_of_date",
+      "semantic_category": "credit_policy",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "accounts_receivable_read",
+        "report_name": "Accounts Receivable Summary",
+        "master_data_requirement": "Customer Credit Limit",
+        "numerator_metric": "Outstanding Amount",
+        "denominator_metric": "Configured Credit Limit"
+      },
+      "business_purpose": "it shows how much of a customer's approved credit is already consumed, which supports credit-risk monitoring, collection prioritization, and working-capital control.",
+      "clarify_policy": "clarify_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "credit utilization",
+        "customer credit utilization",
+        "credit usage"
+      ]
+    }
+  ]
+}

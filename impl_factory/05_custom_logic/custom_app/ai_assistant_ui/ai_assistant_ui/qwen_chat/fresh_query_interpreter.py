@@ -106,6 +106,22 @@ _ALLOWED_AMBIGUITY_FLAGS = {
 _RUNTIME_DEFAULT_MODEL_OVERRIDE = "__runtime_default__"
 
 
+def _family_narrative_prefers_rendered_response(
+	*,
+	family_id: str,
+	response_policy: Dict[str, Any] | None,
+) -> bool:
+	clean_family = str(family_id or "").strip().lower()
+	policy = dict(response_policy or {}) if isinstance(response_policy, dict) else {}
+	if clean_family != "aging":
+		return False
+	if bool(policy.get("analysis_requested")):
+		return False
+	if bool(policy.get("implication_allowed")) or bool(policy.get("recommendation_allowed")):
+		return False
+	return True
+
+
 @dataclass(frozen=True)
 class SemanticFreshQueryResult:
 	status: str
@@ -1439,6 +1455,12 @@ def _deterministic_family_surface_interpretation(
 	candidate_reports = _clean_list(selected_rule.get("candidate_reports"))
 	primary_capability_id = str((candidate_capability_ids or [""])[0] or "").strip()
 	defaults = capability_fresh_query_defaults(primary_capability_id, intent_class=intent_class)
+	detected_metrics = detect_canonical_keys(
+		message,
+		capability_id=primary_capability_id or None,
+		dimension_or_metric="metric",
+	)
+	requested_metrics = list(dict.fromkeys(_clean_list(defaults.get("default_metrics")) + detected_metrics))
 	return build_fresh_query_interpretation_contract(
 		request_id=request_id,
 		session_id=session_id,
@@ -1446,7 +1468,7 @@ def _deterministic_family_surface_interpretation(
 		candidate_capability_ids=candidate_capability_ids,
 		candidate_reports=candidate_reports,
 		requested_dimensions=_clean_list(defaults.get("default_dimensions")),
-		requested_metrics=_clean_list(defaults.get("default_metrics")),
+		requested_metrics=requested_metrics,
 		requested_time_scope=str(defaults.get("default_time_scope") or "").strip(),
 		target_limit=0,
 		requested_presentation=[],
@@ -1463,6 +1485,52 @@ def _deterministic_family_surface_interpretation(
 	)
 
 
+def _augment_semantic_interpretation_with_detected_metrics(
+	*,
+	semantic_result: SemanticFreshQueryResult,
+	message: str,
+) -> SemanticFreshQueryResult:
+	interpretation = semantic_result.interpretation
+	if interpretation is None:
+		return semantic_result
+	candidate_capability_ids = list(interpretation.candidate_capability_ids or [])
+	primary_capability_id = str(candidate_capability_ids[0] or "").strip() if candidate_capability_ids else ""
+	detected_metrics = detect_canonical_keys(
+		message,
+		capability_id=primary_capability_id or None,
+		dimension_or_metric="metric",
+	)
+	if not detected_metrics:
+		return semantic_result
+	combined_metrics = list(dict.fromkeys(list(interpretation.requested_metrics) + detected_metrics))
+	if combined_metrics == list(interpretation.requested_metrics):
+		return semantic_result
+	augmented = build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=combined_metrics,
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=interpretation.ambiguity_reason,
+		confidence=interpretation.confidence,
+	)
+	return SemanticFreshQueryResult(
+		status=semantic_result.status,
+		confidence_threshold=semantic_result.confidence_threshold,
+		interpretation=augmented,
+		runtime_error=semantic_result.runtime_error,
+		validation_error=semantic_result.validation_error,
+		agent_meta=semantic_result.agent_meta,
+	)
+
+
 def _compile_pipeline_from_semantic_result(
 	*,
 	request_id: str,
@@ -1474,6 +1542,11 @@ def _compile_pipeline_from_semantic_result(
 	semantic_result: SemanticFreshQueryResult,
 	proposal_generation_latency_ms: int,
 ) -> Dict[str, Any]:
+	if semantic_result.interpretation is not None:
+		semantic_result = _augment_semantic_interpretation_with_detected_metrics(
+			semantic_result=semantic_result,
+			message=message,
+		)
 	interaction_contract = build_interaction_contract(
 		request_id=request_id,
 		session_id=session_id,
@@ -1528,6 +1601,10 @@ def _compile_pipeline_from_semantic_result(
 				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
 				"semantic_resolution_applied": True,
 			},
+		)
+		semantic_result = _augment_semantic_interpretation_with_detected_metrics(
+			semantic_result=semantic_result,
+			message=message,
 		)
 	augmented_interpretation = _augment_direct_query_scalar_filters_from_message(
 		message=message,
@@ -2208,6 +2285,11 @@ def execute_compiled_fresh_query_message(
 		)
 		if narrative_contract is not None:
 			narrative_response_payload = narrative_contract.to_payload()
+		if _family_narrative_prefers_rendered_response(
+			family_id=str(adapter_outcome.family_id or compiler_contract.get("selected_report_family") or "").strip(),
+			response_policy=response_policy,
+		):
+			narrative_response_payload = {}
 	total_pipeline_latency_ms = int((time.perf_counter() - total_started) * 1000)
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
 	tool_names = [

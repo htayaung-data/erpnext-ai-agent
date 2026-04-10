@@ -248,6 +248,8 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
 	run_customer_credit_policy_followup_smoke as _run_customer_credit_policy_followup_smoke_helper,
 	run_governed_kpi_frontdoor_smoke as _run_governed_kpi_frontdoor_smoke_helper,
+	run_governed_kpi_customer_execution_smoke as _run_governed_kpi_customer_execution_smoke_helper,
+	run_governed_kpi_period_execution_smoke as _run_governed_kpi_period_execution_smoke_helper,
 	run_customer_credit_overdue_probe as _run_customer_credit_overdue_probe_helper,
 	run_customer_credit_balance_probe as _run_customer_credit_balance_probe_helper,
 	run_customer_credit_scope_reset_probe as _run_customer_credit_scope_reset_probe_helper,
@@ -337,6 +339,10 @@ from ai_assistant_ui.qwen_chat.metric_union_support import (
 )
 from ai_assistant_ui.qwen_chat.governed_kpi_support import (
 	run_governed_kpi_frontdoor_probe as _run_governed_kpi_frontdoor_probe_helper,
+)
+from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
+	run_governed_kpi_customer_execution_probe as _run_governed_kpi_customer_execution_probe_helper,
+	run_governed_kpi_period_execution_probe as _run_governed_kpi_period_execution_probe_helper,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import QwenRuntimeClientError, call_qwen_runtime_chat
 from ai_assistant_ui.qwen_chat.runtime_support import (
@@ -1230,6 +1236,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			pending_clarification_signal=pending_clarification_signal,
 			clarification_state=clarification_state,
 			latest_grounded_turn_available=latest_grounded_turn_available,
+			latest_grounded_turn=latest_grounded_turn,
 		)
 	else:
 		post_clarification_stop_acknowledgement = bool(
@@ -1244,6 +1251,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			message=msg,
 			recent_messages=recent_frontdoor_messages,
 			grounded_context_available=latest_grounded_turn_available,
+			latest_grounded_turn=latest_grounded_turn,
 			latest_recovery_contract_available=bool(latest_recovery_contract),
 			pre_frontdoor_reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
 			post_clarification_stop_acknowledgement=post_clarification_stop_acknowledgement,
@@ -1415,15 +1423,22 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		if clarification_handled and clarification_payload is not None:
 			return True, clarification_payload
 		clarified_frontdoor_message = ""
+		clarification_decision = (
+			str(clarification_response_contract.decision or "").strip()
+			if clarification_response_contract is not None
+			else ""
+		)
 		if (
 			clarification_response_contract is not None
-			and str(clarification_response_contract.decision or "").strip() == "resolved_option"
+			and clarification_decision == "resolved_option"
 			and clarification_continuation_lane(pending_clarification_signal) == "front_door"
 		):
 			clarified_frontdoor_message = clarification_resolved_continuation_message(
 				signal_payload=pending_clarification_signal,
 				resolved_option=str(clarification_response_contract.resolved_option or "").strip(),
 			)
+		elif clarification_decision == "new_request":
+			clarified_frontdoor_message = raw_msg
 		if clarified_frontdoor_message and entity_drilldown is None:
 			(
 				clarified_frontdoor_semantic_result,
@@ -1438,6 +1453,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				message=clarified_frontdoor_message,
 				recent_messages=repair_recent_messages,
 				grounded_context_available=latest_grounded_turn_available,
+				latest_grounded_turn=latest_grounded_turn,
 				latest_recovery_contract_available=bool(latest_recovery_contract),
 				pre_frontdoor_reasoning_semantic_result=None,
 			)
@@ -2222,6 +2238,32 @@ def run_phase2_4_governed_kpi_frontdoor_smoke() -> Dict[str, Any]:
 
 def run_phase2_4_governed_kpi_frontdoor_probe() -> Dict[str, Any]:
 	return _run_governed_kpi_frontdoor_probe_helper()
+
+
+def run_phase2_5_governed_kpi_period_execution_smoke() -> Dict[str, Any]:
+	return _run_governed_kpi_period_execution_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase2_5_governed_kpi_period_execution_probe() -> Dict[str, Any]:
+	return _run_governed_kpi_period_execution_probe_helper()
+
+
+def run_phase2_5_governed_kpi_customer_execution_smoke() -> Dict[str, Any]:
+	return _run_governed_kpi_customer_execution_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase2_5_governed_kpi_customer_execution_probe() -> Dict[str, Any]:
+	return _run_governed_kpi_customer_execution_probe_helper()
 
 
 def run_phase1_1_delivery_note_date_scope_probe() -> Dict[str, Any]:

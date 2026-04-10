@@ -203,6 +203,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				message="write a short poem about this",
 				recent_messages=[],
 				grounded_context_available=True,
+				latest_grounded_turn={},
 				latest_recovery_contract_available=False,
 				pre_frontdoor_reasoning_semantic_result=types.SimpleNamespace(
 					status="accepted",
@@ -235,6 +236,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				message="what does this mean",
 				recent_messages=[],
 				grounded_context_available=True,
+				latest_grounded_turn={},
 				latest_recovery_contract_available=False,
 				pre_frontdoor_reasoning_semantic_result=types.SimpleNamespace(
 					status="accepted",

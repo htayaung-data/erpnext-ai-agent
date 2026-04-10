@@ -32,6 +32,7 @@ def build_pending_clarification_frontdoor_skip(
 	pending_clarification_signal: Dict[str, Any],
 	clarification_state,
 	latest_grounded_turn_available: bool,
+	latest_grounded_turn: Dict[str, Any],
 ) -> Tuple[Any, SemanticFrontDoorResult, Any]:
 	clarification_response_contract = resolve_pending_clarification_response(
 		request_id=request_id,
@@ -42,6 +43,7 @@ def build_pending_clarification_frontdoor_skip(
 		signal_payload=pending_clarification_signal,
 		clarification_attempt_count=int(max(0, clarification_state.attempt_count)),
 		max_attempts=int(max(1, clarification_state.max_attempts)),
+		grounded_turn=latest_grounded_turn,
 	)
 	frontdoor_semantic_result = SemanticFrontDoorResult(
 		status="skipped_for_pending_clarification",
@@ -99,6 +101,7 @@ def handle_pending_clarification_turn(
 				signal_payload=pending_clarification_signal,
 				clarification_attempt_count=int(max(0, clarification_state.attempt_count)),
 				max_attempts=int(max(1, clarification_state.max_attempts)),
+				grounded_turn=latest_grounded_turn,
 			)
 			clarification_decision = str(clarification_response_contract.decision or "").strip()
 		else:
@@ -196,4 +199,3 @@ def handle_pending_clarification_turn(
 	if str(clarification_response_contract.decision or "").strip() == "resolved_option":
 		resolved_message = str(clarification_response_contract.resolved_option or "").strip() or resolved_message
 	return False, clarification_response_contract, resolved_message, None
-

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils.file_lock import LockTimeoutError
+from frappe.utils.synchronization import filelock
 
 from ai_assistant_ui.qwen_chat.service import QWEN_SESSION_DOCTYPE, handle_qwen_user_message
 
@@ -9,6 +11,10 @@ def _get_qwen_session(session_name: str):
 	if doc.owner != frappe.session.user and not frappe.has_permission(QWEN_SESSION_DOCTYPE, "read", doc=doc):
 		frappe.throw("Not permitted.")
 	return doc
+
+
+def _qwen_session_lock_name(session_name: str) -> str:
+	return f"qwen_chat_session::{str(session_name or '').strip()}"
 
 
 @frappe.whitelist()
@@ -65,11 +71,17 @@ def qwen_chat_send(session_name: str, message: str):
 	_get_qwen_session(session_name)
 
 	try:
-		ok, payload = handle_qwen_user_message(
-			session_name=session_name,
-			message=message,
-			user=frappe.session.user,
-		)
+		with filelock(_qwen_session_lock_name(session_name), timeout=1):
+			ok, payload = handle_qwen_user_message(
+				session_name=session_name,
+				message=message,
+				user=frappe.session.user,
+			)
+	except LockTimeoutError:
+		return {
+			"ok": False,
+			"error": "Please wait for the current Qwen response to finish before sending another message in this chat.",
+		}
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Qwen Assistant: qwen_chat_send crashed")
 		return {"ok": False, "error": "Internal error. Please try again."}

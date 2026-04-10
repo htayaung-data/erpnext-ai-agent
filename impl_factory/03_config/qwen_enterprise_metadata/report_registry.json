@@ -340,6 +340,131 @@
       "chartable_fields": []
     },
     {
+      "report_name": "Customer Master List",
+      "module": "Selling",
+      "family": "customer_master_list",
+      "capability_ids": [
+        "customer_master_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Customer",
+        "fields": [
+          "name",
+          "customer_name",
+          "creation",
+          "modified",
+          "customer_group",
+          "territory",
+          "default_price_list",
+          "payment_terms",
+          "disabled",
+          "is_frozen"
+        ],
+        "order_by": "creation desc, modified desc",
+        "filterable_fields": [
+          "customer_group",
+          "territory",
+          "disabled",
+          "is_frozen"
+        ],
+        "date_field": "creation",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [],
+      "defaultable_filters": [],
+      "supported_intent_classes": [],
+      "semantic_tags": [
+        "customer",
+        "master_data",
+        "lifecycle"
+      ],
+      "supported_dimensions": [
+        "Customer",
+        "Creation",
+        "Territory",
+        "Customer Group"
+      ],
+      "supported_metrics": [],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
+      "report_name": "Payment Entry List",
+      "module": "Accounts",
+      "family": "payment_entry_list",
+      "capability_ids": [
+        "collections_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Payment Entry",
+        "fields": [
+          "name",
+          "posting_date",
+          "payment_type",
+          "party_type",
+          "party",
+          "company",
+          "paid_amount",
+          "received_amount",
+          "total_allocated_amount",
+          "docstatus"
+        ],
+        "order_by": "posting_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "filterable_fields": [
+          "payment_type",
+          "party_type",
+          "party"
+        ],
+        "date_field": "posting_date",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [],
+      "semantic_tags": [
+        "collections",
+        "payments",
+        "receipts"
+      ],
+      "supported_dimensions": [
+        "Payment Entry",
+        "Posting Date",
+        "Customer"
+      ],
+      "supported_metrics": [
+        "Received Amount",
+        "Total Allocated Amount"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Purchase Order List",
       "module": "Buying",
       "family": "purchase_order_list",

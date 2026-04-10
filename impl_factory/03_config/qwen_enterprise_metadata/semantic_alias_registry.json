@@ -133,6 +133,19 @@
       "erp_field_mappings": {}
     },
     {
+      "canonical_key": "overdue_ratio",
+      "label": "Overdue Ratio",
+      "aliases": [
+        "overdue ratio",
+        "customer overdue ratio",
+        "receivable overdue ratio",
+        "ar overdue ratio"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
       "canonical_key": "credit_balance_only",
       "label": "Credit Balance Customers",
       "aliases": [
@@ -183,6 +196,8 @@
         "credit limit status",
         "credit limit exceeded",
         "exceeded credit limit",
+        "above credit limit",
+        "above the credit limit",
         "over credit limit",
         "over the credit limit",
         "within credit limit",
