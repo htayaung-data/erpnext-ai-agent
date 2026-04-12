@@ -136,6 +136,7 @@ from ai_assistant_ui.qwen_chat.entity_followup_support import (
 	try_entity_detail_followup as _try_entity_detail_followup_helper,
 )
 from ai_assistant_ui.qwen_chat.family_followup import (
+	refine_local_family_artifact,
 	render_local_family_followup,
 	supports_local_family_followup,
 )
@@ -247,6 +248,7 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_customer_credit_balance_smoke as _run_customer_credit_balance_smoke_helper,
 	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
 	run_customer_credit_policy_followup_smoke as _run_customer_credit_policy_followup_smoke_helper,
+	run_governed_customer_commercial_composite_smoke as _run_governed_customer_commercial_composite_smoke_helper,
 	run_governed_kpi_frontdoor_smoke as _run_governed_kpi_frontdoor_smoke_helper,
 	run_governed_kpi_customer_execution_smoke as _run_governed_kpi_customer_execution_smoke_helper,
 	run_governed_kpi_period_execution_smoke as _run_governed_kpi_period_execution_smoke_helper,
@@ -307,6 +309,10 @@ from ai_assistant_ui.qwen_chat.probes.service_diagnostics import (
 	run_first_turn_regression_suite as _run_first_turn_regression_suite_helper,
 	run_phase1_1_delivery_note_invoice_switch_debug as _run_phase1_1_delivery_note_invoice_switch_debug_helper,
 	run_phase1_1_invoice_detail_delivery_trend_debug as _run_phase1_1_invoice_detail_delivery_trend_debug_helper,
+	run_phase3_2_projection_followup_debug as _run_phase3_2_projection_followup_debug_helper,
+	run_phase3_2_subject_switch_regression_debug as _run_phase3_2_subject_switch_regression_debug_helper,
+	run_phase3_3_product_quantity_projection_regression_debug as _run_phase3_3_product_quantity_projection_regression_debug_helper,
+	run_phase3_3_ranking_projection_continuation_regression_debug as _run_phase3_3_ranking_projection_continuation_regression_debug_helper,
 	run_phase4_compiled_rollout_governance_selftests as _run_phase4_compiled_rollout_governance_selftests_helper,
 	run_phase4_compiled_rollout_monitoring_smoke as _run_phase4_compiled_rollout_monitoring_smoke_helper,
 	run_phase4_compiled_rollout_smoke as _run_phase4_compiled_rollout_smoke_helper,
@@ -337,6 +343,9 @@ from ai_assistant_ui.qwen_chat.metric_union_support import (
 	report_can_project_metric_union as _report_can_project_metric_union_helper,
 	resolve_metric_union_requery_target as _resolve_metric_union_requery_target_helper,
 )
+from ai_assistant_ui.qwen_chat.governed_composite_runtime_execution import (
+	run_governed_customer_commercial_composite_probe as _run_governed_customer_commercial_composite_probe_helper,
+)
 from ai_assistant_ui.qwen_chat.governed_kpi_support import (
 	run_governed_kpi_frontdoor_probe as _run_governed_kpi_frontdoor_probe_helper,
 )
@@ -354,7 +363,10 @@ from ai_assistant_ui.qwen_chat.runtime_support import (
 	tool_trace_message as _tool_trace_message_helper,
 	tool_trace_payload as _tool_trace_payload,
 )
-from ai_assistant_ui.qwen_chat.semantic_interpreter import interpret_followup_semantically
+from ai_assistant_ui.qwen_chat.semantic_interpreter import (
+	interpret_artifact_local_projection_deterministically,
+	interpret_followup_semantically,
+)
 from ai_assistant_ui.qwen_chat.semantic_reasoning_activation import interpret_reasoning_activation_semantically
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys as _detect_semantic_alias_keys
 QWEN_SESSION_DOCTYPE = "Qwen Chat Session"
@@ -1055,7 +1067,83 @@ def _try_local_followup_transform(
 		render_local_followup=render_local_followup,
 		ensure_table_from_grounded_context=_ensure_table_from_grounded_context,
 		transform_markdown_to_million=_transform_markdown_to_million,
+		refine_local_family_artifact=refine_local_family_artifact,
 	)
+
+
+def _artifact_local_refinement_should_defer_runtime_frontdoor(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]],
+	latest_grounded_turn: Dict[str, Any],
+	latest_family_artifact: Dict[str, Any],
+	latest_assistant_payload: Dict[str, Any],
+) -> Tuple[bool, Any | None]:
+	if not latest_grounded_turn or not latest_family_artifact:
+		return False, None
+	semantic_result = interpret_followup_semantically(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		recent_messages=recent_messages,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_assistant_payload=latest_assistant_payload,
+	)
+	deterministic_projection_result = interpret_artifact_local_projection_deterministically(
+		message=message,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_family_artifact=latest_family_artifact,
+	)
+	candidate_results = [semantic_result]
+	if (
+		str(getattr(deterministic_projection_result, "status", "") or "").strip() == "accepted"
+		and getattr(deterministic_projection_result, "intent", None) is not None
+	):
+		candidate_results.append(deterministic_projection_result)
+	for candidate in candidate_results:
+		if str(getattr(candidate, "status", "") or "").strip() != "accepted" or getattr(candidate, "intent", None) is None:
+			continue
+		followup_resolution = build_followup_resolution(
+			request_id=request_id,
+			message=message,
+			latest_grounded_turn_available=True,
+			latest_grounded_turn=latest_grounded_turn,
+			semantic_intent=candidate.intent,
+			allow_heuristic_fallback=False,
+			degraded_reason="",
+		)
+		continuation_contract = build_artifact_continuation_contract(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			grounded_turn=latest_grounded_turn,
+			artifact_payload=latest_family_artifact,
+		)
+		if continuation_contract is not None:
+			followup_resolution = _authoritative_continuation_resolution(
+				request_id=request_id,
+				followup_resolution=followup_resolution,
+				continuation_contract=continuation_contract,
+				artifact_payload=latest_family_artifact,
+				grounded_turn=latest_grounded_turn,
+			)
+		requery_upgrade, _ = _requery_resolution_for_unsupported_local_columns(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			continuation_contract=continuation_contract,
+		)
+		if requery_upgrade is not None:
+			followup_resolution = requery_upgrade
+		if str(getattr(followup_resolution, "mode", "") or "").strip() == "local_grounded_transform":
+			return True, candidate
+	return False, semantic_result
 
 
 def _tool_trace_message(
@@ -1156,6 +1244,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	pre_frontdoor_reasoning_activation_contract = None
 	pre_frontdoor_reasoning_semantic_result = None
 	pre_frontdoor_reasoning_activation_latency_ms = 0
+	pre_frontdoor_followup_semantic_result = None
+	defer_runtime_value_frontdoor = False
 	reasoning_recent_messages = _recent_messages_for_grounded_source(
 		session_doc,
 		grounded_turn=latest_grounded_turn,
@@ -1239,6 +1329,18 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			latest_grounded_turn=latest_grounded_turn,
 		)
 	else:
+		if latest_grounded_turn_available:
+			defer_runtime_value_frontdoor, pre_frontdoor_followup_semantic_result = _artifact_local_refinement_should_defer_runtime_frontdoor(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=msg,
+				recent_messages=_recent_messages(session_doc, limit=6),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+			)
 		post_clarification_stop_acknowledgement = bool(
 			latest_assistant_turn_was_clarification_fallback_stop(session_doc)
 			and looks_like_short_acknowledgement(msg)
@@ -1254,6 +1356,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			latest_grounded_turn=latest_grounded_turn,
 			latest_recovery_contract_available=bool(latest_recovery_contract),
 			pre_frontdoor_reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			defer_runtime_value_frontdoor=defer_runtime_value_frontdoor,
 			post_clarification_stop_acknowledgement=post_clarification_stop_acknowledgement,
 		)
 	entity_drilldown = detect_entity_drilldown_request(
@@ -1278,15 +1381,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and entity_drilldown is None
 		and (not latest_recovery_contract or recovery_allows_semantic_followup)
 	):
-		semantic_result = interpret_followup_semantically(
-			request_id=request_id,
-			session_id=session_name,
-			user_id=user,
-			site_name=site_name,
-			message=msg,
-			recent_messages=_recent_messages(session_doc, limit=6),
-			latest_grounded_turn=latest_grounded_turn,
-			latest_assistant_payload=latest_assistant_payload,
+		semantic_result = (
+			pre_frontdoor_followup_semantic_result
+			if pre_frontdoor_followup_semantic_result is not None
+			else interpret_followup_semantically(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=msg,
+				recent_messages=_recent_messages(session_doc, limit=6),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_assistant_payload=latest_assistant_payload,
+			)
 		)
 		if semantic_result.status == "accepted" and semantic_result.intent is not None:
 			semantic_intent = semantic_result.intent
@@ -1733,6 +1840,56 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			continuation_contract=continuation_contract,
 		)
 		recent_messages = []
+		requery_frontdoor_semantic_result, requery_frontdoor_contract, requery_frontdoor_render_result, requery_frontdoor_answer = evaluate_frontdoor_lane(
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=runtime_message,
+			recent_messages=[],
+			grounded_context_available=latest_grounded_turn_available,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_recovery_contract_available=bool(latest_recovery_contract),
+			pre_frontdoor_reasoning_semantic_result=None,
+			defer_runtime_value_frontdoor=False,
+			post_clarification_stop_acknowledgement=False,
+		)
+		requery_frontdoor_handled, requery_frontdoor_payload = handle_frontdoor_turn(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			message=runtime_message,
+			interaction_contract=interaction_contract,
+			frontdoor_semantic_result=requery_frontdoor_semantic_result,
+			frontdoor_contract=requery_frontdoor_contract,
+			frontdoor_render_result=requery_frontdoor_render_result,
+			frontdoor_answer=requery_frontdoor_answer,
+			context_force_new_query=bool(context_isolation.force_new_query),
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			latest_grounded_turn=latest_grounded_turn,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
+			assistant_text_payload=_assistant_text_payload,
+			store_pending_clarification_signal=store_pending_clarification_signal,
+			save_session=_save_session,
+			raw_message=raw_msg,
+			clarification_response_contract=clarification_response_contract,
+			additional_tool_payloads=[
+				payload
+				for payload in [
+					response_policy_contract.to_payload(),
+					semantic_payload if isinstance(semantic_payload, dict) else {},
+					followup_resolution.to_payload(),
+					continuation_contract.to_payload() if continuation_contract is not None else {},
+					enrichment_compatibility_contract.to_payload() if enrichment_compatibility_contract is not None else {},
+					scope_decision_contract.to_payload(),
+				]
+				if isinstance(payload, dict) and payload
+			],
+		)
+		if requery_frontdoor_handled and requery_frontdoor_payload is not None:
+			return True, requery_frontdoor_payload
 
 	if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
 		session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
@@ -2264,6 +2421,35 @@ def run_phase2_5_governed_kpi_customer_execution_smoke() -> Dict[str, Any]:
 
 def run_phase2_5_governed_kpi_customer_execution_probe() -> Dict[str, Any]:
 	return _run_governed_kpi_customer_execution_probe_helper()
+
+
+def run_phase3_2_customer_commercial_composite_smoke() -> Dict[str, Any]:
+	return _run_governed_customer_commercial_composite_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase3_2_customer_commercial_composite_probe() -> Dict[str, Any]:
+	return _run_governed_customer_commercial_composite_probe_helper()
+
+
+def run_phase3_2_projection_followup_debug() -> Dict[str, Any]:
+	return _run_phase3_2_projection_followup_debug_helper()
+
+
+def run_phase3_2_subject_switch_regression_debug() -> Dict[str, Any]:
+	return _run_phase3_2_subject_switch_regression_debug_helper()
+
+
+def run_phase3_3_ranking_projection_continuation_regression_debug() -> Dict[str, Any]:
+	return _run_phase3_3_ranking_projection_continuation_regression_debug_helper()
+
+
+def run_phase3_3_product_quantity_projection_regression_debug() -> Dict[str, Any]:
+	return _run_phase3_3_product_quantity_projection_regression_debug_helper()
 
 
 def run_phase1_1_delivery_note_date_scope_probe() -> Dict[str, Any]:

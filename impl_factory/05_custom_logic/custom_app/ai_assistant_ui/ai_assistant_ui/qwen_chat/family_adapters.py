@@ -84,6 +84,11 @@ def _is_total_like_row(row: Dict[str, Any]) -> bool:
 
 def _metric_label(metric_key: str, fallback: str = "Value") -> str:
 	key = str(metric_key or "").strip().lower()
+	clean_fallback = str(fallback or "").strip()
+	if clean_fallback and clean_fallback.lower() not in {"value", "primary metric"}:
+		if clean_fallback == clean_fallback.lower():
+			return clean_fallback.replace("_", " ").title()
+		return clean_fallback
 	return {
 		"sales_amount": "Sales Amount",
 		"gross_profit": "Gross Profit",
@@ -375,6 +380,128 @@ def _requested_output_columns_from_contract(
 	if "contribution_percent" in requested_metrics and "contribution_percent" in available_metric_keys:
 		columns.append("contribution_percent")
 	return list(dict.fromkeys([value for value in columns if value]))
+
+
+def _requested_secondary_metric_keys_from_contract(
+	compiler_contract: Dict[str, Any],
+	*,
+	available_metric_keys: List[str],
+	primary_metric_key: str,
+) -> List[str]:
+	available_by_key = {
+		_clean_metric_key(metric_key): str(metric_key or "").strip()
+		for metric_key in available_metric_keys
+		if str(metric_key or "").strip()
+	}
+	primary_key = _clean_metric_key(primary_metric_key)
+	out: List[str] = []
+	for requested_key in _canonical_requested_values(
+		compiler_contract,
+		"requested_metrics",
+		dimension_or_metric="metric",
+	):
+		resolved = available_by_key.get(_clean_metric_key(requested_key))
+		if not resolved or _clean_metric_key(resolved) == primary_key:
+			continue
+		if resolved not in out:
+			out.append(resolved)
+	return out
+
+
+def _ranking_requested_column_alias_map(
+	*,
+	entity_dimension: str,
+	available_metric_keys: List[str],
+) -> Dict[str, str]:
+	alias_map: Dict[str, str] = {"entity": "entity"}
+	entity_key = _normalize_key(entity_dimension)
+	if entity_key in {"customer", "customers"}:
+		alias_map.update({"customer": "entity", "customers": "entity"})
+	elif entity_key in {"item", "items", "product", "products"} or "item" in entity_key or "product" in entity_key:
+		alias_map.update(
+			{
+				"item": "entity",
+				"items": "entity",
+				"item_name": "entity",
+				"product": "entity",
+				"products": "entity",
+				"product_name": "entity",
+			}
+		)
+	if "sales_amount" in available_metric_keys:
+		alias_map.update(
+			{
+				"amount": "sales_amount",
+				"revenue": "sales_amount",
+				"sales": "sales_amount",
+				"sales_amount": "sales_amount",
+				"value": "sales_amount",
+			}
+		)
+	if "quantity" in available_metric_keys:
+		alias_map.update({"qty": "quantity", "quantity": "quantity"})
+	if "average_order_value" in available_metric_keys:
+		alias_map.update({"aov": "average_order_value", "average_order_value": "average_order_value"})
+	if "average_invoice_value" in available_metric_keys:
+		alias_map.update({"average_invoice_value": "average_invoice_value"})
+	if "average_selling_price" in available_metric_keys:
+		alias_map.update({"asp": "average_selling_price", "average_selling_price": "average_selling_price"})
+	if "gross_profit" in available_metric_keys:
+		alias_map.update({"gross_profit": "gross_profit"})
+	if "gross_profit_percent" in available_metric_keys:
+		alias_map.update(
+			{
+				"gross_profit_percent": "gross_profit_percent",
+				"gross_profit_percentage": "gross_profit_percent",
+				"gross_profit_pct": "gross_profit_percent",
+			}
+		)
+	if "buying_amount" in available_metric_keys:
+		alias_map.update({"buying_amount": "buying_amount", "cost": "buying_amount"})
+	if "contribution_percent" in available_metric_keys:
+		alias_map.update(
+			{
+				"contribution": "contribution_percent",
+				"contribution_percent": "contribution_percent",
+				"share": "contribution_percent",
+			}
+		)
+	return alias_map
+
+
+def _apply_ranking_request_hints(
+	dimensions: Dict[str, Any],
+	*,
+	compiler_contract: Dict[str, Any],
+	available_metric_keys: List[str],
+	default_metric_key: str,
+	entity_dimension: str,
+) -> Dict[str, Any]:
+	hints = _apply_request_hints(
+		dimensions,
+		compiler_contract=compiler_contract,
+		available_metric_keys=available_metric_keys,
+		default_metric_key=default_metric_key,
+		entity_code_dimension_keys=(),
+	)
+	requested_metric_key = str(hints.get("requested_metric_key") or default_metric_key or "").strip()
+	requested_columns = ["entity"]
+	if requested_metric_key:
+		requested_columns.append(requested_metric_key)
+	secondary_metric_keys = _requested_secondary_metric_keys_from_contract(
+		compiler_contract,
+		available_metric_keys=available_metric_keys,
+		primary_metric_key=requested_metric_key,
+	)
+	requested_columns.extend(secondary_metric_keys)
+	hints["requested_columns"] = list(dict.fromkeys([value for value in requested_columns if value]))
+	hints["requested_projection_mode"] = "explicit_selection" if secondary_metric_keys else "default"
+	hints["requested_column_alias_map"] = _ranking_requested_column_alias_map(
+		entity_dimension=entity_dimension,
+		available_metric_keys=available_metric_keys,
+	)
+	hints["suppress_summary_by_default"] = True
+	return hints
 
 
 def _apply_request_hints(
@@ -1016,7 +1143,11 @@ def _build_sales_analytics_ranking(
 	period = _period_from_filters(filters)
 	total_row = _report_total_row_map(result)
 	metric_key = "quantity" if _normalize_key(filters.get("value_quantity")) == "quantity" else "sales_amount"
-	metric_label = "Quantity" if metric_key == "quantity" else "Sales Amount"
+	metric_label = _requested_metric_label_from_contract(
+		compiler_contract,
+		metric_key,
+		"Quantity" if metric_key == "quantity" else "Sales Amount",
+	)
 	ranked_rows = _sort_ranked_rows(
 		[
 			{
@@ -1038,7 +1169,7 @@ def _build_sales_analytics_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_request_hints({
+		dimensions=_apply_ranking_request_hints({
 			"entity_dimension": str(filters.get("tree_type") or "Entity").strip() or "Entity",
 			"primary_metric_key": metric_key,
 			"primary_metric_label": metric_label,
@@ -1048,6 +1179,7 @@ def _build_sales_analytics_ranking(
 			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
+			entity_dimension=str(filters.get("tree_type") or "Entity").strip() or "Entity",
 		),
 		metrics={
 			metric_key: total_value,
@@ -1128,7 +1260,7 @@ def _build_aging_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_request_hints({
+		dimensions=_apply_ranking_request_hints({
 			"entity_dimension": entity_dimension,
 			"primary_metric_key": metric_key,
 			"primary_metric_label": metric_label,
@@ -1138,6 +1270,7 @@ def _build_aging_ranking(
 			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
+			entity_dimension=entity_dimension,
 		),
 		metrics={
 			metric_key: total_value,
@@ -1262,7 +1395,7 @@ def _build_gross_profit_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_request_hints({
+		dimensions=_apply_ranking_request_hints({
 			"entity_dimension": report_family_entity_dimension_label(
 				"ranking_analytics",
 				entity_fields=("item_name", "item_code"),
@@ -1275,6 +1408,11 @@ def _build_gross_profit_ranking(
 			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
+			entity_dimension=report_family_entity_dimension_label(
+				"ranking_analytics",
+				entity_fields=("item_name", "item_code"),
+				default_label=str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+			),
 		),
 		metrics={
 			metric_key: total_value,
@@ -1383,7 +1521,7 @@ def _build_item_history_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_request_hints({
+		dimensions=_apply_ranking_request_hints({
 			"entity_dimension": entity_dimension,
 			"primary_metric_key": metric_key,
 			"primary_metric_label": metric_label,
@@ -1392,6 +1530,7 @@ def _build_item_history_ranking(
 			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
+			entity_dimension=entity_dimension,
 		),
 		metrics={
 			metric_key: total_value,
@@ -1485,7 +1624,7 @@ def _build_stock_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_request_hints({
+		dimensions=_apply_ranking_request_hints({
 			"entity_dimension": entity_dimension,
 			"primary_metric_key": metric_key,
 			"primary_metric_label": metric_label,
@@ -1494,6 +1633,7 @@ def _build_stock_ranking(
 			compiler_contract=compiler_contract,
 			available_metric_keys=available_metric_keys,
 			default_metric_key=metric_key,
+			entity_dimension=entity_dimension,
 		),
 		metrics={
 			metric_key: total_value,
@@ -2101,11 +2241,12 @@ def _build_product_profitability_artifact(
 	top_row = product_rows[0] if product_rows else {}
 	dimensions["primary_metric_key"] = primary_metric_key
 	dimensions["primary_metric_label"] = primary_metric_label
-	dimensions = _apply_request_hints(
+	dimensions = _apply_ranking_request_hints(
 		dimensions,
 		compiler_contract=compiler_contract,
 		available_metric_keys=available_metrics + ["contribution_percent"],
 		default_metric_key=primary_metric_key,
+		entity_dimension="Product",
 	)
 	artifact = build_normalized_family_artifact_contract(
 		request_id=request_id,
