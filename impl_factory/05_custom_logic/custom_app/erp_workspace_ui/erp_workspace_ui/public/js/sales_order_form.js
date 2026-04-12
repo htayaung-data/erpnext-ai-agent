@@ -1,43 +1,180 @@
 (function () {
   const METHOD = "erp_workspace_ui.api.get_sales_order_page_context";
+  const childPageRuntime = window.erpWorkspaceUiChildPage || {};
+  const childPageHelpers = childPageRuntime.helpers || {};
+  const childPageShell = childPageRuntime.shell || {};
+  const childPageLifecycle = childPageRuntime.runtime || {};
+  const childPageConnections = childPageRuntime.connections || {};
+  const childPageSections = childPageRuntime.sections || {};
+  const childPageDetails = childPageRuntime.details || {};
+  const childPageTerms = childPageRuntime.terms || {};
+  const childPageSummaries = childPageRuntime.summaries || {};
+  const childPageSupport = childPageRuntime.support || {};
+  const childPageSidebar = childPageRuntime.sidebar || {};
+  const childPageShellContent = childPageRuntime.shellContent || {};
 
-  function formatMoney(value, currency) {
+  // Keep a local fallback so the form stays usable even if the shared asset is stale or delayed.
+  const formatMoney = childPageHelpers.formatMoney || function (value, currency) {
     if (value == null) return "--";
     try {
       return format_currency(value, currency || frappe.defaults.get_default("currency"));
     } catch (e) {
       return `${currency || ""} ${value}`;
     }
-  }
+  };
 
   function pct(value) {
     const numeric = Number(value || 0);
     return `${Math.round(numeric)}%`;
   }
 
-  function escapeHtml(value) {
+  const escapeHtml = childPageHelpers.escapeHtml || function (value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
-  }
+  };
 
-  function routeToDoc(doctype, name) {
+  const routeToDoc = childPageHelpers.routeToDoc || function (doctype, name) {
     if (!doctype || !name) return;
     frappe.set_route("Form", doctype, name);
-  }
+  };
 
-  function routeToList(doctype, filters) {
+  const routeToList = childPageHelpers.routeToList || function (doctype, filters) {
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
+  };
+
+  const hasVisibleControls = childPageSections.hasVisibleControls || function ($container, options) {
+    if (!$container || !$container.length) return false;
+
+    const settings = Object.assign({
+      directChildren: false,
+      selector: ".frappe-control",
+    }, options || {});
+
+    const $controls = settings.directChildren
+      ? $container.children(settings.selector)
+      : $container.find(settings.selector);
+
+    return $controls.toArray().some((element) => {
+      const $control = $(element);
+      if ($control.hasClass("hide-control") || $control.hasClass("hidden")) return false;
+      if ($control.css("display") === "none") return false;
+      const inlineStyle = String($control.attr("style") || "").toLowerCase();
+      if (inlineStyle.includes("display: none")) return false;
+      return true;
+    });
+  };
+
+  const arrangeSharedAddressFieldGrid = childPageSections.arrangeAddressFieldGrid || function () {
+    return $();
+  };
+  const ensureSharedDetailWorkspace = childPageSections.ensureDetailWorkspace || function () {
+    return $();
+  };
+  const coreAddressFieldOrder = childPageSections.coreAddressFieldOrder || [
+    "contact_person",
+    "contact_mobile",
+    "contact_email",
+    "territory",
+    "customer_address",
+    "address_display",
+  ];
+  const coreAddressPlaceholders = childPageSections.coreAddressPlaceholders || {
+    contact_person: "",
+    contact_mobile: "",
+    customer_address: "",
+    address_display: "",
+    contact_email: "",
+    territory: "",
+  };
+  const relocateSharedFieldIntoSectionBody = childPageSections.relocateFieldIntoSectionBody || function () {};
+  const restoreSharedRelocatedFieldPlacements = childPageSections.restoreRelocatedFieldPlacements || function () {};
+
+  function getObservability() {
+    return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.observability) || {};
   }
 
-  function getFormTaskState(frm) {
+  function markFeatureStatus(frm, feature, status, meta) {
+    const observability = getObservability();
+    if (typeof observability.markFeatureStatus === "function") {
+      return observability.markFeatureStatus(frm, feature, status, meta);
+    }
+    return false;
+  }
+
+  function markFeatureReady(frm, feature, meta) {
+    const observability = getObservability();
+    if (typeof observability.markFeatureReady === "function") {
+      return observability.markFeatureReady(frm, feature, meta);
+    }
+    return false;
+  }
+
+  function markFeatureMissing(frm, feature, meta) {
+    const observability = getObservability();
+    if (typeof observability.markFeatureMissing === "function") {
+      return observability.markFeatureMissing(frm, feature, meta);
+    }
+    return false;
+  }
+
+  function getShellOptions() {
+    return {
+      shellClasses: ["erpws-order-shell"],
+      removeClasses: ["erpw-preload-shell"],
+    };
+  }
+
+  function openDocChoiceDialog(title, items) {
+    const options = Array.isArray(items) ? items.filter((item) => item && item.doctype && item.name) : [];
+    if (!options.length) return;
+
+    const dialog = new frappe.ui.Dialog({
+      title: title || "Open record",
+      fields: [
+        {
+          fieldtype: "HTML",
+          fieldname: "choices_html",
+        },
+      ],
+      primary_action_label: "Close",
+      primary_action() {
+        dialog.hide();
+      },
+    });
+
+    const html = options.map((item, index) => `
+      <button type="button" class="btn btn-default btn-block text-left erpw-so-route-choice" data-choice-index="${index}">
+        <div><strong>${escapeHtml(item.doctype)}</strong></div>
+        <div>${escapeHtml(item.name)}</div>
+        ${item.status ? `<div class="text-muted small">${escapeHtml(item.status)}</div>` : ""}
+      </button>
+    `).join("");
+
+    dialog.fields_dict.choices_html.$wrapper.html(`
+      <div class="erpw-so-route-choice-list">
+        ${html}
+      </div>
+    `);
+
+    dialog.fields_dict.choices_html.$wrapper.find("[data-choice-index]").on("click", function () {
+      const choice = options[Number($(this).attr("data-choice-index"))];
+      if (!choice) return;
+      dialog.hide();
+      routeToDoc(choice.doctype, choice.name);
+    });
+
+    dialog.show();
+  }
+
+  const getFormTaskState = childPageHelpers.getFormTaskState || function (frm) {
     if (!frm) return { timers: {} };
     if (!frm.__erpwTaskState) {
       frm.__erpwTaskState = { timers: {} };
     }
     return frm.__erpwTaskState;
-  }
+  };
 
-  function scheduleFormTask(frm, key, delay, fn) {
+  const scheduleFormTask = childPageHelpers.scheduleFormTask || function (frm, key, delay, fn) {
     if (!frm || typeof fn !== "function") return;
     const state = getFormTaskState(frm);
     if (state.timers[key]) {
@@ -48,11 +185,55 @@
       if (!frm.doc) return;
       fn();
     }, Math.max(0, Number(delay || 0)));
-  }
+  };
+
+  const scheduleEnhancePasses = childPageLifecycle.scheduleEnhancePasses || function (frm, run, options) {
+    if (typeof run !== "function") return;
+    scheduleFormTask(frm, options && options.fastKey ? options.fastKey : "enhance_form_body_fast", options && options.fastDelay != null ? options.fastDelay : 0, () => run(frm));
+    scheduleFormTask(frm, options && options.lateKey ? options.lateKey : "enhance_form_body_late", options && options.lateDelay != null ? options.lateDelay : 180, () => run(frm));
+  };
+
+  const scheduleRetryPair = childPageLifecycle.scheduleRetryPair || function (frm, options) {
+    if (!options || typeof options.run !== "function") return;
+    if (options.fastKey) {
+      scheduleFormTask(frm, options.fastKey, options.fastDelay != null ? options.fastDelay : 420, () => options.run(frm));
+    }
+    if (options.lateKey) {
+      scheduleFormTask(frm, options.lateKey, options.lateDelay != null ? options.lateDelay : 980, () => options.run(frm));
+    }
+  };
+
+  const runRetriedEnhancers = childPageLifecycle.runRetriedEnhancers || function (frm, steps) {
+    if (!Array.isArray(steps)) return;
+    steps.forEach((step) => {
+      if (!step || typeof step.run !== "function") return;
+      if (!step.run(frm)) {
+        scheduleRetryPair(frm, step);
+      }
+    });
+  };
+
+  const bindRuntimeTabEnhancers = childPageLifecycle.bindTabEnhancers || function (frm, options) {
+    if (!frm || !options || typeof options.run !== "function") return;
+    const $root = $(frm.page && frm.page.main ? frm.page.main : frm.$wrapper || []);
+    if (!$root.length) return;
+
+    const $links = $root.find(".form-tabs-list .nav-link, .form-tabs .nav-link");
+    if (!$links.length) return;
+
+    const namespace = options.namespace || ".erpwChildPageTabs";
+    $links.off(namespace).on(`click${namespace}`, function () {
+      scheduleEnhancePasses(frm, options.run, options);
+    });
+  };
 
   function scheduleFormEnhance(frm) {
-    scheduleFormTask(frm, "enhance_form_body_fast", 0, () => enhanceFormBody(frm));
-    scheduleFormTask(frm, "enhance_form_body_late", 260, () => enhanceFormBody(frm));
+    scheduleEnhancePasses(frm, () => enhanceFormBody(frm), {
+      fastKey: "enhance_form_body_fast",
+      lateKey: "enhance_form_body_late",
+      fastDelay: 0,
+      lateDelay: 260,
+    });
   }
 
   function scheduleConnectionsEnhance(frm) {
@@ -168,28 +349,68 @@
     return icons[kind] || icons.policy;
   }
 
-  function getFormRoot(frm) {
-    return $(frm && frm.page && frm.page.main ? frm.page.main : frm && frm.$wrapper ? frm.$wrapper : []);
-  }
+  const getLayoutWrapper = childPageHelpers.getLayoutWrapper || function (frm) {
+    return $(frm && frm.layout && frm.layout.wrapper ? frm.layout.wrapper : []);
+  };
 
-  function getNativeLayoutAnchor(frm) {
+  const getFormRoot = childPageHelpers.getFormRoot || function (frm) {
+    const $layout = getLayoutWrapper(frm);
+    if ($layout.length) {
+      const $mainSection = $layout.closest(".layout-main-section");
+      if ($mainSection.length) return $mainSection;
+
+      const $formPage = $layout.closest(".form-page");
+      if ($formPage.length) return $formPage;
+
+      const $parent = $layout.parent();
+      if ($parent.length) return $parent;
+
+      return $layout;
+    }
+
+    const $wrapper = $(frm && frm.wrapper ? frm.wrapper : frm && frm.$wrapper ? frm.$wrapper : []);
+    if ($wrapper.length) {
+      const $mainSection = $wrapper.closest(".layout-main-section");
+      if ($mainSection.length) return $mainSection;
+
+      const $formPage = $wrapper.closest(".form-page");
+      if ($formPage.length) return $formPage;
+
+      return $wrapper;
+    }
+
+    return $(frm && frm.page && frm.page.main ? frm.page.main : []);
+  };
+
+  const getNativeLayoutAnchor = childPageHelpers.getNativeLayoutAnchor || function (frm) {
+    const $layout = getLayoutWrapper(frm);
+    if ($layout.length) return $layout;
+
     const $root = getFormRoot(frm);
     if (!$root.length) return $();
 
-    return $root.find(".form-layout").first().length
-      ? $root.find(".form-layout").first()
+    return $root.find(".std-form-layout").first().length
+      ? $root.find(".std-form-layout").first()
+      : $root.find(".form-layout").first().length
+        ? $root.find(".form-layout").first()
       : $root.find(".layout-main-section").first().length
         ? $root.find(".layout-main-section").first()
         : $root.find(".form-page").first().length
           ? $root.find(".form-page").first()
           : $();
-  }
+  };
 
   function getShell(frm) {
+    if (typeof childPageShell.ensureShell === "function") {
+      return childPageShell.ensureShell(frm, getShellOptions());
+    }
+
     const $root = getFormRoot(frm);
     const $mount = getNativeLayoutAnchor(frm);
 
-    let $shell = $root.find(".erpw-child-shell.erpws-order-shell").first();
+    let $shell = $mount.length
+      ? $mount.siblings(".erpw-child-shell.erpws-order-shell").first()
+      : $root.children(".erpw-child-shell.erpws-order-shell").first();
     if (!$shell.length) {
       $shell = $('<div class="erpw-child-shell erpws-order-shell"></div>');
       if ($mount.length) {
@@ -197,7 +418,10 @@
       } else {
         $root.prepend($shell);
       }
-    } else if ($mount.length && $shell.parent().get(0) !== $root.get(0)) {
+    } else if (
+      $mount.length &&
+      ($shell.parent().get(0) !== $mount.parent().get(0) || $shell.next().get(0) !== $mount.get(0))
+    ) {
       $shell.detach();
       $shell.insertBefore($mount);
     }
@@ -205,7 +429,7 @@
     return $shell;
   }
 
-  function getShellSkeletonMarkup() {
+  const getShellSkeletonMarkup = childPageShell.getShellSkeletonMarkup || function () {
     return `
       <section class="erpw-child-card erpw-child-summary erpw-so-shell-skeleton erpw-so-shell-skeleton-summary">
         <div class="erpw-so-shell-skeleton-copy">
@@ -229,13 +453,18 @@
         <div class="erpw-so-shell-skeleton-guidance-card"></div>
       </section>
     `;
-  }
+  };
 
   function showShellSkeleton(frm) {
+    if (typeof childPageShell.showShellSkeleton === "function") {
+      return childPageShell.showShellSkeleton(frm, getShellOptions());
+    }
+
     const $shell = getShell(frm);
     if (!$shell.children(".erpw-so-shell-skeleton").length || frm.__erpwContextRenderedName !== (frm.doc && frm.doc.name)) {
       $shell.html(getShellSkeletonMarkup());
     }
+    return $shell;
   }
 
   function setNativeLayoutPrepState(frm, isPrepping) {
@@ -271,6 +500,10 @@
     if ($root.length) {
       $root.addClass("erpw-so-form-enhanced");
     }
+    markFeatureReady(frm, "shell_release", {
+      hasRoot: !!$root.length,
+      source: "release_prepared_shell",
+    });
   }
 
   function isCustomShellReadyForRelease(frm) {
@@ -293,12 +526,25 @@
 
   function prepareFormShell(frm, loadingMessage) {
     const $root = getFormRoot(frm);
-    if (!$root.length) return;
+    if (!$root.length) {
+      markFeatureMissing(frm, "shell_prepare", {
+        reason: "no_root",
+        loadingMessage: loadingMessage || null,
+      });
+      return;
+    }
 
     const state = getFormTaskState(frm);
     setNativeLayoutPrepState(frm, true);
+    markFeatureStatus(frm, "shell_prepare", "loading", {
+      loadingMessage: loadingMessage || null,
+    });
 
-    showShellSkeleton(frm);
+    const prepareShell = childPageShell.prepareShell || showShellSkeleton;
+    prepareShell(frm, getShellOptions());
+    markFeatureReady(frm, "shell_prepare", {
+      loadingMessage: loadingMessage || null,
+    });
 
     if (state.prepReleaseTimer) {
       clearTimeout(state.prepReleaseTimer);
@@ -369,10 +615,11 @@
     const linked = data.linked_documents || {};
     const support = data.support || {};
     const actions = [];
+    const formatCountTitle = (singular, plural, count) => `${count === 1 ? singular : plural} (${count})`;
 
     if (Array.isArray(linked.deliveries) && linked.deliveries.length) {
       actions.push({
-        title: linked.deliveries.length === 1 ? "Open Delivery" : `Open Deliveries (${linked.deliveries.length})`,
+        title: formatCountTitle("Open Delivery", "Open Deliveries", linked.deliveries.length),
         variant: "primary",
         icon: "delivery",
         handler: () => {
@@ -387,7 +634,7 @@
 
     if (Array.isArray(linked.invoices) && linked.invoices.length) {
       actions.push({
-        title: linked.invoices.length === 1 ? "Open Invoice" : `Open Invoices (${linked.invoices.length})`,
+        title: formatCountTitle("Open Invoice", "Open Invoices", linked.invoices.length),
         variant: "primary",
         icon: "invoice",
         handler: () => {
@@ -433,7 +680,7 @@
 
     if (Array.isArray(linked.returns) && linked.returns.length) {
       actions.push({
-        title: linked.returns.length === 1 ? "Open Return" : `Open Returns (${linked.returns.length})`,
+        title: formatCountTitle("Open Return", "Open Returns", linked.returns.length),
         variant: "secondary",
         icon: "return_doc",
         handler: () => {
@@ -447,7 +694,7 @@
             routeToList(firstType, { name: ["in", linked.returns.map((row) => row.name)] });
             return;
           }
-          routeToDoc(linked.returns[0].doctype, linked.returns[0].name);
+          openDocChoiceDialog("Choose return record", linked.returns);
         },
       });
     }
@@ -490,6 +737,17 @@
     if (!field) return null;
     const $wrapper = field.$wrapper && field.$wrapper.length ? field.$wrapper : $(field.wrapper || []);
     return $wrapper.length ? $wrapper : null;
+  }
+
+  function moveFieldIntoSectionBodyIfNeeded(frm, fieldname, $section, scopeKey) {
+    const $wrapper = getFieldWrapper(frm, fieldname);
+    relocateSharedFieldIntoSectionBody($wrapper, $section, scopeKey);
+  }
+
+  function restoreRelocatedFieldPlacements(frm, scopeKey) {
+    const $root = getFormRoot(frm);
+    if (!$root.length) return;
+    restoreSharedRelocatedFieldPlacements($root, scopeKey);
   }
 
   function getTabForField(frm, fieldname) {
@@ -654,6 +912,16 @@
     }
   }
 
+  function setManagedSectionVisibility($section, visible, className) {
+    if (!$section || !$section.length) return;
+
+    const managedClass = String(className || "").trim();
+    if (managedClass) {
+      $section.toggleClass(managedClass, !visible);
+    }
+    $section.toggle(!!visible);
+  }
+
   function markSection(frm, fieldname, className) {
     const $section = getSectionForField(frm, fieldname);
     if ($section) {
@@ -687,114 +955,8 @@
     return !sameCurrency || !defaultPriceList || hasPricingSignal;
   }
 
-  function ensureMoreInfoWorkspace($tab) {
-    let $workspace = $tab.children(".erpw-so-moreinfo-workspace").first();
-    if ($workspace.length) return $workspace;
-
-    $workspace = $(`
-      <div class="form-section erpw-so-moreinfo-workspace">
-        <section class="erpw-so-moreinfo-card" data-card="context">
-          <div class="erpw-so-moreinfo-head">
-            <div class="erpw-so-moreinfo-title">Operational Context</div>
-            <div class="erpw-so-moreinfo-note">Cross-reference and financial context for this order.</div>
-          </div>
-          <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-two" data-slot="context"></div>
-        </section>
-        <section class="erpw-so-moreinfo-card" data-card="print">
-          <div class="erpw-so-moreinfo-head">
-            <div class="erpw-so-moreinfo-title">Document Output</div>
-            <div class="erpw-so-moreinfo-note">Control print language, heading, and customer-facing document presentation.</div>
-          </div>
-          <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-two" data-slot="print"></div>
-        </section>
-        <section class="erpw-so-moreinfo-card" data-card="execution">
-          <div class="erpw-so-moreinfo-head">
-            <div class="erpw-so-moreinfo-title">Execution Signals</div>
-            <div class="erpw-so-moreinfo-note">Secondary delivery, billing, and picking detail beyond the main header.</div>
-          </div>
-          <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-two" data-slot="execution"></div>
-        </section>
-        <section class="erpw-so-moreinfo-card erpw-so-moreinfo-card-wide" data-card="commercial">
-          <div class="erpw-so-moreinfo-head">
-            <div class="erpw-so-moreinfo-title">Commercial Attribution</div>
-            <div class="erpw-so-moreinfo-note">Commission ownership and sales allocation for this order.</div>
-          </div>
-          <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-two" data-slot="commercial"></div>
-          <div class="erpw-so-moreinfo-subcard" data-subcard="sales-team">
-            <div class="erpw-so-moreinfo-subtitle">Sales Team</div>
-            <div class="erpw-so-moreinfo-fields" data-slot="sales-team"></div>
-          </div>
-        </section>
-        <section class="erpw-so-moreinfo-card erpw-so-moreinfo-card-wide" data-card="controls">
-          <div class="erpw-so-moreinfo-head">
-            <div class="erpw-so-moreinfo-title">Internal Controls</div>
-            <div class="erpw-so-moreinfo-note">Automation, routing, and internal handling settings that support execution.</div>
-          </div>
-          <div class="erpw-so-moreinfo-composite">
-            <div class="erpw-so-moreinfo-subcard" data-subcard="automation">
-              <div class="erpw-so-moreinfo-subtitle">Auto Repeat</div>
-              <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-two" data-slot="automation"></div>
-            </div>
-            <div class="erpw-so-moreinfo-subcard" data-subcard="flags">
-              <div class="erpw-so-moreinfo-subtitle">Internal Flags</div>
-              <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-flags" data-slot="flags"></div>
-            </div>
-            <div class="erpw-so-moreinfo-subcard erpw-so-moreinfo-subcard-wide" data-subcard="routing">
-              <div class="erpw-so-moreinfo-subtitle">Routing & Dispatch</div>
-              <div class="erpw-so-moreinfo-fields erpw-so-moreinfo-fields-two" data-slot="routing"></div>
-            </div>
-          </div>
-        </section>
-      </div>
-    `);
-
-    $tab.prepend($workspace);
-    return $workspace;
-  }
-
-  function getSectionFieldnames($section) {
-    if (!$section || !$section.length) return [];
-    return $section.find(".frappe-control").map((_, element) => $(element).attr("data-fieldname")).get().filter(Boolean);
-  }
-
-  function moveFieldToSlot(frm, fieldname, $slot) {
-    if (!$slot || !$slot.length) return;
-    const field = frm.fields_dict && frm.fields_dict[fieldname];
-    const $wrapper = getFieldWrapper(frm, fieldname);
-    if (!field || !$wrapper || !$wrapper.length) return;
-
-    $wrapper
-      .addClass("erpw-so-moreinfo-control")
-      .attr("data-erpw-so-moreinfo-field", fieldname)
-      .toggleClass("erpw-so-moreinfo-control-table", field.df && field.df.fieldtype === "Table")
-      .toggleClass("erpw-so-moreinfo-control-check", field.df && field.df.fieldtype === "Check")
-      .toggleClass("erpw-so-moreinfo-control-button", field.df && field.df.fieldtype === "Button");
-
-    $slot.append($wrapper);
-  }
-
-  function slotHasVisibleControls($slot) {
-    if (!$slot || !$slot.length) return false;
-    return $slot.children(".frappe-control").toArray().some((element) => {
-      const $control = $(element);
-      if ($control.hasClass("hide-control") || $control.hasClass("hidden")) return false;
-      if ($control.css("display") === "none") return false;
-      const inlineStyle = String($control.attr("style") || "").toLowerCase();
-      if (inlineStyle.includes("display: none")) return false;
-      return true;
-    });
-  }
-
   function containerHasVisibleControls($container) {
-    if (!$container || !$container.length) return false;
-    return $container.find(".frappe-control").toArray().some((element) => {
-      const $control = $(element);
-      if ($control.hasClass("hide-control") || $control.hasClass("hidden")) return false;
-      if ($control.css("display") === "none") return false;
-      const inlineStyle = String($control.attr("style") || "").toLowerCase();
-      if (inlineStyle.includes("display: none")) return false;
-      return true;
-    });
+    return hasVisibleControls($container);
   }
 
   function ensureMoreInfoStack($tab) {
@@ -807,6 +969,16 @@
   }
 
   function ensureMoreInfoSectionHeader($section, title, note) {
+    if (typeof childPageSections.ensureMoreInfoSectionHeader === "function") {
+      return childPageSections.ensureMoreInfoSectionHeader($section, {
+        expanded: true,
+        interactive: true,
+        note,
+        showToggle: true,
+        title,
+      });
+    }
+
     const $defaultHead = $section.children(".section-head").first();
     if ($defaultHead.length) {
       $defaultHead.addClass("erpw-so-moreinfo-default-head").hide();
@@ -856,6 +1028,10 @@
   }
 
   function ensureMoreInfoStatePanel($section) {
+    if (typeof childPageSections.ensureSectionStatePanel === "function") {
+      return childPageSections.ensureSectionStatePanel($section, "erpw-so-moreinfo");
+    }
+
     const $body = $section.children(".section-body").first();
     if (!$body.length) return $();
 
@@ -877,6 +1053,7 @@
   }
 
   function getMoreInfoSectionPresentation(frm, key) {
+    const isSubmitted = Number(frm.doc.docstatus || 0) === 1;
     const hasCommissionSignal = [
       frm.doc.sales_partner,
       frm.doc.commission_rate,
@@ -912,13 +1089,14 @@
         statusText: hasMeaningfulValue(frm.doc.project) ? "Project linked" : "Reference",
       },
       print: {
+        hidden: isSubmitted && !frm.doc.group_same_items && !hasMeaningfulValue(frm.doc.letter_head) && !hasMeaningfulValue(frm.doc.select_print_heading),
         expanded: Boolean(frm.doc.group_same_items || hasMeaningfulValue(frm.doc.letter_head) || hasMeaningfulValue(frm.doc.select_print_heading)),
         quiet: true,
         statusText: getLanguageLabel(frm.doc.language),
         summary: (!frm.doc.group_same_items && !hasMeaningfulValue(frm.doc.letter_head) && !hasMeaningfulValue(frm.doc.select_print_heading)) ? {
-          title: `Using ${getLanguageLabel(frm.doc.language)} print presentation`,
-          note: "Standard print language is active with no custom heading or letter head.",
-          actionLabel: "Edit output settings",
+          title: `Using ${getLanguageLabel(frm.doc.language)} output`,
+          note: "Keep print settings quiet unless the customer-facing order needs a custom heading or letter head.",
+          actionLabel: "Adjust output",
           actionType: "reveal",
         } : null,
       },
@@ -943,15 +1121,16 @@
           ? (hasMeaningfulValue(frm.doc.sales_partner)
             ? "Partner set"
             : `${formatCompactNumber(frm.doc.commission_rate || 0)}% rate`)
-          : "Unassigned",
+          : "No commission",
         summary: hasCommissionSignal ? null : {
-          title: "Commission ownership not configured",
-          note: "Assign a sales partner only when commission should apply.",
-          actionLabel: "Edit attribution",
+          title: "No commission or sales allocation is in use",
+          note: "Only surface partner ownership or split allocation when this order truly needs commercial attribution.",
+          actionLabel: "Review attribution",
           actionType: "reveal",
         },
       },
       "sales-team": {
+        hidden: salesTeamRows === 0,
         expanded: salesTeamRows > 0,
         wide: salesTeamRows > 0,
         quiet: salesTeamRows === 0,
@@ -964,6 +1143,7 @@
         },
       },
       controls: {
+        hidden: isSubmitted && !hasControlSignal,
         expanded: hasControlSignal,
         wide: hasDispatchInfo,
         quiet: !hasControlSignal,
@@ -977,8 +1157,8 @@
               : "Manual",
         summary: hasControlSignal ? null : {
           title: "No automation or routing overrides",
-          note: "Execution follows the default sales order workflow with no recurring or routing override.",
-          actionLabel: "Configure controls",
+          note: "This order is following the normal sales workflow without recurring, dispatch, or internal routing overrides.",
+          actionLabel: "Open controls",
           actionType: "reveal",
         },
       },
@@ -1085,6 +1265,7 @@
 
     $tab.children(".erpw-so-moreinfo-workspace").remove();
     $tab.children(".erpw-so-moreinfo-stack").remove();
+    $tab.find(".erpw-so-moreinfo-metrics").remove();
     $tab.find(".erpw-so-moreinfo-state-panel").remove();
     $tab.find(".erpw-so-moreinfo-header").remove();
     $tab.find(".form-section").removeData("erpwMoreinfoRevealRaw");
@@ -1108,48 +1289,6 @@
       "erpw-so-moreinfo-section-quiet",
       "erpw-so-moreinfo-section-wide",
     ].join(" "));
-  }
-
-  function updateMoreInfoVisibility(frm, $workspace) {
-    const samePartyCurrency = !hasMeaningfulValue(frm.doc.party_account_currency)
-      || String(frm.doc.party_account_currency || "").trim() === String(frm.doc.currency || "").trim();
-    const hasCommissionSignal = [
-      frm.doc.sales_partner,
-      frm.doc.commission_rate,
-      frm.doc.total_commission,
-    ].some((value) => hasMeaningfulValue(value));
-    const hasAutoRepeat = hasMeaningfulValue(frm.doc.auto_repeat);
-    const hasDispatchInfo = [
-      frm.doc.dispatch_address_name,
-      frm.doc.dispatch_address,
-      frm.doc.contact_phone,
-    ].some((value) => hasMeaningfulValue(value));
-    const hasInternalCompany = Boolean(frm.doc.is_internal_customer) || hasMeaningfulValue(frm.doc.represents_company);
-
-    toggleField(frm, "status", false);
-    toggleField(frm, "inter_company_order_reference", hasMeaningfulValue(frm.doc.inter_company_order_reference));
-    toggleField(frm, "party_account_currency", !samePartyCurrency);
-    toggleField(frm, "letter_head", hasMeaningfulValue(frm.doc.letter_head));
-    toggleField(frm, "select_print_heading", hasMeaningfulValue(frm.doc.select_print_heading));
-    toggleField(frm, "per_picked", hasMeaningfulValue(frm.doc.per_picked));
-    toggleField(frm, "amount_eligible_for_commission", hasCommissionSignal);
-    toggleField(frm, "update_auto_repeat_reference", hasAutoRepeat);
-    toggleField(frm, "represents_company", hasInternalCompany);
-    toggleField(frm, "dispatch_address_name", hasDispatchInfo);
-    toggleField(frm, "dispatch_address", hasDispatchInfo);
-    toggleField(frm, "contact_phone", hasDispatchInfo);
-
-    $workspace.find("[data-subcard]").each((_, cardElement) => {
-      const $card = $(cardElement);
-      const slotName = $card.attr("data-subcard");
-      const $slot = $workspace.find(`[data-slot="${slotName}"]`).first();
-      $card.toggle(slotHasVisibleControls($slot));
-    });
-
-    $workspace.find("[data-card]").each((_, cardElement) => {
-      const $card = $(cardElement);
-      $card.toggle(containerHasVisibleControls($card));
-    });
   }
 
   function enhanceMoreInfoTab(frm) {
@@ -1285,6 +1424,10 @@
       $section.addClass("erpw-so-moreinfo-hidden-source").hide();
     });
 
+    if (typeof childPageSections.balanceMoreInfoStack === "function") {
+      childPageSections.balanceMoreInfoStack($stack);
+    }
+
     if (frm.layout && typeof frm.layout.refresh_sections === "function") {
       frm.layout.refresh_sections();
     }
@@ -1292,6 +1435,10 @@
   }
 
   function ensureAddressContactStack($tab) {
+    if (typeof childPageSections.ensureSectionStack === "function") {
+      return childPageSections.ensureSectionStack($tab, "erpw-so-address-stack");
+    }
+
     let $stack = $tab.children(".erpw-so-address-stack").first();
     if ($stack.length) return $stack;
 
@@ -1301,6 +1448,16 @@
   }
 
   function ensureAddressContactSectionHeader($section, config, presentation) {
+    if (typeof childPageSections.ensureAddressSectionHeader === "function") {
+      return childPageSections.ensureAddressSectionHeader($section, {
+        iconMarkup: addressSectionIconMarkup(config.icon || "customer"),
+        note: config.note,
+        statusText: String((presentation && presentation.statusText) || "").trim(),
+        statusTone: String((presentation && presentation.statusTone) || "neutral").trim(),
+        title: config.title,
+      });
+    }
+
     const $defaultHead = $section.children(".section-head").first();
     if ($defaultHead.length) {
       $defaultHead.addClass("erpw-so-address-default-head").hide();
@@ -1342,6 +1499,10 @@
   }
 
   function ensureAddressContactStatePanel($section) {
+    if (typeof childPageSections.ensureSectionStatePanel === "function") {
+      return childPageSections.ensureSectionStatePanel($section, "erpw-so-address");
+    }
+
     const $body = $section.children(".section-body").first();
     if (!$body.length) return $();
 
@@ -1460,8 +1621,10 @@
     $panel.prop("hidden", false);
   }
 
-  function resetAddressContactTab($tab) {
+  function resetAddressContactTab(frm, $tab) {
     if (!$tab || !$tab.length) return;
+
+    restoreRelocatedFieldPlacements(frm, "sales-order-address");
 
     $tab.find(".erpw-so-address-customer-grid").each((_, element) => {
       const $grid = $(element);
@@ -1495,39 +1658,12 @@
   }
 
   function arrangeCustomerContactGrid(frm, $section) {
-    if (!$section || !$section.length) return;
-
-    const $body = $section.children(".section-body").first();
-    if (!$body.length) return;
-
-    let $grid = $body.children(".erpw-so-address-customer-grid").first();
-    if (!$grid.length) {
-      $grid = $('<div class="erpw-so-address-customer-grid"></div>');
-      const $state = $body.children(".erpw-so-address-state-panel").first();
-      if ($state.length) {
-        $grid.insertAfter($state);
-      } else {
-        $body.prepend($grid);
-      }
-    }
-
-    ["territory", "contact_person", "contact_mobile", "contact_email"].forEach((fieldname) => {
-      const $wrapper = getFieldWrapper(frm, fieldname);
-      if (!$wrapper || !$wrapper.length || !$wrapper.closest($section).length) return;
-
-      $wrapper
-        .addClass("erpw-so-address-grid-field")
-        .attr("data-address-grid-field", fieldname)
-        .appendTo($grid);
+    return arrangeSharedAddressFieldGrid($section, {
+      fieldnames: coreAddressFieldOrder,
+      getWrapper: (fieldname) => getFieldWrapper(frm, fieldname),
+      placeholders: coreAddressPlaceholders,
+      values: frm.doc || {},
     });
-
-    $body.children(".form-column").each((_, element) => {
-      const $column = $(element);
-      const hasVisibleContent = containerHasVisibleControls($column);
-      $column.toggleClass("erpw-so-address-column-empty", !hasVisibleContent).toggle(hasVisibleContent);
-    });
-
-    $grid.toggle(containerHasVisibleControls($grid));
   }
 
   function enhanceAddressContactTab(frm) {
@@ -1536,23 +1672,22 @@
     const $tab = getTabByFieldname(frm, "contact_info");
     if (!$tab.length) return false;
 
-    resetAddressContactTab($tab);
+    resetAddressContactTab(frm, $tab);
     $tab.addClass("erpw-so-address-tab");
 
-    const hasBillingAddress = [frm.doc.customer_address, frm.doc.address_display].some((value) => hasMeaningfulValue(value));
-    const hasContactPhone = hasMeaningfulValue(frm.doc.contact_phone);
-    const hasContactMobile = hasMeaningfulValue(frm.doc.contact_mobile);
-    const hasContactEmail = hasMeaningfulValue(frm.doc.contact_email);
     const hasShippingAddress = [frm.doc.shipping_address_name, frm.doc.shipping_address].some((value) => hasMeaningfulValue(value));
     const hasDispatchAddress = [frm.doc.dispatch_address_name, frm.doc.dispatch_address].some((value) => hasMeaningfulValue(value));
     const hasCompanyAddress = [frm.doc.company_address, frm.doc.company_address_display].some((value) => hasMeaningfulValue(value));
     const hasCompanyContact = hasMeaningfulValue(frm.doc.company_contact_person);
 
-    toggleField(frm, "address_display", hasBillingAddress);
+    toggleField(frm, "contact_person", true);
+    toggleField(frm, "customer_address", true);
+    toggleField(frm, "address_display", true);
     toggleField(frm, "contact_display", false);
-    toggleField(frm, "contact_phone", hasContactPhone);
-    toggleField(frm, "contact_mobile", hasContactMobile);
-    toggleField(frm, "contact_email", hasContactEmail);
+    toggleField(frm, "contact_phone", false);
+    toggleField(frm, "contact_mobile", true);
+    toggleField(frm, "contact_email", true);
+    toggleField(frm, "territory", true);
     toggleField(frm, "customer_group", false);
     toggleField(frm, "shipping_address", hasShippingAddress);
     toggleField(frm, "dispatch_address_name", hasShippingAddress || hasDispatchAddress);
@@ -1607,9 +1742,21 @@
       $stack.append($section);
 
       if (config.key === "customer") {
+        coreAddressFieldOrder.forEach((fieldname) => {
+          moveFieldIntoSectionBodyIfNeeded(frm, fieldname, $section, "sales-order-address");
+        });
         arrangeCustomerContactGrid(frm, $section);
       }
     });
+
+    if (typeof childPageSections.normalizeAddressFieldDisplays === "function") {
+      childPageSections.normalizeAddressFieldDisplays($stack, [
+        "customer_address",
+        "shipping_address_name",
+        "dispatch_address_name",
+        "company_address",
+      ]);
+    }
 
     $tab.children(".form-section").not($stack.children(".form-section")).each((_, element) => {
       $(element).addClass("erpw-so-address-hidden-source").hide();
@@ -1623,6 +1770,14 @@
   }
 
   function ensureTermsStack($tab) {
+    if (typeof childPageTerms.ensureTermsStack === "function") {
+      return childPageTerms.ensureTermsStack($tab, "erpw-so-terms-stack");
+    }
+
+    if (typeof childPageSections.ensureSectionStack === "function") {
+      return childPageSections.ensureSectionStack($tab, "erpw-so-terms-stack");
+    }
+
     let $stack = $tab.children(".erpw-so-terms-stack").first();
     if ($stack.length) return $stack;
 
@@ -1632,6 +1787,16 @@
   }
 
   function ensureTermsSectionHeader($section, config, presentation) {
+    if (typeof childPageTerms.ensureTermsSectionHeader === "function") {
+      return childPageTerms.ensureTermsSectionHeader($section, {
+        icon: config.icon || "policy",
+        note: config.note,
+        statusText: String((presentation && presentation.statusText) || "").trim(),
+        statusTone: String((presentation && presentation.statusTone) || "neutral").trim(),
+        title: config.title,
+      });
+    }
+
     const $defaultHead = $section.children(".section-head").first();
     if ($defaultHead.length) {
       $defaultHead.addClass("erpw-so-terms-default-head").hide();
@@ -1673,6 +1838,10 @@
   }
 
   function ensureTermsStatePanel($section) {
+    if (typeof childPageTerms.ensureTermsStatePanel === "function") {
+      return childPageTerms.ensureTermsStatePanel($section);
+    }
+
     const $body = $section.children(".section-body").first();
     if (!$body.length) return $();
 
@@ -1694,6 +1863,10 @@
   }
 
   function ensureTermsMetrics($section) {
+    if (typeof childPageTerms.ensureTermsMetrics === "function") {
+      return childPageTerms.ensureTermsMetrics($section);
+    }
+
     const $body = $section.children(".section-body").first();
     if (!$body.length) return $();
 
@@ -1706,6 +1879,10 @@
   }
 
   function ensureTermsAssistNote($section) {
+    if (typeof childPageTerms.ensureTermsAssistNote === "function") {
+      return childPageTerms.ensureTermsAssistNote($section);
+    }
+
     const $body = $section.children(".section-body").first();
     if (!$body.length) return $();
 
@@ -1801,6 +1978,18 @@
   }
 
   function applyTermsSectionState(frm, $section, presentation) {
+    if (typeof childPageTerms.applyTermsSectionState === "function") {
+      return childPageTerms.applyTermsSectionState($section, presentation, {
+        onFocusField(fieldname) {
+          triggerFieldPrimaryAction(frm, fieldname);
+        },
+        onRevealFields() {
+          toggleField(frm, "tc_name", true);
+          toggleField(frm, "terms", true);
+        },
+      });
+    }
+
     if (!$section || !$section.length) return;
 
     const state = presentation && presentation.state;
@@ -1849,6 +2038,10 @@
   }
 
   function applyTermsMetrics(frm, $section, presentation) {
+    if (typeof childPageTerms.applyTermsMetrics === "function") {
+      return childPageTerms.applyTermsMetrics($section, presentation);
+    }
+
     if (!$section || !$section.length) return;
 
     const metrics = presentation && Array.isArray(presentation.metrics) ? presentation.metrics : [];
@@ -1870,6 +2063,10 @@
   }
 
   function applyTermsAssistNote($section, presentation) {
+    if (typeof childPageTerms.applyTermsAssistNote === "function") {
+      return childPageTerms.applyTermsAssistNote($section, presentation);
+    }
+
     if (!$section || !$section.length) return;
 
     const noteText = String((presentation && presentation.assistNote) || "").trim();
@@ -1885,6 +2082,10 @@
   }
 
   function resetTermsTab($tab) {
+    if (typeof childPageTerms.resetTermsTab === "function") {
+      return childPageTerms.resetTermsTab($tab);
+    }
+
     if (!$tab || !$tab.length) return;
 
     $tab.children(".erpw-so-terms-stack").remove();
@@ -1902,6 +2103,7 @@
         "erpw-so-terms-section-quiet",
         "erpw-so-terms-section-payment",
         "erpw-so-terms-section-conditions",
+        "erpw-so-terms-section-readonly",
         "erpw-so-terms-hidden-source",
         "erpw-so-terms-section-summary-mode",
       ].join(" "));
@@ -2027,6 +2229,10 @@
   }
 
   function cleanSidebarUtilityRail(frm) {
+    if (typeof childPageSidebar.cleanSidebarUtilityRail === "function") {
+      return childPageSidebar.cleanSidebarUtilityRail(frm);
+    }
+
     const $wrapper = $(frm.wrapper || frm.$wrapper || []);
     const $sidebar = $(frm.page && frm.page.sidebar ? frm.page.sidebar : $wrapper.find(".form-sidebar").parent());
     if (!$sidebar.length) return false;
@@ -2193,8 +2399,9 @@
 
   function getConnectionStatusRank(status) {
     if (!status) return 0;
-    if (status.variant === "attention") return 2;
-    if (status.variant === "active") return 1;
+    const tone = status.variant || status.tone || "neutral";
+    if (tone === "attention") return 2;
+    if (tone === "active") return 1;
     return 0;
   }
 
@@ -2281,8 +2488,25 @@
     return $documents.find(`.document-link[data-doctype="${doctype}"]`).first();
   }
 
-  function buildConnectionsModel($documents, countsReady) {
-    const primaryGroups = [];
+  function normalizeConnectionStatus(status) {
+    if (!status || !status.text) return null;
+
+    return {
+      text: status.text,
+      tone: status.variant || "neutral",
+    };
+  }
+
+  function availablePathIconMarkup() {
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.5 12h9M12 7.5l4.5 4.5L12 16.5M6 5.5h12a1.5 1.5 0 0 1 1.5 1.5v10A1.5 1.5 0 0 1 18 18.5H6A1.5 1.5 0 0 1 4.5 17V7A1.5 1.5 0 0 1 6 5.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+  }
+
+  function buildConnectionsModel(frm, $documents, countsReady) {
+    const groups = [];
     const availableItems = [];
     let hasPendingCounts = false;
 
@@ -2316,21 +2540,66 @@
         if (countState.unknown) groupStatusCounts.unknown = true;
         if (countsPending) hasPendingCounts = true;
 
+        const description = getConnectionDocDescription(doctype);
         const item = {
           doctype,
-          description: getConnectionDocDescription(doctype),
-          status,
-          createAllowed,
+          title: doctype,
+          note: description,
+          iconMarkup: connectionDocIconMarkup(doctype),
+          status: normalizeConnectionStatus(status),
           countsPending,
+          actions: [
+            {
+              label: countsPending ? "Open list" : "View linked",
+              tone: "primary",
+              run: () => {
+                const $sourceLink = getConnectionSourceLink($documents, doctype);
+                if (!$sourceLink.length) return;
+                frm.dashboard.open_document_list($sourceLink);
+              },
+            },
+          ],
         };
+
+        if (createAllowed) {
+          item.actions.push({
+            label: "Create new",
+            tone: "secondary",
+            run: () => {
+              const $sourceLink = getConnectionSourceLink($documents, doctype);
+              const $newButton = $sourceLink.find(".btn-new").first();
+              if ($newButton.length) {
+                $newButton.trigger("click");
+                return;
+              }
+              frm.make_new(doctype);
+            },
+          });
+        }
 
         if (status || countsPending) {
           primaryItems.push(item);
         } else if (countsReady && createAllowed) {
           availableItems.push({
-            groupLabel: label,
             doctype,
-            description: item.description,
+            title: doctype,
+            note: description,
+            iconMarkup: connectionDocIconMarkup(doctype),
+            actions: [
+              {
+                label: "Create",
+                tone: "tertiary",
+                run: () => {
+                  const $sourceLink = getConnectionSourceLink($documents, doctype);
+                  const $newButton = $sourceLink.find(".btn-new").first();
+                  if ($newButton.length) {
+                    $newButton.trigger("click");
+                    return;
+                  }
+                  frm.make_new(doctype);
+                },
+              },
+            ],
           });
         }
       });
@@ -2342,159 +2611,70 @@
           return left.doctype.localeCompare(right.doctype);
         });
 
-        primaryGroups.push({
-          label,
+        groups.push({
+          title: label,
           key,
-          description: getConnectionGroupDescription(label),
-          status: getConnectionGroupStatus(
+          note: getConnectionGroupDescription(label),
+          iconMarkup: connectionGroupIconMarkup(key),
+          status: normalizeConnectionStatus(getConnectionGroupStatus(
             groupStatusCounts.linked,
             groupStatusCounts.open,
             groupStatusCounts.unknown,
             countsReady
-          ),
-          countsPending: primaryItems.some((item) => item.countsPending),
+          )),
           items: primaryItems,
         });
       }
     });
 
-    primaryGroups.sort((left, right) => {
+    groups.sort((left, right) => {
       const statusOrder = getConnectionStatusRank(right.status) - getConnectionStatusRank(left.status);
       if (statusOrder !== 0) return statusOrder;
-      return left.label.localeCompare(right.label);
+      return left.title.localeCompare(right.title);
     });
 
-    availableItems.sort((left, right) => {
-      const groupOrder = left.groupLabel.localeCompare(right.groupLabel);
-      if (groupOrder !== 0) return groupOrder;
-      return left.doctype.localeCompare(right.doctype);
-    });
+    availableItems.sort((left, right) => left.doctype.localeCompare(right.doctype));
 
-    return { primaryGroups, availableItems, countsReady, hasPendingCounts };
-  }
+    const model = {
+      groups,
+      pendingNote: !countsReady && hasPendingCounts
+        ? "Live counts are updating. You can already open related lists."
+        : "",
+    };
 
-  function renderConnectionsLoadingState() {
-    return `
-      <section class="erpw-so-connections-loading-shell">
-        <div class="erpw-so-connections-loading-title">Loading relationship status</div>
-        <div class="erpw-so-connections-loading-note">Checking linked downstream documents and available creation paths for this order.</div>
-      </section>
-    `;
-  }
-
-  function renderConnectionsPendingState() {
-    return `
-      <div class="erpw-so-connections-pending-note">Live counts are updating. You can already open related lists.</div>
-    `;
-  }
-
-  function renderConnectionsEmptyState(model) {
-    if (!model.countsReady || model.primaryGroups.length || model.availableItems.length) {
-      return "";
+    if (!countsReady && !groups.length && !availableItems.length) {
+      model.loading = {
+        title: "Loading relationship status",
+        note: "Checking linked downstream documents and available creation paths for this order.",
+      };
+      return model;
     }
 
-    return `
-      <section class="erpw-so-connections-empty">
-        <div class="erpw-so-connections-empty-title">No linked downstream documents yet</div>
-        <div class="erpw-so-connections-empty-note">Create the next related record when execution moves forward from this order.</div>
-      </section>
-    `;
-  }
-
-  function renderConnectionsWorkspace($wrapper, frm, $documents, model) {
-    const $body = $wrapper.find(".section-body").first().length ? $wrapper.find(".section-body").first() : $wrapper;
-    const $scope = getConnectionsRenderScope($wrapper);
-    $scope.find(".erpw-so-connections-workspace").remove();
-    const $workspace = $('<div class="erpw-so-connections-workspace"></div>');
-    $workspace.insertBefore($documents);
-
-    if (!model.primaryGroups.length && !model.availableItems.length) {
-      $workspace.html(renderConnectionsLoadingState());
-      return;
+    if (availableItems.length) {
+      model.secondary = {
+        title: "Available Paths",
+        note: "Create the next related document only when execution needs it.",
+        iconMarkup: availablePathIconMarkup(),
+        items: availableItems,
+      };
     }
 
-    $workspace.html(`
-      ${!model.countsReady && model.hasPendingCounts ? renderConnectionsPendingState() : ""}
-      ${model.primaryGroups.map((group, groupIndex) => `
-        <section class="erpw-so-connection-primary-group" data-group-index="${groupIndex}" data-group-key="${escapeHtml(group.key)}">
-          <div class="erpw-so-connection-primary-head">
-            <div class="erpw-so-connection-primary-summary">
-              <span class="erpw-so-connection-primary-icon" aria-hidden="true">${connectionGroupIconMarkup(group.key)}</span>
-              <div class="erpw-so-connection-primary-copy">
-                <div class="erpw-so-connection-primary-title">${escapeHtml(group.label)}</div>
-                <div class="erpw-so-connection-primary-note">${escapeHtml(group.description)}</div>
-              </div>
-            </div>
-            ${group.status ? `<div class="erpw-so-connection-primary-status" data-status="${escapeHtml(group.status.variant)}">${escapeHtml(group.status.text)}</div>` : ""}
-          </div>
-          <div class="erpw-so-connection-primary-grid" data-item-count="${group.items.length}">
-            ${group.items.map((item, itemIndex) => `
-              <article class="erpw-so-connection-doc-card" data-group-index="${groupIndex}" data-item-index="${itemIndex}" data-doctype="${escapeHtml(item.doctype)}">
-                <div class="erpw-so-connection-doc-head">
-                  <div class="erpw-so-connection-doc-main">
-                    <span class="erpw-so-connection-doc-icon" aria-hidden="true">${connectionDocIconMarkup(item.doctype)}</span>
-                    <div class="erpw-so-connection-doc-copy">
-                      <div class="erpw-so-connection-doc-title">${escapeHtml(item.doctype)}</div>
-                      <div class="erpw-so-connection-doc-note">${escapeHtml(item.description)}</div>
-                    </div>
-                  </div>
-                  ${item.status ? `<div class="erpw-so-connection-doc-status" data-status="${escapeHtml(item.status.variant)}">${escapeHtml(item.status.text)}</div>` : ""}
-                </div>
-                <div class="erpw-so-connection-doc-actions">
-                  <button type="button" class="erpw-so-connection-action erpw-so-connection-action-primary" data-action="open" data-doctype="${escapeHtml(item.doctype)}">${item.countsPending ? "Open list" : "View linked"}</button>
-                  ${item.createAllowed ? `<button type="button" class="erpw-so-connection-action erpw-so-connection-action-secondary" data-action="create" data-doctype="${escapeHtml(item.doctype)}">Create new</button>` : ""}
-                </div>
-              </article>
-            `).join("")}
-          </div>
-        </section>
-      `).join("")}
+    if (countsReady && !groups.length && !availableItems.length) {
+      model.empty = {
+        title: "No linked downstream documents yet",
+        note: "Create the next related record when execution moves forward from this order.",
+      };
+    }
 
-      ${model.availableItems.length ? `
-        <section class="erpw-so-connections-secondary-shell">
-          <div class="erpw-so-connections-secondary-head">
-            <span class="erpw-so-connections-secondary-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M7.5 12h9M12 7.5l4.5 4.5L12 16.5M6 5.5h12a1.5 1.5 0 0 1 1.5 1.5v10A1.5 1.5 0 0 1 18 18.5H6A1.5 1.5 0 0 1 4.5 17V7A1.5 1.5 0 0 1 6 5.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
-            <div class="erpw-so-connections-secondary-copy">
-              <div class="erpw-so-connections-secondary-title">Available Paths</div>
-              <div class="erpw-so-connections-secondary-note">Create the next related document only when execution needs it.</div>
-            </div>
-          </div>
-          <div class="erpw-so-connections-secondary-rows">
-            ${model.availableItems.map((item, itemIndex) => `
-              <div class="erpw-so-connections-secondary-row" data-available-index="${itemIndex}" data-doctype="${escapeHtml(item.doctype)}">
-                <div class="erpw-so-connections-secondary-row-copy">
-                  <div class="erpw-so-connections-secondary-row-title">${escapeHtml(item.doctype)}</div>
-                  <div class="erpw-so-connections-secondary-row-note">${escapeHtml(item.description)}</div>
-                </div>
-                <button type="button" class="erpw-so-connection-action erpw-so-connection-action-tertiary" data-action="create" data-doctype="${escapeHtml(item.doctype)}">Create</button>
-              </div>
-            `).join("")}
-          </div>
-        </section>
-      ` : ""}
-
-      ${renderConnectionsEmptyState(model)}
-    `);
-
-    $workspace.find('[data-action="open"]').off("click").on("click", function () {
-      const doctype = $(this).attr("data-doctype");
-      if (!doctype) return;
-      const $sourceLink = getConnectionSourceLink($documents, doctype);
-      if (!$sourceLink.length) return;
-      frm.dashboard.open_document_list($sourceLink);
-    });
-
-    $workspace.find('[data-action="create"]').off("click").on("click", function () {
-      const doctype = $(this).attr("data-doctype");
-      if (!doctype) return;
-      frm.make_new(doctype);
-    });
+    return model;
   }
 
   function enhanceConnectionsWorkspace(frm) {
     if (!frm || !frm.dashboard) return false;
+    if (typeof childPageConnections.renderCardWorkspace !== "function") {
+      markFeatureMissing(frm, "connection_workspace", { reason: "runtime_unavailable" });
+      return false;
+    }
 
     const $wrapper = getConnectionsWrapper(frm);
     if (!$wrapper.length) return false;
@@ -2503,18 +2683,78 @@
     if (!$documents.length) return false;
 
     $wrapper.addClass("erpw-so-connections-shell");
-    getConnectionsRenderScope($wrapper).find(".erpw-so-connections-workspace, .erpw-so-connections-secondary, .erpw-so-connections-empty").remove();
+    const $scope = getConnectionsRenderScope($wrapper);
     $documents.removeClass("erpw-so-connections-documents has-single-group is-empty").addClass("erpw-so-connections-source");
     const countsReady = Boolean(frm.dashboard && frm.dashboard._fetched_counts);
     if (!countsReady) {
       requestConnectionsCounts(frm);
     }
-    const model = buildConnectionsModel($documents, countsReady);
-    renderConnectionsWorkspace($wrapper, frm, $documents, model);
-    return true;
+    const model = buildConnectionsModel(frm, $documents, countsReady);
+    return childPageConnections.renderCardWorkspace(frm, {
+      featureKey: "connection_workspace",
+      layout: "card",
+      model,
+      mount: {
+        cleanupRoot: $scope,
+        cleanupSelector: ".erpw-so-connections-workspace",
+        anchor: $documents,
+        insertMode: "before",
+      },
+      theme: {
+        namespace: ".erpwSoConnectionWorkspace",
+        workspaceClassName: "erpw-so-connections-workspace",
+        pendingNoteClass: "erpw-so-connections-pending-note",
+        groupClass: "erpw-so-connection-primary-group",
+        groupHeadClass: "erpw-so-connection-primary-head",
+        groupSummaryClass: "erpw-so-connection-primary-summary",
+        groupIconClass: "erpw-so-connection-primary-icon",
+        groupCopyClass: "erpw-so-connection-primary-copy",
+        groupTitleClass: "erpw-so-connection-primary-title",
+        groupNoteClass: "erpw-so-connection-primary-note",
+        groupStatusClass: "erpw-so-connection-primary-status",
+        itemsClass: "erpw-so-connection-primary-grid",
+        itemClass: "erpw-so-connection-doc-card",
+        itemHeadClass: "erpw-so-connection-doc-head",
+        itemMainClass: "erpw-so-connection-doc-main",
+        itemIconClass: "erpw-so-connection-doc-icon",
+        itemCopyClass: "erpw-so-connection-doc-copy",
+        itemTitleClass: "erpw-so-connection-doc-title",
+        itemNoteClass: "erpw-so-connection-doc-note",
+        itemStatusClass: "erpw-so-connection-doc-status",
+        itemActionsClass: "erpw-so-connection-doc-actions",
+        actionBaseClass: "erpw-so-connection-action",
+        actionToneClassMap: {
+          primary: "erpw-so-connection-action-primary",
+          secondary: "erpw-so-connection-action-secondary",
+          tertiary: "erpw-so-connection-action-tertiary",
+        },
+        secondaryShellClass: "erpw-so-connections-secondary-shell",
+        secondaryHeadClass: "erpw-so-connections-secondary-head",
+        secondaryIconClass: "erpw-so-connections-secondary-icon",
+        secondaryCopyClass: "erpw-so-connections-secondary-copy",
+        secondaryTitleClass: "erpw-so-connections-secondary-title",
+        secondaryNoteClass: "erpw-so-connections-secondary-note",
+        secondaryRowsClass: "erpw-so-connections-secondary-rows",
+        secondaryRowClass: "erpw-so-connections-secondary-row",
+        secondaryRowIconClass: "erpw-so-connections-secondary-row-icon",
+        secondaryRowCopyClass: "erpw-so-connections-secondary-row-copy",
+        secondaryRowTitleClass: "erpw-so-connections-secondary-row-title",
+        secondaryRowNoteClass: "erpw-so-connections-secondary-row-note",
+        loadingShellClass: "erpw-so-connections-loading-shell",
+        loadingTitleClass: "erpw-so-connections-loading-title",
+        loadingNoteClass: "erpw-so-connections-loading-note",
+        emptyShellClass: "erpw-so-connections-empty",
+        emptyTitleClass: "erpw-so-connections-empty-title",
+        emptyNoteClass: "erpw-so-connections-empty-note",
+      },
+    });
   }
 
   function enhanceSupportArea(frm) {
+    if (typeof childPageSupport.enhanceSupportArea === "function") {
+      return childPageSupport.enhanceSupportArea(frm);
+    }
+
     const $wrapper = $(frm.wrapper || frm.$wrapper || []);
     if (!$wrapper.length) return false;
 
@@ -2554,6 +2794,13 @@
   }
 
   function enhanceWorkflowReadonlyBanner(frm) {
+    if (typeof childPageSupport.enhanceWorkflowReadonlyBanner === "function") {
+      return childPageSupport.enhanceWorkflowReadonlyBanner(frm, {
+        title: "Workflow-controlled record",
+        note: "This Sales Order is currently review-only in the active workflow state.",
+      });
+    }
+
     const $root = $(frm.page && frm.page.main ? frm.page.main : frm.$wrapper || []);
     if (!$root.length) return false;
 
@@ -2595,26 +2842,18 @@
   }
 
   function bindTabEnhancers(frm) {
-    if (!frm) return;
-    const $root = $(frm.page && frm.page.main ? frm.page.main : frm.$wrapper || []);
-    if (!$root.length) return;
-
-    const $links = $root.find(".form-tabs-list .nav-link, .form-tabs .nav-link");
-    if (!$links.length) return;
-
-    $links.off(".erpwTabEnhancers").on("click.erpwTabEnhancers", function () {
-      scheduleFormTask(frm, "tab_enhancers_fast", 0, () => {
+    bindRuntimeTabEnhancers(frm, {
+      namespace: ".erpwTabEnhancers",
+      fastKey: "tab_enhancers_fast",
+      lateKey: "tab_enhancers_late",
+      fastDelay: 0,
+      lateDelay: 180,
+      run: () => {
         enhanceAddressContactTab(frm);
         enhanceTermsTab(frm);
         enhanceMoreInfoTab(frm);
         enhanceConnectionsWorkspace(frm);
-      });
-      scheduleFormTask(frm, "tab_enhancers_late", 180, () => {
-        enhanceAddressContactTab(frm);
-        enhanceTermsTab(frm);
-        enhanceMoreInfoTab(frm);
-        enhanceConnectionsWorkspace(frm);
-      });
+      },
     });
   }
 
@@ -2674,12 +2913,10 @@
     const showAccountingDimensions = hasMeaningfulValue(frm.doc.cost_center) || hasMeaningfulValue(frm.doc.project);
     toggleSection(frm, "cost_center", showAccountingDimensions);
 
-    const showWarehouseSetup = [
-      "scan_barcode",
-      "last_scanned_warehouse",
-      "set_warehouse",
-    ].some((fieldname) => hasMeaningfulValue(frm.doc[fieldname])) || Boolean(frm.doc.reserve_stock);
-    toggleSection(frm, "scan_barcode", showWarehouseSetup);
+    // Keep native pricing and warehouse setup off this premium execution surface.
+    // If warehouse or pricing context needs to return later, it should come back
+    // through an intentional snapshot/support pattern instead of raw native sections.
+    toggleSection(frm, "scan_barcode", false);
 
     const showDiscount = [
       "additional_discount_percentage",
@@ -2687,8 +2924,7 @@
       "base_discount_amount",
       "coupon_code",
     ].some((fieldname) => hasMeaningfulValue(frm.doc[fieldname]));
-    const showPricing = shouldShowPricingSection(frm);
-    toggleSection(frm, "currency", showPricing);
+    toggleSection(frm, "currency", false);
     toggleSection(frm, "apply_discount_on", showDiscount);
 
     const showTotalsDetail = [
@@ -2699,39 +2935,73 @@
     toggleSection(frm, "total_qty", false);
     toggleSection(frm, "grand_total", showTotalsDetail);
 
+    renderDetailsSnapshot(frm);
+    renderItemsSectionHeader(frm);
     renderCommercialSummary(frm);
-    if (!enhanceAddressContactTab(frm)) {
-      scheduleFormTask(frm, "address_contact_retry_fast", 420, () => enhanceAddressContactTab(frm));
-      scheduleFormTask(frm, "address_contact_retry_late", 980, () => enhanceAddressContactTab(frm));
-    }
-    if (!enhanceTermsTab(frm)) {
-      scheduleFormTask(frm, "terms_retry_fast", 420, () => enhanceTermsTab(frm));
-      scheduleFormTask(frm, "terms_retry_late", 980, () => enhanceTermsTab(frm));
-    }
-    if (!enhanceMoreInfoTab(frm)) {
-      scheduleFormTask(frm, "more_info_retry_fast", 420, () => enhanceMoreInfoTab(frm));
-      scheduleFormTask(frm, "more_info_retry_late", 980, () => enhanceMoreInfoTab(frm));
-    }
-    if (!cleanSidebarUtilityRail(frm)) {
-      scheduleFormTask(frm, "sidebar_retry_fast", 420, () => cleanSidebarUtilityRail(frm));
-      scheduleFormTask(frm, "sidebar_retry_late", 980, () => cleanSidebarUtilityRail(frm));
-    }
+    renderDetailWorkspace(frm);
+    runRetriedEnhancers(frm, [
+      {
+        fastKey: "address_contact_retry_fast",
+        lateKey: "address_contact_retry_late",
+        fastDelay: 420,
+        lateDelay: 980,
+        run: () => enhanceAddressContactTab(frm),
+      },
+      {
+        fastKey: "terms_retry_fast",
+        lateKey: "terms_retry_late",
+        fastDelay: 420,
+        lateDelay: 980,
+        run: () => enhanceTermsTab(frm),
+      },
+      {
+        fastKey: "more_info_retry_fast",
+        lateKey: "more_info_retry_late",
+        fastDelay: 420,
+        lateDelay: 980,
+        run: () => enhanceMoreInfoTab(frm),
+      },
+      {
+        fastKey: "sidebar_retry_fast",
+        lateKey: "sidebar_retry_late",
+        fastDelay: 420,
+        lateDelay: 980,
+        run: () => cleanSidebarUtilityRail(frm),
+      },
+    ]);
     const supportReady = enhanceSupportArea(frm);
     const shellReady = isCustomShellReadyForRelease(frm);
     if (!supportReady) {
-      scheduleFormTask(frm, "support_retry_fast", 420, () => enhanceSupportArea(frm));
-      scheduleFormTask(frm, "support_retry_late", 980, () => enhanceSupportArea(frm));
+      scheduleRetryPair(frm, {
+        fastKey: "support_retry_fast",
+        lateKey: "support_retry_late",
+        fastDelay: 420,
+        lateDelay: 980,
+        run: () => enhanceSupportArea(frm),
+      });
     }
     if (!enhanceWorkflowReadonlyBanner(frm)) {
-      scheduleFormTask(frm, "workflow_banner_retry_fast", 220, () => enhanceWorkflowReadonlyBanner(frm));
-      scheduleFormTask(frm, "workflow_banner_retry_late", 760, () => enhanceWorkflowReadonlyBanner(frm));
+      scheduleRetryPair(frm, {
+        fastKey: "workflow_banner_retry_fast",
+        lateKey: "workflow_banner_retry_late",
+        fastDelay: 220,
+        lateDelay: 760,
+        run: () => enhanceWorkflowReadonlyBanner(frm),
+      });
     }
     if (!enhanceConnectionsWorkspace(frm)) {
       scheduleConnectionsEnhance(frm);
-      scheduleFormTask(frm, "connections_retry_late", 980, () => enhanceConnectionsWorkspace(frm));
+      scheduleRetryPair(frm, {
+        lateKey: "connections_retry_late",
+        lateDelay: 980,
+        run: () => enhanceConnectionsWorkspace(frm),
+      });
     }
 
     if (!shellReady) {
+      markFeatureStatus(frm, "shell_release", "waiting", {
+        reason: "context_not_ready",
+      });
       return;
     }
 
@@ -2743,6 +3013,32 @@
     if (!$itemsSection || !$itemsSection.length) return;
 
     $itemsSection.find(".erpw-so-inline-summary").remove();
+
+    if (typeof childPageDetails.ensureCriticalStyles === "function") {
+      childPageDetails.ensureCriticalStyles();
+    }
+
+    const chips = [];
+    const perDelivered = Number(frm.doc.per_delivered || 0);
+    const perBilled = Number(frm.doc.per_billed || 0);
+    const hasTaxes = !Number.isNaN(Number(frm.doc.total_taxes_and_charges || 0))
+      && Math.abs(Number(frm.doc.total_taxes_and_charges || 0)) > 0.0001;
+
+    if (perDelivered >= 100) {
+      chips.push({ label: "Delivered", tone: "approved" });
+    } else if (perDelivered > 0) {
+      chips.push({ label: `${formatFixedNumber(perDelivered)}% delivered`, tone: "attention" });
+    }
+
+    if (perBilled >= 100) {
+      chips.push({ label: "Fully billed", tone: "approved" });
+    } else if (perBilled > 0) {
+      chips.push({ label: `${formatFixedNumber(perBilled)}% billed`, tone: "pending" });
+    }
+
+    if (!hasTaxes) {
+      chips.push({ label: "No tax rows", tone: "neutral" });
+    }
 
     const metrics = [
       {
@@ -2767,10 +3063,34 @@
       },
     ];
 
+    if (typeof childPageSummaries.renderInlineSummary === "function") {
+      childPageSummaries.renderInlineSummary($itemsSection, {
+        chips,
+        metrics: metrics.map((metric) => ({
+          className: metric.modifier ? `erpw-so-inline-metric-${metric.modifier}` : "",
+          label: metric.label,
+          value: metric.value,
+        })),
+        note: "Read quantity, value, and billing posture here while ERP totals stay authoritative.",
+        removeSelector: ".erpw-so-inline-summary",
+        summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
+        title: "Commercial Summary",
+      });
+      return;
+    }
+
     const $summary = $(`
-      <div class="erpw-so-inline-summary">
+      <div class="erpw-so-inline-summary erpw-child-inline-summary-soft">
         <div class="erpw-so-inline-summary-head">
           <div class="erpw-so-inline-summary-title">Commercial Summary</div>
+          <div class="erpw-child-subtitle erpw-child-inline-summary-note">Read quantity, value, and billing posture here while ERP totals stay authoritative.</div>
+          ${chips.length ? `
+            <div class="erpw-child-chip-row">
+              ${chips.map((chip) => `
+                <span class="erpw-child-chip ${escapeHtml(chip.tone || "neutral")}">${escapeHtml(chip.label)}</span>
+              `).join("")}
+            </div>
+          ` : ""}
         </div>
         <div class="erpw-so-inline-summary-grid">
           ${metrics.map((metric) => `
@@ -2789,6 +3109,141 @@
     } else {
       $itemsSection.append($summary);
     }
+  }
+
+  function renderDetailWorkspace(frm) {
+    const $itemsSection = getSectionForField(frm, "items");
+    if (!$itemsSection || !$itemsSection.length) return false;
+
+    const $currentWorkspace = $itemsSection.closest(".erpw-child-detail-workspace");
+    const $snapshot = $currentWorkspace.length
+      ? $currentWorkspace.prev(".erpw-child-detail-snapshot").first()
+      : $itemsSection.prev(".erpw-child-detail-snapshot").first();
+    const $taxesSection = getSectionForField(frm, "taxes");
+    const $totalsSection = getSectionForField(frm, "grand_total") || getSectionForField(frm, "base_grand_total");
+
+    return Boolean(ensureSharedDetailWorkspace([
+      $itemsSection,
+      $taxesSection,
+      $totalsSection,
+    ], {
+      className: "erpw-child-detail-workspace",
+      insertAfter: $snapshot,
+      scope: "sales-order",
+    }).length);
+  }
+
+  function getSalesOrderSnapshotMetric(frm) {
+    const poReference = String(frm.doc.po_no || "").trim();
+    if (poReference) {
+      return {
+        label: "Customer PO",
+        value: poReference,
+      };
+    }
+
+    const orderType = String(frm.doc.order_type || "").trim();
+    if (orderType) {
+      return {
+        label: "Order Type",
+        value: Number(frm.doc.is_subcontracted || 0) === 1 ? `${orderType} • Subcontracted` : orderType,
+      };
+    }
+
+    return {
+      label: "Fulfillment",
+      value: Number(frm.doc.is_subcontracted || 0) === 1 ? "Subcontracted" : "Standard order",
+    };
+  }
+
+  function renderDetailsSnapshot(frm) {
+    const $topSection = getSectionForField(frm, "customer");
+    const $itemsSection = getSectionForField(frm, "items");
+    if (!$itemsSection || !$itemsSection.length) return false;
+
+    $itemsSection.closest(".erpw-child-detail-workspace").prev(".erpw-child-detail-snapshot").first().remove();
+    $itemsSection.prev(".erpw-child-detail-snapshot").first().remove();
+
+    const isSubmitted = Number(frm.doc.docstatus || 0) === 1;
+    if (!$topSection || !$topSection.length || !isSubmitted) {
+      setManagedSectionVisibility($topSection, true, "erpw-so-details-hidden-source");
+      return false;
+    }
+
+    if (typeof childPageDetails.renderDetailSnapshot !== "function") {
+      setManagedSectionVisibility($topSection, true, "erpw-so-details-hidden-source");
+      return false;
+    }
+
+    const deliveryDiff = frm.doc.delivery_date
+      ? frappe.datetime.get_diff(frm.doc.delivery_date, frappe.datetime.get_today())
+      : null;
+    const perDelivered = Number(frm.doc.per_delivered || 0);
+    let statusText = "Committed";
+    let statusTone = "active";
+
+    if (perDelivered >= 100) {
+      statusText = "Delivered";
+    } else if (deliveryDiff != null && deliveryDiff < 0) {
+      statusText = "Overdue";
+      statusTone = "attention";
+    } else if (deliveryDiff != null && deliveryDiff <= 3) {
+      statusText = "Due soon";
+      statusTone = "attention";
+    } else if (Number(frm.doc.is_subcontracted || 0) === 1) {
+      statusText = "Subcontracted";
+      statusTone = "neutral";
+    }
+
+    const metrics = [
+      {
+        label: "Customer",
+        value: frm.doc.customer_name || frm.doc.customer || "--",
+      },
+      {
+        label: "Order Date",
+        value: formatDateLabel(frm.doc.transaction_date),
+      },
+      {
+        label: "Delivery Date",
+        value: formatDateLabel(frm.doc.delivery_date),
+      },
+      getSalesOrderSnapshotMetric(frm),
+    ];
+
+    childPageDetails.renderDetailSnapshot($itemsSection, {
+      kicker: "Order Snapshot",
+      metrics,
+      note: "Read the committed order context here, then work the native execution grid and downstream follow-through below.",
+      removeSelector: ".erpw-child-detail-snapshot",
+      snapshotClass: "erpw-child-detail-snapshot",
+      statusText,
+      statusTone,
+    });
+
+    setManagedSectionVisibility($topSection, false, "erpw-so-details-hidden-source");
+    return true;
+  }
+
+  function renderItemsSectionHeader(frm) {
+    const $itemsSection = getSectionForField(frm, "items");
+    if (!$itemsSection || !$itemsSection.length) return false;
+
+    if (typeof childPageDetails.renderSectionHeader !== "function") {
+      return false;
+    }
+
+    const items = Array.isArray(frm.doc.items) ? frm.doc.items : [];
+    childPageDetails.renderSectionHeader($itemsSection, {
+      headerClass: "erpw-child-section-header",
+      note: "Keep ERP item entry native here, then use the summary below for quantity, value, and downstream fulfillment reading.",
+      removeSelector: ".erpw-child-section-header",
+      statusText: `${items.length || 0} ${items.length === 1 ? "line" : "lines"}`,
+      statusTone: "neutral",
+      title: "Execution Lines",
+    });
+
+    return true;
   }
 
   function renderShell(frm, data) {
@@ -2814,6 +3269,74 @@
     const executionMeta = blocker
       ? `${pct(summary.per_billed)} billed`
       : `${pct(summary.per_billed)} billed`;
+    const summaryChips = [
+      { label: summary.status || "Draft", tone: statusChipClass },
+      { label: summary.workflow_state || "Draft", tone: statusChipClass },
+      dueSoon ? { label: "Due Soon", tone: "attention" } : null,
+      returnCount ? { label: `${returnCount} Return Linked`, tone: "blocker" } : null,
+    ].filter(Boolean);
+    const summaryFacts = [
+      {
+        label: "Grand Total",
+        value: formatMoney(summary.grand_total, summary.currency),
+      },
+      {
+        label: "Delivery Date",
+        value: summary.delivery_date || "--",
+        meta: deliveryDateMeta || "",
+      },
+      {
+        label: "Execution",
+        value: executionValue,
+        meta: executionMeta,
+      },
+    ];
+    const guidanceCards = [
+      {
+        chipLabel: "Priority",
+        className: "erpw-child-guidance-card-primary",
+        iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        text: support.next_action || "Continue normal execution follow-through.",
+        title: "Next Action",
+      },
+      {
+        chipClass: "erpw-child-guidance-chip-secondary",
+        chipLabel: "Communication",
+        className: "erpw-child-guidance-card-secondary",
+        iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 13a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zm-6 6a6 6 0 0 1 12 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        text: support.customer_response_hint || "Use linked delivery and invoice context before confirming customer-facing status.",
+        title: "Customer Response",
+      },
+    ];
+    const actionsWithIndex = actions.map((action, idx) => ({ ...action, idx }));
+    const primaryActions = actionsWithIndex.filter((action) => action.variant === "primary");
+    const secondaryActions = actionsWithIndex.filter((action) => action.variant !== "primary");
+    if (typeof childPageShellContent.renderShellContent === "function") {
+      childPageShellContent.renderShellContent($shell, {
+        actionIconMarkup,
+        actions,
+        guidance: {
+          cards: guidanceCards,
+          title: "What To Do Now",
+        },
+        summary: {
+          chips: summaryChips,
+          facts: summaryFacts,
+          kicker: "Sales Order",
+          subtitle: summary.customer || "Customer not selected yet",
+          title: summary.name || frm.doc.name || "Sales Order",
+        },
+      });
+      return;
+    }
+    const renderActionButton = (action) => `
+      <button type="button" class="erpw-child-action ${escapeHtml(action.variant || "secondary")}" data-action-index="${action.idx}">
+        <span class="erpw-child-action-accent" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
+        <span class="erpw-child-action-copy">
+          <span class="erpw-child-action-title">${escapeHtml(action.title)}</span>
+        </span>
+      </button>
+    `;
     $shell.html(`
       <section class="erpw-child-card erpw-child-summary">
         <div class="erpw-child-summary-copy">
@@ -2850,15 +3373,17 @@
       </section>
 
       <section class="erpw-child-card erpw-child-actions erpw-child-actions-band">
-        <div class="erpw-child-action-row erpw-child-action-row-single">
-          ${actions.map((action, idx) => `
-            <button type="button" class="erpw-child-action ${escapeHtml(action.variant || "secondary")}" data-action-index="${idx}">
-              <span class="erpw-child-action-accent" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
-              <span class="erpw-child-action-copy">
-                <span class="erpw-child-action-title">${escapeHtml(action.title)}</span>
-              </span>
-            </button>
-          `).join("")}
+        <div class="erpw-child-action-stack">
+          ${primaryActions.length ? `
+            <div class="erpw-child-action-row erpw-child-action-row-primary" data-count="${primaryActions.length}">
+              ${primaryActions.map((action) => renderActionButton(action)).join("")}
+            </div>
+          ` : ""}
+          ${secondaryActions.length ? `
+            <div class="erpw-child-action-row erpw-child-action-row-secondary" data-count="${secondaryActions.length}">
+              ${secondaryActions.map((action) => renderActionButton(action)).join("")}
+            </div>
+          ` : ""}
         </div>
       </section>
 
@@ -2910,19 +3435,43 @@
   function loadContext(frm) {
     if (!frm || frm.doctype !== "Sales Order") return;
     const signature = getContextSignature(frm);
-    if (frm.__erpwContextLoadingSignature === signature) return;
+    if (frm.__erpwContextLoadingSignature === signature) {
+      markFeatureStatus(frm, "context_load", "inflight", {
+        signature,
+      });
+      return;
+    }
     if (frm.__erpwContextRenderedSignature === signature) {
-      prepareFormShell(frm, "Loading sales order execution context...");
+      const $shell = getShell(frm);
+      const shellNeedsRender = !$shell.children().length || !!$shell.children(".erpw-so-shell-skeleton").length;
+      if (shellNeedsRender) {
+        if (frm.__erpwSalesOrderContext) {
+          renderShell(frm, frm.__erpwSalesOrderContext);
+        } else {
+          frm.__erpwContextRenderedSignature = null;
+          loadContext(frm);
+          return;
+        }
+      }
+      markFeatureReady(frm, "context_load", {
+        signature,
+        source: "cache",
+      });
       scheduleFormEnhance(frm);
       return;
     }
-
     prepareFormShell(frm, "Loading sales order execution context...");
 
     if (frm.is_new()) {
-      renderShell(frm, draftContext(frm));
+      frm.__erpwSalesOrderContext = draftContext(frm);
+      renderShell(frm, frm.__erpwSalesOrderContext);
       frm.__erpwContextRenderedSignature = signature;
+      frm.__erpwContextRenderedName = frm.doc && frm.doc.name;
       frm.__erpwContextLoadingSignature = null;
+      markFeatureReady(frm, "context_load", {
+        signature,
+        source: "draft",
+      });
       scheduleFormEnhance(frm);
       return;
     }
@@ -2935,26 +3484,78 @@
     const requestId = (frm.__erpwContextRequestId || 0) + 1;
     frm.__erpwContextRequestId = requestId;
     frm.__erpwContextLoadingSignature = signature;
-    frappe.call({
+    markFeatureStatus(frm, "context_load", "loading", {
+      requestId,
+      signature,
+      source: "remote",
+    });
+    const request = frappe.call({
       method: METHOD,
       args: { name: frm.doc.name },
       freeze: false,
-    }).then((r) => {
-      if (frm.__erpwContextRequestId !== requestId) return;
-      if (!frm.doc || frm.doc.name !== (r.message && r.message.summary && r.message.summary.name)) {
+    });
+
+    request.then((r) => {
+      if (frm.__erpwContextRequestId !== requestId) {
+        markFeatureStatus(frm, "context_load", "stale", {
+          requestId,
+          signature,
+          phase: "success",
+        });
         return;
       }
-      renderShell(frm, r.message || draftContext(frm));
+      if (!frm.doc || frm.doc.name !== (r.message && r.message.summary && r.message.summary.name)) {
+        markFeatureStatus(frm, "context_load", "stale", {
+          requestId,
+          signature,
+          phase: "name_mismatch",
+        });
+        return;
+      }
+      frm.__erpwSalesOrderContext = r.message || draftContext(frm);
+      renderShell(frm, frm.__erpwSalesOrderContext);
       frm.__erpwContextRenderedSignature = signature;
       frm.__erpwContextRenderedName = frm.doc.name;
+      markFeatureReady(frm, "context_load", {
+        requestId,
+        signature,
+        source: "remote",
+      });
       scheduleFormEnhance(frm);
     }).catch(() => {
-      if (frm.__erpwContextRequestId !== requestId) return;
+      if (frm.__erpwContextRequestId !== requestId) {
+        markFeatureStatus(frm, "context_load", "stale", {
+          requestId,
+          signature,
+          phase: "error",
+        });
+        return;
+      }
       getShell(frm).html('<section class="erpw-child-card erpw-child-loading">Sales order workspace context is temporarily unavailable.</section>');
+      markFeatureMissing(frm, "context_load", {
+        requestId,
+        signature,
+        source: "remote",
+        reason: "request_failed",
+      });
       scheduleFormEnhance(frm);
-    }).finally(() => {
+    });
+
+    Promise.resolve(request).then(() => {
       if (frm.__erpwContextRequestId === requestId) {
         frm.__erpwContextLoadingSignature = null;
+        markFeatureStatus(frm, "context_load", "idle", {
+          requestId,
+          signature,
+        });
+      }
+    }, () => {
+      if (frm.__erpwContextRequestId === requestId) {
+        frm.__erpwContextLoadingSignature = null;
+        markFeatureStatus(frm, "context_load", "idle", {
+          requestId,
+          signature,
+        });
       }
     });
   }
@@ -2979,9 +3580,14 @@
   });
 
   function bootstrapCurrentSalesOrderForm() {
-    if (!window.cur_frm || cur_frm.doctype !== "Sales Order") return;
-    if (!cur_frm.page || !cur_frm.page.main) return;
+    if (!window.cur_frm || cur_frm.doctype !== "Sales Order") return false;
+    if (!cur_frm.page || !cur_frm.page.main) return false;
     loadContext(cur_frm);
+    return true;
+  }
+
+  if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.registerChildPageBootstrap === "function") {
+    window.erpWorkspaceUiBoot.registerChildPageBootstrap("Sales Order", bootstrapCurrentSalesOrderForm);
   }
 
   $(document).ready(() => {

@@ -569,18 +569,9 @@ def _expiring_quotation_metric(today, scope: dict[str, object]) -> dict[str, obj
 	if "status" not in fields or "valid_till" not in fields:
 		return _unavailable_metric("Expiry tracking requires Quotation status and valid_till fields.")
 
-	filters, scope_note = _apply_scope_filters(
-		"Quotation",
-		[
-			["docstatus", "!=", 2],
-			["status", "=", "Open"],
-			["valid_till", ">=", today],
-			["valid_till", "<=", today + timedelta(days=7)],
-		],
-		scope,
-	)
+	filters, scope_note = _quotation_expiring_filters(today, scope)
 	value = _count_records("Quotation", filters)
-	return _live_metric(value, f"Live count of open quotations expiring within seven days. {scope_note}")
+	return _live_metric(value, f"Live count of active quotations expiring within seven days. {scope_note}")
 
 
 def _open_sales_order_metric(scope: dict[str, object], note: str | None = None) -> dict[str, object]:
@@ -625,6 +616,7 @@ def _workflow_pending_metric(doctype: str, scope: dict[str, object]) -> dict[str
 		doctype,
 		[["workflow_state", "in", matching_states]],
 		scope,
+		approval_visibility=True,
 	)
 	try:
 		value = _count_records(doctype, filters)
@@ -807,6 +799,7 @@ def _quotation_approval_target(scope: dict[str, object]) -> dict[str, object]:
 		"Quotation",
 		[["workflow_state", "in", matching_states]],
 		scope,
+		approval_visibility=True,
 	)
 	return {"kind": "list", "doctype": "Quotation", "filters": _route_filter_options(filters)}
 
@@ -855,6 +848,7 @@ def _blocked_sales_order_target(scope: dict[str, object]) -> dict[str, object]:
 		"Sales Order",
 		[["workflow_state", "in", matching_states]],
 		scope,
+		approval_visibility=True,
 	)
 	return {"kind": "list", "doctype": "Sales Order", "filters": _route_filter_options(filters)}
 
@@ -994,7 +988,7 @@ def _quotation_expiring_filters(today, scope: dict[str, object]) -> tuple[list[l
 		"Quotation",
 		[
 			["docstatus", "!=", 2],
-			["status", "=", "Open"],
+			["status", "in", ["Draft", "Open"]],
 			["valid_till", ">=", today],
 			["valid_till", "<=", today + timedelta(days=7)],
 		],
@@ -1049,6 +1043,10 @@ def _invoice_outstanding_filters(scope: dict[str, object]) -> tuple[list[list[ob
 		filters.append(["is_return", "=", 0])
 	if "outstanding_amount" in fields:
 		filters.append(["outstanding_amount", ">", 0])
+	chain_names, scope_note = _scoped_sales_chain_invoice_names(scope)
+	if chain_names is not None:
+		filters.append(["name", "in", chain_names or ["__erpw_no_match__"]])
+		return filters, scope_note
 	return _apply_scope_filters("Sales Invoice", filters, scope)
 
 
@@ -1063,6 +1061,17 @@ def _sales_return_filters(
 		filters.append(["is_return", "=", 1])
 	if "posting_date" in fields:
 		filters.append(["posting_date", ">=", today - timedelta(days=30)])
+		filters.append(["posting_date", "<=", today])
+	if doctype == "Sales Invoice":
+		normal_names, scope_note = _scoped_sales_chain_invoice_names(scope)
+		if normal_names is not None and "return_against" in fields:
+			filters.append(["return_against", "in", normal_names or ["__erpw_no_match__"]])
+			return filters, scope_note
+	elif doctype == "Delivery Note":
+		normal_names, scope_note = _scoped_sales_chain_delivery_names(scope)
+		if normal_names is not None and "return_against" in fields:
+			filters.append(["return_against", "in", normal_names or ["__erpw_no_match__"]])
+			return filters, scope_note
 	return _apply_scope_filters(doctype, filters, scope)
 
 
@@ -1121,6 +1130,128 @@ def _route_filter_options(filters: list[list[object]]) -> dict[str, object]:
 
 		route_filters[fieldname] = [existing, condition]
 	return route_filters
+
+
+def _should_scope_sales_documents_through_chain(scope: dict[str, object]) -> bool:
+	scope_mode = scope.get("scope_mode")
+	owner_user_ids = list(scope.get("owner_user_ids") or [])
+	return bool(owner_user_ids) and scope_mode != "executive_review_scope"
+
+
+def _sales_chain_scope_cache(scope: dict[str, object]) -> dict[str, object]:
+	cache = getattr(frappe.local, "_erpw_sales_chain_scope_cache", None)
+	if cache is None:
+		cache = {}
+		frappe.local._erpw_sales_chain_scope_cache = cache
+
+	key = (
+		frappe.session.user,
+		scope.get("scope_mode"),
+		scope.get("branch_name"),
+		tuple(sorted(scope.get("owner_user_ids") or [])),
+	)
+	if key not in cache:
+		cache[key] = _build_sales_chain_scope(scope)
+	return cache[key]
+
+
+def _build_sales_chain_scope(scope: dict[str, object]) -> dict[str, object]:
+	scope_note = "Using permission scope because sales-chain ownership rules are not active for this role."
+	if not _should_scope_sales_documents_through_chain(scope):
+		return {
+			"sales_order_names": None,
+			"delivery_names": None,
+			"invoice_names": None,
+			"scope_note": scope_note,
+		}
+
+	sales_order_filters, _ = _apply_scope_filters("Sales Order", [["docstatus", "!=", 2]], scope)
+	sales_order_rows = frappe.get_list(
+		"Sales Order",
+		fields=["name"],
+		filters=sales_order_filters,
+		order_by="modified desc",
+		limit_page_length=5000,
+	)
+	sales_order_names = [row["name"] for row in sales_order_rows]
+
+	if not sales_order_names:
+		return {
+			"sales_order_names": [],
+			"delivery_names": [],
+			"invoice_names": [],
+			"scope_note": "Commercial chain scope applied through owned or team-linked sales orders. No linked sales orders are currently visible.",
+		}
+
+	delivery_parent_rows = frappe.get_all(
+		"Delivery Note Item",
+		filters={"against_sales_order": ["in", sales_order_names]},
+		fields=["parent"],
+		distinct=True,
+		order_by="parent asc",
+		limit_page_length=5000,
+	)
+	delivery_parent_names = [row["parent"] for row in delivery_parent_rows]
+	delivery_names: list[str] = []
+	if delivery_parent_names:
+		delivery_rows = frappe.get_list(
+			"Delivery Note",
+			fields=["name"],
+			filters={"name": ["in", delivery_parent_names], "docstatus": ["!=", 2], "is_return": ["!=", 1]},
+			order_by="posting_date desc, creation desc",
+			limit_page_length=5000,
+		)
+		delivery_names = [row["name"] for row in delivery_rows]
+
+	invoice_parent_names: set[str] = set()
+	invoice_parent_rows = frappe.get_all(
+		"Sales Invoice Item",
+		filters={"sales_order": ["in", sales_order_names]},
+		fields=["parent"],
+		distinct=True,
+		order_by="parent asc",
+		limit_page_length=5000,
+	)
+	invoice_parent_names.update(row["parent"] for row in invoice_parent_rows)
+
+	if delivery_names:
+		delivery_link_rows = frappe.get_all(
+			"Sales Invoice Item",
+			filters={"delivery_note": ["in", delivery_names]},
+			fields=["parent"],
+			distinct=True,
+			order_by="parent asc",
+			limit_page_length=5000,
+		)
+		invoice_parent_names.update(row["parent"] for row in delivery_link_rows)
+
+	invoice_names: list[str] = []
+	if invoice_parent_names:
+		invoice_rows = frappe.get_list(
+			"Sales Invoice",
+			fields=["name"],
+			filters={"name": ["in", sorted(invoice_parent_names)], "docstatus": ["!=", 2], "is_return": ["!=", 1]},
+			order_by="posting_date desc, creation desc",
+			limit_page_length=5000,
+		)
+		invoice_names = [row["name"] for row in invoice_rows]
+
+	return {
+		"sales_order_names": sales_order_names,
+		"delivery_names": delivery_names,
+		"invoice_names": invoice_names,
+		"scope_note": "Commercial chain scope applied through owned or team-linked sales orders and their downstream documents.",
+	}
+
+
+def _scoped_sales_chain_invoice_names(scope: dict[str, object]) -> tuple[list[str] | None, str]:
+	chain = _sales_chain_scope_cache(scope)
+	return chain.get("invoice_names"), str(chain.get("scope_note") or "")
+
+
+def _scoped_sales_chain_delivery_names(scope: dict[str, object]) -> tuple[list[str] | None, str]:
+	chain = _sales_chain_scope_cache(scope)
+	return chain.get("delivery_names"), str(chain.get("scope_note") or "")
 
 
 def _resolve_branch(employee_record: dict[str, object] | None = None) -> str | None:
@@ -1241,12 +1372,20 @@ def _apply_scope_filters(
 	doctype: str,
 	filters: list[list[object]],
 	scope: dict[str, object],
+	approval_visibility: bool = False,
 ) -> tuple[list[list[object]], str]:
 	scoped_filters = list(filters)
 	branch_name = scope.get("branch_name")
 	owner_user_ids = list(scope.get("owner_user_ids") or [])
+	scope_mode = scope.get("scope_mode")
 
 	fields = _fieldnames(doctype)
+	if approval_visibility and scope_mode in {"team_review_scope", "executive_review_scope"}:
+		if branch_name and scope.get("apply_branch_filter") and "branch" in fields:
+			scoped_filters.append(["branch", "=", branch_name])
+			return scoped_filters, f"Approval visibility uses manager or executive scope with branch context: {branch_name}."
+		return scoped_filters, "Approval visibility uses manager or executive scope without ownership restriction."
+
 	if owner_user_ids and "owner" in fields and doctype in {"Quotation", "Sales Order", "Opportunity", "Lead"}:
 		scoped_filters.append(["owner", "in", owner_user_ids])
 
@@ -1730,9 +1869,15 @@ def _resolve_commercial_chain(
 	elif doctype == "Sales Order":
 		sales_order_names.add(anchor["name"])
 	elif doctype == "Delivery Note":
-		delivery_names.add(anchor["name"])
+		if _is_return_document(anchor) and anchor.get("return_against"):
+			delivery_names.add(str(anchor.get("return_against")))
+		else:
+			delivery_names.add(anchor["name"])
 	elif doctype == "Sales Invoice":
-		sales_invoice_names.add(anchor["name"])
+		if _is_return_document(anchor) and anchor.get("return_against"):
+			sales_invoice_names.add(str(anchor.get("return_against")))
+		else:
+			sales_invoice_names.add(anchor["name"])
 
 	if doctype == "Customer":
 		quotation_names.update(_recent_doc_names("Quotation", customer_name, limit=5))
@@ -1761,18 +1906,26 @@ def _resolve_commercial_chain(
 
 	quotation_docs = _load_documents("Quotation", list(quotation_names), order_date_field="transaction_date")
 	sales_order_docs = _load_documents("Sales Order", list(sales_order_names), order_date_field="transaction_date")
-	delivery_docs = _load_documents("Delivery Note", list(delivery_names), order_date_field="posting_date")
-	sales_invoice_docs = _load_documents("Sales Invoice", list(sales_invoice_names), order_date_field="posting_date")
+	delivery_docs = _filter_normal_chain_documents(
+		_load_documents("Delivery Note", list(delivery_names), order_date_field="posting_date")
+	)
+	sales_invoice_docs = _filter_normal_chain_documents(
+		_load_documents("Sales Invoice", list(sales_invoice_names), order_date_field="posting_date")
+	)
 	return quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs
 
 
 def _recent_doc_names(doctype: str, customer_name: str | None, limit: int = 5) -> list[str]:
 	if not customer_name or not _can_read(doctype) or "customer" not in _fieldnames(doctype):
 		return []
+	filters = {"customer": customer_name}
+	fields = _fieldnames(doctype)
+	if doctype in {"Sales Invoice", "Delivery Note"} and "is_return" in fields:
+		filters["is_return"] = ["!=", 1]
 	rows = frappe.get_list(
 		doctype,
 		fields=["name"],
-		filters={"customer": customer_name},
+		filters=filters,
 		order_by="modified desc",
 		page_length=limit,
 	)
@@ -1926,6 +2079,18 @@ def _load_documents(doctype: str, names: list[str], order_date_field: str | None
 	return rows
 
 
+def _is_return_document(doc: dict[str, object]) -> bool:
+	return (
+		doc.get("is_return") in (1, "1", True)
+		or bool(doc.get("return_against"))
+		or str(doc.get("status") or "").strip().lower() == "return"
+	)
+
+
+def _filter_normal_chain_documents(docs: list[dict[str, object]]) -> list[dict[str, object]]:
+	return [doc for doc in docs if not _is_return_document(doc)]
+
+
 def _resolve_payment_entries(
 	sales_invoice_docs: list[dict[str, object]],
 	sales_order_docs: list[dict[str, object]],
@@ -1973,13 +2138,16 @@ def _resolve_return_documents(
 	returns: list[dict[str, object]] = []
 	invoice_names = [doc.get("name") for doc in sales_invoice_docs if doc.get("name")]
 	delivery_names = [doc.get("name") for doc in delivery_docs if doc.get("name")]
+	allow_customer_scope = str(anchor.get("doctype") or "") == "Customer"
 
 	if _can_read("Sales Invoice") and "is_return" in _fieldnames("Sales Invoice"):
 		filters = {"is_return": 1}
 		if invoice_names and "return_against" in _fieldnames("Sales Invoice"):
 			filters["return_against"] = ["in", invoice_names]
-		elif customer_name and "customer" in _fieldnames("Sales Invoice"):
+		elif allow_customer_scope and customer_name and "customer" in _fieldnames("Sales Invoice"):
 			filters["customer"] = customer_name
+		else:
+			filters["name"] = "__erpw_no_match__"
 		rows = frappe.get_list(
 			"Sales Invoice",
 			fields=[field for field in ["name", "customer", "status", "posting_date", "return_against"] if field in _fieldnames("Sales Invoice")],
@@ -1995,8 +2163,10 @@ def _resolve_return_documents(
 		filters = {"is_return": 1}
 		if delivery_names and "return_against" in _fieldnames("Delivery Note"):
 			filters["return_against"] = ["in", delivery_names]
-		elif customer_name and "customer" in _fieldnames("Delivery Note"):
+		elif allow_customer_scope and customer_name and "customer" in _fieldnames("Delivery Note"):
 			filters["customer"] = customer_name
+		else:
+			filters["name"] = "__erpw_no_match__"
 		rows = frappe.get_list(
 			"Delivery Note",
 			fields=[field for field in ["name", "customer", "status", "posting_date", "return_against"] if field in _fieldnames("Delivery Note")],
@@ -2074,7 +2244,12 @@ def _build_customer_summary(
 
 def _latest_doc_reference(doctype: str, docs: list[dict[str, object]]) -> dict[str, object]:
 	if not docs:
-		return {"doctype": doctype, "state": "not_available", "name": None, "status": None}
+		return {
+			"doctype": doctype,
+			"state": "not_available",
+			"name": _latest_doc_absence_text(doctype),
+			"status": None,
+		}
 	doc = docs[0]
 	return {
 		"doctype": doctype,
@@ -2082,6 +2257,16 @@ def _latest_doc_reference(doctype: str, docs: list[dict[str, object]]) -> dict[s
 		"name": doc.get("name"),
 		"status": _document_status_label(doc),
 	}
+
+
+def _latest_doc_absence_text(doctype: str) -> str:
+	labels = {
+		"Quotation": "No quotation linked to this chain",
+		"Sales Order": "No sales order linked to this chain",
+		"Sales Invoice": "No invoice linked to this chain",
+	}
+	return labels.get(doctype, "No linked record in this chain")
+
 
 
 def _build_document_flow(
@@ -2099,7 +2284,7 @@ def _build_document_flow(
 		_flow_stage("Delivery", delivery_docs, _infer_flow_state("Delivery", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
 		_flow_stage("Sales Invoice", sales_invoice_docs, _infer_flow_state("Sales Invoice", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
 		_build_payment_flow_stage(sales_invoice_docs, payment_entries),
-		_flow_stage("Return", return_docs, _infer_flow_state("Return", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
+		_flow_stage("Sales Return", return_docs, _infer_flow_state("Sales Return", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
 	]
 
 
@@ -2107,15 +2292,54 @@ def _flow_stage(label: str, docs: list[dict[str, object]], state: str) -> dict[s
 	return {
 		"label": label,
 		"state": state,
+		"empty_text": _flow_stage_empty_text(label, state),
 		"items": [
 			{
 				"doctype": doc.get("doctype") or label,
 				"name": doc.get("name"),
-				"status": _document_status_label(doc),
+				"status": _sales_return_stage_item_status(doc) if label == "Sales Return" else _document_status_label(doc),
 			}
 			for doc in docs[:5]
 		],
 	}
+
+
+def _flow_stage_empty_text(label: str, state: str) -> str:
+	stage_defaults = {
+		"Quotation": "No quotation linked to this chain",
+		"Sales Order": "No sales order linked to this chain",
+		"Delivery": "No delivery linked to this chain",
+		"Sales Invoice": "No invoice linked to this chain",
+		"Sales Return": "No sales return linked to this chain",
+		"Payment": "No payment activity linked to this chain",
+	}
+	if label == "Quotation" and state == "not_yet_created":
+		return "Quotation has not been created in this chain yet"
+	if label == "Sales Order" and state == "not_yet_created":
+		return "Sales order has not been created in this chain yet"
+	if label == "Delivery" and state == "not_yet_created":
+		return "Delivery has not been created in this chain yet"
+	if label == "Sales Invoice" and state == "not_yet_created":
+		return "Invoice has not been created in this chain yet"
+	if label == "Sales Return" and state == "not_applicable":
+		return "Sales return becomes relevant after delivery or invoicing"
+	if label == "Payment" and state == "not_applicable":
+		return "Payment becomes relevant after invoicing"
+	if state == "unknown":
+		return f"{label} visibility is limited in this chain"
+	return stage_defaults.get(label, "No linked record in this chain")
+
+
+
+def _sales_return_stage_item_status(doc: dict[str, object]) -> str:
+	return_against = str(doc.get("return_against") or "").strip()
+	if return_against:
+		return f"Against {return_against}"
+	if doc.get("doctype") == "Sales Invoice":
+		return "Return Invoice"
+	if doc.get("doctype") == "Delivery Note":
+		return "Return Delivery"
+	return _document_status_label(doc)
 
 
 def _build_payment_flow_stage(
@@ -2123,9 +2347,7 @@ def _build_payment_flow_stage(
 	payment_entries: list[dict[str, object]],
 ) -> dict[str, object]:
 	state, item_name, item_status = _payment_flow_descriptor(sales_invoice_docs, payment_entries)
-	stage = _flow_stage("Payment", payment_entries, state)
-	if stage["items"]:
-		return stage
+	stage = _flow_stage("Payment", [], state)
 	stage["items"] = [{
 		"doctype": "Payment",
 		"name": item_name,
@@ -2150,7 +2372,7 @@ def _infer_flow_state(
 		"Delivery": delivery_docs,
 		"Sales Invoice": sales_invoice_docs,
 		"Payment": payment_entries,
-		"Return": return_docs,
+		"Sales Return": return_docs,
 	}.get(stage, [])
 	if stage_docs:
 		return "present"
@@ -2188,10 +2410,10 @@ def _infer_flow_state(
 			return "not_yet_created"
 		return "not_applicable"
 
-	if stage == "Return":
+	if stage == "Sales Return":
 		if delivery_docs or sales_invoice_docs:
-			return "not_applicable"
-		return "not_used"
+			return "not_used"
+		return "not_applicable"
 
 	return "unknown"
 
@@ -2227,7 +2449,7 @@ def _build_current_status(
 			"value": _payment_summary(sales_invoice_docs, payment_entries),
 		},
 		{
-			"label": "Return",
+			"label": "Sales Return",
 			"value": _return_summary(return_docs),
 		},
 		{
@@ -2263,76 +2485,78 @@ def _invoice_summary(sales_invoice_docs: list[dict[str, object]]) -> str:
 
 
 def _payment_summary(sales_invoice_docs: list[dict[str, object]], payment_entries: list[dict[str, object]]) -> str:
-	if payment_entries:
-		return f"{len(payment_entries)} payment entry record(s) linked"
-	if not sales_invoice_docs:
-		return "Payment not yet applicable without invoice"
-	cancelled = [
-		doc for doc in sales_invoice_docs
-		if str(_document_status_label(doc) or "").lower() == "cancelled"
-	]
-	if cancelled and len(cancelled) == len(sales_invoice_docs):
-		return "Cancelled invoices do not require payment follow-up"
-	returned = [
-		doc for doc in sales_invoice_docs
-		if (doc.get("is_return") in (1, "1", True)) or str(doc.get("status") or "").lower() == "return"
-	]
-	if returned and len(returned) == len(sales_invoice_docs):
-		return "Return invoices require credit or refund settlement review"
-	paid = [
-		doc for doc in sales_invoice_docs
-		if (doc.get("outstanding_amount") in (0, 0.0, None, "")) or str(doc.get("status") or "").lower() == "paid"
-	]
-	if paid and len(paid) == len(sales_invoice_docs):
-		return "Invoices appear fully settled"
-	if paid:
-		return "Invoices are partly settled"
-	return "Invoices still need payment or settlement follow-up"
+	_state, item_name, item_status = _payment_flow_descriptor(sales_invoice_docs, payment_entries)
+	if item_status:
+		return f"{item_name}; {item_status}"
+	return item_name
+
+
+def _payment_progress_percent(sales_invoice_docs: list[dict[str, object]]) -> int | None:
+	total = 0.0
+	outstanding = 0.0
+	for doc in sales_invoice_docs:
+		try:
+			total += float(doc.get("grand_total") or 0)
+		except (TypeError, ValueError):
+			pass
+		try:
+			outstanding += max(float(doc.get("outstanding_amount") or 0), 0.0)
+		except (TypeError, ValueError):
+			pass
+	if total <= 0:
+		return None
+	settled = max(total - outstanding, 0.0)
+	return int(round((settled / total) * 100))
+
+
+
+def _payment_follow_up_note(sales_invoice_docs: list[dict[str, object]]) -> str:
+	statuses = [str(doc.get("status") or "").lower() for doc in sales_invoice_docs]
+	if any("overdue" in status for status in statuses):
+		return "Invoice remains overdue"
+	if any("unpaid" in status for status in statuses):
+		return "Invoice remains unpaid"
+	return "Invoice still has an open balance"
+
 
 
 def _payment_flow_descriptor(
 	sales_invoice_docs: list[dict[str, object]],
 	payment_entries: list[dict[str, object]],
 ) -> tuple[str, str, str]:
-	if payment_entries:
-		return ("present", "Visible payment entry in this chain", "")
 	if not sales_invoice_docs:
-		return ("not_applicable", "None visible in this chain", "")
+		return ("not_applicable", "Payment not applicable yet", "No invoice linked in this chain")
 	cancelled = [
 		doc for doc in sales_invoice_docs
 		if str(_document_status_label(doc) or "").lower() == "cancelled"
 	]
 	if cancelled and len(cancelled) == len(sales_invoice_docs):
-		return ("not_applicable", "Cancelled invoices do not require payment follow-up", "")
+		return ("not_applicable", "Settlement not required", "Cancelled invoices do not require payment follow-up")
 	returned = [
 		doc for doc in sales_invoice_docs
 		if (doc.get("is_return") in (1, "1", True)) or str(doc.get("status") or "").lower() == "return"
 	]
 	if returned and len(returned) == len(sales_invoice_docs):
-		return ("not_applicable", "Return invoices require credit or refund settlement review", "")
+		return ("not_applicable", "Settlement handled through return review", "Return invoices require credit or refund settlement review")
+	progress_percent = _payment_progress_percent(sales_invoice_docs)
 	paid = [
 		doc for doc in sales_invoice_docs
 		if (doc.get("outstanding_amount") in (0, 0.0, None, "")) or str(doc.get("status") or "").lower() == "paid"
 	]
-	payment_scope_available = _can_read("Payment Entry") and _doctype_exists("Payment Entry Reference")
 	if paid and len(paid) == len(sales_invoice_docs):
-		if payment_scope_available:
-			return ("settled", "Settlement reflected on invoice status", "")
-		return ("settled", "Detailed payment records are outside current read scope", "")
-	if paid:
-		if payment_scope_available:
-			return ("partly_settled", "Settlement is partially reflected on invoice status", "")
-		return ("partly_settled", "Detailed payment records are outside current read scope", "")
-	if payment_scope_available:
-		return ("follow_up", "No linked payment record is visible in this chain", "")
-	return ("follow_up", "Detailed payment records are outside current read scope", "")
+		detail = f"{len(payment_entries)} payment record(s) linked" if payment_entries else "Invoice balance is fully settled"
+		return ("settled", "Fully settled", detail)
+	if progress_percent and progress_percent > 0:
+		detail = f"{len(payment_entries)} payment record(s) linked" if payment_entries else "Invoice still has balance outstanding"
+		return ("partly_settled", f"{progress_percent}% settled", detail)
+	return ("follow_up", "Payment follow-up required", _payment_follow_up_note(sales_invoice_docs))
 
 
 def _return_summary(return_docs: list[dict[str, object]]) -> str:
 	if not return_docs:
-		return "No active return is linked in this chain"
+		return "No active sales return is linked in this chain"
 	latest = return_docs[0]
-	return f"{len(return_docs)} return record(s); latest: {latest.get('doctype')} {latest.get('name')}"
+	return f"{len(return_docs)} sales return record(s); latest: {latest.get('doctype')} {latest.get('name')}"
 
 
 def _approval_summary(
@@ -2379,7 +2603,7 @@ def _build_inquiry_exceptions(
 	if return_docs:
 		exceptions.append({
 			"severity": "review",
-			"label": "Return activity",
+			"label": "Sales return activity",
 			"detail": f"{len(return_docs)} return-related record(s) are linked to this chain.",
 		})
 
@@ -2397,10 +2621,11 @@ def _build_related_documents(
 ) -> list[dict[str, object]]:
 	seen: set[tuple[str, str]] = set()
 	related = []
-	for doc in [anchor, *quotation_docs, *sales_order_docs, *delivery_docs, *sales_invoice_docs, *payment_entries, *return_docs]:
+	anchor_key = (anchor.get("doctype"), anchor.get("name"))
+	for doc in [*quotation_docs, *sales_order_docs, *delivery_docs, *sales_invoice_docs, *payment_entries, *return_docs]:
 		doctype = doc.get("doctype")
 		name = doc.get("name")
-		if not doctype or not name or (doctype, name) in seen:
+		if not doctype or not name or (doctype, name) == anchor_key or (doctype, name) in seen:
 			continue
 		seen.add((doctype, name))
 		related.append({
@@ -2474,7 +2699,7 @@ def _fallback_summary_text(
 	status_map: dict[str, str],
 ) -> str:
 	parts = [f"{customer_label} is currently anchored on {anchor_label}."]
-	for label in ("Sales Order", "Delivery", "Invoice", "Payment", "Return"):
+	for label in ("Sales Order", "Delivery", "Invoice", "Payment", "Sales Return"):
 		value = str(status_map.get(label) or "").strip()
 		if value:
 			parts.append(f"{label}: {value}.")

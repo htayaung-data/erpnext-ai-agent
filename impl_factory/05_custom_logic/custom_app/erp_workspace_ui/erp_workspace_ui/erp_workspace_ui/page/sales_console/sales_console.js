@@ -6,6 +6,13 @@
   const INQUIRY_METHOD = "erp_workspace_ui.sales_console.service.resolve_customer_inquiry";
   const INQUIRY_SUGGEST_METHOD = "erp_workspace_ui.sales_console.service.suggest_customer_inquiry";
   const INQUIRY_AI_METHOD = "erp_workspace_ui.sales_console.service.generate_customer_inquiry_assist";
+  const consoleRuntime = window.erpWorkspaceConsoleRuntime || {};
+
+  function getConsoleRuntimeMethod(name) {
+    const method = consoleRuntime[name];
+    if (typeof method === "function") return method;
+    throw new Error(`Sales Console runtime is missing method: ${name}`);
+  }
 
   function ensureStyle() {
     if (document.getElementById("sales-console-shell-style")) return;
@@ -168,6 +175,7 @@
         color: #d4deea;
       }
       .sales-console-section {
+        position: relative;
         padding: 18px 20px 20px;
       }
       .sales-console-section-head {
@@ -191,6 +199,17 @@
         max-width: 250px;
         line-height: 1.45;
         white-space: normal;
+      }
+      .sales-console-section[data-section-key="work"] .sales-console-section-head,
+      .sales-console-section[data-section-key="lifecycle"] .sales-console-section-head,
+      .sales-console-section[data-section-key="approvals"] .sales-console-section-head,
+      .sales-console-section[data-section-key="reports"] .sales-console-section-head {
+        margin-bottom: 16px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #edf2f7;
+      }
+      .sales-console-section[data-section-key="approvals"] .sales-console-section-head {
+        border-bottom-color: #e5edf7;
       }
       .sales-console-action-groups {
         display: grid;
@@ -242,7 +261,6 @@
         background: #d7e0ea;
       }
       .sales-console-action:hover {
-        transform: translateY(-1px);
         border-color: rgba(255, 255, 255, 0.98);
         box-shadow: var(
           --erpw-shadow-card-hover,
@@ -945,6 +963,33 @@
       .sales-console-queue-grid[data-section-grid="approvals"] > [data-queue-key]:first-child {
         grid-column: 1 / -1;
       }
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-card {
+        align-items: center;
+      }
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-card.regular {
+        grid-template-columns: minmax(0, 1fr) 122px;
+        gap: 20px;
+        min-height: 122px;
+        padding: 22px 22px 20px;
+      }
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-card.regular .sales-console-queue-main {
+        padding: 0;
+      }
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-side,
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-priority-side {
+        min-width: 122px;
+        width: 122px;
+        padding: 12px 16px;
+      }
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-count {
+        font-size: 24px;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1, "lnum" 1;
+      }
+      .sales-console-queue-grid[data-section-grid="approvals"] .sales-console-queue-side-label {
+        min-width: 7ch;
+        text-align: center;
+      }
       .sales-console-queue-card {
         position: relative;
         overflow: hidden;
@@ -1001,10 +1046,10 @@
         );
       }
       .sales-console-queue-card.regular {
-        grid-template-columns: minmax(0, 1fr) 104px;
-        gap: 16px;
+        grid-template-columns: minmax(0, 1fr) 112px;
+        gap: 18px;
         align-items: stretch;
-        min-height: 96px;
+        min-height: 104px;
         box-shadow:
           inset 3px 0 0 #d8e0ea,
           var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
@@ -1012,6 +1057,26 @@
       .sales-console-queue-card.regular:hover {
         box-shadow:
           inset 4px 0 0 #c7d4e2,
+          var(--erpw-shadow-card-hover, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 30px rgba(15, 23, 42, 0.07));
+      }
+      .sales-console-queue-grid[data-section-grid="work"] .sales-console-queue-card.regular {
+        box-shadow:
+          inset 3px 0 0 #d0e1de,
+          var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
+      }
+      .sales-console-queue-grid[data-section-grid="work"] .sales-console-queue-card.regular:hover {
+        box-shadow:
+          inset 4px 0 0 #bdd8d2,
+          var(--erpw-shadow-card-hover, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 30px rgba(15, 23, 42, 0.07));
+      }
+      .sales-console-queue-grid[data-section-grid="lifecycle"] .sales-console-queue-card.regular {
+        box-shadow:
+          inset 3px 0 0 #d7e1ef,
+          var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
+      }
+      .sales-console-queue-grid[data-section-grid="lifecycle"] .sales-console-queue-card.regular:hover {
+        box-shadow:
+          inset 4px 0 0 #c7d6e8,
           var(--erpw-shadow-card-hover, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 30px rgba(15, 23, 42, 0.07));
       }
       .sales-console-queue-main {
@@ -1028,9 +1093,9 @@
         display: grid;
         justify-items: center;
         align-content: center;
-        gap: 4px;
-        min-width: 104px;
-        padding: 12px 14px;
+        gap: 5px;
+        min-width: 112px;
+        padding: 13px 16px;
         border-radius: 14px;
         border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
         background: var(--erpw-surface-panel, linear-gradient(135deg, #f8fafc 0%, #ffffff 100%));
@@ -1039,6 +1104,14 @@
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
           0 8px 18px rgba(15, 23, 42, 0.03)
         );
+      }
+      .sales-console-queue-grid[data-section-grid="work"] .sales-console-queue-side {
+        border-color: #dbe8e4;
+        background: #f7fbfb;
+      }
+      .sales-console-queue-grid[data-section-grid="lifecycle"] .sales-console-queue-side {
+        border-color: #dde6f0;
+        background: #f8fbfd;
       }
       .sales-console-queue-card.priority::before {
         content: "";
@@ -1109,6 +1182,8 @@
         line-height: 1;
         color: #0f172a;
         letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1, "lnum" 1;
       }
       .sales-console-queue-card.priority .sales-console-queue-count {
         font-size: 24px;
@@ -1167,21 +1242,22 @@
       .sales-console-report-links {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
+        gap: 12px;
       }
       .sales-console-link {
         position: relative;
         overflow: hidden;
         display: grid;
         grid-template-columns: 42px minmax(0, 1fr) auto;
-        align-items: start;
+        align-items: center;
         gap: 14px;
         width: 100%;
         text-align: left;
-        padding: 14px 16px;
+        padding: 15px 18px;
+        min-height: 96px;
         border-radius: 16px;
-        border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
-        background: var(--erpw-surface-elevated, #ffffff);
+        border: 1px solid #e6edf5;
+        background: #fcfdff;
         cursor: pointer;
         transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease, transform 120ms ease;
         min-width: 0;
@@ -1195,21 +1271,33 @@
         content: "";
         position: absolute;
         top: 0;
-        left: 16px;
-        width: 30px;
+        left: 18px;
+        width: 34px;
         height: 3px;
         border-radius: 999px;
-        background: linear-gradient(90deg, #a8d8d2 0%, #dff0ed 100%);
+        background: #c7e5de;
       }
       .sales-console-link:hover {
-        border-color: rgba(255, 255, 255, 0.98);
-        background: var(--erpw-surface-elevated, #ffffff);
-        transform: translateY(-1px);
+        border-color: #d8e3ee;
+        background: #ffffff;
         box-shadow: var(
           --erpw-shadow-card,
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
           0 10px 24px rgba(15, 23, 42, 0.04)
         );
+      }
+      .sales-console-action.is-pending,
+      .sales-console-queue-card.is-pending,
+      .sales-console-link.is-pending {
+        opacity: 0.74;
+        cursor: progress;
+        pointer-events: none;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 6px 14px rgba(15, 23, 42, 0.03);
+      }
+      .sales-console-action.is-pending .sales-console-action-meta,
+      .sales-console-queue-card.is-pending .sales-console-queue-meta,
+      .sales-console-link.is-pending .sales-console-link-meta {
+        color: #475569;
       }
       .sales-console-link-icon {
         display: inline-flex;
@@ -1244,10 +1332,13 @@
         color: #64748b;
       }
       .sales-console-link .sales-console-badge.review {
-        min-width: 62px;
-        border: 1px solid rgba(42, 56, 80, 0.16);
-        background: #ffffff;
+        min-width: 64px;
+        min-height: 32px;
+        padding: 0 12px;
+        border: 1px solid #d9e3ee;
+        background: #f8fbff;
         color: #2a3850;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset;
       }
       .sales-console-sidebar-guide {
         margin-top: 10px;
@@ -1485,80 +1576,37 @@
     executeTarget(groupTargets[key], fallback);
   }
 
-  function makeAction(config) {
-    const variantClass = config.primary ? "primary" : "secondary";
-    const $button = $(`
-      <button class="sales-console-action ${variantClass}" data-action-key="${escapeHtml(config.key)}" type="button">
-        <span class="sales-console-action-icon">${iconMarkup(config.icon || "square")}</span>
-        <span class="sales-console-action-copy">
-          <span class="sales-console-action-title">${escapeHtml(config.title)}</span>
-          <span class="sales-console-action-meta">${escapeHtml(config.meta)}</span>
-        </span>
-      </button>
-    `);
-    $button.on("click", (event) => {
+  function bindConsoleNavigationDelegates($root, pageState) {
+    if (!$root || !$root.length) return;
+
+    const actionFallbacks = {
+      new_quotation: () => frappe.new_doc("Quotation"),
+      new_sales_order: () => frappe.new_doc("Sales Order"),
+      open_customer: () => routeToList("Customer"),
+      new_opportunity: () => frappe.new_doc("Opportunity"),
+      open_item: () => routeToList("Item"),
+    };
+
+    $root.off(".salesConsoleActions");
+    $root.on("click.salesConsoleActions", "[data-action-key]", function (event) {
       event.preventDefault();
       event.stopPropagation();
-      if (typeof config.onClick === "function") config.onClick(event);
+      const key = this.getAttribute("data-action-key");
+      if (!key) return;
+      runNavigation(pageState, "actions", key, actionFallbacks[key]);
     });
-    return $button;
+  }
+
+  function makeAction(config) {
+    return getConsoleRuntimeMethod("makeAction")(config);
   }
 
   function makeQueueItem(config) {
-    const badgeClass = config.badgeClass || "pending";
-    const sideLabel = config.sideLabel || "Open";
-    if (config.priority) {
-      const $priority = $(`
-        <button class="sales-console-queue-card priority" data-queue-key="${escapeHtml(config.key)}" type="button">
-          <div class="sales-console-queue-priority-main">
-            <div class="sales-console-queue-kicker">Priority Queue</div>
-            <div class="sales-console-queue-topline">
-              <div class="sales-console-queue-title">${escapeHtml(config.title)}</div>
-              <span class="sales-console-badge ${badgeClass}" data-role="badge">Pending</span>
-            </div>
-            <div class="sales-console-queue-meta" data-role="meta">${escapeHtml(config.meta)}</div>
-          </div>
-          <div class="sales-console-queue-priority-side">
-            <div class="sales-console-queue-count" data-role="count">--</div>
-            <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
-          </div>
-        </button>
-      `);
-      $priority.on("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (typeof config.onClick === "function") config.onClick(event);
-      });
-      return $priority;
-    }
-    const $row = $(`
-      <button class="sales-console-queue-card regular" data-queue-key="${escapeHtml(config.key)}" type="button">
-        <div class="sales-console-queue-main">
-          <div class="sales-console-queue-title">${escapeHtml(config.title)}</div>
-          <div class="sales-console-queue-meta" data-role="meta">${escapeHtml(config.meta)}</div>
-        </div>
-        <div class="sales-console-queue-side">
-          <div class="sales-console-queue-count" data-role="count">--</div>
-          <div class="sales-console-queue-side-label">${escapeHtml(sideLabel)}</div>
-        </div>
-      </button>
-    `);
-    $row.on("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (typeof config.onClick === "function") config.onClick(event);
-    });
-    return $row;
+    return getConsoleRuntimeMethod("makeQueueItem")(config);
   }
 
   function makeInsightCard(config) {
-    return $(`
-      <button class="sales-console-kpi-card" data-insight-key="${escapeHtml(config.key)}" type="button">
-        <div class="sales-console-kpi-label">${escapeHtml(config.label)}</div>
-        <div class="sales-console-kpi-value" data-role="value">--</div>
-        <div class="sales-console-kpi-meta" data-role="meta">${escapeHtml(config.meta)}</div>
-      </button>
-    `);
+    return getConsoleRuntimeMethod("makeInsightCard")(config);
   }
 
   function applyHeaderContent($root, payload) {
@@ -1612,46 +1660,17 @@
   }
 
   function makeReportLink(key, title, meta, icon, onClick) {
-    const $row = $(`
-      <button class="sales-console-link" data-report-key="${escapeHtml(key)}" type="button">
-        <span class="sales-console-link-icon">${iconMarkup(icon || "chart")}</span>
-        <div class="sales-console-link-copy">
-          <div class="sales-console-link-title">${escapeHtml(title)}</div>
-          <div class="sales-console-link-meta">${escapeHtml(meta)}</div>
-        </div>
-        <span class="sales-console-badge review">Open</span>
-      </button>
-    `);
-    $row.on("click", onClick);
-    return $row;
+    return getConsoleRuntimeMethod("makeReportLink")(key, title, meta, icon, onClick);
   }
 
   function renderReportsSection($root, pageState, reportCards) {
-    const $reportLinks = $root.find(".sales-console-report-links");
-    $reportLinks.empty();
-
-    if (!Array.isArray(reportCards) || !reportCards.length) {
-      $root.find('[data-section="reports"]').hide();
-      return;
-    }
-
-    $root.find('[data-section="reports"]').show();
-
-    reportCards.forEach((card) => {
-      $reportLinks.append(
-        makeReportLink(
-          card.key,
-          card.title,
-          card.meta,
-          card.icon,
-          () => runNavigation(
-            pageState,
-            "reports",
-            card.key,
-            () => routeToReport(card.report_name)
-          )
-        )
-      );
+    return getConsoleRuntimeMethod("renderReportsSection")($root, reportCards, {
+      onSelect: (card) => runNavigation(
+        pageState,
+        "reports",
+        card.key,
+        () => routeToReport(card.report_name)
+      ),
     });
   }
 
@@ -1715,7 +1734,7 @@
     const latestDocsHtml = latestDocs.map((item) => `
       <div class="sales-console-inquiry-field">
         <div class="sales-console-inquiry-field-label">${escapeHtml(item.doctype || "Document")}</div>
-        <div class="sales-console-inquiry-field-value">${escapeHtml(item.name ? `${item.name}${item.status ? ` (${item.status})` : ""}` : "Not available")}</div>
+        <div class="sales-console-inquiry-field-value">${escapeHtml(item.name ? `${item.name}${item.status ? ` (${item.status})` : ""}` : latestDocEmptyText(item.doctype))}</div>
       </div>
     `).join("");
 
@@ -1726,12 +1745,12 @@
           <div class="sales-console-inquiry-stage-state">${escapeHtml(stageStateLabel(stage.state))}</div>
         </div>
         <div class="sales-console-inquiry-stage-items">
-          ${(Array.isArray(stage.items) && stage.items.length ? stage.items : [{ name: "None visible in this chain", status: "" }]).map((item) => `
+          ${(Array.isArray(stage.items) && stage.items.length ? stage.items : [{ name: stageEmptyText(stage), status: "" }]).map((item) => `
             <div class="sales-console-inquiry-stage-item">
               <div class="sales-console-inquiry-stage-item-head">
                 <span class="sales-console-inquiry-stage-doc">${escapeHtml(item.doctype || stage.label || "Record")}</span>
               </div>
-              <div class="sales-console-inquiry-stage-name">${escapeHtml(item.name || "None visible in this chain")}</div>
+              <div class="sales-console-inquiry-stage-name">${escapeHtml(item.name || stageEmptyText(stage))}</div>
               ${item.status ? `<div class="sales-console-inquiry-stage-meta">${escapeHtml(item.status)}</div>` : ""}
             </div>
           `).join("")}
@@ -1765,7 +1784,7 @@
             <div class="sales-console-related-card-meta">${escapeHtml(item.status || "Visible record")}</div>
           </button>
         `).join("")
-      : `<div class="sales-console-inquiry-placeholder">No related documents are visible in the current read scope.</div>`;
+      : `<div class="sales-console-inquiry-placeholder">No other linked records are visible in this chain.</div>`;
 
     $target.html(`
       <div class="sales-console-inquiry-block">
@@ -1841,6 +1860,36 @@
         name: this.getAttribute("data-related-name"),
       });
     });
+  }
+
+  function latestDocEmptyText(doctype) {
+    const labels = {
+      Quotation: "No quotation linked to this chain",
+      "Sales Order": "No sales order linked to this chain",
+      "Sales Invoice": "No invoice linked to this chain",
+    };
+    return labels[doctype] || "No linked record in this chain";
+  }
+
+  function stageEmptyText(stage) {
+    const label = stage && stage.label ? String(stage.label) : "Record";
+    const state = stage && stage.state ? String(stage.state) : "";
+    if (state === "unknown") return `${label} visibility is limited in this chain`;
+    if (label === "Quotation" && state === "not_yet_created") return "Quotation has not been created in this chain yet";
+    if (label === "Sales Order" && state === "not_yet_created") return "Sales order has not been created in this chain yet";
+    if (label === "Delivery" && state === "not_yet_created") return "Delivery has not been created in this chain yet";
+    if (label === "Sales Invoice" && state === "not_yet_created") return "Invoice has not been created in this chain yet";
+    if (label === "Sales Return" && state === "not_applicable") return "Sales return becomes relevant after delivery or invoicing";
+    if (label === "Payment" && state === "not_applicable") return "Payment becomes relevant after invoicing";
+    const defaults = {
+      Quotation: "No quotation linked to this chain",
+      "Sales Order": "No sales order linked to this chain",
+      Delivery: "No delivery linked to this chain",
+      "Sales Invoice": "No invoice linked to this chain",
+      Payment: "No payment activity linked to this chain",
+      "Sales Return": "No sales return linked to this chain",
+    };
+    return defaults[label] || "No linked record in this chain";
   }
 
   function renderInquiryChoices($target, result, runSearch) {
@@ -2213,238 +2262,39 @@
   }
 
   function iconMarkup(name) {
-    const icons = {
-      quotation: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 20h8"></path>
-          <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-        </svg>
-      `,
-      order: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="9" cy="19.5" r="1.35"></circle>
-          <circle cx="17" cy="19.5" r="1.35"></circle>
-          <path d="M3 4h2l2.4 10.2a1 1 0 0 0 1 .8h8.9a1 1 0 0 0 1-.76L20 8H7"></path>
-        </svg>
-      `,
-      customer: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20 21a8 8 0 0 0-16 0"></path>
-          <circle cx="12" cy="8" r="3.2"></circle>
-        </svg>
-      `,
-      opportunity: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 16l5.5-5.5 4 4L20 8"></path>
-          <path d="M14.5 8H20v5.5"></path>
-        </svg>
-      `,
-      item: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 3l7 4-7 4-7-4 7-4z"></path>
-          <path d="M5 7v10l7 4 7-4V7"></path>
-          <path d="M12 11v10"></path>
-        </svg>
-      `,
-      chart: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 20V10"></path>
-          <path d="M10 20V4"></path>
-          <path d="M16 20v-7"></path>
-          <path d="M22 20V8"></path>
-        </svg>
-      `,
-      guide: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="9"></circle>
-          <path d="M9.4 9a2.6 2.6 0 1 1 3.9 2.25c-.85.48-1.3.98-1.3 2"></path>
-          <circle cx="12" cy="17" r="1"></circle>
-        </svg>
-      `,
-      square: `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 5v14"></path>
-          <path d="M5 12h14"></path>
-        </svg>
-      `,
-    };
-
-    return icons[name] || icons.square;
+    return getConsoleRuntimeMethod("iconMarkup")(name);
   }
 
   function metricValueText(metric) {
-    if (!metric) return "--";
-    if (metric.state === "restricted") return "LOCK";
-    if (metric.state === "unavailable") return "N/A";
-    if (metric.value == null) return "--";
-    return String(metric.value);
+    return getConsoleRuntimeMethod("metricValueText")(metric);
   }
 
   function metricBadge(metric, key) {
-    if (key === "orders_blocked_by_approval") {
-      return { text: "Pending Approval", className: "blocker" };
-    }
-    if (!metric) {
-      return { text: "Pending", className: "pending" };
-    }
-    if (metric.state === "live") {
-      return { text: "Active", className: metric.badgeClass || "attention" };
-    }
-    if (metric.state === "restricted") {
-      return { text: "Restricted", className: "restricted" };
-    }
-    if (metric.state === "unavailable") {
-      return { text: "Unavailable", className: "pending" };
-    }
-    return { text: "Pending", className: "pending" };
+    return getConsoleRuntimeMethod("metricBadge")(metric, key);
   }
 
   function applyQueueMetric($root, key, metric) {
-    const $item = $root.find(`[data-queue-key="${key}"]`);
-    if (!$item.length) return;
-
-    const badge = metricBadge(metric, key);
-    $item.find('[data-role="count"]').text(metricValueText(metric));
-    $item.find('[data-role="badge"]')
-      .removeClass("attention blocker review pending restricted")
-      .addClass(badge.className)
-      .text(badge.text);
-
-    if (metric && metric.state !== "live" && metric.note) {
-      $item.find('[data-role="meta"]').text(metric.note);
-    }
+    return getConsoleRuntimeMethod("applyQueueMetric")($root, key, metric);
   }
 
   function applyInsightMetric($root, key, metric) {
-    const $card = $root.find(`[data-insight-key="${key}"]`);
-    if (!$card.length) return;
-
-    $card.find('[data-role="value"]').text(metricValueText(metric));
-    if (metric && metric.state !== "live" && metric.note) {
-      $card.find('[data-role="meta"]').text(metric.note);
-    }
+    return getConsoleRuntimeMethod("applyInsightMetric")($root, key, metric);
   }
 
   function hydrateKnownMetrics($root, payload) {
-    const queueSources = {
-      sales_orders_pending_fulfillment: (payload.work || {}).sales_orders_pending_fulfillment,
-      quotations_waiting_action: (payload.work || {}).quotations_waiting_action,
-      expiring_quotations: (payload.work || {}).expiring_quotations,
-      customer_follow_up_tasks: (payload.work || {}).customer_follow_up_tasks,
-      orders_due_soon: (payload.lifecycle || {}).orders_due_soon,
-      partially_delivered_orders: (payload.lifecycle || {}).partially_delivered_orders,
-      invoices_outstanding: (payload.lifecycle || {}).invoices_outstanding,
-      sales_returns_in_progress: (payload.lifecycle || {}).sales_returns_in_progress,
-      orders_blocked_by_approval: (payload.blockers || {}).orders_blocked_by_approval,
-      quotations_awaiting_approval: (payload.blockers || {}).quotations_awaiting_approval,
-    };
-
-    Object.entries(queueSources).forEach(([key, metric]) => {
-      if (metric) {
-        applyQueueMetric($root, key, metric);
-      }
-    });
-
-    const insightSources = {
-      awaiting_approval: (payload.insights || {}).awaiting_approval,
-      open_orders: (payload.insights || {}).open_orders,
-    };
-    Object.entries(insightSources).forEach(([key, metric]) => {
-      if (metric) {
-        applyInsightMetric($root, key, metric);
-      }
-    });
+    return getConsoleRuntimeMethod("hydrateKnownMetrics")($root, payload);
   }
 
   function reorderChildren($container, order, attributeName) {
-    if (!Array.isArray(order) || !order.length) return;
-
-    const children = $container.children().get();
-    const byKey = new Map(children.map(element => [element.getAttribute(attributeName), element]));
-
-    order.forEach(key => {
-      const element = byKey.get(key);
-      if (element) {
-        $container.append(element);
-      }
-    });
+    return getConsoleRuntimeMethod("reorderChildren")($container, order, attributeName);
   }
 
   function applyActionOrder($root, order) {
-    if (!Array.isArray(order) || !order.length) return;
-
-    const elements = $root.find("[data-action-key]").get();
-    const byKey = new Map(elements.map(element => [element.getAttribute("data-action-key"), element]));
-    const arranged = [];
-
-    order.forEach(key => {
-      const element = byKey.get(key);
-      if (element) {
-        arranged.push(element);
-        byKey.delete(key);
-      }
-    });
-
-    byKey.forEach(element => arranged.push(element));
-
-    const $primary = $root.find(".sales-console-action-strip.primary");
-    const $secondary = $root.find(".sales-console-action-strip.secondary");
-    $primary.empty();
-    $secondary.empty();
-
-    arranged.forEach((element, index) => {
-      if (index < 3) {
-        $primary.append(element);
-      } else {
-        $secondary.append(element);
-      }
-    });
+    return getConsoleRuntimeMethod("applyActionOrder")($root, order);
   }
 
   function rebalanceActionStrips($root) {
-    const $primary = $root.find(".sales-console-action-strip.primary");
-    const $secondary = $root.find(".sales-console-action-strip.secondary");
-    const $actions = $root.find("[data-action-key]");
-    if (!$actions.length) return;
-
-    const visible = [];
-    const hidden = [];
-
-    $actions.each((_, element) => {
-      if ($(element).css("display") === "none") {
-        hidden.push(element);
-      } else {
-        visible.push(element);
-      }
-    });
-
-    $primary.empty();
-    $secondary.empty();
-
-    visible.forEach((element, index) => {
-      if (index < 3) {
-        $primary.append(element);
-      } else {
-        $secondary.append(element);
-      }
-    });
-    hidden.forEach((element) => {
-      $secondary.append(element);
-    });
-
-    const primaryVisibleCount = Math.min(visible.length, 3);
-    const secondaryVisibleCount = Math.max(visible.length - 3, 0);
-
-    const primaryColumns = Math.max(primaryVisibleCount, 1);
-    $primary.css("grid-template-columns", `repeat(${primaryColumns}, minmax(0, 1fr))`);
-
-    if (secondaryVisibleCount > 0) {
-      const secondaryColumns = Math.min(Math.max(secondaryVisibleCount, 1), 2);
-      $secondary.css("grid-template-columns", `repeat(${secondaryColumns}, minmax(0, 1fr))`);
-      $secondary.removeAttr("hidden");
-    } else {
-      $secondary.attr("hidden", true);
-    }
+    return getConsoleRuntimeMethod("rebalanceActionStrips")($root);
   }
 
   function applyUiProfile($root, profile) {
@@ -2629,7 +2479,10 @@
       } catch (reportError) {
         $root.find('[data-section="reports"]').hide();
       }
+
+      $root.attr("data-erpw-console-bootstrap", "ready");
     } catch (error) {
+      $root.attr("data-erpw-console-bootstrap", "degraded");
       frappe.show_alert({
         message: __("Sales Console data is not available yet."),
         indicator: "orange",
@@ -2650,7 +2503,7 @@
     const detail = error && error.message ? String(error.message) : "Unexpected render error";
 
     $host.empty().append(`
-      <div class="sales-console-shell">
+      <div class="sales-console-shell" data-erpw-console-runtime="failed" data-erpw-console-bootstrap="failed">
         <section class="sales-console-card sales-console-section">
           <div class="sales-console-section-head">
             <h2 class="sales-console-section-title">Sales Console Unavailable</h2>
@@ -2682,7 +2535,7 @@
     const pageState = { payload: {} };
     const openGuide = () => showGuideDialog(pageState.payload);
 
-    const $root = $('<div class="sales-console-shell"></div>');
+    const $root = $('<div class="sales-console-shell" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="loading"></div>');
 
     const $header = $(`
       <section class="sales-console-card sales-console-header">
@@ -2726,7 +2579,7 @@
     );
 
     const $actionsSection = $(`
-      <section class="sales-console-card sales-console-section">
+      <section class="sales-console-card sales-console-section" data-section-key="actions">
         <div class="sales-console-section-head">
           <h2 class="sales-console-section-title">Quick Actions</h2>
           <div class="sales-console-section-note" data-section-note="actions">Daily entry points</div>
@@ -2939,8 +2792,8 @@
       }),
       makeQueueItem({
         key: "expiring_quotations",
-        title: "Open Quotations Nearing Expiry",
-        meta: "Open quotations at risk of slipping out of cycle.",
+        title: "Active Quotations Nearing Expiry",
+        meta: "Draft or open quotations at risk of slipping out of cycle.",
         badgeClass: "attention",
         sideLabel: "Due",
         onClick: () => runNavigation(
@@ -3018,10 +2871,10 @@
       }),
       makeQueueItem({
         key: "sales_returns_in_progress",
-        title: "Sales Returns In Progress",
-        meta: "Return situations still affecting customer communication.",
+        title: "Recent Sales Returns",
+        meta: "Recent customer return and credit-note records requiring awareness.",
         badgeClass: "attention",
-        sideLabel: "Active",
+        sideLabel: "Recent",
         onClick: () => runNavigation(
           pageState,
           "lifecycle",
@@ -3085,6 +2938,7 @@
     $body.append($inquirySection, $workSection, $lifecycleSection, $approvalsSection, $reportsSection);
     $root.append($header, $actionsSection, $body);
     $(page.body).empty().append($root);
+    bindConsoleNavigationDelegates($root, pageState);
 
     scheduleSidebarGuide(openGuide);
     loadBootstrap($root, pageState);
