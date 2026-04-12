@@ -2,10 +2,133 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from ai_assistant_ui.qwen_chat.compiler import _date_range_from_time_scope
 from ai_assistant_ui.qwen_chat.context.message_history import latest_display_preferences
-from ai_assistant_ui.qwen_chat.metadata import report_capability_ids, resolve_followup_report_switch
+from ai_assistant_ui.qwen_chat.metadata import (
+	get_composite_family_spec,
+	report_capability_ids,
+	resolve_followup_report_switch,
+)
 from ai_assistant_ui.qwen_chat.recovery_support import structured_governed_query_message
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key, get_metric_label
+
+
+def _clean_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _metric_phrase(metric_id: str) -> str:
+	value = _clean_text(metric_id)
+	if value == "average_order_value":
+		return "average order value"
+	if value == "average_invoice_value":
+		return "average invoice value"
+	return value.replace("_", " ")
+
+
+def _basis_context_phrase(basis: str) -> str:
+	value = _clean_text(basis)
+	if value == "sales_order":
+		return "sales orders"
+	if value == "sales_invoice":
+		return "sales invoices"
+	return value.replace("_", " ")
+
+
+def _time_scope_from_range(from_date: str, to_date: str, fallback: str = "") -> str:
+	start = _clean_text(from_date)
+	end = _clean_text(to_date)
+	if start and end:
+		for candidate in ("last_month", "current_fiscal_year_to_date", "last_year"):
+			candidate_start, candidate_end = _date_range_from_time_scope(candidate)
+			if candidate_start == start and candidate_end == end:
+				return candidate
+	return _clean_text(fallback)
+
+
+def _time_scope_phrase(time_scope: str) -> str:
+	value = _clean_text(time_scope)
+	if value == "last_month":
+		return "last month"
+	if value == "current_fiscal_year_to_date":
+		return "current fiscal year to date"
+	if value == "last_year":
+		return "last year"
+	return value.replace("_", " ")
+
+
+def _composite_secondary_metric_ids(
+	*,
+	composite_family_id: str,
+	requested_columns: List[str],
+	primary_metric_id: str,
+	fallback_secondary_metric_ids: List[str],
+) -> List[str]:
+	family_spec = get_composite_family_spec(composite_family_id)
+	metric_semantic_key_map = (
+		family_spec.get("metric_semantic_key_map")
+		if isinstance(family_spec.get("metric_semantic_key_map"), dict)
+		else {}
+	)
+
+	def _resolve_metric_id(value: str) -> str:
+		clean = _clean_text(value)
+		if not clean:
+			return ""
+		canonical = _clean_text(get_canonical_key(clean, dimension_or_metric="metric") or clean)
+		canonical_key = canonical.lower().replace(" ", "_")
+		for metric_id, semantic_keys in metric_semantic_key_map.items():
+			candidates = {
+				_clean_text(metric_id).lower().replace(" ", "_"),
+				*{
+					_clean_text(get_canonical_key(item, dimension_or_metric="metric") or item).lower().replace(" ", "_")
+					for item in (semantic_keys or [])
+					if _clean_text(item)
+				},
+			}
+			if canonical_key in candidates:
+				return _clean_text(metric_id)
+		return canonical_key
+
+	primary = _clean_text(primary_metric_id)
+	out: List[str] = []
+	for value in requested_columns:
+		clean = _resolve_metric_id(value)
+		if not clean or clean in {"entity", "entity_code", primary}:
+			continue
+		if clean not in out:
+			out.append(clean)
+	if out:
+		return out
+	for value in fallback_secondary_metric_ids:
+		clean = _resolve_metric_id(value)
+		if clean and clean != primary and clean not in out:
+			out.append(clean)
+	return out
+
+
+def _compile_composite_family_requery_message(
+	*,
+	composite_family_id: str,
+	composite_subject_alias: str,
+	composite_basis: str,
+	primary_metric_id: str,
+	secondary_metric_ids: List[str],
+	time_scope: str,
+	target_limit: int,
+) -> str:
+	family_spec = get_composite_family_spec(composite_family_id)
+	subject = _clean_text(composite_subject_alias) or _clean_text(family_spec.get("subject_alias_value")) or "item"
+	limit_phrase = f"top {target_limit}" if int(max(0, target_limit or 0)) > 0 else "top"
+	parts = [f"show {limit_phrase} {subject}s by {_metric_phrase(primary_metric_id)}"]
+	if composite_basis:
+		parts.append(f"for {_basis_context_phrase(composite_basis)}")
+	time_scope_phrase = _time_scope_phrase(time_scope)
+	if time_scope_phrase:
+		parts.append(time_scope_phrase)
+	if secondary_metric_ids:
+		parts.append("with " + " and ".join(_metric_phrase(metric_id) for metric_id in secondary_metric_ids))
+	return " ".join(part for part in parts if part).strip()
 
 
 def _compile_transaction_listing_requery_message(
@@ -38,8 +161,14 @@ def _compile_transaction_listing_requery_message(
 		parts.append(f'Use company "{company}".')
 	if requested_time_scope == "last_month":
 		parts.append("Use the last month date range.")
+	elif requested_time_scope == "last_year":
+		parts.append("Use the last year date range.")
 	elif requested_time_scope == "current_period":
 		parts.append("Use the current month to date.")
+	elif requested_time_scope == "current_fiscal_year_to_date":
+		parts.append("Use the current fiscal year to date range.")
+	elif requested_time_scope == "as_of_today":
+		parts.append("Use the current date context as of today.")
 	elif requested_time_scope == "all_period":
 		parts.append("Use the full available time range.")
 	elif preserve_prior_date_scope and from_date and to_date:
@@ -109,6 +238,18 @@ def compile_capability_requery_message(
 	preserve_rank_membership = bool(getattr(continuation_contract, "preserve_rank_membership", False))
 	preserve_rank_order = bool(getattr(continuation_contract, "preserve_rank_order", False))
 	preserve_prior_date_scope = bool(getattr(continuation_contract, "preserve_date_context", False))
+	source_composite_family_id = str(getattr(continuation_contract, "source_composite_family_id", "") or "").strip()
+	source_composite_subject_alias = str(getattr(continuation_contract, "source_composite_subject_alias", "") or "").strip()
+	source_composite_basis = str(getattr(continuation_contract, "source_composite_basis", "") or "").strip()
+	source_composite_primary_metric_id = str(
+		getattr(continuation_contract, "source_composite_primary_metric_id", "") or ""
+	).strip()
+	source_composite_secondary_metric_ids = [
+		str(value or "").strip()
+		for value in (getattr(continuation_contract, "source_composite_secondary_metric_ids", []) or [])
+		if str(value or "").strip()
+	]
+	source_composite_time_scope = str(getattr(continuation_contract, "source_composite_time_scope", "") or "").strip()
 	requested_columns = [
 		str(value or "").strip()
 		for value in (getattr(followup_resolution, "requested_columns", []) or [])
@@ -164,14 +305,57 @@ def compile_capability_requery_message(
 	time_phrase = ""
 	if requested_time_scope == "last_month":
 		time_phrase = " for last month"
+	elif requested_time_scope == "last_year":
+		time_phrase = " for last year"
 	elif requested_time_scope == "current_period":
 		time_phrase = " for the current month"
+	elif requested_time_scope == "current_fiscal_year_to_date":
+		time_phrase = " for the current fiscal year to date"
+	elif requested_time_scope == "as_of_today":
+		time_phrase = " as of today"
 	elif requested_time_scope == "all_period":
 		time_phrase = " for the full available time range"
 	elif preserve_prior_date_scope and report_date:
 		time_phrase = f" as of {report_date}"
 	elif preserve_prior_date_scope and from_date and to_date:
 		time_phrase = f" from {from_date} to {to_date}"
+	composite_time_scope = requested_time_scope or _time_scope_from_range(
+		from_date,
+		to_date,
+		fallback=source_composite_time_scope,
+	)
+	if source_composite_family_id and set(requested_modes).intersection(
+		{"sort_or_limit", "metric_refinement", "column_refinement", "time_scope_restatement"}
+	):
+		composite_primary_metric_target = (
+			target_metric
+			if "metric_refinement" in set(requested_modes)
+			else ""
+		)
+		composite_primary_metric_id = _clean_text(
+			composite_primary_metric_target
+			or source_composite_primary_metric_id
+			or preserved_metric_key
+			or getattr(continuation_contract, "source_metric_key", "")
+			or ""
+		)
+		composite_secondary_metric_ids = _composite_secondary_metric_ids(
+			composite_family_id=source_composite_family_id,
+			requested_columns=requested_columns or preserved_requested_columns,
+			primary_metric_id=composite_primary_metric_id,
+			fallback_secondary_metric_ids=source_composite_secondary_metric_ids,
+		)
+		composite_message = _compile_composite_family_requery_message(
+			composite_family_id=source_composite_family_id,
+			composite_subject_alias=source_composite_subject_alias,
+			composite_basis=source_composite_basis or str(filters.get("basis") or "").strip(),
+			primary_metric_id=composite_primary_metric_id,
+			secondary_metric_ids=composite_secondary_metric_ids,
+			time_scope=composite_time_scope,
+			target_limit=target_limit or preserved_limit,
+		)
+		if composite_message:
+			return composite_message
 	if (
 		source_family_id == "ranking_analytics"
 		and primary_metric_for_query
@@ -218,8 +402,14 @@ def compile_capability_requery_message(
 		parts.append(f'Use company "{company}".')
 	if requested_time_scope == "last_month":
 		parts.append("Use the last month date range.")
+	elif requested_time_scope == "last_year":
+		parts.append("Use the last year date range.")
 	elif requested_time_scope == "current_period":
 		parts.append("Use the current month to date.")
+	elif requested_time_scope == "current_fiscal_year_to_date":
+		parts.append("Use the current fiscal year to date range.")
+	elif requested_time_scope == "as_of_today":
+		parts.append("Use the current date context as of today.")
 	elif requested_time_scope == "all_period":
 		parts.append("Use the full available time range.")
 	elif preserve_prior_date_scope and from_date and to_date:

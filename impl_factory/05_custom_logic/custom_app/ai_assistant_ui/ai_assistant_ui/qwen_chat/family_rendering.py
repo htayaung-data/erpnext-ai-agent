@@ -84,12 +84,20 @@ def _amount_text(value: Any, currency: str = "", show_million: bool = False) -> 
 
 def _metric_label(metric_key: str, fallback: str = "Value") -> str:
 	key = _clean_text(metric_key).lower()
+	clean_fallback = _clean_text(fallback)
+	if clean_fallback and clean_fallback.lower() not in {"value", "primary metric"}:
+		if clean_fallback == clean_fallback.lower():
+			return clean_fallback.replace("_", " ").title()
+		return clean_fallback
 	return {
+		"revenue": "Revenue",
 		"sales_amount": "Sales Amount",
 		"gross_profit": "Gross Profit",
 		"gross_profit_percent": "Gross Profit %",
 		"buying_amount": "Buying Amount",
 		"quantity": "Quantity",
+		"average_order_value": "Average Order Value",
+		"average_invoice_value": "Average Invoice Value",
 		"outstanding_total": "Outstanding Amount",
 		"outstanding_amount": "Outstanding Amount",
 		"total_due": "Total Amount Due",
@@ -156,9 +164,21 @@ def _requested_columns(dimensions: Dict[str, Any], response_overrides: Dict[str,
 		values = override_values
 	else:
 		values = _clean_list(dimensions.get("requested_columns"))
+	column_alias_map = (
+		{
+			_clean_text(key).lower().replace(" ", "_"): _clean_text(value).lower().replace(" ", "_")
+			for key, value in (dimensions.get("requested_column_alias_map") or {}).items()
+			if _clean_text(key) and _clean_text(value)
+		}
+		if isinstance(dimensions.get("requested_column_alias_map"), dict)
+		else {}
+	)
 	normalized: List[str] = []
 	for value in values:
 		key = _clean_text(value).lower().replace(" ", "_")
+		if key in column_alias_map:
+			normalized.append(column_alias_map[key])
+			continue
 		if key in {"transaction_date", "posting_date"}:
 			normalized.append("posting_date")
 		elif key in {"customer", "supplier", "party", "party_name"}:
@@ -168,6 +188,18 @@ def _requested_columns(dimensions: Dict[str, Any], response_overrides: Dict[str,
 		else:
 			normalized.append(value)
 	return list(dict.fromkeys([value for value in normalized if _clean_text(value)]))
+
+
+def _suppress_summary_block(
+	dimensions: Dict[str, Any],
+	response_overrides: Dict[str, Any] | None,
+) -> bool:
+	if bool((response_overrides or {}).get("suppress_summary")):
+		return True
+	if bool(dimensions.get("suppress_summary_by_default")):
+		return True
+	projection_mode = _clean_text(dimensions.get("requested_projection_mode")).lower()
+	return projection_mode == "explicit_selection"
 
 
 def _preferred_metric_key(
@@ -483,20 +515,22 @@ def _ranking_blocks(
 		requested_columns=requested_columns,
 		show_million=show_million,
 	)
-	blocks = [
-		{
-			"block_type": "summary_table",
-			"title": "Summary",
-			"columns": ["Metric", "Value"],
-			"rows": [
-				[
-					_clean_text(item.get("label")),
-					_amount_text(item.get("amount"), show_million=show_million) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
-				]
-				for item in summary
-			],
-		},
-	]
+	blocks: List[Dict[str, Any]] = []
+	if summary and not _suppress_summary_block(dimensions, response_overrides):
+		blocks.append(
+			{
+				"block_type": "summary_table",
+				"title": "Summary",
+				"columns": ["Metric", "Value"],
+				"rows": [
+					[
+						_clean_text(item.get("label")),
+						_amount_text(item.get("amount"), show_million=show_million) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
+					]
+					for item in summary
+				],
+			}
+		)
 	if ranked_rows:
 		blocks.append(
 			{
@@ -559,20 +593,22 @@ def _inventory_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, 
 		rows = _clean_rows(sections.get("item_totals"))
 		entity_key = "item"
 	rows = rows[:10]
-	blocks = [
-		{
-			"block_type": "summary_table",
-			"title": "Summary",
-			"columns": ["Metric", "Value"],
-			"rows": [
-				[
-					_clean_text(item.get("label")),
-					_amount_text(item.get("amount")) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
-				]
-				for item in summary
-			],
-		}
-	]
+	blocks: List[Dict[str, Any]] = []
+	if summary and not _suppress_summary_block(dimensions, response_overrides):
+		blocks.append(
+			{
+				"block_type": "summary_table",
+				"title": "Summary",
+				"columns": ["Metric", "Value"],
+				"rows": [
+					[
+						_clean_text(item.get("label")),
+						_amount_text(item.get("amount")) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
+					]
+					for item in summary
+				],
+			}
+		)
 	if rows:
 		blocks.append(
 			{
@@ -614,20 +650,22 @@ def _product_blocks(
 	summary = _clean_rows(sections.get("summary"))
 	requested_columns = _requested_columns(dimensions, response_overrides)
 	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
-	blocks = [
-		{
-			"block_type": "summary_table",
-			"title": "Summary",
-			"columns": ["Metric", "Value"],
-			"rows": [
-				[
-					_clean_text(item.get("label")),
-					_amount_text(item.get("amount")) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
-				]
-				for item in summary
-			],
-		}
-	]
+	blocks: List[Dict[str, Any]] = []
+	if summary and not _suppress_summary_block(dimensions, response_overrides):
+		blocks.append(
+			{
+				"block_type": "summary_table",
+				"title": "Summary",
+				"columns": ["Metric", "Value"],
+				"rows": [
+					[
+						_clean_text(item.get("label")),
+						_amount_text(item.get("amount")) if item.get("amount") not in (None, "") else _clean_text(item.get("value")),
+					]
+					for item in summary
+				],
+			}
+		)
 	if product_rows:
 		if requested_columns:
 			table_headers, table_rows = _ranking_table_spec(

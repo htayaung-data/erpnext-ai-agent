@@ -113,6 +113,12 @@ def _family_narrative_prefers_rendered_response(
 ) -> bool:
 	clean_family = str(family_id or "").strip().lower()
 	policy = dict(response_policy or {}) if isinstance(response_policy, dict) else {}
+	if clean_family in {"ranking_analytics", "product_profitability"}:
+		if bool(policy.get("analysis_requested")):
+			return False
+		if bool(policy.get("implication_allowed")) or bool(policy.get("recommendation_allowed")):
+			return False
+		return True
 	if clean_family != "aging":
 		return False
 	if bool(policy.get("analysis_requested")):

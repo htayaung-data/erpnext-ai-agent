@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List
 
@@ -94,6 +95,13 @@ def _payload_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
 		"recommended_recovery_action": str(payload.get("recommended_recovery_action") or "").strip(),
 		"intent": dict(payload.get("intent") or {}),
 	}
+
+
+def _top_ranked_name_from_markdown(text: str) -> str:
+	match = re.search(r"^\|\s*1\s*\|\s*([^|]+?)\s*\|", str(text or ""), flags=re.MULTILINE)
+	if not match:
+		return ""
+	return str(match.group(1) or "").strip()
 
 
 def run_phase4_compiled_rollout_smoke() -> Dict[str, Any]:
@@ -885,3 +893,606 @@ def run_phase1_1_invoice_detail_delivery_trend_debug() -> Dict[str, Any]:
 		}
 
 	return service_module._run_phase55_smoke_session("Phase 1.1 Invoice Detail Delivery Trend Debug", _runner)
+
+
+def run_phase3_2_projection_followup_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	doc.title = "Phase3.2 Projection Followup Debug"
+	doc.insert(ignore_permissions=False)
+	try:
+		ok, first_payload = service_module.handle_qwen_user_message(
+			session_name=doc.name,
+			message="show top 5 customers by revenue for sales orders last month",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase3.2 projection debug failed on first composite turn.")
+		session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+		latest_grounded_turn = service_module._latest_grounded_turn_contract(session_doc)
+		latest_family_artifact = service_module._latest_normalized_family_artifact(session_doc)
+		latest_assistant_payload = service_module._latest_assistant_payload(session_doc)
+		recent_messages = service_module._recent_messages(session_doc, limit=6)
+		request_id = f"phase3-2-projection-debug-{int(time.time() * 1000)}"
+		defer_runtime_value_frontdoor, semantic_result = service_module._artifact_local_refinement_should_defer_runtime_frontdoor(
+			request_id=request_id,
+			session_id=doc.name,
+			user_id="Administrator",
+			site_name=str(getattr(frappe.local, "site", "") or ""),
+			message="give me customer name and AOV column only",
+			recent_messages=recent_messages,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_family_artifact=latest_family_artifact,
+			latest_assistant_payload=latest_assistant_payload,
+		)
+		followup_resolution_payload: Dict[str, Any] = {}
+		continuation_payload: Dict[str, Any] = {}
+		requery_upgrade_payload: Dict[str, Any] = {}
+		if str(getattr(semantic_result, "status", "") or "").strip() == "accepted" and getattr(semantic_result, "intent", None) is not None:
+			followup_resolution = service_module.build_followup_resolution(
+				request_id=request_id,
+				message="give me customer name and AOV column only",
+				latest_grounded_turn_available=True,
+				latest_grounded_turn=latest_grounded_turn,
+				semantic_intent=semantic_result.intent,
+				allow_heuristic_fallback=False,
+				degraded_reason="",
+			)
+			followup_resolution_payload = followup_resolution.to_payload()
+			continuation_contract = service_module.build_artifact_continuation_contract(
+				request_id=request_id,
+				followup_resolution=followup_resolution,
+				grounded_turn=latest_grounded_turn,
+				artifact_payload=latest_family_artifact,
+			)
+			if continuation_contract is not None:
+				continuation_payload = continuation_contract.to_payload()
+				followup_resolution = service_module._authoritative_continuation_resolution(
+					request_id=request_id,
+					followup_resolution=followup_resolution,
+					continuation_contract=continuation_contract,
+					artifact_payload=latest_family_artifact,
+					grounded_turn=latest_grounded_turn,
+				)
+				followup_resolution_payload = followup_resolution.to_payload()
+				requery_upgrade, _ = service_module._requery_resolution_for_unsupported_local_columns(
+					request_id=request_id,
+					followup_resolution=followup_resolution,
+					artifact_payload=latest_family_artifact,
+					grounded_turn=latest_grounded_turn,
+					continuation_contract=continuation_contract,
+				)
+				if requery_upgrade is not None:
+					requery_upgrade_payload = requery_upgrade.to_payload()
+		frontdoor_semantic_result, frontdoor_contract, _frontdoor_render_result, frontdoor_answer = service_module.evaluate_frontdoor_lane(
+			request_id=request_id,
+			session_id=doc.name,
+			user_id="Administrator",
+			site_name=str(getattr(frappe.local, "site", "") or ""),
+			message="give me customer name and AOV column only",
+			recent_messages=recent_messages,
+			grounded_context_available=True,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_recovery_contract_available=False,
+			pre_frontdoor_reasoning_semantic_result=None,
+			defer_runtime_value_frontdoor=defer_runtime_value_frontdoor,
+			post_clarification_stop_acknowledgement=False,
+		)
+		ok, second_payload = service_module.handle_qwen_user_message(
+			session_name=doc.name,
+			message="give me customer name and AOV column only",
+			user="Administrator",
+		)
+		session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = _tool_payloads_from_session_doc(session_doc, parse_payload=service_module._parse_payload)
+		return {
+			"ok": bool(ok),
+			"session_name": doc.name,
+			"first_payload": dict(first_payload or {}),
+			"pre_frontdoor": {
+				"defer_runtime_value_frontdoor": defer_runtime_value_frontdoor,
+				"semantic_result": semantic_result.to_payload() if hasattr(semantic_result, "to_payload") else {},
+				"followup_resolution": followup_resolution_payload,
+				"continuation_contract": continuation_payload,
+				"requery_upgrade": requery_upgrade_payload,
+				"latest_grounded_turn": _payload_summary(latest_grounded_turn),
+				"latest_family_artifact": _payload_summary(latest_family_artifact),
+			},
+			"frontdoor_preview": {
+				"semantic_result": frontdoor_semantic_result.to_payload() if hasattr(frontdoor_semantic_result, "to_payload") else {},
+				"frontdoor_contract": frontdoor_contract.to_payload() if hasattr(frontdoor_contract, "to_payload") else {},
+				"frontdoor_answer": str(frontdoor_answer or "").strip(),
+			},
+			"actual_second_payload": dict(second_payload or {}),
+			"actual_second_answer": str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip(),
+			"tool_payload_type_tail": [
+				str(item.get("type") or "").strip()
+				for item in tool_payloads[-12:]
+				if isinstance(item, dict)
+			],
+		}
+	finally:
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+
+
+def run_phase3_3_ranking_projection_continuation_regression_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	doc.title = "Phase3.3 Ranking Projection Continuation Regression Debug"
+	doc.insert(ignore_permissions=False)
+	try:
+		conf = getattr(frappe, "conf", None) or {}
+		originals = {
+			flag_key: conf.get(flag_key),
+			percent_key: conf.get(percent_key),
+			users_key: conf.get(users_key),
+		}
+		presence = {
+			flag_key: flag_key in conf,
+			percent_key: percent_key in conf,
+			users_key: users_key in conf,
+		}
+		try:
+			conf[flag_key] = True
+			conf[percent_key] = 100
+			conf[users_key] = []
+			frappe.db.commit()
+			frappe.clear_cache()
+
+			customer_message = "show top 5 customers by revenue for sales orders last month"
+			ok_customer, customer_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=customer_message,
+				user="Administrator",
+			)
+			if not ok_customer:
+				raise RuntimeError("Phase3.3 regression failed on the customer ranking base turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			customer_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "| Rank | Customer |" not in customer_text or "Revenue" not in customer_text:
+				raise RuntimeError("Phase3.3 regression failed: base customer ranking did not render the minimal customer and revenue table.")
+			if "Average Order Value" in customer_text or "Quantity" in customer_text:
+				raise RuntimeError("Phase3.3 regression failed: base customer ranking exposed extra metrics without an explicit request.")
+			top_customer_name = _top_ranked_name_from_markdown(customer_text)
+
+			projection_message = "give me Customer, Revenue and AOV columns only"
+			ok_projection, projection_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=projection_message,
+				user="Administrator",
+			)
+			if not ok_projection:
+				raise RuntimeError("Phase3.3 regression failed on the projection refinement turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			projection_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "| Rank | Customer | Revenue | Average Order Value |" not in projection_text:
+				raise RuntimeError("Phase3.3 regression failed: projection refinement did not keep only the requested Customer, Revenue, and AOV columns.")
+			if "Summary" in projection_text:
+				raise RuntimeError("Phase3.3 regression failed: explicit projection refinement still leaked the summary block.")
+			if "Quantity" in projection_text:
+				raise RuntimeError("Phase3.3 regression failed: explicit projection refinement still leaked Quantity.")
+
+			time_message = "I mean last year, not last month"
+			ok_time, time_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=time_message,
+				user="Administrator",
+			)
+			if not ok_time:
+				raise RuntimeError("Phase3.3 regression failed on the time correction turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			time_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			tool_payloads = _tool_payloads_from_session_doc(session_doc, parse_payload=service_module._parse_payload)
+			time_request_id = str((time_payload or {}).get("request_id") or "").strip()
+			time_followup_resolution = _request_scoped_payload(
+				tool_payloads,
+				"qwen_followup_resolution",
+				time_request_id,
+				latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+			)
+			time_artifact = _request_scoped_payload(
+				tool_payloads,
+				"qwen_normalized_family_artifact_contract",
+				time_request_id,
+				latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+			)
+			time_period = time_artifact.get("period") if isinstance(time_artifact.get("period"), dict) else {}
+			if str(time_followup_resolution.get("requested_time_scope") or "").strip() != "last_year":
+				raise RuntimeError("Phase3.3 regression failed: time correction was not normalized to the governed last_year scope.")
+			if str(time_period.get("time_scope") or time_period.get("requested_time_scope") or "").strip() != "last_year":
+				raise RuntimeError("Phase3.3 regression failed: the refreshed artifact did not carry the corrected last_year period.")
+			if "2026-03-01 to 2026-03-31" in time_text:
+				raise RuntimeError("Phase3.3 regression failed: time correction still reused the prior March month window.")
+			if "Quantity" in time_text:
+				raise RuntimeError("Phase3.3 regression failed: time correction reintroduced Quantity even though the projection was explicitly narrowed.")
+			if "Average Order Value" not in time_text:
+				raise RuntimeError("Phase3.3 regression failed: time correction did not preserve the selected AOV projection.")
+
+			product_message = "show top 5 products by revenue last month"
+			ok_product, product_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=product_message,
+				user="Administrator",
+			)
+			if not ok_product:
+				raise RuntimeError("Phase3.3 regression failed on the product subject-switch turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			product_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "| Rank | Customer |" in product_text:
+				raise RuntimeError("Phase3.3 regression failed: product ranking still reused the prior customer artifact.")
+			if top_customer_name and top_customer_name in product_text:
+				raise RuntimeError("Phase3.3 regression failed: product ranking leaked the previous top customer into the new subject.")
+			if "| Rank | Product |" not in product_text and "| Rank | Item |" not in product_text:
+				raise RuntimeError("Phase3.3 regression failed: product subject switch did not render a product/item ranking table.")
+
+			return {
+				"ok": True,
+				"customer_turn": {
+					"mode": str((customer_payload or {}).get("mode") or "").strip(),
+					"engine": str((customer_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": top_customer_name,
+				},
+				"projection_turn": {
+					"mode": str((projection_payload or {}).get("mode") or "").strip(),
+					"engine": str((projection_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				},
+				"time_turn": {
+					"mode": str((time_payload or {}).get("mode") or "").strip(),
+					"engine": str((time_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"requested_time_scope": str(time_followup_resolution.get("requested_time_scope") or "").strip(),
+					"artifact_time_scope": str(time_period.get("time_scope") or time_period.get("requested_time_scope") or "").strip(),
+				},
+				"product_turn": {
+					"mode": str((product_payload or {}).get("mode") or "").strip(),
+					"engine": str((product_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": _top_ranked_name_from_markdown(product_text),
+				},
+			}
+		finally:
+			_restore_conf(conf, originals, presence)
+			frappe.db.commit()
+			frappe.clear_cache()
+	finally:
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+
+
+def run_phase3_3_product_quantity_projection_regression_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	base_doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	base_doc.title = "Phase3.3 Product Quantity Projection Regression Debug"
+	base_doc.insert(ignore_permissions=False)
+	direct_doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	direct_doc.title = "Phase3.3 Product Quantity Direct Regression Debug"
+	direct_doc.insert(ignore_permissions=False)
+	try:
+		try:
+			conf[flag_key] = True
+			conf[percent_key] = 100
+			conf[users_key] = []
+			frappe.db.commit()
+			frappe.clear_cache()
+
+			base_headers = {
+				"| Rank | Product | Revenue |",
+				"| Rank | Item | Revenue |",
+				"| Rank | Product | Sales Amount |",
+				"| Rank | Item | Sales Amount |",
+				"| Rank | Product | Selling Amount |",
+				"| Rank | Item | Selling Amount |",
+			}
+			qty_headers = {
+				"| Rank | Product | Revenue | Quantity |",
+				"| Rank | Product | Revenue (MMK) | Quantity |",
+				"| Rank | Item | Revenue | Quantity |",
+				"| Rank | Item | Revenue (MMK) | Quantity |",
+				"| Rank | Product | Sales Amount | Quantity |",
+				"| Rank | Item | Sales Amount | Quantity |",
+				"| Rank | Product | Selling Amount | Quantity |",
+				"| Rank | Item | Selling Amount | Quantity |",
+				"| Rank | Product | Revenue | Qty |",
+				"| Rank | Product | Revenue (MMK) | Qty |",
+				"| Rank | Item | Revenue | Qty |",
+				"| Rank | Item | Revenue (MMK) | Qty |",
+				"| Rank | Product | Sales Amount | Qty |",
+				"| Rank | Item | Sales Amount | Qty |",
+				"| Rank | Product | Selling Amount | Qty |",
+				"| Rank | Item | Selling Amount | Qty |",
+			}
+			failure_markers = {
+				"can't answer it safely",
+				"cannot safely add quantity",
+				"governed requery instead of local reshaping",
+				"current recommended recovery path",
+				"run_alternative_governed_query",
+			}
+
+			base_message = "show top 5 products by revenue last month"
+			ok_base, base_payload = service_module.handle_qwen_user_message(
+				session_name=base_doc.name,
+				message=base_message,
+				user="Administrator",
+			)
+			if not ok_base:
+				raise RuntimeError("Phase3.3 product regression failed on the base product ranking turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name)
+			base_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if not any(header in base_text for header in base_headers):
+				raise RuntimeError("Phase3.3 product regression failed: base product ranking did not render the minimal product and primary metric table.")
+			if "| Code |" in base_text:
+				raise RuntimeError("Phase3.3 product regression failed: base product ranking still exposed the legacy Code column.")
+			if "Quantity" in base_text or "Qty" in base_text:
+				raise RuntimeError("Phase3.3 product regression failed: base product ranking exposed quantity without an explicit request.")
+			if any(marker in base_text.lower() for marker in {"key highlight", "led all products", "total monthly sales amount"}):
+				raise RuntimeError("Phase3.3 product regression failed: base product ranking still used the legacy narrative template instead of the table-first response.")
+			top_product_name = _top_ranked_name_from_markdown(base_text)
+
+			followup_message = "include Qty column in the above table"
+			ok_followup, followup_payload = service_module.handle_qwen_user_message(
+				session_name=base_doc.name,
+				message=followup_message,
+				user="Administrator",
+			)
+			if not ok_followup:
+				raise RuntimeError("Phase3.3 product regression failed on the product quantity follow-up turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name)
+			followup_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if any(marker in followup_text.lower() for marker in failure_markers):
+				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up still hit the governed boundary fallback instead of the approved composite continuation path.")
+			if not any(header in followup_text for header in qty_headers):
+				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up did not render the requested Product, Revenue, and Quantity projection.")
+			if "| Code |" in followup_text:
+				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up reintroduced the legacy Code column.")
+			if "Summary" in followup_text:
+				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up leaked the summary block.")
+			if top_product_name and top_product_name not in followup_text:
+				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up did not preserve the ranked product scope.")
+
+			direct_message = "show top 5 products by revenue last month, show together with Qty column"
+			ok_direct, direct_payload = service_module.handle_qwen_user_message(
+				session_name=direct_doc.name,
+				message=direct_message,
+				user="Administrator",
+			)
+			if not ok_direct:
+				raise RuntimeError("Phase3.3 product regression failed on the direct product quantity turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, direct_doc.name)
+			direct_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if any(marker in direct_text.lower() for marker in failure_markers):
+				raise RuntimeError("Phase3.3 product regression failed: direct product quantity request still hit the governed boundary fallback instead of the approved composite frontdoor path.")
+			if not any(header in direct_text for header in qty_headers):
+				raise RuntimeError("Phase3.3 product regression failed: direct product quantity request did not render the requested Product, Revenue, and Quantity table.")
+			if "| Code |" in direct_text:
+				raise RuntimeError("Phase3.3 product regression failed: direct product quantity request exposed the legacy Code column.")
+			if "Summary" in direct_text:
+				raise RuntimeError("Phase3.3 product regression failed: direct product quantity request leaked the summary block.")
+
+			return {
+				"ok": True,
+				"base_turn": {
+					"mode": str((base_payload or {}).get("mode") or "").strip(),
+					"engine": str((base_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": top_product_name,
+				},
+				"followup_turn": {
+					"mode": str((followup_payload or {}).get("mode") or "").strip(),
+					"engine": str((followup_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				},
+				"direct_turn": {
+					"mode": str((direct_payload or {}).get("mode") or "").strip(),
+					"engine": str((direct_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": _top_ranked_name_from_markdown(direct_text),
+				},
+			}
+		finally:
+			_restore_conf(conf, originals, presence)
+			frappe.db.commit()
+			frappe.clear_cache()
+	finally:
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name, ignore_permissions=False)
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, direct_doc.name, ignore_permissions=False)
+
+
+def inspect_phase3_3_product_quantity_projection_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	base_doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	base_doc.title = "Phase3.3 Product Quantity Inspection"
+	base_doc.insert(ignore_permissions=False)
+	direct_doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	direct_doc.title = "Phase3.3 Product Quantity Direct Inspection"
+	direct_doc.insert(ignore_permissions=False)
+	try:
+		try:
+			conf[flag_key] = True
+			conf[percent_key] = 100
+			conf[users_key] = []
+			frappe.db.commit()
+			frappe.clear_cache()
+
+			ok_base, base_payload = service_module.handle_qwen_user_message(
+				session_name=base_doc.name,
+				message="show top 5 products by revenue last month",
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name)
+			base_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+
+			ok_followup, followup_payload = service_module.handle_qwen_user_message(
+				session_name=base_doc.name,
+				message="include Qty column in the above table",
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name)
+			followup_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+
+			ok_direct, direct_payload = service_module.handle_qwen_user_message(
+				session_name=direct_doc.name,
+				message="show top 5 products by revenue last month, show together with Qty column",
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, direct_doc.name)
+			direct_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+
+			return {
+				"ok": True,
+				"base": {
+					"ok": bool(ok_base),
+					"mode": str((base_payload or {}).get("mode") or "").strip(),
+					"engine": str((base_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"text": base_text,
+				},
+				"followup": {
+					"ok": bool(ok_followup),
+					"mode": str((followup_payload or {}).get("mode") or "").strip(),
+					"engine": str((followup_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"text": followup_text,
+				},
+				"direct": {
+					"ok": bool(ok_direct),
+					"mode": str((direct_payload or {}).get("mode") or "").strip(),
+					"engine": str((direct_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"text": direct_text,
+				},
+			}
+		finally:
+			_restore_conf(conf, originals, presence)
+			frappe.db.commit()
+			frappe.clear_cache()
+	finally:
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name, ignore_permissions=False)
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, direct_doc.name, ignore_permissions=False)
+
+
+def run_phase3_2_subject_switch_regression_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	doc.title = "Phase3.2 Subject Switch Regression Debug"
+	doc.insert(ignore_permissions=False)
+	try:
+		conf = getattr(frappe, "conf", None) or {}
+		originals = {
+			flag_key: conf.get(flag_key),
+			percent_key: conf.get(percent_key),
+			users_key: conf.get(users_key),
+		}
+		presence = {
+			flag_key: flag_key in conf,
+			percent_key: percent_key in conf,
+			users_key: users_key in conf,
+		}
+		try:
+			conf[flag_key] = True
+			conf[percent_key] = 100
+			conf[users_key] = []
+			frappe.db.commit()
+			frappe.clear_cache()
+
+			customer_message = "show top 5 customers by revenue for sales orders last month"
+			ok_customer, customer_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=customer_message,
+				user="Administrator",
+			)
+			if not ok_customer:
+				raise RuntimeError("Subject-switch regression failed on the customer composite turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			customer_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "| Rank | Customer |" not in customer_text or "Revenue" not in customer_text:
+				raise RuntimeError("Subject-switch regression failed: customer ranking did not render the minimal customer/revenue table.")
+			if "Average Order Value" in customer_text or "Quantity" in customer_text:
+				raise RuntimeError("Subject-switch regression failed: customer ranking exposed extra metrics without an explicit request.")
+			top_customer_name = _top_ranked_name_from_markdown(customer_text)
+
+			generic_product_message = "show top 5 products by revenue last month"
+			ok_generic_product, generic_product_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=generic_product_message,
+				user="Administrator",
+			)
+			if not ok_generic_product:
+				raise RuntimeError("Subject-switch regression failed on the generic product ranking turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			generic_product_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "| Rank | Customer |" in generic_product_text:
+				raise RuntimeError("Subject-switch regression failed: generic product ranking reused the prior customer artifact.")
+			if top_customer_name and top_customer_name in generic_product_text:
+				raise RuntimeError("Subject-switch regression failed: generic product ranking leaked the prior top customer into the new answer.")
+
+			explicit_product_message = "show top 5 products by revenue for sales orders last month"
+			ok_explicit_product, explicit_product_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=explicit_product_message,
+				user="Administrator",
+			)
+			if not ok_explicit_product:
+				raise RuntimeError("Subject-switch regression failed on the explicit product composite turn.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			explicit_product_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "| Rank | Product |" not in explicit_product_text or "Revenue" not in explicit_product_text:
+				raise RuntimeError("Subject-switch regression failed: explicit product composite did not render the product ranking table.")
+			top_product_name = _top_ranked_name_from_markdown(explicit_product_text)
+			if top_product_name and top_product_name not in generic_product_text:
+				raise RuntimeError("Subject-switch regression failed: generic product ranking did not align with the later explicit product ranking scope.")
+
+			return {
+				"ok": True,
+				"customer_turn": {
+					"mode": str((customer_payload or {}).get("mode") or "").strip(),
+					"engine": str((customer_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": top_customer_name,
+				},
+				"generic_product_turn": {
+					"mode": str((generic_product_payload or {}).get("mode") or "").strip(),
+					"engine": str((generic_product_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": _top_ranked_name_from_markdown(generic_product_text),
+				},
+				"explicit_product_turn": {
+					"mode": str((explicit_product_payload or {}).get("mode") or "").strip(),
+					"engine": str((explicit_product_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+					"top_name": top_product_name,
+				},
+			}
+		finally:
+			_restore_conf(conf, originals, presence)
+			frappe.db.commit()
+			frappe.clear_cache()
+	finally:
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)

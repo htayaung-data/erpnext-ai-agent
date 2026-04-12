@@ -1,0 +1,215 @@
+{
+  "contract_version": "1.0",
+  "status": "phase3_1_family_contracts_active",
+  "description": "Governed composite family registry for reusable composite business surfaces, supported variation axes, and family-level clarification policy.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_entity_grains": [
+    "customer",
+    "item"
+  ],
+  "allowed_time_scope_types": [
+    "period_required",
+    "as_of_date_required"
+  ],
+  "allowed_variation_axes": [
+    "basis",
+    "period",
+    "as_of_date",
+    "limit",
+    "primary_sort_metric",
+    "supporting_metrics",
+    "threshold_filter"
+  ],
+  "allowed_limit_policies": [
+    "top_n",
+    "threshold_match"
+  ],
+  "allowed_sort_directions": [
+    "asc",
+    "desc"
+  ],
+  "allowed_clarification_policies": [
+    "clarify_family_variation",
+    "clarify_scope"
+  ],
+  "families": [
+    {
+      "family_id": "customer_commercial_ranking",
+      "label": "Customer Commercial Ranking",
+      "owner": "commercial_ops",
+      "company_scope": [
+        "global"
+      ],
+      "subject_alias_value": "customer",
+      "local_followup_family_id": "ranking_analytics",
+      "default_basis_policy": "source_report_default_doc_type",
+      "default_basis_source_report": "Sales Analytics",
+      "metric_semantic_key_map": {
+        "revenue": [
+          "sales_amount"
+        ],
+        "quantity": [
+          "quantity"
+        ],
+        "average_order_value": [
+          "average_order_value"
+        ],
+        "average_invoice_value": [
+          "average_invoice_value"
+        ]
+      },
+      "entity_grain": "customer",
+      "time_scope_type": "period_required",
+      "supported_variation_axes": [
+        "basis",
+        "period",
+        "limit",
+        "primary_sort_metric",
+        "supporting_metrics"
+      ],
+      "supported_variation_values": {
+        "basis": [
+          "sales_order",
+          "sales_invoice"
+        ],
+        "primary_sort_metric": [
+          "revenue",
+          "quantity"
+        ],
+        "supporting_metrics": [
+          "quantity",
+          "average_order_value",
+          "average_invoice_value"
+        ]
+      },
+      "allowed_primary_metrics": [
+        "revenue",
+        "quantity"
+      ],
+      "allowed_secondary_metrics": [
+        "quantity",
+        "average_order_value",
+        "average_invoice_value"
+      ],
+      "default_sort_direction": "desc",
+      "default_limit_policy": "top_n",
+      "clarification_policy": "clarify_family_variation",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "family_id": "product_commercial_ranking",
+      "label": "Product Commercial Ranking",
+      "owner": "commercial_ops",
+      "company_scope": [
+        "global"
+      ],
+      "subject_alias_value": "product",
+      "local_followup_family_id": "ranking_analytics",
+      "default_basis_policy": "source_report_default_doc_type",
+      "default_basis_source_report": "Sales Analytics",
+      "metric_semantic_key_map": {
+        "revenue": [
+          "sales_amount"
+        ],
+        "quantity": [
+          "quantity"
+        ],
+        "average_selling_price": [
+          "average_selling_price"
+        ]
+      },
+      "entity_grain": "item",
+      "time_scope_type": "period_required",
+      "supported_variation_axes": [
+        "basis",
+        "period",
+        "limit",
+        "primary_sort_metric",
+        "supporting_metrics"
+      ],
+      "supported_variation_values": {
+        "basis": [
+          "sales_order",
+          "sales_invoice"
+        ],
+        "primary_sort_metric": [
+          "revenue",
+          "quantity"
+        ],
+        "supporting_metrics": [
+          "quantity",
+          "average_selling_price"
+        ]
+      },
+      "allowed_primary_metrics": [
+        "revenue",
+        "quantity"
+      ],
+      "allowed_secondary_metrics": [
+        "quantity",
+        "average_selling_price"
+      ],
+      "default_sort_direction": "desc",
+      "default_limit_policy": "top_n",
+      "clarification_policy": "clarify_family_variation",
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "family_id": "customer_credit_overdue_composite",
+      "label": "Customer Credit And Overdue Composite",
+      "owner": "finance",
+      "company_scope": [
+        "global"
+      ],
+      "subject_alias_value": "customer",
+      "entity_grain": "customer",
+      "time_scope_type": "as_of_date_required",
+      "supported_variation_axes": [
+        "as_of_date",
+        "limit",
+        "primary_sort_metric",
+        "supporting_metrics",
+        "threshold_filter"
+      ],
+      "supported_variation_values": {
+        "primary_sort_metric": [
+          "overdue_amount",
+          "overdue_ratio",
+          "credit_utilization"
+        ],
+        "supporting_metrics": [
+          "outstanding_amount",
+          "overdue_ratio",
+          "credit_utilization"
+        ],
+        "threshold_filter": [
+          "overdue_only",
+          "limit_exceeded"
+        ]
+      },
+      "allowed_primary_metrics": [
+        "overdue_amount",
+        "overdue_ratio",
+        "credit_utilization"
+      ],
+      "allowed_secondary_metrics": [
+        "outstanding_amount",
+        "overdue_ratio",
+        "credit_utilization"
+      ],
+      "default_sort_direction": "desc",
+      "default_limit_policy": "top_n",
+      "clarification_policy": "clarify_scope",
+      "activation_state": "draft_unapproved",
+      "blocked_reason": "Phase 3.4 must first prove reusable customer risk composites with shared as-of date alignment and safe row degradation."
+    }
+  ]
+}

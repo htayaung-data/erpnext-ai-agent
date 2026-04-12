@@ -16,8 +16,11 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_default_report_name,
 	capability_report_names,
 	capability_semantic_tags,
+	get_composite_family_spec,
 	governed_self_contained_business_terms,
 	get_frontdoor_intent_spec,
+	list_capability_specs,
+	list_semantic_resolution_alias_entries,
 	ontology_detect_concepts,
 	ontology_self_contained_prefixes,
 	report_capability_ids,
@@ -27,7 +30,6 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_metrics,
 	resolve_followup_report_switch,
 	resolve_target_report_for_capability,
-	list_capability_specs,
 	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
@@ -1336,6 +1338,13 @@ class ArtifactContinuationContract:
 	source_capability_id: str
 	source_report: str
 	source_artifact_type: str
+	source_composite_family_id: str
+	source_composite_family_label: str
+	source_composite_subject_alias: str
+	source_composite_basis: str
+	source_composite_primary_metric_id: str
+	source_composite_secondary_metric_ids: List[str]
+	source_composite_time_scope: str
 	source_dimension: str
 	source_metric_key: str
 	source_requested_columns: List[str]
@@ -1373,6 +1382,13 @@ class ArtifactContinuationContract:
 			"source_capability_id": self.source_capability_id,
 			"source_report": self.source_report,
 			"source_artifact_type": self.source_artifact_type,
+			"source_composite_family_id": self.source_composite_family_id,
+			"source_composite_family_label": self.source_composite_family_label,
+			"source_composite_subject_alias": self.source_composite_subject_alias,
+			"source_composite_basis": self.source_composite_basis,
+			"source_composite_primary_metric_id": self.source_composite_primary_metric_id,
+			"source_composite_secondary_metric_ids": list(self.source_composite_secondary_metric_ids),
+			"source_composite_time_scope": self.source_composite_time_scope,
 			"source_dimension": self.source_dimension,
 			"source_metric_key": self.source_metric_key,
 			"source_requested_columns": list(self.source_requested_columns),
@@ -2884,6 +2900,10 @@ def build_artifact_enrichment_compatibility_contract(
 		or getattr(continuation_contract, "source_dimension", "")
 		or ""
 	).strip()
+	source_composite_family_id = str(getattr(continuation_contract, "source_composite_family_id", "") or "").strip()
+	source_composite_primary_metric_id = str(
+		getattr(continuation_contract, "source_composite_primary_metric_id", "") or ""
+	).strip()
 	target_metric = str(getattr(followup_resolution, "target_metric", "") or "").strip()
 	requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
 	required_keys = _canonical_metric_keys(required_metric_keys or [], capability_id=source_capability_id)
@@ -2894,6 +2914,34 @@ def build_artifact_enrichment_compatibility_contract(
 		capability_id=source_capability_id,
 		surface_summary=source_surface,
 	) if source_report and source_capability_id and source_surface else []
+	composite_family_spec = get_composite_family_spec(source_composite_family_id) if source_composite_family_id else {}
+	if len(required_keys) > 1 and _composite_family_can_cover_metric_union(
+		family_spec=composite_family_spec,
+		primary_metric_id=source_composite_primary_metric_id,
+		required_metric_keys=required_keys,
+	):
+		reason = (
+			"The current grounded ranking artifact is single-metric, but a governed composite requery can preserve the "
+			"same ranking scope while adding the requested approved secondary metric."
+		)
+		return ArtifactEnrichmentCompatibilityContract(
+			request_id=str(request_id or "").strip(),
+			source_family_id=source_family_id,
+			source_capability_id=source_capability_id,
+			source_report=source_report,
+			source_dimension=source_dimension,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			required_metric_keys=required_keys,
+			compatibility_status="governed_composite_requery_compatible",
+			compatible=True,
+			target_capability_id=source_capability_id,
+			target_report=source_report,
+			candidate_reports_considered=[source_report] if source_report else [],
+			source_surface_sources=source_surface_sources,
+			source_selector_filters=source_selector_filters,
+			reason=reason,
+		)
 	if len(required_keys) > 1 and (
 		"value_quantity" in source_selector_filters
 		or source_family_id == "ranking_analytics"
@@ -3360,6 +3408,144 @@ def _artifact_row_count(turn: Dict[str, Any], artifact: Dict[str, Any]) -> int:
 	return 0
 
 
+def _doc_type_to_composite_basis(value: Any) -> str:
+	key = _normalized_key_fallback(value)
+	if key == "sales_order":
+		return "sales_order"
+	if key in {"sales_invoice", "sales_invoice_due"}:
+		return "sales_invoice"
+	return ""
+
+
+def _dimension_to_composite_family(entity_dimension: str) -> tuple[str, str]:
+	key = _normalized_key_fallback(entity_dimension)
+	if key == "customer":
+		return "customer_commercial_ranking", "customer"
+	if key in {"item", "product"}:
+		return "product_commercial_ranking", "product"
+	return "", ""
+
+
+def _metric_key_to_composite_metric_id(metric_key: str) -> str:
+	key = _normalized_key_fallback(metric_key)
+	if key in {"sales_amount", "selling_amount", "revenue", "value"}:
+		return "revenue"
+	if key == "quantity":
+		return "quantity"
+	if key == "average_order_value":
+		return "average_order_value"
+	if key == "average_invoice_value":
+		return "average_invoice_value"
+	if key == "average_selling_price":
+		return "average_selling_price"
+	return ""
+
+
+def _derive_composite_context_from_generic_ranking(
+	*,
+	source_family_id: str,
+	source_report: str,
+	source_dimension: str,
+	source_metric_key: str,
+	source_filters: Dict[str, Any],
+) -> Dict[str, str]:
+	if str(source_family_id or "").strip() != "ranking_analytics":
+		return {}
+	if _normalized_key_fallback(source_report) != "sales_analytics":
+		return {}
+	family_id, subject_alias = _dimension_to_composite_family(
+		str(source_dimension or source_filters.get("tree_type") or "").strip()
+	)
+	if not family_id:
+		return {}
+	basis = _doc_type_to_composite_basis(source_filters.get("doc_type"))
+	if not basis:
+		return {}
+	primary_metric_id = _metric_key_to_composite_metric_id(
+		str(source_metric_key or source_filters.get("value_quantity") or "").strip()
+	)
+	if not primary_metric_id:
+		return {}
+	family_spec = get_composite_family_spec(family_id)
+	if str(family_spec.get("activation_state") or "").strip() != "active":
+		return {}
+	allowed_primary_metrics = {
+		str(value or "").strip()
+		for value in (family_spec.get("allowed_primary_metrics") or [])
+		if str(value or "").strip()
+	}
+	if primary_metric_id not in allowed_primary_metrics:
+		return {}
+	return {
+		"family_id": family_id,
+		"family_label": str(family_spec.get("label") or "").strip(),
+		"subject_alias": subject_alias,
+		"basis": basis,
+		"primary_metric_id": primary_metric_id,
+	}
+
+
+def _composite_metric_ids_for_required_keys(
+	*,
+	family_spec: Dict[str, Any],
+	required_metric_keys: List[str],
+) -> List[str]:
+	if not isinstance(family_spec, dict) or not family_spec:
+		return []
+	metric_semantic_key_map = (
+		family_spec.get("metric_semantic_key_map")
+		if isinstance(family_spec.get("metric_semantic_key_map"), dict)
+		else {}
+	)
+	out: List[str] = []
+	for required_key in required_metric_keys:
+		clean_required = _normalized_key_fallback(required_key)
+		if not clean_required:
+			continue
+		for metric_id, semantic_keys in metric_semantic_key_map.items():
+			candidate_keys = {
+				_normalized_key_fallback(metric_id),
+				*{
+					_normalized_key_fallback(item)
+					for item in (semantic_keys or [])
+					if str(item or "").strip()
+				},
+			}
+			if clean_required in candidate_keys and str(metric_id or "").strip() not in out:
+				out.append(str(metric_id or "").strip())
+	return out
+
+
+def _composite_family_can_cover_metric_union(
+	*,
+	family_spec: Dict[str, Any],
+	primary_metric_id: str,
+	required_metric_keys: List[str],
+) -> bool:
+	if not isinstance(family_spec, dict) or not family_spec:
+		return False
+	resolved_metric_ids = _composite_metric_ids_for_required_keys(
+		family_spec=family_spec,
+		required_metric_keys=required_metric_keys,
+	)
+	if not resolved_metric_ids:
+		return False
+	primary = str(primary_metric_id or "").strip()
+	if primary and primary not in resolved_metric_ids:
+		return False
+	allowed_secondary_metrics = {
+		str(value or "").strip()
+		for value in (family_spec.get("allowed_secondary_metrics") or [])
+		if str(value or "").strip()
+	}
+	for metric_id in resolved_metric_ids:
+		if metric_id == primary:
+			continue
+		if metric_id not in allowed_secondary_metrics:
+			return False
+	return True
+
+
 def build_artifact_continuation_contract(
 	*,
 	request_id: str,
@@ -3371,6 +3557,7 @@ def build_artifact_continuation_contract(
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	artifact_dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	artifact_period = artifact.get("period") if isinstance(artifact.get("period"), dict) else {}
+	artifact_filters = artifact.get("filters") if isinstance(artifact.get("filters"), dict) else {}
 	filters = turn.get("filters") if isinstance(turn.get("filters"), dict) else {}
 	date_range = turn.get("date_range") if isinstance(turn.get("date_range"), dict) else {}
 	requested_modes = [
@@ -3382,6 +3569,36 @@ def build_artifact_continuation_contract(
 	source_family_id = str(turn.get("artifact_family_id") or artifact.get("family_id") or "").strip()
 	source_capability_id = str((report_capability_ids(source_report) or [""])[0] or "").strip() if source_report else ""
 	source_artifact_type = str(turn.get("artifact_type") or artifact.get("artifact_type") or "").strip()
+	source_composite_family_id = str(
+		artifact_dimensions.get("source_composite_family_id")
+		or artifact_filters.get("composite_family_id")
+		or ""
+	).strip()
+	source_composite_family_label = str(
+		artifact_dimensions.get("source_composite_family_label")
+		or artifact_filters.get("composite_family_label")
+		or ""
+	).strip()
+	source_composite_subject_alias = str(
+		artifact_dimensions.get("source_composite_subject_alias")
+		or artifact_filters.get("composite_subject_alias")
+		or ""
+	).strip()
+	source_composite_basis = str(
+		artifact_dimensions.get("source_composite_basis")
+		or artifact_filters.get("composite_basis")
+		or filters.get("basis")
+		or ""
+	).strip()
+	source_composite_primary_metric_id = str(
+		artifact_dimensions.get("source_composite_primary_metric_id")
+		or artifact_filters.get("composite_primary_metric_id")
+		or ""
+	).strip()
+	source_composite_secondary_metric_ids = _clean_string_list(
+		artifact_dimensions.get("source_composite_secondary_metric_ids")
+		or artifact_filters.get("composite_secondary_metric_ids")
+	)
 	source_dimension = str(
 		artifact_dimensions.get("entity_dimension")
 		or ((turn.get("dimensions") or [""])[0] if isinstance(turn.get("dimensions"), list) else "")
@@ -3409,8 +3626,25 @@ def build_artifact_continuation_contract(
 	source_time_scope = str(
 		artifact_period.get("time_scope")
 		or artifact_period.get("requested_time_scope")
+		or artifact_dimensions.get("source_composite_time_scope")
+		or artifact_filters.get("composite_time_scope")
 		or ""
 	).strip()
+	if not source_composite_family_id:
+		derived_composite_context = _derive_composite_context_from_generic_ranking(
+			source_family_id=source_family_id,
+			source_report=source_report,
+			source_dimension=source_dimension,
+			source_metric_key=source_metric_key,
+			source_filters=filters or artifact_filters,
+		)
+		if derived_composite_context:
+			source_composite_family_id = str(derived_composite_context.get("family_id") or "").strip()
+			source_composite_family_label = str(derived_composite_context.get("family_label") or "").strip()
+			source_composite_subject_alias = str(derived_composite_context.get("subject_alias") or "").strip()
+			source_composite_basis = str(derived_composite_context.get("basis") or "").strip()
+			source_composite_primary_metric_id = str(derived_composite_context.get("primary_metric_id") or "").strip()
+			source_composite_secondary_metric_ids = []
 	preserved_dimension = str(getattr(followup_resolution, "target_dimension", "") or source_dimension or "").strip()
 	preserved_metric_key = str(getattr(followup_resolution, "target_metric", "") or source_metric_key or "").strip()
 	preserved_requested_columns = _clean_string_list(getattr(followup_resolution, "requested_columns", []) or [])
@@ -3445,7 +3679,7 @@ def build_artifact_continuation_contract(
 	preserve_metric_context = bool(preserve_grounded_context and "metric_refinement" not in mode_set)
 	preserve_projection_shape = bool(
 		preserve_grounded_context
-		and not mode_set.intersection({"column_refinement", "dimension_breakdown", "grouping_change", "time_scope_restatement"})
+		and not mode_set.intersection({"column_refinement", "dimension_breakdown", "grouping_change"})
 	)
 	preserve_date_context = bool(
 		preserve_grounded_context
@@ -3465,6 +3699,13 @@ def build_artifact_continuation_contract(
 		source_capability_id=source_capability_id,
 		source_report=source_report,
 		source_artifact_type=source_artifact_type,
+		source_composite_family_id=source_composite_family_id,
+		source_composite_family_label=source_composite_family_label,
+		source_composite_subject_alias=source_composite_subject_alias,
+		source_composite_basis=source_composite_basis,
+		source_composite_primary_metric_id=source_composite_primary_metric_id,
+		source_composite_secondary_metric_ids=source_composite_secondary_metric_ids,
+		source_composite_time_scope=source_time_scope,
 		source_dimension=source_dimension,
 		source_metric_key=source_metric_key,
 		source_requested_columns=source_requested_columns,
@@ -3665,17 +3906,33 @@ def _infer_followup_requested_time_scope(
 	current = str(requested_time_scope or "").strip()
 	if current:
 		return current
-	text = str(message or "").strip().lower()
+	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
 		return ""
-	if re.search(r"\b(?:last|previous|prior)\s+month\b", text):
-		return "last_month"
+	alias_entries = list_semantic_resolution_alias_entries("time_scope") or list_semantic_resolution_alias_entries(
+		"requested_time_scope"
+	)
+	for entry in sorted(
+		alias_entries,
+		key=lambda item: max((len(str(alias or "")) for alias in (item.get("aliases") or [])), default=0),
+		reverse=True,
+	):
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		aliases = [
+			" ".join(str(alias or "").strip().lower().split())
+			for alias in (entry.get("aliases") or [])
+			if str(alias or "").strip()
+		]
+		for alias in sorted(aliases, key=len, reverse=True):
+			pattern = r"(?<!\w)" + re.escape(alias).replace(r"\ ", r"\s+") + r"(?!\w)"
+			if re.search(pattern, text):
+				return canonical_value
 	if re.search(r"\b(?:this|current)\s+month\b", text):
 		return "current_period"
-	if re.search(r"\b(?:year\s+to\s+date|fiscal\s+year)\b", text):
+	if re.search(r"\b(?:year\s+to\s+date|fiscal\s+year\s+to\s+date)\b", text):
 		return "current_fiscal_year_to_date"
-	if re.search(r"\b(?:today|as of today|as of now|now)\b", text):
-		return "as_of_today"
 	if re.search(r"\b(?:all\s+time|overall|full\s+available\s+time\s+range)\b", text):
 		return "all_period"
 	return ""
@@ -3742,8 +3999,23 @@ def build_followup_resolution(
 		message=message,
 		requested_time_scope=requested_time_scope,
 	)
-	if requested_time_scope and not original_requested_time_scope and target_limit > 0 and not _message_has_structural_followup_limit(message):
-		target_limit = 0
+	requested_modes = list(dict.fromkeys(str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()))
+	requested_mode_set = {
+		str(mode or "").strip()
+		for mode in requested_modes
+		if str(mode or "").strip()
+	}
+	if requested_time_scope and "time_scope_restatement" not in requested_mode_set:
+		requested_modes = list(requested_modes) + ["time_scope_restatement"]
+		requested_mode_set.add("time_scope_restatement")
+	if requested_time_scope and not original_requested_time_scope:
+		if target_limit > 0 and not _message_has_structural_followup_limit(message):
+			target_limit = 0
+		if target_dimension and not requested_mode_set.intersection({"dimension_breakdown", "grouping_change", "filter_refinement"}):
+			target_dimension = ""
+		if not target_limit and not sort_direction and "sort_or_limit" in requested_mode_set:
+			requested_modes = [mode for mode in requested_modes if str(mode or "").strip() != "sort_or_limit"]
+			requested_mode_set.discard("sort_or_limit")
 	non_presentation_requested_modes = {
 		str(mode or "").strip()
 		for mode in (requested_modes or [])
@@ -3758,6 +4030,14 @@ def build_followup_resolution(
 		or target_limit
 		or sort_direction
 		or non_presentation_requested_modes
+	)
+	local_projection_or_metric_refinement_requested = bool(
+		{
+			str(mode or "").strip()
+			for mode in (requested_modes or [])
+			if str(mode or "").strip()
+		}.intersection({"column_refinement", "metric_refinement"})
+		and (requested_columns or target_metric)
 	)
 	grounded_turn_payload = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
 	grounded_date_range = grounded_turn_payload.get("date_range") if isinstance(grounded_turn_payload.get("date_range"), dict) else {}
@@ -3783,6 +4063,7 @@ def build_followup_resolution(
 		and not requested_time_scope
 		and not self_contained
 		and message_looks_self_contained_business_query
+		and not local_projection_or_metric_refinement_requested
 	):
 		self_contained = True
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}

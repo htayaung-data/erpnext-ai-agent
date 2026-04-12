@@ -23,12 +23,14 @@ def _fake_get_all(doctype, *args, **kwargs):
 fake_frappe = types.ModuleType("frappe")
 fake_frappe.get_all = _fake_get_all
 fake_frappe.conf = {}
+fake_frappe.db = types.SimpleNamespace(exists=lambda *args, **kwargs: False)
 fake_frappe.local = types.SimpleNamespace(site="")
 sys.modules.setdefault("frappe", fake_frappe)
 
 from ai_assistant_ui.qwen_chat.compiler import compile_fresh_query
 from ai_assistant_ui.qwen_chat.clarification_translation import _translate_compiler_signal
 from ai_assistant_ui.qwen_chat.contracts import (
+	build_artifact_enrichment_compatibility_contract,
 	build_artifact_continuation_contract,
 	build_compiled_query_request_contract,
 	build_composite_read_plan_contract,
@@ -38,6 +40,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_fresh_query_interpretation_contract,
 	build_followup_resolution,
 	build_grounded_turn_context,
+	build_normalized_family_artifact_contract,
 	build_scope_decision_input,
 )
 from ai_assistant_ui.qwen_chat.composite_reads import (
@@ -52,6 +55,11 @@ from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	interpret_front_door_semantically,
 )
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
+from ai_assistant_ui.qwen_chat.family_followup import (
+	refine_local_family_artifact,
+	render_local_family_followup,
+	supports_local_family_followup,
+)
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surface_for_message
@@ -75,12 +83,16 @@ from ai_assistant_ui.qwen_chat.metadata import (
 )
 from ai_assistant_ui.qwen_chat.semantic_interpreter import (
 	_build_interpretation_context as _build_semantic_followup_context,
+	interpret_artifact_local_projection_deterministically,
 	_validate_semantic_payload as _validate_semantic_followup_payload,
 )
 from ai_assistant_ui.qwen_chat import followup_interpreter as followup_interpreter_module
 from ai_assistant_ui.qwen_chat.followup_interpreter import assess_context_isolation
 from ai_assistant_ui.qwen_chat.continuation_support import authoritative_continuation_resolution
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
+from ai_assistant_ui.qwen_chat.governed_composite_runtime_execution import (
+	_resolve_composite_candidate,
+)
 from ai_assistant_ui.qwen_chat.lanes.legacy_runtime_lane import (
 	_legacy_runtime_family_tool_surface_allowed,
 	handle_legacy_runtime_turn,
@@ -89,6 +101,7 @@ from ai_assistant_ui.qwen_chat.lanes.runtime_gate_lane import handle_runtime_gat
 from ai_assistant_ui.qwen_chat.requery_message_support import (
 	compile_capability_requery_message,
 )
+from ai_assistant_ui.qwen_chat.metric_union_support import artifact_metric_columns_available
 from ai_assistant_ui.qwen_chat.phase8_hardening_support import (
 	_seed_quantity_recovery_session,
 )
@@ -419,6 +432,320 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		self.assertFalse(context.get("grounded_followup_supported"))
 		self.assertIsInstance(context.get("source_semantic_tags"), list)
+
+	def test_semantic_followup_context_uses_report_context_for_report_family_artifact(self):
+		context = _build_semantic_followup_context(
+			latest_grounded_turn={
+				"source_name": "ranking_analytics",
+				"artifact_family_id": "ranking_analytics",
+				"artifact_source_reports": ["Sales Order List"],
+				"returned_schema": ["Customer", "Revenue", "Quantity", "Average Order Value"],
+				"row_count": 4,
+			},
+			latest_assistant_payload={"title": "Top Customers"},
+		)
+		self.assertEqual(context.get("source_surface_name"), "ranking_analytics")
+		self.assertEqual(context.get("source_report_name"), "Sales Order List")
+		self.assertTrue(context.get("grounded_followup_supported"))
+		self.assertIn("column_projection", context.get("approved_follow_up_modes") or [])
+		self.assertIn("Customer", context.get("available_dimensions") or [])
+
+	def test_artifact_metric_columns_available_resolves_family_aliases(self):
+		artifact_payload = {
+			"dimensions": {
+				"available_metric_keys": ["revenue", "quantity", "average_order_value", "sales_amount"],
+				"requested_column_alias_map": {
+					"customer": "entity",
+					"customer_name": "entity",
+					"aov": "average_order_value",
+					"rev": "revenue",
+					"qty": "quantity",
+				},
+			},
+			"sections": {
+				"ranked_rows": [
+					{
+						"entity": "Zegyo Mobile Supply House",
+						"customer_name": "Zegyo Mobile Supply House",
+						"revenue": 9340000.0,
+						"quantity": 30.0,
+						"average_order_value": 3113333.33,
+					}
+				]
+			},
+		}
+		self.assertTrue(
+			artifact_metric_columns_available(
+				artifact_payload,
+				["customer name", "aov"],
+			)
+		)
+
+	def test_artifact_local_projection_fallback_accepts_family_alias_projection(self):
+		result = interpret_artifact_local_projection_deterministically(
+			message="Give me customer name and AOV column only",
+			latest_grounded_turn={
+				"source_name": "ranking_analytics",
+				"artifact_family_id": "ranking_analytics",
+			},
+			latest_family_artifact={
+				"family_id": "ranking_analytics",
+				"dimensions": {
+					"requested_column_alias_map": {
+						"customer": "entity",
+						"customer name": "entity",
+						"aov": "average_order_value",
+						"average order value": "average_order_value",
+					},
+				},
+			},
+		)
+		self.assertEqual(result.status, "accepted")
+		self.assertEqual(list(result.intent.requested_modes), ["column_projection"])
+		self.assertEqual(list(result.intent.requested_columns), ["entity", "average_order_value"])
+		self.assertEqual(result.intent.target_metric, "average_order_value")
+
+	def test_artifact_local_projection_fallback_rejects_time_scope_breakout(self):
+		result = interpret_artifact_local_projection_deterministically(
+			message="Give me customer name and AOV column only for last year",
+			latest_grounded_turn={
+				"source_name": "ranking_analytics",
+				"artifact_family_id": "ranking_analytics",
+			},
+			latest_family_artifact={
+				"family_id": "ranking_analytics",
+				"dimensions": {
+					"requested_column_alias_map": {
+						"customer": "entity",
+						"customer name": "entity",
+						"aov": "average_order_value",
+					},
+				},
+			},
+		)
+		self.assertEqual(result.status, "not_applicable")
+
+	def test_build_followup_resolution_infers_last_year_temporal_correction_and_clears_inherited_limit_noise(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["sort_or_limit"],
+			target_dimension="Transaction Date",
+			target_limit=5,
+			sort_direction="",
+			target_metric="revenue",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="The user is restating the governed period for the current ranking.",
+		)
+		resolution = build_followup_resolution(
+			request_id="grounded-last-year-restatement",
+			message="I mean last year, not last month",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"source_name": "Sales Order List",
+				"artifact_family_id": "ranking_analytics",
+				"returned_schema": ["Customer", "Revenue", "Average Order Value"],
+				"dimensions": ["Customer"],
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+			degraded_reason="",
+		)
+		self.assertEqual(resolution.mode, "capability_requery")
+		self.assertEqual(resolution.requested_time_scope, "last_year")
+		self.assertEqual(resolution.target_limit, 0)
+		self.assertEqual(resolution.target_dimension, "")
+		self.assertIn("time_scope_restatement", resolution.requested_modes)
+		self.assertNotIn("sort_or_limit", resolution.requested_modes)
+
+	def test_build_followup_resolution_keeps_grounded_column_refinement_despite_inherited_date_context(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["column_refinement"],
+			target_dimension="Customer",
+			target_limit=5,
+			sort_direction="",
+			target_metric="revenue",
+			requested_columns=["customer", "average order value"],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User requested specific columns from the previous result.",
+		)
+		resolution = build_followup_resolution(
+			request_id="grounded-column-refinement",
+			message="give me customer name and AOV column only",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"source_name": "ranking_analytics",
+				"artifact_family_id": "ranking_analytics",
+				"returned_schema": ["Customer", "Revenue", "Quantity", "Average Order Value"],
+				"dimensions": ["Customer"],
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+			degraded_reason="",
+		)
+		self.assertEqual(resolution.mode, "local_grounded_transform")
+		self.assertFalse(resolution.self_contained)
+
+	def test_render_local_family_followup_normalizes_alias_projection_columns(self):
+		payload = render_local_family_followup(
+			request_id="family-followup-aov-only",
+			artifact_payload={
+				"request_id": "family-followup-aov-only",
+				"family_id": "ranking_analytics",
+				"artifact_type": "normalized_family_artifact",
+				"source_reports": ["Sales Order List"],
+				"period": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"dimensions": {
+					"entity_dimension": "Customer",
+					"primary_metric_key": "revenue",
+					"requested_metric_key": "revenue",
+					"requested_columns": ["entity", "revenue", "quantity", "average_order_value"],
+					"requested_column_alias_map": {
+						"customer": "entity",
+						"customer name": "entity",
+						"aov": "average_order_value",
+						"average order value": "average_order_value",
+					},
+					"requested_top_n": 5,
+					"requested_sort_direction": "desc",
+				},
+				"sections": {
+					"ranked_rows": [
+						{
+							"rank": 1,
+							"entity": "Zegyo Mobile Supply House",
+							"entity_name": "Zegyo Mobile Supply House",
+							"revenue": 9340000.0,
+							"quantity": 30.0,
+							"average_order_value": 3113333.33,
+						}
+					],
+				},
+			},
+			requested_columns=["customer name", "average order value"],
+			requested_modes=["column_refinement"],
+		)
+		answer_text = str(payload.get("answer_text") or "").strip()
+		self.assertIn("| Rank | Customer | Average Order Value |", answer_text)
+		self.assertNotIn("| Rank | Customer | Revenue | Quantity | Average Order Value |", answer_text)
+		self.assertNotIn("Summary", answer_text)
+
+	def test_refine_local_family_artifact_updates_composite_projection_metadata(self):
+		payload = refine_local_family_artifact(
+			request_id="family-followup-refined-composite-projection",
+			artifact_payload={
+				"request_id": "family-followup-refined-composite-projection",
+				"family_id": "ranking_analytics",
+				"artifact_type": "normalized_family_artifact",
+				"source_reports": ["Sales Order List"],
+				"period": {"time_scope": "last_month", "from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"dimensions": {
+					"entity_dimension": "Customer",
+					"source_composite_family_id": "customer_revenue_ranking",
+					"source_composite_primary_metric_id": "revenue",
+					"source_composite_secondary_metric_ids": ["quantity", "average_order_value"],
+					"primary_metric_key": "revenue",
+					"requested_metric_key": "revenue",
+					"requested_columns": ["entity", "revenue", "quantity", "average_order_value"],
+					"requested_column_alias_map": {
+						"customer": "entity",
+						"revenue": "revenue",
+						"aov": "average_order_value",
+					},
+				},
+				"sections": {
+					"ranked_rows": [
+						{
+							"rank": 1,
+							"entity": "Zegyo Mobile Supply House",
+							"revenue": 9340000.0,
+							"quantity": 30.0,
+							"average_order_value": 3113333.33,
+						}
+					]
+				},
+			},
+			requested_columns=["customer", "revenue", "aov"],
+			requested_modes=["column_refinement"],
+		)
+		dimensions = payload.get("dimensions") if isinstance(payload.get("dimensions"), dict) else {}
+		self.assertEqual(dimensions.get("requested_columns"), ["entity", "revenue", "average_order_value"])
+		self.assertEqual(dimensions.get("source_composite_primary_metric_id"), "revenue")
+		self.assertEqual(dimensions.get("source_composite_secondary_metric_ids"), ["average_order_value"])
+		self.assertEqual(dimensions.get("requested_projection_mode"), "explicit_selection")
+
+	def test_supports_local_family_followup_allows_preserved_time_scope_for_projection(self):
+		self.assertTrue(
+			supports_local_family_followup(
+				{
+					"family_id": "ranking_analytics",
+					"period": {
+						"time_scope": "last_month",
+						"from_date": "2026-03-01",
+						"to_date": "2026-03-31",
+					},
+					"dimensions": {
+						"requested_metric_key": "revenue",
+						"requested_columns": ["entity", "revenue", "quantity", "average_order_value"],
+					},
+					"sections": {
+						"ranked_rows": [
+							{
+								"rank": 1,
+								"entity": "Zegyo Mobile Supply House",
+								"revenue": 9340000.0,
+								"quantity": 30.0,
+								"average_order_value": 3113333.33,
+							}
+						],
+					},
+				},
+				target_limit=5,
+				target_metric="revenue",
+				requested_columns=["entity", "revenue", "average_order_value"],
+				requested_time_scope="last_month",
+				requested_modes=["column_refinement"],
+			)
+		)
+
+	def test_supports_local_family_followup_rejects_explicit_time_scope_restatement(self):
+		self.assertFalse(
+			supports_local_family_followup(
+				{
+					"family_id": "ranking_analytics",
+					"period": {
+						"time_scope": "last_month",
+						"from_date": "2026-03-01",
+						"to_date": "2026-03-31",
+					},
+					"dimensions": {
+						"requested_metric_key": "revenue",
+						"requested_columns": ["entity", "revenue", "quantity", "average_order_value"],
+					},
+					"sections": {
+						"ranked_rows": [
+							{
+								"rank": 1,
+								"entity": "Zegyo Mobile Supply House",
+								"revenue": 9340000.0,
+								"quantity": 30.0,
+								"average_order_value": 3113333.33,
+							}
+						],
+					},
+				},
+				target_limit=5,
+				target_metric="revenue",
+				requested_columns=["entity", "revenue", "average_order_value"],
+				requested_time_scope="last_year",
+				requested_modes=["column_refinement", "time_scope_restatement"],
+			)
+		)
 
 	def test_semantic_followup_column_projection_reason_restores_missing_qty_metric(self):
 		intent = _validate_semantic_followup_payload(
@@ -1743,6 +2070,351 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertFalse(result.force_new_query)
 		self.assertFalse(result.out_of_scope)
 		self.assertEqual(result.reason, "")
+
+	def test_assess_context_isolation_prefers_explicit_ranking_subject_over_stale_semantic_dimension(self):
+		result = assess_context_isolation(
+			"show top 5 products by revenue last month",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "ranking_analytics",
+				"artifact_family_id": "ranking_analytics",
+				"dimensions": ["Customer"],
+				"known_entities": [
+					{"entity_type": "customer", "name": "Zegyo Mobile Supply House", "code": "Zegyo Mobile Supply House"}
+				],
+				"returned_schema": ["Customer", "Revenue", "Average Order Value"],
+			},
+			semantic_intent=types.SimpleNamespace(
+				requested_modes=["sort_or_limit", "time_scope_restatement"],
+				target_dimension="Customer",
+				target_limit=5,
+				sort_direction="",
+				target_metric="revenue",
+				requested_columns=["entity", "revenue", "average_order_value"],
+				requested_time_scope="last_month",
+				target_capability_id="",
+				self_contained=False,
+			),
+		)
+		self.assertTrue(result.force_new_query)
+		self.assertFalse(result.out_of_scope)
+		self.assertIn("switches the governed ranking subject from customer to product", result.reason)
+
+	def test_build_artifact_continuation_contract_preserves_projection_shape_for_time_scope_restatement(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="ranking-time-scope-projection-preserve",
+			mode="capability_requery",
+			requested_modes=["time_scope_restatement"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="last_year",
+			target_capability_id="sales_read",
+			target_report="Sales Analytics",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Preserve the governed ranking shape while changing the period.",
+		)
+		continuation = build_artifact_continuation_contract(
+			request_id="ranking-time-scope-projection-preserve",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Sales Analytics",
+				"artifact_family_id": "ranking_analytics",
+				"artifact_type": "normalized_family_artifact",
+				"dimensions": ["Customer"],
+				"metrics": ["Revenue"],
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+			},
+			artifact_payload={
+				"family_id": "ranking_analytics",
+				"artifact_type": "normalized_family_artifact",
+				"period": {"time_scope": "last_month", "from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"dimensions": {
+					"entity_dimension": "Customer",
+					"requested_metric_key": "revenue",
+					"primary_metric_key": "revenue",
+					"requested_columns": ["entity", "revenue", "average_order_value"],
+					"requested_top_n": 5,
+					"requested_sort_direction": "desc",
+				},
+				"sections": {
+					"ranked_rows": [
+						{"rank": 1, "entity": "Zegyo Mobile Supply House", "revenue": 9340000.0, "average_order_value": 3113333.33}
+					]
+				},
+			},
+		)
+		self.assertTrue(continuation.preserve_projection_shape)
+		self.assertFalse(continuation.preserve_rank_membership)
+		self.assertEqual(continuation.preserved_requested_columns, ["entity", "revenue", "average_order_value"])
+
+	def test_build_artifact_continuation_contract_derives_composite_context_from_generic_sales_analytics_ranking(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="generic-ranking-composite-derivation",
+			mode="capability_requery",
+			requested_modes=["column_refinement"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="qty",
+			requested_columns=["qty"],
+			requested_time_scope="",
+			target_capability_id="sales_read",
+			target_report="Sales Analytics",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Add quantity to the preserved ranking.",
+		)
+		continuation = build_artifact_continuation_contract(
+			request_id="generic-ranking-composite-derivation",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Sales Analytics",
+				"artifact_family_id": "ranking_analytics",
+				"artifact_type": "normalized_family_artifact",
+				"filters": {
+					"company": "Enterprise Co",
+					"doc_type": "Sales Invoice",
+					"tree_type": "Item",
+				},
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"dimensions": ["Item"],
+				"metrics": ["Sales Amount"],
+			},
+			artifact_payload={
+				"family_id": "ranking_analytics",
+				"artifact_type": "normalized_family_artifact",
+				"period": {"time_scope": "last_month", "from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"filters": {
+					"company": "Enterprise Co",
+					"doc_type": "Sales Invoice",
+					"tree_type": "Item",
+				},
+				"dimensions": {
+					"entity_dimension": "Item",
+					"requested_metric_key": "sales_amount",
+					"primary_metric_key": "sales_amount",
+					"requested_columns": ["entity", "sales_amount"],
+					"requested_top_n": 5,
+					"requested_sort_direction": "desc",
+				},
+				"sections": {
+					"ranked_rows": [
+						{"rank": 1, "entity": "OPPO A58 (6GB 128GB)", "sales_amount": 4780000.0}
+					]
+				},
+			},
+		)
+		self.assertEqual(continuation.source_composite_family_id, "product_commercial_ranking")
+		self.assertEqual(continuation.source_composite_basis, "sales_invoice")
+		self.assertEqual(continuation.source_composite_primary_metric_id, "revenue")
+		self.assertEqual(continuation.source_composite_subject_alias, "product")
+
+	def test_build_artifact_enrichment_compatibility_contract_allows_composite_requery_for_generic_ranking_metric_union(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="generic-ranking-composite-compatibility",
+			mode="capability_requery",
+			requested_modes=["column_refinement"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="qty",
+			requested_columns=["qty"],
+			requested_time_scope="",
+			target_capability_id="sales_read",
+			target_report="Sales Analytics",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Add quantity to the preserved ranking.",
+		)
+		compatibility = build_artifact_enrichment_compatibility_contract(
+			request_id="generic-ranking-composite-compatibility",
+			followup_resolution=followup_resolution,
+			continuation_contract=types.SimpleNamespace(
+				source_family_id="ranking_analytics",
+				source_capability_id="sales_read",
+				source_report="Sales Analytics",
+				preserved_dimension="Item",
+				source_dimension="Item",
+				source_composite_family_id="product_commercial_ranking",
+				source_composite_primary_metric_id="revenue",
+			),
+			required_metric_keys=["sales_amount", "quantity"],
+		)
+		self.assertTrue(compatibility.compatible)
+		self.assertEqual(compatibility.compatibility_status, "governed_composite_requery_compatible")
+		self.assertIn("composite requery", compatibility.reason.lower())
+
+	def test_compile_capability_requery_message_promotes_generic_ranking_followup_to_composite_family(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="generic-ranking-composite-message",
+			mode="capability_requery",
+			requested_modes=["column_refinement"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="qty",
+			requested_columns=["qty"],
+			requested_time_scope="",
+			target_capability_id="sales_read",
+			target_report="Sales Analytics",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Add quantity to the preserved ranking.",
+		)
+		session_doc = types.SimpleNamespace(get=lambda key, default=None: [])
+		message = compile_capability_requery_message(
+			session_doc,
+			raw_message="include Qty column in the above table",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Sales Analytics",
+				"filters": {"company": "Enterprise Co", "doc_type": "Sales Invoice"},
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"artifact_family_id": "ranking_analytics",
+			},
+			continuation_contract=types.SimpleNamespace(
+				preserved_dimension="Item",
+				preserved_metric_key="sales_amount",
+				preserved_requested_columns=["entity", "sales_amount"],
+				preserved_limit=5,
+				preserve_rank_membership=True,
+				preserve_rank_order=True,
+				preserve_projection_shape=True,
+				preserve_date_context=True,
+				source_family_id="ranking_analytics",
+				source_composite_family_id="product_commercial_ranking",
+				source_composite_subject_alias="product",
+				source_composite_basis="sales_invoice",
+				source_composite_primary_metric_id="revenue",
+				source_composite_secondary_metric_ids=[],
+				source_composite_time_scope="last_month",
+				source_metric_key="sales_amount",
+				source_capability_id="sales_read",
+				source_report="Sales Analytics",
+			),
+		)
+		self.assertIn("show top 5 products by revenue", message.lower())
+		self.assertIn("sales invoices", message.lower())
+		self.assertIn("with quantity", message.lower())
+
+	def test_render_normalized_family_response_suppresses_ranking_summary_for_table_first_policy(self):
+		artifact = build_normalized_family_artifact_contract(
+			request_id="ranking-summary-suppressed",
+			family_id="ranking_analytics",
+			source_reports=["Sales Analytics"],
+			period={"from_date": "2026-03-01", "to_date": "2026-03-31"},
+			filters={"doc_type": "Sales Invoice", "tree_type": "Item"},
+			dimensions={
+				"entity_dimension": "Product",
+				"primary_metric_key": "sales_amount",
+				"primary_metric_label": "Sales Amount",
+				"requested_metric_key": "sales_amount",
+				"requested_columns": ["entity", "sales_amount"],
+				"suppress_summary_by_default": True,
+			},
+			metrics={"sales_amount": 4780000.0, "entity_count": 1, "top_value": 4780000.0},
+			sections={
+				"ranked_rows": [{"rank": 1, "entity": "OPPO A58 (6GB 128GB)", "sales_amount": 4780000.0}],
+				"summary": [{"label": "Total Sales Amount", "metric_key": "sales_amount", "amount": 4780000.0}],
+			},
+		)
+		render_outcome = render_normalized_family_response(
+			request_id="ranking-summary-suppressed",
+			artifact_contract=artifact,
+		)
+		self.assertIsNotNone(render_outcome.contract)
+		blocks = render_outcome.contract.blocks if render_outcome.contract is not None else []
+		block_titles = [str(block.get("title") or "") for block in blocks if isinstance(block, dict)]
+		self.assertNotIn("Summary", block_titles)
+		data_table = next(
+			(block for block in blocks if isinstance(block, dict) and str(block.get("block_type") or "").strip() == "data_table"),
+			{},
+		)
+		self.assertEqual(data_table.get("columns"), ["Rank", "Product", "Sales Amount"])
+
+	def test_resolve_composite_candidate_defaults_basis_for_generic_product_metric_expansion(self):
+		family_spec, family_resolution = _resolve_composite_candidate(
+			message="show top 5 products by revenue last month, show together with Qty column",
+			company_name="Enterprise Co",
+		)
+		self.assertEqual(str(family_spec.get("family_id") or ""), "product_commercial_ranking")
+		self.assertIsNotNone(family_resolution)
+		self.assertEqual(family_resolution.status, "resolved_family")
+		self.assertEqual(family_resolution.requested_basis, "sales_invoice")
+		self.assertEqual(family_resolution.requested_primary_metric, "revenue")
+		self.assertEqual(family_resolution.requested_secondary_metrics, ["quantity"])
+
+	def test_resolve_composite_candidate_keeps_generic_single_metric_product_ranking_on_generic_path(self):
+		family_spec, family_resolution = _resolve_composite_candidate(
+			message="show top 5 products by revenue last month",
+			company_name="Enterprise Co",
+		)
+		self.assertEqual(family_spec, {})
+		self.assertIsNone(family_resolution)
+
+	def test_compile_capability_requery_message_prefers_explicit_last_year_for_composite_ranking_and_does_not_add_unrequested_secondary_metrics(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="composite-last-year-requery",
+			mode="capability_requery",
+			requested_modes=["time_scope_restatement"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="last_year",
+			target_capability_id="sales_read",
+			target_report="Sales Analytics",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="Restate the governed ranking period without changing the selected columns.",
+		)
+		session_doc = types.SimpleNamespace(get=lambda key, default=None: [])
+		message = compile_capability_requery_message(
+			session_doc,
+			raw_message="I mean last year, not last month",
+			followup_resolution=followup_resolution,
+			grounded_turn={
+				"source_name": "Sales Analytics",
+				"filters": {"company": "Enterprise Co", "basis": "sales_order"},
+				"date_range": {"from_date": "2026-03-01", "to_date": "2026-03-31"},
+				"artifact_family_id": "ranking_analytics",
+			},
+			continuation_contract=types.SimpleNamespace(
+				preserved_dimension="Customer",
+				preserved_metric_key="revenue",
+				preserved_requested_columns=["customer", "revenue", "average_order_value"],
+				source_requested_columns=["customer", "revenue", "average_order_value"],
+				preserved_limit=5,
+				preserve_rank_membership=False,
+				preserve_rank_order=False,
+				preserve_projection_shape=True,
+				preserve_date_context=False,
+				source_family_id="ranking_analytics",
+				source_composite_family_id="customer_revenue_ranking",
+				source_composite_subject_alias="customer",
+				source_composite_basis="sales_order",
+				source_composite_primary_metric_id="revenue",
+				source_composite_secondary_metric_ids=["average_order_value"],
+				source_composite_time_scope="last_month",
+				source_metric_key="revenue",
+				source_capability_id="sales_read",
+				source_report="Sales Analytics",
+			),
+		)
+		self.assertIn("last year", message.lower())
+		self.assertNotIn("last month", message.lower())
+		self.assertIn("average order value", message.lower())
+		self.assertNotIn("quantity", message.lower())
 
 	def test_compile_capability_requery_message_preserves_structured_ranking_limit(self):
 		followup_resolution = build_followup_resolution_contract(
@@ -4663,6 +5335,74 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.mode, "grounded_follow_up")
 		self.assertEqual(list(outcome.requested_columns), ["quantity"])
 		self.assertEqual(outcome.target_metric, "sales_amount")
+
+	def test_ranking_metric_alias_refinement_stays_local_when_artifact_already_has_metric(self):
+		resolution = build_followup_resolution_contract(
+			request_id="continuation-ranking-aov",
+			mode="local_grounded_transform",
+			requested_modes=["column_refinement"],
+			target_dimension="Customer",
+			target_limit=5,
+			target_metric="aov",
+			requested_columns=["customer name"],
+			requested_time_scope="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			reason="Show customer name and aov only.",
+		)
+		continuation_contract = types.SimpleNamespace(
+			preserve_grounded_context=True,
+			source_family_id="ranking_analytics",
+			source_capability_id="sales_order_read",
+			source_report="Sales Order List",
+			preserved_dimension="Customer",
+			source_dimension="Customer",
+			preserved_metric_key="revenue",
+			source_metric_key="revenue",
+			preserve_projection_shape=False,
+			preserved_requested_columns=["entity", "revenue", "quantity", "average_order_value"],
+			source_requested_columns=["entity", "revenue", "quantity", "average_order_value"],
+			preserve_rank_membership=True,
+			preserved_limit=5,
+			source_limit=5,
+			preserve_rank_order=True,
+			preserved_sort_direction="desc",
+			source_sort_direction="desc",
+			preserved_time_scope="last_month",
+			source_time_scope="last_month",
+		)
+		artifact_payload = {
+			"dimensions": {
+				"requested_metric_key": "revenue",
+				"available_metric_keys": ["revenue", "quantity", "average_order_value", "sales_amount"],
+				"requested_column_alias_map": {
+					"customer": "entity",
+					"customer_name": "entity",
+					"aov": "average_order_value",
+				},
+			},
+			"sections": {
+				"ranked_rows": [
+					{
+						"entity": "Zegyo Mobile Supply House",
+						"customer_name": "Zegyo Mobile Supply House",
+						"revenue": 9340000,
+						"quantity": 30,
+						"average_order_value": 3113333.33,
+					}
+				]
+			},
+		}
+		outcome = authoritative_continuation_resolution(
+			request_id="continuation-ranking-aov",
+			followup_resolution=resolution,
+			continuation_contract=continuation_contract,
+			artifact_payload=artifact_payload,
+			grounded_turn={},
+		)
+		self.assertEqual(outcome.mode, "local_grounded_transform")
+		self.assertEqual(outcome.target_metric, "aov")
+		self.assertEqual(list(outcome.requested_columns), ["customer name"])
 
 	def test_transaction_listing_time_scope_restatement_upgrades_to_capability_requery(self):
 		resolution = build_followup_resolution_contract(
