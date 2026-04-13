@@ -1,10 +1,22 @@
 from __future__ import annotations
 
+import json
+import re
+import uuid
 from datetime import timedelta
 
 import frappe
 from frappe import _
 from frappe.utils import get_fullname, getdate, now_datetime, nowdate
+
+try:
+	from ai_assistant_ui.qwen_chat.artifact_narrative import (
+		build_artifact_narrative_context,
+		narrate_governed_artifact,
+	)
+except Exception:  # pragma: no cover - workspace remains usable without AI app/runtime
+	build_artifact_narrative_context = None
+	narrate_governed_artifact = None
 
 
 TERMINAL_SALES_ORDER_STATUSES = ("Completed", "Closed", "Cancelled")
@@ -49,6 +61,14 @@ EXPLICIT_PENDING_WORKFLOW_STATES = {
 		"Escalated",
 	),
 }
+INQUIRY_DOCUMENT_ORDER = ("Quotation", "Sales Order", "Sales Invoice", "Delivery Note", "Customer")
+INQUIRY_DOCUMENT_HINTS = {
+	"Quotation": {"date_field": "transaction_date"},
+	"Sales Order": {"date_field": "transaction_date"},
+	"Sales Invoice": {"date_field": "posting_date"},
+	"Delivery Note": {"date_field": "posting_date"},
+	"Customer": {"date_field": "modified"},
+}
 
 
 @frappe.whitelist()
@@ -76,11 +96,21 @@ def get_sales_console_bootstrap() -> dict[str, object]:
 
 
 @frappe.whitelist()
-def resolve_customer_inquiry(query: str) -> dict[str, object]:
+def resolve_customer_inquiry(
+	query: str,
+	doctype: str | None = None,
+	name: str | None = None,
+) -> dict[str, object]:
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Authentication required"), frappe.PermissionError)
 
 	needle = (query or "").strip()
+	if doctype and name:
+		result = _build_customer_inquiry_result(str(doctype).strip(), str(name).strip(), needle or str(name).strip())
+		if result.get("state") == "resolved":
+			result["match_mode"] = "selected_suggestion"
+		return result
+
 	if not needle:
 		return {
 			"state": "empty",
@@ -99,6 +129,59 @@ def resolve_customer_inquiry(query: str) -> dict[str, object]:
 	return result
 
 
+@frappe.whitelist()
+def suggest_customer_inquiry(query: str) -> dict[str, object]:
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Authentication required"), frappe.PermissionError)
+
+	needle = (query or "").strip()
+	if len(needle) < 2:
+		return {
+			"state": "idle",
+			"query": needle,
+			"message": "Type at least 2 characters to see matching customers and document IDs.",
+			"suggestions": [],
+		}
+
+	suggestions = _build_customer_inquiry_suggestions(needle)
+	if not suggestions:
+		return {
+			"state": "empty",
+			"query": needle,
+			"message": "No visible customers or commercial documents match this entry yet.",
+			"suggestions": [],
+		}
+
+	return {
+		"state": "ready",
+		"query": needle,
+		"message": f"{len(suggestions)} visible suggestion{'s' if len(suggestions) != 1 else ''} found.",
+		"suggestions": suggestions,
+	}
+
+
+@frappe.whitelist()
+def generate_customer_inquiry_assist(
+	query: str,
+	doctype: str | None = None,
+	name: str | None = None,
+) -> dict[str, object]:
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Authentication required"), frappe.PermissionError)
+
+	resolved = _resolve_customer_inquiry_payload(query=query, doctype=doctype, name=name)
+	if resolved.get("state") != "resolved":
+		return {
+			"state": resolved.get("state") or "unavailable",
+			"query": query,
+			"message": resolved.get("message") or "Customer inquiry must resolve to a single visible chain first.",
+		}
+
+	fallback = _build_customer_inquiry_assist_fallback(resolved)
+	ai_result = _generate_customer_inquiry_assist_via_runtime(resolved, fallback)
+	return ai_result or fallback
+
+
 def _build_context() -> dict[str, object]:
 	employee_record = _employee_record()
 	branch_name = _resolve_branch(employee_record)
@@ -113,12 +196,24 @@ def _build_context() -> dict[str, object]:
 	}
 
 
+def _resolve_customer_inquiry_payload(
+	*,
+	query: str,
+	doctype: str | None = None,
+	name: str | None = None,
+) -> dict[str, object]:
+	needle = (query or "").strip()
+	if doctype and name:
+		return _build_customer_inquiry_result(str(doctype).strip(), str(name).strip(), needle)
+	return resolve_customer_inquiry(needle)
+
+
 def _build_scope(context: dict[str, object]) -> dict[str, object]:
 	branch_name = context.get("branch_label")
 	role_variant = context.get("role_variant")
 	employee_name = context.get("employee_name")
 
-	if role_variant == "sales_supervisor":
+	if role_variant == "sales_manager":
 		team_users = _direct_report_users(employee_name)
 		scoped_users = sorted({frappe.session.user, *team_users})
 		return {
@@ -158,6 +253,16 @@ def _build_scope(context: dict[str, object]) -> dict[str, object]:
 			"todo_user_ids": [frappe.session.user],
 		}
 
+	if role_variant == "executive_review":
+		return {
+			"branch_name": branch_name,
+			"scope_mode": "executive_review_scope",
+			"scope_label": "Executive review scope across company-wide sales approvals and exception context.",
+			"apply_branch_filter": False,
+			"owner_user_ids": [],
+			"todo_user_ids": [frappe.session.user],
+		}
+
 	if branch_name:
 		return {
 			"branch_name": branch_name,
@@ -180,8 +285,8 @@ def _build_scope(context: dict[str, object]) -> dict[str, object]:
 
 def _build_ui_profile(role_variant: str) -> dict[str, object]:
 	profiles = {
-		"sales_supervisor": {
-			"mode_label": "Supervisor Mode",
+		"sales_manager": {
+			"mode_label": "Manager Mode",
 			"summary_note": "Prioritize approvals, commercial blockers, and team follow-through.",
 			"brief_points": [
 				"Start with approval queues and blocked commercial exceptions.",
@@ -835,7 +940,7 @@ def _build_reports_catalog(role_variant: str | None) -> list[dict[str, object]]:
 			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation movement without a heavy management surface", "quotation"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check sales history during item and customer discussion", "item"),
 		],
-		"sales_supervisor": [
+		"sales_manager": [
 			("sales_analytics", "Sales Analytics", "Sales Analytics", "Management and team performance review", "chart"),
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review operational order execution and exception patterns", "order"),
 			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation flow, conversion direction, and aging", "quotation"),
@@ -977,7 +1082,21 @@ def _follow_up_filters(scope: dict[str, object]) -> tuple[list[list[object]], st
 		["status", "!=", "Closed"],
 	]
 	if "reference_type" in fields:
-		filters.append(["reference_type", "in", ["Customer", "Lead", "Opportunity", "Quotation", "Sales Order"]])
+		filters.append(
+			[
+				"reference_type",
+				"in",
+				[
+					"Customer",
+					"Lead",
+					"Opportunity",
+					"Quotation",
+					"Sales Order",
+					"Sales Invoice",
+					"Delivery Note",
+				],
+			]
+		)
 
 	scoped_filters, scope_note = _apply_scope_filters("ToDo", filters, scope)
 	return scoped_filters, scope_note, assignee_field
@@ -1020,7 +1139,7 @@ def _resolve_branch(employee_record: dict[str, object] | None = None) -> str | N
 
 def _primary_sales_role(role_variant: str | None = None) -> str:
 	labels = {
-		"sales_supervisor": "Sales Manager",
+		"sales_manager": "Sales Manager",
 		"sales_executive": "Sales Staff",
 		"key_account_sales": "Key Account Sales",
 		"showroom_sales": "Showroom Sales",
@@ -1037,8 +1156,8 @@ def _role_variant() -> str:
 		return "showroom_sales"
 	if "key account sales" in roles:
 		return "key_account_sales"
-	if "sales supervisor" in roles or "sales manager" in roles:
-		return "sales_supervisor"
+	if "sales manager" in roles or "sales supervisor" in roles:
+		return "sales_manager"
 	if "sales executive" in roles or "sales user" in roles:
 		return "sales_executive"
 	return "sales_executive"
@@ -1229,8 +1348,7 @@ def _access_metric(doctype: str) -> dict[str, object]:
 
 
 def _find_customer_inquiry_match(query: str) -> dict[str, object]:
-	document_order = ["Quotation", "Sales Order", "Sales Invoice", "Delivery Note", "Customer"]
-	for doctype in document_order:
+	for doctype in INQUIRY_DOCUMENT_ORDER:
 		if not _can_read(doctype):
 			continue
 		if frappe.db.exists(doctype, query):
@@ -1240,18 +1358,11 @@ def _find_customer_inquiry_match(query: str) -> dict[str, object]:
 				"anchor": {"doctype": doctype, "name": query},
 			}
 
-	if not _can_read("Customer"):
-		return {
-			"state": "not_found",
-			"query": query,
-			"message": "No exact document match was found, and Customer is outside current read scope.",
-		}
-
-	customer_matches = _find_customer_name_matches(query)
+	customer_matches = _find_exact_customer_matches(query)
 	if len(customer_matches) == 1:
 		return {
 			"state": "resolved",
-			"match_mode": "customer_name",
+			"match_mode": "exact_customer_name",
 			"anchor": {"doctype": "Customer", "name": customer_matches[0]["name"]},
 		}
 
@@ -1259,16 +1370,17 @@ def _find_customer_inquiry_match(query: str) -> dict[str, object]:
 		return {
 			"state": "multiple_matches",
 			"query": query,
-			"message": "Multiple customers match this inquiry. Choose the correct customer chain.",
-			"choices": [
-				{
-					"doctype": "Customer",
-					"name": row.get("name"),
-					"label": row.get("customer_name") or row.get("name"),
-					"meta": "Customer",
-				}
-				for row in customer_matches
-			],
+			"message": "Multiple customers share this exact name. Choose the correct customer chain.",
+			"choices": [_build_customer_choice(row) for row in customer_matches],
+		}
+
+	suggestions = _build_customer_inquiry_suggestions(query)
+	if suggestions:
+		return {
+			"state": "multiple_matches",
+			"query": query,
+			"message": "No exact match was found. Choose the closest visible customer or document.",
+			"choices": suggestions,
 		}
 
 	return {
@@ -1278,20 +1390,214 @@ def _find_customer_inquiry_match(query: str) -> dict[str, object]:
 	}
 
 
-def _find_customer_name_matches(query: str) -> list[dict[str, object]]:
+def _find_exact_customer_matches(query: str) -> list[dict[str, object]]:
+	if not _can_read("Customer"):
+		return []
+
 	fields = _fieldnames("Customer")
 	filters: list[list[object]] = []
 	if "customer_name" in fields:
-		filters.append(["customer_name", "like", f"%{query}%"])
-	filters.append(["name", "like", f"%{query}%"])
-	return frappe.get_list(
+		filters.append(["customer_name", "=", query])
+	filters.append(["name", "=", query])
+	if not filters:
+		return []
+
+	rows = frappe.get_list(
 		"Customer",
-		fields=["name", "customer_name"],
+		fields=["name", "customer_name", "territory", "modified"],
 		filters=filters,
 		or_filters=filters,
 		order_by="modified desc",
 		page_length=6,
 	)
+	return _dedupe_inquiry_rows(rows)
+
+
+def _find_customer_name_matches(query: str, limit: int = 6) -> list[dict[str, object]]:
+	if not _can_read("Customer"):
+		return []
+
+	fields = _fieldnames("Customer")
+	filters: list[list[object]] = []
+	if "customer_name" in fields:
+		filters.append(["customer_name", "like", f"%{query}%"])
+	filters.append(["name", "like", f"%{query}%"])
+	if not filters:
+		return []
+
+	rows = frappe.get_list(
+		"Customer",
+		fields=["name", "customer_name", "territory", "modified"],
+		filters=filters,
+		or_filters=filters,
+		order_by="modified desc",
+		page_length=limit,
+	)
+	return _dedupe_inquiry_rows(rows)
+
+
+def _build_customer_inquiry_suggestions(query: str, limit: int = 8) -> list[dict[str, object]]:
+	query = (query or "").strip()
+	if not query:
+		return []
+
+	doctype_order = _inquiry_doctype_priority(query)
+	doctype_priority = {doctype: index for index, doctype in enumerate(doctype_order)}
+	query_prefers_document_order = bool(re.search(r"[\d-]", query))
+	candidates: list[dict[str, object]] = []
+	seen: set[tuple[str, str]] = set()
+
+	for doctype in doctype_order:
+		for suggestion in _search_inquiry_candidates(doctype, query):
+			key = (suggestion["doctype"], suggestion["name"])
+			if key in seen:
+				continue
+			seen.add(key)
+			candidates.append(suggestion)
+
+	candidates.sort(key=lambda item: item.get("_sort_modified") or "", reverse=True)
+	if query_prefers_document_order:
+		candidates.sort(key=lambda item: item.get("_sort_name") or "", reverse=True)
+	candidates.sort(key=lambda item: doctype_priority.get(item.get("doctype"), len(doctype_order)))
+	candidates.sort(key=lambda item: item.get("_sort_score", 0), reverse=True)
+	return [
+		{
+			"doctype": item["doctype"],
+			"name": item["name"],
+			"label": item["label"],
+			"meta": item["meta"],
+		}
+		for item in candidates[:limit]
+	]
+
+
+def _search_inquiry_candidates(doctype: str, query: str) -> list[dict[str, object]]:
+	if doctype == "Customer":
+		return _search_customer_inquiry_candidates(query)
+	if not _can_read(doctype):
+		return []
+
+	rows = frappe.get_list(
+		doctype,
+		fields=_inquiry_doc_fields(doctype),
+		filters=[["name", "like", f"%{query}%"]],
+		order_by="modified desc",
+		page_length=6,
+	)
+	candidates = []
+	for row in rows:
+		score = _score_inquiry_value(query, row.get("name"))
+		if score <= 0:
+			continue
+		candidates.append(
+			{
+				"doctype": doctype,
+				"name": row.get("name"),
+				"label": row.get("name"),
+				"meta": _build_inquiry_doc_meta(doctype, row),
+				"_sort_name": row.get("name") or "",
+				"_sort_score": score,
+				"_sort_modified": row.get("modified") or "",
+			}
+		)
+	return candidates
+
+
+def _search_customer_inquiry_candidates(query: str) -> list[dict[str, object]]:
+	rows = _find_customer_name_matches(query, limit=6)
+	candidates = []
+	for row in rows:
+		score = max(
+			_score_inquiry_value(query, row.get("customer_name"), exact_bonus=40),
+			_score_inquiry_value(query, row.get("name"), exact_bonus=20),
+		)
+		if score <= 0:
+			continue
+		candidates.append(
+			{
+				"doctype": "Customer",
+				"name": row.get("name"),
+				"label": row.get("customer_name") or row.get("name"),
+				"meta": _build_customer_choice_meta(row),
+				"_sort_name": row.get("name") or row.get("customer_name") or "",
+				"_sort_score": score,
+				"_sort_modified": row.get("modified") or "",
+			}
+		)
+	return candidates
+
+
+def _inquiry_doc_fields(doctype: str) -> list[str]:
+	fields = _fieldnames(doctype)
+	field_list = ["name", "modified"]
+	for fieldname in ("customer", "status", "transaction_date", "posting_date", "delivery_date"):
+		if fieldname in fields and fieldname not in field_list:
+			field_list.append(fieldname)
+	return field_list
+
+
+def _score_inquiry_value(query: str, value: object, exact_bonus: int = 0) -> int:
+	if value in (None, ""):
+		return 0
+
+	needle = str(query).strip().casefold()
+	candidate = str(value).strip().casefold()
+	if not needle or not candidate:
+		return 0
+	if candidate == needle:
+		return 1000 + exact_bonus
+	if candidate.startswith(needle):
+		return 820 + exact_bonus
+	if needle in candidate:
+		return 540 + exact_bonus
+	return 0
+
+
+def _build_inquiry_doc_meta(doctype: str, row: dict[str, object]) -> str:
+	date_field = (INQUIRY_DOCUMENT_HINTS.get(doctype) or {}).get("date_field")
+	date_value = row.get(date_field) if date_field else None
+	parts = [row.get("customer"), row.get("status"), date_value]
+	if not any(part not in (None, "") for part in parts):
+		parts = [doctype]
+	return " · ".join(str(part).strip() for part in parts if part not in (None, ""))
+
+
+def _build_customer_choice(row: dict[str, object]) -> dict[str, object]:
+	return {
+		"doctype": "Customer",
+		"name": row.get("name"),
+		"label": row.get("customer_name") or row.get("name"),
+		"meta": _build_customer_choice_meta(row),
+	}
+
+
+def _build_customer_choice_meta(row: dict[str, object]) -> str:
+	parts = []
+	if row.get("name") and row.get("customer_name") and row.get("name") != row.get("customer_name"):
+		parts.append(row.get("name"))
+	if row.get("territory"):
+		parts.append(row.get("territory"))
+	if not parts:
+		parts.append("Customer record")
+	return " · ".join(str(part).strip() for part in parts if part not in (None, ""))
+
+
+def _inquiry_doctype_priority(query: str) -> list[str]:
+	if re.search(r"[\d-]", query or ""):
+		return list(INQUIRY_DOCUMENT_ORDER)
+	return ["Customer", "Quotation", "Sales Order", "Sales Invoice", "Delivery Note"]
+
+
+def _dedupe_inquiry_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+	seen: set[str] = set()
+	unique_rows: list[dict[str, object]] = []
+	for row in rows:
+		name = row.get("name")
+		if not name or name in seen:
+			continue
+		seen.add(name)
+		unique_rows.append(row)
+	return unique_rows
 
 
 def _build_customer_inquiry_result(doctype: str, name: str, query: str) -> dict[str, object]:
@@ -1314,7 +1620,7 @@ def _build_customer_inquiry_result(doctype: str, name: str, query: str) -> dict[
 	customer = _load_customer_summary(customer_name) if customer_name else None
 	quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs = _resolve_commercial_chain(anchor)
 	payment_entries = _resolve_payment_entries(sales_invoice_docs, sales_order_docs)
-	return_docs = _resolve_return_documents(sales_invoice_docs, delivery_docs, customer_name)
+	return_docs = _resolve_return_documents(anchor, sales_invoice_docs, delivery_docs, customer_name)
 
 	return {
 		"state": "resolved",
@@ -1659,6 +1965,7 @@ def _resolve_payment_entries(
 
 
 def _resolve_return_documents(
+	anchor: dict[str, object],
 	sales_invoice_docs: list[dict[str, object]],
 	delivery_docs: list[dict[str, object]],
 	customer_name: str | None,
@@ -1701,11 +2008,33 @@ def _resolve_return_documents(
 			row["doctype"] = "Delivery Note"
 		returns.extend(rows)
 
-	return sorted(
+	if anchor.get("doctype") in {"Sales Invoice", "Delivery Note"} and (
+		anchor.get("is_return") in (1, "1", True)
+		or bool(anchor.get("return_against"))
+		or str(anchor.get("status") or "").lower() == "return"
+	):
+		returns.append({
+			"doctype": anchor.get("doctype"),
+			"name": anchor.get("name"),
+			"customer": anchor.get("customer"),
+			"status": anchor.get("status"),
+			"posting_date": anchor.get("posting_date"),
+			"return_against": anchor.get("return_against"),
+		})
+
+	seen: set[tuple[str, str]] = set()
+	unique_returns: list[dict[str, object]] = []
+	for row in sorted(
 		returns,
-		key=lambda row: (row.get("posting_date") or "", row.get("name") or ""),
+		key=lambda item: (item.get("posting_date") or "", item.get("name") or ""),
 		reverse=True,
-	)
+	):
+		key = (str(row.get("doctype") or ""), str(row.get("name") or ""))
+		if not key[0] or not key[1] or key in seen:
+			continue
+		seen.add(key)
+		unique_returns.append(row)
+	return unique_returns
 
 
 def _build_primary_match(anchor: dict[str, object], customer: dict[str, object] | None) -> dict[str, object]:
@@ -1769,7 +2098,7 @@ def _build_document_flow(
 		_flow_stage("Sales Order", sales_order_docs, _infer_flow_state("Sales Order", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
 		_flow_stage("Delivery", delivery_docs, _infer_flow_state("Delivery", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
 		_flow_stage("Sales Invoice", sales_invoice_docs, _infer_flow_state("Sales Invoice", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
-		_flow_stage("Payment", payment_entries, _infer_flow_state("Payment", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
+		_build_payment_flow_stage(sales_invoice_docs, payment_entries),
 		_flow_stage("Return", return_docs, _infer_flow_state("Return", anchor, quotation_docs, sales_order_docs, delivery_docs, sales_invoice_docs, payment_entries, return_docs)),
 	]
 
@@ -1787,6 +2116,22 @@ def _flow_stage(label: str, docs: list[dict[str, object]], state: str) -> dict[s
 			for doc in docs[:5]
 		],
 	}
+
+
+def _build_payment_flow_stage(
+	sales_invoice_docs: list[dict[str, object]],
+	payment_entries: list[dict[str, object]],
+) -> dict[str, object]:
+	state, item_name, item_status = _payment_flow_descriptor(sales_invoice_docs, payment_entries)
+	stage = _flow_stage("Payment", payment_entries, state)
+	if stage["items"]:
+		return stage
+	stage["items"] = [{
+		"doctype": "Payment",
+		"name": item_name,
+		"status": item_status,
+	}]
+	return stage
 
 
 def _infer_flow_state(
@@ -1922,6 +2267,18 @@ def _payment_summary(sales_invoice_docs: list[dict[str, object]], payment_entrie
 		return f"{len(payment_entries)} payment entry record(s) linked"
 	if not sales_invoice_docs:
 		return "Payment not yet applicable without invoice"
+	cancelled = [
+		doc for doc in sales_invoice_docs
+		if str(_document_status_label(doc) or "").lower() == "cancelled"
+	]
+	if cancelled and len(cancelled) == len(sales_invoice_docs):
+		return "Cancelled invoices do not require payment follow-up"
+	returned = [
+		doc for doc in sales_invoice_docs
+		if (doc.get("is_return") in (1, "1", True)) or str(doc.get("status") or "").lower() == "return"
+	]
+	if returned and len(returned) == len(sales_invoice_docs):
+		return "Return invoices require credit or refund settlement review"
 	paid = [
 		doc for doc in sales_invoice_docs
 		if (doc.get("outstanding_amount") in (0, 0.0, None, "")) or str(doc.get("status") or "").lower() == "paid"
@@ -1931,6 +2288,44 @@ def _payment_summary(sales_invoice_docs: list[dict[str, object]], payment_entrie
 	if paid:
 		return "Invoices are partly settled"
 	return "Invoices still need payment or settlement follow-up"
+
+
+def _payment_flow_descriptor(
+	sales_invoice_docs: list[dict[str, object]],
+	payment_entries: list[dict[str, object]],
+) -> tuple[str, str, str]:
+	if payment_entries:
+		return ("present", "Visible payment entry in this chain", "")
+	if not sales_invoice_docs:
+		return ("not_applicable", "None visible in this chain", "")
+	cancelled = [
+		doc for doc in sales_invoice_docs
+		if str(_document_status_label(doc) or "").lower() == "cancelled"
+	]
+	if cancelled and len(cancelled) == len(sales_invoice_docs):
+		return ("not_applicable", "Cancelled invoices do not require payment follow-up", "")
+	returned = [
+		doc for doc in sales_invoice_docs
+		if (doc.get("is_return") in (1, "1", True)) or str(doc.get("status") or "").lower() == "return"
+	]
+	if returned and len(returned) == len(sales_invoice_docs):
+		return ("not_applicable", "Return invoices require credit or refund settlement review", "")
+	paid = [
+		doc for doc in sales_invoice_docs
+		if (doc.get("outstanding_amount") in (0, 0.0, None, "")) or str(doc.get("status") or "").lower() == "paid"
+	]
+	payment_scope_available = _can_read("Payment Entry") and _doctype_exists("Payment Entry Reference")
+	if paid and len(paid) == len(sales_invoice_docs):
+		if payment_scope_available:
+			return ("settled", "Settlement reflected on invoice status", "")
+		return ("settled", "Detailed payment records are outside current read scope", "")
+	if paid:
+		if payment_scope_available:
+			return ("partly_settled", "Settlement is partially reflected on invoice status", "")
+		return ("partly_settled", "Detailed payment records are outside current read scope", "")
+	if payment_scope_available:
+		return ("follow_up", "No linked payment record is visible in this chain", "")
+	return ("follow_up", "Detailed payment records are outside current read scope", "")
 
 
 def _return_summary(return_docs: list[dict[str, object]]) -> str:
@@ -2032,3 +2427,367 @@ def _document_status_label(doc: dict[str, object]) -> str:
 	if doc.get("docstatus") == 2:
 		return "Cancelled"
 	return "Draft"
+
+
+def _build_customer_inquiry_assist_fallback(result: dict[str, object]) -> dict[str, object]:
+	primary = result.get("primary_match") if isinstance(result.get("primary_match"), dict) else {}
+	customer = result.get("customer_summary") if isinstance(result.get("customer_summary"), dict) else {}
+	status_rows = list(result.get("current_status") or [])
+	exceptions = list(result.get("exceptions") or [])
+	status_map = {
+		str(item.get("label") or "").strip(): str(item.get("value") or "").strip()
+		for item in status_rows
+		if isinstance(item, dict) and str(item.get("label") or "").strip()
+	}
+
+	customer_label = (
+		str(customer.get("name") or "").strip()
+		or str(primary.get("customer") or "").strip()
+		or "This customer"
+	)
+	anchor_label = f"{primary.get('doctype') or 'record'} {primary.get('name') or ''}".strip()
+
+	summary = _fallback_summary_text(customer_label, anchor_label, status_map)
+	blocker = _fallback_blocker_text(exceptions, status_map)
+	next_action = _fallback_next_action_text(exceptions, status_map)
+	customer_reply = _fallback_customer_reply_text(customer_label, status_map, exceptions, next_action)
+
+	return {
+		"state": "ready",
+		"query": result.get("query"),
+		"anchor": result.get("anchor"),
+		"source": "fallback",
+		"engine": "structured_inquiry_brief",
+		"assist": {
+			"summary": summary,
+			"blocker_explanation": blocker,
+			"next_action": next_action,
+			"customer_reply": customer_reply,
+			"confidence_note": "Built from linked ERP documents visible in the current permission scope.",
+		},
+	}
+
+
+def _fallback_summary_text(
+	customer_label: str,
+	anchor_label: str,
+	status_map: dict[str, str],
+) -> str:
+	parts = [f"{customer_label} is currently anchored on {anchor_label}."]
+	for label in ("Sales Order", "Delivery", "Invoice", "Payment", "Return"):
+		value = str(status_map.get(label) or "").strip()
+		if value:
+			parts.append(f"{label}: {value}.")
+	return " ".join(parts[:4])
+
+
+def _fallback_blocker_text(
+	exceptions: list[dict[str, object]],
+	status_map: dict[str, str],
+) -> str:
+	if exceptions:
+		primary = next(
+			(item for item in exceptions if str(item.get("severity") or "").strip() == "blocker"),
+			exceptions[0],
+		)
+		label = str(primary.get("label") or "Exception").strip()
+		detail = str(primary.get("detail") or "").strip()
+		return f"{label}: {detail}".strip(": ")
+
+	approval = str(status_map.get("Approval / Blocker") or "").strip()
+	if approval:
+		return approval
+	return "No active commercial blocker is visible in the linked chain right now."
+
+
+def _fallback_next_action_text(
+	exceptions: list[dict[str, object]],
+	status_map: dict[str, str],
+) -> str:
+	for item in exceptions:
+		severity = str(item.get("severity") or "").strip()
+		label = str(item.get("label") or "").strip().lower()
+		if severity == "blocker":
+			return "Review the pending approval or exception state before confirming any new commitment to the customer."
+		if "overdue invoice" in label:
+			return "Coordinate with accounts on settlement status and update the customer with a clear payment follow-up message."
+		if "return" in label:
+			return "Review the linked return records with operations or finance before giving the customer the next commitment."
+
+	delivery = str(status_map.get("Delivery") or "").strip().lower()
+	invoice = str(status_map.get("Invoice") or "").strip().lower()
+	payment = str(status_map.get("Payment") or "").strip().lower()
+	if "not yet created" in delivery or "not linked" in delivery:
+		return "Check delivery scheduling or fulfillment handoff with operations before replying to the customer."
+	if "need payment" in payment or "settlement" in payment or "outstanding" in invoice:
+		return "Confirm current invoice and payment status with accounts before giving a collection-related answer."
+	return "Use the linked chain to confirm the latest status and continue the normal customer follow-up."
+
+
+def _fallback_customer_reply_text(
+	customer_label: str,
+	status_map: dict[str, str],
+	exceptions: list[dict[str, object]],
+	next_action: str,
+) -> str:
+	delivery = str(status_map.get("Delivery") or "").strip()
+	invoice = str(status_map.get("Invoice") or "").strip()
+	payment = str(status_map.get("Payment") or "").strip()
+	blocker_line = _fallback_blocker_text(exceptions, status_map)
+
+	reply_parts = [f"I checked the latest records for {customer_label}."]
+	if delivery:
+		reply_parts.append(f"Delivery status: {delivery}.")
+	if invoice:
+		reply_parts.append(f"Invoice status: {invoice}.")
+	if payment:
+		reply_parts.append(f"Payment status: {payment}.")
+	if blocker_line and not blocker_line.lower().startswith("no active"):
+		reply_parts.append(f"Current issue to note: {blocker_line}.")
+	reply_parts.append(f"Next step on our side: {next_action}")
+	return " ".join(reply_parts[:5])
+
+
+def _generate_customer_inquiry_assist_via_runtime(
+	result: dict[str, object],
+	fallback: dict[str, object],
+) -> dict[str, object] | None:
+	if build_artifact_narrative_context is None or narrate_governed_artifact is None:
+		return None
+
+	query = str(result.get("query") or "").strip()
+	request_id = str(uuid.uuid4())
+	context_payload = _build_customer_inquiry_ai_context(result)
+	artifact_context = build_artifact_narrative_context(
+		request_id=request_id,
+		artifact_payload=_customer_inquiry_artifact_payload(result),
+		rendered_response_payload=_customer_inquiry_rendered_payload(result),
+		response_policy={
+			"answer_style": "concise_operational",
+			"preferred_formats": ["json_only"],
+			"max_paragraph_sentences": 2,
+		},
+		validation_payload={},
+	)
+	user_prompt = (
+		f"Customer inquiry query: {query or 'n/a'}\n\n"
+		"You are writing a concise sales-console assist brief from a governed inquiry artifact.\n"
+		"Use only the governed artifact content. Do not invent missing commercial steps.\n"
+		"If a linked payment, quotation, order, or delivery record is not visible in the governed chain, describe it as not visible in the chain, not as missing or omitted from the system.\n"
+		"Do not imply process failure unless the governed artifact explicitly shows a blocker, exception, overdue state, or cancellation.\n"
+		"Produce a JSON object only with this structure:\n"
+		"{\n"
+		'  "summary": "2-4 sentence operational summary",\n'
+		'  "blocker_explanation": "clear explanation of the most important blocker or say none visible",\n'
+		'  "next_action": "single recommended next action for staff",\n'
+		'  "customer_reply": "short customer-facing reply draft in plain business language",\n'
+		'  "confidence_note": "one sentence about scope or visibility limitations"\n'
+		"}\n\n"
+		f"Governed inquiry context JSON:\n{json.dumps(context_payload, default=str, ensure_ascii=True, indent=2)}"
+	)
+
+	try:
+		runtime_payload = narrate_governed_artifact(
+			session_id=f"sales-console-inquiry-{frappe.session.user}",
+			user_id=frappe.session.user,
+			site_name=str(getattr(frappe.local, "site", "") or ""),
+			message=user_prompt,
+			request_id=request_id,
+			artifact_context=artifact_context,
+			response_policy={
+				"answer_style": "concise_operational",
+				"preferred_formats": ["json_only"],
+				"max_paragraph_sentences": 2,
+			},
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Sales Console AI Assist Error")
+		return None
+
+	if not isinstance(runtime_payload, dict) or not bool(runtime_payload.get("ok")):
+		return None
+
+	answer_text = str(runtime_payload.get("answer_text") or "").strip()
+	parsed = _extract_json_object(answer_text)
+	if not isinstance(parsed, dict):
+		return None
+
+	assist = {}
+	for key in ("summary", "blocker_explanation", "next_action", "customer_reply", "confidence_note"):
+		value = str(parsed.get(key) or "").strip()
+		if value:
+			assist[key] = value
+
+	if not all(assist.get(key) for key in ("summary", "blocker_explanation", "next_action", "customer_reply")):
+		return None
+
+	assist = _normalize_customer_inquiry_ai_assist(assist, result)
+
+	return {
+		"state": "ready",
+		"query": result.get("query"),
+		"anchor": result.get("anchor"),
+		"source": "ai",
+		"engine": str(((runtime_payload.get("agent_meta") or {}).get("engine")) or "qwen_runtime"),
+		"assist": {
+			"summary": assist["summary"],
+			"blocker_explanation": assist["blocker_explanation"],
+			"next_action": assist["next_action"],
+			"customer_reply": assist["customer_reply"],
+			"confidence_note": assist.get("confidence_note")
+				or "Generated from the visible ERP inquiry chain for the current user scope.",
+		},
+	}
+
+
+def _build_customer_inquiry_ai_context(result: dict[str, object]) -> dict[str, object]:
+	return {
+		"primary_match": result.get("primary_match") if isinstance(result.get("primary_match"), dict) else {},
+		"customer_summary": result.get("customer_summary") if isinstance(result.get("customer_summary"), dict) else {},
+		"document_flow": list(result.get("document_flow") or []),
+		"current_status": list(result.get("current_status") or []),
+		"exceptions": list(result.get("exceptions") or []),
+		"related_documents": [
+			{
+				"doctype": item.get("doctype"),
+				"name": item.get("name"),
+				"status": item.get("status"),
+			}
+			for item in list(result.get("related_documents") or [])[:8]
+			if isinstance(item, dict)
+		],
+	}
+
+
+def _customer_inquiry_artifact_payload(result: dict[str, object]) -> dict[str, object]:
+	anchor = result.get("anchor") if isinstance(result.get("anchor"), dict) else {}
+	return {
+		"family_id": "sales_console_customer_inquiry",
+		"source_reports": ["Sales Console Customer Inquiry"],
+		"warnings": [],
+		"anchor_doctype": anchor.get("doctype"),
+		"anchor_name": anchor.get("name"),
+		"query": result.get("query"),
+	}
+
+
+def _customer_inquiry_rendered_payload(result: dict[str, object]) -> dict[str, object]:
+	status_rows = list(result.get("current_status") or [])
+	exceptions = list(result.get("exceptions") or [])
+	related = list(result.get("related_documents") or [])
+	primary = result.get("primary_match") if isinstance(result.get("primary_match"), dict) else {}
+	customer = result.get("customer_summary") if isinstance(result.get("customer_summary"), dict) else {}
+
+	return {
+		"title": "Sales Console Customer Inquiry",
+		"family_id": "sales_console_customer_inquiry",
+		"source_reports": ["Sales Console Customer Inquiry"],
+		"blocks": [
+			{
+				"block_type": "summary_table",
+				"title": "Primary Match",
+				"columns": ["Field", "Value"],
+				"rows": [
+					["Document", f"{primary.get('doctype') or ''} {primary.get('name') or ''}".strip()],
+					["Status", str(primary.get("status") or "").strip()],
+					["Customer", str(customer.get("name") or primary.get("customer") or "").strip()],
+				],
+			},
+			{
+				"block_type": "summary_table",
+				"title": "Current Status",
+				"columns": ["Area", "Value"],
+				"rows": [
+					[str(item.get("label") or "").strip(), str(item.get("value") or "").strip()]
+					for item in status_rows
+					if isinstance(item, dict)
+				],
+			},
+			{
+				"block_type": "bullet_list",
+				"title": "Exceptions",
+				"items": [
+					f"{str(item.get('label') or '').strip()}: {str(item.get('detail') or '').strip()}".strip(": ")
+					for item in exceptions
+					if isinstance(item, dict)
+				] or ["No active commercial exception is visible in the linked chain."],
+			},
+			{
+				"block_type": "bullet_list",
+				"title": "Related Documents",
+				"items": [
+					f"{str(item.get('doctype') or '').strip()} {str(item.get('name') or '').strip()} ({str(item.get('status') or '').strip()})".strip()
+					for item in related[:8]
+					if isinstance(item, dict)
+				],
+			},
+		],
+	}
+
+
+def _extract_json_object(text: str) -> dict[str, object] | None:
+	raw = str(text or "").strip()
+	if not raw:
+		return None
+	candidates = [raw]
+	match = re.search(r"\{[\s\S]*\}", raw)
+	if match:
+		candidates.append(match.group(0))
+	for candidate in candidates:
+		try:
+			data = json.loads(candidate)
+		except Exception:
+			continue
+		if isinstance(data, dict):
+			return data
+	return None
+
+
+def _normalize_customer_inquiry_ai_assist(
+	assist: dict[str, str],
+	result: dict[str, object],
+) -> dict[str, str]:
+	normalized = dict(assist)
+	status_map = {
+		str(item.get("label") or "").strip(): str(item.get("value") or "").strip()
+		for item in list(result.get("current_status") or [])
+		if isinstance(item, dict)
+	}
+	payment_status = str(status_map.get("Payment") or "").strip().lower()
+	invoice_status = str(status_map.get("Invoice") or "").strip().lower()
+	anchor = result.get("primary_match") if isinstance(result.get("primary_match"), dict) else {}
+	anchor_name = str(anchor.get("name") or "").strip()
+	is_partly_paid = "partly paid" in invoice_status or "partly settled" in payment_status
+	is_fully_paid = (
+		not is_partly_paid
+		and ("fully settled" in payment_status or "latest status: paid" in invoice_status)
+	)
+
+	if is_partly_paid:
+		normalized["next_action"] = (
+			"If the customer needs the latest balance position, verify the related finance record and confirm the remaining amount before replying."
+		)
+		if anchor_name:
+			normalized["customer_reply"] = (
+				f"Hi there - invoice {anchor_name} is partly paid in our system and a balance is still pending. "
+				"If you need the latest balance or payment confirmation, we can verify the related finance record and share the confirmed position with you."
+			)
+		else:
+			normalized["customer_reply"] = (
+				"The invoice is partly paid in our system and a balance is still pending. If you need the latest balance or payment confirmation, we can verify the related finance record and share the confirmed position with you."
+			)
+	elif is_fully_paid:
+		normalized["next_action"] = (
+			"If the customer needs a copy of the invoice or settlement proof, verify the related finance record and share the confirmed document."
+		)
+		if anchor_name:
+			normalized["customer_reply"] = (
+				f"Hi there - invoice {anchor_name} is recorded as paid in our system. "
+				"If you need a copy of the invoice or payment confirmation, we can verify the related finance record and share it with you."
+			)
+		else:
+			normalized["customer_reply"] = (
+				"The invoice is recorded as paid in our system. If you need a copy of the invoice or payment confirmation, we can verify the related finance record and share it with you."
+			)
+
+	return normalized
