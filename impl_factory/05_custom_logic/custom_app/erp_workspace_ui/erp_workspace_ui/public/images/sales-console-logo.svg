@@ -1,0 +1,12 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="salesConsoleGradient" x1="18" y1="16" x2="104" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22314D"/>
+      <stop offset="1" stop-color="#2C4568"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="28" fill="url(#salesConsoleGradient)"/>
+  <rect x="28" y="34" width="72" height="12" rx="6" fill="#6FE4D5"/>
+  <rect x="28" y="58" width="50" height="12" rx="6" fill="white" fill-opacity="0.95"/>
+  <rect x="28" y="82" width="60" height="12" rx="6" fill="white" fill-opacity="0.65"/>
+</svg>
