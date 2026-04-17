@@ -1,0 +1,29 @@
+{
+ "app": "erp_workspace_ui",
+ "creation": "2026-04-05 07:44:43.654695",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "briefcase",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "panel-top",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Sales Console",
+   "link_to": "sales-console",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-04-05 07:44:43.654695",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "ERP Workspace UI",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "ERP Workspace UI"
+}

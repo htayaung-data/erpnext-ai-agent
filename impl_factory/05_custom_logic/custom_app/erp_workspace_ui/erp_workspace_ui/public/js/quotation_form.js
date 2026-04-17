@@ -112,6 +112,22 @@
     return false;
   }
 
+  function resetDraftPerformanceSession(frm, meta) {
+    const observability = getObservability();
+    if (typeof observability.resetDraftPerformanceSession === "function") {
+      return observability.resetDraftPerformanceSession(frm, meta);
+    }
+    return null;
+  }
+
+  function seedDraftPerformanceSession(frm, snapshot) {
+    const observability = getObservability();
+    if (typeof observability.seedDraftPerformanceSession === "function") {
+      return observability.seedDraftPerformanceSession(frm, snapshot);
+    }
+    return null;
+  }
+
   function getShellOptions() {
     return {
       shellClasses: ["erpws-order-shell", "erpwq-quotation-shell"],
@@ -137,6 +153,12 @@
       if (!frm.doc) return;
       fn();
     }, Math.max(0, Number(delay || 0)));
+  };
+  const setSharedDraftBodyPending = childPageHelpers.setDraftBodyPending || function () {};
+  const watchSharedDraftBodyStability = childPageHelpers.watchDraftBodyStability || function (frm, options) {
+    if (options && typeof options.onStable === "function") {
+      options.onStable(frm, { forced: true });
+    }
   };
 
   const scheduleEnhancePasses = childPageLifecycle.scheduleEnhancePasses || function (frm, run, options) {
@@ -180,6 +202,21 @@
   };
 
   function scheduleFormEnhance(frm) {
+    if (frm && typeof frm.is_new === "function" && frm.is_new()) {
+      promoteQuotationDraftBodyStableIfReady(frm);
+      if (!frm.__erpwDraftBodyStabilized) {
+        setSharedDraftBodyPending(frm, true);
+        scheduleFormTask(frm, "enhance_form_body_draft_fast", 40, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+        scheduleFormTask(frm, "enhance_form_body_draft_settle", 160, () => enhanceFormBody(frm, { releaseDraftBody: true }));
+        scheduleFormTask(frm, "enhance_form_body_draft_reconcile", 420, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+        return;
+      }
+      setSharedDraftBodyPending(frm, false);
+      scheduleFormTask(frm, "enhance_form_body_draft_refresh", 0, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+      scheduleFormTask(frm, "enhance_form_body_draft_reconcile", 240, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+      return;
+    }
+    setSharedDraftBodyPending(frm, false);
     scheduleEnhancePasses(frm, () => enhanceFormBody(frm), {
       fastKey: "enhance_form_body_fast",
       lateKey: "enhance_form_body_late",
@@ -190,8 +227,11 @@
 
   function getContextSignature(frm) {
     const doc = (frm && frm.doc) || {};
+    const draftIdentity = typeof frm.is_new === "function" && frm.is_new()
+      ? getDraftRouteDocName(frm, doc.name || "")
+      : (doc.name || "");
     return [
-      doc.name || "",
+      draftIdentity,
       doc.modified || "",
       doc.docstatus == null ? "" : String(doc.docstatus),
       doc.status || "",
@@ -258,8 +298,11 @@
   };
 
   function getShell(frm) {
+    const shellOptions = Object.assign({}, getShellOptions(), {
+    });
+
     if (typeof childPageShell.ensureShell === "function") {
-      return childPageShell.ensureShell(frm, getShellOptions());
+      return childPageShell.ensureShell(frm, shellOptions);
     }
 
     const $root = getFormRoot(frm);
@@ -328,11 +371,39 @@
       markFeatureMissing(frm, "shell_prepare", { reason: "no_form" });
       return;
     }
+    const preparedMode = typeof frm.is_new === "function" && frm.is_new() ? "draft" : "standard";
+    const preparedName = preparedMode === "draft"
+      ? getDraftRouteDocName(frm, (frm.doc && frm.doc.name) || "__draft__")
+      : ((frm.doc && frm.doc.name) || "__draft__");
+    const draftSessionKey = getDraftStabilitySessionKey(frm);
+    if (preparedMode === "draft") {
+      applyQuotationDraftPreflightVisibility(frm);
+      promoteQuotationDraftBodyStableIfReady(frm);
+    }
+    if (frm.__erpwDraftBodySessionKey !== draftSessionKey) {
+      frm.__erpwDraftBodySessionKey = draftSessionKey;
+      frm.__erpwDraftBodyStabilized = preparedMode !== "draft";
+      if (frm.__erpwDraftBodyReleasedKey !== draftSessionKey) {
+        frm.__erpwDraftBodyReleasedKey = null;
+      }
+    }
+    const releasedForSession = preparedMode === "draft" && frm.__erpwDraftBodyReleasedKey === draftSessionKey;
+    const $existingShell = getShell(frm);
+    if (
+      frm.__erpwShellPreparedName === preparedName
+      && frm.__erpwShellPreparedMode === preparedMode
+      && $existingShell.length
+    ) {
+      return;
+    }
     markFeatureStatus(frm, "shell_prepare", "loading", {
       loadingMessage: "Loading quotation execution context...",
     });
+    setSharedDraftBodyPending(frm, preparedMode === "draft" && !frm.__erpwDraftBodyStabilized && !releasedForSession);
     const prepareShell = childPageShell.prepareShell || showShellSkeleton;
     prepareShell(frm, getShellOptions());
+    frm.__erpwShellPreparedName = preparedName;
+    frm.__erpwShellPreparedMode = preparedMode;
     markFeatureReady(frm, "shell_prepare", {
       loadingMessage: "Loading quotation execution context...",
     });
@@ -343,6 +414,58 @@
     if (!field) return null;
     const $wrapper = field.$wrapper && field.$wrapper.length ? field.$wrapper : $(field.wrapper || []);
     return $wrapper.length ? $wrapper : null;
+  }
+
+  function getDraftStabilitySessionKey(frm) {
+    const routePath = `${window.location.pathname || ""}`;
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    const draftIdentity = isDraft
+      ? (routePath || `${frm && frm.doctype ? frm.doctype : "Quotation"}|draft`)
+      : (frm && frm.doc && frm.doc.name ? frm.doc.name : "__draft__");
+    return [
+      frm && frm.doctype ? frm.doctype : "",
+      isDraft ? "draft" : "saved",
+      draftIdentity,
+    ].join("|");
+  }
+
+  function getFieldLabelText(frm, fieldname) {
+    const $wrapper = getFieldWrapper(frm, fieldname);
+    if (!$wrapper || !$wrapper.length) return "";
+
+    const $label = $wrapper.find(".control-label, .form-control-label, label").first();
+    return String($label.text() || "").replace(/\s+/g, " ").trim();
+  }
+
+  function getDraftRouteDocName(frm, fallback) {
+    const routePath = `${window.location.pathname || ""}`;
+    const routeName = routePath.split("/").filter(Boolean).pop();
+    if (frm && typeof frm.is_new === "function" && frm.is_new() && routeName) {
+      return decodeURIComponent(routeName);
+    }
+    return fallback || routeName || "__draft__";
+  }
+
+  function hasVisibleFieldControl(frm, fieldname) {
+    const $wrapper = getFieldWrapper(frm, fieldname);
+    if (!$wrapper || !$wrapper.length) return false;
+
+    const element = $wrapper.get(0);
+    if (!(element instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" || element.hidden) return false;
+
+    return !!$wrapper.find("input, select, textarea, .control-value, .input-with-feedback").length;
+  }
+
+  function isFieldWrapperVisible(frm, fieldname) {
+    const $wrapper = getFieldWrapper(frm, fieldname);
+    if (!$wrapper || !$wrapper.length) return false;
+
+    const element = $wrapper.get(0);
+    if (!(element instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && !element.hidden;
   }
 
   function getSectionForField(frm, fieldname) {
@@ -369,6 +492,11 @@
   function toggleField(frm, fieldname, visible) {
     if (!frm.fields_dict || !frm.fields_dict[fieldname]) return;
     frm.toggle_display(fieldname, !!visible);
+    const $wrapper = getFieldWrapper(frm, fieldname);
+    if ($wrapper && $wrapper.length) {
+      $wrapper.toggle(!!visible);
+      $wrapper.attr("aria-hidden", visible ? "false" : "true");
+    }
   }
 
   function toggleSection(frm, fieldname, visible) {
@@ -400,6 +528,66 @@
     if (typeof value === "boolean") return value;
     const normalized = String(value).trim();
     return normalized !== "" && normalized !== "0";
+  }
+
+  function isQuotationDraftBodyReady(frm) {
+    if (!frm || !frm.fields_dict) return false;
+
+    const basicsReady = [
+      "quotation_to",
+      "party_name",
+      "transaction_date",
+      "valid_till",
+      "order_type",
+    ].every((fieldname) => hasVisibleFieldControl(frm, fieldname));
+    if (!basicsReady) return false;
+
+    const quotationToLabel = getFieldLabelText(frm, "quotation_to").toLowerCase();
+    if (quotationToLabel !== "quotation to") return false;
+
+    if (isFieldWrapperVisible(frm, "naming_series")) return false;
+
+    const $itemsSection = getSectionForField(frm, "items");
+    if (!$itemsSection || !$itemsSection.length) return false;
+
+    const headerReady = !!$itemsSection.find(".erpw-child-section-header, .erpw-child-section-header-compact").length;
+    const gridReady = !!getFieldWrapper(frm, "items");
+    return headerReady && gridReady;
+  }
+
+  function applyQuotationDraftPreflightVisibility(frm) {
+    if (!frm || !frm.fields_dict || !(typeof frm.is_new === "function" && frm.is_new())) return;
+
+    [
+      "quotation_to",
+      "party_name",
+      "transaction_date",
+      "valid_till",
+      "order_type",
+    ].forEach((fieldname) => toggleField(frm, fieldname, true));
+
+    [
+      "workflow_state",
+      "naming_series",
+      "amended_from",
+      "customer_name",
+      "contact_display",
+      "base_in_words",
+      "in_words",
+      "has_unit_price_items",
+      "disable_rounded_total",
+    ].forEach((fieldname) => toggleField(frm, fieldname, false));
+  }
+
+  function promoteQuotationDraftBodyStableIfReady(frm) {
+    if (!frm || !(typeof frm.is_new === "function" && frm.is_new())) return false;
+    if (frm.__erpwDraftBodyPending === true) return false;
+    if (!isQuotationDraftBodyReady(frm)) return false;
+
+    const sessionKey = getDraftStabilitySessionKey(frm);
+    frm.__erpwDraftBodyStabilized = true;
+    frm.__erpwDraftBodyReleasedKey = sessionKey;
+    return true;
   }
 
   function usesCompanyCurrencyOnly(frm) {
@@ -463,7 +651,7 @@
 
     return {
       summary: {
-        name: frm.doc.name || "New Quotation",
+        name: getDraftRouteDocName(frm, frm.doc.name || "New Quotation"),
         customer_label: frm.doc.customer_name || frm.doc.party_name || "Customer not selected yet",
         party_doctype: frm.doc.quotation_to || "Customer",
         party_name: frm.doc.party_name || null,
@@ -557,6 +745,82 @@
     return icons[kind] || icons.sales_order;
   }
 
+  function buildQuotationDraftReadiness(frm, data) {
+    const partyLabel = getPartyLabel(frm.doc.quotation_to || "Customer");
+    const itemRows = getQuotedItemRows(frm);
+    const zeroRateRows = getQuotationZeroRateRows(frm);
+    const priceList = getActiveQuotationPriceList(frm);
+    const taxRows = Array.isArray(frm.doc.taxes) ? frm.doc.taxes.length : 0;
+    const hasTaxContext = [
+      frm.doc.taxes_and_charges,
+      frm.doc.shipping_rule,
+      frm.doc.incoterm,
+    ].some((value) => hasMeaningfulValue(value));
+    const pricingRequired = itemRows.length > 0;
+    const readinessItems = [
+      {
+        title: partyLabel,
+        status: hasMeaningfulValue(frm.doc.party_name) ? "Ready" : "Missing",
+        tone: hasMeaningfulValue(frm.doc.party_name) ? "good" : "attention",
+        value: hasMeaningfulValue(frm.doc.party_name) ? String(frm.doc.party_name) : `Select ${partyLabel.toLowerCase()}`,
+        note: "Required commercial party for this quotation.",
+      },
+      {
+        title: "Valid Till",
+        status: hasMeaningfulValue(frm.doc.valid_till) ? "Ready" : "Missing",
+        tone: hasMeaningfulValue(frm.doc.valid_till) ? "good" : "attention",
+        value: hasMeaningfulValue(frm.doc.valid_till) ? formatDateLabel(frm.doc.valid_till) : "Set validity date",
+        note: "Controls expiry and customer commitment window.",
+      },
+      {
+        title: "Price List",
+        status: priceList ? "Ready" : "Missing",
+        tone: priceList ? "good" : "attention",
+        value: priceList || "Select selling price list",
+        note: "Use the active commercial price list for quoted valuation.",
+      },
+      {
+        title: "Quoted Lines",
+        status: itemRows.length ? "Ready" : "Missing",
+        tone: itemRows.length ? "good" : "attention",
+        value: itemRows.length ? `${itemRows.length} ${itemRows.length === 1 ? "line" : "lines"} added` : "Add at least one item",
+        note: "Commercial review starts only after the quote lines are defined.",
+      },
+      {
+        title: "Pricing",
+        status: !pricingRequired ? "Pending" : (zeroRateRows.length ? `${zeroRateRows.length} missing rate` : "Ready"),
+        tone: !pricingRequired ? "neutral" : (zeroRateRows.length ? "attention" : "good"),
+        value: !pricingRequired ? "Waiting for quote lines" : (zeroRateRows.length ? `${zeroRateRows.length} line${zeroRateRows.length === 1 ? "" : "s"} need pricing` : "All lines priced"),
+        note: !pricingRequired
+          ? "Add quote lines before validating customer rates."
+          : (zeroRateRows.length
+            ? "Review item price, pricing rule, or manual rate before commercial commitment."
+            : "No zero-rate lines detected on this draft."),
+        required: pricingRequired,
+      },
+    ];
+    const metaItems = [
+      {
+        label: "Tax context",
+        tone: taxRows || hasTaxContext ? "good" : "neutral",
+        value: taxRows
+          ? `${taxRows} tax ${taxRows === 1 ? "row" : "rows"} configured`
+          : (hasTaxContext ? "Set" : "Optional"),
+      },
+    ];
+    const requiredItems = readinessItems.filter((item) => item.required !== false);
+    const readyCount = requiredItems.filter((item) => item.tone === "good").length;
+    return {
+      items: readinessItems,
+      metaItems,
+      note: "Save this draft to unlock navigation, follow-up actions, and downstream conversion guidance.",
+      readyCount,
+      requiredCount: requiredItems.length,
+      summary: `${readyCount}/${requiredItems.length} essentials ready`,
+      title: "Draft Readiness",
+    };
+  }
+
   function actionConfig(frm, data) {
     const summary = data.summary || {};
     const linked = data.linked_documents || {};
@@ -601,6 +865,8 @@
       title: support.open_task_count ? `Review Follow-Up (${support.open_task_count})` : "Create Follow-Up Task",
       variant: "secondary",
       icon: "follow_up",
+      disabled: frm.is_new() && !support.open_task_count,
+      disabledReason: frm.is_new() && !support.open_task_count ? "Save quotation first" : "",
       handler: () => {
         if (support.open_task_count) {
           routeToList("ToDo", { reference_name: ["in", getReferenceNames(frm, data)], status: ["!=", "Closed"] });
@@ -715,6 +981,201 @@
       frm.doc.base_discount_amount,
       frm.doc.coupon_code,
     ].some((value) => hasMeaningfulValue(value));
+  }
+
+  function getActiveQuotationPriceList(frm) {
+    return String(frm.doc.selling_price_list || frm.doc.price_list || "").trim();
+  }
+
+  function getQuotedItemRows(frm) {
+    return Array.isArray(frm.doc.items)
+      ? frm.doc.items.filter((row) => String(row.item_code || "").trim())
+      : [];
+  }
+
+  function getQuotationZeroRateRows(frm) {
+    return getQuotedItemRows(frm).filter((row) => {
+      const qty = Number(row.qty || 0);
+      const rate = Number(row.rate || 0);
+      const amount = Number(row.amount || 0);
+      return Math.abs(qty) > 0.0001 && Math.abs(rate) < 0.0001 && Math.abs(amount) < 0.0001;
+    });
+  }
+
+  function getQuotationPriceAvailabilityState(frm) {
+    return frm.__erpwQuotationPriceAvailability || {
+      availableItemCodes: {},
+      pending: false,
+      priceList: "",
+      ready: false,
+      requestKey: "",
+    };
+  }
+
+  function getQuotationMissingPriceDiagnostics(frm) {
+    const activePriceList = getActiveQuotationPriceList(frm);
+    const state = getQuotationPriceAvailabilityState(frm);
+    const quotedRows = getQuotedItemRows(frm);
+    const zeroRateRows = getQuotationZeroRateRows(frm);
+    const ready = !!(activePriceList && state.ready && state.priceList === activePriceList);
+    const availableItemCodes = ready ? (state.availableItemCodes || {}) : {};
+    const missingPriceListRows = ready
+      ? quotedRows.filter((row) => {
+          const code = String(row.item_code || "").trim();
+          const rate = Number(row.rate || 0);
+          const amount = Number(row.amount || 0);
+          return !availableItemCodes[code]
+            && Math.abs(rate) < 0.0001
+            && Math.abs(amount) < 0.0001;
+        })
+      : [];
+    const blockingRows = missingPriceListRows.filter((row) => {
+      const rate = Number(row.rate || 0);
+      const amount = Number(row.amount || 0);
+      return Math.abs(rate) < 0.0001 && Math.abs(amount) < 0.0001;
+    });
+
+    return {
+      activePriceList,
+      blockingRows: blockingRows.length ? blockingRows : zeroRateRows,
+      missingPriceListRows,
+      pending: !!state.pending,
+      ready,
+      zeroRateRows,
+    };
+  }
+
+  function refreshQuotationPriceAvailability(frm) {
+    const activePriceList = getActiveQuotationPriceList(frm);
+    const itemCodes = Array.from(new Set(getQuotedItemRows(frm).map((row) => String(row.item_code || "").trim()).filter(Boolean))).sort();
+    const requestKey = `${activePriceList}|${itemCodes.join("||")}`;
+    const rerender = () => {
+      scheduleFormTask(frm, "quotation_price_summary_render", 0, () => {
+        renderItemsSectionHeader(frm);
+        renderCommercialSummary(frm);
+      });
+    };
+
+    if (!activePriceList || !itemCodes.length) {
+      frm.__erpwQuotationPriceAvailability = {
+        availableItemCodes: {},
+        pending: false,
+        priceList: activePriceList,
+        ready: !!activePriceList,
+        requestKey,
+      };
+      rerender();
+      return Promise.resolve(frm.__erpwQuotationPriceAvailability);
+    }
+
+    const currentState = getQuotationPriceAvailabilityState(frm);
+    if (currentState.requestKey === requestKey) {
+      rerender();
+      if (currentState.pending || currentState.ready) {
+        return Promise.resolve(currentState);
+      }
+    }
+
+    frm.__erpwQuotationPriceAvailability = {
+      availableItemCodes: {},
+      pending: true,
+      priceList: activePriceList,
+      ready: false,
+      requestKey,
+    };
+    rerender();
+
+    return frappe.db.get_list("Item Price", {
+      fields: ["item_code", "price_list_rate"],
+      filters: {
+        item_code: ["in", itemCodes],
+        price_list: activePriceList,
+      },
+      limit: Math.max(itemCodes.length * 4, 20),
+    }).then((rows) => {
+      if (!frm.__erpwQuotationPriceAvailability || frm.__erpwQuotationPriceAvailability.requestKey != requestKey) {
+        return null;
+      }
+      const availableItemCodes = {};
+      (rows || []).forEach((row) => {
+        const code = String(row.item_code || "").trim();
+        if (code && hasMeaningfulValue(row.price_list_rate)) {
+          availableItemCodes[code] = true;
+        }
+      });
+      frm.__erpwQuotationPriceAvailability = {
+        availableItemCodes,
+        pending: false,
+        priceList: activePriceList,
+        ready: true,
+        requestKey,
+      };
+      rerender();
+      return frm.__erpwQuotationPriceAvailability;
+    }).catch(() => {
+      if (!frm.__erpwQuotationPriceAvailability || frm.__erpwQuotationPriceAvailability.requestKey != requestKey) {
+        return null;
+      }
+      frm.__erpwQuotationPriceAvailability = {
+        availableItemCodes: {},
+        pending: false,
+        priceList: activePriceList,
+        ready: false,
+        requestKey,
+      };
+      rerender();
+      return null;
+    });
+  }
+
+  function scheduleQuotationPriceRefresh(frm, delay = 120) {
+    scheduleFormTask(frm, "quotation_price_availability_refresh", delay, () => refreshQuotationPriceAvailability(frm));
+  }
+
+  function scheduleQuotationDraftStabilityCheck(frm, delay = 220) {
+    if (!frm || !frm.is_new()) return;
+    scheduleFormTask(frm, "quotation_draft_stability_check", delay, () => {
+      const $shell = getShell(frm);
+      const shellReady = $shell.length && $shell.children().length && !$shell.find(".erpw-so-shell-skeleton").length;
+      if (shellReady && frm.__erpwContextRenderedSignature) return;
+      loadContext(frm);
+    });
+  }
+
+  function scheduleQuotationDraftContextSync(frm, delay = 160) {
+    if (!frm || !frm.is_new()) return;
+    scheduleFormTask(frm, "quotation_draft_context_sync", delay, () => loadContext(frm));
+  }
+
+  function getQuotationSummaryDaysToExpiry(summary) {
+    if (!summary || !summary.valid_till) return null;
+    try {
+      return frappe.datetime.get_diff(summary.valid_till, frappe.datetime.get_today());
+    } catch (e) {
+      const numeric = Number(summary.days_to_expiry);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+  }
+
+  function getQuotationValidityMeta(summary) {
+    if (!summary || !summary.valid_till) return "Set validity date";
+    return formatDaysToExpiry(getQuotationSummaryDaysToExpiry(summary));
+  }
+
+  function ensureQuotationPricingGuardrail(frm) {
+    const diagnostics = getQuotationMissingPriceDiagnostics(frm);
+    if (!diagnostics.blockingRows.length) return;
+
+    const names = diagnostics.blockingRows
+      .map((row) => String(row.item_code || "").trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    const scopeNote = diagnostics.missingPriceListRows.length && diagnostics.activePriceList
+      ? ` in active price list ${diagnostics.activePriceList}`
+      : "";
+    const preview = names.length ? ` Review: ${names.join(", ")}${diagnostics.blockingRows.length > names.length ? ", ..." : ""}.` : "";
+
+    frappe.throw(`Missing item rate${diagnostics.blockingRows.length === 1 ? "" : "s"}${scopeNote}.${preview}`);
   }
 
   function getQuotationDaysToExpiry(frm) {
@@ -1877,6 +2338,7 @@
     const workflowLabel = String(frm.doc.workflow_state || "").trim();
     const hasTaxes = !Number.isNaN(Number(frm.doc.total_taxes_and_charges || 0))
       && Math.abs(Number(frm.doc.total_taxes_and_charges || 0)) > 0.0001;
+    const pricingDiagnostics = getQuotationMissingPriceDiagnostics(frm);
 
     if (workflowLabel && /pending/i.test(workflowLabel)) {
       chips.push({
@@ -1899,12 +2361,30 @@
       }
     }
 
+    if (pricingDiagnostics.missingPriceListRows.length) {
+      chips.push({
+        label: `${pricingDiagnostics.missingPriceListRows.length} item${pricingDiagnostics.missingPriceListRows.length === 1 ? "" : "s"} missing active price`,
+        tone: "blocker",
+      });
+    } else if (pricingDiagnostics.zeroRateRows.length) {
+      chips.push({
+        label: `${pricingDiagnostics.zeroRateRows.length} line${pricingDiagnostics.zeroRateRows.length === 1 ? "" : "s"} at zero rate`,
+        tone: "attention",
+      });
+    }
+
     if (!hasTaxes) {
       chips.push({
         label: "No tax rows",
         tone: "neutral",
       });
     }
+
+    const summaryNote = pricingDiagnostics.missingPriceListRows.length && pricingDiagnostics.activePriceList
+      ? `Some items do not have a price in ${pricingDiagnostics.activePriceList}. Fix pricing before commercial commitment.`
+      : pricingDiagnostics.zeroRateRows.length
+        ? "One or more lines still have zero rate. Review pricing before commercial commitment."
+        : "Read quoted value, approval pressure, and tax posture here while ERP totals stay authoritative.";
 
     const metrics = [
       {
@@ -1937,7 +2417,7 @@
           label: metric.label,
           value: metric.value,
         })),
-        note: "Read quoted value, approval pressure, and tax posture here while ERP totals stay authoritative.",
+        note: summaryNote,
         removeSelector: ".erpw-so-inline-summary",
         summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
         title: "Commercial Posture",
@@ -1949,7 +2429,7 @@
       <div class="erpw-so-inline-summary erpw-child-inline-summary-soft">
         <div class="erpw-so-inline-summary-head">
           <div class="erpw-so-inline-summary-title">Commercial Posture</div>
-          <div class="erpw-child-subtitle erpw-child-inline-summary-note">Read quoted value, approval pressure, and tax posture here while ERP totals stay authoritative.</div>
+          <div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(summaryNote)}</div>
           ${chips.length ? `
             <div class="erpw-child-chip-row">
               ${chips.map((chip) => `
@@ -1975,6 +2455,72 @@
     } else {
       $itemsSection.append($summary);
     }
+  }
+
+  function ensureQuotationDraftTaxContext(frm) {
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    const $taxesSection = getSectionForField(frm, "taxes");
+    if (!$taxesSection || !$taxesSection.length) return false;
+
+    restoreRelocatedFieldPlacements(frm, "quotation-draft-tax-context");
+    $taxesSection.find(".erpw-draft-tax-context").remove();
+    if (!isDraft) return false;
+
+    const fields = [
+      { fieldname: "taxes_and_charges", zone: "main" },
+    ];
+    const $body = $taxesSection.children(".section-body").first();
+    if (!$body.length) return false;
+
+    const taxRows = Array.isArray(frm.doc.taxes) ? frm.doc.taxes.length : 0;
+    const hasTemplate = hasMeaningfulValue(frm.doc.taxes_and_charges);
+    const statusText = hasTemplate
+      ? "Selected"
+      : (taxRows ? `${taxRows} manual ${taxRows === 1 ? "row" : "rows"}` : "Optional");
+
+    const $card = $(`
+      <div class="erpw-draft-tax-context">
+        <div class="erpw-draft-tax-context-meta">
+          <div class="erpw-draft-tax-context-status">${escapeHtml(statusText)}</div>
+        </div>
+        <div class="erpw-draft-tax-grid erpw-draft-tax-grid-main"></div>
+      </div>
+    `);
+    $body.prepend($card);
+
+    fields.forEach((config) => {
+      const $wrapper = getFieldWrapper(frm, config.fieldname);
+      if (!$wrapper || !$wrapper.length) return;
+      relocateSharedFieldIntoSectionBody($wrapper, $taxesSection, "quotation-draft-tax-context");
+      $wrapper.addClass("erpw-draft-tax-field");
+      $card.find(".erpw-draft-tax-grid-main").append($wrapper);
+    });
+    return true;
+  }
+
+  function applyQuotationDraftTaxFieldPolicy(frm, isDraft) {
+    [
+      "tax_category",
+      "shipping_rule",
+      "incoterm",
+    ].forEach((fieldname) => {
+      const field = frm && frm.fields_dict ? frm.fields_dict[fieldname] : null;
+      if (!field || typeof frm.set_df_property !== "function") return;
+
+      frm.set_df_property(fieldname, "hidden", isDraft ? 1 : 0);
+
+      const $input = field.$input && field.$input.length
+        ? field.$input
+        : $(field.input || []);
+      if ($input.length) {
+        $input.prop("disabled", !!isDraft);
+        if (isDraft) {
+          $input.attr("tabindex", "-1").attr("aria-hidden", "true");
+        } else {
+          $input.removeAttr("tabindex").removeAttr("aria-hidden");
+        }
+      }
+    });
   }
 
   function renderDetailWorkspace(frm) {
@@ -2030,6 +2576,63 @@
 
     return section && section.length ? section : null;
   }
+
+  function surfaceQuotationDraftPriceListField(frm) {
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    if (!isDraft) return false;
+
+    const $topSection = getQuotationTopDetailsSection(frm);
+    if (!$topSection || !$topSection.length) return false;
+
+    toggleField(frm, "selling_price_list", true);
+    moveFieldIntoSectionBodyIfNeeded(frm, "selling_price_list", $topSection, "quotation-draft-basics");
+    alignQuotationDraftPriceListField(frm, $topSection);
+    return true;
+  }
+
+  function alignQuotationDraftPriceListField(frm, $section) {
+      const $field = getFieldWrapper(frm, "selling_price_list");
+      const $body = $section && $section.length ? $section.children(".section-body").first() : $();
+      if (!$field || !$field.length || !$body.length) return false;
+
+      const $legacyColumn = $body.children('[data-erpw-draft-column="quotation-price-list"]').first();
+      $body.children('[data-erpw-draft-column="quotation-price-list"]').not(':has([data-fieldname="selling_price_list"])').remove();
+
+      const $anchor = getFieldWrapper(frm, "party_name")
+        || getFieldWrapper(frm, "quotation_to")
+        || getFieldWrapper(frm, "order_type");
+      const $anchorColumn = $anchor && $anchor.length ? $anchor.parent() : $();
+
+      if ($anchor.length && $anchorColumn.length && !$anchorColumn.is($body)) {
+        if (!$field.parent().is($anchorColumn)) {
+          $field.appendTo($anchorColumn);
+        }
+        $field.insertAfter($anchor);
+        if ($legacyColumn.length && !$legacyColumn.children().length) {
+          $legacyColumn.remove();
+        }
+        $field.addClass("erpw-so-draft-price-list-field");
+        return true;
+      }
+
+      let $column = $field.parent();
+      const fieldAlreadyWrapped = $column.length
+        && !$column.is($body)
+        && String($column.attr("data-erpw-draft-column") || "").trim() === "quotation-price-list";
+
+      if (!fieldAlreadyWrapped) {
+        $column = $('<div class="form-column col-sm-4" data-erpw-draft-column="quotation-price-list"></div>');
+        $column.append($field);
+      } else {
+        $column.attr("class", "form-column col-sm-4");
+        $column.attr("data-erpw-draft-column", "quotation-price-list");
+      }
+
+      $column.addClass("erpw-so-draft-price-list-column");
+      $column.appendTo($body);
+      $field.addClass("erpw-so-draft-price-list-field");
+      return true;
+    }
 
   function renderDetailsSnapshot(frm) {
     const $topSection = getQuotationTopDetailsSection(frm);
@@ -2102,12 +2705,19 @@
     }
 
     const items = Array.isArray(frm.doc.items) ? frm.doc.items : [];
+    const pricingDiagnostics = getQuotationMissingPriceDiagnostics(frm);
+    const statusParts = [`${items.length || 0} ${items.length === 1 ? "line" : "lines"}`];
+    if (pricingDiagnostics.missingPriceListRows.length) {
+      statusParts.push(`${pricingDiagnostics.missingPriceListRows.length} missing price`);
+    } else if (pricingDiagnostics.zeroRateRows.length) {
+      statusParts.push(`${pricingDiagnostics.zeroRateRows.length} zero rate`);
+    }
     childPageDetails.renderSectionHeader($itemsSection, {
       headerClass: "erpw-child-section-header",
       note: "Keep quotation lines native here, then use the summary below for quoted value, tax posture, and approval reading.",
       removeSelector: ".erpw-child-section-header",
-      statusText: `${items.length || 0} ${items.length === 1 ? "line" : "lines"}`,
-      statusTone: "neutral",
+      statusText: statusParts.join(" / "),
+      statusTone: pricingDiagnostics.missingPriceListRows.length || pricingDiagnostics.zeroRateRows.length ? "attention" : "neutral",
       title: "Quoted Lines",
     });
 
@@ -2575,8 +3185,20 @@
     });
   }
 
-  function enhanceFormBody(frm) {
+  function shouldShowQuotationTaxCategoryField(frm) {
+    return Number(frm.doc.docstatus || 0) === 1 && hasMeaningfulValue(frm.doc.tax_category);
+  }
+
+  function shouldShowQuotationTaxBreakup(frm) {
+    return Number(frm.doc.docstatus || 0) === 1 && hasMeaningfulValue(frm.doc.item_wise_tax_details);
+  }
+
+  function enhanceFormBody(frm, options) {
     if (!frm || !frm.fields_dict) return;
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    const settings = Object.assign({
+      releaseDraftBody: true,
+    }, options || {});
 
     const $root = getFormRoot(frm);
     if ($root.length) {
@@ -2584,6 +3206,8 @@
     }
 
     bindTabEnhancers(frm);
+    restoreRelocatedFieldPlacements(frm, "quotation-draft-basics");
+    restoreRelocatedFieldPlacements(frm, "quotation-draft-tax-context");
 
     markSection(frm, "party_name", "erpw-so-section-primary erpw-so-section-basics");
     markSection(frm, "currency", "erpw-so-section-secondary erpw-so-section-pricing");
@@ -2642,8 +3266,13 @@
       "last_scanned_warehouse",
     ].some((fieldname) => hasMeaningfulValue(frm.doc[fieldname]));
     const hasTaxSignal = (Array.isArray(frm.doc.taxes) && frm.doc.taxes.length > 0)
-      || (!Number.isNaN(Number(frm.doc.total_taxes_and_charges || 0)) && Math.abs(Number(frm.doc.total_taxes_and_charges || 0)) > 0.0001);
-    const showTaxSection = hasTaxSignal || !isQuotationReviewPosture(frm);
+      || (!Number.isNaN(Number(frm.doc.total_taxes_and_charges || 0)) && Math.abs(Number(frm.doc.total_taxes_and_charges || 0)) > 0.0001)
+      || hasMeaningfulValue(frm.doc.taxes_and_charges)
+      || hasMeaningfulValue(frm.doc.tax_category);
+    const showTaxSection = isDraft ? true : (hasTaxSignal || !isQuotationReviewPosture(frm));
+    const showTaxCategoryField = !isDraft && shouldShowQuotationTaxCategoryField(frm);
+    const showTaxBreakup = shouldShowQuotationTaxBreakup(frm);
+    applyQuotationDraftTaxFieldPolicy(frm, isDraft);
     toggleSection(frm, "currency", showPricing);
     setManagedSectionVisibility(
       getSectionForField(frm, "selling_price_list") || getSectionForField(frm, "currency"),
@@ -2656,17 +3285,45 @@
     toggleSection(frm, "grand_total", showTotalsDetail);
     toggleField(frm, "scan_barcode", showScanSetup);
     toggleField(frm, "last_scanned_warehouse", showScanSetup && hasMeaningfulValue(frm.doc.last_scanned_warehouse));
+    toggleField(frm, 'tax_category', showTaxCategoryField);
+    toggleField(frm, 'item_wise_tax_details', showTaxBreakup);
     const $taxesSection = getSectionForField(frm, "taxes");
     const $taxCategorySection = getSectionForField(frm, "tax_category");
     setManagedSectionVisibility($taxesSection, showTaxSection, "erpwq-details-hidden-source");
     if (!$taxCategorySection || !$taxesSection || !$taxCategorySection.is($taxesSection)) {
       setManagedSectionVisibility($taxCategorySection, showTaxSection, "erpwq-details-hidden-source");
     }
+    toggleField(frm, "taxes_and_charges", isDraft || hasMeaningfulValue(frm.doc.taxes_and_charges));
+    toggleField(frm, "shipping_rule", !isDraft && hasMeaningfulValue(frm.doc.shipping_rule));
+    toggleField(frm, "incoterm", hasMeaningfulValue(frm.doc.incoterm));
 
     renderDetailsSnapshot(frm);
     renderItemsSectionHeader(frm);
     renderCommercialSummary(frm);
     renderDetailWorkspace(frm);
+    ensureQuotationDraftTaxContext(frm);
+    surfaceQuotationDraftPriceListField(frm);
+    if (isDraft) {
+      enhanceAddressContactTab(frm);
+      enhanceTermsTab(frm);
+      enhanceMoreInfoTab(frm);
+      cleanSidebarUtilityRail(frm);
+      if (settings.releaseDraftBody) {
+        watchSharedDraftBodyStability(frm, {
+          isReady: () => isQuotationDraftBodyReady(frm),
+          key: getDraftStabilitySessionKey(frm),
+          onStable: () => {
+            frm.__erpwDraftBodyStabilized = true;
+            frm.__erpwDraftBodyReleasedKey = getDraftStabilitySessionKey(frm);
+            setSharedDraftBodyPending(frm, false);
+            markFeatureReady(frm, "shell_release", {
+              source: "draft_body_stable",
+            });
+          },
+        });
+      }
+      return;
+    }
     runRetriedEnhancers(frm, [
       {
         fastKey: "quotation_address_retry_fast",
@@ -2787,7 +3444,7 @@
     const summaryChips = [
       { label: primaryChipLabel, tone: workflowPending ? "pending" : "approved" },
       showWorkflowChip ? { label: workflowLabel, tone: "good" } : null,
-      summary.valid_till ? { label: formatDaysToExpiry(summary.days_to_expiry), tone: validityChipClass } : null,
+      summary.valid_till ? { label: getQuotationValidityMeta(summary), tone: validityChipClass } : null,
       converted ? { label: formatCountTitle("Sales Order", "Sales Orders", Number(summary.sales_order_count || 0)), tone: "approved" } : null,
     ].filter(Boolean);
     const summaryFacts = [
@@ -2800,7 +3457,7 @@
         className: "erpw-child-fact-validity",
         label: "Valid Till",
         value: formatDateLabel(summary.valid_till),
-        meta: formatDaysToExpiry(summary.days_to_expiry),
+        meta: getQuotationValidityMeta(summary),
       },
       {
         className: "erpw-child-fact-conversion",
@@ -2841,7 +3498,7 @@
             </div>
             <div class="erpwq-quotation-review-item">
               <div class="erpwq-quotation-review-label">Validity</div>
-              <div class="erpwq-quotation-review-value">${escapeHtml(formatDaysToExpiry(summary.days_to_expiry))}</div>
+              <div class="erpwq-quotation-review-value">${escapeHtml(getQuotationValidityMeta(summary))}</div>
             </div>
           </div>
           <div class="erpwq-quotation-review-note">${escapeHtml(workflowPending ? (support.approval_note || commercialWindowNote) : commercialWindowNote)}</div>
@@ -2866,6 +3523,57 @@
         </article>
       </section>
     `;
+    if (frm.is_new() && typeof childPageShellContent.renderShellContent === "function") {
+      const draftReadiness = buildQuotationDraftReadiness(frm, data);
+      const progressTone = draftReadiness.readyCount >= draftReadiness.requiredCount
+        ? "approved"
+        : draftReadiness.readyCount > 0
+          ? "attention"
+          : "pending";
+      const draftReadinessPlacement = "inline";
+      frm.__erpwDraftReadinessPlacement = draftReadinessPlacement;
+      cleanSidebarUtilityRail(frm, {
+        draftReadiness,
+        draftReadinessPlacement,
+      });
+      childPageShellContent.renderShellContent($shell, {
+        actionIconMarkup,
+        actions: [],
+        draftReadiness,
+        draftReadinessPlacement,
+        guidance: { cards: [] },
+        summary: {
+          chips: [
+            { label: summary.status || "Draft", tone: "pending" },
+            { label: `${draftReadiness.readyCount}/${draftReadiness.requiredCount} ready`, tone: progressTone },
+          ],
+          facts: [
+            {
+              label: "Quote Date",
+              value: formatDateLabel(summary.transaction_date),
+            },
+            {
+              label: "Valid Till",
+              value: formatDateLabel(summary.valid_till),
+            },
+            {
+              label: "Grand Total",
+              value: formatMoney(summary.grand_total, summary.currency),
+            },
+          ],
+          kicker: "Quotation Draft",
+          subtitle: summary.customer_label || "Customer not selected yet",
+          title: summary.name || frm.doc.name || "Quotation",
+        },
+      });
+      return;
+    }
+
+    frm.__erpwDraftReadiness = null;
+    frm.__erpwDraftReadinessPlacement = null;
+    frm.__erpwDraftRailMounted = false;
+    cleanSidebarUtilityRail(frm, { draftReadiness: null, draftReadinessPlacement: null });
+
     if (typeof childPageShellContent.renderShellContent === "function") {
       childPageShellContent.renderShellContent($shell, {
         actionIconMarkup,
@@ -2888,14 +3596,18 @@
       });
       return;
     }
-    const renderActionButton = (action) => `
-      <button type="button" class="erpw-child-action ${escapeHtml(action.variant || "secondary")}" data-action-index="${action.idx}">
+    const renderActionButton = (action) => {
+      const note = String(action.note || action.disabledReason || "").trim();
+      return `
+      <button type="button" class="erpw-child-action ${escapeHtml(action.variant || "secondary")}${action.disabled ? " is-disabled" : ""}" data-action-index="${action.idx}" ${action.disabled ? 'disabled aria-disabled="true"' : ""}${note ? ` title="${escapeHtml(note)}"` : ""}>
         <span class="erpw-child-action-accent" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
         <span class="erpw-child-action-copy">
           <span class="erpw-child-action-title">${escapeHtml(action.title)}</span>
+          ${note ? `<span class="erpw-child-action-note">${escapeHtml(note)}</span>` : ""}
         </span>
       </button>
     `;
+    };
 
     $shell.html(`
       <section class="erpw-child-card erpw-child-summary">
@@ -2909,7 +3621,7 @@
             <div class="erpw-child-chip-row erpw-child-chip-row-header">
               <span class="erpw-child-chip ${workflowPending ? "pending" : "approved"}">${escapeHtml(primaryChipLabel)}</span>
               ${showWorkflowChip ? `<span class="erpw-child-chip good">${escapeHtml(workflowLabel)}</span>` : ""}
-              ${summary.valid_till ? `<span class="erpw-child-chip ${validityChipClass}">${escapeHtml(formatDaysToExpiry(summary.days_to_expiry))}</span>` : ""}
+              ${summary.valid_till ? `<span class="erpw-child-chip ${validityChipClass}">${escapeHtml(getQuotationValidityMeta(summary))}</span>` : ""}
               ${converted ? `<span class="erpw-child-chip approved">${escapeHtml(formatCountTitle("Sales Order", "Sales Orders", Number(summary.sales_order_count || 0)))}</span>` : ""}
             </div>
           </div>
@@ -2922,7 +3634,7 @@
           <div class="erpw-child-fact erpw-child-fact-validity">
             <div class="erpw-child-fact-label">Valid Till</div>
             <div class="erpw-child-fact-value">${escapeHtml(formatDateLabel(summary.valid_till))}</div>
-            <div class="erpw-child-fact-meta">${escapeHtml(formatDaysToExpiry(summary.days_to_expiry))}</div>
+            <div class="erpw-child-fact-meta">${escapeHtml(getQuotationValidityMeta(summary))}</div>
           </div>
           <div class="erpw-child-fact erpw-child-fact-conversion">
             <div class="erpw-child-fact-label">Conversion</div>
@@ -2999,7 +3711,7 @@
             </div>
             <div class="erpwq-quotation-review-item">
               <div class="erpwq-quotation-review-label">Validity</div>
-              <div class="erpwq-quotation-review-value">${escapeHtml(formatDaysToExpiry(summary.days_to_expiry))}</div>
+              <div class="erpwq-quotation-review-value">${escapeHtml(getQuotationValidityMeta(summary))}</div>
             </div>
           </div>
           <div class="erpwq-quotation-review-note">${escapeHtml(workflowPending ? (support.approval_note || commercialWindowNote) : commercialWindowNote)}</div>
@@ -3026,6 +3738,7 @@
     `);
 
     actionIndexes.forEach((action, idx) => {
+      if (action.disabled || typeof action.handler !== "function") return;
       $shell.find(`[data-action-index="${idx}"]`).on("click", action.handler);
     });
   }
@@ -3173,12 +3886,78 @@
       prepareFormShell(frm);
     },
     refresh(frm) {
+      if (typeof frm.is_new === "function" && frm.is_new()) {
+        const draftPerfKey = getDraftStabilitySessionKey(frm);
+        if (frm.__erpwDraftPerformanceResetKey !== draftPerfKey) {
+          frm.__erpwDraftPerformanceResetKey = draftPerfKey;
+          resetDraftPerformanceSession(frm, {
+            hook: "refresh",
+            doctype: frm.doctype || "Quotation",
+          });
+          seedDraftPerformanceSession(frm, {
+            source: "refresh_seed",
+            shellPrepared: frm.__erpwShellPreparedMode === "draft",
+            contextReady: !!frm.__erpwContextRenderedSignature,
+            pendingActive: frm.__erpwDraftBodyPending === true,
+          });
+          promoteQuotationDraftBodyStableIfReady(frm);
+        }
+        applyQuotationDraftTaxFieldPolicy(frm, true);
+      }
+      markFeatureStatus(frm, "draft_route", "start", {
+        hook: "refresh",
+        mode: typeof frm.is_new === "function" && frm.is_new() ? "draft" : "standard",
+      });
       loadContext(frm);
-      scheduleFormTask(frm, "post_refresh_enhance", 160, () => enhanceFormBody(frm));
+      if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.primeManagedDraftLookups === "function") {
+        window.erpWorkspaceUiBoot.primeManagedDraftLookups(frm);
+      }
+      scheduleQuotationDraftStabilityCheck(frm, 220);
+      scheduleQuotationPriceRefresh(frm, 120);
+      if (!(typeof frm.is_new === "function" && frm.is_new())) {
+        scheduleFormTask(frm, "post_refresh_enhance", 160, () => enhanceFormBody(frm));
+      }
+    },
+    party_name(frm) {
+      scheduleQuotationDraftContextSync(frm, 120);
+      scheduleQuotationPriceRefresh(frm, 120);
+    },
+    valid_till(frm) {
+      scheduleQuotationDraftContextSync(frm, 120);
+    },
+    transaction_date(frm) {
+      scheduleQuotationDraftContextSync(frm, 120);
+    },
+    selling_price_list(frm) {
+      scheduleQuotationPriceRefresh(frm, 120);
+    },
+    price_list(frm) {
+      scheduleQuotationPriceRefresh(frm, 120);
+    },
+    items_remove(frm) {
+      scheduleQuotationPriceRefresh(frm, 60);
+    },
+    before_submit(frm) {
+      ensureQuotationPricingGuardrail(frm);
     },
     dashboard_update(frm) {
       scheduleFormTask(frm, "connections_refresh_fast", 0, () => renderConnectionsWorkspace(frm, frm.__erpwQuotationContext || draftContext(frm)));
       scheduleFormTask(frm, "connections_refresh_late", 180, () => renderConnectionsWorkspace(frm, frm.__erpwQuotationContext || draftContext(frm)));
+    },
+  });
+
+  frappe.ui.form.on("Quotation Item", {
+    item_code(frm) {
+      scheduleQuotationPriceRefresh(frm, 120);
+    },
+    qty(frm) {
+      scheduleQuotationPriceRefresh(frm, 120);
+    },
+    rate(frm) {
+      scheduleQuotationPriceRefresh(frm, 120);
+    },
+    amount(frm) {
+      scheduleQuotationPriceRefresh(frm, 120);
     },
   });
 
@@ -3191,9 +3970,9 @@
 
   if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.registerChildPageBootstrap === "function") {
     window.erpWorkspaceUiBoot.registerChildPageBootstrap("Quotation", bootstrapCurrentQuotationForm);
+  } else {
+    $(document).ready(() => {
+      setTimeout(bootstrapCurrentQuotationForm, 120);
+    });
   }
-
-  $(document).ready(() => {
-    setTimeout(bootstrapCurrentQuotationForm, 120);
-  });
 })();

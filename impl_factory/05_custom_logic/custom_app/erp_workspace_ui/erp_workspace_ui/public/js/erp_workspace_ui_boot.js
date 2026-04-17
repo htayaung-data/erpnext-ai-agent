@@ -2,8 +2,18 @@
   let footerPatched = false;
   let sidebarPatched = false;
   let routeChromeBound = false;
-  let salesOrderSidebarCollapsed = false;
-  let priorSidebarExpandedState = null;
+  let gridActionLabelsBound = false;
+  let gridActionLabelsObserver = null;
+  let gridActionLabelNormalizeFrame = null;
+  let draftLookupBound = false;
+  let activeDraftLookupInput = null;
+  let draftLookupPositionFrame = null;
+  let draftLookupMirror = null;
+  let draftLookupMirrorNativeOptions = [];
+  let activeDraftLookupMeta = null;
+  let draftLookupRequestToken = 0;
+  let draftLookupResultCache = Object.create(null);
+  let draftLookupPendingCache = Object.create(null);
 
   function matchesChildExecutionPath(slug) {
     const path = window.location.pathname || "";
@@ -51,14 +61,50 @@
       node.classList.remove("erpw-so-left-sidebar-compact");
     });
 
-    salesOrderSidebarCollapsed = false;
-    priorSidebarExpandedState = null;
   }
 
   const childPageBootstrapRegistry = {};
   let childPageBootstrapWatcherToken = 0;
   let lastChildExecutionScrollPath = null;
   let childExecutionScrollToken = 0;
+
+  function elementHasMeaningfulVisibleContent(node) {
+    if (!(node instanceof HTMLElement)) return false;
+
+    const visibleDescendants = Array.from(node.querySelectorAll('*')).filter((child) => {
+      if (!(child instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(child);
+      return style.display !== 'none' && style.visibility !== 'hidden' && !child.hidden;
+    });
+
+    const visibleText = visibleDescendants
+      .map((child) => String(child.textContent || '').replace(/\s+/g, ' ').trim())
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (visibleText) return true;
+
+    return visibleDescendants.some((child) => child.matches('button, a[href], input:not([type="hidden"]), select, textarea, .btn, .indicator-pill, .chart-wrapper, .widget, .number-widget'));
+  }
+
+  function collapseEmptyChildTopChrome() {
+    if (!isChildExecutionRoute()) return;
+
+    const candidates = document.querySelectorAll(
+      '.layout-main-section .form-dashboard,'
+      + '.layout-main-section .form-dashboard-section,'
+      + '.layout-main-section .form-message-container,'
+      + '.form-page .form-dashboard,'
+      + '.form-page .form-dashboard-section,'
+      + '.form-page .form-message-container'
+    );
+
+    candidates.forEach((node) => {
+      if (!(node instanceof HTMLElement)) return;
+      const meaningful = elementHasMeaningfulVisibleContent(node);
+      node.classList.toggle('erpw-child-empty-top-strip', !meaningful);
+    });
+  }
 
   function forceChildExecutionHeaderTop() {
     try {
@@ -102,10 +148,35 @@
     });
   }
 
+  function hasRenderedChildShell(frm) {
+    const rootNode = frm && (
+      frm.page && frm.page.main
+        ? frm.page.main
+        : frm.layout && frm.layout.wrapper
+          ? frm.layout.wrapper
+          : frm.wrapper || frm.$wrapper || null
+    );
+    const rootElement = rootNode && rootNode.jquery ? rootNode.get(0) : rootNode;
+    const scopedRoot = rootElement instanceof HTMLElement
+      ? (rootElement.closest(".layout-main-section, .form-page, .page-content") || rootElement)
+      : null;
+    const shell = scopedRoot
+      ? scopedRoot.querySelector(".erpw-child-shell")
+      : document.querySelector(".erpw-child-shell");
+
+    if (!(shell instanceof HTMLElement)) return false;
+    if (!shell.children.length) return false;
+    return !shell.querySelector(".erpw-so-shell-skeleton");
+  }
+
   function runActiveChildPageBootstrap() {
     const frm = window.cur_frm;
     if (!frm || !frm.doctype || !isChildExecutionDocType(frm.doctype)) {
       return false;
+    }
+
+    if (frm.__erpwContextRenderedName === (frm.doc && frm.doc.name) && hasRenderedChildShell(frm)) {
+      return true;
     }
 
     const bootstrap = childPageBootstrapRegistry[frm.doctype];
@@ -161,6 +232,11 @@
     const syncSoon = () => {
       window.requestAnimationFrame(() => {
         applySalesOrderRouteChrome();
+        collapseEmptyChildTopChrome();
+        ensureChildGridActionLabels();
+        bindDraftLookupSurface();
+        prewarmDraftLookupDefaults();
+        scheduleDraftLookupPositioning();
         ensureActiveChildPageBootstrap({ maxAttempts: 20 });
       });
     };
@@ -231,6 +307,1070 @@
     }
   }
 
+  function countSelectedGridRows(section) {
+    if (!(section instanceof Element)) return 0;
+
+    const selectors = [
+      '.grid-row-check:checked',
+      '.grid-row-check.checked',
+      '.grid-body input[type="checkbox"]:checked',
+      '.grid-static-col input[type="checkbox"]:checked',
+      '.rows input[type="checkbox"]:checked',
+      '.grid-row input[type="checkbox"]:checked',
+    ];
+
+    const nodes = new Set();
+    selectors.forEach((selector) => {
+      section.querySelectorAll(selector).forEach((node) => nodes.add(node));
+    });
+    return nodes.size;
+  }
+
+  function resetGridActionLabel(button) {
+    if (!(button instanceof HTMLElement)) return;
+    button.querySelectorAll('.erpw-grid-action-label').forEach((node) => node.remove());
+    button.classList.remove('erpw-grid-action-labeled', 'erpw-grid-action-force-label');
+    button.removeAttribute('data-erpw-action-label');
+  }
+
+  function syncNativeDeleteButton(button, selectedRows) {
+    if (!(button instanceof HTMLElement)) return;
+
+    resetGridActionLabel(button);
+    button.setAttribute('aria-label', 'Delete row');
+    button.setAttribute('title', 'Delete row');
+    button.removeAttribute('data-erpw-action-label');
+    button.style.removeProperty('display');
+    button.style.setProperty('background-color', 'rgb(255, 255, 255)', 'important');
+    button.style.setProperty('border-color', 'rgba(226, 232, 240, 0.82)', 'important');
+    button.style.setProperty('color', 'rgb(56, 56, 56)', 'important');
+    button.style.setProperty('-webkit-text-fill-color', 'rgb(56, 56, 56)', 'important');
+
+    const currentText = String(button.textContent || '').replace(/\s+/g, ' ').trim();
+    if (selectedRows > 0 && !currentText) {
+      button.textContent = 'Delete row';
+    }
+  }
+
+  function normalizeGridActionLabels(scope) {
+    if (!isChildExecutionRoute()) return;
+
+    collapseEmptyChildTopChrome();
+
+    const rootNode = scope && typeof scope.querySelectorAll === 'function'
+      ? scope
+      : document;
+    const footers = rootNode.querySelectorAll(
+      '.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer,'
+      + '.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer,'
+      + '.erpw-so-terms-section-payment .grid-footer'
+    );
+
+    footers.forEach((footer) => {
+      const section = footer && typeof footer.closest === 'function'
+        ? footer.closest('.form-section, .grid-field, .frappe-control')
+        : null;
+      const selectedRows = countSelectedGridRows(section);
+      const nativeDeleteButton = footer.querySelector('.grid-buttons .grid-remove-rows');
+      const deleteAllButton = footer.querySelector('.grid-buttons .grid-remove-all-rows');
+
+      if (nativeDeleteButton instanceof HTMLElement) {
+        syncNativeDeleteButton(nativeDeleteButton, selectedRows);
+      }
+
+      if (deleteAllButton instanceof HTMLElement) {
+        resetGridActionLabel(deleteAllButton);
+        deleteAllButton.style.removeProperty('display');
+      }
+
+      footer.querySelectorAll('.grid-bulk-actions .btn, .grid-bulk-actions button').forEach((button) => {
+        if (!(button instanceof HTMLElement)) return;
+        resetGridActionLabel(button);
+        button.style.removeProperty('display');
+      });
+    });
+  }
+
+  function scheduleGridActionLabelNormalization(scope) {
+    if (gridActionLabelNormalizeFrame) {
+      window.cancelAnimationFrame(gridActionLabelNormalizeFrame);
+    }
+    gridActionLabelNormalizeFrame = window.requestAnimationFrame(() => {
+      gridActionLabelNormalizeFrame = null;
+      normalizeGridActionLabels(scope);
+    });
+    [120, 320, 720].forEach((delay) => {
+      window.setTimeout(() => normalizeGridActionLabels(scope), delay);
+    });
+  }
+
+  function isManagedDraftForm(frm) {
+    return !!(
+      frm
+      && (frm.doctype === 'Sales Order' || frm.doctype === 'Quotation')
+      && typeof frm.is_new === 'function'
+      && frm.is_new()
+      && isChildExecutionRoute()
+    );
+  }
+
+  function getManagedDraftLookupInput(target) {
+    if (!isManagedDraftForm(window.cur_frm)) return null;
+    const input = target instanceof HTMLInputElement
+      ? target
+      : target && typeof target.closest === 'function'
+        ? target.closest('input')
+        : null;
+    if (!(input instanceof HTMLInputElement)) return null;
+    if (!input.closest('.erpw-so-form-enhanced')) return null;
+    return input;
+  }
+
+  function getManagedDraftLookupAnchorFromInput(input) {
+    if (!(input instanceof HTMLInputElement)) return null;
+    const candidates = [
+      input.closest('.awesomplete'),
+      input.closest('.link-field'),
+      input.closest('.control-input-wrapper'),
+      input.parentElement,
+    ];
+    const anchor = candidates.find((candidate) => candidate instanceof HTMLElement && candidate.closest('.erpw-so-form-enhanced'));
+    return anchor instanceof HTMLElement ? anchor : null;
+  }
+
+  function resetDraftLookupAnchors() {
+    Array.from(document.querySelectorAll('.erpw-managed-draft-lookup-anchor')).forEach((anchor) => {
+      if (!(anchor instanceof HTMLElement)) return;
+      anchor.classList.remove('erpw-managed-draft-lookup-anchor');
+      [
+        'position', 'overflow', 'display', 'width', 'max-width', 'min-height', 'height', 'max-height', 'z-index'
+      ].forEach((property) => anchor.style.removeProperty(property));
+    });
+  }
+
+  let managedDraftLookupStylesInjected = false;
+
+  function ensureManagedDraftLookupStyles() {
+    if (managedDraftLookupStylesInjected || !document.head) return;
+    managedDraftLookupStylesInjected = true;
+
+    const style = document.createElement('style');
+    style.id = 'erpw-managed-draft-lookup-styles';
+    style.textContent = `
+      .erpw-so-form-enhanced [data-erpw-draft-column="quotation-price-list"],
+      .erpw-so-form-enhanced [data-erpw-draft-column="sales-order-price-list"] {
+        display: block;
+        clear: left;
+        float: left;
+        width: 33.33333333%;
+      }
+
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field,
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field .frappe-control,
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field .control-input-wrapper,
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field .link-field,
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field .awesomplete,
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field input {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      .erpw-so-form-enhanced .erpw-so-draft-price-list-field {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-context {
+        margin: 0 24px 18px;
+        padding: 12px 18px 14px;
+        border: 1px solid rgba(214, 224, 238, 0.95);
+        border-radius: 18px;
+        background: #ffffff;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-context-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-context-status {
+        flex: 0 0 auto;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #7b8ea6;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-grid {
+        display: grid;
+        gap: 10px 16px;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-grid-main {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-field {
+        margin: 0 !important;
+        width: min(640px, 100%) !important;
+        max-width: 640px !important;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-field .form-group,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .frappe-control,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .control-input-wrapper,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .link-field,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .awesomplete,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .input-with-feedback,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .control-value,
+      .erpw-so-form-enhanced .erpw-draft-tax-field input,
+      .erpw-so-form-enhanced .erpw-draft-tax-field select {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      .erpw-so-form-enhanced .erpw-draft-tax-field .control-input-wrapper,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .link-field,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .awesomplete,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .input-with-feedback,
+      .erpw-so-form-enhanced .erpw-draft-tax-field .control-value,
+      .erpw-so-form-enhanced .erpw-draft-tax-field input,
+      .erpw-so-form-enhanced .erpw-draft-tax-field select {
+        background: #f3f6fa !important;
+        border-color: #dfe7f1 !important;
+        border-radius: 12px !important;
+      }
+
+      @media (max-width: 991px) {
+        .erpw-so-form-enhanced .erpw-draft-tax-grid-main {
+          grid-template-columns: 1fr;
+        }
+
+        .erpw-so-form-enhanced .erpw-draft-tax-context {
+          margin-left: 16px;
+          margin-right: 16px;
+        }
+      }
+
+      .erpw-hide-line-delivery-date .grid-heading-row [data-fieldname="delivery_date"],
+      .erpw-hide-line-delivery-date .grid-body [data-fieldname="delivery_date"],
+      .erpw-hide-line-delivery-date .rows [data-fieldname="delivery_date"],
+      .erpw-hide-line-delivery-date .grid-static-col[data-fieldname="delivery_date"] {
+        display: none !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function normalizeDraftLookupAnchor(input) {
+    const anchor = getManagedDraftLookupAnchorFromInput(input);
+    if (!(anchor instanceof HTMLElement)) return null;
+
+    const inputRect = input.getBoundingClientRect();
+    const inputHeight = Math.max(34, Math.ceil(inputRect.height || input.offsetHeight || 36));
+    const inputWidth = Math.max(180, Math.ceil(inputRect.width || input.offsetWidth || anchor.offsetWidth || 0));
+
+    anchor.classList.add('erpw-managed-draft-lookup-anchor');
+    anchor.style.setProperty('position', 'relative', 'important');
+    anchor.style.setProperty('overflow', 'visible', 'important');
+    anchor.style.setProperty('z-index', '1400', 'important');
+    anchor.style.setProperty('min-height', `${inputHeight}px`, 'important');
+    anchor.style.setProperty('height', `${inputHeight}px`, 'important');
+    anchor.style.setProperty('max-height', `${inputHeight}px`, 'important');
+
+    if (
+      anchor.classList.contains('awesomplete')
+      || anchor.classList.contains('link-field')
+      || anchor.classList.contains('control-input-wrapper')
+    ) {
+      anchor.style.setProperty('display', 'block', 'important');
+      anchor.style.setProperty('width', `${inputWidth}px`, 'important');
+      anchor.style.setProperty('max-width', '100%', 'important');
+    }
+    return anchor;
+  }
+
+  function getManagedDraftLookupMeta(target) {
+    const frm = window.cur_frm;
+    if (!isManagedDraftForm(frm)) return null;
+    const input = getManagedDraftLookupInput(target);
+    if (!(input instanceof HTMLInputElement)) return null;
+
+    const explicitFieldHost = input.closest('[data-fieldname], .frappe-control[data-fieldname], .grid-static-col[data-fieldname], .grid-field[data-fieldname]');
+    const explicitOptionsHost = input.closest('[data-options], .frappe-control[data-options], [data-fieldtype="Link"][data-options]');
+
+    let fieldname = explicitFieldHost && typeof explicitFieldHost.getAttribute === 'function'
+      ? String(explicitFieldHost.getAttribute('data-fieldname') || '').trim()
+      : '';
+    let optionsDoctype = explicitOptionsHost && typeof explicitOptionsHost.getAttribute === 'function'
+      ? String(explicitOptionsHost.getAttribute('data-options') || '').trim()
+      : '';
+
+    let node = input;
+    while (node && node !== document.body) {
+      if (typeof node.getAttribute === 'function') {
+        fieldname = fieldname || String(node.getAttribute('data-fieldname') || '').trim();
+        optionsDoctype = optionsDoctype || String(node.getAttribute('data-options') || '').trim();
+      }
+      node = node.parentElement;
+    }
+
+    const quotationPartyDoctype = frm && frm.doctype === 'Quotation'
+      ? String((frm.doc && frm.doc.quotation_to) || 'Customer').trim() || 'Customer'
+      : 'Customer';
+    const fieldDoctypeMap = {
+      item_code: 'Item',
+      customer: 'Customer',
+      party_name: quotationPartyDoctype,
+      customer_address: 'Address',
+      shipping_address_name: 'Address',
+      contact_person: 'Contact',
+      territory: 'Territory',
+      taxes_and_charges: 'Sales Taxes and Charges Template',
+      tax_category: 'Tax Category',
+      shipping_rule: 'Shipping Rule',
+      incoterm: 'Incoterm',
+      selling_price_list: 'Price List',
+    };
+
+    const resolvedOptionsDoctype = (
+      optionsDoctype
+      && optionsDoctype !== 'quotation_to'
+      && /^[A-Z]/.test(optionsDoctype)
+    ) ? optionsDoctype : '';
+    const doctype = fieldname === 'party_name'
+      ? quotationPartyDoctype
+      : resolvedOptionsDoctype || fieldDoctypeMap[fieldname] || '';
+    const managedFields = new Set(['item_code', 'customer', 'party_name', 'selling_price_list', 'taxes_and_charges']);
+    if (!managedFields.has(fieldname)) return null;
+    if (!(doctype === 'Customer' || doctype === 'Item' || doctype === 'Price List' || doctype === 'Sales Taxes and Charges Template')) return null;
+
+    return {
+      doctype,
+      fieldname,
+      input,
+    };
+  }
+
+  function getDraftLookupCacheKey(meta, frm) {
+    const activeForm = frm || window.cur_frm;
+    if (!activeForm || !meta || !meta.doctype) return '';
+    const routeKey = String(activeForm.doctype || '').trim();
+    const fieldKey = String(meta.fieldname || meta.doctype || '').trim();
+    const doctypeKey = String(meta.doctype || '').trim();
+    const partyKey = String(activeForm.doc && activeForm.doc.quotation_to || '').trim();
+    return [routeKey, fieldKey, doctypeKey, partyKey].filter(Boolean).join('::');
+  }
+
+  function setDraftLookupCachedResults(meta, results, frm) {
+    const cacheKey = getDraftLookupCacheKey(meta, frm);
+    if (!cacheKey) return [];
+    draftLookupResultCache[cacheKey] = Array.isArray(results) ? results.slice() : [];
+    return draftLookupResultCache[cacheKey];
+  }
+
+  function mergeDraftLookupFilters(baseFilters, extraFilters) {
+    const additions = extraFilters && typeof extraFilters === 'object' ? extraFilters : {};
+    if (!Object.keys(additions).length) return baseFilters;
+    if (!baseFilters) return additions;
+
+    if (typeof baseFilters === 'string') {
+      try {
+        const parsed = JSON.parse(baseFilters);
+        return Object.assign({}, parsed || {}, additions);
+      } catch (error) {
+        return additions;
+      }
+    }
+
+    if (Array.isArray(baseFilters)) {
+      return baseFilters.concat(Object.entries(additions));
+    }
+
+    if (typeof baseFilters === 'object') {
+      return Object.assign({}, baseFilters, additions);
+    }
+
+    return additions;
+  }
+
+  function applyManagedDraftLookupFieldFilters(meta, args) {
+    if (!meta || !args || typeof args !== 'object') return args;
+
+    if (meta.fieldname === 'selling_price_list') {
+      args.filters = mergeDraftLookupFilters(args.filters, {
+        selling: 1,
+        enabled: 1,
+      });
+    }
+
+    if (meta.fieldname === 'taxes_and_charges') {
+      args.filters = mergeDraftLookupFilters(args.filters, {
+        disabled: 0,
+      });
+    }
+
+    return args;
+  }
+
+  function getDraftLookupCachedResults(meta, frm) {
+    const cacheKey = getDraftLookupCacheKey(meta, frm);
+    if (!cacheKey) return [];
+    return Array.isArray(draftLookupResultCache[cacheKey]) ? draftLookupResultCache[cacheKey].slice() : [];
+  }
+
+  function fetchDraftLookupDataset(meta, frm) {
+    const activeForm = frm || window.cur_frm;
+    if (!activeForm || !meta || !meta.doctype) return Promise.resolve([]);
+    if (!window.frappe || typeof frappe.call !== 'function') return Promise.resolve([]);
+
+    const cacheKey = getDraftLookupCacheKey(meta, activeForm);
+    if (!cacheKey) return Promise.resolve([]);
+
+    const cachedResults = getDraftLookupCachedResults(meta, activeForm);
+    if (cachedResults.length) return Promise.resolve(cachedResults);
+    if (draftLookupPendingCache[cacheKey]) return draftLookupPendingCache[cacheKey];
+
+    draftLookupPendingCache[cacheKey] = new Promise((resolve) => {
+      try {
+        const args = applyManagedDraftLookupFieldFilters(meta, {
+          doctype: meta.doctype,
+          txt: '',
+          page_length: 500,
+          reference_doctype: activeForm.doctype,
+          link_fieldname: meta.fieldname || undefined,
+        });
+
+        frappe.call({
+          method: 'frappe.desk.search.search_link',
+          args,
+          callback: (response) => {
+            const results = normalizeDraftLookupResults(response && response.message);
+            setDraftLookupCachedResults(meta, results, activeForm);
+            delete draftLookupPendingCache[cacheKey];
+            resolve(results);
+          },
+          error: () => {
+            delete draftLookupPendingCache[cacheKey];
+            resolve([]);
+          },
+        });
+      } catch (error) {
+        delete draftLookupPendingCache[cacheKey];
+        resolve([]);
+      }
+    });
+
+    return draftLookupPendingCache[cacheKey];
+  }
+
+  function filterDraftLookupResults(results, query) {
+    if (!Array.isArray(results) || !results.length) return [];
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return results.slice();
+
+    const scored = results
+      .map((result, index) => {
+        const value = String(result && result.value || '').trim();
+        const label = String(result && result.label || value).trim();
+        const description = String(result && result.description || '').trim();
+        const primary = `${value} ${label}`.toLowerCase();
+        const secondary = description.toLowerCase();
+
+        let score = -1;
+        if (value.toLowerCase() === normalizedQuery || label.toLowerCase() === normalizedQuery) {
+          score = 0;
+        } else if (value.toLowerCase().startsWith(normalizedQuery) || label.toLowerCase().startsWith(normalizedQuery)) {
+          score = 1;
+        } else if (primary.includes(normalizedQuery)) {
+          score = 2;
+        } else if (secondary.includes(normalizedQuery)) {
+          score = 3;
+        }
+
+        if (score < 0) return null;
+        return { result, score, index };
+      })
+      .filter(Boolean)
+      .sort((left, right) => {
+        if (left.score !== right.score) return left.score - right.score;
+        return left.index - right.index;
+      })
+      .map((entry) => entry.result);
+
+    return scored;
+  }
+
+  function prewarmDraftLookup(meta) {
+    const frm = window.cur_frm;
+    if (!isManagedDraftForm(frm) || !frm) return;
+    if (!meta || !meta.doctype) return;
+
+    frm.__erpwDraftLookupWarmed = frm.__erpwDraftLookupWarmed || {};
+    const warmKey = getDraftLookupCacheKey(meta, frm);
+    if (!warmKey || frm.__erpwDraftLookupWarmed[warmKey]) return;
+
+    frm.__erpwDraftLookupWarmed[warmKey] = true;
+    fetchDraftLookupDataset(meta, frm);
+  }
+
+  function prewarmDraftLookupDefaults(frmOverride) {
+    const frm = frmOverride || window.cur_frm;
+    if (!isManagedDraftForm(frm)) return;
+    if (frm.doctype === 'Quotation') {
+      prewarmDraftLookup({
+        doctype: String((frm.doc && frm.doc.quotation_to) || 'Customer').trim() || 'Customer',
+        fieldname: 'party_name',
+      });
+    } else {
+      prewarmDraftLookup({ doctype: 'Customer', fieldname: 'customer' });
+    }
+    prewarmDraftLookup({ doctype: 'Item', fieldname: 'item_code' });
+    prewarmDraftLookup({ doctype: 'Price List', fieldname: 'selling_price_list' });
+    prewarmDraftLookup({ doctype: 'Sales Taxes and Charges Template', fieldname: 'taxes_and_charges' });
+  }
+
+  function primeManagedDraftLookups(frm) {
+    const activeForm = frm || window.cur_frm;
+    if (!isManagedDraftForm(activeForm)) return;
+    prewarmDraftLookupDefaults(activeForm);
+  }
+
+  function getVisibleDraftLookupPopups() {
+    const selectors = [
+      '.awesomplete > ul:not([hidden])',
+      '.ui-autocomplete',
+      '.autocomplete-suggestions',
+      '.link-field .awesomplete > ul:not([hidden])',
+      '[role="listbox"]',
+      '.ui-menu',
+    ];
+
+    const seen = new Set();
+    return selectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((popup) => {
+        if (!(popup instanceof HTMLElement)) return false;
+        if (seen.has(popup)) return false;
+        seen.add(popup);
+        const style = window.getComputedStyle(popup);
+        if (style.display === 'none' || style.visibility === 'hidden' || popup.hidden) return false;
+        return popup.getClientRects().length > 0;
+      });
+  }
+
+  function hideNativeDraftLookupPopups(popups) {
+    popups.forEach((popup) => {
+      if (!(popup instanceof HTMLElement)) return;
+      popup.classList.add('erpw-native-draft-lookup-hidden');
+    });
+  }
+
+  function clearNativeDraftLookupPopupHiding() {
+    getVisibleDraftLookupPopups().forEach((popup) => {
+      if (!(popup instanceof HTMLElement)) return;
+      popup.classList.remove('erpw-native-draft-lookup-hidden');
+    });
+  }
+
+  function getManagedDraftLookupGridRow(input) {
+    const frm = window.cur_frm;
+    if (!frm || !(input instanceof HTMLElement)) return null;
+    const rowNode = input.closest('.grid-row');
+    if (!(rowNode instanceof HTMLElement)) return null;
+    const rowName = String(rowNode.getAttribute('data-name') || rowNode.getAttribute('data-docname') || rowNode.dataset.name || '').trim();
+    if (!rowName) return null;
+
+    const fieldEntries = Object.values(frm.fields_dict || {});
+    for (const field of fieldEntries) {
+      const grid = field && field.grid;
+      if (!grid || !grid.grid_rows_by_docname) continue;
+      if (grid.grid_rows_by_docname[rowName]) {
+        return grid.grid_rows_by_docname[rowName];
+      }
+    }
+    return null;
+  }
+
+  function escapeDraftLookupHtml(value) {
+    const text = String(value == null ? '' : value);
+    if (window.frappe && frappe.utils && typeof frappe.utils.escape_html === 'function') {
+      return frappe.utils.escape_html(text);
+    }
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function normalizeDraftLookupResults(message) {
+    if (!Array.isArray(message)) return [];
+    return message
+      .map((row) => {
+        if (!row) return null;
+        if (typeof row === 'string') {
+          return { value: row, label: row, description: '' };
+        }
+        if (Array.isArray(row)) {
+          return {
+            value: String(row[0] || '').trim(),
+            label: String(row[0] || '').trim(),
+            description: String(row[1] || '').trim(),
+          };
+        }
+        const value = String(row.value || row.name || '').trim();
+        if (!value) return null;
+        return {
+          value,
+          label: String(row.label || row.value || row.name || '').trim() || value,
+          description: String(row.description || '').trim(),
+        };
+      })
+      .filter((row) => row && row.value);
+  }
+
+  function ensureDraftLookupMirror() {
+    if (draftLookupMirror instanceof HTMLElement && document.body.contains(draftLookupMirror)) return draftLookupMirror;
+
+    const mirror = document.createElement('div');
+    mirror.className = 'erpw-draft-lookup-mirror';
+    mirror.setAttribute('aria-hidden', 'true');
+    mirror.addEventListener('mousedown', (event) => {
+      if (event.target.closest('.erpw-draft-lookup-option')) {
+        event.preventDefault();
+      }
+    });
+    mirror.addEventListener('click', (event) => {
+      const optionNode = event.target.closest('.erpw-draft-lookup-option');
+      if (!(optionNode instanceof HTMLElement)) return;
+      event.preventDefault();
+      const index = Number(optionNode.getAttribute('data-lookup-index') || '-1');
+      const result = draftLookupMirrorNativeOptions[index];
+      if (!result) return;
+      applyDraftLookupSelection(result);
+    });
+    document.body.appendChild(mirror);
+    draftLookupMirror = mirror;
+    return draftLookupMirror;
+  }
+
+  function hideDraftLookupMirror() {
+    if (!(draftLookupMirror instanceof HTMLElement)) return;
+    draftLookupMirror.classList.remove('visible');
+    draftLookupMirror.setAttribute('aria-hidden', 'true');
+    draftLookupMirror.innerHTML = '';
+    draftLookupMirrorNativeOptions = [];
+  }
+
+  function renderDraftLookupMirrorMessage(input, title, note) {
+    const mirror = ensureDraftLookupMirror();
+    draftLookupMirrorNativeOptions = [];
+    mirror.innerHTML = `
+      <div class="erpw-draft-lookup-empty">
+        <span class="erpw-draft-lookup-empty-title">${escapeDraftLookupHtml(title || '')}</span>
+        ${note ? `<span class="erpw-draft-lookup-empty-note">${escapeDraftLookupHtml(note)}</span>` : ''}
+      </div>
+    `;
+    mirror.classList.add('visible');
+    mirror.setAttribute('aria-hidden', 'false');
+    positionDraftLookupMirror(input);
+  }
+
+  function positionDraftLookupMirror(input) {
+    if (!(draftLookupMirror instanceof HTMLElement) || !draftLookupMirror.classList.contains('visible')) return;
+    if (!(input instanceof HTMLElement)) return;
+    const rect = input.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+
+    const viewportPadding = 12;
+    const width = Math.min(Math.max(Math.ceil(rect.width + 18), 260), 340, window.innerWidth - (viewportPadding * 2));
+    const mirrorHeight = Math.min(Math.max(draftLookupMirror.scrollHeight || draftLookupMirror.offsetHeight || 180, 120), 280);
+    const roomBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const top = roomBelow >= Math.min(180, mirrorHeight)
+      ? rect.bottom + 2
+      : Math.max(viewportPadding, rect.top - mirrorHeight - 2);
+    const left = Math.min(
+      Math.max(viewportPadding, rect.left),
+      window.innerWidth - width - viewportPadding
+    );
+
+    draftLookupMirror.style.setProperty('top', `${top}px`, 'important');
+    draftLookupMirror.style.setProperty('left', `${left}px`, 'important');
+    draftLookupMirror.style.setProperty('width', `${width}px`, 'important');
+    draftLookupMirror.style.setProperty('max-height', '280px', 'important');
+  }
+
+  function renderDraftLookupMirror(results, input) {
+    const mirror = ensureDraftLookupMirror();
+    if (!Array.isArray(results) || !results.length) {
+      hideDraftLookupMirror();
+      return;
+    }
+
+    draftLookupMirrorNativeOptions = results;
+    mirror.innerHTML = results.map((result, index) => `
+      <button type="button" class="erpw-draft-lookup-option" data-lookup-index="${index}">
+        <span class="erpw-draft-lookup-title">${escapeDraftLookupHtml(result.label || result.value)}</span>
+        ${result.description ? `<span class="erpw-draft-lookup-meta">${escapeDraftLookupHtml(result.description)}</span>` : ''}
+      </button>
+    `).join('');
+    mirror.classList.add('visible');
+    mirror.setAttribute('aria-hidden', 'false');
+    positionDraftLookupMirror(input);
+  }
+
+  function applyDraftLookupSelection(result) {
+    const frm = window.cur_frm;
+    const meta = activeDraftLookupMeta;
+    const input = activeDraftLookupInput;
+    if (!frm || !meta || !(input instanceof HTMLInputElement) || !result || !result.value) {
+      resetDraftLookupPopups();
+      return;
+    }
+
+    input.value = result.value;
+
+    if (meta.fieldname === 'item_code') {
+      const gridRow = getManagedDraftLookupGridRow(input);
+      if (gridRow && gridRow.doc && window.frappe && frappe.model && typeof frappe.model.set_value === 'function') {
+        frappe.model.set_value(gridRow.doc.doctype, gridRow.doc.name, meta.fieldname, result.value);
+      } else {
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } else if (typeof frm.set_value === 'function') {
+      frm.set_value(meta.fieldname, result.value);
+    } else {
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    window.setTimeout(() => {
+      resetDraftLookupPopups();
+      if (input && typeof input.focus === 'function') {
+        input.focus();
+      }
+    }, 0);
+  }
+
+  function fetchManagedDraftLookup(meta, input, options) {
+    const frm = meta && meta.frm ? meta.frm : window.cur_frm;
+    if (!isManagedDraftForm(frm) || !meta || !meta.doctype || !(input instanceof HTMLInputElement)) {
+      resetDraftLookupPopups();
+      return;
+    }
+
+    const settings = Object.assign({
+      showAll: false,
+    }, options || {});
+    const query = settings.showAll ? '' : String(input.value || '').trim();
+    const requestToken = ++draftLookupRequestToken;
+    activeDraftLookupInput = input;
+    activeDraftLookupMeta = meta;
+    normalizeDraftLookupAnchor(input);
+
+    const renderFiltered = (results) => {
+      const filteredResults = filterDraftLookupResults(results, query);
+      hideNativeDraftLookupPopups(getVisibleDraftLookupPopups());
+      if (filteredResults.length) {
+        renderDraftLookupMirror(filteredResults, input);
+        return;
+      }
+      renderDraftLookupMirrorMessage(
+        input,
+        query ? `No matches for "${query}"` : 'No options available',
+        query ? 'Try a broader term or clear the field.' : 'No records are available for this field.'
+      );
+    };
+
+    hideNativeDraftLookupPopups(getVisibleDraftLookupPopups());
+    renderDraftLookupMirrorMessage(input, 'Loading options...', 'Fetching the latest records.');
+
+    let args = null;
+    if (meta.control && typeof meta.control.get_search_args === 'function') {
+      args = meta.control.get_search_args(query);
+    }
+    if (!args) {
+      args = {
+        txt: query,
+        doctype: meta.doctype,
+        reference_doctype: frm.doctype,
+        link_fieldname: meta.fieldname,
+      };
+    }
+
+    args.txt = query;
+    args.doctype = meta.doctype;
+    args.reference_doctype = frm.doctype;
+    args.link_fieldname = meta.fieldname || args.link_fieldname;
+    args.page_length = query ? 200 : (meta.doctype === 'Price List' ? 500 : 120);
+    applyManagedDraftLookupFieldFilters(meta, args);
+
+    try {
+      frappe.call({
+        type: query ? 'POST' : 'GET',
+        method: 'frappe.desk.search.search_link',
+        no_spinner: true,
+        cache: !query,
+        args,
+        callback: (response) => {
+          if (requestToken !== draftLookupRequestToken) return;
+          if (activeDraftLookupInput !== input) return;
+          const results = normalizeDraftLookupResults(response && response.message);
+          renderFiltered(results);
+        },
+        error: () => {
+          if (requestToken !== draftLookupRequestToken) return;
+          renderDraftLookupMirrorMessage(input, 'Unable to load options', 'Try again in a moment.');
+        },
+      });
+    } catch (error) {
+      if (requestToken !== draftLookupRequestToken) return;
+      renderDraftLookupMirrorMessage(input, 'Unable to load options', 'Try again in a moment.');
+    }
+  }
+
+  function scheduleManagedDraftLookupFetch(meta, input, options) {
+    if (!meta || !meta.doctype || !(input instanceof HTMLInputElement)) {
+      resetDraftLookupPopups();
+      return;
+    }
+
+    activeDraftLookupMeta = meta;
+    activeDraftLookupInput = input;
+    normalizeDraftLookupAnchor(input);
+    fetchManagedDraftLookup(meta, input, options);
+  }
+
+  function resetDraftLookupPopups() {
+    draftLookupRequestToken += 1;
+    clearNativeDraftLookupPopupHiding();
+    resetDraftLookupAnchors();
+    hideDraftLookupMirror();
+  }
+
+  function positionDraftLookupPopups() {
+    if (!isManagedDraftForm(window.cur_frm)) {
+      resetDraftLookupPopups();
+      return;
+    }
+    if (!(activeDraftLookupInput instanceof HTMLElement) || !document.body.contains(activeDraftLookupInput)) {
+      resetDraftLookupPopups();
+      return;
+    }
+    positionDraftLookupMirror(activeDraftLookupInput);
+    hideNativeDraftLookupPopups(getVisibleDraftLookupPopups());
+  }
+
+  function scheduleDraftLookupPositioning() {
+    if (draftLookupPositionFrame) {
+      window.cancelAnimationFrame(draftLookupPositionFrame);
+    }
+    draftLookupPositionFrame = window.requestAnimationFrame(() => {
+      draftLookupPositionFrame = null;
+      positionDraftLookupPopups();
+    });
+  }
+
+  function bindDraftLookupSurface() {
+    if (draftLookupBound || !document.body) return;
+    draftLookupBound = true;
+    ensureManagedDraftLookupStyles();
+
+    const isLookupEventInside = (target) => {
+      if (!(target instanceof Element)) return false;
+      if (target.closest('.erpw-draft-lookup-mirror')) return true;
+      return !!getManagedDraftLookupMeta(target);
+    };
+
+    document.body.addEventListener('mousedown', (event) => {
+      if (isLookupEventInside(event.target)) return;
+      resetDraftLookupPopups();
+    }, true);
+
+    document.body.addEventListener('focusin', (event) => {
+      const meta = getManagedDraftLookupMeta(event.target);
+      if (!meta) return;
+      scheduleManagedDraftLookupFetch(meta, meta.input, { showAll: true });
+    }, true);
+
+    document.body.addEventListener('input', (event) => {
+      const meta = getManagedDraftLookupMeta(event.target);
+      if (!meta) return;
+      scheduleManagedDraftLookupFetch(meta, meta.input);
+    }, true);
+
+    document.body.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      if (!isLookupEventInside(event.target)) return;
+      resetDraftLookupPopups();
+    }, true);
+
+    window.addEventListener('resize', scheduleDraftLookupPositioning, true);
+    window.addEventListener('scroll', () => {
+      if (activeDraftLookupInput instanceof HTMLElement && document.body.contains(activeDraftLookupInput)) {
+        scheduleDraftLookupPositioning();
+        return;
+      }
+      resetDraftLookupPopups();
+    }, true);
+  }
+
+
+  function ensureChildGridActionLabels() {
+    if (!document.body) return;
+
+    if (!gridActionLabelsBound) {
+      gridActionLabelsBound = true;
+
+      if (window.MutationObserver) {
+        gridActionLabelsObserver = new MutationObserver((mutations) => {
+          if (!isChildExecutionRoute()) return;
+          const hasRelevantChange = mutations.some((mutation) => {
+            if (mutation.addedNodes && mutation.addedNodes.length) return true;
+            if (mutation.type === 'attributes' && ['class', 'checked', 'title', 'aria-label'].includes(mutation.attributeName || '')) {
+              return true;
+            }
+            return false;
+          });
+          if (!hasRelevantChange) return;
+          scheduleGridActionLabelNormalization(document);
+        });
+        gridActionLabelsObserver.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['class', 'checked', 'title', 'aria-label'],
+        });
+      }
+
+      const scheduleGridLabels = () => {
+        if (!isChildExecutionRoute()) return;
+        scheduleGridActionLabelNormalization(document);
+      };
+
+      document.body.addEventListener('click', scheduleGridLabels, true);
+      document.body.addEventListener('change', scheduleGridLabels, true);
+    }
+
+    scheduleGridActionLabelNormalization(document);
+  }
+
+  function getManagedNativeDraftForm(control) {
+    if (!control) return null;
+    const frm = control.frm
+      || (control.grid && control.grid.frm)
+      || (control.layout && control.layout.frm)
+      || window.cur_frm;
+    return isManagedDraftForm(frm) ? frm : null;
+  }
+
+  function getManagedNativeDraftLookupMeta(control) {
+    const frm = getManagedNativeDraftForm(control);
+    if (!frm || !control || !control.df) return null;
+
+    const fieldname = String(control.df.fieldname || '').trim();
+    if (!(fieldname === 'customer' || fieldname === 'party_name' || fieldname === 'item_code' || fieldname === 'selling_price_list' || fieldname === 'taxes_and_charges')) {
+      return null;
+    }
+
+    const input = control.$input && typeof control.$input.get === 'function'
+      ? control.$input.get(0)
+      : control.input;
+    if (!(input instanceof HTMLInputElement)) return null;
+
+    const doctype = fieldname === 'item_code'
+      ? 'Item'
+      : fieldname === 'selling_price_list'
+        ? 'Price List'
+      : fieldname === 'taxes_and_charges'
+        ? String(control.df.options || 'Sales Taxes and Charges Template').trim() || 'Sales Taxes and Charges Template'
+      : frm.doctype === 'Quotation'
+        ? String((frm.doc && frm.doc.quotation_to) || control.df.options || 'Customer').trim() || 'Customer'
+        : 'Customer';
+
+    return {
+      frm,
+      control,
+      fieldname,
+      doctype,
+      input,
+    };
+  }
+
+  function isManagedNativeDraftLink(control) {
+    return !!getManagedNativeDraftLookupMeta(control);
+  }
+
+  function patchNativeDraftLinkLookup() {
+    if (!window.frappe || !frappe.ui || !frappe.ui.form || !frappe.ui.form.ControlLink) {
+      return;
+    }
+    const proto = frappe.ui.form.ControlLink.prototype;
+    if (!proto || proto.__erpwNativeDraftLookupPatched) return;
+
+    const originalGetSearchArgs = proto.get_search_args;
+    const originalSetupAwesomplete = proto.setup_awesomeplete;
+    const originalOnInput = proto.on_input;
+
+    proto.get_search_args = function () {
+      const args = originalGetSearchArgs.apply(this, arguments);
+      if (args && isManagedNativeDraftLink(this)) {
+        args.page_length = 200;
+      }
+      return args;
+    };
+
+    proto.setup_awesomeplete = function () {
+      const result = originalSetupAwesomplete.apply(this, arguments);
+      if (!isManagedNativeDraftLink(this)) return result;
+      if (!this.awesomplete || !this.$input) return result;
+
+      this.awesomplete.maxItems = 200;
+      if (!this.__erpwManagedDraftInputBound) {
+        if (this._debounced_input_handler) {
+          this.$input.off('input', this._debounced_input_handler);
+        }
+        this._debounced_input_handler = frappe.utils.debounce(this.on_input.bind(this), 120);
+        this.$input.on('input', this._debounced_input_handler);
+        this.__erpwManagedDraftInputBound = true;
+      }
+      return result;
+    };
+
+    proto.on_input = function () {
+      const meta = getManagedNativeDraftLookupMeta(this);
+      if (!meta) {
+        return originalOnInput.apply(this, arguments);
+      }
+      if (this.awesomplete && typeof this.awesomplete.close === 'function') {
+        this.awesomplete.close();
+      }
+      return;
+    };
+
+    window.addEventListener('scroll', () => {
+      document.querySelectorAll('.awesomplete').forEach((node) => {
+        if (!(node instanceof HTMLElement)) return;
+        const input = node.querySelector('input');
+        if (!(input instanceof HTMLInputElement)) return;
+        const control = input._control || input.control;
+        if (control && isManagedNativeDraftLink(control) && control.awesomplete && typeof control.awesomplete.close === 'function') {
+          control.awesomplete.close();
+        }
+      });
+    }, true);
+
+    proto.__erpwNativeDraftLookupPatched = true;
+  }
+
   function patchFooter() {
     if (
       footerPatched ||
@@ -296,6 +1436,7 @@
     runActiveChildPageBootstrap,
     ensureActiveChildPageBootstrap,
     scheduleActiveChildPageBootstrap,
+    primeManagedDraftLookups,
     setSalesOrderPrep() {
       // First-paint prep takeover has been intentionally disabled.
       // Sales Order enhancement should never be allowed to blank the route.
@@ -304,13 +1445,24 @@
 
   patchFooter();
   patchSidebar();
+  patchNativeDraftLinkLookup();
   bindRouteChrome();
+  ensureChildGridActionLabels();
+  bindDraftLookupSurface();
   setTimeout(patchFooter, 0);
   setTimeout(patchFooter, 80);
   setTimeout(patchFooter, 220);
   setTimeout(patchSidebar, 0);
   setTimeout(patchSidebar, 80);
   setTimeout(patchSidebar, 220);
+  setTimeout(patchNativeDraftLinkLookup, 0);
+  setTimeout(patchNativeDraftLinkLookup, 120);
+  setTimeout(patchNativeDraftLinkLookup, 320);
   setTimeout(bindRouteChrome, 80);
   setTimeout(bindRouteChrome, 220);
+  setTimeout(ensureChildGridActionLabels, 0);
+  setTimeout(ensureChildGridActionLabels, 140);
+  setTimeout(ensureChildGridActionLabels, 360);
+  setTimeout(scheduleDraftLookupPositioning, 0);
+  setTimeout(scheduleDraftLookupPositioning, 180);
 })();

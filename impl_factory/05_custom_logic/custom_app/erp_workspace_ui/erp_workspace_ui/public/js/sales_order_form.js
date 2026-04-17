@@ -117,6 +117,22 @@
     return false;
   }
 
+  function resetDraftPerformanceSession(frm, meta) {
+    const observability = getObservability();
+    if (typeof observability.resetDraftPerformanceSession === "function") {
+      return observability.resetDraftPerformanceSession(frm, meta);
+    }
+    return null;
+  }
+
+  function seedDraftPerformanceSession(frm, snapshot) {
+    const observability = getObservability();
+    if (typeof observability.seedDraftPerformanceSession === "function") {
+      return observability.seedDraftPerformanceSession(frm, snapshot);
+    }
+    return null;
+  }
+
   function getShellOptions() {
     return {
       shellClasses: ["erpws-order-shell"],
@@ -186,6 +202,12 @@
       fn();
     }, Math.max(0, Number(delay || 0)));
   };
+  const setSharedDraftBodyPending = childPageHelpers.setDraftBodyPending || function () {};
+  const watchSharedDraftBodyStability = childPageHelpers.watchDraftBodyStability || function (frm, options) {
+    if (options && typeof options.onStable === "function") {
+      options.onStable(frm, { forced: true });
+    }
+  };
 
   const scheduleEnhancePasses = childPageLifecycle.scheduleEnhancePasses || function (frm, run, options) {
     if (typeof run !== "function") return;
@@ -228,6 +250,21 @@
   };
 
   function scheduleFormEnhance(frm) {
+    if (frm && typeof frm.is_new === "function" && frm.is_new()) {
+      promoteSalesOrderDraftBodyStableIfReady(frm);
+      if (!frm.__erpwDraftBodyStabilized) {
+        setSharedDraftBodyPending(frm, true);
+        scheduleFormTask(frm, "enhance_form_body_draft_fast", 40, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+        scheduleFormTask(frm, "enhance_form_body_draft_settle", 160, () => enhanceFormBody(frm, { releaseDraftBody: true }));
+        scheduleFormTask(frm, "enhance_form_body_draft_reconcile", 420, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+        return;
+      }
+      setSharedDraftBodyPending(frm, false);
+      scheduleFormTask(frm, "enhance_form_body_draft_refresh", 0, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+      scheduleFormTask(frm, "enhance_form_body_draft_reconcile", 240, () => enhanceFormBody(frm, { releaseDraftBody: false }));
+      return;
+    }
+    setSharedDraftBodyPending(frm, false);
     scheduleEnhancePasses(frm, () => enhanceFormBody(frm), {
       fastKey: "enhance_form_body_fast",
       lateKey: "enhance_form_body_late",
@@ -258,8 +295,11 @@
 
   function getContextSignature(frm) {
     const doc = (frm && frm.doc) || {};
+    const draftIdentity = typeof frm.is_new === "function" && frm.is_new()
+      ? getDraftRouteDocName(frm, doc.name || "")
+      : (doc.name || "");
     return [
-      doc.name || "",
+      draftIdentity,
       doc.modified || "",
       doc.docstatus == null ? "" : String(doc.docstatus),
       doc.status || "",
@@ -401,8 +441,11 @@
   };
 
   function getShell(frm) {
+    const shellOptions = Object.assign({}, getShellOptions(), {
+    });
+
     if (typeof childPageShell.ensureShell === "function") {
-      return childPageShell.ensureShell(frm, getShellOptions());
+      return childPageShell.ensureShell(frm, shellOptions);
     }
 
     const $root = getFormRoot(frm);
@@ -533,15 +576,43 @@
       });
       return;
     }
+    const preparedMode = typeof frm.is_new === "function" && frm.is_new() ? "draft" : "standard";
+    const preparedName = preparedMode === "draft"
+      ? getDraftRouteDocName(frm, (frm.doc && frm.doc.name) || "__draft__")
+      : ((frm.doc && frm.doc.name) || "__draft__");
+    const draftSessionKey = getDraftStabilitySessionKey(frm);
+    if (preparedMode === "draft") {
+      applySalesOrderDraftPreflightVisibility(frm);
+      promoteSalesOrderDraftBodyStableIfReady(frm);
+    }
+    if (frm.__erpwDraftBodySessionKey !== draftSessionKey) {
+      frm.__erpwDraftBodySessionKey = draftSessionKey;
+      frm.__erpwDraftBodyStabilized = preparedMode !== "draft";
+      if (frm.__erpwDraftBodyReleasedKey !== draftSessionKey) {
+        frm.__erpwDraftBodyReleasedKey = null;
+      }
+    }
+    const releasedForSession = preparedMode === "draft" && frm.__erpwDraftBodyReleasedKey === draftSessionKey;
+    const $existingShell = getShell(frm);
+    if (
+      frm.__erpwShellPreparedName === preparedName
+      && frm.__erpwShellPreparedMode === preparedMode
+      && $existingShell.length
+    ) {
+      return;
+    }
 
     const state = getFormTaskState(frm);
     setNativeLayoutPrepState(frm, true);
     markFeatureStatus(frm, "shell_prepare", "loading", {
       loadingMessage: loadingMessage || null,
     });
+    setSharedDraftBodyPending(frm, preparedMode === "draft" && !frm.__erpwDraftBodyStabilized && !releasedForSession);
 
     const prepareShell = childPageShell.prepareShell || showShellSkeleton;
     prepareShell(frm, getShellOptions());
+    frm.__erpwShellPreparedName = preparedName;
+    frm.__erpwShellPreparedMode = preparedMode;
     markFeatureReady(frm, "shell_prepare", {
       loadingMessage: loadingMessage || null,
     });
@@ -564,6 +635,73 @@
       .filter(Boolean);
   }
 
+  function getFieldLabelText(frm, fieldname) {
+    const field = frm.fields_dict && frm.fields_dict[fieldname];
+    if (!field) return "";
+
+    const $wrapper = field.$wrapper && field.$wrapper.length ? field.$wrapper : $(field.wrapper || []);
+    if (!$wrapper.length) return "";
+
+    const $label = $wrapper.find(".control-label, .form-control-label, label").first();
+    return String($label.text() || "").replace(/\s+/g, " ").trim();
+  }
+
+  function hasVisibleFieldControl(frm, fieldname) {
+    const field = frm.fields_dict && frm.fields_dict[fieldname];
+    if (!field) return false;
+
+    const $wrapper = field.$wrapper && field.$wrapper.length ? field.$wrapper : $(field.wrapper || []);
+    if (!$wrapper.length) return false;
+
+    const element = $wrapper.get(0);
+    if (!(element instanceof HTMLElement)) return false;
+    const style = window.getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" || element.hidden) return false;
+
+    return !!$wrapper.find("input, select, textarea, .control-value, .input-with-feedback").length;
+  }
+
+  function getDraftStabilitySessionKey(frm) {
+    const routePath = `${window.location.pathname || ""}`;
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    const draftIdentity = isDraft
+      ? (routePath || `${frm && frm.doctype ? frm.doctype : "Sales Order"}|draft`)
+      : (frm && frm.doc && frm.doc.name ? frm.doc.name : "__draft__");
+    return [
+      frm && frm.doctype ? frm.doctype : "",
+      isDraft ? "draft" : "saved",
+      draftIdentity,
+    ].join("|");
+  }
+
+  function getDraftRouteDocName(frm, fallback) {
+    const routePath = `${window.location.pathname || ""}`;
+    const routeName = routePath.split("/").filter(Boolean).pop();
+    if (frm && typeof frm.is_new === "function" && frm.is_new() && routeName) {
+      return decodeURIComponent(routeName);
+    }
+    return fallback || routeName || "__draft__";
+  }
+
+  function isSalesOrderDraftBodyReady(frm) {
+    if (!frm || !frm.fields_dict) return false;
+
+    const basicsReady = [
+      "customer",
+      "transaction_date",
+      "delivery_date",
+      "order_type",
+    ].every((fieldname) => hasVisibleFieldControl(frm, fieldname));
+    if (!basicsReady) return false;
+
+    const $itemsSection = getSectionForField(frm, "items");
+    if (!$itemsSection || !$itemsSection.length) return false;
+
+    const headerReady = !!$itemsSection.find(".erpw-child-section-header, .erpw-child-section-header-compact").length;
+    const gridReady = !!getFieldWrapper(frm, "items");
+    return headerReady && gridReady;
+  }
+
   function createFollowUpTask(frm, data) {
     const summary = data.summary || {};
     frappe.new_doc("ToDo", {
@@ -581,7 +719,7 @@
 
     return {
       summary: {
-        name: frm.doc.name || "New Sales Order",
+        name: getDraftRouteDocName(frm, frm.doc.name || "New Sales Order"),
         customer: frm.doc.customer || "Customer not selected yet",
         status: frm.doc.docstatus === 0 ? "Draft" : (frm.doc.status || "Draft"),
         workflow_state: frm.doc.workflow_state || "Draft",
@@ -607,6 +745,81 @@
         next_action: "Complete the core order details, then save so the execution workspace can evaluate linked delivery and billing context.",
         detail_guide: "Use the detailed form sections below to complete items, taxes, addresses, and terms before submitting the order.",
       },
+    };
+  }
+
+  function buildSalesOrderDraftReadiness(frm, data) {
+    const itemRows = getSalesOrderItemRows(frm);
+    const zeroRateRows = getSalesOrderZeroRateRows(frm);
+    const priceList = getActiveSalesOrderPriceList(frm);
+    const taxRows = Array.isArray(frm.doc.taxes) ? frm.doc.taxes.length : 0;
+    const hasTaxContext = [
+      frm.doc.taxes_and_charges,
+      frm.doc.shipping_rule,
+      frm.doc.incoterm,
+    ].some((value) => hasMeaningfulValue(value));
+    const pricingRequired = itemRows.length > 0;
+    const readinessItems = [
+      {
+        title: "Customer",
+        status: hasMeaningfulValue(frm.doc.customer) ? "Ready" : "Missing",
+        tone: hasMeaningfulValue(frm.doc.customer) ? "good" : "attention",
+        value: hasMeaningfulValue(frm.doc.customer) ? String(frm.doc.customer) : "Select customer",
+        note: "Required sold-to account for this order.",
+      },
+      {
+        title: "Delivery Date",
+        status: hasMeaningfulValue(frm.doc.delivery_date) ? "Ready" : "Missing",
+        tone: hasMeaningfulValue(frm.doc.delivery_date) ? "good" : "attention",
+        value: hasMeaningfulValue(frm.doc.delivery_date) ? formatDateLabel(frm.doc.delivery_date) : "Set delivery date",
+        note: "Used for customer commitment and fulfillment planning.",
+      },
+      {
+        title: "Price List",
+        status: priceList ? "Ready" : "Missing",
+        tone: priceList ? "good" : "attention",
+        value: priceList || "Select selling price list",
+        note: "Use the active commercial price list for line valuation.",
+      },
+      {
+        title: "Order Lines",
+        status: itemRows.length ? "Ready" : "Missing",
+        tone: itemRows.length ? "good" : "attention",
+        value: itemRows.length ? `${itemRows.length} ${itemRows.length === 1 ? "line" : "lines"} added` : "Add at least one item",
+        note: "Execution can only start after the order lines are defined.",
+      },
+      {
+        title: "Pricing",
+        status: !pricingRequired ? "Pending" : (zeroRateRows.length ? `${zeroRateRows.length} missing rate` : "Ready"),
+        tone: !pricingRequired ? "neutral" : (zeroRateRows.length ? "attention" : "good"),
+        value: !pricingRequired ? "Waiting for item rows" : (zeroRateRows.length ? `${zeroRateRows.length} line${zeroRateRows.length === 1 ? "" : "s"} need pricing` : "All lines priced"),
+        note: !pricingRequired
+          ? "Add item rows before validating commercial rates."
+          : (zeroRateRows.length
+            ? "Review item price, pricing rule, or manual rate before execution commitment."
+            : "No zero-rate lines detected on this draft."),
+        required: pricingRequired,
+      },
+    ];
+    const metaItems = [
+      {
+        label: "Tax context",
+        tone: taxRows || hasTaxContext ? "good" : "neutral",
+        value: taxRows
+          ? `${taxRows} tax ${taxRows === 1 ? "row" : "rows"} configured`
+          : (hasTaxContext ? "Set" : "Optional"),
+      },
+    ];
+    const requiredItems = readinessItems.filter((item) => item.required !== false);
+    const readyCount = requiredItems.filter((item) => item.tone === "good").length;
+    return {
+      items: readinessItems,
+      metaItems,
+      note: "Save this draft to unlock navigation, linked documents, and lifecycle guidance.",
+      readyCount,
+      requiredCount: requiredItems.length,
+      summary: `${readyCount}/${requiredItems.length} essentials ready`,
+      title: "Draft Readiness",
     };
   }
 
@@ -660,6 +873,8 @@
       title: support.open_task_count ? `Review Follow-Up (${support.open_task_count})` : "Create Follow-Up Task",
       variant: "secondary",
       icon: "follow_up",
+      disabled: frm.is_new() && !support.open_task_count,
+      disabledReason: frm.is_new() && !support.open_task_count ? "Save sales order first" : "",
       handler: () => {
         if (support.open_task_count) {
           routeToList("ToDo", { reference_name: ["in", getReferenceNames(frm, data)], status: ["!=", "Closed"] });
@@ -812,6 +1027,186 @@
     return labels[normalized.toLowerCase()] || normalized;
   }
 
+  function getActiveSalesOrderPriceList(frm) {
+    return String(frm.doc.selling_price_list || frm.doc.price_list || "").trim();
+  }
+
+  function getSalesOrderItemRows(frm) {
+    return Array.isArray(frm.doc.items)
+      ? frm.doc.items.filter((row) => String(row.item_code || "").trim())
+      : [];
+  }
+
+  function getSalesOrderZeroRateRows(frm) {
+    return getSalesOrderItemRows(frm).filter((row) => {
+      const qty = Number(row.qty || 0);
+      const rate = Number(row.rate || 0);
+      const amount = Number(row.amount || 0);
+      return Math.abs(qty) > 0.0001 && Math.abs(rate) < 0.0001 && Math.abs(amount) < 0.0001;
+    });
+  }
+
+  function getSalesOrderPriceAvailabilityState(frm) {
+    return frm.__erpwSalesOrderPriceAvailability || {
+      availableItemCodes: {},
+      pending: false,
+      priceList: "",
+      ready: false,
+      requestKey: "",
+    };
+  }
+
+  function getSalesOrderMissingPriceDiagnostics(frm) {
+    const activePriceList = getActiveSalesOrderPriceList(frm);
+    const state = getSalesOrderPriceAvailabilityState(frm);
+    const rows = getSalesOrderItemRows(frm);
+    const zeroRateRows = getSalesOrderZeroRateRows(frm);
+    const ready = !!(activePriceList && state.ready && state.priceList === activePriceList);
+    const availableItemCodes = ready ? (state.availableItemCodes || {}) : {};
+    const missingPriceListRows = ready
+      ? rows.filter((row) => {
+          const code = String(row.item_code || "").trim();
+          const rate = Number(row.rate || 0);
+          const amount = Number(row.amount || 0);
+          return !availableItemCodes[code]
+            && Math.abs(rate) < 0.0001
+            && Math.abs(amount) < 0.0001;
+        })
+      : [];
+    const blockingRows = missingPriceListRows.filter((row) => {
+      const rate = Number(row.rate || 0);
+      const amount = Number(row.amount || 0);
+      return Math.abs(rate) < 0.0001 && Math.abs(amount) < 0.0001;
+    });
+
+    return {
+      activePriceList,
+      blockingRows: blockingRows.length ? blockingRows : zeroRateRows,
+      missingPriceListRows,
+      pending: !!state.pending,
+      ready,
+      zeroRateRows,
+    };
+  }
+
+  function refreshSalesOrderPriceAvailability(frm) {
+    const activePriceList = getActiveSalesOrderPriceList(frm);
+    const itemCodes = Array.from(new Set(getSalesOrderItemRows(frm).map((row) => String(row.item_code || "").trim()).filter(Boolean))).sort();
+    const requestKey = `${activePriceList}|${itemCodes.join("||")}`;
+    const rerender = () => {
+      scheduleFormTask(frm, "sales_order_price_summary_render", 0, () => {
+        renderItemsSectionHeader(frm);
+        renderCommercialSummary(frm);
+      });
+    };
+
+    if (!activePriceList || !itemCodes.length) {
+      frm.__erpwSalesOrderPriceAvailability = {
+        availableItemCodes: {},
+        pending: false,
+        priceList: activePriceList,
+        ready: !!activePriceList,
+        requestKey,
+      };
+      rerender();
+      return Promise.resolve(frm.__erpwSalesOrderPriceAvailability);
+    }
+
+    const currentState = getSalesOrderPriceAvailabilityState(frm);
+    if (currentState.requestKey === requestKey) {
+      rerender();
+      if (currentState.pending || currentState.ready) {
+        return Promise.resolve(currentState);
+      }
+    }
+
+    frm.__erpwSalesOrderPriceAvailability = {
+      availableItemCodes: {},
+      pending: true,
+      priceList: activePriceList,
+      ready: false,
+      requestKey,
+    };
+    rerender();
+
+    return frappe.db.get_list("Item Price", {
+      fields: ["item_code", "price_list_rate"],
+      filters: {
+        item_code: ["in", itemCodes],
+        price_list: activePriceList,
+      },
+      limit: Math.max(itemCodes.length * 4, 20),
+    }).then((rows) => {
+      if (!frm.__erpwSalesOrderPriceAvailability || frm.__erpwSalesOrderPriceAvailability.requestKey != requestKey) {
+        return null;
+      }
+      const availableItemCodes = {};
+      (rows || []).forEach((row) => {
+        const code = String(row.item_code || "").trim();
+        if (code && hasMeaningfulValue(row.price_list_rate)) {
+          availableItemCodes[code] = true;
+        }
+      });
+      frm.__erpwSalesOrderPriceAvailability = {
+        availableItemCodes,
+        pending: false,
+        priceList: activePriceList,
+        ready: true,
+        requestKey,
+      };
+      rerender();
+      return frm.__erpwSalesOrderPriceAvailability;
+    }).catch(() => {
+      if (!frm.__erpwSalesOrderPriceAvailability || frm.__erpwSalesOrderPriceAvailability.requestKey != requestKey) {
+        return null;
+      }
+      frm.__erpwSalesOrderPriceAvailability = {
+        availableItemCodes: {},
+        pending: false,
+        priceList: activePriceList,
+        ready: false,
+        requestKey,
+      };
+      rerender();
+      return null;
+    });
+  }
+
+  function scheduleSalesOrderPriceRefresh(frm, delay = 120) {
+    scheduleFormTask(frm, "sales_order_price_availability_refresh", delay, () => refreshSalesOrderPriceAvailability(frm));
+  }
+
+  function scheduleSalesOrderDraftStabilityCheck(frm, delay = 220) {
+    if (!frm || !frm.is_new()) return;
+    scheduleFormTask(frm, "sales_order_draft_stability_check", delay, () => {
+      const $shell = getShell(frm);
+      const shellReady = $shell.length && $shell.children().length && !$shell.find(".erpw-so-shell-skeleton").length;
+      if (shellReady && frm.__erpwContextRenderedSignature) return;
+      loadContext(frm);
+    });
+  }
+
+  function scheduleSalesOrderDraftContextSync(frm, delay = 160) {
+    if (!frm || !frm.is_new()) return;
+    scheduleFormTask(frm, "sales_order_draft_context_sync", delay, () => loadContext(frm));
+  }
+
+  function ensureSalesOrderPricingGuardrail(frm) {
+    const diagnostics = getSalesOrderMissingPriceDiagnostics(frm);
+    if (!diagnostics.blockingRows.length) return;
+
+    const names = diagnostics.blockingRows
+      .map((row) => String(row.item_code || "").trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    const scopeNote = diagnostics.missingPriceListRows.length && diagnostics.activePriceList
+      ? ` in active price list ${diagnostics.activePriceList}`
+      : "";
+    const preview = names.length ? ` Review: ${names.join(", ")}${diagnostics.blockingRows.length > names.length ? ", ..." : ""}.` : "";
+
+    frappe.throw(`Missing item rate${diagnostics.blockingRows.length === 1 ? "" : "s"}${scopeNote}.${preview}`);
+  }
+
   function setFieldPrecision(frm, fieldname, precision) {
     const field = frm.fields_dict && frm.fields_dict[fieldname];
     if (!field || !field.df) return;
@@ -903,6 +1298,41 @@
   function toggleField(frm, fieldname, visible) {
     if (!frm.fields_dict || !frm.fields_dict[fieldname]) return;
     frm.toggle_display(fieldname, !!visible);
+    const $wrapper = getFieldWrapper(frm, fieldname);
+    if ($wrapper && $wrapper.length) {
+      $wrapper.toggle(!!visible);
+      $wrapper.attr("aria-hidden", visible ? "false" : "true");
+    }
+  }
+
+  function applySalesOrderDraftPreflightVisibility(frm) {
+    if (!frm || !frm.fields_dict || !(typeof frm.is_new === "function" && frm.is_new())) return;
+
+    [
+      "customer",
+      "transaction_date",
+      "delivery_date",
+      "order_type",
+    ].forEach((fieldname) => toggleField(frm, fieldname, true));
+
+    [
+      "naming_series",
+      "customer_name",
+      "workflow_state",
+      "base_in_words",
+      "in_words",
+    ].forEach((fieldname) => toggleField(frm, fieldname, false));
+  }
+
+  function promoteSalesOrderDraftBodyStableIfReady(frm) {
+    if (!frm || !(typeof frm.is_new === "function" && frm.is_new())) return false;
+    if (frm.__erpwDraftBodyPending === true) return false;
+    if (!isSalesOrderDraftBodyReady(frm)) return false;
+
+    const sessionKey = getDraftStabilitySessionKey(frm);
+    frm.__erpwDraftBodyStabilized = true;
+    frm.__erpwDraftBodyReleasedKey = sessionKey;
+    return true;
   }
 
   function toggleSection(frm, fieldname, visible) {
@@ -2857,8 +3287,93 @@
     });
   }
 
-  function enhanceFormBody(frm) {
+  function hasSalesOrderTaxSignal(frm) {
+    return (Array.isArray(frm.doc.taxes) && frm.doc.taxes.length > 0)
+      || (!Number.isNaN(Number(frm.doc.total_taxes_and_charges || 0)) && Math.abs(Number(frm.doc.total_taxes_and_charges || 0)) > 0.0001)
+      || hasMeaningfulValue(frm.doc.taxes_and_charges)
+      || hasMeaningfulValue(frm.doc.tax_category);
+  }
+
+  function shouldShowSalesOrderTaxCategoryField(frm) {
+    return Number(frm.doc.docstatus || 0) === 1 && hasMeaningfulValue(frm.doc.tax_category);
+  }
+
+  function shouldShowSalesOrderTaxBreakup(frm) {
+    return Number(frm.doc.docstatus || 0) === 1 && hasMeaningfulValue(frm.doc.item_wise_tax_details);
+  }
+
+  function ensureSalesOrderDraftTaxContext(frm) {
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    const $taxesSection = getSectionForField(frm, "taxes");
+    if (!$taxesSection || !$taxesSection.length) return false;
+
+    restoreRelocatedFieldPlacements(frm, "sales-order-draft-tax-context");
+    $taxesSection.find(".erpw-draft-tax-context").remove();
+    if (!isDraft) return false;
+
+    const fields = [
+      { fieldname: "taxes_and_charges", zone: "main" },
+    ];
+    const $body = $taxesSection.children(".section-body").first();
+    if (!$body.length) return false;
+
+    const taxRows = Array.isArray(frm.doc.taxes) ? frm.doc.taxes.length : 0;
+    const hasTemplate = hasMeaningfulValue(frm.doc.taxes_and_charges);
+    const statusText = hasTemplate
+      ? "Selected"
+      : (taxRows ? `${taxRows} manual ${taxRows === 1 ? "row" : "rows"}` : "Optional");
+
+    const $card = $(`
+      <div class="erpw-draft-tax-context">
+        <div class="erpw-draft-tax-context-meta">
+          <div class="erpw-draft-tax-context-status">${escapeHtml(statusText)}</div>
+        </div>
+        <div class="erpw-draft-tax-grid erpw-draft-tax-grid-main"></div>
+      </div>
+    `);
+    $body.prepend($card);
+
+    fields.forEach((config) => {
+      const $wrapper = getFieldWrapper(frm, config.fieldname);
+      if (!$wrapper || !$wrapper.length) return;
+      relocateSharedFieldIntoSectionBody($wrapper, $taxesSection, "sales-order-draft-tax-context");
+      $wrapper.addClass("erpw-draft-tax-field");
+      $card.find(".erpw-draft-tax-grid-main").append($wrapper);
+    });
+    return true;
+  }
+
+  function applySalesOrderDraftTaxFieldPolicy(frm, isDraft) {
+    [
+      "tax_category",
+      "shipping_rule",
+      "incoterm",
+    ].forEach((fieldname) => {
+      const field = frm && frm.fields_dict ? frm.fields_dict[fieldname] : null;
+      if (!field || typeof frm.set_df_property !== "function") return;
+
+      frm.set_df_property(fieldname, "hidden", isDraft ? 1 : 0);
+
+      const $input = field.$input && field.$input.length
+        ? field.$input
+        : $(field.input || []);
+      if ($input.length) {
+        $input.prop("disabled", !!isDraft);
+        if (isDraft) {
+          $input.attr("tabindex", "-1").attr("aria-hidden", "true");
+        } else {
+          $input.removeAttr("tabindex").removeAttr("aria-hidden");
+        }
+      }
+    });
+  }
+
+  function enhanceFormBody(frm, options) {
     if (!frm || !frm.fields_dict) return;
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    const settings = Object.assign({
+      releaseDraftBody: true,
+    }, options || {});
 
     const $root = getFormRoot(frm);
     if ($root.length) {
@@ -2866,12 +3381,15 @@
     }
 
     bindTabEnhancers(frm);
+    restoreRelocatedFieldPlacements(frm, "sales-order-draft-basics");
+    restoreRelocatedFieldPlacements(frm, "sales-order-draft-tax-context");
 
     markSection(frm, "customer", "erpw-so-section-primary erpw-so-section-basics");
     markSection(frm, "currency", "erpw-so-section-secondary erpw-so-section-pricing");
     markSection(frm, "items", "erpw-so-section-primary erpw-so-section-items");
     markSection(frm, "total_qty", "erpw-so-section-summary erpw-so-section-commercial-snapshot");
     markSection(frm, "taxes", "erpw-so-section-secondary erpw-so-section-taxes");
+    markSection(frm, 'tax_category', 'erpw-so-section-secondary erpw-so-section-taxes');
     markSection(frm, "grand_total", "erpw-so-section-summary");
     markSection(frm, "apply_discount_on", "erpw-so-section-quiet erpw-so-section-discount");
 
@@ -2924,6 +3442,10 @@
       "base_discount_amount",
       "coupon_code",
     ].some((fieldname) => hasMeaningfulValue(frm.doc[fieldname]));
+    const showTaxSection = isDraft ? true : (hasSalesOrderTaxSignal(frm) || Number(frm.doc.docstatus || 0) !== 1);
+    const showTaxCategoryField = !isDraft && shouldShowSalesOrderTaxCategoryField(frm);
+    const showTaxBreakup = shouldShowSalesOrderTaxBreakup(frm);
+    applySalesOrderDraftTaxFieldPolicy(frm, isDraft);
     toggleSection(frm, "currency", false);
     toggleSection(frm, "apply_discount_on", showDiscount);
 
@@ -2934,11 +3456,46 @@
     ].some((fieldname) => hasMeaningfulValue(frm.doc[fieldname]));
     toggleSection(frm, "total_qty", false);
     toggleSection(frm, "grand_total", showTotalsDetail);
+    const $taxesSection = getSectionForField(frm, 'taxes');
+    const $taxCategorySection = getSectionForField(frm, 'tax_category');
+    setManagedSectionVisibility($taxesSection, showTaxSection, 'erpw-so-details-hidden-source');
+    if (!$taxCategorySection || !$taxesSection || !$taxCategorySection.is($taxesSection)) {
+      setManagedSectionVisibility($taxCategorySection, showTaxSection, 'erpw-so-details-hidden-source');
+    }
+    toggleField(frm, 'tax_category', showTaxCategoryField);
+    toggleField(frm, 'item_wise_tax_details', showTaxBreakup);
+    toggleField(frm, 'taxes_and_charges', isDraft || hasMeaningfulValue(frm.doc.taxes_and_charges));
+    toggleField(frm, 'shipping_rule', !isDraft && hasMeaningfulValue(frm.doc.shipping_rule));
+    toggleField(frm, 'incoterm', hasMeaningfulValue(frm.doc.incoterm));
 
     renderDetailsSnapshot(frm);
     renderItemsSectionHeader(frm);
+    syncSalesOrderDraftLineDeliveryColumn(frm);
     renderCommercialSummary(frm);
     renderDetailWorkspace(frm);
+    ensureSalesOrderDraftTaxContext(frm);
+    surfaceSalesOrderDraftPriceListField(frm);
+    if (isDraft) {
+      scheduleFormTask(frm, "sales_order_line_delivery_sync_fast", 120, () => syncSalesOrderDraftLineDeliveryColumn(frm));
+      scheduleFormTask(frm, "sales_order_line_delivery_sync_late", 480, () => syncSalesOrderDraftLineDeliveryColumn(frm));
+      enhanceAddressContactTab(frm);
+      enhanceTermsTab(frm);
+      enhanceMoreInfoTab(frm);
+      cleanSidebarUtilityRail(frm);
+      if (settings.releaseDraftBody) {
+        watchSharedDraftBodyStability(frm, {
+          isReady: () => isSalesOrderDraftBodyReady(frm),
+          key: getDraftStabilitySessionKey(frm),
+          onStable: () => {
+            frm.__erpwDraftBodyStabilized = true;
+            frm.__erpwDraftBodyReleasedKey = getDraftStabilitySessionKey(frm);
+            setSharedDraftBodyPending(frm, false);
+            releasePreparedShell(frm);
+          },
+        });
+      }
+      return;
+    }
     runRetriedEnhancers(frm, [
       {
         fastKey: "address_contact_retry_fast",
@@ -3023,6 +3580,7 @@
     const perBilled = Number(frm.doc.per_billed || 0);
     const hasTaxes = !Number.isNaN(Number(frm.doc.total_taxes_and_charges || 0))
       && Math.abs(Number(frm.doc.total_taxes_and_charges || 0)) > 0.0001;
+    const pricingDiagnostics = getSalesOrderMissingPriceDiagnostics(frm);
 
     if (perDelivered >= 100) {
       chips.push({ label: "Delivered", tone: "approved" });
@@ -3036,9 +3594,27 @@
       chips.push({ label: `${formatFixedNumber(perBilled)}% billed`, tone: "pending" });
     }
 
+    if (pricingDiagnostics.missingPriceListRows.length) {
+      chips.push({
+        label: `${pricingDiagnostics.missingPriceListRows.length} item${pricingDiagnostics.missingPriceListRows.length === 1 ? "" : "s"} missing active price`,
+        tone: "blocker",
+      });
+    } else if (pricingDiagnostics.zeroRateRows.length) {
+      chips.push({
+        label: `${pricingDiagnostics.zeroRateRows.length} line${pricingDiagnostics.zeroRateRows.length === 1 ? "" : "s"} at zero rate`,
+        tone: "attention",
+      });
+    }
+
     if (!hasTaxes) {
       chips.push({ label: "No tax rows", tone: "neutral" });
     }
+
+    const summaryNote = pricingDiagnostics.missingPriceListRows.length && pricingDiagnostics.activePriceList
+      ? `Some items do not have a price in ${pricingDiagnostics.activePriceList}. Fix pricing before execution commitment.`
+      : pricingDiagnostics.zeroRateRows.length
+        ? "One or more lines still have zero rate. Review pricing before execution commitment."
+        : "Read quantity, value, and billing posture here while ERP totals stay authoritative.";
 
     const metrics = [
       {
@@ -3071,7 +3647,7 @@
           label: metric.label,
           value: metric.value,
         })),
-        note: "Read quantity, value, and billing posture here while ERP totals stay authoritative.",
+        note: summaryNote,
         removeSelector: ".erpw-so-inline-summary",
         summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
         title: "Commercial Summary",
@@ -3083,7 +3659,7 @@
       <div class="erpw-so-inline-summary erpw-child-inline-summary-soft">
         <div class="erpw-so-inline-summary-head">
           <div class="erpw-so-inline-summary-title">Commercial Summary</div>
-          <div class="erpw-child-subtitle erpw-child-inline-summary-note">Read quantity, value, and billing posture here while ERP totals stay authoritative.</div>
+          <div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(summaryNote)}</div>
           ${chips.length ? `
             <div class="erpw-child-chip-row">
               ${chips.map((chip) => `
@@ -3119,7 +3695,7 @@
     const $snapshot = $currentWorkspace.length
       ? $currentWorkspace.prev(".erpw-child-detail-snapshot").first()
       : $itemsSection.prev(".erpw-child-detail-snapshot").first();
-    const $taxesSection = getSectionForField(frm, "taxes");
+    const $taxesSection = getSectionForField(frm, 'taxes');
     const $totalsSection = getSectionForField(frm, "grand_total") || getSectionForField(frm, "base_grand_total");
 
     return Boolean(ensureSharedDetailWorkspace([
@@ -3154,6 +3730,105 @@
       label: "Fulfillment",
       value: Number(frm.doc.is_subcontracted || 0) === 1 ? "Subcontracted" : "Standard order",
     };
+  }
+
+  function surfaceSalesOrderDraftPriceListField(frm) {
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    if (!isDraft) return false;
+
+    const $topSection = getSectionForField(frm, "customer");
+    if (!$topSection || !$topSection.length) return false;
+
+    toggleField(frm, "selling_price_list", true);
+    moveFieldIntoSectionBodyIfNeeded(frm, "selling_price_list", $topSection, "sales-order-draft-basics");
+    alignSalesOrderDraftPriceListField(frm, $topSection);
+    return true;
+  }
+
+  function alignSalesOrderDraftPriceListField(frm, $section) {
+    const $field = getFieldWrapper(frm, "selling_price_list");
+    const $body = $section && $section.length ? $section.children(".section-body").first() : $();
+    if (!$field || !$field.length || !$body.length) return false;
+
+    const $legacyColumn = $body.children('[data-erpw-draft-column="sales-order-price-list"]').first();
+    $body.children('[data-erpw-draft-column="sales-order-price-list"]').not(':has([data-fieldname="selling_price_list"])').remove();
+
+    const $anchor = getFieldWrapper(frm, "order_type")
+      || getFieldWrapper(frm, "customer");
+    const $anchorColumn = $anchor && $anchor.length ? $anchor.parent() : $();
+
+    if ($anchor.length && $anchorColumn.length && !$anchorColumn.is($body)) {
+      if (!$field.parent().is($anchorColumn)) {
+        $field.appendTo($anchorColumn);
+      }
+      $field.insertAfter($anchor);
+      if ($legacyColumn.length && !$legacyColumn.children().length) {
+        $legacyColumn.remove();
+      }
+      $field.addClass("erpw-so-draft-price-list-field");
+      return true;
+    }
+
+    let $column = $field.parent();
+    const fieldAlreadyWrapped = $column.length
+      && !$column.is($body)
+      && String($column.attr("data-erpw-draft-column") || "").trim() === "sales-order-price-list";
+
+    if (!fieldAlreadyWrapped) {
+      $column = $('<div class="form-column col-sm-4" data-erpw-draft-column="sales-order-price-list"></div>');
+      $column.append($field);
+    } else {
+      $column.attr("class", "form-column col-sm-4");
+      $column.attr("data-erpw-draft-column", "sales-order-price-list");
+    }
+
+    $column.addClass("erpw-so-draft-price-list-column");
+    $column.appendTo($body);
+    $field.addClass("erpw-so-draft-price-list-field");
+    return true;
+  }
+
+  function shouldShowSalesOrderLineDeliveryDate(frm) {
+    const isDraft = typeof frm.is_new === "function" && frm.is_new();
+    if (!isDraft) return true;
+
+    const orderDeliveryDate = String(frm.doc.delivery_date || "").trim();
+    const rows = Array.isArray(frm.doc.items) ? frm.doc.items : [];
+    if (!rows.length) return false;
+
+    return rows.some((row) => {
+      const rowDeliveryDate = String(row.delivery_date || "").trim();
+      if (!rowDeliveryDate) return false;
+      if (!orderDeliveryDate) return true;
+      return rowDeliveryDate !== orderDeliveryDate;
+    });
+  }
+
+  function syncSalesOrderDraftLineDeliveryColumn(frm) {
+    const grid = frm && frm.fields_dict && frm.fields_dict.items && frm.fields_dict.items.grid;
+    if (!grid || typeof grid.update_docfield_property !== "function") return false;
+
+    const visible = shouldShowSalesOrderLineDeliveryDate(frm);
+    grid.update_docfield_property("delivery_date", "hidden", visible ? 0 : 1);
+    grid.update_docfield_property("delivery_date", "in_list_view", visible ? 1 : 0);
+    if (Array.isArray(grid.docfields)) {
+      grid.docfields.forEach((df) => {
+        if (String(df.fieldname || "").trim() !== "delivery_date") return;
+        df.hidden = visible ? 0 : 1;
+        df.in_list_view = visible ? 1 : 0;
+      });
+    }
+    if (typeof grid.setup_visible_columns === "function") {
+      grid.setup_visible_columns();
+    }
+    const $gridWrapper = $(grid.wrapper || grid.grid_wrapper || grid.grid_rows_wrapper);
+    if ($gridWrapper.length) {
+      $gridWrapper.toggleClass("erpw-hide-line-delivery-date", !visible);
+    }
+    if (typeof grid.refresh === "function") {
+      grid.refresh();
+    }
+    return visible;
   }
 
   function renderDetailsSnapshot(frm) {
@@ -3234,12 +3909,19 @@
     }
 
     const items = Array.isArray(frm.doc.items) ? frm.doc.items : [];
+    const pricingDiagnostics = getSalesOrderMissingPriceDiagnostics(frm);
+    const statusParts = [`${items.length || 0} ${items.length === 1 ? "line" : "lines"}`];
+    if (pricingDiagnostics.missingPriceListRows.length) {
+      statusParts.push(`${pricingDiagnostics.missingPriceListRows.length} missing price`);
+    } else if (pricingDiagnostics.zeroRateRows.length) {
+      statusParts.push(`${pricingDiagnostics.zeroRateRows.length} zero rate`);
+    }
     childPageDetails.renderSectionHeader($itemsSection, {
       headerClass: "erpw-child-section-header",
       note: "Keep ERP item entry native here, then use the summary below for quantity, value, and downstream fulfillment reading.",
       removeSelector: ".erpw-child-section-header",
-      statusText: `${items.length || 0} ${items.length === 1 ? "line" : "lines"}`,
-      statusTone: "neutral",
+      statusText: statusParts.join(" / "),
+      statusTone: pricingDiagnostics.missingPriceListRows.length || pricingDiagnostics.zeroRateRows.length ? "attention" : "neutral",
       title: "Execution Lines",
     });
 
@@ -3311,6 +3993,57 @@
     const actionsWithIndex = actions.map((action, idx) => ({ ...action, idx }));
     const primaryActions = actionsWithIndex.filter((action) => action.variant === "primary");
     const secondaryActions = actionsWithIndex.filter((action) => action.variant !== "primary");
+    if (frm.is_new() && typeof childPageShellContent.renderShellContent === "function") {
+      const draftReadiness = buildSalesOrderDraftReadiness(frm, data);
+      const progressTone = draftReadiness.readyCount >= draftReadiness.requiredCount
+        ? "approved"
+        : draftReadiness.readyCount > 0
+          ? "attention"
+          : "pending";
+      const draftReadinessPlacement = "inline";
+      frm.__erpwDraftReadinessPlacement = draftReadinessPlacement;
+      cleanSidebarUtilityRail(frm, {
+        draftReadiness,
+        draftReadinessPlacement,
+      });
+      childPageShellContent.renderShellContent($shell, {
+        actionIconMarkup,
+        actions: [],
+        draftReadiness,
+        draftReadinessPlacement,
+        guidance: { cards: [] },
+        summary: {
+          chips: [
+            { label: summary.status || "Draft", tone: "pending" },
+            { label: `${draftReadiness.readyCount}/${draftReadiness.requiredCount} ready`, tone: progressTone },
+          ],
+          facts: [
+            {
+              label: "Order Date",
+              value: formatDateLabel(summary.transaction_date),
+            },
+            {
+              label: "Delivery Date",
+              value: formatDateLabel(summary.delivery_date),
+            },
+            {
+              label: "Grand Total",
+              value: formatMoney(summary.grand_total, summary.currency),
+            },
+          ],
+          kicker: "Sales Order Draft",
+          subtitle: summary.customer || "Customer not selected yet",
+          title: summary.name || frm.doc.name || "Sales Order",
+        },
+      });
+      return;
+    }
+
+    frm.__erpwDraftReadiness = null;
+    frm.__erpwDraftReadinessPlacement = null;
+    frm.__erpwDraftRailMounted = false;
+    cleanSidebarUtilityRail(frm, { draftReadiness: null, draftReadinessPlacement: null });
+
     if (typeof childPageShellContent.renderShellContent === "function") {
       childPageShellContent.renderShellContent($shell, {
         actionIconMarkup,
@@ -3329,14 +4062,18 @@
       });
       return;
     }
-    const renderActionButton = (action) => `
-      <button type="button" class="erpw-child-action ${escapeHtml(action.variant || "secondary")}" data-action-index="${action.idx}">
+    const renderActionButton = (action) => {
+      const note = String(action.note || action.disabledReason || "").trim();
+      return `
+      <button type="button" class="erpw-child-action ${escapeHtml(action.variant || "secondary")}${action.disabled ? " is-disabled" : ""}" data-action-index="${action.idx}" ${action.disabled ? 'disabled aria-disabled="true"' : ""}${note ? ` title="${escapeHtml(note)}"` : ""}>
         <span class="erpw-child-action-accent" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
         <span class="erpw-child-action-copy">
           <span class="erpw-child-action-title">${escapeHtml(action.title)}</span>
+          ${note ? `<span class="erpw-child-action-note">${escapeHtml(note)}</span>` : ""}
         </span>
       </button>
     `;
+    };
     $shell.html(`
       <section class="erpw-child-card erpw-child-summary">
         <div class="erpw-child-summary-copy">
@@ -3421,6 +4158,7 @@
     `);
 
     actions.forEach((action, idx) => {
+      if (action.disabled || typeof action.handler !== "function") return;
       $shell.find(`[data-action-index="${idx}"]`).on("click", action.handler);
     });
     $shell.find("[data-link-doctype][data-link-name]").on("click", function () {
@@ -3571,11 +4309,82 @@
       prepareFormShell(frm, "Loading sales order execution context...");
     },
     refresh(frm) {
+      if (typeof frm.is_new === "function" && frm.is_new()) {
+        const draftPerfKey = getDraftStabilitySessionKey(frm);
+        if (frm.__erpwDraftPerformanceResetKey !== draftPerfKey) {
+          frm.__erpwDraftPerformanceResetKey = draftPerfKey;
+          resetDraftPerformanceSession(frm, {
+            hook: "refresh",
+            doctype: frm.doctype || "Sales Order",
+          });
+          seedDraftPerformanceSession(frm, {
+            source: "refresh_seed",
+            shellPrepared: frm.__erpwShellPreparedMode === "draft",
+            contextReady: !!frm.__erpwContextRenderedSignature,
+            pendingActive: frm.__erpwDraftBodyPending === true,
+          });
+          promoteSalesOrderDraftBodyStableIfReady(frm);
+        }
+        applySalesOrderDraftTaxFieldPolicy(frm, true);
+      }
+      markFeatureStatus(frm, "draft_route", "start", {
+        hook: "refresh",
+        mode: typeof frm.is_new === "function" && frm.is_new() ? "draft" : "standard",
+      });
       loadContext(frm);
-      scheduleFormTask(frm, "post_refresh_enhance", 160, () => enhanceFormBody(frm));
+      if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.primeManagedDraftLookups === "function") {
+        window.erpWorkspaceUiBoot.primeManagedDraftLookups(frm);
+      }
+      scheduleSalesOrderDraftStabilityCheck(frm, 220);
+      scheduleSalesOrderPriceRefresh(frm, 120);
+      if (!(typeof frm.is_new === "function" && frm.is_new())) {
+        scheduleFormTask(frm, "post_refresh_enhance", 160, () => enhanceFormBody(frm));
+      }
+    },
+    customer(frm) {
+      scheduleSalesOrderDraftContextSync(frm, 120);
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    delivery_date(frm) {
+      scheduleSalesOrderDraftContextSync(frm, 120);
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    transaction_date(frm) {
+      scheduleSalesOrderDraftContextSync(frm, 120);
+    },
+    selling_price_list(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    price_list(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    items_remove(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 60);
+      scheduleSalesOrderDraftContextSync(frm, 60);
+    },
+    before_submit(frm) {
+      ensureSalesOrderPricingGuardrail(frm);
     },
     dashboard_update(frm) {
       scheduleConnectionsEnhance(frm);
+    },
+  });
+
+  frappe.ui.form.on("Sales Order Item", {
+    item_code(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    delivery_date(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    qty(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    rate(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
+    },
+    amount(frm) {
+      scheduleSalesOrderPriceRefresh(frm, 120);
     },
   });
 
@@ -3588,9 +4397,9 @@
 
   if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.registerChildPageBootstrap === "function") {
     window.erpWorkspaceUiBoot.registerChildPageBootstrap("Sales Order", bootstrapCurrentSalesOrderForm);
+  } else {
+    $(document).ready(() => {
+      setTimeout(bootstrapCurrentSalesOrderForm, 120);
+    });
   }
-
-  $(document).ready(() => {
-    setTimeout(bootstrapCurrentSalesOrderForm, 120);
-  });
 })();

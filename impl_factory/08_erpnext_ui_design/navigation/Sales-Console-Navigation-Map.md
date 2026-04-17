@@ -390,7 +390,7 @@ Should usually not own:
 2. broad credit administration
 3. invoice management
 
-### 8.2 Sales Supervisor
+### 8.2 Sales Manager
 
 Main pages:
 

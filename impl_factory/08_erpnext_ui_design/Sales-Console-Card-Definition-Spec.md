@@ -247,12 +247,18 @@ Formula direction:
 
 1. `ToDo.status = Open`
 2. `allocated_to = current user` for staff
-3. manager may see team scope later
+3. `Sales Manager` sees current team scope
 4. `reference_type` in:
    - `Customer`
    - `Quotation`
    - `Sales Order`
    - `Opportunity`
+   - `Sales Invoice`
+   - `Delivery Note`
+
+Practical note:
+
+1. invoice and delivery-note references are intentionally included so overdue billing follow-up and return callbacks can appear in the same sales-facing queue
 
 ### 7.5 Opportunities Closing Soon
 

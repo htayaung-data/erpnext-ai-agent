@@ -13,7 +13,7 @@ Implement role-aware rendering inside the single `Sales Console` page instead of
 1. explicit role variants returned by the server contract
 2. front-end rendering that changes action order, queue order, section notes, and showroom simplification
 3. a single console shell that behaves differently for:
-   - sales supervisor
+   - sales manager
    - sales executive
    - key account sales
    - showroom sales

@@ -716,23 +716,34 @@
       },
     });
 
-    if (canReadPaymentEntry && Array.isArray(linked.payment_entries) && linked.payment_entries.length) {
-      actions.push({
-        title: formatCountTitle("Open Payment Entry", "Open Payment Entries", linked.payment_entries.length),
-        variant: "secondary",
-        icon: "payment_entry",
-        handler: () => {
-          if (linked.payment_entries.length === 1) {
-            routeToDoc("Payment Entry", linked.payment_entries[0].name);
-            return;
-          }
-          routeToList("Payment Entry", { name: ["in", linked.payment_entries.map((row) => row.name)] });
-        },
+    if (canReadPaymentEntry) {
+      markFeatureReady(frm, "payment_entry_access", {
+        count: paymentEntryReferenceCount,
+        state: paymentEntryReferenceCount > 0 ? "linked" : "available",
       });
-    } else if (!canReadPaymentEntry && paymentEntryReferenceCount > 0) {
+      if (Array.isArray(linked.payment_entries) && linked.payment_entries.length) {
+        actions.push({
+          title: formatCountTitle("Open Payment Entry", "Open Payment Entries", linked.payment_entries.length),
+          variant: "secondary",
+          icon: "payment_entry",
+          handler: () => {
+            if (linked.payment_entries.length === 1) {
+              routeToDoc("Payment Entry", linked.payment_entries[0].name);
+              return;
+            }
+            routeToList("Payment Entry", { name: ["in", linked.payment_entries.map((row) => row.name)] });
+          },
+        });
+      }
+    } else if (paymentEntryReferenceCount > 0) {
       markFeatureMissing(frm, "payment_entry_access", {
         count: paymentEntryReferenceCount,
         reason: "payment_entry_permission_missing",
+      });
+    } else {
+      markFeatureReady(frm, "payment_entry_access", {
+        count: 0,
+        state: "not_linked",
       });
     }
 

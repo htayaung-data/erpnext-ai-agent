@@ -610,7 +610,7 @@ def _linked_return_docs(delivery_names: list[str], invoice_names: list[str]) -> 
 			order_by="posting_date desc, creation desc",
 			limit_page_length=100,
 		)
-	results.extend({"doctype": "Sales Invoice", **row} for row in rows)
+		results.extend({"doctype": "Sales Invoice", **row} for row in rows)
 	return results
 
 

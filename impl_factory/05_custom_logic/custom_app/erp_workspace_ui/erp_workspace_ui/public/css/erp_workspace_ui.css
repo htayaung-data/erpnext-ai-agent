@@ -76,6 +76,36 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   gap: 0.85rem;
 }
 
+.erpw-child-empty-top-strip {
+  display: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.erpw-draft-sidebar-hidden {
+  display: none !important;
+}
+
+.erpw-draft-sidebar-surface {
+  display: block !important;
+  width: 252px !important;
+  max-width: 252px !important;
+  flex: 0 0 252px !important;
+}
+
+.erpw-draft-support-rail {
+  width: 100%;
+  max-width: 228px;
+  margin: 0 0 0 auto;
+  position: sticky;
+  top: 0.55rem;
+  align-self: start;
+}
+
 .erpw-child-card {
   border-radius: 16px;
   border: 1px solid var(--erpw-border-soft);
@@ -92,6 +122,147 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
     radial-gradient(circle at bottom left, rgba(56, 189, 248, 0.12), transparent 30%),
     linear-gradient(145deg, #131b2d 0%, #1d2b43 52%, #0b1220 100%);
   color: #f8fafc;
+}
+
+.erpw-child-draft-cluster {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  gap: 0.72rem;
+  align-items: start;
+}
+
+.erpw-child-draft-cluster > .erpw-child-summary {
+  margin: 0;
+}
+
+.erpw-child-draft-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 248px;
+  gap: 0.72rem;
+  align-items: start;
+}
+
+.erpw-child-draft-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+}
+
+.erpw-child-draft-main > .erpw-child-page-host {
+  display: grid;
+  gap: 0 !important;
+  margin: 0 !important;
+  min-width: 0;
+}
+
+.erpw-child-draft-main > .erpw-child-page-host:empty {
+  display: none;
+  margin: 0 !important;
+}
+
+.erpw-child-draft-main > .erpw-child-page-host > .erpw-child-shell {
+  margin: 0 !important;
+}
+
+.erpw-child-draft-main > .std-form-layout,
+.erpw-child-draft-main > .form-layout {
+  min-width: 0;
+  margin-top: 0 !important;
+}
+
+.erpw-child-draft-side-slot {
+  min-width: 0;
+  align-self: start;
+}
+
+.erpw-child-draft-side-slot:empty {
+  display: none;
+}
+
+.erpw-child-draft-side-slot .erpw-child-draft-rail {
+  margin: 0;
+}
+
+.erpw-child-draft-rail {
+  padding: 0.52rem 0.62rem;
+  background: #ffffff;
+  box-shadow: none;
+  border-color: rgba(226, 232, 240, 0.9);
+  position: sticky;
+  top: 0.55rem;
+}
+
+.erpw-child-draft-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin-bottom: 0.38rem;
+}
+
+.erpw-child-draft-rail-copy {
+  min-width: 0;
+}
+
+.erpw-child-draft-rail-list {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.erpw-child-draft-rail-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.42rem;
+  padding: 0.18rem 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(226, 232, 240, 0.72);
+  box-shadow: none;
+}
+
+.erpw-child-draft-rail-item:first-child {
+  border-top: 0;
+}
+
+.erpw-child-draft-rail-item.good,
+.erpw-child-draft-rail-item.attention,
+.erpw-child-draft-rail-item.pending,
+.erpw-child-draft-rail-item.blocker {
+  background: transparent;
+}
+
+.erpw-child-draft-rail-item-main {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  overflow: hidden;
+}
+
+.erpw-child-draft-rail-item-title {
+  flex: 0 1 auto;
+  font-size: 0.61rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.erpw-child-draft-rail-item-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+  color: #172033;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .erpw-child-summary-copy {
@@ -167,7 +338,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
   color: #f8fafc;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -252,7 +423,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpw-child-section-note {
-  color: var(--erpw-note-color);
+  color: #64748b;
   font-size: 0.8rem;
   line-height: 1.45;
   text-align: right;
@@ -738,8 +909,8 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpws-order-shell .erpw-child-fact-label {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
+  font-size: 0.67rem;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: #64748b;
   font-weight: 700;
@@ -846,6 +1017,43 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   font-size: 0.845rem;
   font-weight: 700;
   line-height: 1.2;
+}
+
+.erpw-child-action-note {
+  display: block;
+  margin-top: 0.24rem;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.erpws-order-shell .erpw-child-action.is-disabled,
+.erpws-order-shell .erpw-child-action[disabled] {
+  cursor: not-allowed;
+  opacity: 0.74;
+  box-shadow: none;
+}
+
+.erpws-order-shell .erpw-child-action.is-disabled::before,
+.erpws-order-shell .erpw-child-action[disabled]::before {
+  opacity: 0.5;
+}
+
+.erpws-order-shell .erpw-child-action.is-disabled:hover,
+.erpws-order-shell .erpw-child-action[disabled]:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--erpw-border-strong);
+  background: #ffffff;
+}
+
+.erpws-order-shell .erpw-child-action.is-disabled .erpw-child-action-accent,
+.erpws-order-shell .erpw-child-action[disabled] .erpw-child-action-accent {
+  box-shadow: none;
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #64748b;
 }
 
 .erpws-order-shell .erpw-child-action-stack {
@@ -1050,7 +1258,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 
 .erpwq-quotation-shell .erpw-child-fact-validity .erpw-child-fact-value,
 .erpwq-quotation-shell .erpw-child-fact-conversion .erpw-child-fact-value {
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   line-height: 1.2;
   color: #162033;
   font-weight: 700;
@@ -1140,7 +1348,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpwq-quotation-connection-note {
-  margin-top: 0.18rem;
+  margin-top: 0.12rem;
   color: #64748b;
   font-size: 0.78rem;
   line-height: 1.48;
@@ -1225,7 +1433,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 .erpwq-quotation-connection-row-note {
   margin-top: 0.18rem;
   color: #64748b;
-  font-size: 0.77rem;
+  font-size: 0.73rem;
   line-height: 1.45;
 }
 
@@ -1359,7 +1567,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpwq-quotation-form-enhanced .erpw-so-workflow-banner {
-  gap: 0.68rem;
+  gap: 0.5rem;
   padding: 0.64rem 0.82rem;
   background: #ffffff;
   box-shadow: none;
@@ -1607,7 +1815,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .section-head {
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.56rem;
 }
 
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .section-head,
@@ -1643,8 +1851,8 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-field {
   border-radius: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.78);
+  overflow: visible;
+  border: 1px solid rgba(226, 232, 240, 0.92);
   background: #ffffff;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.98) inset,
@@ -1655,7 +1863,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 .erpw-so-terms-section-payment .grid-field {
   margin-top: 0.2rem;
   border-radius: 14px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(226, 232, 240, 0.78);
   background: #ffffff;
   box-shadow:
@@ -1683,6 +1891,119 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-row {
   transition: background-color 0.16s ease;
+}
+
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-body,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .rows,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-row,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-static-col,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-body,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .rows,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-row,
+.erpw-so-terms-section-payment .grid-body,
+.erpw-so-terms-section-payment .rows,
+.erpw-so-terms-section-payment .grid-row {
+  overflow: visible;
+}
+
+.erpw-so-form-enhanced .awesomplete {
+  overflow: visible !important;
+}
+
+.erpw-managed-draft-lookup-anchor {
+  position: relative !important;
+  overflow: visible !important;
+  z-index: 1400;
+}
+
+.erpw-managed-draft-lookup-anchor > ul[hidden],
+.erpw-managed-draft-lookup-anchor .awesomplete > ul[hidden] {
+  display: none !important;
+}
+
+.erpw-managed-draft-lookup-anchor > ul:not([hidden]),
+.erpw-managed-draft-lookup-anchor .awesomplete > ul:not([hidden]) {
+  display: none !important;
+}
+
+.erpw-native-draft-lookup-hidden {
+  position: fixed !important;
+  top: -10000px !important;
+  left: -10000px !important;
+  right: auto !important;
+  bottom: auto !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+  transform: none !important;
+  z-index: -1 !important;
+}
+
+.erpw-draft-lookup-mirror {
+  position: fixed !important;
+  display: none;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.25rem;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+  overflow-y: auto;
+  z-index: 6000;
+  overscroll-behavior: contain;
+}
+
+
+.erpw-draft-lookup-mirror.visible {
+  display: flex;
+}
+
+.erpw-draft-lookup-option {
+  appearance: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  cursor: pointer;
+}
+
+.erpw-draft-lookup-option:hover,
+.erpw-draft-lookup-option:focus-visible {
+  background: rgba(241, 245, 249, 0.96);
+  outline: none;
+}
+
+.erpw-draft-lookup-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #142033;
+}
+
+.erpw-draft-lookup-meta {
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: #5f6f8c;
+}
+
+.erpw-managed-draft-lookup-popup,
+.erpw-so-form-enhanced .ui-autocomplete,
+.erpw-so-form-enhanced .autocomplete-suggestions,
+.erpw-so-form-enhanced .ui-menu {
+  z-index: 4000 !important;
+  max-height: 280px !important;
+  overflow-y: auto !important;
+}
+
+.erpw-managed-draft-lookup-popup {
+  margin-top: 0 !important;
+  transform: none !important;
 }
 
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-row,
@@ -1790,12 +2111,21 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-upload .btn,
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer .btn,
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-custom-buttons .btn,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-upload button,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer button,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-custom-buttons button,
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-upload .btn,
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer .btn,
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-custom-buttons .btn,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-upload button,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer button,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-custom-buttons button,
 .erpw-so-terms-section-payment .grid-upload .btn,
 .erpw-so-terms-section-payment .grid-footer .btn,
-.erpw-so-terms-section-payment .grid-custom-buttons .btn {
+.erpw-so-terms-section-payment .grid-custom-buttons .btn,
+.erpw-so-terms-section-payment .grid-upload button,
+.erpw-so-terms-section-payment .grid-footer button,
+.erpw-so-terms-section-payment .grid-custom-buttons button {
   border-radius: 12px;
   border: 1px solid rgba(226, 232, 240, 0.82);
   background: #ffffff;
@@ -1805,12 +2135,21 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-upload .btn:hover,
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer .btn:hover,
 .erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-custom-buttons .btn:hover,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-upload button:hover,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer button:hover,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-custom-buttons button:hover,
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-upload .btn:hover,
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer .btn:hover,
 .erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-custom-buttons .btn:hover,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-upload button:hover,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer button:hover,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-custom-buttons button:hover,
 .erpw-so-terms-section-payment .grid-upload .btn:hover,
 .erpw-so-terms-section-payment .grid-footer .btn:hover,
-.erpw-so-terms-section-payment .grid-custom-buttons .btn:hover {
+.erpw-so-terms-section-payment .grid-custom-buttons .btn:hover,
+.erpw-so-terms-section-payment .grid-upload button:hover,
+.erpw-so-terms-section-payment .grid-footer button:hover,
+.erpw-so-terms-section-payment .grid-custom-buttons button:hover {
   border-color: rgba(191, 219, 254, 0.84);
   box-shadow: 0 12px 22px rgba(15, 23, 42, 0.06);
 }
@@ -2155,7 +2494,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 
 .erpw-so-moreinfo-stack[data-layout="single"] > .erpw-so-moreinfo-section {
   width: min(760px, 100%);
-  max-width: 760px;
+  max-width: 860px;
   margin-inline: auto;
 }
 
@@ -2225,7 +2564,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   gap: 0.62rem;
   border-style: solid;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: var(--erpw-shadow-shell-quiet);
+  box-shadow: var(--erpw-shadow-card-quiet);
 }
 
 .erpw-so-moreinfo-section[data-density="sparse"].erpw-so-moreinfo-section-summary-mode .erpw-so-moreinfo-state-copy {
@@ -3079,7 +3418,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   word-break: break-word;
   overflow-wrap: anywhere;
   white-space: normal !important;
-  line-height: 1.38;
+  line-height: 1.3;
   overflow: visible;
   text-overflow: unset;
 }
@@ -4964,4 +5303,269 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   border-color: rgba(191, 219, 254, 0.6) !important;
   background: rgba(239, 246, 255, 0.8) !important;
   color: #2563eb !important;
+}
+
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer .btn.erpw-grid-action-labeled,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer button.erpw-grid-action-labeled,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer .btn.erpw-grid-action-labeled,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer button.erpw-grid-action-labeled,
+.erpw-so-terms-section-payment .grid-footer .btn.erpw-grid-action-labeled,
+.erpw-so-terms-section-payment .grid-footer button.erpw-grid-action-labeled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: max-content;
+}
+
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer .btn.erpw-grid-action-force-label,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer button.erpw-grid-action-force-label,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer .btn.erpw-grid-action-force-label,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer button.erpw-grid-action-force-label,
+.erpw-so-terms-section-payment .grid-footer .btn.erpw-grid-action-force-label,
+.erpw-so-terms-section-payment .grid-footer button.erpw-grid-action-force-label {
+  min-width: max-content;
+}
+
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer .btn.erpw-grid-action-labeled:not(.erpw-grid-action-force-label)::before,
+.erpw-so-form-enhanced .form-section.erpw-so-section-items .grid-footer button.erpw-grid-action-labeled:not(.erpw-grid-action-force-label)::before,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer .btn.erpw-grid-action-labeled:not(.erpw-grid-action-force-label)::before,
+.erpw-so-form-enhanced .form-section.erpw-so-section-taxes .grid-footer button.erpw-grid-action-labeled:not(.erpw-grid-action-force-label)::before,
+.erpw-so-terms-section-payment .grid-footer .btn.erpw-grid-action-labeled:not(.erpw-grid-action-force-label)::before,
+.erpw-so-terms-section-payment .grid-footer button.erpw-grid-action-labeled:not(.erpw-grid-action-force-label)::before {
+  content: attr(data-erpw-action-label);
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.erpw-so-form-enhanced .grid-footer .erpw-grid-action-label,
+.erpw-so-terms-section-payment .grid-footer .erpw-grid-action-label {
+  display: inline-block;
+  white-space: nowrap;
+  font: inherit;
+  color: inherit;
+}
+
+.erpw-child-draft-readiness {
+  padding: 0.72rem 0.82rem;
+  background: rgba(250, 251, 252, 0.96);
+  box-shadow: var(--erpw-shadow-shell-quiet);
+}
+
+.erpw-child-draft-heading {
+  align-items: center;
+  margin-bottom: 0.56rem;
+}
+
+.erpw-child-draft-heading-copy {
+  min-width: 0;
+}
+
+.erpw-child-draft-note {
+  color: var(--erpw-note-color);
+  font-size: 0.73rem;
+  line-height: 1.45;
+  max-width: 860px;
+}
+
+.erpw-child-draft-progress {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0.24rem 0.54rem;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  color: #334155;
+  font-size: 0.69rem;
+  font-weight: 700;
+}
+
+.erpw-child-draft-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.erpw-child-draft-check {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.54rem;
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 0.56rem 0.62rem;
+  border-radius: 12px;
+  background: var(--erpw-surface-shell);
+  border: 1px solid rgba(226, 232, 240, 0.78);
+  box-shadow: var(--erpw-shadow-card-quiet);
+}
+
+.erpw-child-draft-check.good {
+  border-color: rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.erpw-child-draft-check.attention,
+.erpw-child-draft-check.pending {
+  border-color: rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.erpw-child-draft-check.blocker {
+  border-color: rgba(226, 232, 240, 0.92);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.erpw-child-draft-check-main {
+  min-width: 0;
+}
+
+.erpw-child-draft-check-title {
+  font-size: 0.67rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 800;
+}
+
+.erpw-child-draft-check-value {
+  margin-top: 0.12rem;
+  color: #0f172a;
+  font-size: 0.79rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.erpw-child-draft-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: auto;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.erpw-child-draft-readiness .erpw-child-section-title {
+  color: #0f172a;
+}
+
+.erpw-child-draft-meta {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  align-items: center;
+}
+
+.erpw-child-draft-meta-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: #64748b;
+  min-width: 0;
+}
+
+.erpw-child-draft-meta-label {
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.erpw-child-draft-meta-value {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.erpw-child-draft-meta-value.good {
+  color: #0f766e;
+}
+
+.erpw-child-draft-meta-value.attention,
+.erpw-child-draft-meta-value.pending {
+  color: #b7791f;
+}
+
+.erpw-child-draft-meta-value.blocker {
+  color: #b91c1c;
+}
+
+.erpw-child-draft-status.good {
+  background: transparent;
+  color: #0f766e;
+  border-color: transparent;
+}
+
+.erpw-child-draft-status.attention,
+.erpw-child-draft-status.pending {
+  background: transparent;
+  color: #b7791f;
+  border-color: transparent;
+}
+
+.erpw-child-draft-status.blocker {
+  background: transparent;
+  color: #b91c1c;
+  border-color: transparent;
+}
+
+@media (max-width: 860px) {
+  .erpw-child-draft-check {
+    flex-basis: calc(50% - 0.34rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .erpw-child-draft-check {
+    flex-basis: 100%;
+  }
+}
+
+
+@media (max-width: 1100px) {
+  .erpw-child-draft-cluster {
+    grid-template-columns: 1fr;
+  }
+
+  .erpw-child-draft-rail {
+    position: static;
+  }
+}
+
+
+.erpw-draft-lookup-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.erpw-draft-lookup-empty-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #142033;
+}
+
+.erpw-draft-lookup-empty-note {
+  font-size: 0.73rem;
+  line-height: 1.42;
+  color: #64748b;
+}
+
+
+.erpw-so-form-enhanced .awesomplete > ul,
+.erpw-so-form-enhanced .link-field .awesomplete > ul {
+  z-index: 6200 !important;
+  max-height: 320px !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
 }

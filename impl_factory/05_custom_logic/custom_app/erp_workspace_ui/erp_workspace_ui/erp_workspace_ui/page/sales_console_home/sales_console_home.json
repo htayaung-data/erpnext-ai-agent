@@ -1,0 +1,20 @@
+{
+ "content": null,
+ "creation": "2026-04-05 07:44:42.464498",
+ "docstatus": 0,
+ "doctype": "Page",
+ "icon": "octicon octicon-briefcase",
+ "idx": 0,
+ "modified": "2026-04-05 07:44:44.068157",
+ "modified_by": "Administrator",
+ "module": "ERP Workspace UI",
+ "name": "sales-console-home",
+ "owner": "Administrator",
+ "page_name": "sales-console-home",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Sales Console Home"
+}
