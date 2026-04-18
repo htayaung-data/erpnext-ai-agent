@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "sales-console-worklist",
+  "page_name": "sales-console-worklist",
+  "title": "Sales Console Worklist",
+  "icon": "octicon octicon-list-unordered",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

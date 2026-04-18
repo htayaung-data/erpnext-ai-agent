@@ -27,6 +27,7 @@ app_include_js = [
 	"/assets/erp_workspace_ui/js/runtime/child_page/child_page_connections.js",
 	"/assets/erp_workspace_ui/js/runtime/child_page/child_page_support.js",
 	"/assets/erp_workspace_ui/js/runtime/child_page/child_page_sidebar.js",
+	"/assets/erp_workspace_ui/js/runtime/list_page/list_page_shell.js",
 ]
 doctype_js = {
 	"Sales Order": "public/js/sales_order_form.js",

@@ -1534,6 +1534,18 @@
     }
   }
 
+  function routeToWorklist(queueKey) {
+    try {
+      frappe.set_route("sales-console-worklist", String(queueKey || "").replace(/_/g, "-"));
+    } catch (error) {
+      frappe.msgprint({
+        title: __("Worklist unavailable"),
+        message: __("Could not open the Sales Console worklist."),
+        indicator: "orange",
+      });
+    }
+  }
+
   function executeTarget(target, fallback) {
     if (!target) {
       if (typeof fallback === "function") fallback();
@@ -1564,6 +1576,11 @@
 
     if (target.kind === "report" && target.report_name) {
       routeToReport(target.report_name, target.filters || null);
+      return;
+    }
+
+    if (target.kind === "worklist" && target.queue_key) {
+      routeToWorklist(target.queue_key);
       return;
     }
 

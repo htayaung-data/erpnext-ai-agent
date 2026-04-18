@@ -516,30 +516,31 @@ def _build_navigation(today, context: dict[str, object], scope: dict[str, object
 		},
 		"insights": {
 			"awaiting_approval": _approval_review_target(scope),
-			"open_orders": _open_sales_order_target(scope),
+			"open_orders": _worklist_target("open_orders"),
 		},
 		"work": {
-			"sales_orders_pending_fulfillment": _pending_fulfillment_target(scope),
-			"quotations_waiting_action": _actionable_quotation_target(scope),
-			"expiring_quotations": _expiring_quotation_target(today, scope),
-			"customer_follow_up_tasks": _follow_up_target(scope),
+			"sales_orders_pending_fulfillment": _worklist_target("sales_orders_pending_fulfillment"),
+			"quotations_waiting_action": _worklist_target("quotations_waiting_action"),
+			"expiring_quotations": _worklist_target("expiring_quotations"),
+			"customer_follow_up_tasks": _worklist_target("customer_follow_up_tasks"),
 		},
 		"lifecycle": {
-			"orders_due_soon": _orders_due_soon_target(today, scope),
-			"partially_delivered_orders": _partially_delivered_orders_target(scope),
-			"invoices_outstanding": _invoices_outstanding_target(scope),
-			"sales_returns_in_progress": _sales_returns_target(today, scope),
+			"orders_due_soon": _worklist_target("orders_due_soon"),
+			"partially_delivered_orders": _worklist_target("partially_delivered_orders"),
+			"invoices_outstanding": _worklist_target("invoices_outstanding"),
+			"sales_returns_in_progress": _worklist_target("sales_returns_in_progress"),
 		},
 		"blockers": {
-			"orders_blocked_by_approval": _blocked_sales_order_target(scope),
-			"quotations_awaiting_approval": _quotation_approval_target(scope),
+			"orders_blocked_by_approval": _worklist_target("orders_blocked_by_approval"),
+			"quotations_awaiting_approval": _worklist_target("quotations_awaiting_approval"),
 		},
 		"queues": {
-			"orders_blocked_by_approval": _blocked_sales_order_target(scope),
-			"sales_orders_pending_fulfillment": _pending_fulfillment_target(scope),
-			"quotations_waiting_action": _actionable_quotation_target(scope),
-			"expiring_quotations": _expiring_quotation_target(today, scope),
-			"customer_follow_up_tasks": _follow_up_target(scope),
+			"orders_blocked_by_approval": _worklist_target("orders_blocked_by_approval"),
+			"quotations_awaiting_approval": _worklist_target("quotations_awaiting_approval"),
+			"sales_orders_pending_fulfillment": _worklist_target("sales_orders_pending_fulfillment"),
+			"quotations_waiting_action": _worklist_target("quotations_waiting_action"),
+			"expiring_quotations": _worklist_target("expiring_quotations"),
+			"customer_follow_up_tasks": _worklist_target("customer_follow_up_tasks"),
 		},
 		"reports": report_targets,
 	}
@@ -777,6 +778,13 @@ def _item_list_target() -> dict[str, object]:
 	return {"kind": "list", "doctype": "Item", "filters": filters}
 
 
+def _worklist_target(queue_key: str, notice: str | None = None) -> dict[str, object]:
+	target = {"kind": "worklist", "queue_key": queue_key}
+	if notice:
+		target["notice"] = notice
+	return target
+
+
 def _quotation_approval_target(scope: dict[str, object]) -> dict[str, object]:
 	if "workflow_state" not in _fieldnames("Quotation"):
 		return {
@@ -807,16 +815,16 @@ def _quotation_approval_target(scope: dict[str, object]) -> dict[str, object]:
 def _approval_review_target(scope: dict[str, object]) -> dict[str, object]:
 	sales_order_metric = _workflow_pending_metric("Sales Order", scope)
 	if sales_order_metric.get("state") == "live" and int(sales_order_metric.get("value") or 0) > 0:
-		return _blocked_sales_order_target(scope)
+		return _worklist_target("orders_blocked_by_approval")
 
 	quotation_metric = _workflow_pending_metric("Quotation", scope)
 	if quotation_metric.get("state") == "live" and int(quotation_metric.get("value") or 0) > 0:
-		return _quotation_approval_target(scope)
+		return _worklist_target("quotations_awaiting_approval")
 
 	if sales_order_metric.get("state") == "live":
-		return _blocked_sales_order_target(scope)
+		return _worklist_target("orders_blocked_by_approval")
 
-	return _quotation_approval_target(scope)
+	return _worklist_target("quotations_awaiting_approval")
 
 
 def _open_sales_order_target(scope: dict[str, object]) -> dict[str, object]:
@@ -983,6 +991,22 @@ def _quotation_action_filters(scope: dict[str, object]) -> tuple[list[list[objec
 	return _apply_scope_filters("Quotation", filters, scope)
 
 
+def _quotation_approval_filters(scope: dict[str, object]) -> tuple[list[list[object]], str]:
+	fields = _fieldnames("Quotation")
+	matching_states = _configured_pending_states("Quotation")
+	if "workflow_state" not in fields or not matching_states:
+		filters, scope_note = _quotation_action_filters(scope)
+		return filters, f"{scope_note} Approval workflow states are not fully exposed on this site; actionable quotations are shown instead."
+
+	filters, scope_note = _apply_scope_filters(
+		"Quotation",
+		[["workflow_state", "in", matching_states]],
+		scope,
+		approval_visibility=True,
+	)
+	return filters, f"{scope_note} Pending quotation approvals only."
+
+
 def _quotation_expiring_filters(today, scope: dict[str, object]) -> tuple[list[list[object]], str]:
 	return _apply_scope_filters(
 		"Quotation",
@@ -1010,6 +1034,22 @@ def _sales_order_active_filters(
 		filters.append(["workflow_state", "not in", pending_states])
 
 	return _apply_scope_filters("Sales Order", filters, scope)
+
+
+def _sales_order_approval_filters(scope: dict[str, object]) -> tuple[list[list[object]], str]:
+	fields = _fieldnames("Sales Order")
+	matching_states = _configured_pending_states("Sales Order")
+	if "workflow_state" not in fields or not matching_states:
+		filters, scope_note = _sales_order_active_filters(scope)
+		return filters, f"{scope_note} Approval workflow states are not fully exposed on this site; active sales orders are shown instead."
+
+	filters, scope_note = _apply_scope_filters(
+		"Sales Order",
+		[["workflow_state", "in", matching_states]],
+		scope,
+		approval_visibility=True,
+	)
+	return filters, f"{scope_note} Pending sales-order approvals only."
 
 
 def _partially_delivered_sales_order_filters(scope: dict[str, object]) -> tuple[list[list[object]], str]:
