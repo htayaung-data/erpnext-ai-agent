@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.capability_adapters import (
@@ -13,6 +13,7 @@ from ai_assistant_ui.qwen_chat.capability_adapters import (
 from ai_assistant_ui.qwen_chat.erp_metadata_discovery import get_report_surface_summary
 from ai_assistant_ui.qwen_chat.metadata import (
 	all_ontology_concepts,
+	capability_contract_identity,
 	capability_default_report_name,
 	capability_report_names,
 	capability_semantic_tags,
@@ -33,6 +34,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	supported_ontology_concepts,
 )
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
+from ai_assistant_ui.qwen_chat.governed_scope_registry import listing_view_for_report_name
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_canonical_key
 from ai_assistant_ui.qwen_chat.scope_decision_input import (
 	ScopeDecisionInputContract,
@@ -56,6 +58,30 @@ def _safe_json_loads(value: Any) -> Any:
 		return json.loads(text)
 	except Exception:
 		return None
+
+
+def _canonical_capability_identities(
+	capability_ids: List[str] | None,
+	*,
+	scope_id: str = "",
+	report_name: str = "",
+) -> List[str]:
+	values: List[str] = []
+	for capability_id in capability_ids or []:
+		clean = str(capability_id or "").strip()
+		if not clean:
+			continue
+		values.append(
+			str(
+				capability_contract_identity(
+					clean,
+					scope_id=str(scope_id or "").strip(),
+					report_name=str(report_name or "").strip(),
+				)
+				or clean
+			).strip()
+		)
+	return [value for value in dict.fromkeys(values) if value]
 
 
 def detect_language(text: str) -> str:
@@ -207,6 +233,48 @@ class ClarificationSignalContract:
 	suggested_options: List[str]
 	internal_reason: str
 	internal_details: Dict[str, Any]
+	candidate_capability_ids: List[str] = field(default_factory=list)
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+
+	def __post_init__(self) -> None:
+		candidates = [
+			str(value or "").strip()
+			for value in list(self.candidate_capability_ids or [])
+			if str(value or "").strip()
+		]
+		if not candidates:
+			details = dict(self.internal_details or {})
+			if isinstance(details.get("capability_candidates"), list):
+				candidates = [
+					str(value or "").strip()
+					for value in details.get("capability_candidates")
+					if str(value or "").strip()
+				]
+		object.__setattr__(self, "candidate_capability_ids", candidates)
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			details = dict(self.internal_details or {})
+			scope_id = str(details.get("scope_id") or "").strip()
+			report_name = str((details.get("report_candidates") or [""])[0] or "").strip()
+			if isinstance(details.get("canonical_capability_candidates"), list):
+				canonical = [
+					str(value or "").strip()
+					for value in details.get("canonical_capability_candidates")
+					if str(value or "").strip()
+				]
+			elif isinstance(details.get("canonical_candidate_capability_ids"), list):
+				canonical = [
+					str(value or "").strip()
+					for value in details.get("canonical_candidate_capability_ids")
+					if str(value or "").strip()
+				]
+			else:
+				canonical = _canonical_capability_identities(
+					details.get("capability_candidates") if isinstance(details.get("capability_candidates"), list) else [],
+					scope_id=scope_id,
+					report_name=report_name,
+				)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -217,6 +285,8 @@ class ClarificationSignalContract:
 			"reason_type": self.reason_type,
 			"user_question": self.user_question,
 			"suggested_options": list(self.suggested_options),
+			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"canonical_candidate_capability_ids": list(self.canonical_candidate_capability_ids),
 			"internal_reason": self.internal_reason,
 			"internal_details": dict(self.internal_details),
 			"created_at": _utc_now(),
@@ -240,6 +310,21 @@ class ClarificationReasonContract:
 	suggested_options: List[str]
 	internal_reason: str
 	internal_details: Dict[str, Any]
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+
+	def __post_init__(self) -> None:
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			scope_id = ""
+			if isinstance(self.internal_details, dict):
+				scope_id = str(self.internal_details.get("scope_id") or "").strip()
+			report_name = str((self.candidate_reports or [""])[0] or "").strip()
+			canonical = _canonical_capability_identities(
+				self.candidate_capability_ids,
+				scope_id=scope_id,
+				report_name=report_name,
+			)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -256,6 +341,7 @@ class ClarificationReasonContract:
 			"missing_fields": list(self.missing_fields),
 			"ambiguity_flags": list(self.ambiguity_flags),
 			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"canonical_candidate_capability_ids": list(self.canonical_candidate_capability_ids),
 			"candidate_reports": list(self.candidate_reports),
 			"suggested_options": list(self.suggested_options),
 			"internal_reason": self.internal_reason,
@@ -304,6 +390,72 @@ class ClarificationResolutionContract:
 
 
 @dataclass(frozen=True)
+class EntityReferenceResolutionContract:
+	request_id: str
+	entity_grain: str
+	lookup_mode: str
+	search_text: str
+	resolution_status: str
+	candidate_entities: List[Dict[str, Any]]
+	resolved_entity: Dict[str, Any]
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_entity_reference_resolution_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"entity_grain": self.entity_grain,
+			"lookup_mode": self.lookup_mode,
+			"search_text": self.search_text,
+			"resolution_status": self.resolution_status,
+			"candidate_entities": [dict(item) for item in self.candidate_entities if isinstance(item, dict)],
+			"resolved_entity": dict(self.resolved_entity),
+			"reason": self.reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class EntityDetailEvidenceRequestContract:
+	request_id: str
+	entity_type: str
+	entity_question_type: str
+	requested_metrics: List[str]
+	requested_dimensions: List[str]
+	requested_concepts: List[str]
+	basis: str
+	question_shape: str
+	value_mode: str
+	resolved_entity_ref: Dict[str, Any]
+	profile_sections: List[str]
+	clarification_required: bool
+	clarification_reason_type: str
+	clarification_options: List[str]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_entity_detail_evidence_request_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"entity_type": self.entity_type,
+			"entity_question_type": self.entity_question_type,
+			"requested_metrics": list(self.requested_metrics),
+			"requested_dimensions": list(self.requested_dimensions),
+			"requested_concepts": list(self.requested_concepts),
+			"basis": self.basis,
+			"question_shape": self.question_shape,
+			"value_mode": self.value_mode,
+			"resolved_entity_ref": dict(self.resolved_entity_ref),
+			"profile_sections": list(self.profile_sections),
+			"clarification_required": bool(self.clarification_required),
+			"clarification_reason_type": self.clarification_reason_type,
+			"clarification_options": list(self.clarification_options),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class SemanticResolutionContract:
 	request_id: str
 	session_id: str
@@ -319,6 +471,19 @@ class SemanticResolutionContract:
 	resolution_source: Dict[str, str]
 	governed_decision: str
 	governed_reason: str
+	scope_id: str = ""
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
+
+	def __post_init__(self) -> None:
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			report_name = str((self.candidate_reports or [""])[0] or "").strip()
+			canonical = _canonical_capability_identities(
+				self.candidate_capability_ids,
+				scope_id=self.scope_id,
+				report_name=report_name,
+			)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -344,6 +509,11 @@ class SemanticResolutionContract:
 			"candidate_capability_ids": [
 				str(value) for value in list(self.candidate_capability_ids) if str(value or "").strip()
 			],
+			"canonical_candidate_capability_ids": [
+				str(value)
+				for value in list(self.canonical_candidate_capability_ids)
+				if str(value or "").strip()
+			],
 			"candidate_reports": [
 				str(value) for value in list(self.candidate_reports) if str(value or "").strip()
 			],
@@ -358,6 +528,7 @@ class SemanticResolutionContract:
 			},
 			"governed_decision": self.governed_decision,
 			"governed_reason": self.governed_reason,
+			"scope_id": str(self.scope_id or "").strip(),
 			"created_at": _utc_now(),
 		}
 
@@ -645,7 +816,22 @@ class FreshQueryInterpretationContract:
 	ambiguity_flags: List[str]
 	ambiguity_reason: str
 	confidence: float
+	canonical_candidate_capability_ids: List[str] = field(default_factory=list)
 	target_limit: int = 0
+
+	def __post_init__(self) -> None:
+		canonical = list(self.canonical_candidate_capability_ids or [])
+		if not canonical:
+			scope_id = ""
+			if isinstance(self.extracted_slots, dict):
+				scope_id = str(self.extracted_slots.get("scope_id") or "").strip()
+			report_name = str((self.candidate_reports or [""])[0] or "").strip()
+			canonical = _canonical_capability_identities(
+				self.candidate_capability_ids,
+				scope_id=scope_id,
+				report_name=report_name,
+			)
+		object.__setattr__(self, "canonical_candidate_capability_ids", canonical)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -655,6 +841,7 @@ class FreshQueryInterpretationContract:
 			"session_id": self.session_id,
 			"intent_class": self.intent_class,
 			"candidate_capability_ids": list(self.candidate_capability_ids),
+			"canonical_candidate_capability_ids": list(self.canonical_candidate_capability_ids),
 			"candidate_reports": list(self.candidate_reports),
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
@@ -686,6 +873,8 @@ class FreshQueryCompilerContract:
 	governed_resolution_details: Dict[str, Any]
 	clarification_reason_type: str
 	clarification_details: Dict[str, Any]
+	extracted_slots: Dict[str, Any]
+	canonical_capability_id: str = ""
 	target_limit: int = 0
 
 	def to_payload(self) -> Dict[str, Any]:
@@ -695,6 +884,7 @@ class FreshQueryCompilerContract:
 			"request_id": self.request_id,
 			"session_id": self.session_id,
 			"capability_id": self.capability_id,
+			"canonical_capability_id": self.canonical_capability_id,
 			"selected_report": self.selected_report,
 			"selected_report_family": self.selected_report_family,
 			"completed_filters": dict(self.completed_filters),
@@ -708,6 +898,7 @@ class FreshQueryCompilerContract:
 			"governed_resolution_details": dict(self.governed_resolution_details),
 			"clarification_reason_type": self.clarification_reason_type,
 			"clarification_details": dict(self.clarification_details),
+			"extracted_slots": dict(self.extracted_slots),
 			"created_at": _utc_now(),
 		}
 
@@ -721,6 +912,8 @@ class CompiledQueryRequestContract:
 	requested_dimensions: List[str]
 	requested_metrics: List[str]
 	response_policy: Dict[str, Any]
+	extracted_slots: Dict[str, Any]
+	canonical_capability_id: str = ""
 	target_limit: int = 0
 	mode: str = "compiled_read_query"
 
@@ -731,12 +924,14 @@ class CompiledQueryRequestContract:
 			"request_id": self.request_id,
 			"mode": self.mode,
 			"capability_id": self.capability_id,
+			"canonical_capability_id": self.canonical_capability_id,
 			"selected_report": self.selected_report,
 			"filters": dict(self.filters),
 			"requested_dimensions": list(self.requested_dimensions),
 			"requested_metrics": list(self.requested_metrics),
 			"target_limit": int(max(0, self.target_limit or 0)),
 			"response_policy": dict(self.response_policy),
+			"extracted_slots": dict(self.extracted_slots),
 			"created_at": _utc_now(),
 		}
 
@@ -1120,6 +1315,59 @@ def build_followup_boundary_contract(
 	)
 
 
+def build_recent_focus_affordance_contract(
+	*,
+	request_id: str,
+	focus_kind: str,
+	focus_grain: str,
+	focus_label: str = "",
+	source_family: str = "",
+	source_capability: str = "",
+	source_report: str = "",
+	allowed_action_classes: List[str] | None = None,
+	allowed_local_followup_modes: List[str] | None = None,
+	allowed_requery_followup_modes: List[str] | None = None,
+	deictic_reference_allowed: bool = False,
+	explicit_named_reference_allowed: bool = False,
+	supports_cross_family_followup: bool = False,
+	reason: str = "",
+) -> RecentFocusAffordanceContract:
+	return RecentFocusAffordanceContract(
+		request_id=str(request_id or "").strip(),
+		focus_kind=str(focus_kind or "").strip(),
+		focus_grain=str(focus_grain or "").strip(),
+		focus_label=str(focus_label or "").strip(),
+		source_family=str(source_family or "").strip(),
+		source_capability=str(source_capability or "").strip(),
+		source_report=str(source_report or "").strip(),
+		allowed_action_classes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (allowed_action_classes or [])
+				if str(value or "").strip()
+			)
+		),
+		allowed_local_followup_modes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (allowed_local_followup_modes or [])
+				if str(value or "").strip()
+			)
+		),
+		allowed_requery_followup_modes=list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (allowed_requery_followup_modes or [])
+				if str(value or "").strip()
+			)
+		),
+		deictic_reference_allowed=bool(deictic_reference_allowed),
+		explicit_named_reference_allowed=bool(explicit_named_reference_allowed),
+		supports_cross_family_followup=bool(supports_cross_family_followup),
+		reason=str(reason or "").strip(),
+	)
+
+
 def clone_followup_resolution(
 	resolution: FollowUpResolution,
 	*,
@@ -1327,6 +1575,45 @@ class FollowUpBoundaryContract:
 				for key, value in dict(self.resolution_source).items()
 				if str(key or "").strip()
 			},
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class RecentFocusAffordanceContract:
+	request_id: str
+	focus_kind: str
+	focus_grain: str
+	focus_label: str
+	source_family: str
+	source_capability: str
+	source_report: str
+	allowed_action_classes: List[str]
+	allowed_local_followup_modes: List[str]
+	allowed_requery_followup_modes: List[str]
+	deictic_reference_allowed: bool
+	explicit_named_reference_allowed: bool
+	supports_cross_family_followup: bool
+	reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_recent_focus_affordance_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"focus_kind": self.focus_kind,
+			"focus_grain": self.focus_grain,
+			"focus_label": self.focus_label,
+			"source_family": self.source_family,
+			"source_capability": self.source_capability,
+			"source_report": self.source_report,
+			"allowed_action_classes": list(self.allowed_action_classes),
+			"allowed_local_followup_modes": list(self.allowed_local_followup_modes),
+			"allowed_requery_followup_modes": list(self.allowed_requery_followup_modes),
+			"deictic_reference_allowed": bool(self.deictic_reference_allowed),
+			"explicit_named_reference_allowed": bool(self.explicit_named_reference_allowed),
+			"supports_cross_family_followup": bool(self.supports_cross_family_followup),
+			"reason": self.reason,
 			"created_at": _utc_now(),
 		}
 
@@ -1629,6 +1916,181 @@ class FrontDoorIntentGateContract:
 
 
 @dataclass(frozen=True)
+class CompoundRequestAssessmentContract:
+	request_id: str
+	status: str
+	segments: List[str]
+	suggested_options: List[str]
+	clarification_required: bool
+	reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_compound_request_assessment_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"status": self.status,
+			"segments": list(self.segments),
+			"suggested_options": list(self.suggested_options),
+			"clarification_required": bool(self.clarification_required),
+			"reason": self.reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ConversationControlDecisionContract:
+	request_id: str
+	decision_class: str
+	decision_action: str
+	target_state_class: str
+	resolved_business_message: str
+	resolved_focus_target: Dict[str, Any]
+	resolved_sequence_target: Dict[str, Any]
+	clear_pending_clarification: bool
+	clear_active_sequence: bool
+	update_recent_focus: bool
+	preserve_prior_branch: bool
+	confidence: float
+	reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_conversation_control_decision_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"decision_class": self.decision_class,
+			"decision_action": self.decision_action,
+			"target_state_class": self.target_state_class,
+			"resolved_business_message": self.resolved_business_message,
+			"resolved_focus_target": dict(self.resolved_focus_target),
+			"resolved_sequence_target": dict(self.resolved_sequence_target),
+			"clear_pending_clarification": bool(self.clear_pending_clarification),
+			"clear_active_sequence": bool(self.clear_active_sequence),
+			"update_recent_focus": bool(self.update_recent_focus),
+			"preserve_prior_branch": bool(self.preserve_prior_branch),
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"reason": self.reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class ConversationControlEvidenceContract:
+	request_id: str
+	evidence_class: str
+	action_id: str
+	evidence_strength: str
+	raw_message: str
+	normalized_message: str
+	matched_surface_form: str
+	embedded_business_message: str
+	reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_conversation_control_evidence_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"evidence_class": self.evidence_class,
+			"action_id": self.action_id,
+			"evidence_strength": self.evidence_strength,
+			"raw_message": self.raw_message,
+			"normalized_message": self.normalized_message,
+			"matched_surface_form": self.matched_surface_form,
+			"embedded_business_message": self.embedded_business_message,
+			"reason": self.reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class PriorBranchRestoreContract:
+	request_id: str
+	target_branch_kind: str
+	target_branch_label: str
+	target_request_id: str
+	target_family: str
+	target_scope: Dict[str, Any]
+	restore_mode: str
+	resumable: bool
+	clear_current_pending_clarification: bool
+	clear_current_active_sequence: bool
+	preserve_time_context: bool
+	preserve_scope: bool
+	preserve_entity_dimension: bool
+	reason: str
+	confidence: float
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_prior_branch_restore_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"target_branch_kind": self.target_branch_kind,
+			"target_branch_label": self.target_branch_label,
+			"target_request_id": self.target_request_id,
+			"target_family": self.target_family,
+			"target_scope": dict(self.target_scope),
+			"restore_mode": self.restore_mode,
+			"resumable": bool(self.resumable),
+			"clear_current_pending_clarification": bool(self.clear_current_pending_clarification),
+			"clear_current_active_sequence": bool(self.clear_current_active_sequence),
+			"preserve_time_context": bool(self.preserve_time_context),
+			"preserve_scope": bool(self.preserve_scope),
+			"preserve_entity_dimension": bool(self.preserve_entity_dimension),
+			"reason": self.reason,
+			"confidence": float(max(0.0, min(1.0, self.confidence))),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MasterDataFrontDoorAssessmentContract:
+	request_id: str
+	status: str
+	scope_id: str
+	entity_grain: str
+	request_mode: str
+	lookup_projection: str
+	lookup_search_text: str
+	capability_id: str
+	report_name: str
+	allowed_lookup_modes: List[str]
+	supported_entity_grains: List[str]
+	ambiguity_reason_type: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_master_data_frontdoor_assessment_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"status": self.status,
+			"scope_id": self.scope_id,
+			"entity_grain": self.entity_grain,
+			"request_mode": self.request_mode,
+			"lookup_projection": self.lookup_projection,
+			"lookup_search_text": self.lookup_search_text,
+			"capability_id": self.capability_id,
+			"report_name": self.report_name,
+			"allowed_lookup_modes": list(self.allowed_lookup_modes),
+			"supported_entity_grains": list(self.supported_entity_grains),
+			"ambiguity_reason_type": self.ambiguity_reason_type,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class CompiledExecutionAuditContract:
 	request_id: str
 	session_id: str
@@ -1780,6 +2242,11 @@ def translate_front_door_intent_gate_contract(
 				"Give me the financial statement",
 			],
 		}
+	if mode == "clarification_signal":
+		return {
+			"text": "",
+			"suggested_prompts": [],
+		}
 	text_by_intent = {
 		"greeting": "I can help with governed ERP reports and follow-up analysis. What would you like to look at?",
 		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new governed query.",
@@ -1787,6 +2254,7 @@ def translate_front_door_intent_gate_contract(
 		"closure_signoff": "Understood. Feel free to come back anytime, and we can pick up from a new ERP question or continue from there.",
 		"governed_kpi_definition": "I can explain governed KPI definitions and approved formula bases from the active business-definition registry.",
 		"low_signal_non_business": "That request is outside this ERP/business assistant. I’m ready when you want to return to the current ERP analysis or continue with an ERP question or follow-up.",
+		"master_data_grain_clarification": "",
 		"route_onward": "",
 	}
 	return {
@@ -1802,6 +2270,7 @@ def build_front_door_intent_gate_contract(
 	confidence: float,
 	grounded_context_available: bool = False,
 	reason: str = "",
+	response_payload_override: Dict[str, Any] | None = None,
 ) -> FrontDoorIntentGateContract:
 	intent = str(intent_class or "").strip() or "route_onward"
 	spec = get_frontdoor_intent_spec(intent)
@@ -1824,6 +2293,8 @@ def build_front_door_intent_gate_contract(
 		response_mode=response_mode,
 		grounded_context_available=grounded_context_available,
 	)
+	if isinstance(response_payload_override, dict) and response_payload_override:
+		response_payload = dict(response_payload_override)
 	return FrontDoorIntentGateContract(
 		request_id=str(request_id or "").strip(),
 		intent_class=intent,
@@ -1833,6 +2304,169 @@ def build_front_door_intent_gate_contract(
 		response_payload=dict(response_payload),
 		route_target=route_target,
 		reason=final_reason,
+	)
+
+
+def build_compound_request_assessment_contract(
+	*,
+	request_id: str,
+	status: str,
+	segments: List[str] | None = None,
+	suggested_options: List[str] | None = None,
+	clarification_required: bool = False,
+	reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> CompoundRequestAssessmentContract:
+	return CompoundRequestAssessmentContract(
+		request_id=str(request_id or "").strip(),
+		status=str(status or "").strip(),
+		segments=[str(x or "").strip() for x in (segments or []) if str(x or "").strip()],
+		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
+		clarification_required=bool(clarification_required),
+		reason=str(reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_conversation_control_decision_contract(
+	*,
+	request_id: str,
+	decision_class: str,
+	decision_action: str,
+	target_state_class: str = "",
+	resolved_business_message: str = "",
+	resolved_focus_target: Dict[str, Any] | None = None,
+	resolved_sequence_target: Dict[str, Any] | None = None,
+	clear_pending_clarification: bool = False,
+	clear_active_sequence: bool = False,
+	update_recent_focus: bool = False,
+	preserve_prior_branch: bool = False,
+	confidence: float = 0.0,
+	reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> ConversationControlDecisionContract:
+	return ConversationControlDecisionContract(
+		request_id=str(request_id or "").strip(),
+		decision_class=str(decision_class or "").strip(),
+		decision_action=str(decision_action or "").strip(),
+		target_state_class=str(target_state_class or "").strip(),
+		resolved_business_message=str(resolved_business_message or "").strip(),
+		resolved_focus_target=dict(resolved_focus_target or {}),
+		resolved_sequence_target=dict(resolved_sequence_target or {}),
+		clear_pending_clarification=bool(clear_pending_clarification),
+		clear_active_sequence=bool(clear_active_sequence),
+		update_recent_focus=bool(update_recent_focus),
+		preserve_prior_branch=bool(preserve_prior_branch),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+		reason=str(reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_conversation_control_evidence_contract(
+	*,
+	request_id: str,
+	evidence_class: str,
+	action_id: str,
+	evidence_strength: str,
+	raw_message: str,
+	normalized_message: str = "",
+	matched_surface_form: str = "",
+	embedded_business_message: str = "",
+	reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> ConversationControlEvidenceContract:
+	return ConversationControlEvidenceContract(
+		request_id=str(request_id or "").strip(),
+		evidence_class=str(evidence_class or "").strip(),
+		action_id=str(action_id or "").strip(),
+		evidence_strength=str(evidence_strength or "").strip(),
+		raw_message=str(raw_message or "").strip(),
+		normalized_message=str(normalized_message or "").strip(),
+		matched_surface_form=str(matched_surface_form or "").strip(),
+		embedded_business_message=str(embedded_business_message or "").strip(),
+		reason=str(reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_prior_branch_restore_contract(
+	*,
+	request_id: str,
+	target_branch_kind: str = "",
+	target_branch_label: str = "",
+	target_request_id: str = "",
+	target_family: str = "",
+	target_scope: Dict[str, Any] | None = None,
+	restore_mode: str = "",
+	resumable: bool = False,
+	clear_current_pending_clarification: bool = False,
+	clear_current_active_sequence: bool = False,
+	preserve_time_context: bool = False,
+	preserve_scope: bool = False,
+	preserve_entity_dimension: bool = False,
+	reason: str = "",
+	confidence: float = 0.0,
+	internal_details: Dict[str, Any] | None = None,
+) -> PriorBranchRestoreContract:
+	return PriorBranchRestoreContract(
+		request_id=str(request_id or "").strip(),
+		target_branch_kind=str(target_branch_kind or "").strip(),
+		target_branch_label=str(target_branch_label or "").strip(),
+		target_request_id=str(target_request_id or "").strip(),
+		target_family=str(target_family or "").strip(),
+		target_scope=dict(target_scope or {}),
+		restore_mode=str(restore_mode or "").strip(),
+		resumable=bool(resumable),
+		clear_current_pending_clarification=bool(clear_current_pending_clarification),
+		clear_current_active_sequence=bool(clear_current_active_sequence),
+		preserve_time_context=bool(preserve_time_context),
+		preserve_scope=bool(preserve_scope),
+		preserve_entity_dimension=bool(preserve_entity_dimension),
+		reason=str(reason or "").strip(),
+		confidence=float(max(0.0, min(1.0, confidence or 0.0))),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_master_data_frontdoor_assessment_contract(
+	*,
+	request_id: str,
+	status: str,
+	scope_id: str = "",
+	entity_grain: str = "",
+	request_mode: str = "",
+	lookup_projection: str = "",
+	lookup_search_text: str = "",
+	capability_id: str = "",
+	report_name: str = "",
+	allowed_lookup_modes: List[str] | None = None,
+	supported_entity_grains: List[str] | None = None,
+	ambiguity_reason_type: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> MasterDataFrontDoorAssessmentContract:
+	return MasterDataFrontDoorAssessmentContract(
+		request_id=str(request_id or "").strip(),
+		status=str(status or "").strip(),
+		scope_id=str(scope_id or "").strip(),
+		entity_grain=str(entity_grain or "").strip(),
+		request_mode=str(request_mode or "").strip(),
+		lookup_projection=str(lookup_projection or "").strip(),
+		lookup_search_text=str(lookup_search_text or "").strip(),
+		capability_id=str(capability_id or "").strip(),
+		report_name=str(report_name or "").strip(),
+		allowed_lookup_modes=[
+			str(value or "").strip()
+			for value in (allowed_lookup_modes or [])
+			if str(value or "").strip()
+		],
+		supported_entity_grains=[
+			str(value or "").strip()
+			for value in (supported_entity_grains or [])
+			if str(value or "").strip()
+		],
+		ambiguity_reason_type=str(ambiguity_reason_type or "").strip(),
+		internal_details=dict(internal_details or {}),
 	)
 
 
@@ -1911,6 +2545,7 @@ def build_clarification_reason_contract(
 	missing_fields: List[str] | None = None,
 	ambiguity_flags: List[str] | None = None,
 	candidate_capability_ids: List[str] | None = None,
+	canonical_candidate_capability_ids: List[str] | None = None,
 	candidate_reports: List[str] | None = None,
 	suggested_options: List[str] | None = None,
 	internal_reason: str = "",
@@ -1928,6 +2563,11 @@ def build_clarification_reason_contract(
 		missing_fields=[str(x or "").strip() for x in (missing_fields or []) if str(x or "").strip()],
 		ambiguity_flags=[str(x or "").strip() for x in (ambiguity_flags or []) if str(x or "").strip()],
 		candidate_capability_ids=[str(x or "").strip() for x in (candidate_capability_ids or []) if str(x or "").strip()],
+		canonical_candidate_capability_ids=[
+			str(x or "").strip()
+			for x in (canonical_candidate_capability_ids or [])
+			if str(x or "").strip()
+		],
 		candidate_reports=[str(x or "").strip() for x in (candidate_reports or []) if str(x or "").strip()],
 		suggested_options=[str(x or "").strip() for x in (suggested_options or []) if str(x or "").strip()],
 		internal_reason=str(internal_reason or "").strip(),
@@ -1995,6 +2635,558 @@ def build_clarification_response_resolution_contract(
 		confidence=1.0 if str(decision or "").strip() == "resolved_option" else 0.0,
 		reason=reason,
 	)
+
+
+def _entity_detail_capability_id(entity_type: str) -> str:
+	entity_key = str(entity_type or "").strip().lower()
+	capability_by_entity_type = {
+		"customer": "accounts_receivable_read",
+		"item": "stock_read",
+		"purchase_order": "purchase_order_read",
+		"sales_order": "sales_order_read",
+		"sales_invoice": "sales_read",
+	}
+	return str(capability_by_entity_type.get(entity_key) or "").strip()
+
+
+def _ordered_unique_values(values: List[str] | None) -> List[str]:
+	ordered: List[str] = []
+	for value in values or []:
+		clean = str(value or "").strip()
+		if clean and clean not in ordered:
+			ordered.append(clean)
+	return ordered
+
+
+def _artifact_has_stock_position_sections(artifact_payload: Dict[str, Any]) -> bool:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	return bool(
+		isinstance(sections.get("stock_rows"), list)
+		or isinstance(sections.get("warehouse_totals"), list)
+		or isinstance(sections.get("item_totals"), list)
+	)
+
+
+def _normalize_stock_position_requested_metrics(requested_metrics: List[str]) -> List[str]:
+	metric_aliases = {
+		"quantity": "balance_qty",
+		"qty": "balance_qty",
+		"stock_qty": "balance_qty",
+		"stock_quantity": "balance_qty",
+		"balance_qty": "balance_qty",
+		"value": "balance_value",
+		"stock_value": "balance_value",
+		"inventory_value": "balance_value",
+		"balance_value": "balance_value",
+	}
+	return _ordered_unique_values(
+		[
+			str(metric_aliases.get(str(value or "").strip(), str(value or "").strip()) or "").strip()
+			for value in (requested_metrics or [])
+		]
+	)
+
+
+def _customer_tenure_basis_choices() -> List[Dict[str, str]]:
+	return [
+		{
+			"label": "Customer Tenure by Customer Created Date",
+			"basis": "customer_created_date",
+			"resolved_message": "what is this customer's tenure by customer created date?",
+		},
+		{
+			"label": "Customer Tenure by First Sales Order",
+			"basis": "first_sales_order_date",
+			"resolved_message": "what is this customer's tenure by first sales order date?",
+		},
+		{
+			"label": "Customer Tenure by First Sales Invoice",
+			"basis": "first_sales_invoice_date",
+			"resolved_message": "what is this customer's tenure by first sales invoice date?",
+		},
+	]
+
+
+def _customer_tenure_aliases_by_option() -> Dict[str, List[str]]:
+	aliases_by_basis = {
+		"customer_created_date": [
+			"customer created date",
+			"created date",
+			"customer creation date",
+			"by customer created date",
+		],
+		"first_sales_order_date": [
+			"first sales order",
+			"first sales order date",
+			"sales order",
+			"order date",
+			"by first sales order",
+		],
+		"first_sales_invoice_date": [
+			"first sales invoice",
+			"first sales invoice date",
+			"sales invoice",
+			"invoice date",
+			"by first sales invoice",
+		],
+	}
+	out: Dict[str, List[str]] = {}
+	for item in _customer_tenure_basis_choices():
+		label = str(item.get("label") or "").strip()
+		basis = str(item.get("basis") or "").strip()
+		out[label] = list(aliases_by_basis.get(basis) or [])
+	return out
+
+
+def _customer_operational_document_choices() -> List[Dict[str, str]]:
+	return [
+		{
+			"label": "First Sales Order Date",
+			"resolved_message": "when was the first sales order for this customer?",
+		},
+		{
+			"label": "First Sales Invoice Date",
+			"resolved_message": "when was the first sales invoice for this customer?",
+		},
+		{
+			"label": "Specific Sales Document Detail",
+			"resolved_message": "tell me more about a specific sales order or sales invoice for this customer",
+		},
+	]
+
+
+def _customer_operational_document_aliases_by_option() -> Dict[str, List[str]]:
+	return {
+		"First Sales Order Date": [
+			"first sales order",
+			"sales order date",
+			"first order date",
+		],
+		"First Sales Invoice Date": [
+			"first sales invoice",
+			"sales invoice date",
+			"first invoice date",
+		],
+		"Specific Sales Document Detail": [
+			"specific sales order",
+			"specific sales invoice",
+			"specific sales document",
+			"show the document",
+		],
+	}
+
+
+def _customer_basis_from_entity_detail_request(
+	requested_metrics: List[str],
+	requested_dimensions: List[str],
+) -> tuple[str, str]:
+	tenure_metric_basis = {
+		"customer_created_tenure_days": "customer_created_date",
+		"first_sales_order_tenure_days": "first_sales_order_date",
+		"first_sales_invoice_tenure_days": "first_sales_invoice_date",
+	}
+	lifecycle_dimension_basis = {
+		"customer_created_date": "customer_created_date",
+		"first_sales_order_date": "first_sales_order_date",
+		"first_sales_invoice_date": "first_sales_invoice_date",
+	}
+	for metric_key in requested_metrics:
+		if metric_key in tenure_metric_basis:
+			return "customer_tenure", tenure_metric_basis[metric_key]
+	for dimension_key in requested_dimensions:
+		if dimension_key in lifecycle_dimension_basis and "tenure" in requested_metrics:
+			return "customer_tenure", lifecycle_dimension_basis[dimension_key]
+	if "tenure" in requested_metrics:
+		return "customer_tenure", ""
+	for dimension_key in requested_dimensions:
+		if dimension_key in lifecycle_dimension_basis:
+			return "customer_lifecycle_date", lifecycle_dimension_basis[dimension_key]
+	if "dominant_aging_bucket" in requested_dimensions:
+		return "customer_aging_bucket", ""
+	return "", ""
+
+
+def _non_customer_entity_detail_question_type(
+	*,
+	entity_type: str,
+	requested_metrics: List[str],
+	requested_dimensions: List[str],
+	requested_concepts: List[str],
+) -> str:
+	requested_metric_set = {
+		str(value or "").strip()
+		for value in requested_metrics
+		if str(value or "").strip()
+	}
+	requested_dimension_set = {
+		str(value or "").strip()
+		for value in requested_dimensions
+		if str(value or "").strip()
+	}
+	requested_concept_set = {
+		str(value or "").strip()
+		for value in requested_concepts
+		if str(value or "").strip()
+	}
+	if entity_type == "sales_order":
+		if "posting_date" in requested_dimension_set:
+			return "sales_order_actual_delivery_event_date"
+		if "planned_delivery_date" in requested_dimension_set:
+			return "sales_order_planned_delivery_date"
+		if "billing_progress_percent" in requested_metric_set:
+			return "sales_order_billing_progress"
+		if "delivery_progress_percent" in requested_metric_set:
+			return "sales_order_delivery_progress"
+		if "document_status" in requested_dimension_set:
+			return "sales_order_document_status"
+	if entity_type == "purchase_order":
+		if "posting_date" in requested_dimension_set:
+			return "purchase_order_actual_receipt_event_date"
+		if "planned_receipt_date" in requested_dimension_set:
+			return "purchase_order_planned_receipt_date"
+		if "billing_progress_percent" in requested_metric_set:
+			return "purchase_order_billing_progress"
+		if "receipt_progress_percent" in requested_metric_set:
+			return "purchase_order_receipt_progress"
+		if "document_status" in requested_dimension_set:
+			return "purchase_order_document_status"
+	if entity_type == "sales_invoice" and "fulfillment" in requested_concept_set:
+		if "posting_date" in requested_dimension_set:
+			return "sales_invoice_delivery_event_date"
+		return "sales_invoice_delivery_evidence"
+	return ""
+
+
+def _item_entity_detail_question_type(
+	*,
+	requested_metrics: List[str],
+	requested_dimensions: List[str],
+	requested_concepts: List[str],
+	artifact_payload: Dict[str, Any],
+) -> tuple[str, List[str]]:
+	if not _artifact_has_stock_position_sections(artifact_payload):
+		return "", _ordered_unique_values(requested_metrics)
+	normalized_metrics = _normalize_stock_position_requested_metrics(requested_metrics)
+	requested_metric_set = {
+		str(value or "").strip()
+		for value in normalized_metrics
+		if str(value or "").strip()
+	}
+	requested_dimension_set = {
+		str(value or "").strip()
+		for value in requested_dimensions
+		if str(value or "").strip()
+	}
+	requested_concept_set = {
+		str(value or "").strip()
+		for value in requested_concepts
+		if str(value or "").strip()
+	}
+	stock_position_requested = bool(
+		requested_metric_set.intersection({"balance_qty", "balance_value"})
+		or "warehouse" in requested_dimension_set
+		or "inventory" in requested_concept_set
+	)
+	if not stock_position_requested:
+		return "", normalized_metrics
+	return "item_stock_position", normalized_metrics
+
+
+def _entity_detail_question_shape_and_value_mode(
+	*,
+	entity_type: str,
+	entity_question_type: str,
+	requested_metrics: List[str],
+	requested_dimensions: List[str],
+) -> tuple[str, str]:
+	if entity_question_type == "customer_tenure":
+		return "scalar_duration", "current_value"
+	if entity_question_type == "customer_lifecycle_date":
+		return "date_lookup", "first_value"
+	if entity_question_type == "customer_aging_bucket":
+		return "dimension_lookup", "dominant_value"
+	if entity_question_type in {
+		"sales_order_actual_delivery_event_date",
+		"purchase_order_actual_receipt_event_date",
+		"sales_invoice_delivery_event_date",
+	}:
+		return "date_lookup", "actual_value"
+	if entity_question_type in {
+		"sales_order_planned_delivery_date",
+		"purchase_order_planned_receipt_date",
+	}:
+		return "date_lookup", "planned_value"
+	if entity_question_type in {
+		"sales_order_document_status",
+		"purchase_order_document_status",
+	}:
+		return "dimension_lookup", "current_value"
+	if entity_question_type in {
+		"sales_order_delivery_progress",
+		"purchase_order_receipt_progress",
+		"sales_invoice_delivery_evidence",
+	}:
+		return "boolean_status", "current_value"
+	if entity_question_type in {
+		"sales_order_billing_progress",
+		"purchase_order_billing_progress",
+	}:
+		return "scalar_ratio", "current_value"
+	if entity_question_type == "item_stock_position":
+		return "dimension_lookup", "current_value"
+	if "overdue_only" in requested_metrics or "credit_balance_only" in requested_metrics:
+		return "boolean_status", "current_value"
+	if any(metric in requested_metrics for metric in ("overdue_total", "outstanding_total", "total_due", "credit_limit_available")):
+		return "scalar_amount", "current_value"
+	if any(metric in requested_metrics for metric in ("overdue_ratio", "credit_limit_utilization_ratio")):
+		return "scalar_ratio", "current_value"
+	if requested_dimensions or requested_metrics:
+		return "dimension_lookup", "current_value"
+	if str(entity_type or "").strip():
+		return "profile_request", "current_value"
+	return "", ""
+
+
+def _entity_detail_resolved_entity_ref(artifact_payload: Dict[str, Any]) -> Dict[str, Any]:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip()
+	entity_key = str(dimensions.get("entity_key") or "").strip()
+	entity_label = str(dimensions.get("entity_label") or entity_key).strip()
+	if not entity_type and not entity_key and not entity_label:
+		return {}
+	return {
+		"entity_type": entity_type,
+		"entity_key": entity_key or entity_label,
+		"entity_label": entity_label or entity_key,
+		"resolution_status": "artifact_bound",
+		"resolution_source": "artifact_payload",
+	}
+
+
+def _entity_detail_profile_sections(artifact_payload: Dict[str, Any]) -> List[str]:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	return [
+		str(key or "").strip()
+		for key, value in sections.items()
+		if str(key or "").strip() and value not in (None, "", [], {})
+	]
+
+
+def build_entity_reference_resolution_contract(
+	*,
+	request_id: str,
+	entity_grain: str = "",
+	lookup_mode: str = "",
+	search_text: str = "",
+	resolution_status: str = "",
+	candidate_entities: List[Dict[str, Any]] | None = None,
+	resolved_entity: Dict[str, Any] | None = None,
+	reason: str = "",
+) -> EntityReferenceResolutionContract:
+	return EntityReferenceResolutionContract(
+		request_id=str(request_id or "").strip(),
+		entity_grain=str(entity_grain or "").strip(),
+		lookup_mode=str(lookup_mode or "").strip(),
+		search_text=str(search_text or "").strip(),
+		resolution_status=str(resolution_status or "").strip(),
+		candidate_entities=[dict(item) for item in (candidate_entities or []) if isinstance(item, dict)],
+		resolved_entity=dict(resolved_entity or {}),
+		reason=str(reason or "").strip(),
+	)
+
+
+def build_entity_detail_evidence_request_contract(
+	*,
+	request_id: str,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+) -> EntityDetailEvidenceRequestContract:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	capability_id = _entity_detail_capability_id(entity_type)
+	requested_metrics = _ordered_unique_values(
+		detect_canonical_keys(
+			raw_message,
+			capability_id=capability_id or None,
+			dimension_or_metric="metric",
+		)
+	)
+	requested_dimensions = _ordered_unique_values(
+		detect_canonical_keys(
+			raw_message,
+			capability_id=capability_id or None,
+			dimension_or_metric="dimension",
+		)
+	)
+	requested_concepts = _ordered_unique_values(
+		[
+			str(value or "").strip()
+			for value in ontology_detect_concepts(raw_message)
+			if str(value or "").strip()
+		]
+	)
+	entity_question_type = ""
+	basis = ""
+	question_shape = ""
+	value_mode = ""
+	resolved_entity_ref = _entity_detail_resolved_entity_ref(artifact)
+	profile_sections = _entity_detail_profile_sections(artifact)
+	clarification_required = False
+	clarification_reason_type = ""
+	clarification_options: List[str] = []
+	if entity_type == "customer":
+		entity_question_type, basis = _customer_basis_from_entity_detail_request(
+			requested_metrics=requested_metrics,
+			requested_dimensions=requested_dimensions,
+		)
+		if entity_question_type == "customer_tenure" and basis:
+			requested_metrics = [value for value in requested_metrics if value != "tenure"]
+		if entity_question_type == "customer_tenure" and not basis:
+			clarification_required = True
+			clarification_reason_type = "customer_tenure_basis_missing"
+			clarification_options = [
+				str(item.get("label") or "").strip()
+				for item in _customer_tenure_basis_choices()
+				if str(item.get("label") or "").strip()
+			]
+		elif "posting_date" in requested_dimensions and not entity_question_type:
+			clarification_required = True
+			clarification_reason_type = "customer_operational_document_missing"
+			clarification_options = [
+				str(item.get("label") or "").strip()
+				for item in _customer_operational_document_choices()
+				if str(item.get("label") or "").strip()
+			]
+	elif entity_type == "item":
+		entity_question_type, requested_metrics = _item_entity_detail_question_type(
+			requested_metrics=requested_metrics,
+			requested_dimensions=requested_dimensions,
+			requested_concepts=requested_concepts,
+			artifact_payload=artifact,
+		)
+	else:
+		entity_question_type = _non_customer_entity_detail_question_type(
+			entity_type=entity_type,
+			requested_metrics=requested_metrics,
+			requested_dimensions=requested_dimensions,
+			requested_concepts=requested_concepts,
+		)
+	question_shape, value_mode = _entity_detail_question_shape_and_value_mode(
+		entity_type=entity_type,
+		entity_question_type=entity_question_type,
+		requested_metrics=requested_metrics,
+		requested_dimensions=requested_dimensions,
+	)
+	return EntityDetailEvidenceRequestContract(
+		request_id=str(request_id or "").strip(),
+		entity_type=entity_type,
+		entity_question_type=entity_question_type,
+		requested_metrics=requested_metrics,
+		requested_dimensions=requested_dimensions,
+		requested_concepts=requested_concepts,
+		basis=basis,
+		question_shape=question_shape,
+		value_mode=value_mode,
+		resolved_entity_ref=resolved_entity_ref,
+		profile_sections=profile_sections,
+		clarification_required=clarification_required,
+		clarification_reason_type=clarification_reason_type,
+		clarification_options=clarification_options,
+	)
+
+
+def build_entity_detail_clarification_signal_contract(
+	*,
+	request_id: str,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any] | None = None,
+) -> ClarificationSignalContract | None:
+	if isinstance(evidence_request_contract, dict):
+		evidence_request_payload = dict(evidence_request_contract)
+	else:
+		evidence_request_payload = build_entity_detail_evidence_request_contract(
+			request_id=request_id,
+			raw_message=raw_message,
+			artifact_payload=artifact_payload,
+		).to_payload()
+	if not bool(evidence_request_payload.get("clarification_required")):
+		return None
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this customer").strip()
+	reason_type = str(evidence_request_payload.get("clarification_reason_type") or "").strip()
+	if reason_type == "customer_tenure_basis_missing":
+		choices = _customer_tenure_basis_choices()
+		suggested_options = [
+			str(item.get("label") or "").strip()
+			for item in choices
+			if str(item.get("label") or "").strip()
+		]
+		resolved_message_by_option = {
+			str(item.get("label") or "").strip(): str(item.get("resolved_message") or "").strip()
+			for item in choices
+			if str(item.get("label") or "").strip() and str(item.get("resolved_message") or "").strip()
+		}
+		return build_clarification_signal_contract(
+			request_id=request_id,
+			stage="artifact_boundary",
+			reason_type="customer_tenure_basis_missing",
+			user_question=(
+				f"I can calculate customer tenure for {entity_label}, but I need the date basis first.\n\n"
+				"Choose one:\n\n"
+				+ "\n".join(suggested_options)
+			),
+			suggested_options=suggested_options,
+			internal_reason=(
+				"Customer tenure is governed, but the evidence request must resolve the approved lifecycle basis before the current "
+				"artifact can answer safely."
+			),
+			internal_details={
+				"continuation_lane": "artifact_boundary",
+				"continuation_intent_class": "entity_detail_evidence",
+				"resolved_message_by_option": resolved_message_by_option,
+				"option_aliases_by_option": _customer_tenure_aliases_by_option(),
+			},
+		)
+	if reason_type == "customer_operational_document_missing":
+		choices = _customer_operational_document_choices()
+		suggested_options = [
+			str(item.get("label") or "").strip()
+			for item in choices
+			if str(item.get("label") or "").strip()
+		]
+		resolved_message_by_option = {
+			str(item.get("label") or "").strip(): str(item.get("resolved_message") or "").strip()
+			for item in choices
+			if str(item.get("label") or "").strip() and str(item.get("resolved_message") or "").strip()
+		}
+		return build_clarification_signal_contract(
+			request_id=request_id,
+			stage="artifact_boundary",
+			reason_type="customer_operational_document_missing",
+			user_question=(
+				f"I can help with that for {entity_label}, but I need the exact sales document or date basis first.\n\n"
+				"Choose one:\n\n"
+				+ "\n".join(suggested_options)
+			),
+			suggested_options=suggested_options,
+			internal_reason=(
+				"The current customer profile does not directly prove operational delivery events, so the request must resolve "
+				"to an approved sales lifecycle basis or a specific sales document."
+			),
+			internal_details={
+				"continuation_lane": "artifact_boundary",
+				"continuation_intent_class": "entity_detail_evidence",
+				"resolved_message_by_option": resolved_message_by_option,
+				"option_aliases_by_option": _customer_operational_document_aliases_by_option(),
+			},
+		)
+	return None
 
 
 def build_erp_business_reasoning_activation_contract(
@@ -2225,6 +3417,7 @@ def build_clarification_reason_contract_from_sources(
 			missing_fields=details.get("missing_fields") if isinstance(details.get("missing_fields"), list) else [],
 			ambiguity_flags=details.get("ambiguity_flags") if isinstance(details.get("ambiguity_flags"), list) else [],
 			candidate_capability_ids=details.get("capability_candidates") if isinstance(details.get("capability_candidates"), list) else [],
+			canonical_candidate_capability_ids=details.get("canonical_capability_candidates") if isinstance(details.get("canonical_capability_candidates"), list) else [],
 			candidate_reports=details.get("report_candidates") if isinstance(details.get("report_candidates"), list) else [],
 			suggested_options=details.get("suggested_time_scope_options") if isinstance(details.get("suggested_time_scope_options"), list) else [],
 			internal_reason=str(compiler_reason or "").strip(),
@@ -2307,6 +3500,7 @@ def build_fresh_query_compiler_contract(
 	request_id: str,
 	session_id: str,
 	capability_id: str = "",
+	canonical_capability_id: str = "",
 	selected_report: str = "",
 	selected_report_family: str = "",
 	completed_filters: Dict[str, Any] | None = None,
@@ -2320,11 +3514,16 @@ def build_fresh_query_compiler_contract(
 	governed_resolution_details: Dict[str, Any] | None = None,
 	clarification_reason_type: str = "",
 	clarification_details: Dict[str, Any] | None = None,
+	extracted_slots: Dict[str, Any] | None = None,
 ) -> FreshQueryCompilerContract:
 	return FreshQueryCompilerContract(
 		request_id=request_id,
 		session_id=session_id,
 		capability_id=str(capability_id or "").strip(),
+		canonical_capability_id=str(
+			canonical_capability_id
+			or capability_contract_identity(capability_id, report_name=selected_report)
+		).strip(),
 		selected_report=str(selected_report or "").strip(),
 		selected_report_family=str(selected_report_family or "").strip(),
 		completed_filters=dict(completed_filters or {}),
@@ -2338,6 +3537,7 @@ def build_fresh_query_compiler_contract(
 		governed_resolution_details=dict(governed_resolution_details or {}),
 		clarification_reason_type=str(clarification_reason_type or "").strip(),
 		clarification_details=dict(clarification_details or {}),
+		extracted_slots=dict(extracted_slots or {}),
 	)
 
 
@@ -2346,21 +3546,28 @@ def build_compiled_query_request_contract(
 	request_id: str,
 	capability_id: str,
 	selected_report: str,
+	canonical_capability_id: str = "",
 	filters: Dict[str, Any] | None = None,
 	requested_dimensions: List[str] | None = None,
 	requested_metrics: List[str] | None = None,
 	target_limit: int = 0,
 	response_policy: Dict[str, Any] | None = None,
+	extracted_slots: Dict[str, Any] | None = None,
 ) -> CompiledQueryRequestContract:
 	return CompiledQueryRequestContract(
 		request_id=request_id,
 		capability_id=str(capability_id or "").strip(),
+		canonical_capability_id=str(
+			canonical_capability_id
+			or capability_contract_identity(capability_id, report_name=selected_report)
+		).strip(),
 		selected_report=str(selected_report or "").strip(),
 		filters=dict(filters or {}),
 		requested_dimensions=[str(x or "").strip() for x in (requested_dimensions or []) if str(x or "").strip()],
 		requested_metrics=[str(x or "").strip() for x in (requested_metrics or []) if str(x or "").strip()],
 		target_limit=int(max(0, target_limit or 0)),
 		response_policy=dict(response_policy or {}),
+		extracted_slots=dict(extracted_slots or {}),
 	)
 
 
@@ -3953,6 +5160,60 @@ def _message_has_structural_followup_limit(message: str) -> bool:
 	)
 
 
+_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN = re.compile(
+	r"\b(column|columns|only|just|keep|include|without)\b",
+	re.IGNORECASE,
+)
+
+
+def _message_slot_value(slot_name: str, message: str) -> str:
+	normalized_message = " ".join(str(message or "").strip().lower().split())
+	if not normalized_message:
+		return ""
+	for entry in list_semantic_resolution_alias_entries(slot_name):
+		if not isinstance(entry, dict):
+			continue
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		for alias in (entry.get("aliases") or []):
+			alias_text = " ".join(str(alias or "").strip().lower().split())
+			if alias_text and re.search(r"(?<!\w)" + re.escape(alias_text).replace(r"\ ", r"\s+") + r"(?!\w)", normalized_message):
+				return canonical_value
+	return ""
+
+
+def _message_has_explicit_projection_selection_cue(message: str) -> bool:
+	text = str(message or "").strip().lower()
+	if not text:
+		return False
+	return bool(_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN.search(text))
+
+
+def _looks_like_base_transaction_listing_reask(
+	*,
+	message: str,
+	latest_grounded_turn: Dict[str, Any] | None = None,
+	requested_time_scope: str = "",
+) -> bool:
+	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	artifact_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
+	if artifact_family_id and artifact_family_id != "transaction_listing":
+		return False
+	if str(requested_time_scope or "").strip():
+		return False
+	source_report = str(grounded_turn.get("source_name") or "").strip()
+	source_listing_view = listing_view_for_report_name(source_report)
+	requested_listing_view = _message_slot_value("listing_view", message)
+	if not source_listing_view or not requested_listing_view or requested_listing_view != source_listing_view:
+		return False
+	if _message_has_structural_followup_limit(message):
+		return False
+	if _message_has_explicit_projection_selection_cue(message):
+		return False
+	return True
+
+
 def build_followup_resolution(
 	*,
 	request_id: str,
@@ -3999,6 +5260,20 @@ def build_followup_resolution(
 		message=message,
 		requested_time_scope=requested_time_scope,
 	)
+	if latest_grounded_turn_available and _looks_like_base_transaction_listing_reask(
+		message=message,
+		latest_grounded_turn=latest_grounded_turn,
+		requested_time_scope=requested_time_scope,
+	):
+		requested_modes = []
+		target_dimension = ""
+		target_limit = 0
+		sort_direction = ""
+		target_metric = ""
+		requested_columns = []
+		target_capability_id = ""
+		self_contained = True
+		semantic_reason = semantic_reason or "The request restates the base transaction listing and should be treated as a fresh ERP query."
 	requested_modes = list(dict.fromkeys(str(mode or "").strip() for mode in (requested_modes or []) if str(mode or "").strip()))
 	requested_mode_set = {
 		str(mode or "").strip()
@@ -4344,7 +5619,8 @@ def _artifact_matches_runtime_execution(
 		return False
 	artifact_request_id = str(artifact.get("request_id") or "").strip()
 	if artifact_request_id:
-		return artifact_request_id == str(request_id or "").strip()
+		if artifact_request_id == str(request_id or "").strip():
+			return True
 	artifact_source_name = str(artifact.get("source_name") or artifact.get("title") or "").strip()
 	if artifact_source_name and artifact_source_name == str(source_name or "").strip():
 		return True

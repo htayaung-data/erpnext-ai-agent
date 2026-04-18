@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import re
 import time
+import traceback
 import uuid
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -66,6 +67,11 @@ from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	resolve_pending_clarification_response,
 	store_pending_clarification_signal,
 )
+from ai_assistant_ui.qwen_chat.conversation_control_language import (
+	classify_conversation_control_evidence as _classify_conversation_control_evidence,
+	prior_branch_restore_phrase_type as _prior_branch_restore_phrase_type_helper,
+	strip_leading_control_discard_preamble as _strip_leading_control_discard_preamble_helper,
+)
 from ai_assistant_ui.qwen_chat.compiled_support import (
 	append_compiled_attempt_artifacts as _append_compiled_attempt_artifacts_helper,
 	handle_compiled_first_turn_result as _handle_compiled_first_turn_result_helper,
@@ -83,8 +89,15 @@ from ai_assistant_ui.qwen_chat.continuation_support import (
 from ai_assistant_ui.qwen_chat.contracts import (
 	ExecutionPath,
 	build_artifact_enrichment_recovery_contract,
+	build_compound_request_assessment_contract,
+	build_conversation_control_evidence_contract,
+	build_conversation_control_decision_contract,
 	build_conversational_repair_intent_contract,
+	build_entity_detail_clarification_signal_contract,
+	build_entity_detail_evidence_request_contract,
 	build_known_unsupported_scope_decision_input,
+	build_prior_branch_restore_contract,
+	build_recent_focus_affordance_contract,
 	coerce_followup_resolution_from_scope_decision,
 	build_artifact_continuation_contract,
 	build_audit_envelope,
@@ -100,6 +113,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	governed_scope_decision_public_decision,
 	governed_scope_decision_requires_fresh_query,
 	normalize_scope_decision_input,
+)
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	entity_grain_for_report_name,
+	listing_view_for_report_name,
 )
 from ai_assistant_ui.qwen_chat.context.session_context import (
 	append_message as _session_append_message,
@@ -144,6 +161,7 @@ from ai_assistant_ui.qwen_chat.family_tool_surface import build_family_tool_surf
 from ai_assistant_ui.qwen_chat.followup_interpreter import (
 	assess_context_isolation,
 )
+from ai_assistant_ui.qwen_chat.metadata import report_approved_followup_modes
 from ai_assistant_ui.qwen_chat.knowledge_boundary import (
 	render_knowledge_boundary_answer,
 )
@@ -247,6 +265,7 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_customer_credit_overdue_smoke as _run_customer_credit_overdue_smoke_helper,
 	run_customer_credit_balance_smoke as _run_customer_credit_balance_smoke_helper,
 	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
+	run_customer_detail_clarification_followup_smoke as _run_customer_detail_clarification_followup_smoke_helper,
 	run_customer_credit_policy_followup_smoke as _run_customer_credit_policy_followup_smoke_helper,
 	run_governed_customer_commercial_composite_smoke as _run_governed_customer_commercial_composite_smoke_helper,
 	run_governed_kpi_frontdoor_smoke as _run_governed_kpi_frontdoor_smoke_helper,
@@ -311,6 +330,9 @@ from ai_assistant_ui.qwen_chat.probes.service_diagnostics import (
 	run_phase1_1_invoice_detail_delivery_trend_debug as _run_phase1_1_invoice_detail_delivery_trend_debug_helper,
 	run_phase3_2_projection_followup_debug as _run_phase3_2_projection_followup_debug_helper,
 	run_phase3_2_subject_switch_regression_debug as _run_phase3_2_subject_switch_regression_debug_helper,
+	run_phase3_3c_customer_master_lookup_smoke as _run_phase3_3c_customer_master_lookup_smoke_helper,
+	run_phase_d2a_transaction_listing_today_requery_smoke as _run_phase_d2a_transaction_listing_today_requery_smoke_helper,
+	run_phase_d2c_transaction_listing_base_scope_reset_smoke as _run_phase_d2c_transaction_listing_base_scope_reset_smoke_helper,
 	run_phase3_3_product_quantity_projection_regression_debug as _run_phase3_3_product_quantity_projection_regression_debug_helper,
 	run_phase3_3_ranking_projection_continuation_regression_debug as _run_phase3_3_ranking_projection_continuation_regression_debug_helper,
 	run_phase4_compiled_rollout_governance_selftests as _run_phase4_compiled_rollout_governance_selftests_helper,
@@ -407,6 +429,62 @@ def _message_has_grounded_context_anchor(message: str) -> bool:
 			text,
 		)
 	)
+
+
+def _frontdoor_recent_messages_for_message(
+	*,
+	message: str,
+	recent_messages: List[Dict[str, str]] | None,
+	grounded_context_available: bool,
+	language: str = "en",
+) -> List[Dict[str, str]]:
+	recent = list(recent_messages or [])
+	if not grounded_context_available:
+		return recent
+	if _message_has_grounded_context_anchor(message):
+		return recent
+	if _message_looks_like_self_contained_governed_business_query(
+		message=message,
+		language=language,
+	):
+		return []
+	return recent
+
+
+def _frontdoor_contract_handle_in_front_door(frontdoor_contract: Any) -> bool:
+	if isinstance(frontdoor_contract, dict):
+		return bool(frontdoor_contract.get("handle_in_front_door"))
+	return bool(getattr(frontdoor_contract, "handle_in_front_door", False))
+
+
+def _frontdoor_contract_intent_class(frontdoor_contract: Any) -> str:
+	if isinstance(frontdoor_contract, dict):
+		return str(frontdoor_contract.get("intent_class") or "").strip()
+	return str(getattr(frontdoor_contract, "intent_class", "") or "").strip()
+
+
+def _frontdoor_context_isolation_retry_needed(
+	*,
+	message: str,
+	grounded_context_available: bool,
+	frontdoor_contract: Any,
+) -> bool:
+	if not grounded_context_available:
+		return False
+	if _message_has_grounded_context_anchor(message):
+		return False
+	if not _frontdoor_contract_handle_in_front_door(frontdoor_contract):
+		return False
+	return _frontdoor_contract_intent_class(frontdoor_contract) in {
+		"master_data_grain_clarification",
+		"report_or_scope_clarification",
+		"low_signal_non_business",
+	}
+
+
+def _should_skip_artifact_boundary(*, scope_decision_contract) -> bool:
+	# Fresh-query breakouts must not be answered from the prior grounded artifact.
+	return governed_scope_decision_requires_fresh_query(scope_decision_contract)
 
 
 def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
@@ -539,6 +617,113 @@ def _compile_capability_requery_message(
 	)
 
 
+def _clean_runtime_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _normalize_runtime_text(value: Any) -> str:
+	return " ".join(_clean_runtime_text(value).lower().split())
+
+
+def _grounded_entity_reference(
+	*,
+	grounded_turn: Dict[str, Any],
+	artifact_payload: Dict[str, Any],
+) -> Dict[str, str]:
+	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	candidates: List[Dict[str, str]] = []
+	for item in (turn.get("known_entities") or []):
+		if not isinstance(item, dict):
+			continue
+		entity_type = _clean_runtime_text(item.get("entity_type"))
+		entity_key = _clean_runtime_text(item.get("code") or item.get("entity_key") or item.get("name"))
+		entity_label = _clean_runtime_text(item.get("name") or item.get("entity_label") or entity_key)
+		if entity_type and (entity_key or entity_label):
+			candidates.append(
+				{
+					"entity_type": entity_type,
+					"entity_key": entity_key or entity_label,
+					"entity_label": entity_label or entity_key,
+				}
+			)
+	if not candidates:
+		dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+		entity_type = _clean_runtime_text(dimensions.get("entity_type"))
+		entity_key = _clean_runtime_text(
+			dimensions.get("entity_key") or (artifact.get("filters") or {}).get("entity_key")
+		)
+		entity_label = _clean_runtime_text(dimensions.get("entity_label") or entity_key)
+		if entity_type and (entity_key or entity_label):
+			candidates.append(
+				{
+					"entity_type": entity_type,
+					"entity_key": entity_key or entity_label,
+					"entity_label": entity_label or entity_key,
+				}
+			)
+	unique_candidates: Dict[tuple[str, str, str], Dict[str, str]] = {}
+	for item in candidates:
+		key = (
+			_clean_runtime_text(item.get("entity_type")),
+			_clean_runtime_text(item.get("entity_key")),
+			_clean_runtime_text(item.get("entity_label")),
+		)
+		if key[0] and (key[1] or key[2]):
+			unique_candidates[key] = item
+	if len(unique_candidates) == 1:
+		return next(iter(unique_candidates.values()))
+	return {}
+
+
+def _compile_contextual_entity_breakout_message(
+	*,
+	raw_message: str,
+	followup_resolution,
+	grounded_turn: Dict[str, Any],
+	artifact_payload: Dict[str, Any],
+	continuation_contract=None,
+) -> str:
+	message = _clean_runtime_text(raw_message)
+	if not message:
+		return ""
+	if str(getattr(followup_resolution, "mode", "") or "").strip() != "new_query":
+		return ""
+	if not bool(getattr(followup_resolution, "depends_on_grounded_turn", False)):
+		return ""
+	source_family_id = _clean_runtime_text(
+		getattr(continuation_contract, "source_family_id", "") or (grounded_turn or {}).get("artifact_family_id")
+	)
+	if source_family_id != "entity_detail":
+		return ""
+	entity_reference = _grounded_entity_reference(
+		grounded_turn=grounded_turn,
+		artifact_payload=artifact_payload,
+	)
+	entity_type = _clean_runtime_text(entity_reference.get("entity_type"))
+	entity_key = _clean_runtime_text(entity_reference.get("entity_key"))
+	entity_label = _clean_runtime_text(entity_reference.get("entity_label")) or entity_key
+	if entity_type not in {"customer", "supplier", "item"} or not entity_label:
+		return ""
+	normalized_message = _normalize_runtime_text(message)
+	if _normalize_runtime_text(entity_label) in normalized_message or (
+		entity_key and _normalize_runtime_text(entity_key) in normalized_message
+	):
+		return ""
+	entity_noun = {
+		"customer": "customer",
+		"supplier": "supplier",
+		"item": "item",
+	}.get(entity_type, "entity")
+	if message.endswith("?"):
+		base_message = message[:-1].rstrip()
+		suffix = "?"
+	else:
+		base_message = message
+		suffix = ""
+	return f'{base_message} for {entity_noun} "{entity_label}"{suffix}'.strip()
+
+
 def _recovery_time_phrase(recovery_contract: Dict[str, Any]) -> str:
 	return _recovery_time_phrase_helper(recovery_contract)
 
@@ -638,11 +823,13 @@ def _grounded_artifact_evidence_boundary_answer(
 	raw_message: str,
 	artifact_payload: Dict[str, Any],
 	grounded_turn: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any] | None = None,
 ) -> str:
 	return _grounded_artifact_evidence_boundary_answer_helper(
 		raw_message=raw_message,
 		artifact_payload=artifact_payload,
 		grounded_turn=grounded_turn,
+		evidence_request_contract=evidence_request_contract,
 	)
 
 
@@ -651,11 +838,13 @@ def _grounded_artifact_direct_evidence_answer(
 	raw_message: str,
 	artifact_payload: Dict[str, Any],
 	grounded_turn: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any] | None = None,
 ) -> str:
 	return _grounded_artifact_direct_evidence_answer_helper(
 		raw_message=raw_message,
 		artifact_payload=artifact_payload,
 		grounded_turn=grounded_turn,
+		evidence_request_contract=evidence_request_contract,
 	)
 
 
@@ -664,12 +853,46 @@ def _build_grounded_artifact_direct_evidence_rendered_payload(
 	raw_message: str,
 	artifact_payload: Dict[str, Any],
 	grounded_turn: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	return _build_grounded_artifact_direct_evidence_rendered_payload_helper(
 		raw_message=raw_message,
 		artifact_payload=artifact_payload,
 		grounded_turn=grounded_turn,
+		evidence_request_contract=evidence_request_contract,
 	)
+
+
+def _entity_detail_evidence_request_payload(
+	*,
+	request_id: str,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	if str(artifact.get("family_id") or "").strip() != "entity_detail":
+		return {}
+	return build_entity_detail_evidence_request_contract(
+		request_id=request_id,
+		raw_message=raw_message,
+		artifact_payload=artifact,
+	).to_payload()
+
+
+def _entity_detail_clarification_signal_payload(
+	*,
+	request_id: str,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any],
+) -> Dict[str, Any]:
+	clarification_signal = build_entity_detail_clarification_signal_contract(
+		request_id=request_id,
+		raw_message=raw_message,
+		artifact_payload=artifact_payload,
+		evidence_request_contract=evidence_request_contract,
+	)
+	return clarification_signal.to_payload() if clarification_signal is not None else {}
 
 
 def _grounded_artifact_direct_evidence_response(
@@ -683,15 +906,27 @@ def _grounded_artifact_direct_evidence_response(
 	grounded_turn: Dict[str, Any],
 	fallback_answer_text: str = "",
 ) -> Dict[str, Any]:
+	evidence_request_contract = _entity_detail_evidence_request_payload(
+		request_id=request_id,
+		raw_message=raw_message,
+		artifact_payload=artifact_payload,
+	)
 	fallback_text = str(fallback_answer_text or "").strip()
 	if not fallback_text:
 		fallback_text = _grounded_artifact_direct_evidence_answer(
 			raw_message=raw_message,
 			artifact_payload=artifact_payload,
 			grounded_turn=grounded_turn,
+			evidence_request_contract=evidence_request_contract,
 		)
 	if not fallback_text:
 		return {}
+	clarification_signal_payload = _entity_detail_clarification_signal_payload(
+		request_id=request_id,
+		raw_message=raw_message,
+		artifact_payload=artifact_payload,
+		evidence_request_contract=evidence_request_contract,
+	)
 	requested_dimensions = {
 		str(value or "").strip()
 		for value in _detect_semantic_alias_keys(raw_message, dimension_or_metric="dimension")
@@ -702,13 +937,25 @@ def _grounded_artifact_direct_evidence_response(
 		raw_message=raw_message,
 		artifact_payload=artifact_payload,
 		grounded_turn=grounded_turn,
+		evidence_request_contract=evidence_request_contract,
 	)
+	if clarification_signal_payload:
+		return {
+			"answer_text": fallback_text,
+			"rendered_response_payload": {},
+			"narrative_payload": {},
+			"narrative_contract_payload": {},
+			"clarification_signal_payload": clarification_signal_payload,
+			"evidence_request_contract_payload": evidence_request_contract,
+		}
 	if not rendered_response_payload:
 		return {
 			"answer_text": fallback_text,
 			"rendered_response_payload": {},
 			"narrative_payload": {},
 			"narrative_contract_payload": {},
+			"clarification_signal_payload": clarification_signal_payload,
+			"evidence_request_contract_payload": evidence_request_contract,
 		}
 	if entity_type == "purchase_order" or "posting_date" in requested_dimensions or (
 		entity_type == "sales_order" and "planned_delivery_date" in requested_dimensions
@@ -719,6 +966,8 @@ def _grounded_artifact_direct_evidence_response(
 			"rendered_response_payload": rendered_response_payload,
 			"narrative_payload": {},
 			"narrative_contract_payload": {},
+			"clarification_signal_payload": clarification_signal_payload,
+			"evidence_request_contract_payload": evidence_request_contract,
 		}
 	rendered_response_payload["answer_text"] = fallback_text
 	artifact_context = build_artifact_narrative_context(
@@ -749,7 +998,1673 @@ def _grounded_artifact_direct_evidence_response(
 		"rendered_response_payload": rendered_response_payload,
 		"narrative_payload": narrative_payload if isinstance(narrative_payload, dict) else {},
 		"narrative_contract_payload": narrative_contract_payload,
+		"clarification_signal_payload": clarification_signal_payload,
+		"evidence_request_contract_payload": evidence_request_contract,
 	}
+
+
+def _resolved_clarification_runtime_message(
+	*,
+	raw_message: str,
+	pending_clarification_signal: Dict[str, Any],
+	clarification_response_contract,
+) -> str:
+	if clarification_response_contract is None:
+		return ""
+	decision = str(clarification_response_contract.decision or "").strip()
+	if decision == "new_request":
+		return str(raw_message or "").strip()
+	if decision != "resolved_option":
+		return ""
+	return clarification_resolved_continuation_message(
+		signal_payload=pending_clarification_signal,
+		resolved_option=str(clarification_response_contract.resolved_option or "").strip(),
+	)
+
+
+def _conversation_control_decision_from_clarification_response(
+	*,
+	raw_message: str,
+	pending_clarification_signal: Dict[str, Any],
+	clarification_response_contract,
+):
+	if clarification_response_contract is None:
+		return None
+	decision = str(getattr(clarification_response_contract, "decision", "") or "").strip()
+	if not decision:
+		return None
+	resolved_runtime_message = _resolved_clarification_runtime_message(
+		raw_message=raw_message,
+		pending_clarification_signal=pending_clarification_signal,
+		clarification_response_contract=clarification_response_contract,
+	)
+	common = {
+		"request_id": str(getattr(clarification_response_contract, "request_id", "") or "").strip(),
+		"target_state_class": "pending_clarification",
+		"confidence": float(getattr(clarification_response_contract, "confidence", 0.0) or 0.0),
+		"reason": str(getattr(clarification_response_contract, "reason", "") or "").strip(),
+		"internal_details": {
+			"source_contract_type": "qwen_clarification_resolution_contract",
+			"pending_reason_type": str(getattr(clarification_response_contract, "pending_reason_type", "") or "").strip(),
+			"matched_by": str(getattr(clarification_response_contract, "matched_by", "") or "").strip(),
+			"resolved_option": str(getattr(clarification_response_contract, "resolved_option", "") or "").strip(),
+			"clarified_runtime_message": str(resolved_runtime_message or "").strip(),
+		},
+	}
+	if decision == "resolved_option":
+		return build_conversation_control_decision_contract(
+			decision_class="clarification_resolution",
+			decision_action="resolve_pending_clarification",
+			resolved_business_message=str(resolved_runtime_message or "").strip(),
+			clear_pending_clarification=True,
+			**common,
+		)
+	if decision == "show_options":
+		return build_conversation_control_decision_contract(
+			decision_class="option_list_request",
+			decision_action="show_pending_options",
+			**common,
+		)
+	if decision == "new_request":
+		internal_details = (
+			getattr(clarification_response_contract, "internal_details", {})
+			if isinstance(getattr(clarification_response_contract, "internal_details", {}), dict)
+			else {}
+		)
+		override_business_message = str(internal_details.get("override_business_message") or "").strip()
+		new_request_common = dict(common)
+		new_request_common["internal_details"] = {
+			**dict(common.get("internal_details") or {}),
+			"override_business_message": override_business_message,
+		}
+		return build_conversation_control_decision_contract(
+			decision_class="fresh_request_override",
+			decision_action="override_with_new_request",
+			resolved_business_message=override_business_message or str(raw_message or "").strip(),
+			clear_pending_clarification=True,
+			**new_request_common,
+		)
+	if decision == "abandon_current_branch":
+		return build_conversation_control_decision_contract(
+			decision_class="branch_discard",
+			decision_action="abandon_current_branch",
+			resolved_business_message="Okay, I'll leave that aside. Ask me a new ERP question whenever you're ready.",
+			clear_pending_clarification=True,
+			**common,
+		)
+	if decision == "meta_question":
+		return build_conversation_control_decision_contract(
+			decision_class="meta_question",
+			decision_action="answer_pending_clarification_meta_question",
+			**common,
+		)
+	if decision == "empty_ack":
+		return build_conversation_control_decision_contract(
+			decision_class="clarification_acknowledgement",
+			decision_action="repeat_pending_clarification",
+			**common,
+		)
+	if decision == "reask_pending_clarification":
+		return build_conversation_control_decision_contract(
+			decision_class="clarification_reask",
+			decision_action="reask_pending_clarification",
+			**common,
+		)
+	return build_conversation_control_decision_contract(
+		decision_class="clarification_other",
+		decision_action=decision,
+		**common,
+	)
+
+
+_STRONG_CONTROL_OWNER_ACTIONS = {
+	"abandon_current_branch",
+	"override_with_new_request",
+	"show_pending_options",
+	"reopen_pending_clarification",
+	"resume_active_sequence",
+	"stop_active_sequence",
+	"replay_or_restore_prior_branch",
+}
+
+
+def _control_action_id(control_evidence_payload: Dict[str, Any] | None) -> str:
+	if not isinstance(control_evidence_payload, dict):
+		return ""
+	return str(control_evidence_payload.get("action_id") or "").strip()
+
+
+def _control_action_id_from_message_or_evidence(
+	message: str,
+	control_evidence_payload: Dict[str, Any] | None,
+) -> str:
+	action_id = _control_action_id(control_evidence_payload)
+	if action_id:
+		return action_id
+	classified = dict(_classify_conversation_control_evidence(message) or {})
+	return _control_action_id(classified)
+
+
+def _control_action_is_strong_owner(control_evidence_payload: Dict[str, Any] | None) -> bool:
+	return _control_action_id(control_evidence_payload) in _STRONG_CONTROL_OWNER_ACTIONS
+
+
+def _conversation_control_sequence_target(payload: Dict[str, Any]) -> Dict[str, Any]:
+	if not isinstance(payload, dict) or not payload:
+		return {}
+	internal_details = payload.get("internal_details") if isinstance(payload.get("internal_details"), dict) else {}
+	return {
+		"request_id": _snapshot_clean_text(payload.get("request_id")),
+		"status": _snapshot_clean_text(payload.get("status")),
+		"segments": [
+			_snapshot_clean_text(value)
+			for value in (payload.get("segments") or [])
+			if _snapshot_clean_text(value)
+		],
+		"primary_segment_message": _snapshot_clean_text(internal_details.get("primary_segment_message")),
+		"remaining_segment_messages": [
+			_snapshot_clean_text(value)
+			for value in (internal_details.get("remaining_segment_messages") or [])
+			if _snapshot_clean_text(value)
+		],
+		"execution_strategy": _snapshot_clean_text(internal_details.get("execution_strategy")),
+	}
+
+
+def _conversation_control_focus_target_from_snapshot(recent_focus_state: Dict[str, Any]) -> Dict[str, Any]:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return {}
+	return {
+		"focus_kind": _snapshot_clean_text(recent_focus_state.get("focus_kind")),
+		"focus_grain": _snapshot_clean_text(recent_focus_state.get("focus_grain")),
+		"focus_label": _snapshot_clean_text(recent_focus_state.get("focus_label")),
+		"focus_key": _snapshot_clean_text(recent_focus_state.get("focus_key")),
+		"source_request_id": _snapshot_clean_text(recent_focus_state.get("source_request_id")),
+		"source_family": _snapshot_clean_text(recent_focus_state.get("source_family")),
+		"source_capability": _snapshot_clean_text(recent_focus_state.get("source_capability")),
+		"source_report": _snapshot_clean_text(recent_focus_state.get("source_report")),
+		"deictic_allowed": bool(recent_focus_state.get("deictic_allowed")),
+		"explicit_named_allowed": bool(recent_focus_state.get("explicit_named_allowed")),
+	}
+
+
+_LOCAL_RECENT_FOCUS_FOLLOWUP_MODES = {
+	"presentation_transform",
+	"table_presentation",
+	"bullet_presentation",
+	"metric_refinement",
+	"column_refinement",
+	"aging_bucket_view",
+	"dimension_breakdown",
+	"sort_or_limit",
+}
+
+
+def _recent_focus_allowed_action_classes(recent_focus_state: Dict[str, Any]) -> List[str]:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return []
+	focus_kind = _snapshot_clean_text(recent_focus_state.get("focus_kind"))
+	focus_grain = _snapshot_clean_text(recent_focus_state.get("focus_grain"))
+	source_family = _snapshot_clean_text(recent_focus_state.get("source_family"))
+	action_classes: List[str] = []
+	if focus_kind == "entity":
+		action_classes.extend(
+			[
+				"detail_followup",
+				"projection_refinement",
+				"time_refinement",
+				"sibling_view_switch",
+			]
+		)
+		if focus_grain in {"item", "product"}:
+			action_classes.append("inventory_position_followup")
+		if focus_grain in {"customer", "supplier"}:
+			action_classes.append("commercial_status_followup")
+	elif focus_kind == "statement":
+		action_classes.extend(
+			[
+				"statement_switch",
+				"line_item_followup",
+				"projection_refinement",
+				"time_refinement",
+			]
+		)
+	elif focus_kind == "listing":
+		action_classes.extend(
+			[
+				"listing_refinement",
+				"projection_refinement",
+				"time_refinement",
+			]
+		)
+		if source_family in {"master_data_directory", "customer_master_list"} or focus_grain in {
+			"customer",
+			"supplier",
+			"item",
+			"product",
+		}:
+			action_classes.append("entity_selection_followup")
+		else:
+			action_classes.append("document_selection_followup")
+	elif focus_kind == "report":
+		action_classes.extend(
+			[
+				"report_refinement",
+				"metric_refinement",
+				"projection_refinement",
+				"time_refinement",
+				"detail_navigation",
+			]
+		)
+	return list(dict.fromkeys(action_classes))
+
+
+def _recent_focus_followup_mode_partition(recent_focus_state: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return [], []
+	source_report = _snapshot_clean_text(recent_focus_state.get("source_report"))
+	approved_modes = [
+		str(value or "").strip()
+		for value in report_approved_followup_modes(source_report)
+		if str(value or "").strip()
+	]
+	local_modes = [mode for mode in approved_modes if mode in _LOCAL_RECENT_FOCUS_FOLLOWUP_MODES]
+	requery_modes = [mode for mode in approved_modes if mode not in _LOCAL_RECENT_FOCUS_FOLLOWUP_MODES]
+	return local_modes, requery_modes
+
+
+def _recent_focus_affordance_reason(recent_focus_state: Dict[str, Any]) -> str:
+	focus_kind = _snapshot_clean_text((recent_focus_state or {}).get("focus_kind"))
+	if focus_kind == "entity":
+		return "The recent focus is a specific ERP entity, so follow-up can stay on that entity or pivot to supported sibling views."
+	if focus_kind == "statement":
+		return "The recent focus is a financial statement, so follow-up can stay on the same statement or move to a supported statement view."
+	if focus_kind == "listing":
+		return "The recent focus is a governed list, so follow-up can refine the list or navigate into a supported detail target."
+	if focus_kind == "report":
+		return "The recent focus is a governed report view, so follow-up can refine the report or navigate into supported downstream detail."
+	return "The recent focus exposes a bounded follow-up surface."
+
+
+def _build_recent_focus_affordance_contract_from_snapshot(
+	*,
+	request_id: str,
+	recent_focus_state: Dict[str, Any],
+):
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return None
+	local_modes, requery_modes = _recent_focus_followup_mode_partition(recent_focus_state)
+	return build_recent_focus_affordance_contract(
+		request_id=request_id,
+		focus_kind=_snapshot_clean_text(recent_focus_state.get("focus_kind")),
+		focus_grain=_snapshot_clean_text(recent_focus_state.get("focus_grain")),
+		focus_label=_snapshot_clean_text(recent_focus_state.get("focus_label")),
+		source_family=_snapshot_clean_text(recent_focus_state.get("source_family")),
+		source_capability=_snapshot_clean_text(recent_focus_state.get("source_capability")),
+		source_report=_snapshot_clean_text(recent_focus_state.get("source_report")),
+		allowed_action_classes=_recent_focus_allowed_action_classes(recent_focus_state),
+		allowed_local_followup_modes=local_modes,
+		allowed_requery_followup_modes=requery_modes,
+		deictic_reference_allowed=bool(recent_focus_state.get("deictic_allowed")),
+		explicit_named_reference_allowed=bool(recent_focus_state.get("explicit_named_allowed")),
+		supports_cross_family_followup=bool(requery_modes),
+		reason=_recent_focus_affordance_reason(recent_focus_state),
+	)
+
+
+def _conversation_control_decision_from_compound_completion(
+	*,
+	request_id: str,
+	raw_message: str,
+	compound_assessment_payload: Dict[str, Any],
+	completion_answer: str,
+	control_evidence_payload: Dict[str, Any] | None = None,
+):
+	if not str(completion_answer or "").strip():
+		return None
+	if not _compound_request_continuation_control_with_evidence(
+		raw_message,
+		control_evidence_payload=control_evidence_payload,
+	):
+		return None
+	status = _compound_request_assessment_status(compound_assessment_payload)
+	if status not in {"ordered_execution_complete", "ordered_execution_cancelled"}:
+		return None
+	return build_conversation_control_decision_contract(
+		request_id=request_id,
+		decision_class="sequence_completion_reentry",
+		decision_action=(
+			"acknowledge_completed_sequence"
+			if status == "ordered_execution_complete"
+			else "acknowledge_cancelled_sequence"
+		),
+		target_state_class="active_sequence",
+		resolved_business_message=str(completion_answer or "").strip(),
+		resolved_sequence_target=_conversation_control_sequence_target(compound_assessment_payload),
+		clear_active_sequence=True,
+		confidence=1.0,
+		reason="The user tried to continue an ordered multi-step sequence that had already finished.",
+		internal_details={
+			"source_contract_type": "qwen_compound_request_assessment_contract",
+			"prior_sequence_status": status,
+			"user_message": _snapshot_clean_text(raw_message),
+		},
+	)
+
+
+def _conversation_control_decision_from_compound_continuation(
+	*,
+	request_id: str,
+	raw_message: str,
+	active_sequence_payload: Dict[str, Any],
+	runtime_message: str,
+	control_evidence_payload: Dict[str, Any] | None = None,
+):
+	if not str(runtime_message or "").strip():
+		return None
+	if not _compound_request_continuation_control_with_evidence(
+		raw_message,
+		control_evidence_payload=control_evidence_payload,
+	):
+		return None
+	if not _compound_request_assessment_is_active(active_sequence_payload):
+		return None
+	return build_conversation_control_decision_contract(
+		request_id=request_id,
+		decision_class="sequence_continuation",
+		decision_action="resume_active_sequence",
+		target_state_class="active_sequence",
+		resolved_business_message=str(runtime_message or "").strip(),
+		resolved_sequence_target=_conversation_control_sequence_target(active_sequence_payload),
+		confidence=0.95,
+		reason="The user chose to continue the active ordered multi-step sequence.",
+		internal_details={
+			"source_contract_type": "qwen_compound_request_assessment_contract",
+			"prior_sequence_status": _compound_request_assessment_status(active_sequence_payload),
+			"user_message": _snapshot_clean_text(raw_message),
+		},
+	)
+
+
+def _conversation_control_decision_from_compound_cancellation(
+	*,
+	request_id: str,
+	raw_message: str,
+	active_sequence_payload: Dict[str, Any],
+	cancelled_sequence_payload: Dict[str, Any],
+	control_evidence_payload: Dict[str, Any] | None = None,
+):
+	if not _compound_request_stop_control_with_evidence(
+		raw_message,
+		control_evidence_payload=control_evidence_payload,
+	):
+		return None
+	if not _compound_request_assessment_is_active(active_sequence_payload):
+		return None
+	sequence_payload = (
+		cancelled_sequence_payload
+		if isinstance(cancelled_sequence_payload, dict) and cancelled_sequence_payload
+		else active_sequence_payload
+	)
+	return build_conversation_control_decision_contract(
+		request_id=request_id,
+		decision_class="sequence_cancellation",
+		decision_action="cancel_active_sequence",
+		target_state_class="active_sequence",
+		resolved_business_message="Okay, I'll stop here.",
+		resolved_sequence_target=_conversation_control_sequence_target(sequence_payload),
+		clear_active_sequence=True,
+		confidence=1.0,
+		reason="The user explicitly stopped the remaining ordered multi-step sequence.",
+		internal_details={
+			"source_contract_type": "qwen_compound_request_assessment_contract",
+			"prior_sequence_status": _compound_request_assessment_status(active_sequence_payload),
+			"user_message": _snapshot_clean_text(raw_message),
+		},
+	)
+
+
+def _conversation_control_decision_from_recent_focus_runtime_message(
+	*,
+	request_id: str,
+	raw_message: str,
+	runtime_message: str,
+	recent_focus_state: Dict[str, Any],
+	followup_resolution,
+	control_evidence_payload: Dict[str, Any] | None = None,
+):
+	if not str(runtime_message or "").strip():
+		return None
+	if _normalize_runtime_text(runtime_message) == _normalize_runtime_text(raw_message):
+		return None
+	if _control_action_is_strong_owner(control_evidence_payload):
+		return None
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return None
+	if followup_resolution is None:
+		return None
+	if str(getattr(followup_resolution, "mode", "") or "").strip() != "new_query":
+		return None
+	if not bool(getattr(followup_resolution, "depends_on_grounded_turn", False)):
+		return None
+	recent_focus_affordance_contract = _build_recent_focus_affordance_contract_from_snapshot(
+		request_id=request_id,
+		recent_focus_state=recent_focus_state,
+	)
+	if recent_focus_affordance_contract is None:
+		return None
+	return build_conversation_control_decision_contract(
+		request_id=request_id,
+		decision_class="recent_focus_continuation",
+		decision_action="resolve_recent_focus_followup",
+		target_state_class="recent_focus",
+		resolved_business_message=str(runtime_message or "").strip(),
+		resolved_focus_target=_conversation_control_focus_target_from_snapshot(recent_focus_state),
+		update_recent_focus=True,
+		confidence=float(max(0.0, min(1.0, recent_focus_state.get("confidence", 0.0) or 0.0))),
+		reason="The follow-up was safely expanded using the latest grounded business focus.",
+		internal_details={
+			"source_contract_type": "qwen_conversation_state_snapshot",
+			"followup_mode": str(getattr(followup_resolution, "mode", "") or "").strip(),
+			"depends_on_grounded_turn": bool(getattr(followup_resolution, "depends_on_grounded_turn", False)),
+			"control_action_id": _control_action_id(control_evidence_payload),
+			"recent_focus_affordance": recent_focus_affordance_contract.to_payload(),
+			"user_message": _snapshot_clean_text(raw_message),
+		},
+	)
+
+
+def _latest_repair_intent_contract(session_doc) -> Dict[str, Any]:
+	return _latest_tool_payload_by_type(
+		_session_tool_payloads(session_doc),
+		"qwen_conversational_repair_intent_contract",
+	)
+
+
+def _latest_current_turn_repair_intent_contract(*, session_doc, request_id: str) -> Dict[str, Any]:
+	payload = _latest_repair_intent_contract(session_doc)
+	if str((payload or {}).get("request_id") or "").strip() != str(request_id or "").strip():
+		return {}
+	return dict(payload or {})
+
+
+def _prior_branch_restore_phrase_type(message: str) -> str:
+	return _prior_branch_restore_phrase_type_helper(message)
+
+
+def _strip_leading_control_discard_preamble(message: str) -> str:
+	return _strip_leading_control_discard_preamble_helper(message)
+
+
+def _conversation_control_evidence_internal_details(evidence: Dict[str, Any]) -> Dict[str, Any]:
+	internal_details = dict(evidence.get("internal_details") or {}) if isinstance(evidence, dict) else {}
+	internal_details["source_contract_type"] = "qwen_conversation_control_language_classifier"
+	return internal_details
+
+
+def _targeted_restore_hint_from_control_evidence(control_evidence_payload: Dict[str, Any] | None) -> Tuple[str, str]:
+	if not isinstance(control_evidence_payload, dict):
+		return "", ""
+	internal_details = (
+		control_evidence_payload.get("internal_details")
+		if isinstance(control_evidence_payload.get("internal_details"), dict)
+		else {}
+	)
+	target_hint = _snapshot_clean_text(internal_details.get("target_hint"))
+	target_grain = _snapshot_clean_text(internal_details.get("target_grain"))
+	return target_hint, target_grain
+
+
+def _targeted_restore_hint_from_message(message: str) -> Tuple[str, str]:
+	evidence = dict(_classify_conversation_control_evidence(message) or {})
+	internal_details = evidence.get("internal_details") if isinstance(evidence.get("internal_details"), dict) else {}
+	target_hint = _snapshot_clean_text(internal_details.get("target_hint"))
+	target_grain = _snapshot_clean_text(internal_details.get("target_grain"))
+	return target_hint, target_grain
+
+
+def _prior_branch_phrase_type_from_control_action(control_evidence_payload: Dict[str, Any] | None) -> str:
+	action_id = _control_action_id(control_evidence_payload)
+	return {
+		"reopen_pending_clarification": "question_restore",
+		"resume_active_sequence": "sequence_restore",
+		"replay_or_restore_prior_branch": "branch_restore",
+	}.get(action_id, "")
+
+
+def _recent_focus_matches_targeted_restore(
+	recent_focus_state: Dict[str, Any],
+	*,
+	target_hint: str,
+	target_grain: str,
+) -> bool:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return False
+	focus_grain = _snapshot_clean_text(recent_focus_state.get("focus_grain"))
+	focus_label = _snapshot_clean_text(recent_focus_state.get("focus_label")).lower()
+	source_report = _snapshot_clean_text(recent_focus_state.get("source_report")).lower()
+	if target_grain and target_grain == focus_grain:
+		return True
+	if target_hint and (target_hint in focus_label or target_hint in source_report):
+		return True
+	return False
+
+
+def _resumable_prior_request_matches_targeted_restore(
+	resumable_prior_request: Dict[str, Any],
+	*,
+	target_hint: str,
+	target_grain: str,
+) -> bool:
+	if not isinstance(resumable_prior_request, dict) or not bool(resumable_prior_request.get("available")):
+		return False
+	branch_label = _snapshot_clean_text(resumable_prior_request.get("branch_label")).lower()
+	target_family = _snapshot_clean_text(resumable_prior_request.get("target_family")).lower()
+	branch_kind = _snapshot_clean_text(resumable_prior_request.get("branch_kind")).lower()
+	if target_grain and (
+		target_grain in target_family
+		or target_grain in branch_kind
+		or target_grain in branch_label
+	):
+		return True
+	if target_hint and target_hint in branch_label:
+		return True
+	return False
+
+
+def _build_recent_focus_restore_contract(
+	*,
+	request_id: str,
+	recent_focus: Dict[str, Any],
+	reason: str,
+	confidence: float | None = None,
+	internal_details: Dict[str, Any] | None = None,
+	clear_current_pending_clarification: bool = False,
+):
+	if not isinstance(recent_focus, dict) or not bool(recent_focus.get("available")):
+		return None
+	return build_prior_branch_restore_contract(
+		request_id=request_id,
+		target_branch_kind="focus",
+		target_branch_label=_snapshot_clean_text((recent_focus or {}).get("focus_label")),
+		target_request_id=_snapshot_clean_text((recent_focus or {}).get("source_request_id")),
+		target_family=_snapshot_clean_text((recent_focus or {}).get("source_family")),
+		target_scope={
+			"focus_kind": _snapshot_clean_text((recent_focus or {}).get("focus_kind")),
+			"focus_grain": _snapshot_clean_text((recent_focus or {}).get("focus_grain")),
+			"focus_key": _snapshot_clean_text((recent_focus or {}).get("focus_key")),
+			"source_report": _snapshot_clean_text((recent_focus or {}).get("source_report")),
+		},
+		restore_mode="restore_recent_focus",
+		resumable=True,
+		clear_current_pending_clarification=bool(clear_current_pending_clarification),
+		preserve_time_context=True,
+		preserve_scope=True,
+		preserve_entity_dimension=True,
+		reason=str(reason or "").strip(),
+		confidence=float(
+			max(
+				0.0,
+				min(
+					1.0,
+					confidence
+					if confidence is not None
+					else float((recent_focus or {}).get("confidence") or 0.0),
+				),
+			)
+		),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def _build_resumable_prior_request_restore_contract(
+	*,
+	request_id: str,
+	resumable_prior_request: Dict[str, Any],
+	reason: str,
+	internal_details: Dict[str, Any] | None = None,
+):
+	if not isinstance(resumable_prior_request, dict) or not bool(resumable_prior_request.get("available")):
+		return None
+	suggested_restore_mode = _snapshot_clean_text((resumable_prior_request or {}).get("suggested_restore_mode"))
+	restore_mode = {
+		"requery_prior_branch": "replay_as_fresh_governed_query",
+		"restore_recent_focus": "restore_recent_focus",
+		"resume_active_sequence": "resume_active_sequence",
+		"accept_prior_recovery_action": "accept_prior_recovery_action",
+	}.get(suggested_restore_mode, "not_resumable")
+	return build_prior_branch_restore_contract(
+		request_id=request_id,
+		target_branch_kind=_snapshot_clean_text((resumable_prior_request or {}).get("branch_kind")),
+		target_branch_label=_snapshot_clean_text((resumable_prior_request or {}).get("branch_label")),
+		target_request_id=_snapshot_clean_text((resumable_prior_request or {}).get("source_request_id")),
+		target_family=_snapshot_clean_text((resumable_prior_request or {}).get("target_family")),
+		target_scope=dict((resumable_prior_request or {}).get("target_scope") or {}),
+		restore_mode=restore_mode,
+		resumable=bool((resumable_prior_request or {}).get("resumable")) and restore_mode != "not_resumable",
+		preserve_time_context=True,
+		preserve_scope=True,
+		preserve_entity_dimension=True,
+		reason=str(reason or "").strip(),
+		confidence=float((resumable_prior_request or {}).get("confidence") or 0.0),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def _latest_non_clarification_restore_owner(
+	*,
+	recent_focus: Dict[str, Any],
+	resumable_prior_request: Dict[str, Any],
+) -> str:
+	recent_focus_available = bool((recent_focus or {}).get("available"))
+	resumable_available = bool((resumable_prior_request or {}).get("available"))
+	if recent_focus_available and not resumable_available:
+		return "recent_focus"
+	if resumable_available and not recent_focus_available:
+		return "resumable_prior_request"
+	if not recent_focus_available and not resumable_available:
+		return ""
+	if _snapshot_state_is_newer(recent_focus, resumable_prior_request):
+		return "recent_focus"
+	if _snapshot_state_is_newer(resumable_prior_request, recent_focus):
+		return "resumable_prior_request"
+	return "recent_focus"
+
+
+def _build_latest_non_clarification_restore_contract(
+	*,
+	request_id: str,
+	phrase_type: str,
+	pending_clarification: Dict[str, Any],
+	recent_focus: Dict[str, Any],
+	resumable_prior_request: Dict[str, Any],
+):
+	pending_available = bool((pending_clarification or {}).get("available"))
+	recent_focus_available = bool((recent_focus or {}).get("available"))
+	resumable_available = bool((resumable_prior_request or {}).get("available"))
+	if not recent_focus_available and not resumable_available:
+		return None
+	recent_focus_eligible = recent_focus_available and (
+		not pending_available or _snapshot_state_is_newer(recent_focus, pending_clarification)
+	)
+	resumable_eligible = resumable_available and (
+		not pending_available or _snapshot_state_is_newer(resumable_prior_request, pending_clarification)
+	)
+	if not recent_focus_eligible and not resumable_eligible:
+		return None
+	owner = _latest_non_clarification_restore_owner(
+		recent_focus=recent_focus if recent_focus_eligible else {},
+		resumable_prior_request=resumable_prior_request if resumable_eligible else {},
+	)
+	if owner == "recent_focus":
+		arbitration_basis = {
+			("question_restore", False): "question_restore_uses_recent_focus",
+			("question_restore", True): "newer_recent_focus_precedes_older_pending_clarification",
+			("branch_restore", False): "generic_branch_restore_uses_recent_focus",
+			("branch_restore", True): "generic_branch_restore_prefers_newer_recent_focus",
+		}.get((phrase_type, pending_available), "")
+		if recent_focus_available and resumable_eligible:
+			arbitration_basis = (
+				"question_restore_prefers_newer_recent_focus_over_resumable_prior_request"
+				if phrase_type == "question_restore"
+				else "generic_branch_restore_prefers_newer_recent_focus_over_resumable_prior_request"
+			)
+		reason = (
+			"The user asked to answer the most recent question, so the assistant is restoring "
+			"the latest grounded business focus."
+			if phrase_type == "question_restore"
+			else "The user asked to go back, so the assistant is restoring the latest grounded business focus."
+		)
+		if pending_available:
+			reason = (
+				"The user asked to answer the most recent question, and the latest grounded "
+				"business focus is newer than the older pending clarification."
+				if phrase_type == "question_restore"
+				else "The user asked to go back, so the assistant is restoring the latest grounded "
+				"business focus instead of reopening an older pending branch."
+			)
+		return _build_recent_focus_restore_contract(
+			request_id=request_id,
+			recent_focus=recent_focus,
+			reason=reason,
+			clear_current_pending_clarification=pending_available,
+			internal_details={
+				"phrase_type": phrase_type,
+				"arbitration_basis": arbitration_basis,
+				"pending_clarification_source_tool_index": _snapshot_source_tool_index(pending_clarification),
+				"recent_focus_source_tool_index": _snapshot_source_tool_index(recent_focus),
+				"resumable_prior_request_source_tool_index": _snapshot_source_tool_index(resumable_prior_request),
+				"derivation_basis": _snapshot_clean_text((recent_focus or {}).get("derivation_basis")),
+			},
+		)
+	if owner == "resumable_prior_request":
+		arbitration_basis = {
+			("question_restore", False): "question_restore_uses_resumable_prior_request",
+			("question_restore", True): "newer_resumable_prior_request_precedes_older_pending_clarification",
+			("branch_restore", False): "generic_branch_restore_uses_resumable_prior_request",
+			("branch_restore", True): "generic_branch_restore_prefers_newer_resumable_prior_request",
+		}.get((phrase_type, pending_available), "")
+		if recent_focus_eligible and resumable_available:
+			arbitration_basis = (
+				"question_restore_prefers_newer_resumable_prior_request_over_recent_focus"
+				if phrase_type == "question_restore"
+				else "generic_branch_restore_prefers_newer_resumable_prior_request_over_recent_focus"
+			)
+		reason = (
+			"The user asked to answer the most recent question, so the assistant is restoring "
+			"the latest resumable prior branch."
+			if phrase_type == "question_restore"
+			else "The user asked to go back, so the assistant is restoring the latest resumable prior branch."
+		)
+		if pending_available:
+			reason = (
+				"The user asked to answer the most recent question, so the assistant is restoring "
+				"the latest resumable prior branch instead of reopening an older pending clarification."
+				if phrase_type == "question_restore"
+				else "The user asked to go back, so the assistant is restoring the latest resumable "
+				"prior branch instead of reopening an older pending clarification."
+			)
+		return _build_resumable_prior_request_restore_contract(
+			request_id=request_id,
+			resumable_prior_request=resumable_prior_request,
+			reason=reason,
+			internal_details={
+				"phrase_type": phrase_type,
+				"snapshot_restore_mode": _snapshot_clean_text((resumable_prior_request or {}).get("suggested_restore_mode")),
+				"arbitration_basis": arbitration_basis,
+				"derivation_basis": _snapshot_clean_text((resumable_prior_request or {}).get("derivation_basis")),
+				"accepted_recovery_action": _snapshot_clean_text(
+					(resumable_prior_request or {}).get("accepted_recovery_action")
+				),
+				"pending_clarification_source_tool_index": _snapshot_source_tool_index(pending_clarification),
+				"recent_focus_source_tool_index": _snapshot_source_tool_index(recent_focus),
+				"resumable_prior_request_source_tool_index": _snapshot_source_tool_index(resumable_prior_request),
+				"prior_recovery_payload": dict(
+					((resumable_prior_request or {}).get("internal_details") or {}).get("prior_recovery_payload") or {}
+				),
+			},
+		)
+	return None
+
+
+def _prior_branch_restore_mode(prior_branch_restore_contract) -> str:
+	if prior_branch_restore_contract is None:
+		return ""
+	return str(getattr(prior_branch_restore_contract, "restore_mode", "") or "").strip()
+
+
+def _prior_branch_restore_runtime_message(prior_branch_restore_contract) -> str:
+	if _prior_branch_restore_mode(prior_branch_restore_contract) != "restore_recent_focus":
+		return ""
+	target_label = str(getattr(prior_branch_restore_contract, "target_branch_label", "") or "").strip()
+	target_family = str(getattr(prior_branch_restore_contract, "target_family", "") or "").strip()
+	target_scope = (
+		getattr(prior_branch_restore_contract, "target_scope", {})
+		if isinstance(getattr(prior_branch_restore_contract, "target_scope", {}), dict)
+		else {}
+	)
+	focus_kind = _snapshot_clean_text(target_scope.get("focus_kind"))
+	if target_family == "entity_detail" or focus_kind == "entity":
+		return f"tell me more about {target_label}".strip()
+	if target_family == "financial_statement" or focus_kind == "statement":
+		return f"show me {target_label}".strip()
+	return target_label
+
+
+def _prior_branch_restore_runtime_override_message(prior_branch_restore_contract) -> str:
+	restore_mode = _prior_branch_restore_mode(prior_branch_restore_contract)
+	if restore_mode == "resume_active_sequence":
+		return str(getattr(prior_branch_restore_contract, "target_branch_label", "") or "").strip()
+	if restore_mode == "restore_recent_focus":
+		return _prior_branch_restore_runtime_message(prior_branch_restore_contract)
+	return ""
+
+
+def _handle_prior_branch_restore_reopen_pending_clarification(
+	*,
+	session_doc,
+	request_id: str,
+	raw_message: str,
+	interaction_contract,
+	conversation_control_evidence_contract,
+	prior_branch_restore_contract,
+	prior_branch_restore_control_decision_contract,
+	pending_clarification_signal: Dict[str, Any],
+):
+	if _prior_branch_restore_mode(prior_branch_restore_contract) != "reopen_pending_clarification":
+		return False, None
+	if not pending_clarification_signal:
+		return False, None
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path="front_door",
+		reason="The user asked to reopen the pending clarification question.",
+		requires_runtime=False,
+		grounded_required=False,
+	)
+	assistant_answer = pending_clarification_repeat_answer(pending_clarification_signal)
+	_append_message(session_doc, "user", raw_message)
+	_append_tool_payload(session_doc, interaction_contract.to_payload())
+	if conversation_control_evidence_contract is not None:
+		_append_tool_payload(session_doc, conversation_control_evidence_contract.to_payload())
+	if prior_branch_restore_contract is not None:
+		_append_tool_payload(session_doc, prior_branch_restore_contract.to_payload())
+	if prior_branch_restore_control_decision_contract is not None:
+		_append_tool_payload(session_doc, prior_branch_restore_control_decision_contract.to_payload())
+	_append_tool_payload(session_doc, execution_path.to_payload())
+	_append_message(session_doc, "assistant", _assistant_text_payload(assistant_answer))
+	_save_session(session_doc, ignore_permissions=False)
+	return True, {
+		"ok": True,
+		"request_id": request_id,
+		"mode": "clarification",
+		"agent_meta": {
+			"engine": "prior_branch_restore",
+			"intent_class": "reopen_pending_clarification",
+		},
+	}
+
+
+def _build_conversation_control_evidence_contract(*, request_id: str, raw_message: str):
+	evidence = dict(_classify_conversation_control_evidence(raw_message) or {})
+	if not evidence:
+		return None
+	evidence_class = str(evidence.get("evidence_class") or "").strip()
+	action_id = str(evidence.get("action_id") or "").strip()
+	embedded_business_message = str(evidence.get("embedded_business_message") or "").strip()
+	if not evidence_class and not action_id and not embedded_business_message:
+		return None
+	return build_conversation_control_evidence_contract(
+		request_id=request_id,
+		evidence_class=evidence_class,
+		action_id=action_id,
+		evidence_strength=str(evidence.get("evidence_strength") or "").strip(),
+		raw_message=str(raw_message or "").strip(),
+		normalized_message=str(evidence.get("matched_surface_form") or "").strip(),
+		matched_surface_form=str(evidence.get("matched_surface_form") or "").strip(),
+		embedded_business_message=embedded_business_message,
+		reason="Shared conversation-control evidence was derived from the user message.",
+		internal_details=_conversation_control_evidence_internal_details(evidence),
+	)
+
+
+def _build_prior_branch_restore_contract_from_snapshot(
+	*,
+	request_id: str,
+	raw_message: str,
+	conversation_state_snapshot: Dict[str, Any],
+	control_evidence_payload: Dict[str, Any] | None = None,
+):
+	phrase_type = _prior_branch_phrase_type_from_control_action(control_evidence_payload)
+	if not phrase_type:
+		phrase_type = _prior_branch_restore_phrase_type(raw_message)
+	if not phrase_type:
+		return None
+	pending_clarification = (
+		conversation_state_snapshot.get("pending_clarification")
+		if isinstance(conversation_state_snapshot, dict)
+		else {}
+	)
+	active_sequence = (
+		conversation_state_snapshot.get("active_sequence")
+		if isinstance(conversation_state_snapshot, dict)
+		else {}
+	)
+	recent_focus = (
+		conversation_state_snapshot.get("recent_focus")
+		if isinstance(conversation_state_snapshot, dict)
+		else {}
+	)
+	resumable_prior_request = (
+		conversation_state_snapshot.get("resumable_prior_request")
+		if isinstance(conversation_state_snapshot, dict)
+		else {}
+	)
+	target_hint, target_grain = _targeted_restore_hint_from_control_evidence(control_evidence_payload)
+	if not target_hint and not target_grain:
+		target_hint, target_grain = _targeted_restore_hint_from_message(raw_message)
+	if (
+		phrase_type == "branch_restore"
+		and (target_hint or target_grain)
+		and _recent_focus_matches_targeted_restore(
+			recent_focus,
+			target_hint=target_hint,
+			target_grain=target_grain,
+		)
+	):
+		return _build_recent_focus_restore_contract(
+			request_id=request_id,
+			recent_focus=recent_focus,
+			reason="The user asked to return to the recent business focus that matches the requested branch.",
+			internal_details={
+				"phrase_type": phrase_type,
+				"target_hint": target_hint,
+				"target_grain": target_grain,
+				"arbitration_basis": "targeted_recent_focus_restore",
+				"derivation_basis": _snapshot_clean_text((recent_focus or {}).get("derivation_basis")),
+			},
+		)
+	if (
+		phrase_type == "branch_restore"
+		and (target_hint or target_grain)
+		and _resumable_prior_request_matches_targeted_restore(
+			resumable_prior_request,
+			target_hint=target_hint,
+			target_grain=target_grain,
+		)
+	):
+		return _build_resumable_prior_request_restore_contract(
+			request_id=request_id,
+			resumable_prior_request=resumable_prior_request,
+			reason="The user asked to return to a prior branch that matches the requested business target.",
+			internal_details={
+				"phrase_type": phrase_type,
+				"target_hint": target_hint,
+				"target_grain": target_grain,
+				"snapshot_restore_mode": _snapshot_clean_text((resumable_prior_request or {}).get("suggested_restore_mode")),
+				"arbitration_basis": "targeted_resumable_prior_branch_restore",
+				"derivation_basis": _snapshot_clean_text((resumable_prior_request or {}).get("derivation_basis")),
+				"accepted_recovery_action": _snapshot_clean_text(
+					(resumable_prior_request or {}).get("accepted_recovery_action")
+				),
+				"prior_recovery_payload": dict(
+					((resumable_prior_request or {}).get("internal_details") or {}).get("prior_recovery_payload") or {}
+				),
+			},
+		)
+	if phrase_type == "branch_restore" and (target_hint or target_grain):
+		return None
+	if phrase_type in {"question_restore", "branch_restore"}:
+		latest_non_clarification_contract = _build_latest_non_clarification_restore_contract(
+			request_id=request_id,
+			phrase_type=phrase_type,
+			pending_clarification=pending_clarification,
+			recent_focus=recent_focus,
+			resumable_prior_request=resumable_prior_request,
+		)
+		if latest_non_clarification_contract is not None:
+			return latest_non_clarification_contract
+	if phrase_type == "question_restore" and bool((pending_clarification or {}).get("available")):
+		signal = dict((pending_clarification or {}).get("signal") or {})
+		return build_prior_branch_restore_contract(
+			request_id=request_id,
+			target_branch_kind="clarification",
+			target_branch_label=_snapshot_clean_text(signal.get("user_question")),
+			target_request_id=_snapshot_clean_text(signal.get("request_id")),
+			target_family="clarification",
+			restore_mode="reopen_pending_clarification",
+			resumable=True,
+			preserve_time_context=True,
+			preserve_scope=True,
+			preserve_entity_dimension=True,
+			reason="The user asked to return to the still-pending clarification question.",
+			confidence=0.96,
+			internal_details={
+				"phrase_type": phrase_type,
+				"continuation_lane": _snapshot_clean_text((pending_clarification or {}).get("continuation_lane")),
+			},
+		)
+	if phrase_type == "branch_restore" and bool((pending_clarification or {}).get("available")):
+		signal = dict((pending_clarification or {}).get("signal") or {})
+		return build_prior_branch_restore_contract(
+			request_id=request_id,
+			target_branch_kind="clarification",
+			target_branch_label=_snapshot_clean_text(signal.get("user_question")),
+			target_request_id=_snapshot_clean_text(signal.get("request_id")),
+			target_family="clarification",
+			restore_mode="reopen_pending_clarification",
+			resumable=True,
+			preserve_time_context=True,
+			preserve_scope=True,
+			preserve_entity_dimension=True,
+			reason="A generic branch-restore request was resolved to the still-pending clarification because it is the highest-priority active branch.",
+			confidence=0.9,
+			internal_details={
+				"phrase_type": phrase_type,
+				"continuation_lane": _snapshot_clean_text((pending_clarification or {}).get("continuation_lane")),
+				"arbitration_basis": "pending_clarification_precedes_generic_prior_branch_restore",
+			},
+		)
+	if phrase_type == "sequence_restore" and bool((active_sequence or {}).get("active")):
+		return build_prior_branch_restore_contract(
+			request_id=request_id,
+			target_branch_kind="sequence",
+			target_branch_label=_snapshot_clean_text((active_sequence or {}).get("primary_segment_message")),
+			target_request_id=_snapshot_clean_text((active_sequence or {}).get("request_id")),
+			target_family="active_sequence",
+			restore_mode="resume_active_sequence",
+			resumable=True,
+			clear_current_active_sequence=False,
+			preserve_time_context=True,
+			preserve_scope=True,
+			preserve_entity_dimension=True,
+			reason="The user asked to resume the still-active ordered multi-step sequence.",
+			confidence=0.93,
+			internal_details={
+				"phrase_type": phrase_type,
+				"sequence_status": _snapshot_clean_text((active_sequence or {}).get("status")),
+			},
+		)
+	if phrase_type in {"question_restore", "branch_restore"} and bool((resumable_prior_request or {}).get("available")):
+		return _build_resumable_prior_request_restore_contract(
+			request_id=request_id,
+			resumable_prior_request=resumable_prior_request,
+			reason="The user asked to return to a prior resumable branch.",
+			internal_details={
+				"phrase_type": phrase_type,
+				"snapshot_restore_mode": _snapshot_clean_text((resumable_prior_request or {}).get("suggested_restore_mode")),
+				"derivation_basis": _snapshot_clean_text((resumable_prior_request or {}).get("derivation_basis")),
+				"accepted_recovery_action": _snapshot_clean_text(
+					(resumable_prior_request or {}).get("accepted_recovery_action")
+				),
+				"prior_recovery_payload": dict(
+					((resumable_prior_request or {}).get("internal_details") or {}).get("prior_recovery_payload") or {}
+				),
+			},
+		)
+	return None
+
+
+def _conversation_control_decision_from_prior_branch_restore_contract(prior_branch_restore_contract):
+	if prior_branch_restore_contract is None:
+		return None
+	restore_mode = str(getattr(prior_branch_restore_contract, "restore_mode", "") or "").strip()
+	if not restore_mode:
+		return None
+	target_scope = (
+		getattr(prior_branch_restore_contract, "target_scope", {})
+		if isinstance(getattr(prior_branch_restore_contract, "target_scope", {}), dict)
+		else {}
+	)
+	resolved_focus_target = {
+		"target_branch_kind": str(getattr(prior_branch_restore_contract, "target_branch_kind", "") or "").strip(),
+		"target_branch_label": str(getattr(prior_branch_restore_contract, "target_branch_label", "") or "").strip(),
+		"target_request_id": str(getattr(prior_branch_restore_contract, "target_request_id", "") or "").strip(),
+		"target_family": str(getattr(prior_branch_restore_contract, "target_family", "") or "").strip(),
+	}
+	if restore_mode == "restore_recent_focus":
+		resolved_focus_target = {
+			**resolved_focus_target,
+			"focus_kind": _snapshot_clean_text(target_scope.get("focus_kind")),
+			"focus_grain": _snapshot_clean_text(target_scope.get("focus_grain")),
+			"focus_key": _snapshot_clean_text(target_scope.get("focus_key")),
+			"focus_label": str(getattr(prior_branch_restore_contract, "target_branch_label", "") or "").strip(),
+			"source_report": _snapshot_clean_text(target_scope.get("source_report")),
+		}
+	return build_conversation_control_decision_contract(
+		request_id=str(getattr(prior_branch_restore_contract, "request_id", "") or "").strip(),
+		decision_class="prior_branch_restore",
+		decision_action=restore_mode,
+		target_state_class="prior_branch_restore",
+		resolved_business_message="",
+		resolved_focus_target=resolved_focus_target,
+		clear_pending_clarification=bool(
+			getattr(prior_branch_restore_contract, "clear_current_pending_clarification", False)
+		),
+		clear_active_sequence=bool(
+			getattr(prior_branch_restore_contract, "clear_current_active_sequence", False)
+		),
+		preserve_prior_branch=True,
+		confidence=float(getattr(prior_branch_restore_contract, "confidence", 0.0) or 0.0),
+		reason=str(getattr(prior_branch_restore_contract, "reason", "") or "").strip(),
+		internal_details={
+			"source_contract_type": "qwen_prior_branch_restore_contract",
+			"restore_mode": restore_mode,
+			"resumable": bool(getattr(prior_branch_restore_contract, "resumable", False)),
+		},
+	)
+
+
+def _handle_prior_branch_restore_fresh_query(
+	*,
+	session_doc,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	raw_message: str,
+	interaction_contract,
+	conversation_control_evidence_contract,
+	frontdoor_semantic_result,
+	frontdoor_contract,
+	clarification_response_contract,
+	response_policy_contract,
+	prior_branch_restore_contract,
+	prior_branch_restore_control_decision_contract,
+):
+	if prior_branch_restore_contract is None:
+		return False, None
+	if str(getattr(prior_branch_restore_contract, "restore_mode", "") or "").strip() != "replay_as_fresh_governed_query":
+		return False, None
+	prior_recovery_payload = dict(
+		(getattr(prior_branch_restore_contract, "internal_details", {}) or {}).get("prior_recovery_payload") or {}
+	)
+	if not prior_recovery_payload:
+		return False, None
+	synthesized_message = _build_recovery_governed_query_message(prior_recovery_payload)
+	if not synthesized_message:
+		return False, None
+	governed_target_limit = int(
+		max(
+			0,
+			(
+				(getattr(prior_branch_restore_contract, "target_scope", {}) or {}).get("requested_top_n")
+				or 0
+			),
+		)
+	)
+	followup_resolution = build_followup_resolution_contract(
+		request_id=request_id,
+		mode="new_query",
+		depends_on_grounded_turn=False,
+		self_contained=True,
+		latest_grounded_turn_available=False,
+		reason="The user chose to restore a prior branch by replaying it as a fresh governed query.",
+	)
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path="prior_branch_restore_requery",
+		reason="The user asked to restore a prior branch by rerunning it through current governed routes.",
+		requires_runtime=True,
+		grounded_required=False,
+	)
+	scope_decision_contract = build_governed_scope_decision_contract(
+		request_id=request_id,
+		stage="prior_branch_restore",
+		followup_resolution=followup_resolution,
+		context_isolation=build_scope_decision_input(force_new_query=True, reason="Prior branch restore replay."),
+		latest_grounded_turn_available=False,
+		entity_drilldown=None,
+		continuation_contract=None,
+		clarification_required=False,
+	)
+	_append_message(session_doc, "user", raw_message)
+	_append_tool_payload(session_doc, interaction_contract.to_payload())
+	if conversation_control_evidence_contract is not None:
+		_append_tool_payload(session_doc, conversation_control_evidence_contract.to_payload())
+	if frontdoor_semantic_result is not None:
+		_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+	if frontdoor_contract is not None:
+		_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+	if clarification_response_contract is not None:
+		_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+	if prior_branch_restore_contract is not None:
+		_append_tool_payload(session_doc, prior_branch_restore_contract.to_payload())
+	if prior_branch_restore_control_decision_contract is not None:
+		_append_tool_payload(session_doc, prior_branch_restore_control_decision_contract.to_payload())
+	_append_tool_payload(session_doc, response_policy_contract.to_payload())
+	_append_tool_payload(session_doc, followup_resolution.to_payload())
+	_append_tool_payload(session_doc, scope_decision_contract.to_payload())
+	_append_tool_payload(session_doc, execution_path.to_payload())
+	compiled_result = execute_compiled_fresh_query_message(
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=synthesized_message,
+		recent_messages=[],
+		clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
+		front_door_contract=frontdoor_contract.to_payload() if frontdoor_contract is not None else None,
+		governed_target_limit=governed_target_limit,
+	)
+	_, payload = _handle_compiled_first_turn_result(
+		session_doc=session_doc,
+		request_id=request_id,
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		governed_scope_contract=scope_decision_contract,
+		front_door_contract=frontdoor_contract,
+		clarification_response_contract=clarification_response_contract,
+		result=compiled_result,
+	)
+	return True, payload
+
+
+def _conversation_control_focus_target_from_recovery_contract(recovery_contract: Dict[str, Any]) -> Dict[str, Any]:
+	if not isinstance(recovery_contract, dict) or not recovery_contract:
+		return {}
+	return {
+		"focus_kind": "recovery_origin",
+		"focus_grain": _snapshot_clean_text(recovery_contract.get("source_family_id")),
+		"focus_label": _snapshot_clean_text(recovery_contract.get("source_report")),
+		"focus_key": _snapshot_clean_text(recovery_contract.get("source_request_id")),
+		"source_request_id": _snapshot_clean_text(recovery_contract.get("source_request_id")),
+		"source_family": _snapshot_clean_text(recovery_contract.get("source_family_id")),
+		"source_capability": _snapshot_clean_text(recovery_contract.get("source_capability_id")),
+		"source_report": _snapshot_clean_text(recovery_contract.get("source_report")),
+		"deictic_allowed": False,
+		"explicit_named_allowed": True,
+	}
+
+
+def _conversation_control_decision_from_repair_contract(
+	*,
+	request_id: str,
+	repair_contract_payload: Dict[str, Any],
+	latest_recovery_contract: Dict[str, Any],
+):
+	if not isinstance(repair_contract_payload, dict) or not repair_contract_payload:
+		return None
+	if str(repair_contract_payload.get("repair_state") or "").strip() != "accepted":
+		return None
+	repair_intent_type = str(repair_contract_payload.get("repair_intent_type") or "").strip()
+	accepted_recovery_action = str(repair_contract_payload.get("accepted_recovery_action") or "").strip()
+	common = {
+		"request_id": request_id,
+		"target_state_class": "repair_guidance",
+		"resolved_focus_target": _conversation_control_focus_target_from_recovery_contract(latest_recovery_contract),
+		"preserve_prior_branch": bool(repair_contract_payload.get("targets_prior_recovery")),
+		"confidence": float(repair_contract_payload.get("confidence") or 0.0),
+		"reason": str(repair_contract_payload.get("reason") or "").strip(),
+		"internal_details": {
+			"source_contract_type": "qwen_conversational_repair_intent_contract",
+			"repair_intent_type": repair_intent_type,
+			"repair_state": str(repair_contract_payload.get("repair_state") or "").strip(),
+			"accepted_recovery_action": accepted_recovery_action,
+			"allowed_next_lane": str(repair_contract_payload.get("allowed_next_lane") or "").strip(),
+			"targets_prior_recovery": bool(repair_contract_payload.get("targets_prior_recovery")),
+		},
+	}
+	if repair_intent_type == "guidance_request":
+		return build_conversation_control_decision_contract(
+			decision_class="repair_guidance",
+			decision_action="answer_recovery_guidance",
+			**common,
+		)
+	if repair_intent_type == "accept_recovery_action":
+		return build_conversation_control_decision_contract(
+			decision_class="repair_acceptance",
+			decision_action=accepted_recovery_action or "accept_recovery_action",
+			update_recent_focus=bool(accepted_recovery_action == "run_alternative_governed_query"),
+			**common,
+		)
+	return None
+
+
+def _clarification_response_resolved_slot_payload(clarification_response_contract) -> Dict[str, Any]:
+	if clarification_response_contract is None:
+		return {}
+	resolved_slot = getattr(clarification_response_contract, "resolved_slot", None)
+	return dict(resolved_slot) if isinstance(resolved_slot, dict) else {}
+
+
+def _frontdoor_clarification_reentry_message(
+	*,
+	raw_message: str,
+	clarification_lane: str,
+	clarification_response_contract,
+	clarified_runtime_message: str,
+) -> str:
+	clean_runtime_message = str(clarified_runtime_message or "").strip()
+	if clean_runtime_message:
+		return clean_runtime_message
+	if str(clarification_lane or "").strip() != "front_door":
+		return ""
+	if clarification_response_contract is None:
+		return ""
+	if str(getattr(clarification_response_contract, "decision", "") or "").strip() != "resolved_option":
+		return ""
+	if not _clarification_response_resolved_slot_payload(clarification_response_contract):
+		return ""
+	return str(raw_message or "").strip()
+
+
+def _artifact_boundary_clarification_requires_runtime_reset(
+	*,
+	clarification_lane: str,
+	clarification_response_contract,
+	clarified_runtime_message: str,
+) -> bool:
+	if clarification_response_contract is None:
+		return False
+	if str(clarification_lane or "").strip() != "artifact_boundary":
+		return False
+	if str(getattr(clarification_response_contract, "decision", "") or "").strip() != "resolved_option":
+		return False
+	return bool(str(clarified_runtime_message or "").strip())
+
+
+def _frontdoor_clarification_requires_fresh_query_reset(
+	*,
+	clarification_lane: str,
+	clarification_response_contract,
+	clarified_runtime_message: str,
+) -> bool:
+	if clarification_response_contract is None:
+		return False
+	if str(clarification_lane or "").strip() != "front_door":
+		return False
+	if str(getattr(clarification_response_contract, "decision", "") or "").strip() != "resolved_option":
+		return False
+	return bool(
+		str(clarified_runtime_message or "").strip()
+		or _clarification_response_resolved_slot_payload(clarification_response_contract)
+	)
+
+
+def _apply_frontdoor_clarification_reentry_state(
+	*,
+	frontdoor_semantic_result,
+	frontdoor_contract,
+	entity_drilldown,
+	clarified_frontdoor_semantic_result,
+	clarified_frontdoor_contract,
+	clarified_runtime_message: str,
+	latest_family_artifact: Dict[str, Any],
+	latest_grounded_turn: Dict[str, Any],
+):
+	updated_frontdoor_semantic_result = clarified_frontdoor_semantic_result or frontdoor_semantic_result
+	updated_frontdoor_contract = clarified_frontdoor_contract or frontdoor_contract
+	updated_entity_drilldown = entity_drilldown
+	if str(clarified_runtime_message or "").strip():
+		updated_entity_drilldown = detect_entity_drilldown_request(
+			message=clarified_runtime_message,
+			artifact_payload=latest_family_artifact if isinstance(latest_family_artifact, dict) else {},
+			grounded_turn=latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {},
+		)
+	return updated_frontdoor_semantic_result, updated_frontdoor_contract, updated_entity_drilldown
+
+
+def _frontdoor_compound_request_assessment_payload(frontdoor_contract) -> Dict[str, Any]:
+	if frontdoor_contract is None:
+		return {}
+	response_payload = getattr(frontdoor_contract, "response_payload", {})
+	if not isinstance(response_payload, dict):
+		return {}
+	payload = response_payload.get("compound_request_assessment")
+	return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _compound_request_assessment_is_active(payload: Dict[str, Any]) -> bool:
+	if not isinstance(payload, dict) or not payload:
+		return False
+	if str(payload.get("type") or "").strip() != "qwen_compound_request_assessment_contract":
+		return False
+	internal_details = payload.get("internal_details") if isinstance(payload.get("internal_details"), dict) else {}
+	if str(internal_details.get("execution_strategy") or "").strip() != "ordered_multi_step":
+		return False
+	primary_segment_message = str(internal_details.get("primary_segment_message") or "").strip()
+	return bool(primary_segment_message)
+
+
+def _compound_request_assessment_status(payload: Dict[str, Any]) -> str:
+	if not isinstance(payload, dict) or not payload:
+		return ""
+	if str(payload.get("type") or "").strip() != "qwen_compound_request_assessment_contract":
+		return ""
+	return str(payload.get("status") or "").strip()
+
+
+def _compound_request_continuation_control(message: str) -> bool:
+	return _compound_request_continuation_control_with_evidence(message, control_evidence_payload=None)
+
+
+def _compound_request_continuation_control_with_evidence(
+	message: str,
+	*,
+	control_evidence_payload: Dict[str, Any] | None,
+) -> bool:
+	return _control_action_id_from_message_or_evidence(
+		message,
+		control_evidence_payload,
+	) == "resume_active_sequence"
+
+
+def _compound_request_stop_control(message: str) -> bool:
+	return _compound_request_stop_control_with_evidence(message, control_evidence_payload=None)
+
+
+def _compound_request_stop_control_with_evidence(
+	message: str,
+	*,
+	control_evidence_payload: Dict[str, Any] | None,
+) -> bool:
+	return _control_action_id_from_message_or_evidence(
+		message,
+		control_evidence_payload,
+	) in {"stop_active_sequence", "abandon_current_branch"}
+
+
+def _compound_request_completion_answer(payload: Dict[str, Any], message: str) -> str:
+	return _compound_request_completion_answer_with_evidence(
+		payload,
+		message,
+		control_evidence_payload=None,
+	)
+
+
+def _compound_request_completion_answer_with_evidence(
+	payload: Dict[str, Any],
+	message: str,
+	*,
+	control_evidence_payload: Dict[str, Any] | None,
+) -> str:
+	status = _compound_request_assessment_status(payload)
+	if status == "ordered_execution_complete" and _compound_request_continuation_control_with_evidence(
+		message,
+		control_evidence_payload=control_evidence_payload,
+	):
+		return "That sequence is already finished. You can start a new request anytime."
+	if status == "ordered_execution_cancelled" and _compound_request_continuation_control_with_evidence(
+		message,
+		control_evidence_payload=control_evidence_payload,
+	):
+		return "That sequence was already stopped. You can start a new request anytime."
+	return ""
+
+
+def _compound_request_completion_is_superseded_by_newer_state(
+	*,
+	active_sequence_state: Dict[str, Any],
+	pending_clarification_state: Dict[str, Any],
+	recent_focus_state: Dict[str, Any],
+	resumable_prior_request_state: Dict[str, Any],
+) -> bool:
+	if not isinstance(active_sequence_state, dict) or not active_sequence_state:
+		return False
+	status = _snapshot_clean_text(active_sequence_state.get("status"))
+	if status not in {"ordered_execution_complete", "ordered_execution_cancelled"}:
+		return False
+	if _snapshot_source_tool_index(active_sequence_state) < 0:
+		return False
+	competing_states = [
+		state
+		for state in [
+			pending_clarification_state,
+			recent_focus_state,
+			resumable_prior_request_state,
+		]
+		if isinstance(state, dict)
+		and (
+			bool(state.get("available"))
+			or bool(state.get("active"))
+		)
+	]
+	return any(
+		_snapshot_state_is_newer(competing_state, active_sequence_state)
+		for competing_state in competing_states
+	)
+
+
+def _compound_request_completion_answer_from_snapshot(
+	*,
+	conversation_state_snapshot: Dict[str, Any],
+	message: str,
+	control_evidence_payload: Dict[str, Any] | None,
+) -> str:
+	active_sequence_state = (
+		dict((conversation_state_snapshot or {}).get("active_sequence") or {})
+		if isinstance(conversation_state_snapshot, dict)
+		else {}
+	)
+	if not active_sequence_state:
+		return ""
+	if _compound_request_completion_is_superseded_by_newer_state(
+		active_sequence_state=active_sequence_state,
+		pending_clarification_state=dict((conversation_state_snapshot or {}).get("pending_clarification") or {}),
+		recent_focus_state=dict((conversation_state_snapshot or {}).get("recent_focus") or {}),
+		resumable_prior_request_state=dict((conversation_state_snapshot or {}).get("resumable_prior_request") or {}),
+	):
+		return ""
+	return _compound_request_completion_answer_with_evidence(
+		dict(active_sequence_state.get("payload") or {}),
+		message,
+		control_evidence_payload=control_evidence_payload,
+	)
+
+
+def _cancel_compound_request_assessment_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+	if not _compound_request_assessment_is_active(payload):
+		return {}
+	internal_details = payload.get("internal_details") if isinstance(payload.get("internal_details"), dict) else {}
+	primary_segment_payload = (
+		dict(internal_details.get("primary_segment_payload"))
+		if isinstance(internal_details.get("primary_segment_payload"), dict)
+		else {}
+	)
+	return build_compound_request_assessment_contract(
+		request_id=str(payload.get("request_id") or "").strip(),
+		status="ordered_execution_cancelled",
+		segments=[
+			str(value or "").strip()
+			for value in (payload.get("segments") or [])
+			if str(value or "").strip()
+		],
+		suggested_options=[
+			str(value or "").strip()
+			for value in (payload.get("suggested_options") or [])
+			if str(value or "").strip()
+		],
+		clarification_required=False,
+		reason=str(payload.get("reason") or "").strip(),
+		internal_details={
+			**internal_details,
+			"primary_segment_message": "",
+			"primary_segment_label": "",
+			"primary_segment_payload": {},
+			"remaining_segment_messages": [],
+			"remaining_segment_labels": [],
+			"remaining_segment_payloads": [],
+			"cancelled": True,
+			"last_completed_segment_payload": primary_segment_payload,
+		},
+	).to_payload()
+
+
+def _resolve_compound_execution_runtime_message(
+	*,
+	raw_message: str,
+	frontdoor_contract,
+	latest_compound_assessment_payload: Dict[str, Any] | None,
+	control_evidence_payload: Dict[str, Any] | None = None,
+) -> Tuple[str, Dict[str, Any]]:
+	current_payload = _frontdoor_compound_request_assessment_payload(frontdoor_contract)
+	if _compound_request_assessment_is_active(current_payload):
+		internal_details = current_payload.get("internal_details") if isinstance(current_payload.get("internal_details"), dict) else {}
+		return str(internal_details.get("primary_segment_message") or "").strip(), current_payload
+	if _compound_request_continuation_control_with_evidence(
+		raw_message,
+		control_evidence_payload=control_evidence_payload,
+	) and _compound_request_assessment_is_active(
+		latest_compound_assessment_payload or {}
+	):
+		internal_details = (
+			latest_compound_assessment_payload.get("internal_details")
+			if isinstance((latest_compound_assessment_payload or {}).get("internal_details"), dict)
+			else {}
+		)
+		return str(internal_details.get("primary_segment_message") or "").strip(), dict(latest_compound_assessment_payload or {})
+	return "", {}
+
+
+def _preserve_artifact_boundary_clarification_followup_resolution(
+	*,
+	request_id: str,
+	followup_resolution,
+	clarification_continuation_active: bool,
+	latest_grounded_turn_available: bool,
+):
+	if not clarification_continuation_active or followup_resolution is None:
+		return followup_resolution
+	if str(getattr(followup_resolution, "mode", "") or "").strip() != "capability_requery":
+		return followup_resolution
+	requested_modes = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(value or "").strip()
+	]
+	if "entity_detail_evidence" not in requested_modes:
+		requested_modes.append("entity_detail_evidence")
+	return build_followup_resolution_contract(
+		request_id=request_id,
+		mode="grounded_follow_up",
+		requested_modes=requested_modes,
+		target_dimension=str(getattr(followup_resolution, "target_dimension", "") or "").strip(),
+		target_limit=int(max(0, getattr(followup_resolution, "target_limit", 0) or 0)),
+		sort_direction=str(getattr(followup_resolution, "sort_direction", "") or "").strip(),
+		target_metric=str(getattr(followup_resolution, "target_metric", "") or "").strip(),
+		requested_columns=list(getattr(followup_resolution, "requested_columns", []) or []),
+		requested_time_scope=str(getattr(followup_resolution, "requested_time_scope", "") or "").strip(),
+		target_capability_id="",
+		target_report="",
+		depends_on_grounded_turn=True,
+		self_contained=False,
+		latest_grounded_turn_available=bool(latest_grounded_turn_available),
+		reason=(
+			"A resolved artifact-boundary clarification must continue on the current governed artifact "
+			"before any governed requery breakout."
+		),
+	)
+
+
+def _preserve_current_artifact_direct_evidence_followup_resolution(
+	*,
+	request_id: str,
+	followup_resolution,
+	evidence_request_contract: Dict[str, Any] | None,
+	direct_evidence_answer: str,
+	evidence_boundary_answer: str,
+	latest_grounded_turn_available: bool,
+):
+	if followup_resolution is None or not bool(latest_grounded_turn_available):
+		return followup_resolution
+	evidence_contract = (
+		dict(evidence_request_contract)
+		if isinstance(evidence_request_contract, dict)
+		else {}
+	)
+	if not evidence_contract or bool(evidence_contract.get("clarification_required")):
+		return followup_resolution
+	if not str(direct_evidence_answer or evidence_boundary_answer or "").strip():
+		return followup_resolution
+	requested_modes = [
+		str(value or "").strip()
+		for value in (getattr(followup_resolution, "requested_modes", []) or [])
+		if str(value or "").strip()
+	]
+	if "direct_evidence_followup" not in requested_modes:
+		requested_modes.append("direct_evidence_followup")
+	return build_followup_resolution_contract(
+		request_id=request_id,
+		mode="grounded_follow_up",
+		requested_modes=requested_modes,
+		target_dimension=str(getattr(followup_resolution, "target_dimension", "") or "").strip(),
+		target_limit=int(max(0, getattr(followup_resolution, "target_limit", 0) or 0)),
+		sort_direction=str(getattr(followup_resolution, "sort_direction", "") or "").strip(),
+		target_metric=str(getattr(followup_resolution, "target_metric", "") or "").strip(),
+		requested_columns=list(getattr(followup_resolution, "requested_columns", []) or []),
+		requested_time_scope=str(getattr(followup_resolution, "requested_time_scope", "") or "").strip(),
+		target_capability_id="",
+		target_report="",
+		depends_on_grounded_turn=True,
+		self_contained=False,
+		latest_grounded_turn_available=True,
+		reason=(
+			"The current grounded artifact already contains the direct evidence needed for this "
+			"follow-up, so the turn should stay on the current artifact instead of breaking out "
+			"to a fresh governed query."
+		),
+	)
 
 
 def _artifact_enrichment_boundary_answer(
@@ -834,6 +2749,535 @@ def _latest_reasoning_contract(session_doc) -> Dict[str, Any]:
 
 def _latest_recovery_contract(session_doc) -> Dict[str, Any]:
 	return _grounded_latest_recovery_contract(session_doc)
+
+
+def _snapshot_clean_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _snapshot_source_tool_index(state_payload: Dict[str, Any]) -> int:
+	if not isinstance(state_payload, dict):
+		return -1
+	try:
+		return int(state_payload.get("source_tool_index", -1) or -1)
+	except (TypeError, ValueError):
+		return -1
+
+
+def _snapshot_state_is_newer(candidate_state: Dict[str, Any], baseline_state: Dict[str, Any]) -> bool:
+	candidate_index = _snapshot_source_tool_index(candidate_state)
+	baseline_index = _snapshot_source_tool_index(baseline_state)
+	if candidate_index < 0 or baseline_index < 0:
+		return False
+	return candidate_index > baseline_index
+
+
+def _snapshot_pending_clarification_state(session_doc) -> Dict[str, Any]:
+	tool_payloads = _session_tool_payloads(session_doc)
+	state = get_clarification_state(session_doc)
+	if getattr(state, "has_pending", False):
+		signal = dict(getattr(state, "pending_signal", {}) or {})
+		signal_request_id = _snapshot_clean_text(signal.get("request_id"))
+		return {
+			"available": bool(signal),
+			"source_kind": "stored_state",
+			"signal": signal,
+			"attempt_count": int(max(0, getattr(state, "attempt_count", 0) or 0)),
+			"max_attempts": int(max(0, getattr(state, "max_attempts", 0) or 0)),
+			"continuation_lane": clarification_continuation_lane(signal),
+			"status": "pending" if signal else "none",
+			"source_tool_index": _latest_tool_payload_position(
+				tool_payloads,
+				payload_type="qwen_clarification_signal_contract",
+				request_id=signal_request_id,
+			),
+		}
+	signal = latest_pending_clarification_signal(session_doc)
+	signal_request_id = _snapshot_clean_text((signal or {}).get("request_id"))
+	return {
+		"available": bool(signal),
+		"source_kind": "message_fallback" if signal else "none",
+		"signal": dict(signal or {}),
+		"attempt_count": 0,
+		"max_attempts": 0,
+		"continuation_lane": clarification_continuation_lane(signal) if signal else "",
+		"status": "pending" if signal else "none",
+		"source_tool_index": _latest_tool_payload_position(
+			tool_payloads,
+			payload_type="qwen_clarification_signal_contract",
+			request_id=signal_request_id,
+		),
+	}
+
+
+def _snapshot_latest_grounded_turn_state(session_doc) -> Dict[str, Any]:
+	payload = _latest_grounded_turn_contract(session_doc)
+	available = bool(isinstance(payload, dict) and payload)
+	tool_payloads = _session_tool_payloads(session_doc)
+	request_id = _snapshot_clean_text((payload or {}).get("request_id"))
+	return {
+		"available": available,
+		"payload": dict(payload or {}),
+		"request_id": _snapshot_clean_text((payload or {}).get("request_id")),
+		"trace_request_id": _snapshot_clean_text((payload or {}).get("trace_request_id")),
+		"grounded": bool((payload or {}).get("grounded")),
+		"source_name": _snapshot_clean_text((payload or {}).get("source_name")),
+		"artifact_family_id": _snapshot_clean_text((payload or {}).get("artifact_family_id")),
+		"artifact_source_reports": [
+			_snapshot_clean_text(value)
+			for value in ((payload or {}).get("artifact_source_reports") or [])
+			if _snapshot_clean_text(value)
+		],
+		"source_quality": "grounded" if bool((payload or {}).get("grounded")) else "absent",
+		"source_tool_index": _latest_tool_payload_position(
+			tool_payloads,
+			payload_type="qwen_grounded_turn_context",
+			request_id=request_id,
+		),
+	}
+
+
+def _snapshot_latest_artifact_state(
+	session_doc,
+	*,
+	grounded_turn_payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	payload = _latest_normalized_family_artifact(
+		session_doc,
+		grounded_turn=grounded_turn_payload if isinstance(grounded_turn_payload, dict) else {},
+	)
+	available = bool(isinstance(payload, dict) and payload)
+	grounded_compatible = bool(
+		available
+		and isinstance(grounded_turn_payload, dict)
+		and grounded_turn_payload
+		and _artifact_compatible_with_grounded_turn(
+			artifact_payload=dict(payload or {}),
+			grounded_turn=dict(grounded_turn_payload or {}),
+		)
+	)
+	source_quality = "absent"
+	if available:
+		source_quality = "grounded_compatible" if grounded_compatible else "fallback_candidate"
+	return {
+		"available": available,
+		"payload": dict(payload or {}),
+		"request_id": _snapshot_clean_text((payload or {}).get("request_id")),
+		"family_id": _snapshot_clean_text((payload or {}).get("family_id")),
+		"artifact_type": _snapshot_clean_text((payload or {}).get("artifact_type")),
+		"source_reports": [
+			_snapshot_clean_text(value)
+			for value in ((payload or {}).get("source_reports") or [])
+			if _snapshot_clean_text(value)
+		],
+		"grounded_compatible": grounded_compatible,
+		"source_quality": source_quality,
+	}
+
+
+def _snapshot_latest_recovery_contract_state(session_doc) -> Dict[str, Any]:
+	payload = _latest_recovery_contract(session_doc)
+	available = bool(isinstance(payload, dict) and payload)
+	return {
+		"available": available,
+		"payload": dict(payload or {}),
+		"request_id": _snapshot_clean_text((payload or {}).get("request_id")),
+		"source_request_id": _snapshot_clean_text((payload or {}).get("source_request_id")),
+		"source_family_id": _snapshot_clean_text((payload or {}).get("source_family_id")),
+		"source_capability_id": _snapshot_clean_text((payload or {}).get("source_capability_id")),
+		"source_report": _snapshot_clean_text((payload or {}).get("source_report")),
+		"recovery_state": _snapshot_clean_text((payload or {}).get("recovery_state")),
+		"recommended_recovery_action": _snapshot_clean_text((payload or {}).get("recommended_recovery_action")),
+		"allowed_to_recover": bool((payload or {}).get("allowed_to_recover")),
+	}
+
+
+def _snapshot_latest_repair_intent_state(session_doc) -> Dict[str, Any]:
+	payload = _latest_repair_intent_contract(session_doc)
+	available = bool(isinstance(payload, dict) and payload)
+	return {
+		"available": available,
+		"payload": dict(payload or {}),
+		"request_id": _snapshot_clean_text((payload or {}).get("request_id")),
+		"repair_intent_type": _snapshot_clean_text((payload or {}).get("repair_intent_type")),
+		"repair_state": _snapshot_clean_text((payload or {}).get("repair_state")),
+		"targets_prior_recovery": bool((payload or {}).get("targets_prior_recovery")),
+		"accepted_recovery_action": _snapshot_clean_text((payload or {}).get("accepted_recovery_action")),
+		"allowed_next_lane": _snapshot_clean_text((payload or {}).get("allowed_next_lane")),
+		"confidence": float(max(0.0, min(1.0, (payload or {}).get("confidence") or 0.0))),
+	}
+
+
+def _snapshot_active_sequence_state(session_doc) -> Dict[str, Any]:
+	payload = _latest_tool_payload_by_type(
+		_session_tool_payloads(session_doc),
+		"qwen_compound_request_assessment_contract",
+	)
+	tool_payloads = _session_tool_payloads(session_doc)
+	internal_details = payload.get("internal_details") if isinstance(payload.get("internal_details"), dict) else {}
+	return {
+		"available": bool(payload),
+		"payload": dict(payload or {}),
+		"request_id": _snapshot_clean_text((payload or {}).get("request_id")),
+		"status": _snapshot_clean_text((payload or {}).get("status")),
+		"segments": [
+			_snapshot_clean_text(value)
+			for value in ((payload or {}).get("segments") or [])
+			if _snapshot_clean_text(value)
+		],
+		"primary_segment_message": _snapshot_clean_text(internal_details.get("primary_segment_message")),
+		"remaining_segment_messages": [
+			_snapshot_clean_text(value)
+			for value in (internal_details.get("remaining_segment_messages") or [])
+			if _snapshot_clean_text(value)
+		],
+		"execution_strategy": _snapshot_clean_text(internal_details.get("execution_strategy")),
+		"active": _compound_request_assessment_is_active(payload),
+		"source_tool_index": _latest_tool_payload_position(
+			tool_payloads,
+			payload_type="qwen_compound_request_assessment_contract",
+			request_id=_snapshot_clean_text((payload or {}).get("request_id")),
+		),
+	}
+
+
+def _snapshot_recent_focus_state(
+	*,
+	latest_grounded_turn: Dict[str, Any],
+	latest_artifact: Dict[str, Any],
+	latest_recovery_contract: Dict[str, Any],
+) -> Dict[str, Any]:
+	grounded_payload = dict(latest_grounded_turn.get("payload") or {}) if isinstance(latest_grounded_turn, dict) else {}
+	artifact_payload = dict(latest_artifact.get("payload") or {}) if isinstance(latest_artifact, dict) else {}
+	source_name = _snapshot_clean_text((grounded_payload or {}).get("source_name"))
+	source_kind = _snapshot_clean_text((grounded_payload or {}).get("source_kind"))
+	family_id = _snapshot_clean_text((artifact_payload or {}).get("family_id") or (grounded_payload or {}).get("artifact_family_id"))
+	dimensions = artifact_payload.get("dimensions") if isinstance(artifact_payload.get("dimensions"), dict) else {}
+	known_entities = grounded_payload.get("known_entities") if isinstance(grounded_payload.get("known_entities"), list) else []
+	entity_grain = _snapshot_clean_text(entity_grain_for_report_name(source_name))
+	listing_view = _snapshot_clean_text(listing_view_for_report_name(source_name))
+	if family_id == "entity_detail" or source_name.endswith(" Detail"):
+		entity_payload = known_entities[0] if known_entities and isinstance(known_entities[0], dict) else {}
+		focus_grain = _snapshot_clean_text(dimensions.get("entity_type") or entity_payload.get("entity_type"))
+		focus_label = _snapshot_clean_text(
+			dimensions.get("entity_label")
+			or entity_payload.get("entity_label")
+			or (source_name[:-7] if source_name.endswith(" Detail") else "")
+		)
+		focus_key = _snapshot_clean_text(
+			dimensions.get("entity_key")
+			or entity_payload.get("entity_key")
+			or focus_label
+		)
+		if focus_label:
+			return {
+				"available": True,
+				"focus_kind": "entity",
+				"focus_grain": focus_grain or "entity",
+				"focus_label": focus_label,
+				"focus_key": focus_key,
+				"source_request_id": _snapshot_clean_text((grounded_payload or {}).get("request_id")),
+				"source_family": family_id or "entity_detail",
+				"source_capability": _snapshot_clean_text((latest_recovery_contract.get("source_capability_id") if isinstance(latest_recovery_contract, dict) else "")),
+				"source_report": source_name,
+				"deictic_allowed": True,
+				"explicit_named_allowed": True,
+				"derivation_basis": "entity_detail_grounded_turn",
+				"confidence": 0.9,
+				"source_tool_index": _snapshot_source_tool_index(latest_grounded_turn),
+			}
+	normalized_source_name = source_name.lower()
+	if normalized_source_name in {"profit and loss statement", "balance sheet", "cash flow"}:
+		return {
+			"available": True,
+			"focus_kind": "statement",
+			"focus_grain": normalized_source_name.replace(" statement", "").replace(" ", "_"),
+			"focus_label": source_name,
+			"focus_key": source_name,
+			"source_request_id": _snapshot_clean_text((grounded_payload or {}).get("request_id")),
+			"source_family": family_id or "financial_statement",
+			"source_capability": "",
+			"source_report": source_name,
+			"deictic_allowed": False,
+			"explicit_named_allowed": True,
+			"derivation_basis": "statement_grounded_turn",
+			"confidence": 0.8,
+			"source_tool_index": _snapshot_source_tool_index(latest_grounded_turn),
+		}
+	if family_id in {"master_data_directory", "customer_master_list"} or entity_grain:
+		focus_grain = entity_grain or _snapshot_clean_text(dimensions.get("entity_type")) or "master_data"
+		return {
+			"available": True,
+			"focus_kind": "listing",
+			"focus_grain": focus_grain,
+			"focus_label": source_name,
+			"focus_key": focus_grain or source_name,
+			"source_request_id": _snapshot_clean_text((grounded_payload or {}).get("request_id")),
+			"source_family": family_id or "master_data_directory",
+			"source_capability": _snapshot_clean_text(
+				(latest_recovery_contract.get("source_capability_id") if isinstance(latest_recovery_contract, dict) else "")
+			),
+			"source_report": source_name,
+			"deictic_allowed": True,
+			"explicit_named_allowed": False,
+			"derivation_basis": "master_data_listing_grounded_turn",
+			"confidence": 0.82,
+			"source_tool_index": _snapshot_source_tool_index(latest_grounded_turn),
+		}
+	if family_id == "transaction_listing" or listing_view:
+		focus_grain = listing_view or _snapshot_clean_text(dimensions.get("listing_view")) or "transaction_listing"
+		return {
+			"available": True,
+			"focus_kind": "listing",
+			"focus_grain": focus_grain,
+			"focus_label": source_name,
+			"focus_key": focus_grain or source_name,
+			"source_request_id": _snapshot_clean_text((grounded_payload or {}).get("request_id")),
+			"source_family": family_id or "transaction_listing",
+			"source_capability": _snapshot_clean_text(
+				(latest_recovery_contract.get("source_capability_id") if isinstance(latest_recovery_contract, dict) else "")
+			),
+			"source_report": source_name,
+			"deictic_allowed": True,
+			"explicit_named_allowed": False,
+			"derivation_basis": "transaction_listing_grounded_turn",
+			"confidence": 0.8,
+			"source_tool_index": _snapshot_source_tool_index(latest_grounded_turn),
+		}
+	if source_kind == "report" and source_name:
+		return {
+			"available": True,
+			"focus_kind": "report",
+			"focus_grain": family_id or _snapshot_clean_text(source_name.lower().replace(" ", "_")),
+			"focus_label": source_name,
+			"focus_key": source_name,
+			"source_request_id": _snapshot_clean_text((grounded_payload or {}).get("request_id")),
+			"source_family": family_id or "report",
+			"source_capability": _snapshot_clean_text(
+				(latest_recovery_contract.get("source_capability_id") if isinstance(latest_recovery_contract, dict) else "")
+			),
+			"source_report": source_name,
+			"deictic_allowed": True,
+			"explicit_named_allowed": True,
+			"derivation_basis": "report_grounded_turn",
+			"confidence": 0.76,
+			"source_tool_index": _snapshot_source_tool_index(latest_grounded_turn),
+		}
+	return {
+		"available": False,
+		"focus_kind": "",
+		"focus_grain": "",
+		"focus_label": "",
+		"focus_key": "",
+		"source_request_id": "",
+		"source_family": "",
+		"source_capability": "",
+		"source_report": "",
+		"deictic_allowed": False,
+		"explicit_named_allowed": False,
+		"derivation_basis": "none",
+		"confidence": 0.0,
+		"source_tool_index": -1,
+	}
+
+
+def _snapshot_resumable_prior_request_state(
+	*,
+	session_doc,
+	pending_clarification: Dict[str, Any],
+	active_sequence: Dict[str, Any],
+	recent_focus: Dict[str, Any],
+	latest_recovery_contract: Dict[str, Any],
+	latest_repair_intent: Dict[str, Any],
+) -> Dict[str, Any]:
+	if bool(pending_clarification.get("available")) or bool(active_sequence.get("active")):
+		return {
+			"available": False,
+			"branch_kind": "none",
+			"branch_label": "",
+			"source_request_id": "",
+			"target_family": "",
+			"target_scope": {},
+			"accepted_recovery_action": "",
+			"resumable": False,
+			"suggested_restore_mode": "",
+			"derivation_basis": "blocked_by_higher_priority_state",
+			"confidence": 0.0,
+			"source_tool_index": -1,
+		}
+	repair_payload = dict(latest_repair_intent.get("payload") or {}) if isinstance(latest_repair_intent, dict) else {}
+	if (
+		str(repair_payload.get("repair_state") or "").strip() == "accepted"
+		and bool(repair_payload.get("targets_prior_recovery"))
+		and str(repair_payload.get("repair_intent_type") or "").strip() == "accept_recovery_action"
+	):
+		tool_payloads = _session_tool_payloads(session_doc)
+		accepted_index = -1
+		for index in range(len(tool_payloads) - 1, -1, -1):
+			item = tool_payloads[index]
+			if str(item.get("type") or "").strip() != "qwen_conversational_repair_intent_contract":
+				continue
+			if str(item.get("request_id") or "").strip() != str(repair_payload.get("request_id") or "").strip():
+				continue
+			accepted_index = index
+			break
+		if accepted_index >= 0:
+			prior_recovery = {}
+			for index in range(accepted_index - 1, -1, -1):
+				item = tool_payloads[index]
+				if str(item.get("type") or "").strip() == "qwen_artifact_enrichment_recovery_contract":
+					prior_recovery = dict(item or {})
+					break
+			newer_grounded_turn = {}
+			for index in range(accepted_index + 1, len(tool_payloads)):
+				item = tool_payloads[index]
+				if str(item.get("type") or "").strip() == "qwen_grounded_turn_context":
+					newer_grounded_turn = dict(item or {})
+			prior_source_request_id = _snapshot_clean_text(prior_recovery.get("source_request_id"))
+			newer_trace_request_id = _snapshot_clean_text(
+				(newer_grounded_turn.get("trace_request_id") or newer_grounded_turn.get("request_id"))
+			)
+			if prior_source_request_id and newer_trace_request_id and newer_trace_request_id != prior_source_request_id:
+				return {
+					"available": True,
+					"branch_kind": "accepted_recovery_origin",
+					"branch_label": _snapshot_clean_text(prior_recovery.get("source_report"))
+					or _snapshot_clean_text(prior_recovery.get("source_family_id")),
+					"source_request_id": prior_source_request_id,
+					"target_family": _snapshot_clean_text(prior_recovery.get("source_family_id")),
+					"target_scope": dict(prior_recovery.get("preservable_scope") or {}),
+					"accepted_recovery_action": _snapshot_clean_text(repair_payload.get("accepted_recovery_action")),
+					"resumable": True,
+					"suggested_restore_mode": "requery_prior_branch",
+					"derivation_basis": "accepted_repair_with_newer_grounded_turn",
+					"confidence": 0.79,
+					"source_tool_index": accepted_index,
+					"internal_details": {
+						"prior_recovery_payload": prior_recovery,
+					},
+				}
+	return {
+		"available": False,
+		"branch_kind": "none",
+		"branch_label": "",
+		"source_request_id": "",
+		"target_family": "",
+		"target_scope": {},
+		"accepted_recovery_action": "",
+		"resumable": False,
+		"suggested_restore_mode": "",
+		"derivation_basis": "conservative_none",
+		"confidence": 0.0,
+		"source_tool_index": -1,
+	}
+
+
+def _snapshot_state_quality(
+	*,
+	pending_clarification: Dict[str, Any],
+	latest_grounded_turn: Dict[str, Any],
+	latest_artifact: Dict[str, Any],
+	latest_recovery_contract: Dict[str, Any],
+	latest_repair_intent: Dict[str, Any],
+	active_sequence: Dict[str, Any],
+	recent_focus: Dict[str, Any],
+	recent_focus_affordance: Dict[str, Any],
+	resumable_prior_request: Dict[str, Any],
+) -> Dict[str, Any]:
+	return {
+		"has_authoritative_pending_clarification": bool(
+			pending_clarification.get("available") and pending_clarification.get("source_kind") == "stored_state"
+		),
+		"has_grounded_turn": bool(latest_grounded_turn.get("available") and latest_grounded_turn.get("grounded")),
+		"has_grounded_compatible_artifact": bool(
+			latest_artifact.get("available") and latest_artifact.get("grounded_compatible")
+		),
+		"has_recovery_contract": bool(latest_recovery_contract.get("available")),
+		"has_latest_repair_intent": bool(latest_repair_intent.get("available")),
+		"has_active_sequence": bool(active_sequence.get("active")),
+		"has_recent_focus": bool(recent_focus.get("available")),
+		"has_recent_focus_affordance": bool(recent_focus_affordance),
+		"has_resumable_prior_request": bool(resumable_prior_request.get("available")),
+	}
+
+
+def _build_conversation_state_snapshot(*, request_id: str, session_doc) -> Dict[str, Any]:
+	pending_clarification = _snapshot_pending_clarification_state(session_doc)
+	latest_grounded_turn = _snapshot_latest_grounded_turn_state(session_doc)
+	latest_artifact = _snapshot_latest_artifact_state(
+		session_doc,
+		grounded_turn_payload=dict(latest_grounded_turn.get("payload") or {}),
+	)
+	latest_recovery_contract = _snapshot_latest_recovery_contract_state(session_doc)
+	latest_repair_intent = _snapshot_latest_repair_intent_state(session_doc)
+	active_sequence = _snapshot_active_sequence_state(session_doc)
+	recent_focus = _snapshot_recent_focus_state(
+		latest_grounded_turn=latest_grounded_turn,
+		latest_artifact=latest_artifact,
+		latest_recovery_contract=latest_recovery_contract,
+	)
+	recent_focus_affordance_contract = _build_recent_focus_affordance_contract_from_snapshot(
+		request_id=request_id,
+		recent_focus_state=recent_focus,
+	)
+	recent_focus_affordance = (
+		recent_focus_affordance_contract.to_payload() if recent_focus_affordance_contract is not None else {}
+	)
+	resumable_prior_request = _snapshot_resumable_prior_request_state(
+		session_doc=session_doc,
+		pending_clarification=pending_clarification,
+		active_sequence=active_sequence,
+		recent_focus=recent_focus,
+		latest_recovery_contract=latest_recovery_contract,
+		latest_repair_intent=latest_repair_intent,
+	)
+	return {
+		"type": "qwen_conversation_state_snapshot",
+		"snapshot_version": "1.0",
+		"request_id": _snapshot_clean_text(request_id),
+		"pending_clarification": pending_clarification,
+		"latest_grounded_turn": latest_grounded_turn,
+		"latest_artifact": latest_artifact,
+		"latest_recovery_contract": latest_recovery_contract,
+		"latest_repair_intent": latest_repair_intent,
+		"active_sequence": active_sequence,
+		"recent_focus": recent_focus,
+		"recent_focus_affordance": recent_focus_affordance,
+		"resumable_prior_request": resumable_prior_request,
+		"state_quality": _snapshot_state_quality(
+			pending_clarification=pending_clarification,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_artifact=latest_artifact,
+			latest_recovery_contract=latest_recovery_contract,
+			latest_repair_intent=latest_repair_intent,
+			active_sequence=active_sequence,
+			recent_focus=recent_focus,
+			recent_focus_affordance=recent_focus_affordance,
+			resumable_prior_request=resumable_prior_request,
+		),
+		"internal_details": {
+			"source_summary": {
+				"pending_clarification_source_kind": _snapshot_clean_text(pending_clarification.get("source_kind")),
+				"latest_artifact_source_quality": _snapshot_clean_text(latest_artifact.get("source_quality")),
+				"latest_repair_intent_type": _snapshot_clean_text(latest_repair_intent.get("repair_intent_type")),
+				"recent_focus_derivation_basis": _snapshot_clean_text(recent_focus.get("derivation_basis")),
+				"recent_focus_affordance_reason": _snapshot_clean_text(recent_focus_affordance.get("reason")),
+				"resumable_prior_request_derivation_basis": _snapshot_clean_text(
+					resumable_prior_request.get("derivation_basis")
+				),
+			},
+			"fallbacks_used": [
+				value
+				for value in [
+					"pending_clarification_message_fallback"
+					if pending_clarification.get("source_kind") == "message_fallback"
+					else "",
+					"artifact_fallback_candidate" if latest_artifact.get("source_quality") == "fallback_candidate" else "",
+				]
+				if value
+			],
+		},
+	}
 
 
 def _source_compatible_reasoning_contract(
@@ -1085,6 +3529,30 @@ def _artifact_local_refinement_should_defer_runtime_frontdoor(
 ) -> Tuple[bool, Any | None]:
 	if not latest_grounded_turn or not latest_family_artifact:
 		return False, None
+	evidence_request_contract = _entity_detail_evidence_request_payload(
+		request_id=request_id,
+		raw_message=message,
+		artifact_payload=latest_family_artifact,
+	)
+	if evidence_request_contract:
+		if bool(evidence_request_contract.get("clarification_required")):
+			return True, None
+		evidence_answer = _grounded_artifact_direct_evidence_answer(
+			raw_message=message,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			evidence_request_contract=evidence_request_contract,
+		)
+		if evidence_answer:
+			return True, None
+		evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+			raw_message=message,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			evidence_request_contract=evidence_request_contract,
+		)
+		if evidence_boundary_answer:
+			return True, None
 	semantic_result = interpret_followup_semantically(
 		request_id=request_id,
 		session_id=session_id,
@@ -1209,21 +3677,23 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	msg = str(message or "").strip()
 	raw_msg = msg
 	recent_frontdoor_messages = _recent_messages(session_doc, limit=6)
-	latest_grounded_turn = _latest_grounded_turn_contract(session_doc)
-	latest_family_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=latest_grounded_turn)
+	conversation_state_snapshot = _build_conversation_state_snapshot(
+		request_id=request_id,
+		session_doc=session_doc,
+	)
+	latest_grounded_turn = dict((conversation_state_snapshot.get("latest_grounded_turn") or {}).get("payload") or {})
+	latest_family_artifact = dict((conversation_state_snapshot.get("latest_artifact") or {}).get("payload") or {})
 	latest_assistant_payload = _latest_assistant_payload(session_doc)
 	latest_reasoning_contract = _source_compatible_reasoning_contract(
 		grounded_turn=latest_grounded_turn,
 		reasoning_contract=_latest_reasoning_contract(session_doc),
 	)
-	latest_recovery_contract = _latest_recovery_contract(session_doc)
+	latest_recovery_contract = dict((conversation_state_snapshot.get("latest_recovery_contract") or {}).get("payload") or {})
+	latest_compound_request_assessment = dict((conversation_state_snapshot.get("active_sequence") or {}).get("payload") or {})
+	recent_focus_state = dict(conversation_state_snapshot.get("recent_focus") or {})
 	clarification_state = get_clarification_state(session_doc)
-	pending_clarification_signal = (
-		dict(clarification_state.pending_signal)
-		if clarification_state.has_pending
-		else latest_pending_clarification_signal(session_doc)
-	)
-	latest_grounded_turn_available = bool(latest_grounded_turn.get("grounded")) or bool(
+	pending_clarification_signal = dict((conversation_state_snapshot.get("pending_clarification") or {}).get("signal") or {})
+	latest_grounded_turn_available = bool((conversation_state_snapshot.get("latest_grounded_turn") or {}).get("grounded")) or bool(
 		_latest_grounded_assistant_context(session_doc)[0]
 	)
 	interaction_contract = build_interaction_contract(
@@ -1233,6 +3703,124 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		site_name=site_name,
 		raw_message=msg,
 	)
+	conversation_control_evidence_contract = _build_conversation_control_evidence_contract(
+		request_id=request_id,
+		raw_message=raw_msg,
+	)
+	leading_control_override_message = (
+		str(getattr(conversation_control_evidence_contract, "embedded_business_message", "") or "").strip()
+		if conversation_control_evidence_contract is not None
+		else ""
+	)
+	if not leading_control_override_message:
+		leading_control_override_message = _strip_leading_control_discard_preamble(raw_msg)
+	if leading_control_override_message:
+		msg = leading_control_override_message
+	prior_branch_restore_contract = _build_prior_branch_restore_contract_from_snapshot(
+		request_id=request_id,
+		raw_message=msg,
+		conversation_state_snapshot=conversation_state_snapshot,
+		control_evidence_payload=(
+			conversation_control_evidence_contract.to_payload()
+			if conversation_control_evidence_contract is not None
+			else None
+		),
+	)
+	prior_branch_restore_control_decision_contract = _conversation_control_decision_from_prior_branch_restore_contract(
+		prior_branch_restore_contract
+	)
+	prior_branch_restore_runtime_message = _prior_branch_restore_runtime_override_message(
+		prior_branch_restore_contract
+	)
+	if prior_branch_restore_runtime_message:
+		msg = prior_branch_restore_runtime_message
+	prior_branch_reopen_handled, prior_branch_reopen_payload = _handle_prior_branch_restore_reopen_pending_clarification(
+		session_doc=session_doc,
+		request_id=request_id,
+		raw_message=raw_msg,
+		interaction_contract=interaction_contract,
+		conversation_control_evidence_contract=conversation_control_evidence_contract,
+		prior_branch_restore_contract=prior_branch_restore_contract,
+		prior_branch_restore_control_decision_contract=prior_branch_restore_control_decision_contract,
+		pending_clarification_signal=pending_clarification_signal,
+	)
+	if prior_branch_reopen_handled and prior_branch_reopen_payload is not None:
+		return True, prior_branch_reopen_payload
+	compound_completion_answer = _compound_request_completion_answer_from_snapshot(
+		conversation_state_snapshot=conversation_state_snapshot,
+		message=raw_msg,
+		control_evidence_payload=(
+			conversation_control_evidence_contract.to_payload()
+			if conversation_control_evidence_contract is not None
+			else None
+		),
+	)
+	if compound_completion_answer:
+		compound_completion_decision_contract = _conversation_control_decision_from_compound_completion(
+			request_id=request_id,
+			raw_message=raw_msg,
+			compound_assessment_payload=latest_compound_request_assessment,
+			completion_answer=compound_completion_answer,
+			control_evidence_payload=(
+				conversation_control_evidence_contract.to_payload()
+				if conversation_control_evidence_contract is not None
+				else None
+			),
+		)
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="front_door",
+			reason="The user asked to continue a completed or cancelled ordered compound-request sequence.",
+			requires_runtime=False,
+			grounded_required=False,
+		)
+		_append_message(session_doc, "user", raw_msg)
+		_append_tool_payload(session_doc, interaction_contract.to_payload())
+		if conversation_control_evidence_contract is not None:
+			_append_tool_payload(session_doc, conversation_control_evidence_contract.to_payload())
+		if latest_compound_request_assessment:
+			_append_tool_payload(session_doc, latest_compound_request_assessment)
+		if compound_completion_decision_contract is not None:
+			_append_tool_payload(session_doc, compound_completion_decision_contract.to_payload())
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		_append_message(session_doc, "assistant", _assistant_text_payload(compound_completion_answer))
+		_append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=build_followup_resolution_contract(
+					request_id=request_id,
+					mode="front_door",
+					requested_modes=[],
+					target_dimension="",
+					target_limit=0,
+					sort_direction="",
+					target_metric="",
+					requested_columns=[],
+					requested_time_scope="",
+					target_capability_id="",
+					target_report="",
+					depends_on_grounded_turn=latest_grounded_turn_available,
+					self_contained=not latest_grounded_turn_available,
+					latest_grounded_turn_available=latest_grounded_turn_available,
+					reason="The ordered compound-request sequence had no remaining steps.",
+				),
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
+				answer_text=compound_completion_answer,
+			).to_payload(),
+		)
+		_save_session(session_doc, ignore_permissions=False)
+		return True, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "front_door",
+			"agent_meta": {
+				"engine": "compound_request_control",
+				"intent_class": "compound_request_complete",
+			},
+		}
 	reasoning_rollout = _erp_business_reasoning_rollout_decision(
 		session_name=session_name,
 		user=user,
@@ -1314,8 +3902,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			),
 		)
 	clarification_response_contract = None
+	conversation_control_decision_contract = None
 	frontdoor_render_result = None
 	frontdoor_answer = ""
+	artifact_boundary_clarification_continuation_active = False
 	if pending_clarification_signal:
 		clarification_response_contract, frontdoor_semantic_result, frontdoor_contract = build_pending_clarification_frontdoor_skip(
 			request_id=request_id,
@@ -1327,6 +3917,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			clarification_state=clarification_state,
 			latest_grounded_turn_available=latest_grounded_turn_available,
 			latest_grounded_turn=latest_grounded_turn,
+			conversation_control_evidence_payload=(
+				conversation_control_evidence_contract.to_payload()
+				if conversation_control_evidence_contract is not None
+				else None
+			),
+		)
+		conversation_control_decision_contract = _conversation_control_decision_from_clarification_response(
+			raw_message=raw_msg,
+			pending_clarification_signal=pending_clarification_signal,
+			clarification_response_contract=clarification_response_contract,
 		)
 	else:
 		if latest_grounded_turn_available:
@@ -1345,13 +3945,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			latest_assistant_turn_was_clarification_fallback_stop(session_doc)
 			and looks_like_short_acknowledgement(msg)
 		)
+		frontdoor_recent_messages = _frontdoor_recent_messages_for_message(
+			message=msg,
+			recent_messages=recent_frontdoor_messages,
+			grounded_context_available=latest_grounded_turn_available,
+			language=interaction_contract.detected_language,
+		)
 		frontdoor_semantic_result, frontdoor_contract, frontdoor_render_result, frontdoor_answer = evaluate_frontdoor_lane(
 			request_id=request_id,
 			session_id=session_name,
 			user_id=user,
 			site_name=site_name,
 			message=msg,
-			recent_messages=recent_frontdoor_messages,
+			recent_messages=frontdoor_recent_messages,
 			grounded_context_available=latest_grounded_turn_available,
 			latest_grounded_turn=latest_grounded_turn,
 			latest_recovery_contract_available=bool(latest_recovery_contract),
@@ -1359,6 +3965,132 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			defer_runtime_value_frontdoor=defer_runtime_value_frontdoor,
 			post_clarification_stop_acknowledgement=post_clarification_stop_acknowledgement,
 		)
+		if _frontdoor_context_isolation_retry_needed(
+			message=msg,
+			grounded_context_available=latest_grounded_turn_available,
+			frontdoor_contract=frontdoor_contract,
+		):
+			isolated_frontdoor_semantic_result, isolated_frontdoor_contract, isolated_frontdoor_render_result, isolated_frontdoor_answer = evaluate_frontdoor_lane(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=msg,
+				recent_messages=[],
+				grounded_context_available=latest_grounded_turn_available,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_recovery_contract_available=bool(latest_recovery_contract),
+				pre_frontdoor_reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+				defer_runtime_value_frontdoor=defer_runtime_value_frontdoor,
+				post_clarification_stop_acknowledgement=post_clarification_stop_acknowledgement,
+			)
+			if not _frontdoor_contract_handle_in_front_door(isolated_frontdoor_contract):
+				frontdoor_semantic_result = isolated_frontdoor_semantic_result
+				frontdoor_contract = isolated_frontdoor_contract
+				frontdoor_render_result = isolated_frontdoor_render_result
+				frontdoor_answer = isolated_frontdoor_answer
+	compound_runtime_message, active_compound_request_assessment = _resolve_compound_execution_runtime_message(
+		raw_message=raw_msg,
+		frontdoor_contract=frontdoor_contract,
+		latest_compound_assessment_payload=latest_compound_request_assessment,
+		control_evidence_payload=(
+			conversation_control_evidence_contract.to_payload()
+			if conversation_control_evidence_contract is not None
+			else None
+		),
+	)
+	if active_compound_request_assessment and isinstance(getattr(frontdoor_contract, "response_payload", None), dict):
+		frontdoor_contract.response_payload["compound_request_assessment"] = dict(active_compound_request_assessment)
+	if conversation_control_decision_contract is None:
+		conversation_control_decision_contract = _conversation_control_decision_from_compound_continuation(
+			request_id=request_id,
+			raw_message=raw_msg,
+			active_sequence_payload=active_compound_request_assessment,
+			runtime_message=compound_runtime_message,
+			control_evidence_payload=(
+				conversation_control_evidence_contract.to_payload()
+				if conversation_control_evidence_contract is not None
+				else None
+			),
+		)
+	if active_compound_request_assessment and _compound_request_stop_control_with_evidence(
+		raw_msg,
+		control_evidence_payload=(
+			conversation_control_evidence_contract.to_payload()
+			if conversation_control_evidence_contract is not None
+			else None
+		),
+	):
+		cancelled_compound_assessment = _cancel_compound_request_assessment_payload(
+			active_compound_request_assessment
+		)
+		compound_cancellation_decision_contract = _conversation_control_decision_from_compound_cancellation(
+			request_id=request_id,
+			raw_message=raw_msg,
+			active_sequence_payload=active_compound_request_assessment,
+			cancelled_sequence_payload=cancelled_compound_assessment,
+			control_evidence_payload=(
+				conversation_control_evidence_contract.to_payload()
+				if conversation_control_evidence_contract is not None
+				else None
+			),
+		)
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="front_door",
+			reason="The user stopped the remaining ordered compound-request steps.",
+			requires_runtime=False,
+			grounded_required=False,
+		)
+		_append_message(session_doc, "user", raw_msg)
+		_append_tool_payload(session_doc, interaction_contract.to_payload())
+		_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+		_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+		if cancelled_compound_assessment:
+			_append_tool_payload(session_doc, cancelled_compound_assessment)
+		if compound_cancellation_decision_contract is not None:
+			_append_tool_payload(session_doc, compound_cancellation_decision_contract.to_payload())
+		_append_tool_payload(session_doc, execution_path.to_payload())
+		_append_message(session_doc, "assistant", _assistant_text_payload("Okay, I’ll stop here."))
+		_append_tool_payload(
+			session_doc,
+			build_audit_envelope(
+				interaction_contract=interaction_contract,
+				followup_resolution=build_followup_resolution_contract(
+					request_id=request_id,
+					mode="front_door",
+					requested_modes=[],
+					target_dimension="",
+					target_limit=0,
+					sort_direction="",
+					target_metric="",
+					requested_columns=[],
+					requested_time_scope="",
+					target_capability_id="",
+					target_report="",
+					depends_on_grounded_turn=latest_grounded_turn_available,
+					self_contained=not latest_grounded_turn_available,
+					latest_grounded_turn_available=latest_grounded_turn_available,
+					reason="The user stopped the remaining ordered compound-request steps.",
+				),
+				execution_path=execution_path,
+				runtime_trace_payload={},
+				grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
+				answer_text="Okay, I’ll stop here.",
+			).to_payload(),
+		)
+		_save_session(session_doc, ignore_permissions=False)
+		return True, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "front_door",
+			"agent_meta": {
+				"engine": "compound_request_control",
+				"intent_class": "compound_request_stop",
+			},
+		}
+	if compound_runtime_message:
+		msg = compound_runtime_message
 	entity_drilldown = detect_entity_drilldown_request(
 		message=msg,
 		artifact_payload=latest_family_artifact if isinstance(latest_family_artifact, dict) else {},
@@ -1453,6 +4185,24 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and _reasoning_scope_suppression_allowed(context_isolation)
 	):
 		context_isolation = build_scope_decision_input()
+	replay_restore_handled, replay_restore_payload = _handle_prior_branch_restore_fresh_query(
+		session_doc=session_doc,
+		request_id=request_id,
+		session_id=session_name,
+		user_id=user,
+		site_name=site_name,
+		raw_message=raw_msg,
+		interaction_contract=interaction_contract,
+		conversation_control_evidence_contract=conversation_control_evidence_contract,
+		frontdoor_semantic_result=frontdoor_semantic_result,
+		frontdoor_contract=frontdoor_contract,
+		clarification_response_contract=clarification_response_contract,
+		response_policy_contract=provisional_response_policy_contract,
+		prior_branch_restore_contract=prior_branch_restore_contract,
+		prior_branch_restore_control_decision_contract=prior_branch_restore_control_decision_contract,
+	)
+	if replay_restore_handled and replay_restore_payload is not None:
+		return True, replay_restore_payload
 	repair_recent_messages = _recent_messages(session_doc, limit=8)
 	if latest_recovery_contract and not pending_clarification_signal and not bool(context_isolation.force_new_query):
 		repair_handled, repair_payload = handle_repair_turn(
@@ -1480,6 +4230,18 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			handle_compiled_first_turn_result=_handle_compiled_first_turn_result,
 		)
 		if repair_handled and repair_payload is not None:
+			repair_contract_payload = _latest_current_turn_repair_intent_contract(
+				session_doc=session_doc,
+				request_id=request_id,
+			)
+			repair_control_decision_contract = _conversation_control_decision_from_repair_contract(
+				request_id=request_id,
+				repair_contract_payload=repair_contract_payload,
+				latest_recovery_contract=latest_recovery_contract,
+			)
+			if repair_control_decision_contract is not None:
+				_append_tool_payload(session_doc, repair_control_decision_contract.to_payload())
+				_save_session(session_doc, ignore_permissions=False)
 			return True, repair_payload
 	if entity_drilldown is None:
 		frontdoor_handled, frontdoor_payload = handle_frontdoor_turn(
@@ -1521,32 +4283,74 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			frontdoor_contract=frontdoor_contract,
 			latest_grounded_turn_available=latest_grounded_turn_available,
 			latest_grounded_turn=latest_grounded_turn,
+			conversation_control_evidence_contract=conversation_control_evidence_contract,
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
 			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
 			assistant_text_payload=_assistant_text_payload,
 			save_session=_save_session,
 		)
+		conversation_control_decision_contract = _conversation_control_decision_from_clarification_response(
+			raw_message=raw_msg,
+			pending_clarification_signal=pending_clarification_signal,
+			clarification_response_contract=clarification_response_contract,
+		)
 		if clarification_handled and clarification_payload is not None:
+			if conversation_control_decision_contract is not None:
+				_append_tool_payload(session_doc, conversation_control_decision_contract.to_payload())
 			return True, clarification_payload
 		clarified_frontdoor_message = ""
+		clarification_lane = clarification_continuation_lane(pending_clarification_signal)
 		clarification_decision = (
 			str(clarification_response_contract.decision or "").strip()
 			if clarification_response_contract is not None
 			else ""
 		)
-		if (
-			clarification_response_contract is not None
-			and clarification_decision == "resolved_option"
-			and clarification_continuation_lane(pending_clarification_signal) == "front_door"
-		):
-			clarified_frontdoor_message = clarification_resolved_continuation_message(
-				signal_payload=pending_clarification_signal,
-				resolved_option=str(clarification_response_contract.resolved_option or "").strip(),
+		if clarification_response_contract is not None:
+			clarified_frontdoor_message = _resolved_clarification_runtime_message(
+				raw_message=raw_msg,
+				pending_clarification_signal=pending_clarification_signal,
+				clarification_response_contract=clarification_response_contract,
 			)
-		elif clarification_decision == "new_request":
-			clarified_frontdoor_message = raw_msg
-		if clarified_frontdoor_message and entity_drilldown is None:
+		frontdoor_reentry_message = _frontdoor_clarification_reentry_message(
+			raw_message=raw_msg,
+			clarification_lane=clarification_lane,
+			clarification_response_contract=clarification_response_contract,
+			clarified_runtime_message=clarified_frontdoor_message,
+		)
+		if frontdoor_reentry_message:
+			msg = frontdoor_reentry_message
+		frontdoor_clarification_continuation_active = _frontdoor_clarification_requires_fresh_query_reset(
+			clarification_lane=clarification_lane,
+			clarification_response_contract=clarification_response_contract,
+			clarified_runtime_message=clarified_frontdoor_message,
+		)
+		artifact_boundary_clarification_continuation_active = _artifact_boundary_clarification_requires_runtime_reset(
+			clarification_lane=clarification_lane,
+			clarification_response_contract=clarification_response_contract,
+			clarified_runtime_message=clarified_frontdoor_message,
+		)
+		if frontdoor_clarification_continuation_active:
+			semantic_intent = None
+			context_isolation = build_scope_decision_input(
+				force_new_query=True,
+				out_of_scope=False,
+				reason="The request resolves a front-door clarification into a fresh ERP query and should not inherit the prior artifact.",
+			)
+		if artifact_boundary_clarification_continuation_active:
+			semantic_intent = None
+			context_isolation = build_scope_decision_input()
+		if (
+			frontdoor_reentry_message
+			and entity_drilldown is None
+			and (clarification_lane == "front_door" or clarification_decision == "new_request")
+		):
+			clarified_frontdoor_recent_messages = _frontdoor_recent_messages_for_message(
+				message=frontdoor_reentry_message,
+				recent_messages=repair_recent_messages,
+				grounded_context_available=latest_grounded_turn_available,
+				language=interaction_contract.detected_language,
+			)
 			(
 				clarified_frontdoor_semantic_result,
 				clarified_frontdoor_contract,
@@ -1557,8 +4361,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				session_id=session_name,
 				user_id=user,
 				site_name=site_name,
-				message=clarified_frontdoor_message,
-				recent_messages=repair_recent_messages,
+				message=frontdoor_reentry_message,
+				recent_messages=clarified_frontdoor_recent_messages,
 				grounded_context_available=latest_grounded_turn_available,
 				latest_grounded_turn=latest_grounded_turn,
 				latest_recovery_contract_available=bool(latest_recovery_contract),
@@ -1568,7 +4372,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				session_doc=session_doc,
 				request_id=request_id,
 				session_id=session_name,
-				message=clarified_frontdoor_message,
+				message=frontdoor_reentry_message,
 				interaction_contract=interaction_contract,
 				frontdoor_semantic_result=clarified_frontdoor_semantic_result,
 				frontdoor_contract=clarified_frontdoor_contract,
@@ -1588,6 +4392,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			)
 			if frontdoor_handled and frontdoor_payload is not None:
 				return True, frontdoor_payload
+			frontdoor_semantic_result, frontdoor_contract, entity_drilldown = _apply_frontdoor_clarification_reentry_state(
+				frontdoor_semantic_result=frontdoor_semantic_result,
+				frontdoor_contract=frontdoor_contract,
+				entity_drilldown=entity_drilldown,
+				clarified_frontdoor_semantic_result=clarified_frontdoor_semantic_result,
+				clarified_frontdoor_contract=clarified_frontdoor_contract,
+				clarified_runtime_message=frontdoor_reentry_message,
+				latest_family_artifact=latest_family_artifact,
+				latest_grounded_turn=latest_grounded_turn,
+			)
 	compiled_rollout = _compiled_first_turn_rollout_decision(
 		session_name=session_name,
 		user=user,
@@ -1616,6 +4430,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	precomputed_evidence_answer = ""
 	precomputed_evidence_response: Dict[str, Any] = {}
 	precomputed_evidence_boundary_answer = ""
+	precomputed_evidence_request_contract: Dict[str, Any] = {}
 	if followup_context_available:
 		pre_reasoning_followup_resolution = build_followup_resolution(
 			request_id=request_id,
@@ -1629,16 +4444,23 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		reasoning_preempted_by_artifact_refinement = _reasoning_preempted_by_followup_refinement(
 			pre_reasoning_followup_resolution
 		)
+		precomputed_evidence_request_contract = _entity_detail_evidence_request_payload(
+			request_id=request_id,
+			raw_message=msg,
+			artifact_payload=latest_family_artifact,
+		)
 		precomputed_evidence_answer = _grounded_artifact_direct_evidence_answer(
 			raw_message=msg,
 			artifact_payload=latest_family_artifact,
 			grounded_turn=latest_grounded_turn,
+			evidence_request_contract=precomputed_evidence_request_contract,
 		)
 		if not precomputed_evidence_answer:
 			precomputed_evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
 				raw_message=msg,
 				artifact_payload=latest_family_artifact,
 				grounded_turn=latest_grounded_turn,
+				evidence_request_contract=precomputed_evidence_request_contract,
 			)
 	reasoning_display_preferences = _latest_display_preferences(
 		session_doc,
@@ -1776,6 +4598,20 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	)
 	if requery_upgrade is not None:
 		followup_resolution = requery_upgrade
+	followup_resolution = _preserve_artifact_boundary_clarification_followup_resolution(
+		request_id=request_id,
+		followup_resolution=followup_resolution,
+		clarification_continuation_active=artifact_boundary_clarification_continuation_active,
+		latest_grounded_turn_available=latest_grounded_turn_available,
+	)
+	followup_resolution = _preserve_current_artifact_direct_evidence_followup_resolution(
+		request_id=request_id,
+		followup_resolution=followup_resolution,
+		evidence_request_contract=precomputed_evidence_request_contract,
+		direct_evidence_answer=precomputed_evidence_answer,
+		evidence_boundary_answer=precomputed_evidence_boundary_answer,
+		latest_grounded_turn_available=followup_context_available,
+	)
 	provisional_scope_decision_contract = build_governed_scope_decision_contract(
 		request_id=request_id,
 		stage="followup_orchestration",
@@ -1791,6 +4627,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			request_id=request_id,
 			followup_resolution=followup_resolution,
 			scope_decision_contract=provisional_scope_decision_contract,
+		)
+		followup_resolution = _preserve_artifact_boundary_clarification_followup_resolution(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			clarification_continuation_active=artifact_boundary_clarification_continuation_active,
+			latest_grounded_turn_available=latest_grounded_turn_available,
 		)
 	continuation_contract = None
 	if followup_context_available:
@@ -1840,66 +4682,48 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			continuation_contract=continuation_contract,
 		)
 		recent_messages = []
-		requery_frontdoor_semantic_result, requery_frontdoor_contract, requery_frontdoor_render_result, requery_frontdoor_answer = evaluate_frontdoor_lane(
-			request_id=request_id,
-			session_id=session_name,
-			user_id=user,
-			site_name=site_name,
-			message=runtime_message,
-			recent_messages=[],
-			grounded_context_available=latest_grounded_turn_available,
-			latest_grounded_turn=latest_grounded_turn,
-			latest_recovery_contract_available=bool(latest_recovery_contract),
-			pre_frontdoor_reasoning_semantic_result=None,
-			defer_runtime_value_frontdoor=False,
-			post_clarification_stop_acknowledgement=False,
-		)
-		requery_frontdoor_handled, requery_frontdoor_payload = handle_frontdoor_turn(
-			session_doc=session_doc,
-			request_id=request_id,
-			session_id=session_name,
-			message=runtime_message,
-			interaction_contract=interaction_contract,
-			frontdoor_semantic_result=requery_frontdoor_semantic_result,
-			frontdoor_contract=requery_frontdoor_contract,
-			frontdoor_render_result=requery_frontdoor_render_result,
-			frontdoor_answer=requery_frontdoor_answer,
-			context_force_new_query=bool(context_isolation.force_new_query),
-			latest_grounded_turn_available=latest_grounded_turn_available,
-			latest_grounded_turn=latest_grounded_turn,
-			append_message=_append_message,
-			append_tool_payload=_append_tool_payload,
-			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
-			assistant_text_payload=_assistant_text_payload,
-			store_pending_clarification_signal=store_pending_clarification_signal,
-			save_session=_save_session,
+	elif followup_context_available:
+		contextual_runtime_message = _compile_contextual_entity_breakout_message(
 			raw_message=raw_msg,
-			clarification_response_contract=clarification_response_contract,
-			additional_tool_payloads=[
-				payload
-				for payload in [
-					response_policy_contract.to_payload(),
-					semantic_payload if isinstance(semantic_payload, dict) else {},
-					followup_resolution.to_payload(),
-					continuation_contract.to_payload() if continuation_contract is not None else {},
-					enrichment_compatibility_contract.to_payload() if enrichment_compatibility_contract is not None else {},
-					scope_decision_contract.to_payload(),
-				]
-				if isinstance(payload, dict) and payload
-			],
+			followup_resolution=followup_resolution,
+			grounded_turn=latest_grounded_turn,
+			artifact_payload=latest_family_artifact,
+			continuation_contract=continuation_contract,
 		)
-		if requery_frontdoor_handled and requery_frontdoor_payload is not None:
-			return True, requery_frontdoor_payload
+		if contextual_runtime_message:
+			runtime_message = contextual_runtime_message
+			recent_messages = []
+			if conversation_control_decision_contract is None:
+				conversation_control_decision_contract = _conversation_control_decision_from_recent_focus_runtime_message(
+					request_id=request_id,
+					raw_message=raw_msg,
+					runtime_message=contextual_runtime_message,
+					recent_focus_state=recent_focus_state,
+					followup_resolution=followup_resolution,
+					control_evidence_payload=(
+						conversation_control_evidence_contract.to_payload()
+						if conversation_control_evidence_contract is not None
+						else None
+					),
+				)
 
 	if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
 		session_doc.title = (raw_msg[:60] + "…") if len(raw_msg) > 60 else raw_msg
 
 	_append_message(session_doc, "user", raw_msg)
 	_append_tool_payload(session_doc, interaction_contract.to_payload())
+	if conversation_control_evidence_contract is not None:
+		_append_tool_payload(session_doc, conversation_control_evidence_contract.to_payload())
 	_append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
 	_append_tool_payload(session_doc, frontdoor_contract.to_payload())
+	if prior_branch_restore_contract is not None:
+		_append_tool_payload(session_doc, prior_branch_restore_contract.to_payload())
+	if prior_branch_restore_control_decision_contract is not None:
+		_append_tool_payload(session_doc, prior_branch_restore_control_decision_contract.to_payload())
 	if clarification_response_contract is not None:
 		_append_tool_payload(session_doc, clarification_response_contract.to_payload())
+	if conversation_control_decision_contract is not None:
+		_append_tool_payload(session_doc, conversation_control_decision_contract.to_payload())
 	_append_tool_payload(session_doc, response_policy_contract.to_payload())
 	if isinstance(semantic_payload, dict):
 		_append_tool_payload(session_doc, semantic_payload)
@@ -2008,15 +4832,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_save_session(session_doc, ignore_permissions=False)
 		return local_transform
 
-	skip_artifact_boundary_for_self_contained_breakout = bool(
-		governed_scope_decision_requires_fresh_query(scope_decision_contract)
-		and _message_looks_like_self_contained_governed_business_query(
-			message=msg,
-			language=interaction_contract.detected_language,
-		)
-		and not _message_has_grounded_context_anchor(msg)
+	skip_artifact_boundary = _should_skip_artifact_boundary(
+		scope_decision_contract=scope_decision_contract,
 	)
-	if entity_drilldown is None and not skip_artifact_boundary_for_self_contained_breakout:
+	if entity_drilldown is None and not skip_artifact_boundary:
 		artifact_boundary_handled, artifact_boundary_payload = handle_artifact_boundary_turn(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -2043,6 +4862,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			append_tool_payload=_append_tool_payload,
 			append_message=_append_message,
 			assistant_text_payload=_assistant_text_payload,
+			store_pending_clarification_signal=store_pending_clarification_signal,
 			save_session=_save_session,
 			precomputed_evidence_response=precomputed_evidence_response,
 			precomputed_evidence_answer=precomputed_evidence_answer,
@@ -2340,6 +5160,634 @@ def run_phase1_4_customer_credit_detail_followup_smoke() -> Dict[str, Any]:
 	)
 
 
+def run_phase3_3b_customer_detail_clarification_followup_smoke() -> Dict[str, Any]:
+	return _run_customer_detail_clarification_followup_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+		session_tool_payloads=_session_tool_payloads,
+		latest_tool_payload_by_type=_latest_tool_payload_by_type,
+	)
+
+
+def run_phase3_3c_customer_master_lookup_smoke() -> Dict[str, Any]:
+	return _run_phase3_3c_customer_master_lookup_smoke_helper()
+
+
+def run_phase_d2a_transaction_listing_today_requery_smoke() -> Dict[str, Any]:
+	return _run_phase_d2a_transaction_listing_today_requery_smoke_helper()
+
+
+def run_phase_d2c_transaction_listing_base_scope_reset_smoke() -> Dict[str, Any]:
+	return _run_phase_d2c_transaction_listing_base_scope_reset_smoke_helper()
+
+
+def run_phase_e2_1b_purchase_invoice_listing_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		frappe.clear_cache()
+		ok, first_payload = _run_smoke_fresh_query_turn_with_retry(
+			session_name=doc.name,
+			message="show me purchase invoices",
+			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
+		)
+		if not ok:
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: initial purchase invoice list request did not execute. "
+				f"payload={first_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=first_grounded_turn)
+		first_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		first_lower = first_assistant_text.lower()
+		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		first_reports = {
+			str(value or "").strip()
+			for value in (first_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		first_family_id = str(first_grounded_turn.get("artifact_family_id") or "").strip()
+		first_scope_id = str(((first_artifact.get("dimensions") or {}).get("scope_id") or "")).strip()
+		if "Purchase Invoice List" not in ({first_source_name} | first_reports):
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: grounded source did not bind to Purchase Invoice List. "
+				f"grounded_turn={first_grounded_turn!r}"
+			)
+		if first_family_id != "transaction_listing":
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: purchase invoice list did not land in transaction_listing family. "
+				f"grounded_turn={first_grounded_turn!r}"
+			)
+		if first_scope_id != "purchase_invoice":
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: normalized artifact did not preserve purchase_invoice scope. "
+				f"artifact={first_artifact!r}"
+			)
+		if any(
+			phrase in first_lower
+			for phrase in (
+				"can't show purchase invoices",
+				"can't open purchase invoices",
+				"which one would you like to see",
+			)
+		):
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: user-facing answer still reflected the old blocked path. "
+				f"assistant_text={first_assistant_text!r}"
+			)
+
+		frappe.clear_cache()
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show supplier and outstanding amount only",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		second_engine = str((((second_payload or {}).get("agent_meta") or {}).get("engine") or "")).strip()
+		if not ok or second_mode not in {
+			"compiled_first_turn",
+			"artifact_enrichment_boundary",
+			"recovery_guidance",
+			"legacy_runtime",
+			"legacy_runtime_rollout_fallback",
+		} and second_engine not in {"local_transform"}:
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: purchase invoice follow-up did not complete in an allowed lane. "
+				f"payload={second_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		second_lower = second_assistant_text.lower()
+		if "supplier" not in second_lower or "outstanding" not in second_lower:
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: follow-up answer did not honor supplier/outstanding projection. "
+				f"assistant_text={second_assistant_text!r}"
+			)
+		if any(
+			phrase in second_lower
+			for phrase in (
+				"can't answer it safely",
+				"can't safely add",
+				"needs a governed requery",
+				"which one would you like",
+			)
+		):
+			raise RuntimeError(
+				"Phase E2.1B purchase invoice smoke failed: follow-up answer fell back to an old blocked/clarify posture. "
+				f"assistant_text={second_assistant_text!r}"
+			)
+
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"first_source_name": first_source_name,
+			"first_family_id": first_family_id,
+			"first_scope_id": first_scope_id,
+			"second_mode": second_mode,
+			"second_engine": second_engine,
+			"first_answer_text": first_assistant_text,
+			"second_answer_text": second_assistant_text,
+		}
+
+	return _run_phase55_smoke_session("Phase E2.1B Purchase Invoice Listing Smoke", _runner)
+
+
+def run_phase_e1_4_item_master_activation_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		frappe.clear_cache()
+		ok, first_payload = _run_smoke_fresh_query_turn_with_retry(
+			session_name=doc.name,
+			message="give me some product list",
+			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
+		)
+		if not ok:
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: initial product list request did not execute. "
+				f"payload={first_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=first_grounded_turn)
+		first_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		first_lower = first_assistant_text.lower()
+		first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+		first_reports = {
+			str(value or "").strip()
+			for value in (first_grounded_turn.get("artifact_source_reports") or [])
+			if str(value or "").strip()
+		}
+		first_family_id = str(first_grounded_turn.get("artifact_family_id") or "").strip()
+		first_scope_id = str(((first_artifact.get("dimensions") or {}).get("scope_id") or "")).strip()
+		if "Item Master List" not in ({first_source_name} | first_reports):
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: grounded source did not bind to Item Master List. "
+				f"grounded_turn={first_grounded_turn!r}"
+			)
+		if first_family_id != "master_data_directory":
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: product list did not land in master_data_directory family. "
+				f"grounded_turn={first_grounded_turn!r}"
+			)
+		if first_scope_id != "item_master":
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: normalized artifact did not preserve item_master scope. "
+				f"artifact={first_artifact!r}"
+			)
+		if any(
+			phrase in first_lower
+			for phrase in (
+				"customers or suppliers",
+				"can't open items as a list",
+				"can't open item as a list",
+				"which one would you like",
+			)
+		):
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: user-facing answer still reflected the old blocked path. "
+				f"assistant_text={first_assistant_text!r}"
+			)
+
+		directory_rows = (
+			(first_artifact.get("sections") or {}).get("directory_rows")
+			if isinstance(first_artifact.get("sections"), dict)
+			else []
+		)
+		first_row = directory_rows[0] if isinstance(directory_rows, list) and directory_rows else {}
+		selected_item_label = str(
+			first_row.get("entity_name") or first_row.get("entity") or first_row.get("entity_code") or ""
+		).strip()
+		if not selected_item_label:
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item master list returned no selectable item row. "
+				f"artifact={first_artifact!r}"
+			)
+
+		frappe.clear_cache()
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="show item and brand only",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		second_engine = str((((second_payload or {}).get("agent_meta") or {}).get("engine") or "")).strip()
+		if not ok or (
+			second_mode
+			not in {
+				"compiled_first_turn",
+				"artifact_enrichment_boundary",
+				"recovery_guidance",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			}
+			and second_engine not in {"local_transform"}
+		):
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item projection follow-up did not complete in an allowed lane. "
+				f"payload={second_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		second_lower = second_assistant_text.lower()
+		if "brand" not in second_lower:
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: follow-up answer did not honor brand projection. "
+				f"assistant_text={second_assistant_text!r}"
+			)
+		if any(
+			phrase in second_lower
+			for phrase in (
+				"customers or suppliers",
+				"can't answer it safely",
+				"can't safely add",
+				"needs a governed requery",
+			)
+		):
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item projection follow-up fell back to an old blocked posture. "
+				f"assistant_text={second_assistant_text!r}"
+			)
+
+		frappe.clear_cache()
+		ok, third_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message=f"tell me more about {selected_item_label}",
+			user="Administrator",
+		)
+		third_mode = str((third_payload or {}).get("mode") or "").strip()
+		third_engine = str((((third_payload or {}).get("agent_meta") or {}).get("engine") or "")).strip()
+		third_agent_mode = str((((third_payload or {}).get("agent_meta") or {}).get("mode") or "")).strip()
+		if not ok or (
+			third_mode
+			not in {
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			}
+			and third_engine not in {"local_transform", "entity_detail"}
+			and third_agent_mode != "entity_drilldown"
+		):
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item detail follow-up did not execute. "
+				f"payload={third_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		third_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		third_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=third_grounded_turn)
+		third_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		third_lower = third_assistant_text.lower()
+		third_family_id = str(third_grounded_turn.get("artifact_family_id") or "").strip()
+		third_entity_type = str(((third_artifact.get("dimensions") or {}).get("entity_type") or "")).strip()
+		if third_family_id != "entity_detail" or third_entity_type != "item":
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item detail did not land in shared entity_detail family. "
+				f"grounded_turn={third_grounded_turn!r} artifact={third_artifact!r}"
+			)
+		if any(
+			phrase in third_lower
+			for phrase in (
+				"customers or suppliers",
+				"can't open items as a list",
+				"can't open item as a list",
+				"which one would you like",
+			)
+		):
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item detail answer fell back to the wrong master-data path. "
+				f"assistant_text={third_assistant_text!r}"
+			)
+		if not any(phrase in third_lower for phrase in ("item profile", "brand", "item group")):
+			raise RuntimeError(
+				"Phase E1.4 item master activation smoke failed: item detail answer did not render item profile content. "
+				f"assistant_text={third_assistant_text!r}"
+			)
+
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"first_source_name": first_source_name,
+			"first_family_id": first_family_id,
+			"first_scope_id": first_scope_id,
+			"selected_item_label": selected_item_label,
+			"second_mode": second_mode,
+			"second_engine": second_engine,
+			"third_mode": third_mode,
+			"third_engine": third_engine,
+			"third_agent_mode": third_agent_mode,
+			"third_family_id": third_family_id,
+			"third_entity_type": third_entity_type,
+			"first_answer_text": first_assistant_text,
+			"second_answer_text": second_assistant_text,
+			"third_answer_text": third_assistant_text,
+		}
+
+	return _run_phase55_smoke_session("Phase E1.4 Item Master Activation Smoke", _runner)
+
+
+def run_phase_e1_5_item_deictic_continuity_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		item_rows = frappe.get_all("Item", fields=["name", "item_name"], order_by="modified desc", limit=10)
+		selected_item_label = ""
+		for row in item_rows or []:
+			if not isinstance(row, dict):
+				continue
+			selected_item_label = str(row.get("item_name") or row.get("name") or "").strip()
+			if selected_item_label:
+				break
+		if not selected_item_label:
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: no live item label was available to seed the lookup."
+			)
+
+		frappe.clear_cache()
+		ok, first_payload = _run_smoke_fresh_query_turn_with_retry(
+			session_name=doc.name,
+			message=f'do u have product name similar to "{selected_item_label}"',
+			user="Administrator",
+			allowed_modes={
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			},
+		)
+		if not ok:
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: initial product candidate-resolution request did not execute. "
+				f"payload={first_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		first_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		first_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=first_grounded_turn)
+		first_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		first_lower = first_assistant_text.lower()
+		first_mode = str((first_payload or {}).get("mode") or "").strip()
+		first_family_id = str(first_grounded_turn.get("artifact_family_id") or "").strip()
+		first_scope_id = str(((first_artifact.get("dimensions") or {}).get("scope_id") or "")).strip()
+		first_resolution = (
+			(first_artifact.get("sections") or {}).get("entity_reference_resolution")
+			if isinstance(first_artifact.get("sections"), dict)
+			else {}
+		)
+		first_directory_rows = (
+			(first_artifact.get("sections") or {}).get("directory_rows")
+			if isinstance(first_artifact.get("sections"), dict)
+			else []
+		)
+		first_resolved_entity = (
+			first_resolution.get("resolved_entity")
+			if isinstance(first_resolution, dict) and isinstance(first_resolution.get("resolved_entity"), dict)
+			else {}
+		)
+		first_resolution_status = str((first_resolution or {}).get("resolution_status") or "").strip()
+		first_resolved_key = str(
+			(first_resolved_entity or {}).get("entity_key") or (first_resolved_entity or {}).get("entity_label") or ""
+		).strip()
+		if not first_resolved_key and isinstance(first_directory_rows, list) and len(first_directory_rows) == 1:
+			first_directory_row = first_directory_rows[0] if isinstance(first_directory_rows[0], dict) else {}
+			first_resolved_key = str(
+				first_directory_row.get("entity_code") or first_directory_row.get("entity_name") or first_directory_row.get("entity") or ""
+			).strip()
+			if first_resolved_key and not first_resolution_status:
+				first_resolution_status = "single_row_context"
+		if first_family_id != "master_data_directory" or first_scope_id != "item_master":
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: candidate resolution did not stay in shared item master directory family. "
+				f"grounded_turn={first_grounded_turn!r} artifact={first_artifact!r}"
+			)
+		if first_resolution_status not in {"resolved", "single_row_context"} or not first_resolved_key:
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: candidate resolution did not produce a single item context. "
+				f"artifact={first_artifact!r}"
+			)
+		if any(
+			phrase in first_lower
+			for phrase in (
+				"customers or suppliers",
+				"can't open items as a list",
+				"can't open item as a list",
+				"which one would you like",
+			)
+		):
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: candidate resolution answer fell back to an old blocked posture. "
+				f"assistant_text={first_assistant_text!r}"
+			)
+
+		frappe.clear_cache()
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="tell me more about that product",
+			user="Administrator",
+		)
+		second_mode = str((second_payload or {}).get("mode") or "").strip()
+		second_engine = str((((second_payload or {}).get("agent_meta") or {}).get("engine") or "")).strip()
+		second_agent_mode = str((((second_payload or {}).get("agent_meta") or {}).get("mode") or "")).strip()
+		if not ok or (
+			second_mode
+			not in {
+				"compiled_first_turn",
+				"legacy_runtime",
+				"legacy_runtime_rollout_fallback",
+			}
+			and second_engine not in {"entity_detail"}
+			and second_agent_mode != "entity_drilldown"
+		):
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: deictic product follow-up did not execute. "
+				f"payload={second_payload!r} latest_assistant={_latest_assistant_payload(session_doc)!r}"
+			)
+
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=second_grounded_turn)
+		second_assistant_text = str(_latest_assistant_payload(session_doc).get("text") or "").strip()
+		second_lower = second_assistant_text.lower()
+		second_family_id = str(second_grounded_turn.get("artifact_family_id") or "").strip()
+		second_entity_type = str(((second_artifact.get("dimensions") or {}).get("entity_type") or "")).strip()
+		second_entity_key = str(((second_artifact.get("dimensions") or {}).get("entity_key") or "")).strip()
+		if second_family_id != "entity_detail" or second_entity_type != "item":
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: deictic product follow-up did not land in shared entity_detail item path. "
+				f"grounded_turn={second_grounded_turn!r} artifact={second_artifact!r}"
+			)
+		if first_resolved_key and second_entity_key and first_resolved_key != second_entity_key:
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: deictic product follow-up did not preserve the resolved item identity. "
+				f"resolved_key={first_resolved_key!r} detail_key={second_entity_key!r}"
+			)
+		if any(
+			phrase in second_lower
+			for phrase in (
+				"customers or suppliers",
+				"can't open items as a list",
+				"can't open item as a list",
+				"which one would you like",
+			)
+		):
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: deictic product follow-up fell back to the wrong path. "
+				f"assistant_text={second_assistant_text!r}"
+			)
+		if not any(phrase in second_lower for phrase in ("item profile", "brand", "item group")):
+			raise RuntimeError(
+				"Phase E1.5 item deictic continuity smoke failed: detail answer did not render item profile content. "
+				f"assistant_text={second_assistant_text!r}"
+			)
+
+		return {
+			"ok": True,
+			"selected_item_label": selected_item_label,
+			"first_mode": first_mode,
+			"first_family_id": first_family_id,
+			"first_scope_id": first_scope_id,
+			"first_resolution_status": first_resolution_status,
+			"first_resolved_key": first_resolved_key,
+			"first_answer_text": first_assistant_text,
+			"second_mode": second_mode,
+			"second_family_id": second_family_id,
+			"second_engine": second_engine,
+			"second_agent_mode": second_agent_mode,
+			"second_entity_type": second_entity_type,
+			"second_entity_key": second_entity_key,
+			"second_answer_text": second_assistant_text,
+		}
+
+	return _run_phase55_smoke_session("Phase E1.5 Item Deictic Continuity Smoke", _runner)
+
+
+def run_phase_e1_6_item_inventory_followup_debug_smoke() -> Dict[str, Any]:
+	def _runner(doc) -> Dict[str, Any]:
+		third_message = "how many stocks do we have for that products, and in which warehouse?"
+		frappe.clear_cache()
+		ok, first_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message='do u have product name similar to "Type-C Cable 1m Fast Charge"?',
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError(f"Phase E1.6 debug smoke failed on first turn: {first_payload!r}")
+
+		frappe.clear_cache()
+		ok, second_payload = handle_qwen_user_message(
+			session_name=doc.name,
+			message="tell me more about that product",
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError(f"Phase E1.6 debug smoke failed on second turn: {second_payload!r}")
+		session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+		second_grounded_turn = _latest_grounded_turn_contract(session_doc)
+		second_artifact = _latest_normalized_family_artifact(session_doc, grounded_turn=second_grounded_turn)
+		stock_rows = (
+			(second_artifact.get("sections") or {}).get("stock_rows")
+			if isinstance((second_artifact.get("sections") or {}), dict)
+			else []
+		)
+		third_evidence_request = _entity_detail_evidence_request_payload(
+			request_id="phase-e1-6-debug",
+			raw_message=third_message,
+			artifact_payload=second_artifact,
+		)
+		third_evidence_answer = _grounded_artifact_direct_evidence_answer(
+			raw_message=third_message,
+			artifact_payload=second_artifact,
+			grounded_turn=second_grounded_turn,
+			evidence_request_contract=third_evidence_request,
+		)
+		third_evidence_boundary = _grounded_artifact_evidence_boundary_answer(
+			raw_message=third_message,
+			artifact_payload=second_artifact,
+			grounded_turn=second_grounded_turn,
+			evidence_request_contract=third_evidence_request,
+		)
+
+		try:
+			frappe.clear_cache()
+			ok, third_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message=third_message,
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			return {
+				"ok": ok,
+				"third_payload": third_payload,
+				"second_grounded_turn": second_grounded_turn,
+				"second_artifact": second_artifact,
+				"second_stock_row_count": len(stock_rows) if isinstance(stock_rows, list) else 0,
+				"third_evidence_request": third_evidence_request,
+				"third_evidence_answer": third_evidence_answer,
+				"third_evidence_boundary": third_evidence_boundary,
+				"latest_assistant": _latest_assistant_payload(session_doc),
+				"latest_grounded_turn": _latest_grounded_turn_contract(session_doc),
+				"latest_followup_resolution": _latest_tool_payload_by_type(
+					_session_tool_payloads(session_doc),
+					"qwen_followup_resolution",
+				),
+				"latest_execution_path": _latest_tool_payload_by_type(
+					_session_tool_payloads(session_doc),
+					"qwen_execution_path",
+				),
+				"latest_qwen_trace": _latest_qwen_trace_payload(session_doc),
+				"latest_artifact": _latest_normalized_family_artifact(
+					session_doc,
+					grounded_turn=_latest_grounded_turn_contract(session_doc),
+				),
+			}
+		except Exception:
+			session_doc = frappe.get_doc(QWEN_SESSION_DOCTYPE, doc.name)
+			return {
+				"ok": False,
+				"error_traceback": traceback.format_exc(),
+				"second_grounded_turn": second_grounded_turn,
+				"second_artifact": second_artifact,
+				"second_stock_row_count": len(stock_rows) if isinstance(stock_rows, list) else 0,
+				"third_evidence_request": third_evidence_request,
+				"third_evidence_answer": third_evidence_answer,
+				"third_evidence_boundary": third_evidence_boundary,
+				"latest_assistant": _latest_assistant_payload(session_doc),
+				"latest_grounded_turn": _latest_grounded_turn_contract(session_doc),
+				"latest_followup_resolution": _latest_tool_payload_by_type(
+					_session_tool_payloads(session_doc),
+					"qwen_followup_resolution",
+				),
+				"latest_execution_path": _latest_tool_payload_by_type(
+					_session_tool_payloads(session_doc),
+					"qwen_execution_path",
+				),
+				"latest_qwen_trace": _latest_qwen_trace_payload(session_doc),
+				"latest_artifact": _latest_normalized_family_artifact(
+					session_doc,
+					grounded_turn=_latest_grounded_turn_contract(session_doc),
+				),
+			}
+
+	return _run_phase55_smoke_session("Phase E1.6 Item Inventory Follow-Up Debug Smoke", _runner)
+
+
 def run_phase1_4_customer_credit_policy_followup_smoke() -> Dict[str, Any]:
 	return _run_customer_credit_policy_followup_smoke_helper(
 		frappe_module=frappe,
@@ -2558,6 +6006,24 @@ def _latest_tool_payload_by_type(tool_payloads: List[Dict[str, Any]], payload_ty
 		if str(item.get("type") or "").strip() == str(payload_type or "").strip():
 			return item
 	return {}
+
+
+def _latest_tool_payload_position(
+	tool_payloads: List[Dict[str, Any]],
+	*,
+	payload_type: str,
+	request_id: str = "",
+) -> int:
+	clean_payload_type = str(payload_type or "").strip()
+	clean_request_id = str(request_id or "").strip()
+	for index in range(len(tool_payloads) - 1, -1, -1):
+		item = tool_payloads[index] if isinstance(tool_payloads[index], dict) else {}
+		if str(item.get("type") or "").strip() != clean_payload_type:
+			continue
+		if clean_request_id and str(item.get("request_id") or "").strip() != clean_request_id:
+			continue
+		return index
+	return -1
 
 
 def _run_family_evaluation_case(*, case: Dict[str, Any], user: str = "Administrator") -> Dict[str, Any]:
