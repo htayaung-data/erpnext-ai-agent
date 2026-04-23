@@ -10,6 +10,12 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_financial_summary_resolution_contract,
 	build_fresh_query_interpretation_contract,
 )
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	governed_scope_family_policy,
+	master_data_lookup_mode_allowed,
+	scope_id_for_entity_grain,
+	scope_id_for_listing_view,
+)
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_fresh_query_defaults,
 	capability_ontology_concepts,
@@ -59,6 +65,262 @@ def _transaction_listing_rules() -> List[Dict[str, Any]]:
 		for rule in rules
 		if isinstance(rule, dict) and str(rule.get("intent_class") or "").strip() == "transaction_listing"
 	]
+
+
+def _master_data_lookup_rules() -> List[Dict[str, Any]]:
+	rules = load_semantic_resolution_registry().get("family_resolution_rules")
+	if not isinstance(rules, list):
+		return []
+	return [
+		dict(rule)
+		for rule in rules
+		if isinstance(rule, dict) and str(rule.get("intent_class") or "").strip() == "master_data_lookup"
+	]
+
+
+def _family_execution_allowed(scope_id: str, family_id: str) -> bool:
+	if not str(scope_id or "").strip() or not str(family_id or "").strip():
+		return False
+	policy = governed_scope_family_policy(scope_id, family_id)
+	return str(policy.get("compatibility_level") or "").strip() in {"full_consumption", "projection_only"}
+
+
+def _unsupported_transaction_listing_view_outcome(
+	interpretation: FreshQueryInterpretationContract,
+	*,
+	listing_view: str,
+	rules: List[Dict[str, Any]],
+) -> SemanticResolutionOutcome:
+	supported_rules = [
+		rule
+		for rule in rules
+		if _family_execution_allowed(
+			scope_id_for_listing_view(str((rule.get("required_slots") or {}).get("listing_view") or "").strip()),
+			"transaction_listing",
+		)
+	]
+	candidate_reports = list(
+		dict.fromkeys(
+			report_name
+			for rule in supported_rules
+			for report_name in _clean_list(rule.get("candidate_reports"))
+		)
+	)
+	supported_listing_views = list(
+		dict.fromkeys(
+			str((rule.get("required_slots") or {}).get("listing_view") or "").strip()
+			for rule in supported_rules
+			if isinstance(rule, dict) and isinstance(rule.get("required_slots"), dict)
+		)
+	)
+	ambiguity_flags = list(dict.fromkeys(_clean_list(interpretation.ambiguity_flags) + ["unsupported_request"]))
+	ambiguity_reason = (
+		f"Unsupported transaction listing view `{listing_view}` cannot be executed as an active document-list view."
+	)
+	scope_id = scope_id_for_listing_view(listing_view)
+	resolved_interpretation = build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots={**dict(interpretation.extracted_slots), **({"scope_id": scope_id} if scope_id else {})},
+		ambiguity_flags=ambiguity_flags,
+		ambiguity_reason=ambiguity_reason,
+		confidence=float(interpretation.confidence or 0.0),
+	)
+	contract = SemanticResolutionContract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class="transaction_listing",
+		primary_business_area="transaction",
+		resolved_slots={"listing_view": listing_view},
+		slot_confidence={"listing_view": float(interpretation.confidence or 0.0)},
+		candidate_family_ids=["transaction_listing"],
+		candidate_capability_ids=[],
+		candidate_reports=candidate_reports,
+		ambiguity_flags=["unsupported_request"],
+		ambiguity_reason=ambiguity_reason,
+		resolution_source={
+			"intent_class": "semantic_runtime",
+			"listing_view": "unresolved",
+		},
+		governed_decision="clarify",
+		governed_reason=(
+			"Transaction-listing routing must not collapse an explicitly requested unsupported document-list view into a different governed document family."
+		),
+		scope_id=scope_id,
+	)
+	return SemanticResolutionOutcome(
+		interpretation=resolved_interpretation,
+		contract=contract,
+		clarification_reason_type="transaction_listing_surface_unsupported",
+		clarification_details={
+			"requested_listing_view": listing_view,
+			"supported_listing_views": supported_listing_views,
+			"report_candidates": candidate_reports,
+		},
+		blocks_legacy_fallback=True,
+	)
+
+
+def _unsupported_master_data_scope_outcome(
+	interpretation: FreshQueryInterpretationContract,
+	*,
+	entity_grain: str,
+	rules: List[Dict[str, Any]],
+) -> SemanticResolutionOutcome:
+	supported_rules = [
+		rule
+		for rule in rules
+		if _family_execution_allowed(
+			scope_id_for_entity_grain(str((rule.get("required_slots") or {}).get("entity_grain") or "").strip()),
+			"master_data_lookup",
+		)
+	]
+	candidate_reports = list(
+		dict.fromkeys(
+			report_name
+			for rule in supported_rules
+			for report_name in _clean_list(rule.get("candidate_reports"))
+		)
+	)
+	supported_entity_grains = list(
+		dict.fromkeys(
+			str((rule.get("required_slots") or {}).get("entity_grain") or "").strip()
+			for rule in supported_rules
+			if isinstance(rule, dict) and isinstance(rule.get("required_slots"), dict)
+		)
+	)
+	ambiguity_flags = list(dict.fromkeys(_clean_list(interpretation.ambiguity_flags) + ["unsupported_request"]))
+	ambiguity_reason = (
+		f"Unsupported master-data directory scope `{entity_grain}` is not active for shared listing execution."
+	)
+	scope_id = scope_id_for_entity_grain(entity_grain)
+	resolved_interpretation = build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=ambiguity_flags,
+		ambiguity_reason=ambiguity_reason,
+		confidence=float(interpretation.confidence or 0.0),
+	)
+	contract = SemanticResolutionContract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class="master_data_lookup",
+		primary_business_area="master_data",
+		resolved_slots={"entity_grain": entity_grain},
+		slot_confidence={"entity_grain": float(interpretation.confidence or 0.0)},
+		candidate_family_ids=list(
+			dict.fromkeys(
+				family_id
+				for rule in supported_rules
+				for family_id in _clean_list(rule.get("candidate_family_ids"))
+			)
+		),
+		candidate_capability_ids=[],
+		candidate_reports=candidate_reports,
+		ambiguity_flags=["unsupported_request"],
+		ambiguity_reason=ambiguity_reason,
+		resolution_source={
+			"intent_class": "semantic_runtime",
+			"entity_grain": "unresolved",
+		},
+		governed_decision="clarify",
+		governed_reason=(
+			"Master-data directory routing must fail closed when the requested entity grain is not active for shared directory lookup."
+		),
+		scope_id=scope_id,
+	)
+	return SemanticResolutionOutcome(
+		interpretation=resolved_interpretation,
+		contract=contract,
+		clarification_reason_type="master_data_scope_unsupported",
+		clarification_details={
+			"requested_entity_grain": entity_grain,
+			"supported_entity_grains": supported_entity_grains,
+			"report_candidates": candidate_reports,
+		},
+		blocks_legacy_fallback=True,
+	)
+
+
+def _unsupported_master_data_mode_outcome(
+	interpretation: FreshQueryInterpretationContract,
+	*,
+	entity_grain: str,
+	lookup_mode: str,
+) -> SemanticResolutionOutcome:
+	ambiguity_reason = (
+		"The requested master-data lookup mode is not active for the shared directory family."
+	)
+	scope_id = scope_id_for_entity_grain(entity_grain)
+	resolved_interpretation = build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=list(dict.fromkeys(_clean_list(interpretation.ambiguity_flags) + ["unsupported_request"])),
+		ambiguity_reason=ambiguity_reason,
+		confidence=float(interpretation.confidence or 0.0),
+	)
+	contract = SemanticResolutionContract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class="master_data_lookup",
+		primary_business_area="master_data",
+		resolved_slots={"entity_grain": entity_grain, "lookup_mode": lookup_mode},
+		slot_confidence={
+			"entity_grain": float(interpretation.confidence or 0.0),
+			"lookup_mode": float(interpretation.confidence or 0.0),
+		},
+		candidate_family_ids=["master_data_lookup", "entity_detail"],
+		candidate_capability_ids=[],
+		candidate_reports=[],
+		ambiguity_flags=["unsupported_request"],
+		ambiguity_reason=ambiguity_reason,
+		resolution_source={
+			"intent_class": "semantic_runtime",
+			"entity_grain": "resolved",
+			"lookup_mode": "unsupported_for_master_data_lookup",
+		},
+		governed_decision="clarify",
+		governed_reason=(
+			"Master-data lookup must fail closed when the requested mode belongs to another family contract."
+		),
+		scope_id=scope_id,
+	)
+	return SemanticResolutionOutcome(
+		interpretation=resolved_interpretation,
+		contract=contract,
+		clarification_reason_type="master_data_mode_unsupported",
+		clarification_details={
+			"requested_entity_grain": entity_grain,
+			"requested_lookup_mode": lookup_mode,
+		},
+		blocks_legacy_fallback=True,
+	)
 
 
 def resolve_financial_statement_interpretation(
@@ -201,24 +463,38 @@ def resolve_transaction_listing_interpretation(
 		if isinstance(interpretation.extracted_slots, dict)
 		else {}
 	)
+	listing_view = str(extracted_slots.get("listing_view") or "").strip()
+	if listing_view and not _family_execution_allowed(
+		scope_id_for_listing_view(listing_view),
+		"transaction_listing",
+	):
+		return _unsupported_transaction_listing_view_outcome(
+			interpretation,
+			listing_view=listing_view,
+			rules=rules,
+		)
 	current_reports = [
 		report_name
 		for report_name in _clean_list(interpretation.candidate_reports)
 		if report_name in report_to_rule
 	]
 	current_reports = list(dict.fromkeys(current_reports))
-	if len(current_reports) == 1:
+	if listing_view:
+		for rule in rules:
+			required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+			if str(required_slots.get("listing_view") or "").strip() == listing_view:
+				selected_rule = rule
+				resolution_source = "semantic_runtime"
+				break
+		if selected_rule is None:
+			return _unsupported_transaction_listing_view_outcome(
+				interpretation,
+				listing_view=listing_view,
+				rules=rules,
+			)
+	elif len(current_reports) == 1:
 		selected_rule = report_to_rule[current_reports[0]]
 		resolution_source = "semantic_runtime"
-	else:
-		listing_view = str(extracted_slots.get("listing_view") or "").strip()
-		if listing_view:
-			for rule in rules:
-				required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
-				if str(required_slots.get("listing_view") or "").strip() == listing_view:
-					selected_rule = rule
-					resolution_source = "semantic_runtime"
-					break
 	if selected_rule is None:
 		current_capability_ids = [
 			capability_id
@@ -256,6 +532,16 @@ def resolve_transaction_listing_interpretation(
 	)
 	required_slots = selected_rule.get("required_slots") if isinstance(selected_rule.get("required_slots"), dict) else {}
 	listing_view = str(required_slots.get("listing_view") or "").strip()
+	scope_id = scope_id_for_listing_view(listing_view)
+	if listing_view and not _family_execution_allowed(
+		scope_id_for_listing_view(listing_view),
+		"transaction_listing",
+	):
+		return _unsupported_transaction_listing_view_outcome(
+			interpretation,
+			listing_view=listing_view,
+			rules=rules,
+		)
 	resolved_interpretation = build_fresh_query_interpretation_contract(
 		request_id=interpretation.request_id,
 		session_id=interpretation.session_id,
@@ -267,7 +553,7 @@ def resolve_transaction_listing_interpretation(
 		requested_time_scope=interpretation.requested_time_scope,
 		target_limit=interpretation.target_limit,
 		requested_presentation=list(interpretation.requested_presentation),
-		extracted_slots=dict(interpretation.extracted_slots),
+		extracted_slots={**dict(interpretation.extracted_slots), **({"scope_id": scope_id} if scope_id else {})},
 		ambiguity_flags=[
 			flag for flag in _clean_list(interpretation.ambiguity_flags) if flag != "ambiguous_report"
 		],
@@ -298,6 +584,109 @@ def resolve_transaction_listing_interpretation(
 			if resolution_source == "semantic_runtime"
 			else "Transaction-listing view defaulted through governed metadata because the interpretation did not resolve a single governed document-listing target."
 		),
+		scope_id=scope_id,
+	)
+	return SemanticResolutionOutcome(
+		interpretation=resolved_interpretation,
+		contract=contract,
+	)
+
+
+def resolve_master_data_lookup_interpretation(
+	interpretation: FreshQueryInterpretationContract,
+) -> SemanticResolutionOutcome | None:
+	if str(interpretation.intent_class or "").strip() != "master_data_lookup":
+		return None
+
+	rules = _master_data_lookup_rules()
+	extracted_slots = (
+		dict(interpretation.extracted_slots)
+		if isinstance(interpretation.extracted_slots, dict)
+		else {}
+	)
+	entity_grain = str(extracted_slots.get("entity_grain") or "").strip()
+	if not entity_grain:
+		return None
+	lookup_mode = str(extracted_slots.get("lookup_mode") or "").strip()
+	if not _family_execution_allowed(
+		scope_id_for_entity_grain(entity_grain),
+		"master_data_lookup",
+	):
+		return _unsupported_master_data_scope_outcome(
+			interpretation,
+			entity_grain=entity_grain,
+			rules=rules,
+		)
+	if lookup_mode and not master_data_lookup_mode_allowed(entity_grain, lookup_mode):
+		return _unsupported_master_data_mode_outcome(
+			interpretation,
+			entity_grain=entity_grain,
+			lookup_mode=lookup_mode,
+		)
+
+	selected_rule: Dict[str, Any] | None = None
+	for rule in rules:
+		required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+		if str(required_slots.get("entity_grain") or "").strip() == entity_grain:
+			selected_rule = rule
+			break
+	if selected_rule is None:
+		return _unsupported_master_data_scope_outcome(
+			interpretation,
+			entity_grain=entity_grain,
+			rules=rules,
+		)
+
+	selected_capability_ids = _clean_list(selected_rule.get("candidate_capability_ids"))
+	selected_reports = _clean_list(selected_rule.get("candidate_reports"))
+	selected_capability_id = selected_capability_ids[0] if selected_capability_ids else ""
+	defaults = capability_fresh_query_defaults(selected_capability_id, intent_class="master_data_lookup")
+	requested_dimensions = (
+		list(interpretation.requested_dimensions)
+		or _clean_list(defaults.get("default_dimensions"))
+	)
+	scope_id = scope_id_for_entity_grain(entity_grain)
+	requested_metrics = (
+		list(interpretation.requested_metrics)
+		or _clean_list(defaults.get("default_metrics"))
+	)
+	resolved_interpretation = build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=selected_capability_ids,
+		candidate_reports=selected_reports,
+		requested_dimensions=requested_dimensions,
+		requested_metrics=requested_metrics,
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots={**dict(interpretation.extracted_slots), **({"scope_id": scope_id} if scope_id else {})},
+		ambiguity_flags=[
+			flag for flag in _clean_list(interpretation.ambiguity_flags) if flag != "ambiguous_report"
+		],
+		ambiguity_reason="",
+		confidence=float(interpretation.confidence or 0.0),
+	)
+	contract = SemanticResolutionContract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class="master_data_lookup",
+		primary_business_area=entity_grain,
+		resolved_slots={"entity_grain": entity_grain},
+		slot_confidence={"entity_grain": float(interpretation.confidence or 0.0)},
+		candidate_family_ids=_clean_list(selected_rule.get("candidate_family_ids")),
+		candidate_capability_ids=selected_capability_ids,
+		candidate_reports=selected_reports,
+		ambiguity_flags=[],
+		ambiguity_reason="",
+		resolution_source={
+			"intent_class": "semantic_runtime",
+			"entity_grain": "semantic_runtime",
+		},
+		governed_decision=str(selected_rule.get("governed_decision") or "execute").strip() or "execute",
+		governed_reason="Master-data directory scope resolved from the governed fresh-query interpretation contract.",
+		scope_id=scope_id,
 	)
 	return SemanticResolutionOutcome(
 		interpretation=resolved_interpretation,
@@ -1458,6 +1847,7 @@ def resolve_interpretation_semantically(
 	for resolver in (
 		resolve_financial_summary_interpretation,
 		resolve_transaction_listing_interpretation,
+		resolve_master_data_lookup_interpretation,
 		resolve_financial_statement_interpretation,
 		resolve_inventory_summary_interpretation,
 		resolve_aging_analysis_interpretation,

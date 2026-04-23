@@ -8,7 +8,13 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	RenderedFamilyResponseContract,
 	build_rendered_family_response_contract,
 )
-from ai_assistant_ui.qwen_chat.metadata import composite_read_renderer_id, report_family_renderer_id
+from ai_assistant_ui.qwen_chat.governed_scope_registry import scope_id_for_entity_grain
+from ai_assistant_ui.qwen_chat.metadata import (
+	composite_read_renderer_id,
+	financial_statement_report_name,
+	get_scope_projection_spec,
+	report_family_renderer_id,
+)
 
 
 def _clean_rows(values: Any) -> List[Dict[str, Any]]:
@@ -190,6 +196,24 @@ def _requested_columns(dimensions: Dict[str, Any], response_overrides: Dict[str,
 	return list(dict.fromkeys([value for value in normalized if _clean_text(value)]))
 
 
+def _display_row_count(requested_count: int, displayed_rows: List[Dict[str, Any]]) -> int:
+	if displayed_rows:
+		return len(displayed_rows)
+	return max(0, int(requested_count or 0))
+
+
+def _normalized_metric_projection_columns(requested_columns: List[str], metric_key: str) -> List[str]:
+	normalized: List[str] = []
+	for value in requested_columns or []:
+		key = metric_key if value == "amount" else value
+		clean_key = _clean_text(key)
+		if not clean_key:
+			continue
+		if clean_key not in normalized:
+			normalized.append(clean_key)
+	return normalized
+
+
 def _suppress_summary_block(
 	dimensions: Dict[str, Any],
 	response_overrides: Dict[str, Any] | None,
@@ -265,6 +289,32 @@ def _title_with_period(title: str, period: Dict[str, Any]) -> str:
 	return title
 
 
+def _period_phrase(period: Dict[str, Any]) -> str:
+	from_date = _clean_text((period or {}).get("from_date"))
+	to_date = _clean_text((period or {}).get("to_date"))
+	if from_date and to_date:
+		return f"for the period {from_date} to {to_date}"
+	if to_date:
+		return f"as of {to_date}"
+	return ""
+
+
+def _pluralize_label(label: str, count: int) -> str:
+	text = _clean_text(label)
+	if not text:
+		return "Items" if count != 1 else "Item"
+	if count == 1:
+		return text
+	lower = text.lower()
+	if lower.endswith("ies") or lower.endswith("ses"):
+		return text
+	if lower.endswith("y") and len(text) > 1 and text[-2].lower() not in "aeiou":
+		return text[:-1] + "ies"
+	if lower.endswith("s"):
+		return text
+	return text + "s"
+
+
 def _markdown_table(headers: List[str], rows: List[List[str]]) -> str:
 	if not headers or not rows:
 		return ""
@@ -319,17 +369,314 @@ def _statement_title(statement_type: str, source_reports: List[str]) -> str:
 	source_report = _clean_text(source_reports[0] if source_reports else "")
 	if source_report:
 		return source_report
+	return financial_statement_report_name(statement_type) or "Financial Statement"
+
+
+def _projection_dimension_key(label: str) -> str:
+	key = _clean_text(label).lower().replace(" ", "_")
 	return {
-		"profit_and_loss": "Profit and Loss Statement",
-		"balance_sheet": "Balance Sheet",
-		"cash_flow": "Cash Flow",
-	}.get(statement_type, "Financial Statement")
+		"customer": "entity",
+		"supplier": "entity",
+		"item": "entity",
+		"product": "entity",
+		"entity": "entity",
+		"territory": "region",
+		"country": "region",
+		"brand": "region",
+		"region": "region",
+		"customer_group": "group",
+		"supplier_group": "group",
+		"item_group": "group",
+		"group": "group",
+		"creation": "creation",
+		"created_date": "creation",
+		"status": "status",
+		"default_price_list": "default_price_list",
+		"payment_terms": "payment_terms",
+	}.get(key, "")
+
+
+def _default_master_data_columns(
+	*,
+	scope_id: str,
+	entity_type: str,
+	lookup_projection: str,
+	column_map: Dict[str, str],
+) -> List[str]:
+	if lookup_projection == "names_only":
+		return ["entity"]
+	if lookup_projection != "standard_directory":
+		return ["entity"]
+	resolved_scope_id = _clean_text(scope_id) or scope_id_for_entity_grain(entity_type)
+	projection_spec = get_scope_projection_spec(resolved_scope_id, "master_data_lookup")
+	allowed_dimensions = _clean_list(projection_spec.get("allowed_dimensions"))
+	selected_columns: List[str] = []
+	for dimension_label in allowed_dimensions:
+		key = _projection_dimension_key(dimension_label)
+		if key and key in column_map and key not in selected_columns:
+			selected_columns.append(key)
+	return selected_columns or ["entity"]
+
+
+def _transaction_projection_key(
+	label: str,
+	*,
+	column_map: Dict[str, str],
+) -> str:
+	normalized = _clean_text(label).lower()
+	if not normalized:
+		return ""
+	for key, display_label in column_map.items():
+		if normalized == _clean_text(display_label).lower():
+			return key
+	return {
+		"customer": "party_name",
+		"supplier": "party_name",
+		"party": "party_name",
+		"posting date": "posting_date",
+		"transaction date": "posting_date",
+		"delivery date": "delivery_date",
+		"schedule date": "schedule_date",
+		"document status": "status",
+		"status": "status",
+		"quantity": "quantity",
+		"grand total": "grand_total",
+		"outstanding amount": "outstanding_amount",
+		"received amount": "received_amount",
+		"total allocated amount": "total_allocated_amount",
+		"paid amount": "paid_amount",
+	}.get(normalized, "")
+
+
+def _default_transaction_columns(
+	*,
+	scope_id: str,
+	column_map: Dict[str, str],
+	document_rows: List[Dict[str, Any]],
+) -> List[str]:
+	projection_spec = get_scope_projection_spec(_clean_text(scope_id), "transaction_listing")
+	allowed_dimensions = _clean_list(projection_spec.get("allowed_dimensions"))
+	allowed_metrics = _clean_list(projection_spec.get("allowed_metrics"))
+	selected_columns: List[str] = []
+	for label in allowed_dimensions + allowed_metrics:
+		key = _transaction_projection_key(label, column_map=column_map)
+		if not key or key not in column_map or key in selected_columns:
+			continue
+		if key in {"document_name", "posting_date", "party_name"}:
+			selected_columns.append(key)
+			continue
+		if any(isinstance(row, dict) and key in row for row in document_rows):
+			selected_columns.append(key)
+	return selected_columns
 
 
 def _top_section_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
 	clean = [dict(item) for item in rows if isinstance(item, dict) and _clean_text(item.get("label"))]
 	clean.sort(key=lambda item: abs(_float_value(item.get("amount"))), reverse=True)
 	return clean[:limit]
+
+
+_GENERIC_STATEMENT_LABELS = {
+	"income",
+	"direct income",
+	"expenses",
+	"direct expenses",
+	"stock expenses",
+	"assets",
+	"liabilities",
+	"equity",
+}
+
+
+def _statement_row_priority(item: Dict[str, Any]) -> tuple[int, int]:
+	label = _clean_text(item.get("label")).lower()
+	indent = int(_float_value(item.get("indent")))
+	return (0 if label in _GENERIC_STATEMENT_LABELS else 1, indent, len(label))
+
+
+def _top_statement_section_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
+	grouped: Dict[str, Dict[str, Any]] = {}
+	for item in rows:
+		if not isinstance(item, dict) or not _clean_text(item.get("label")):
+			continue
+		key = f"{_float_value(item.get('amount')):.2f}"
+		candidate = dict(item)
+		existing = grouped.get(key)
+		if existing is None or _statement_row_priority(candidate) > _statement_row_priority(existing):
+			grouped[key] = candidate
+	distinct = list(grouped.values())
+	distinct.sort(key=lambda item: abs(_float_value(item.get("amount"))), reverse=True)
+	return distinct[:limit]
+
+
+def _statement_leaf_candidates(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+	parent_accounts = {
+		_clean_text(item.get("parent_account"))
+		for item in rows
+		if isinstance(item, dict) and _clean_text(item.get("parent_account"))
+	}
+	return [
+		dict(item)
+		for item in rows
+		if isinstance(item, dict)
+		and _clean_text(item.get("label"))
+		and abs(_float_value(item.get("amount"))) > 0.0001
+		and _clean_text(item.get("account")) not in parent_accounts
+	]
+
+
+def _project_statement_rows(rows: List[Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
+	all_rows = _top_statement_section_rows(rows, limit=max(limit * 3, 12))
+	if not all_rows:
+		return []
+	leaf_rows = _statement_leaf_candidates(all_rows)
+	non_generic_leaf_rows = [
+		item
+		for item in leaf_rows
+		if _clean_text(item.get("label")).lower() not in _GENERIC_STATEMENT_LABELS
+	]
+	preferred_rows = [
+		item
+		for item in non_generic_leaf_rows
+		if int(_float_value(item.get("indent"))) >= 2
+	]
+	if not preferred_rows:
+		preferred_rows = [
+			item
+			for item in non_generic_leaf_rows
+			if int(_float_value(item.get("indent"))) >= 1
+		]
+	if not preferred_rows:
+		preferred_rows = non_generic_leaf_rows
+	if not preferred_rows:
+		preferred_rows = [
+			item
+			for item in all_rows
+			if _clean_text(item.get("label")).lower() not in _GENERIC_STATEMENT_LABELS
+			and abs(_float_value(item.get("amount"))) > 0.0001
+		]
+	if not preferred_rows:
+		preferred_rows = [item for item in all_rows if abs(_float_value(item.get("amount"))) > 0.0001]
+	return preferred_rows[:limit]
+
+
+def _statement_line_phrase(item: Dict[str, Any], currency: str) -> str:
+	label = _clean_text(item.get("label"))
+	amount = _amount_text(item.get("amount"), _clean_text(item.get("currency") or currency))
+	return f"{label} ({amount})".strip()
+
+
+def _statement_section_bullet(section_label: str, rows: List[Dict[str, Any]], currency: str, limit: int = 3) -> str:
+	top_rows = _project_statement_rows(rows, limit=limit)
+	if not top_rows:
+		return ""
+	phrases = [_statement_line_phrase(item, currency) for item in top_rows if _clean_text(item.get("label"))]
+	if not phrases:
+		return ""
+	return f"Key {section_label} lines: {', '.join(phrases)}."
+
+
+def _financial_statement_notable_items(
+	statement_type: str,
+	sections: Dict[str, Any],
+	currency: str,
+) -> List[str]:
+	if statement_type == "profit_and_loss":
+		return [
+			item
+			for item in (
+				_statement_section_bullet("income", _clean_rows(sections.get("income")), currency),
+				_statement_section_bullet("expense", _clean_rows(sections.get("expense")), currency),
+			)
+			if item
+		]
+	if statement_type == "balance_sheet":
+		return [
+			item
+			for item in (
+				_statement_section_bullet("asset", _clean_rows(sections.get("assets")), currency),
+				_statement_section_bullet("liability", _clean_rows(sections.get("liabilities")), currency),
+				_statement_section_bullet("equity", _clean_rows(sections.get("equity")), currency, limit=2),
+			)
+			if item
+		]
+	return [
+		item
+		for item in (
+			_statement_section_bullet("operating cash flow", _clean_rows(sections.get("operations")), currency),
+			_statement_section_bullet("investing cash flow", _clean_rows(sections.get("investing")), currency, limit=2),
+			_statement_section_bullet("financing cash flow", _clean_rows(sections.get("financing")), currency, limit=2),
+		)
+		if item
+	]
+
+
+def _financial_statement_summary_sentence(artifact: NormalizedFamilyArtifactContract) -> str:
+	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
+	metrics = artifact.metrics if isinstance(artifact.metrics, dict) else {}
+	currency = _clean_text(dimensions.get("currency"))
+	statement_type = _clean_text(dimensions.get("statement_type"))
+	company = _clean_text((artifact.filters if isinstance(artifact.filters, dict) else {}).get("company"))
+	company_phrase = f" for {company}" if company else ""
+	period_phrase = _period_phrase(artifact.period if isinstance(artifact.period, dict) else {})
+	period_suffix = f" {period_phrase}" if period_phrase else ""
+	if statement_type == "profit_and_loss":
+		return (
+			f"The Profit and Loss Statement{company_phrase}{period_suffix} shows total income of "
+			f"{_amount_text(metrics.get('total_income'), currency)}, total expenses of "
+			f"{_amount_text(metrics.get('total_expense'), currency)}, and net profit of "
+			f"{_amount_text(metrics.get('net_profit'), currency)}."
+		)
+	if statement_type == "balance_sheet":
+		sentence = (
+			f"The Balance Sheet{company_phrase}{period_suffix} shows total assets of "
+			f"{_amount_text(metrics.get('total_asset'), currency)}, total liabilities of "
+			f"{_amount_text(metrics.get('total_liability'), currency)}, and total equity of "
+			f"{_amount_text(metrics.get('total_equity'), currency)}"
+		)
+		provisional = _float_value(metrics.get("provisional_profit_or_loss"))
+		if provisional:
+			sentence += f", with provisional profit / loss of {_amount_text(provisional, currency)}"
+		return sentence + "."
+	return (
+		f"The Cash Flow statement{company_phrase}{period_suffix} shows net cash from operations of "
+		f"{_amount_text(metrics.get('net_cash_from_operations'), currency)}, net cash from investing of "
+		f"{_amount_text(metrics.get('net_cash_from_investing'), currency)}, net cash from financing of "
+		f"{_amount_text(metrics.get('net_cash_from_financing'), currency)}, and net change in cash of "
+		f"{_amount_text(metrics.get('net_change_in_cash'), currency)}."
+	)
+
+
+def _financial_statement_answer_text(
+	artifact: NormalizedFamilyArtifactContract,
+	title: str,
+	blocks: List[Dict[str, Any]],
+) -> str:
+	lines: List[str] = [title, "", _financial_statement_summary_sentence(artifact)]
+	for block in blocks:
+		if not isinstance(block, dict):
+			continue
+		block_title = _clean_text(block.get("title"))
+		block_type = _clean_text(block.get("block_type"))
+		if block_title:
+			lines.append("")
+			lines.append(block_title)
+		if block_type in {"summary_table", "data_table"}:
+			columns = [_clean_text(item) for item in block.get("columns") or [] if _clean_text(item)]
+			rows = [
+				[_clean_text(cell) for cell in row]
+				for row in (block.get("rows") or [])
+				if isinstance(row, list)
+			]
+			table = _markdown_table(columns, rows)
+			if table:
+				lines.append(table)
+		elif block_type == "bullet_list":
+			for item in block.get("items") or []:
+				text = _clean_text(item)
+				if text:
+					lines.append(f"- {text}")
+	return "\n".join(lines).strip()
 
 
 def _financial_statement_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
@@ -349,7 +696,7 @@ def _financial_statement_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 			["Net Profit", _amount_text(metrics.get("net_profit"), currency)],
 		]
 		for section_name, label in (("income", "Top Income Lines"), ("expense", "Top Expense Lines")):
-			top_rows = _top_section_rows(_clean_rows(sections.get(section_name)))
+			top_rows = _project_statement_rows(_clean_rows(sections.get(section_name)))
 			if not top_rows:
 				continue
 			section_blocks.append(
@@ -370,7 +717,7 @@ def _financial_statement_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 		if provisional:
 			summary_rows.append(["Provisional Profit / Loss", _amount_text(provisional, currency)])
 		for section_name, label in (("assets", "Top Asset Lines"), ("liabilities", "Top Liability Lines"), ("equity", "Top Equity Lines")):
-			top_rows = _top_section_rows(_clean_rows(sections.get(section_name)))
+			top_rows = _project_statement_rows(_clean_rows(sections.get(section_name)))
 			if not top_rows:
 				continue
 			section_blocks.append(
@@ -389,7 +736,7 @@ def _financial_statement_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 			["Net Change in Cash", _amount_text(metrics.get("net_change_in_cash"), currency)],
 		]
 		for section_name, label in (("operations", "Operating Cash Flows"), ("investing", "Investing Cash Flows"), ("financing", "Financing Cash Flows")):
-			top_rows = _top_section_rows(_clean_rows(sections.get(section_name)))
+			top_rows = _project_statement_rows(_clean_rows(sections.get(section_name)))
 			if not top_rows:
 				continue
 			section_blocks.append(
@@ -409,6 +756,15 @@ def _financial_statement_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 			"rows": summary_rows,
 		}
 	]
+	notable_items = _financial_statement_notable_items(statement_type, sections, currency)
+	if notable_items:
+		blocks.append(
+			{
+				"block_type": "bullet_list",
+				"title": "Notable Line Items",
+				"items": notable_items,
+			}
+		)
 	blocks.extend(section_blocks)
 	return title, blocks
 
@@ -496,15 +852,19 @@ def _ranking_blocks(
 	sort_direction = _requested_sort_direction(dimensions, response_overrides, default="desc")
 	if sort_direction == "asc":
 		ranked_rows = list(reversed(all_ranked_rows))[:top_n]
-		title = _title_with_period(f"Bottom {top_n} {entity_label}s by {metric_label}", artifact.period)
+		display_count = _display_row_count(top_n, ranked_rows)
+		title = _title_with_period(f"Bottom {display_count} {entity_label}s by {metric_label}", artifact.period)
 		table_title = "Bottom Ranked Rows"
 	else:
 		ranked_rows = all_ranked_rows[:top_n]
-		title = _title_with_period(f"Top {top_n} {entity_label}s by {metric_label}", artifact.period)
+		display_count = _display_row_count(top_n, ranked_rows)
+		title = _title_with_period(f"Top {display_count} {entity_label}s by {metric_label}", artifact.period)
 		table_title = "Top Ranked Rows"
 	summary = _clean_rows(sections.get("summary"))
-	requested_columns = _requested_columns(dimensions, response_overrides)
-	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
+	requested_columns = _normalized_metric_projection_columns(
+		_requested_columns(dimensions, response_overrides),
+		metric_key,
+	)
 	# Extract show_million from response_overrides
 	show_million = bool((response_overrides or {}).get("show_million"))
 	table_headers, table_rows = _ranking_table_spec(
@@ -580,19 +940,25 @@ def _trend_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List
 	return title, blocks
 
 
-def _inventory_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
+def _inventory_blocks(
+	artifact: NormalizedFamilyArtifactContract,
+	response_overrides: Dict[str, Any] | None = None,
+) -> tuple[str, List[Dict[str, Any]]]:
 	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
 	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
 	title = _title_with_period("Inventory Snapshot", artifact.period)
 	summary = _clean_rows(sections.get("summary"))
 	snapshot_dimension = _clean_text(dimensions.get("snapshot_dimension")) or "Item"
+	snapshot_label = snapshot_dimension.replace("_", " ").title() or "Item"
 	if snapshot_dimension.lower() == "warehouse":
-		rows = _clean_rows(sections.get("warehouse_totals"))
+		all_rows = _clean_rows(sections.get("warehouse_totals"))
 		entity_key = "warehouse"
 	else:
-		rows = _clean_rows(sections.get("item_totals"))
+		all_rows = _clean_rows(sections.get("item_totals"))
 		entity_key = "item"
-	rows = rows[:10]
+	top_n = _requested_top_n(dimensions, response_overrides, default=10)
+	sort_direction = _requested_sort_direction(dimensions, response_overrides, default="desc")
+	rows = list(reversed(all_rows))[:top_n] if sort_direction == "asc" else all_rows[:top_n]
 	blocks: List[Dict[str, Any]] = []
 	if summary and not _suppress_summary_block(dimensions, response_overrides):
 		blocks.append(
@@ -613,8 +979,8 @@ def _inventory_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, 
 		blocks.append(
 			{
 				"block_type": "data_table",
-				"title": f"Top {snapshot_dimension}s",
-				"columns": [snapshot_dimension, "Balance Qty", "Balance Value"],
+				"title": f"Top {snapshot_label}s",
+				"columns": [snapshot_label, "Balance Qty", "Balance Value"],
 				"rows": [
 					[
 						_clean_text(item.get(entity_key)),
@@ -640,16 +1006,20 @@ def _product_blocks(
 	top_n = _requested_top_n(dimensions, response_overrides, default=10)
 	sort_direction = _requested_sort_direction(dimensions, response_overrides, default="desc")
 	if sort_direction == "asc":
-		title = _title_with_period(f"Bottom {top_n} Products by {metric_label}", artifact.period)
 		product_rows = list(reversed(product_rows_all))[:top_n]
+		display_count = _display_row_count(top_n, product_rows)
+		title = _title_with_period(f"Bottom {display_count} Products by {metric_label}", artifact.period)
 		table_title = "Bottom Products"
 	else:
-		title = _title_with_period(f"Top {top_n} Products by {metric_label}", artifact.period)
 		product_rows = product_rows_all[:top_n]
+		display_count = _display_row_count(top_n, product_rows)
+		title = _title_with_period(f"Top {display_count} Products by {metric_label}", artifact.period)
 		table_title = "Top Products"
 	summary = _clean_rows(sections.get("summary"))
-	requested_columns = _requested_columns(dimensions, response_overrides)
-	requested_columns = [metric_key if value == "amount" else value for value in requested_columns]
+	requested_columns = _normalized_metric_projection_columns(
+		_requested_columns(dimensions, response_overrides),
+		metric_key,
+	)
 	blocks: List[Dict[str, Any]] = []
 	if summary and not _suppress_summary_block(dimensions, response_overrides):
 		blocks.append(
@@ -704,38 +1074,77 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 	summary = _clean_rows(sections.get("summary"))
 	top_n = _requested_top_n(dimensions, None, default=len(document_rows) or 10)
 	document_label = _clean_text(dimensions.get("document_label")) or "Transactions"
-	title = _title_with_period(f"Last {top_n} {document_label}s", artifact.period)
+	sort_direction = _requested_sort_direction(dimensions, None, default="desc")
+	title_prefix = "First" if sort_direction == "asc" else "Last"
+	limited_count = _display_row_count(top_n, (list(reversed(document_rows)) if sort_direction == "asc" else list(document_rows))[:top_n])
+	title = _title_with_period(f"{title_prefix} {limited_count} {_pluralize_label(document_label, limited_count)}", artifact.period)
 	requested_columns = _requested_columns(dimensions, None)
 	party_field = _clean_text(dimensions.get("party_field")) or ("customer" if any(_clean_text(row.get("customer")) for row in document_rows) else "party_name")
 	party_label = _clean_text(dimensions.get("party_label")) or "Party"
 	date_label = _clean_text(dimensions.get("date_label")) or "Posting Date"
+	scope_id = _clean_text(dimensions.get("scope_id")) or _clean_text(dimensions.get("transaction_type"))
+	primary_metric_key = _clean_text(dimensions.get("primary_metric_key")) or "grand_total"
+	primary_metric_label = _clean_text(dimensions.get("primary_metric_label")) or "Grand Total"
+	metric_label_map = (
+		dict(dimensions.get("metric_label_map"))
+		if isinstance(dimensions.get("metric_label_map"), dict)
+		else {}
+	)
+	if metric_label_map:
+		metric_label_map = {
+			_clean_text(key).lower().replace(" ", "_"): _clean_text(value)
+			for key, value in metric_label_map.items()
+			if _clean_text(key) and _clean_text(value)
+		}
 	has_party_column = any(_clean_text(row.get(party_field) or row.get("party_name")) for row in document_rows)
 	column_map = {
 		"document_name": document_label,
 		"posting_date": date_label,
+		"delivery_date": "Delivery Date",
+		"schedule_date": "Schedule Date",
 		"customer": party_label,
 		"supplier": party_label,
 		"party_name": party_label,
+		primary_metric_key: primary_metric_label,
 		"grand_total": "Grand Total",
+		"received_amount": _clean_text(metric_label_map.get("received_amount")) or "Received Amount",
+		"total_allocated_amount": _clean_text(metric_label_map.get("total_allocated_amount")) or "Total Allocated Amount",
+		"paid_amount": _clean_text(metric_label_map.get("paid_amount")) or "Paid Amount",
 		"quantity": "Quantity",
 		"outstanding_amount": "Outstanding Amount",
 		"status": "Status",
 	}
+	default_columns = _default_transaction_columns(
+		scope_id=scope_id,
+		column_map=column_map,
+		document_rows=document_rows,
+	)
+	has_explicit_projection_request = bool(dimensions.get("has_explicit_projection_request"))
 	available_columns = ["document_name", "posting_date"]
 	if has_party_column:
 		available_columns.append("party_name")
-	if any(row.get("quantity") not in (None, "", 0) for row in document_rows):
+	if any(_clean_text(row.get("delivery_date")) for row in document_rows):
+		available_columns.append("delivery_date")
+	if any(_clean_text(row.get("schedule_date")) for row in document_rows):
+		available_columns.append("schedule_date")
+	if any(row.get(quantity_key) not in (None, "", 0) for quantity_key in ["quantity"] for row in document_rows):
 		available_columns.append("quantity")
-	if any(row.get("grand_total") not in (None, "", 0) for row in document_rows):
-		available_columns.append("grand_total")
+	if any(row.get(primary_metric_key) not in (None, "", 0) for row in document_rows):
+		available_columns.append(primary_metric_key)
 	if any(row.get("outstanding_amount") not in (None, "", 0) for row in document_rows):
 		available_columns.append("outstanding_amount")
 	available_columns.append("status")
-	selected_columns = requested_columns or available_columns
+	selected_columns = (
+		requested_columns
+		if has_explicit_projection_request and requested_columns
+		else default_columns or requested_columns or available_columns
+	)
 	selected_columns = [value for value in selected_columns if value in column_map]
-	base_columns = ["document_name", "posting_date"]
-	if has_party_column:
-		base_columns.append("party_name")
+	base_columns = [value for value in default_columns if value in {"document_name", "posting_date", "party_name"}]
+	if not base_columns:
+		base_columns = ["document_name", "posting_date"]
+		if has_party_column:
+			base_columns.append("party_name")
 	for key in reversed(base_columns):
 		if key not in selected_columns:
 			selected_columns.insert(0, key)
@@ -754,12 +1163,13 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 		}
 	]
 	if document_rows:
-		limited_rows = document_rows[:top_n]
+		ordered_rows = list(reversed(document_rows)) if sort_direction == "asc" else list(document_rows)
+		limited_rows = ordered_rows[:top_n]
 		table_rows: List[List[str]] = []
 		for row in limited_rows:
 			out: List[str] = []
 			for key in selected_columns:
-				if key == "posting_date":
+				if key in {"posting_date", "delivery_date", "schedule_date"}:
 					out.append(_clean_text(row.get(key)))
 				elif key == "status":
 					out.append(_clean_text(row.get(key)))
@@ -768,7 +1178,8 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 				elif key == "document_name":
 					out.append(_clean_text(row.get(key)))
 				else:
-					out.append(_amount_text(row.get(key)))
+					metric_values = dict(row.get("metric_values")) if isinstance(row.get("metric_values"), dict) else {}
+					out.append(_amount_text(row.get(key) if row.get(key) not in (None, "") else metric_values.get(key)))
 			table_rows.append(out)
 		blocks.append(
 			{
@@ -783,10 +1194,163 @@ def _transaction_listing_blocks(artifact: NormalizedFamilyArtifactContract) -> t
 			{
 				"block_type": "bullet_list",
 				"title": "Result",
-				"items": ["No matching governed documents were found for the current filters."],
+				"items": ["No documents matched these filters."],
 			}
 		)
 	return title, blocks
+
+
+def _master_data_directory_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
+	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
+	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
+	directory_rows = _clean_rows(sections.get("directory_rows") or sections.get("customer_rows"))
+	lookup_mode = _clean_text(dimensions.get("lookup_mode"))
+	lookup_projection = _clean_text(dimensions.get("lookup_projection"))
+	lookup_search_text = _clean_text(dimensions.get("lookup_search_text"))
+	scope_id = _clean_text(dimensions.get("scope_id"))
+	entity_type = _clean_text(dimensions.get("entity_type")) or "customer"
+	entity_label = _clean_text(dimensions.get("entity_label")) or entity_type.title()
+	entity_plural_label = _clean_text(dimensions.get("entity_plural_label")) or f"{entity_label}s"
+	group_label = _clean_text(dimensions.get("group_label")) or "Group"
+	region_label = _clean_text(dimensions.get("region_label")) or "Region"
+	entity_reference_resolution = (
+		dict(sections.get("entity_reference_resolution"))
+		if isinstance(sections.get("entity_reference_resolution"), dict)
+		else {}
+	)
+	top_n = _requested_top_n(dimensions, None, default=len(directory_rows) or 10)
+	title = _title_with_period(entity_plural_label, artifact.period)
+	requested_columns = _requested_columns(dimensions, None)
+	column_map = {
+		"entity": entity_label,
+		"region": region_label,
+		"group": group_label,
+		"creation": "Created Date",
+		"status": "Status",
+		"default_price_list": "Default Price List",
+		"payment_terms": "Payment Terms",
+	}
+	if requested_columns:
+		selected_columns = [value for value in requested_columns if value in column_map] or ["entity"]
+	else:
+		selected_columns = _default_master_data_columns(
+			scope_id=scope_id,
+			entity_type=entity_type,
+			lookup_projection=lookup_projection,
+			column_map=column_map,
+		)
+	limited_rows = directory_rows[:top_n]
+	match_title = f"{entity_label} Match"
+	if lookup_mode == "candidate_resolution" and entity_reference_resolution:
+		resolution_status = _clean_text(entity_reference_resolution.get("resolution_status"))
+		resolved_entity = (
+			dict(entity_reference_resolution.get("resolved_entity"))
+			if isinstance(entity_reference_resolution.get("resolved_entity"), dict)
+			else {}
+		)
+		candidate_entities = _clean_rows(entity_reference_resolution.get("candidate_entities"))
+		candidate_labels = list(
+			dict.fromkeys(
+				_clean_text(item.get("entity_label") or item.get("entity_key"))
+				for item in candidate_entities
+				if _clean_text(item.get("entity_label") or item.get("entity_key"))
+			)
+		)
+		search_phrase = f' "{lookup_search_text}"' if lookup_search_text else ""
+		if resolution_status == "resolved" and _clean_text(resolved_entity.get("entity_label") or resolved_entity.get("entity_key")):
+			resolved_label = _clean_text(resolved_entity.get("entity_label") or resolved_entity.get("entity_key"))
+			if selected_columns == ["entity"] or not limited_rows:
+				return match_title, [
+					{
+						"block_type": "bullet_list",
+						"title": "Result",
+						"items": [f'The closest {entity_type} match for{search_phrase} is {resolved_label}.'],
+					}
+				]
+			filtered_rows = [
+				row
+				for row in limited_rows
+				if _clean_text(row.get("entity_code")) == _clean_text(resolved_entity.get("entity_key"))
+			] or limited_rows[:1]
+			table_rows: List[List[str]] = []
+			for row in filtered_rows:
+				out: List[str] = []
+				for key in selected_columns:
+					if key == "entity":
+						out.append(_clean_text(row.get("entity") or row.get("entity_name")))
+					elif key == "status":
+						out.append(_clean_text(row.get("status") or row.get("document_status")))
+					else:
+						out.append(_clean_text(row.get(key)))
+				table_rows.append(out)
+			return match_title, [
+				{
+					"block_type": "bullet_list",
+					"title": "Result",
+					"items": [f'The closest {entity_type} match for{search_phrase} is {resolved_label}.'],
+				},
+				{
+					"block_type": "data_table",
+					"title": f"Matched {entity_label}",
+					"columns": [column_map[key] for key in selected_columns],
+					"rows": table_rows,
+				},
+			]
+		if resolution_status == "ambiguous" and candidate_labels:
+			return f"Possible {entity_plural_label}", [
+				{
+					"block_type": "bullet_list",
+					"title": f"{entity_label} Names",
+					"items": candidate_labels,
+				}
+			]
+		if resolution_status == "not_found":
+			items = [f'No {entity_type} match was found for{search_phrase}.']
+			suggested_candidates = candidate_labels
+			if suggested_candidates:
+				items.append("Closest names: " + ", ".join(suggested_candidates[:5]) + ".")
+			return match_title, [
+				{
+					"block_type": "bullet_list",
+					"title": "Result",
+					"items": items,
+				}
+			]
+	if not limited_rows:
+		return title, [
+			{
+				"block_type": "bullet_list",
+				"title": "Result",
+				"items": [f"No {entity_plural_label.lower()} matched these filters."],
+			}
+		]
+	if selected_columns == ["entity"]:
+		return title, [
+			{
+				"block_type": "bullet_list",
+				"title": f"{entity_label} Names",
+				"items": [_clean_text(row.get("entity") or row.get("entity_name")) for row in limited_rows],
+			}
+		]
+	table_rows: List[List[str]] = []
+	for row in limited_rows:
+		out: List[str] = []
+		for key in selected_columns:
+			if key == "entity":
+				out.append(_clean_text(row.get("entity") or row.get("entity_name")))
+			elif key == "status":
+				out.append(_clean_text(row.get("status") or row.get("document_status")))
+			else:
+				out.append(_clean_text(row.get(key)))
+		table_rows.append(out)
+	return title, [
+		{
+			"block_type": "data_table",
+			"title": f"{entity_label} Rows",
+			"columns": [column_map[key] for key in selected_columns],
+			"rows": table_rows,
+		}
+	]
 
 
 def _composite_working_capital_blocks(composite_artifact: Dict[str, Any]) -> tuple[str, List[Dict[str, Any]]]:
@@ -864,17 +1428,22 @@ def render_normalized_family_response(
 	elif family_id == "trend_analytics":
 		title, blocks = _trend_blocks(artifact_contract)
 	elif family_id == "inventory_snapshot":
-		title, blocks = _inventory_blocks(artifact_contract)
+		title, blocks = _inventory_blocks(artifact_contract, response_overrides=response_overrides)
 	elif family_id == "product_profitability":
 		title, blocks = _product_blocks(artifact_contract, response_overrides=response_overrides)
 	elif family_id == "transaction_listing":
 		title, blocks = _transaction_listing_blocks(artifact_contract)
+	elif family_id in {"customer_master_list", "master_data_directory"}:
+		title, blocks = _master_data_directory_blocks(artifact_contract)
 	else:
 		return FamilyRenderOutcome(
 			status="render_not_available",
 			errors=[f"No governed family renderer is defined for `{family_id}`."],
 		)
-	answer_text = _blocks_to_text(title, blocks)
+	if family_id == "financial_statement":
+		answer_text = _financial_statement_answer_text(artifact_contract, title, blocks)
+	else:
+		answer_text = _blocks_to_text(title, blocks)
 	contract = build_rendered_family_response_contract(
 		request_id=request_id,
 		family_id=family_id,

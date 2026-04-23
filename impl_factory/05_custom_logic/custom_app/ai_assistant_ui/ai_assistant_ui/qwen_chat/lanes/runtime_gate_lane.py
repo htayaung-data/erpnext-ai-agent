@@ -58,6 +58,7 @@ def handle_runtime_gate_turn(
 			message=message,
 			recent_messages=[],
 			clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
+			front_door_contract=frontdoor_contract.to_payload() if frontdoor_contract is not None else None,
 			governed_target_limit=governed_target_limit,
 		)
 		if compiled_rollout_fallback_eligible(compiled_result):

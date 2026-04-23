@@ -14,6 +14,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	NormalizedFamilyArtifactContract,
 	build_family_validation_contract,
 )
+from ai_assistant_ui.qwen_chat.defaults_repository import (
+	fiscal_year_row_for_date as defaults_fiscal_year_row_for_date,
+	open_fiscal_year_bounds as defaults_open_fiscal_year_bounds,
+)
 
 
 def _today_iso() -> str:
@@ -126,6 +130,9 @@ def _canonical_metric(requested_metric: str) -> str:
 		"grand_total": "total_amount",
 		"invoice_amount": "total_amount",
 		"total_amount": "total_amount",
+		"received_amount": "total_amount",
+		"total_allocated_amount": "total_amount",
+		"paid_amount": "total_amount",
 		"document_count": "document_count",
 	}
 	return mapping.get(key, "")
@@ -149,6 +156,20 @@ def _time_scope_matches(requested_time_scope: str, period: Dict[str, Any]) -> bo
 	today = _today_iso()
 	if scope in {"as_of_today", "current_date_utc"}:
 		return to_date == today
+	if scope == "open_fiscal_year_to_date":
+		open_start, open_end = defaults_open_fiscal_year_bounds(today=_today_date())
+		if from_date and to_date:
+			return from_date == open_start and to_date == open_end
+		from_fiscal_year = str(period.get("from_fiscal_year") or period.get("fiscal_year") or "").strip()
+		to_fiscal_year = str(period.get("to_fiscal_year") or period.get("fiscal_year") or "").strip()
+		open_start_fiscal_year = str(defaults_fiscal_year_row_for_date(open_start).get("name") or "").strip()
+		open_end_fiscal_year = str(defaults_fiscal_year_row_for_date(open_end).get("name") or "").strip()
+		return bool(
+			open_start_fiscal_year
+			and open_end_fiscal_year
+			and from_fiscal_year == open_start_fiscal_year
+			and to_fiscal_year == open_end_fiscal_year
+		)
 	if scope == "current_fiscal_year_to_date":
 		return bool((from_date and to_date == today) or (fiscal_year and fiscal_year == _current_fiscal_year_name()))
 	if scope == "last_year":
@@ -1017,6 +1038,98 @@ def _validate_transaction_listing_artifact(
 	)
 
 
+def _validate_master_data_directory_artifact(
+	*,
+	request_id: str,
+	compiler_contract: Dict[str, Any],
+	artifact_contract: NormalizedFamilyArtifactContract | None,
+	adapter_errors: List[str],
+	adapter_warnings: List[str],
+) -> FamilyValidationOutcome:
+	errors: List[str] = list(adapter_errors or [])
+	warnings: List[str] = list(adapter_warnings or [])
+	if artifact_contract is None:
+		contract = build_family_validation_contract(
+			request_id=request_id,
+			family_id="master_data_directory",
+			requested_metrics=[],
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+			decision="reject_family_inconsistent",
+			validation_errors=errors or ["Master-data directory adapter did not produce a normalized artifact."],
+			validation_warnings=warnings,
+		)
+		return FamilyValidationOutcome(
+			status="reject_family_inconsistent",
+			contract=contract,
+			family_id="master_data_directory",
+			errors=list(contract.validation_errors),
+			warnings=warnings,
+			observed_metrics=[],
+			time_scope_match=False,
+			family_schema_match=False,
+		)
+
+	dimensions = artifact_contract.dimensions if isinstance(artifact_contract.dimensions, dict) else {}
+	metrics = artifact_contract.metrics if isinstance(artifact_contract.metrics, dict) else {}
+	sections = artifact_contract.sections if isinstance(artifact_contract.sections, dict) else {}
+	period = artifact_contract.period if isinstance(artifact_contract.period, dict) else {}
+	directory_rows = sections.get("directory_rows") if isinstance(sections.get("directory_rows"), list) else []
+	entity_type = str(dimensions.get("entity_type") or "").strip()
+	observed_metrics = [
+		str(key or "").strip()
+		for key, value in metrics.items()
+		if str(key or "").strip() and value not in (None, "")
+	]
+	if not _has_source_reports(artifact_contract):
+		errors.append("Normalized master-data directory artifact did not preserve governed source reports.")
+	try:
+		row_count = int(max(0, metrics.get("row_count") or 0))
+	except Exception:
+		row_count = 0
+	if not directory_rows and row_count > 0:
+		errors.append("Normalized master-data directory artifact contains no directory rows.")
+	elif not directory_rows:
+		warnings.append("Normalized master-data directory artifact contains no matching entity rows for the current governed filters.")
+	else:
+		first_row = directory_rows[0] if isinstance(directory_rows[0], dict) else {}
+		if not str(first_row.get("entity") or first_row.get("entity_name") or "").strip():
+			errors.append("Normalized master-data directory artifact did not preserve an entity label.")
+	time_scope_match = _time_scope_matches(
+		str(compiler_contract.get("requested_time_scope") or "").strip(),
+		period,
+	)
+	family_schema_match = bool(
+		entity_type in {"customer", "supplier"}
+		and (directory_rows or row_count == 0)
+	)
+	decision = "pass"
+	if errors:
+		decision = "reject_family_inconsistent"
+	contract = build_family_validation_contract(
+		request_id=request_id,
+		family_id="master_data_directory",
+		requested_metrics=[],
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+		decision=decision,
+		validation_errors=errors,
+		validation_warnings=warnings,
+	)
+	return FamilyValidationOutcome(
+		status=decision,
+		contract=contract,
+		family_id="master_data_directory",
+		errors=errors,
+		warnings=warnings,
+		observed_metrics=observed_metrics,
+		time_scope_match=time_scope_match,
+		family_schema_match=family_schema_match,
+	)
+
+
 def validate_normalized_family_artifact(
 	*,
 	request_id: str,
@@ -1070,6 +1183,14 @@ def validate_normalized_family_artifact(
 			)
 		if target == "transaction_listing":
 			return _validate_transaction_listing_artifact(
+				request_id=request_id,
+				compiler_contract=compiler_contract,
+				artifact_contract=artifact_contract,
+				adapter_errors=_clean_list(adapter_errors),
+				adapter_warnings=_clean_list(adapter_warnings),
+			)
+		if target in {"customer_master_list", "master_data_directory"}:
+			return _validate_master_data_directory_artifact(
 				request_id=request_id,
 				compiler_contract=compiler_contract,
 				artifact_contract=artifact_contract,

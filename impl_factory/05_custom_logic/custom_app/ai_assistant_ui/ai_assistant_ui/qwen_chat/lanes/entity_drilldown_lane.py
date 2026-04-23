@@ -25,6 +25,7 @@ def handle_entity_drilldown_turn(
 	build_latest_qwen_trace_payload: Callable[..., Dict[str, Any]],
 	build_latest_assistant_payload: Callable[..., Dict[str, Any]],
 	save_session: Callable[..., None],
+	clear_pending_clarification_signal: Callable[..., None] | None = None,
 ) -> Tuple[bool, Dict[str, Any] | None]:
 	explicit_entity_reference = str((entity_reference or {}).get("source") or "").strip() == "explicit_identifier"
 	grounded_required = bool(latest_grounded_turn) and not explicit_entity_reference
@@ -51,6 +52,9 @@ def handle_entity_drilldown_turn(
 	)
 	if not entity_result:
 		return False, None
+
+	if clear_pending_clarification_signal is not None:
+		clear_pending_clarification_signal(session_doc)
 
 	latest_grounded_turn_payload = build_latest_grounded_turn_contract(session_doc)
 	append_knowledge_boundary_contract(

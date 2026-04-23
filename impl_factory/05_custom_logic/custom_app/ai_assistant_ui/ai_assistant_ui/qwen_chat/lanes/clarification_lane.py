@@ -9,6 +9,7 @@ from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	pending_clarification_empty_ack_answer,
 	pending_clarification_fallback_stop_answer,
 	pending_clarification_meta_answer,
+	pending_clarification_options_answer,
 	pending_clarification_repeat_answer,
 	resolve_pending_clarification_response,
 	store_pending_clarification_signal,
@@ -33,6 +34,7 @@ def build_pending_clarification_frontdoor_skip(
 	clarification_state,
 	latest_grounded_turn_available: bool,
 	latest_grounded_turn: Dict[str, Any],
+	conversation_control_evidence_payload: Dict[str, Any] | None = None,
 ) -> Tuple[Any, SemanticFrontDoorResult, Any]:
 	clarification_response_contract = resolve_pending_clarification_response(
 		request_id=request_id,
@@ -44,6 +46,7 @@ def build_pending_clarification_frontdoor_skip(
 		clarification_attempt_count=int(max(0, clarification_state.attempt_count)),
 		max_attempts=int(max(1, clarification_state.max_attempts)),
 		grounded_turn=latest_grounded_turn,
+		control_evidence_payload=conversation_control_evidence_payload,
 	)
 	frontdoor_semantic_result = SemanticFrontDoorResult(
 		status="skipped_for_pending_clarification",
@@ -78,6 +81,7 @@ def handle_pending_clarification_turn(
 	frontdoor_contract,
 	latest_grounded_turn_available: bool,
 	latest_grounded_turn: Dict[str, Any],
+	conversation_control_evidence_contract=None,
 	append_message: Callable[..., None],
 	append_tool_payload: Callable[..., None],
 	append_knowledge_boundary_contract: Callable[..., Dict[str, Any]],
@@ -85,6 +89,63 @@ def handle_pending_clarification_turn(
 	save_session: Callable[..., None],
 ) -> Tuple[bool, Any, str, Dict[str, Any] | None]:
 	clarification_decision = str(clarification_response_contract.decision or "").strip()
+	if clarification_decision == "show_options":
+		answer_text = pending_clarification_options_answer(pending_clarification_signal)
+		execution_path = ExecutionPath(
+			request_id=request_id,
+			path="clarification",
+			reason=str(clarification_response_contract.reason or "").strip()
+			or "The user asked to review the clarification options before continuing.",
+			requires_runtime=False,
+			grounded_required=False,
+		)
+		append_message(session_doc, "user", raw_message)
+		append_tool_payload(session_doc, interaction_contract.to_payload())
+		append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
+		append_tool_payload(session_doc, frontdoor_contract.to_payload())
+		append_tool_payload(session_doc, clarification_response_contract.to_payload())
+		append_tool_payload(
+			session_doc,
+			record_phase55_observability_event(
+				request_id=request_id,
+				session_id=session_id,
+				event_family="clarification",
+				event_name="show_options",
+				details={
+					"pending_reason_type": str(pending_clarification_signal.get("reason_type") or "").strip(),
+					"attempt_count": int(max(0, clarification_state.attempt_count)),
+					"max_attempts": int(max(1, clarification_state.max_attempts)),
+				},
+			),
+		)
+		append_knowledge_boundary_contract(
+			session_doc,
+			request_id=request_id,
+			session_id=session_id,
+			proposed_lane="clarification",
+			clarification_resolution=clarification_response_contract.to_payload(),
+			front_door_contract=frontdoor_contract.to_payload(),
+			grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
+		)
+		append_tool_payload(session_doc, execution_path.to_payload())
+		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+		append_tool_payload(session_doc, pending_clarification_signal)
+		store_pending_clarification_signal(
+			session_doc,
+			pending_clarification_signal,
+			attempt_count=int(max(0, clarification_state.attempt_count)),
+			max_attempts=int(max(1, clarification_state.max_attempts)),
+		)
+		save_session(session_doc, ignore_permissions=False)
+		return True, clarification_response_contract, raw_message, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": "clarification",
+			"agent_meta": {
+				"engine": "pending_clarification_resolver",
+				"mode": "show_options",
+			},
+		}
 	if clarification_decision in {"reask_pending_clarification", "meta_question", "empty_ack"}:
 		clarification_state = clarification_state_after_unresolved_attempt(
 			clarification_state,
@@ -102,6 +163,11 @@ def handle_pending_clarification_turn(
 				clarification_attempt_count=int(max(0, clarification_state.attempt_count)),
 				max_attempts=int(max(1, clarification_state.max_attempts)),
 				grounded_turn=latest_grounded_turn,
+				control_evidence_payload=(
+					conversation_control_evidence_contract.to_payload()
+					if conversation_control_evidence_contract is not None and hasattr(conversation_control_evidence_contract, "to_payload")
+					else {}
+				),
 			)
 			clarification_decision = str(clarification_response_contract.decision or "").strip()
 		else:

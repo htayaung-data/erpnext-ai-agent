@@ -740,37 +740,96 @@ Deliver:
 
 Goal: support richer multi-metric governed business questions without loosening authority boundaries.
 
+Current status:
+
+1. `3.1` complete
+2. `3.2` complete
+3. `3.3` next
+
+Current design note:
+
+1. [qwen_erp_phase3_composite_governed_artifact_design_2026-04-10.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_composite_governed_artifact_design_2026-04-10.md)
+2. active `3.3` design note:
+   - [qwen_erp_phase3_3_ranking_projection_and_evidence_contract_design_2026-04-11.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/phase3_entity_lookup_scope/qwen_erp_phase3_3_ranking_projection_and_evidence_contract_design_2026-04-11.md)
+
 ### Mini-phase 3.1: Composite Artifact Contract
 
 Deliver:
 
-1. `CompositeRankingArtifactContract`
-2. governed compatibility rules for multi-metric joins
-3. blocked-safe behavior when scope compatibility is unproven
+1. `CompositeFamilyResolutionContract`
+2. `CompositeGovernedArtifactContract`
+3. `CompositeAssemblyAdapterContract`
+4. `composite_family_registry.json`
+5. `composite_artifact_registry.json`
+6. `composite_compatibility_registry.json`
+7. `composite_assembly_registry.json`
+8. typed blocked-safe family and artifact resolution
+9. deterministic contract and registry validation tests
 
 ### Mini-phase 3.2: Customer Ranking Composites
 
 Deliver:
 
-1. customer revenue + quantity + AOV composite
-2. explicit primary metric rule
-3. governed same-grain validation
+1. reusable customer commercial ranking family
+2. customer revenue + quantity + AOV composite on sales-order basis
+3. customer revenue + quantity + average invoice value composite on sales-invoice basis
+4. explicit primary metric rule
+5. governed same-grain and same-basis validation
+6. family-level variation support for basis, period, top N, and approved supporting metrics
 
-### Mini-phase 3.3: Product Ranking Composites
+Current checkpoint:
+
+1. the reusable `customer_commercial_ranking` family is now active
+2. customer commercial composite execution now reuses approved customer-period KPI component artifacts rather than custom merge logic
+3. front-door composite resolution is active for:
+   - direct composite execution
+   - missing-basis clarification
+   - missing-primary-metric clarification
+   - governed clarification continuation such as `Sales Order`
+4. live probe and live smoke are green through:
+   - `run_phase3_2_customer_commercial_composite_probe`
+   - `run_phase3_2_customer_commercial_composite_smoke`
+5. the release-gate module now includes the `Phase 3.2` customer commercial composite smoke
+
+### Mini-phase 3.3: Entity-Period Commercial Ranking Generalization
 
 Deliver:
 
-1. product revenue + quantity + average selling price composite
-2. governed scope compatibility checks
-3. bounded render and follow-up support
+1. generalize the commercial-ranking family to reusable entity-period ranking behavior
+2. activate item grain through metadata and shared assembly rules
+3. activate product and item commercial ranking as one governed grain variation of the same family
+4. governed item-grain and period compatibility checks
+5. bounded render and row-follow-up support
 
-### Mini-phase 3.4: Overdue Customer Composite
+Current checkpoint:
+
+1. `3.3A` is now the active bounded next slice:
+   - harmonize ranking projection behavior across governed composite ranking and generic compiled ranking paths
+   - default ranking responses to entity plus primary metric only
+   - add supporting metrics only when they are explicitly requested
+2. recent shared work already corrected one important governed continuation seam:
+   - customer-to-product ranking subject switches no longer need to inherit stale ranked artifacts when the subject changes
+3. the current remaining gap is not a new ranking family:
+   - it is authority alignment between ranking projection, continuation, and render behavior across shared ranking paths
+4. `3.3B` is approved immediately after `3.3A`:
+   - remove raw-message business branching from governed entity-detail evidence rendering through a typed evidence-request seam
+   - adapt the existing boundary and artifact contracts instead of inventing a parallel architecture
+5. `3.3C` is the bounded metadata completion step after `3.3B`:
+   - promote remaining evidence distinctions such as tenure basis, overdue question shape, and outstanding-versus-total-due into typed metadata-driven semantics
+6. the approved `3.3` implementation order is now:
+   - `3.3A` ranking projection contract harmonization
+   - `3.3B` entity-detail evidence request contract cleanup
+   - `3.3C` metadata and semantic completion
+
+### Mini-phase 3.4: Customer Risk-As-Of Composite Archetype
 
 Deliver:
 
-1. overdue customer + overdue amount + last payment date composite
-2. governed join and freshness rules
-3. safe clarify or block behavior if compatibility is weak
+1. activate a reusable customer-risk-as-of composite family
+2. activate overdue views, utilization views, and mixed risk views as governed variations inside that family
+3. governed join, as-of alignment, and safe degradation rules
+4. threshold-match filtering for approved customer-risk views
+5. metadata-owned variation policy for risk ranking and threshold-filter views
 
 ### Mini-phase 3.5: Composite Phase Closure
 
@@ -779,6 +838,8 @@ Deliver:
 1. full-gate pass
 2. composite artifact checkpoint docs
 3. updated current baseline docs
+4. proof that approved alternate phrasings work without new code
+5. proof that new composites inside an existing family can be activated metadata-first
 
 ## 8. Phase 4: Complex Business Question Decomposition
 

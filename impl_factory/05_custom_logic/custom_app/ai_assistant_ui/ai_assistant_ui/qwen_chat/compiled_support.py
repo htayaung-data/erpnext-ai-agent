@@ -4,7 +4,14 @@ import datetime as dt
 import time
 from typing import Any, Callable, Dict, List, Tuple
 
-from ai_assistant_ui.qwen_chat.contracts import build_clarification_reason_contract_from_sources
+from ai_assistant_ui.qwen_chat.clarification_translation import render_clarification_signal_user_text
+from ai_assistant_ui.qwen_chat.compound_request_support import (
+	build_post_result_multi_step_assessment_payload,
+	build_multi_step_step_result_integration_payload,
+)
+from ai_assistant_ui.qwen_chat.contracts import (
+	build_clarification_reason_contract_from_sources,
+)
 
 
 def compiled_clarification_reason_contract(*, request_id: str, result: Dict[str, Any]):
@@ -136,6 +143,14 @@ def compiled_rollout_fallback_eligible(result: Dict[str, Any]) -> bool:
 	return decision not in {"clarify", "reject"} and semantic_status not in {"clarify", "reject_semantically_inconsistent"}
 
 
+def _prefer_rendered_family_answer(family_id: str) -> bool:
+	return str(family_id or "").strip() in {
+		"transaction_listing",
+		"master_data_directory",
+		"customer_master_list",
+	}
+
+
 def compiled_decision_message(
 	*,
 	request_id: str,
@@ -174,7 +189,8 @@ def compiled_decision_message(
 			compiler_reason_type=reason_type,
 			compiler_details=reason_details,
 		)
-		return str(signal.user_question or "").strip(), signal.to_payload()
+		payload = signal.to_payload()
+		return render_clarification_signal_user_text(payload), payload
 	if decision == "reject":
 		if unsupported_decision:
 			return out_of_scope_answer(raw_message, unsupported_decision), {}
@@ -187,7 +203,8 @@ def compiled_decision_message(
 			raw_message=raw_message,
 			family_validation=family_validation,
 		)
-		return str(signal.user_question or "").strip(), signal.to_payload()
+		payload = signal.to_payload()
+		return render_clarification_signal_user_text(payload), payload
 	if family_status.startswith("reject"):
 		if unsupported_decision:
 			return out_of_scope_answer(raw_message, unsupported_decision), {}
@@ -199,18 +216,32 @@ def compiled_decision_message(
 			raw_message=raw_message,
 			semantic_validation=semantic,
 		)
-		return str(signal.user_question or "").strip(), signal.to_payload()
+		payload = signal.to_payload()
+		return render_clarification_signal_user_text(payload), payload
 	if semantic_status == "reject_semantically_inconsistent":
 		if unsupported_decision:
 			return out_of_scope_answer(raw_message, unsupported_decision), {}
 		detail = str((semantic_errors or ["The grounded result did not match the requested business intent."])[0] or "").strip()
 		return f"I couldn't complete a grounded answer that matched the requested business intent.\n\n{detail}".strip(), {}
+	normalized_family_artifact = result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {}
+	family_id = str(
+		rendered_response.get("family_id")
+		or narrative_response.get("family_id")
+		or normalized_family_artifact.get("family_id")
+		or ""
+	).strip()
 	narrative_answer = str(narrative_response.get("answer_text") or "").strip()
-	if narrative_answer:
-		return narrative_answer, {}
 	rendered_answer = str(rendered_response.get("answer_text") or "").strip()
-	if rendered_answer:
-		return rendered_answer, {}
+	if _prefer_rendered_family_answer(family_id):
+		if rendered_answer:
+			return rendered_answer, {}
+		if narrative_answer:
+			return narrative_answer, {}
+	else:
+		if narrative_answer:
+			return narrative_answer, {}
+		if rendered_answer:
+			return rendered_answer, {}
 	if unsupported_decision and is_generic_compiled_failure_answer(runtime_answer):
 		return out_of_scope_answer(raw_message, unsupported_decision), {}
 	if runtime_answer:
@@ -222,6 +253,44 @@ def compiled_decision_message(
 	if unsupported_decision:
 		return out_of_scope_answer(raw_message, unsupported_decision), {}
 	return "I could not complete a governed ERP lookup.", {}
+
+
+def _frontdoor_compound_request_assessment_payload(front_door_contract: Any) -> Dict[str, Any]:
+	if front_door_contract is None:
+		return {}
+	response_payload = getattr(front_door_contract, "response_payload", {})
+	if not isinstance(response_payload, dict):
+		return {}
+	payload = response_payload.get("compound_request_assessment")
+	return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _compound_request_internal_details(payload: Dict[str, Any]) -> Dict[str, Any]:
+	internal_details = payload.get("internal_details")
+	return dict(internal_details) if isinstance(internal_details, dict) else {}
+
+
+def _compound_request_payload_has_ordered_execution(payload: Dict[str, Any]) -> bool:
+	if str(payload.get("type") or "").strip() != "qwen_compound_request_assessment_contract":
+		return False
+	internal_details = _compound_request_internal_details(payload)
+	if str(internal_details.get("execution_strategy") or "").strip() != "ordered_multi_step":
+		return False
+	return bool(str(internal_details.get("primary_segment_message") or "").strip())
+
+
+def _compound_request_next_step_note(payload: Dict[str, Any]) -> str:
+	if not _compound_request_payload_has_ordered_execution(payload):
+		return ""
+	internal_details = _compound_request_internal_details(payload)
+	remaining_labels = [
+		str(value or "").strip()
+		for value in (internal_details.get("remaining_segment_labels") or [])
+		if str(value or "").strip()
+	]
+	if not remaining_labels:
+		return ""
+	return f'If you\'d like, I can show {remaining_labels[0]} next. Just say "continue".'
 
 
 def handle_compiled_first_turn_result(
@@ -268,6 +337,11 @@ def handle_compiled_first_turn_result(
 		raw_message=str(interaction_contract.raw_message or "").strip(),
 		result=result,
 	)
+	compound_request_assessment_payload = _frontdoor_compound_request_assessment_payload(front_door_contract)
+	if answer_text and not clarification_signal_payload:
+		next_step_note = _compound_request_next_step_note(compound_request_assessment_payload)
+		if next_step_note:
+			answer_text = f"{answer_text}\n\n{next_step_note}"
 	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
 	for payload in (pre_result_tool_payloads or []):
 		if isinstance(payload, dict) and payload:
@@ -320,6 +394,25 @@ def handle_compiled_first_turn_result(
 		if grounded_turn_context and grounded_turn_context.grounded:
 			grounded_turn_payload = grounded_turn_context.to_payload()
 			append_tool_payload(session_doc, grounded_turn_payload)
+	step_result_integration_payload = build_multi_step_step_result_integration_payload(
+		request_id=request_id,
+		compound_assessment_payload=compound_request_assessment_payload,
+		grounded_turn_payload=grounded_turn_payload,
+		clarification_signal_payload=clarification_signal_payload,
+		normalized_family_artifact=result.get("normalized_family_artifact")
+		if isinstance(result.get("normalized_family_artifact"), dict)
+		else {},
+		family_validation_payload=family_payload,
+		semantic_validation_payload=semantic_payload,
+	)
+	if step_result_integration_payload:
+		append_tool_payload(session_doc, step_result_integration_payload)
+	updated_compound_assessment_payload = build_post_result_multi_step_assessment_payload(
+		compound_assessment_payload=compound_request_assessment_payload,
+		step_result_integration_payload=step_result_integration_payload,
+	)
+	if updated_compound_assessment_payload:
+		append_tool_payload(session_doc, updated_compound_assessment_payload)
 	compiled_audit_payload = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
 	boundary_payload = append_knowledge_boundary_contract(
 		session_doc,

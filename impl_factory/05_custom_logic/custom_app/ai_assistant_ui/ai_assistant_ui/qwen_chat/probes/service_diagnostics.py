@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime as dt
+import json
 import re
 import time
 from typing import Any, Dict, List
@@ -97,6 +99,263 @@ def _payload_summary(payload: Dict[str, Any]) -> Dict[str, Any]:
 	}
 
 
+def run_phase6_reasoning_live_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_erp_business_reasoning"
+	percent_key = "qwen_erp_business_reasoning_rollout_percentage"
+	users_key = "qwen_erp_business_reasoning_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 0
+		conf[users_key] = ["Administrator"]
+
+		def _runner(doc) -> Dict[str, Any]:
+			ok, first_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=service_module.smoke_fixture_replacement_message("fresh_query_override_to_ar"),
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase 6 live reasoning debug failed: first turn did not complete.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			latest_grounded_turn = service_module._latest_grounded_turn_contract(session_doc)
+			latest_family_artifact = service_module._latest_normalized_family_artifact(
+				session_doc,
+				grounded_turn=latest_grounded_turn,
+			)
+			latest_assistant_payload = service_module._latest_assistant_payload(session_doc)
+			request_id = "phase6-debug"
+			interaction_contract = service_module.build_interaction_contract(
+				request_id=request_id,
+				session_id=doc.name,
+				user_id="Administrator",
+				site_name=str(getattr(getattr(frappe, "local", None), "site", "") or "").strip(),
+				raw_message="what does this mean",
+			)
+			response_policy_contract = service_module.build_response_policy_contract(
+				interaction_contract=interaction_contract,
+			)
+			activation = service_module.build_reasoning_activation_contract(
+				request_id=request_id,
+				session_id=doc.name,
+				message="what does this mean",
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				response_policy_contract=response_policy_contract.to_payload(),
+			)
+			semantic = service_module.interpret_reasoning_activation_semantically(
+				request_id=request_id,
+				session_id=doc.name,
+				user_id="Administrator",
+				site_name=str(getattr(getattr(frappe, "local", None), "site", "") or "").strip(),
+				message="what does this mean",
+				recent_messages=service_module._recent_messages(session_doc, limit=8),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				activation_contract=activation.to_payload(),
+			)
+			direct_execution = service_module.execute_erp_business_reasoning(
+				request_id=request_id,
+				session_id=doc.name,
+				user_id="Administrator",
+				message="what does this mean",
+				recent_messages=service_module._recent_messages(session_doc, limit=10),
+				activation_contract=activation.to_payload(),
+				semantic_activation_result=semantic.to_payload(),
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+				latest_assistant_payload=latest_assistant_payload,
+				prior_reasoning_contract=service_module._latest_reasoning_contract(session_doc),
+				prior_answer_text=str(latest_assistant_payload.get("text") or "").strip(),
+			)
+			ok2, second_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message="what does this mean",
+				user="Administrator",
+			)
+			second_payload_summary = {
+				"request_id": str((second_payload or {}).get("request_id") or "").strip(),
+				"mode": str((second_payload or {}).get("mode") or "").strip(),
+				"family_validation_status": str((second_payload or {}).get("family_validation_status") or "").strip(),
+				"semantic_validation_status": str((second_payload or {}).get("semantic_validation_status") or "").strip(),
+				"agent_meta": dict(((second_payload or {}).get("agent_meta") or {})),
+			}
+			return {
+				"ok": True,
+				"rollout": service_module._erp_business_reasoning_rollout_decision(
+					session_name=doc.name,
+					user="Administrator",
+					site_name=str(getattr(getattr(frappe, "local", None), "site", "") or "").strip(),
+				),
+				"first_payload": first_payload,
+				"activation": activation.to_payload(),
+				"semantic": semantic.to_payload(),
+				"direct_execution": direct_execution.to_payload(),
+				"second_ok": ok2,
+				"second_payload": second_payload_summary,
+				"latest_assistant_payload": service_module._latest_assistant_payload(
+					frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+				),
+			}
+
+		return service_module._run_phase55_smoke_session("Phase 6 Live Reasoning Debug", _runner)
+	finally:
+		_restore_conf(conf, originals, presence)
+
+
+def run_phase8c_repair_handling_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+
+	def _seed_recovery_session(doc) -> None:
+		recovery_payload = service_module.build_artifact_enrichment_recovery_contract(
+			request_id="phase8c-debug-recovery",
+			session_id=doc.name,
+			source_request_id="phase8c-debug-grounded-trace",
+			source_family_id="customer_rankings",
+			source_capability_id="top_customers_by_revenue",
+			source_report="Top Customers by Revenue",
+			failure_type="artifact_enrichment_incompatible",
+			recovery_state="recoverable",
+			available_recovery_actions=["keep_current_artifact", "run_alternative_governed_query", "clarify_target_output"],
+			recommended_recovery_action="run_alternative_governed_query",
+			preservable_scope={"company": "Mingalar Mobile Distribution Co., Ltd.", "requested_top_n": 7},
+			preservable_dimensions=["customer"],
+			preservable_metrics=["quantity", "revenue"],
+			preservable_time_context={"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			alternative_capability_id="top_customers_by_quantity",
+			alternative_report="Top Customers by Quantity",
+			reason="Quantity requires a governed sibling query.",
+			allowed_to_recover=True,
+			confidence=0.91,
+		).to_payload()
+		grounded_turn_payload = {
+			"type": "qwen_grounded_turn_context",
+			"contract_version": "1.0",
+			"request_id": "phase8c-debug-grounded-request",
+			"trace_request_id": "phase8c-debug-grounded-trace",
+			"grounded": True,
+			"source_kind": "report",
+			"source_name": "Top Customers by Revenue",
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+			"date_range": {"from_date": "2026-02-01", "to_date": "2026-02-29"},
+			"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+			"dimensions": ["customer"],
+			"metrics": ["revenue"],
+			"returned_schema": ["Customer", "Sales Amount"],
+			"table_rows": [],
+			"row_count": 7,
+			"base_language": "en",
+			"transform_chain": [],
+			"artifact_family_id": "customer_rankings",
+			"artifact_type": "normalized_family_artifact",
+			"artifact_source_reports": ["Top Customers by Revenue"],
+			"known_entities": [],
+			"known_documents": [],
+		}
+		service_module._append_message(
+			doc,
+			"assistant",
+			service_module._assistant_text_payload(
+				"I can't safely add quantity to the current ranking, but I can run the governed Top Customers by Quantity report for last month."
+			),
+		)
+		service_module._append_tool_payload(doc, grounded_turn_payload)
+		service_module._append_tool_payload(doc, recovery_payload)
+		service_module._save_session(doc, ignore_permissions=False)
+
+	def _runner(doc) -> Dict[str, Any]:
+		_seed_recovery_session(doc)
+		fixture_id = "product_recovery_flow"
+		ok, guidance_payload = service_module.handle_qwen_user_message(
+			session_name=doc.name,
+			message=service_module.smoke_fixture_action_message(fixture_id, "guidance"),
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8C repair debug failed on guidance turn.")
+		ok, accepted_payload = service_module.handle_qwen_user_message(
+			session_name=doc.name,
+			message=service_module.smoke_fixture_action_message(fixture_id, "accept_governed_alternative"),
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8C repair debug failed on accepted recovery turn.")
+		session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = service_module._session_tool_payloads(session_doc)
+		return {
+			"ok": True,
+			"guidance_mode": str((guidance_payload or {}).get("mode") or "").strip(),
+			"accepted_mode": str((accepted_payload or {}).get("mode") or "").strip(),
+			"assistant_text": str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip(),
+			"repair_contract": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_conversational_repair_intent_contract"),
+			"followup_resolution": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution_contract"),
+			"compiled_audit": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_compiled_execution_audit_contract"),
+			"rendered_family_response": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract"),
+		}
+
+	return service_module._run_phase55_smoke_session("Phase 8C Repair Handling Debug", _runner)
+
+
+def run_phase8_recovery_execution_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+
+	def _runner(doc) -> Dict[str, Any]:
+		fixture_id = "product_recovery_flow"
+		fixture = service_module.require_smoke_fixture(fixture_id)
+		ok, first_payload = service_module.handle_qwen_user_message(
+			session_name=doc.name,
+			message=str(fixture.get("initial_message") or "").strip(),
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery debug failed on initial products ranking request.")
+		session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+		first_assistant_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+		ok, second_payload = service_module.handle_qwen_user_message(
+			session_name=doc.name,
+			message=service_module.smoke_fixture_action_message(fixture_id, "qty_enrichment"),
+			user="Administrator",
+		)
+		if not ok:
+			raise RuntimeError("Phase 8 recovery debug failed on quantity enrichment request.")
+		session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+		tool_payloads = service_module._session_tool_payloads(session_doc)
+		return {
+			"ok": True,
+			"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+			"first_assistant_text": first_assistant_text,
+			"mode": str((second_payload or {}).get("mode") or "").strip(),
+			"assistant_text": str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip(),
+			"recent_tool_types": [str(item.get("type") or "").strip() for item in tool_payloads[-20:]],
+			"followup_resolution": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_followup_resolution_contract"),
+			"continuation_contract": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_artifact_continuation_contract"),
+			"enrichment_compatibility_contract": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_artifact_enrichment_compatibility_contract"),
+			"recovery_contract": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_artifact_enrichment_recovery_contract"),
+			"scope_decision_contract": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_governed_scope_decision_contract"),
+			"grounded_turn_context": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_grounded_turn_context"),
+			"compiled_audit": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_compiled_execution_audit_contract"),
+			"rendered_family_response": service_module._latest_tool_payload_by_type(tool_payloads, "qwen_rendered_family_response_contract"),
+		}
+
+	return service_module._run_phase55_smoke_session("Phase 8 Recovery Execution Debug", _runner)
+
+
 def _top_ranked_name_from_markdown(text: str) -> str:
 	match = re.search(r"^\|\s*1\s*\|\s*([^|]+?)\s*\|", str(text or ""), flags=re.MULTILINE)
 	if not match:
@@ -178,6 +437,51 @@ def run_phase4_compiled_rollout_smoke() -> Dict[str, Any]:
 			{flag_key: original_flag, percent_key: original_percent, users_key: original_users},
 			{flag_key: had_original, percent_key: had_percent, users_key: had_users},
 		)
+
+
+def run_phase3_3c_customer_master_lookup_smoke() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+	doc.title = "Phase3.3C Customer Master Lookup Smoke"
+	doc.insert(ignore_permissions=False)
+	try:
+		turns: List[Dict[str, Any]] = []
+		for prompt in (
+			"give me some customer names",
+			"do u have customer name similar to Ko Nay Lin Mobile",
+			"tell me details about Ko Nay Lin Mobile Center",
+		):
+			ok, payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=prompt,
+				user="Administrator",
+			)
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			assistant_payload = service_module._latest_assistant_payload(session_doc) or {}
+			answer_text = str(assistant_payload.get("answer_text") or "").strip()
+			turns.append(
+				{
+					"prompt": prompt,
+					"ok": bool(ok),
+					"payload": payload if isinstance(payload, dict) else {},
+					"assistant_payload": _payload_summary(assistant_payload),
+					"answer_text": answer_text,
+				}
+			)
+		if "Which area would you like me to analyze?" in turns[0]["answer_text"]:
+			raise RuntimeError("Customer master lookup smoke failed: generic customer names still fell into area clarification.")
+		if "Ko Nay Lin Mobile Center" not in turns[1]["answer_text"]:
+			raise RuntimeError("Customer master lookup smoke failed: near-match customer lookup did not resolve the governed customer name.")
+		if "Ko Nay Lin Mobile Center Details" not in turns[2]["answer_text"]:
+			raise RuntimeError("Customer master lookup smoke failed: exact detail request did not enter governed customer detail.")
+		return {
+			"ok": True,
+			"session_name": doc.name,
+			"turns": turns,
+		}
+	finally:
+		frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
 
 
 def run_phase4_compiled_rollout_governance_selftests() -> Dict[str, Any]:
@@ -663,6 +967,254 @@ def run_same_session_fresh_query_regression_smoke(messages: List[str] | None = N
 			frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
 	finally:
 		_restore_conf(conf, originals, presence)
+
+
+def run_phase_d2a_transaction_listing_today_requery_smoke() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	today_iso = str(dt.date.today())
+	scenarios = [
+		{
+			"scenario_id": "sales_invoice_today",
+			"first_message": "show me sales invoices",
+			"second_message": "show me sales invoices today",
+			"expected_source_name": "Sales Invoice List",
+		},
+		{
+			"scenario_id": "purchase_order_today",
+			"first_message": "show me purchase orders",
+			"second_message": "show me purchase orders today",
+			"expected_source_name": "Purchase Order List",
+		},
+		{
+			"scenario_id": "payment_entry_today",
+			"first_message": "show me payment entries",
+			"second_message": "show me payment entries today",
+			"expected_source_name": "Payment Entry List",
+		},
+	]
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 100
+		conf[users_key] = []
+		results: List[Dict[str, Any]] = []
+		for scenario in scenarios:
+			doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+			doc.title = f"Phase D2A {scenario['scenario_id']}"
+			doc.insert(ignore_permissions=False)
+			try:
+				first_message = str(scenario.get("first_message") or "").strip()
+				second_message = str(scenario.get("second_message") or "").strip()
+				expected_source_name = str(scenario.get("expected_source_name") or "").strip()
+
+				first_ok, first_payload = service_module.handle_qwen_user_message(
+					session_name=doc.name,
+					message=first_message,
+					user="Administrator",
+				)
+				if not first_ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{first_message}` did not execute through compiled first-turn mode."
+					)
+				session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+				tool_payloads = _tool_payloads_from_session_doc(session_doc, parse_payload=service_module._parse_payload)
+				first_request_id = str((first_payload or {}).get("request_id") or "").strip()
+				first_grounded = _request_scoped_payload(
+					tool_payloads,
+					"qwen_grounded_turn_context",
+					first_request_id,
+					latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+				)
+				first_trace_request_id = str(first_grounded.get("trace_request_id") or first_grounded.get("request_id") or "").strip()
+				first_source_name = str(first_grounded.get("source_name") or "").strip()
+				first_scope = {
+					"date_range": dict(first_grounded.get("date_range") or {}),
+					"filters": dict(first_grounded.get("filters") or {}),
+				}
+				if not first_trace_request_id or not first_source_name:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{first_message}` did not persist a grounded trace."
+					)
+				if first_source_name != expected_source_name:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{first_message}` used unexpected source `{first_source_name}`."
+					)
+
+				second_ok, second_payload = service_module.handle_qwen_user_message(
+					session_name=doc.name,
+					message=second_message,
+					user="Administrator",
+				)
+				if not second_ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` did not execute through compiled first-turn mode."
+					)
+				session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+				tool_payloads = _tool_payloads_from_session_doc(session_doc, parse_payload=service_module._parse_payload)
+				second_request_id = str((second_payload or {}).get("request_id") or "").strip()
+				second_grounded = _request_scoped_payload(
+					tool_payloads,
+					"qwen_grounded_turn_context",
+					second_request_id,
+					latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+				)
+				second_trace_request_id = str(second_grounded.get("trace_request_id") or second_grounded.get("request_id") or "").strip()
+				second_source_name = str(second_grounded.get("source_name") or "").strip()
+				second_scope = {
+					"date_range": dict(second_grounded.get("date_range") or {}),
+					"filters": dict(second_grounded.get("filters") or {}),
+				}
+				if not second_trace_request_id or not second_source_name:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` did not persist a grounded trace."
+					)
+				if second_trace_request_id == first_trace_request_id:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` reused the earlier grounded trace instead of issuing a fresh query."
+					)
+				if second_source_name != first_source_name:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` changed source families unexpectedly from `{first_source_name}` to `{second_source_name}`."
+					)
+				if second_source_name != expected_source_name:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` used unexpected source `{second_source_name}`."
+					)
+				if first_scope == second_scope:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` did not update the grounded time scope."
+					)
+				second_scope_text = json.dumps(second_scope, sort_keys=True, default=str)
+				if today_iso not in second_scope_text:
+					raise RuntimeError(
+						f"Phase D2A transaction-listing smoke failed: `{second_message}` did not carry today's date into grounded scope."
+					)
+
+				results.append(
+					{
+						"scenario_id": str(scenario.get("scenario_id") or "").strip(),
+						"first_message": first_message,
+						"second_message": second_message,
+						"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+						"second_mode": str((second_payload or {}).get("mode") or "").strip(),
+						"source_name": second_source_name,
+						"expected_source_name": expected_source_name,
+						"first_trace_request_id": first_trace_request_id,
+						"second_trace_request_id": second_trace_request_id,
+						"first_scope": first_scope,
+						"second_scope": second_scope,
+						"row_count": int(max(0, second_grounded.get("row_count") or 0)),
+					}
+				)
+			finally:
+				frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+		return {
+			"ok": True,
+			"results": results,
+			"today": today_iso,
+			"rollout_status": service_module.get_compiled_first_turn_rollout_status(),
+		}
+	finally:
+		_restore_conf(conf, originals, presence)
+
+
+def run_phase_d2c_transaction_listing_base_scope_reset_smoke() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+	flag_key = "qwen_enable_compiled_first_turn"
+	percent_key = "qwen_compiled_first_turn_rollout_percentage"
+	users_key = "qwen_compiled_first_turn_rollout_users"
+	conf = getattr(frappe, "conf", None) or {}
+	originals = {
+		flag_key: conf.get(flag_key),
+		percent_key: conf.get(percent_key),
+		users_key: conf.get(users_key),
+	}
+	presence = {
+		flag_key: flag_key in conf,
+		percent_key: percent_key in conf,
+		users_key: users_key in conf,
+	}
+	try:
+		conf[flag_key] = True
+		conf[percent_key] = 100
+		conf[users_key] = []
+		doc = frappe.new_doc(service_module.QWEN_SESSION_DOCTYPE)
+		doc.title = "Phase D2C payment_entry_base_reset"
+		doc.insert(ignore_permissions=False)
+		try:
+			first_ok, first_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me payment entries last month",
+				user="Administrator",
+			)
+			if not first_ok or str((first_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+				raise RuntimeError("Phase D2C smoke failed: scoped payment-entry first turn did not execute through compiled first-turn mode.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = _tool_payloads_from_session_doc(session_doc, parse_payload=service_module._parse_payload)
+			first_request_id = str((first_payload or {}).get("request_id") or "").strip()
+			first_grounded = _request_scoped_payload(
+				tool_payloads,
+				"qwen_grounded_turn_context",
+				first_request_id,
+				latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+			)
+			first_scope = dict(first_grounded.get("date_range") or {})
+			if str(first_grounded.get("source_name") or "").strip() != "Payment Entry List":
+				raise RuntimeError("Phase D2C smoke failed: first payment-entry request used an unexpected source report.")
+			if not str(first_scope.get("from_date") or "").strip() or not str(first_scope.get("to_date") or "").strip():
+				raise RuntimeError("Phase D2C smoke failed: first payment-entry request did not carry the expected scoped date window.")
+
+			second_ok, second_payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message="show me payment entries",
+				user="Administrator",
+			)
+			if not second_ok or str((second_payload or {}).get("mode") or "").strip() != "compiled_first_turn":
+				raise RuntimeError("Phase D2C smoke failed: bare payment-entry re-ask did not execute through compiled first-turn mode.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = _tool_payloads_from_session_doc(session_doc, parse_payload=service_module._parse_payload)
+			second_request_id = str((second_payload or {}).get("request_id") or "").strip()
+			second_grounded = _request_scoped_payload(
+				tool_payloads,
+				"qwen_grounded_turn_context",
+				second_request_id,
+				latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+			)
+			second_scope = dict(second_grounded.get("date_range") or {})
+			if str(second_grounded.get("source_name") or "").strip() != "Payment Entry List":
+				raise RuntimeError("Phase D2C smoke failed: bare payment-entry re-ask changed source reports unexpectedly.")
+			if first_scope == second_scope:
+				raise RuntimeError("Phase D2C smoke failed: bare payment-entry re-ask preserved the prior scoped date window.")
+			if any(str(second_scope.get(key) or "").strip() for key in ("from_date", "to_date", "report_date")):
+				raise RuntimeError("Phase D2C smoke failed: bare payment-entry re-ask still carried an explicit scoped date window.")
+			return {
+				"ok": True,
+				"session_name": doc.name,
+				"first_scope": first_scope,
+				"second_scope": second_scope,
+				"first_mode": str((first_payload or {}).get("mode") or "").strip(),
+				"second_mode": str((second_payload or {}).get("mode") or "").strip(),
+			}
+		finally:
+			frappe.delete_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name, ignore_permissions=False)
+	finally:
+		_restore_conf(conf, originals, presence)
+
 
 
 def run_phase1_1_delivery_note_invoice_switch_debug() -> Dict[str, Any]:

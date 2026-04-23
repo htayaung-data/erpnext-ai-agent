@@ -17,12 +17,20 @@ from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import (
 	resolve_company_name,
 )
 from ai_assistant_ui.qwen_chat.customer_lifecycle_support import get_customer_lifecycle_snapshot
+from ai_assistant_ui.qwen_chat.entity_reference_resolution import (
+	normalize_master_data_lookup_slots,
+	resolve_entity_reference_from_message,
+)
 from ai_assistant_ui.qwen_chat.family_adapters import (
 	_report_result,
 	_report_rows,
 	_report_tool,
 )
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
+from ai_assistant_ui.qwen_chat.metadata import (
+	list_entity_reference_policy_specs,
+	load_semantic_resolution_registry,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 
 
@@ -32,6 +40,18 @@ def _clean_text(value: Any) -> str:
 
 def _normalize_text(value: Any) -> str:
 	return " ".join(_clean_text(value).lower().split())
+
+
+def _clean_text_list(values: Any) -> List[str]:
+	out: List[str] = []
+	seen: set[str] = set()
+	for value in values or []:
+		clean = _clean_text(value)
+		if not clean or clean in seen:
+			continue
+		out.append(clean)
+		seen.add(clean)
+	return out
 
 
 def _iso_date(value: Any) -> str:
@@ -157,76 +177,146 @@ def _identifier_candidates(message: str) -> List[str]:
 
 
 def _explicit_detail_request(message: str) -> bool:
-	text = _normalize_text(message)
 	if _identifier_candidates(message):
 		return True
-	return any(
-		phrase in text
-		for phrase in (
-			"give me details",
-			"give me detail",
-			"tell me more",
-			"more information",
-			"show details",
-			"show detail",
-			"history",
-			"payment history",
-			"purchase history",
-			"previous purchases",
-			"purchasing pattern",
+	return bool(_profile_target_request_candidates(message))
+
+
+def _active_profile_target_entity_policies() -> List[Dict[str, Any]]:
+	out: List[Dict[str, Any]] = []
+	for item in list_entity_reference_policy_specs():
+		if not isinstance(item, dict):
+			continue
+		if _clean_text(item.get("activation_state")) != "active":
+			continue
+		allowed_lookup_modes = {
+			_clean_text(value)
+			for value in (item.get("allowed_lookup_modes") or [])
+			if _clean_text(value)
+		}
+		if "profile_target" not in allowed_lookup_modes:
+			continue
+		entity_grain = _clean_text(item.get("entity_grain"))
+		doctype = _clean_text(item.get("doctype"))
+		identity_field = _clean_text(item.get("identity_field"))
+		if not entity_grain or not doctype or not identity_field:
+			continue
+		out.append(dict(item))
+	return out
+
+
+def _profile_target_request_candidates(message: str) -> List[Dict[str, Any]]:
+	out: List[Dict[str, Any]] = []
+	seen: set[tuple[str, str]] = set()
+	for policy in _active_profile_target_entity_policies():
+		entity_grain = _clean_text(policy.get("entity_grain"))
+		if not entity_grain:
+			continue
+		normalized_slots = normalize_master_data_lookup_slots(
+			message=message,
+			entity_grain=entity_grain,
 		)
+		if _clean_text(normalized_slots.get("lookup_mode")) != "profile_target":
+			continue
+		target_clean = _clean_text(normalized_slots.get("lookup_search_text"))
+		if not target_clean:
+			continue
+		candidate_key = (entity_grain, target_clean)
+		if candidate_key in seen:
+			continue
+		seen.add(candidate_key)
+		out.append(
+			{
+				"entity_grain": entity_grain,
+				"target_clean": target_clean,
+				"policy": dict(policy),
+			}
+		)
+	return out
+
+
+def _resolve_named_entity_from_policy_exact(
+	*,
+	target_clean: str,
+	policy: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+	entity_grain = _clean_text(policy.get("entity_grain"))
+	doctype = _clean_text(policy.get("doctype"))
+	identity_field = _clean_text(policy.get("identity_field"))
+	display_field = _clean_text(policy.get("display_field"))
+	if not entity_grain or not doctype or not identity_field:
+		return None
+	if frappe.db.exists(doctype, target_clean):
+		label = _clean_text(frappe.db.get_value(doctype, target_clean, display_field)) if display_field else ""
+		return {
+			"entity_type": entity_grain,
+			"entity_key": target_clean,
+			"entity_label": label or target_clean,
+			"source": "explicit_name",
+		}
+	if display_field:
+		row = frappe.db.get_value(doctype, {display_field: target_clean}, [identity_field, display_field], as_dict=True)
+		if isinstance(row, dict) and _clean_text(row.get(identity_field)):
+			entity_key = _clean_text(row.get(identity_field))
+			entity_label = _clean_text(row.get(display_field)) or entity_key
+			return {
+				"entity_type": entity_grain,
+				"entity_key": entity_key,
+				"entity_label": entity_label,
+				"source": "explicit_name",
+			}
+	return None
+
+
+def _resolve_named_entity_from_policy_reference(
+	*,
+	target_clean: str,
+	policy: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+	entity_grain = _clean_text(policy.get("entity_grain"))
+	if not entity_grain:
+		return None
+	resolution = resolve_entity_reference_from_message(
+		request_id="entity-detail-explicit-target",
+		entity_grain=entity_grain,
+		message=target_clean,
+		lookup_mode="profile_target",
+		search_text=target_clean,
 	)
-
-
-def _detail_target_from_message(message: str) -> str:
-	text = str(message or "").strip()
-	if not text:
-		return ""
-	lower = text.lower()
-	for phrase in (
-		"give me details about",
-		"give me detail about",
-		"tell me more about",
-		"show details for",
-		"show detail for",
-		"show details about",
-		"show detail about",
-	):
-		if phrase in lower:
-			start = lower.find(phrase) + len(phrase)
-			return text[start:].strip(" :.-\n\t")
-	return ""
+	resolved_entity = (
+		resolution.get("resolved_entity")
+		if isinstance(resolution.get("resolved_entity"), dict)
+		else {}
+	)
+	entity_key = _clean_text(resolved_entity.get("entity_key"))
+	if _clean_text(resolution.get("resolution_status")) != "resolved" or not entity_key:
+		return None
+	entity_label = _clean_text(resolved_entity.get("entity_label")) or entity_key
+	return {
+		"entity_type": entity_grain,
+		"entity_key": entity_key,
+		"entity_label": entity_label,
+		"source": _clean_text(resolved_entity.get("resolution_source")) or "governed_resolution",
+	}
 
 
 def _resolve_named_entity_from_detail_request(message: str) -> Optional[Dict[str, Any]]:
-	target = _detail_target_from_message(message)
-	if not target:
+	candidates = _profile_target_request_candidates(message)
+	if not candidates:
 		return None
-	target_clean = _clean_text(target)
-	if not target_clean:
-		return None
-	if frappe.db.exists("Customer", target_clean):
-		label = _clean_text(frappe.db.get_value("Customer", target_clean, "customer_name"))
-		return {"entity_type": "customer", "entity_key": target_clean, "entity_label": label or target_clean, "source": "explicit_name"}
-	row = frappe.db.get_value("Customer", {"customer_name": target_clean}, ["name", "customer_name"], as_dict=True)
-	if isinstance(row, dict) and _clean_text(row.get("name")):
-		return {
-			"entity_type": "customer",
-			"entity_key": _clean_text(row.get("name")),
-			"entity_label": _clean_text(row.get("customer_name")) or target_clean,
-			"source": "explicit_name",
-		}
-	if frappe.db.exists("Supplier", target_clean):
-		label = _clean_text(frappe.db.get_value("Supplier", target_clean, "supplier_name"))
-		return {"entity_type": "supplier", "entity_key": target_clean, "entity_label": label or target_clean, "source": "explicit_name"}
-	row = frappe.db.get_value("Supplier", {"supplier_name": target_clean}, ["name", "supplier_name"], as_dict=True)
-	if isinstance(row, dict) and _clean_text(row.get("name")):
-		return {
-			"entity_type": "supplier",
-			"entity_key": _clean_text(row.get("name")),
-			"entity_label": _clean_text(row.get("supplier_name")) or target_clean,
-			"source": "explicit_name",
-		}
+	for candidate in candidates:
+		target_clean = _clean_text(candidate.get("target_clean"))
+		policy = candidate.get("policy") if isinstance(candidate.get("policy"), dict) else {}
+		exact_match = _resolve_named_entity_from_policy_exact(target_clean=target_clean, policy=policy)
+		if exact_match:
+			return exact_match
+	for candidate in candidates:
+		target_clean = _clean_text(candidate.get("target_clean"))
+		policy = candidate.get("policy") if isinstance(candidate.get("policy"), dict) else {}
+		resolved_match = _resolve_named_entity_from_policy_reference(target_clean=target_clean, policy=policy)
+		if resolved_match:
+			return resolved_match
+	target_clean = _clean_text(candidates[0].get("target_clean"))
 	item_code, item_name = _resolve_item_name(target_clean)
 	if item_code:
 		return {"entity_type": "item", "entity_key": item_code, "entity_label": item_name or item_code, "source": "explicit_name"}
@@ -264,6 +354,18 @@ def _resolve_explicit_identifier(message: str) -> Optional[Dict[str, Any]]:
 	return None
 
 
+def _message_has_deictic_entity_reference(message: str) -> bool:
+	text = _normalize_text(message)
+	if not text:
+		return False
+	return bool(
+		re.search(
+			r"\b(this|that)\s+(customer|supplier|item|product|invoice|order|delivery|one|record|entry)\b",
+			text,
+		)
+	)
+
+
 def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List[Dict[str, Any]]:
 	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
 	sections = dict(artifact.get("sections") or {}) if isinstance(artifact.get("sections"), dict) else {}
@@ -271,16 +373,48 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 	family_id = _clean_text(artifact.get("family_id"))
 	out: List[Dict[str, Any]] = []
 
-	def _append(entity_type: str, entity_key: Any, entity_label: Any = "", *, alias: Any = "") -> None:
+	def _entity_deictic_aliases(entity_type: str) -> List[str]:
+		clean_entity_type = _clean_text(entity_type)
+		if not clean_entity_type:
+			return []
+		registry = load_semantic_resolution_registry()
+		alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
+		entity_grain_entries = alias_maps.get("entity_grain") if isinstance(alias_maps.get("entity_grain"), list) else []
+		entity_aliases: List[str] = [clean_entity_type]
+		for entry in entity_grain_entries:
+			if not isinstance(entry, dict):
+				continue
+			if _clean_text(entry.get("canonical_value")) != clean_entity_type:
+				continue
+			for alias in entry.get("aliases") or []:
+				clean_alias = _normalize_text(alias)
+				if not clean_alias or clean_alias.endswith(" name") or clean_alias.endswith(" names"):
+					continue
+				entity_aliases.append(clean_alias)
+		out_aliases: List[str] = []
+		for alias in _clean_text_list(entity_aliases):
+			out_aliases.extend([f"that {alias}", f"this {alias}"])
+		return _clean_text_list(out_aliases)
+
+	def _append(
+		entity_type: str,
+		entity_key: Any,
+		entity_label: Any = "",
+		*,
+		alias: Any = "",
+		aliases: List[str] | None = None,
+	) -> None:
 		key = _clean_text(entity_key)
 		label = _clean_text(entity_label) or key
 		if not key and not label:
 			return
+		alias_values = _clean_text_list(list(aliases or []) + [_clean_text(alias)])
 		payload = {
 			"entity_type": _clean_text(entity_type),
 			"entity_key": key or label,
 			"entity_label": label or key,
-			"alias": _clean_text(alias),
+			"alias": alias_values[0] if alias_values else "",
+			"aliases": alias_values,
 			"source": "artifact_context",
 		}
 		if payload not in out:
@@ -324,6 +458,46 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 			if not isinstance(row, dict):
 				continue
 			_append("item", row.get("item_code") or row.get("item_name"), row.get("item_name") or row.get("item_code"))
+	elif family_id in {"customer_master_list", "master_data_directory"}:
+		entity_type = _clean_text(dimensions.get("entity_type")) or "customer"
+		entity_aliases = _entity_deictic_aliases(entity_type)
+		for row in sections.get("directory_rows") or sections.get("customer_rows") or []:
+			if not isinstance(row, dict):
+				continue
+			_append(
+				entity_type,
+				row.get("entity_code") or row.get("customer_code") or row.get("entity") or row.get("entity_name") or row.get("customer_name") or row.get("customer"),
+				row.get("entity_name") or row.get("entity") or row.get("customer_name") or row.get("customer"),
+				aliases=entity_aliases,
+			)
+		resolution_payload = (
+			dict(sections.get("entity_reference_resolution"))
+			if isinstance(sections.get("entity_reference_resolution"), dict)
+			else {}
+		)
+		resolved_entity = (
+			dict(resolution_payload.get("resolved_entity"))
+			if isinstance(resolution_payload.get("resolved_entity"), dict)
+			else {}
+		)
+		if _clean_text(resolved_entity.get("entity_key")) or _clean_text(resolved_entity.get("entity_label")):
+			_append(
+				entity_type,
+				resolved_entity.get("entity_key") or resolved_entity.get("entity_label"),
+				resolved_entity.get("entity_label") or resolved_entity.get("entity_key"),
+				aliases=entity_aliases,
+			)
+	elif family_id == "entity_detail":
+		entity_type = _clean_text(dimensions.get("entity_type"))
+		entity_key = _clean_text(dimensions.get("entity_key"))
+		entity_label = _clean_text(dimensions.get("entity_label"))
+		if entity_type and (entity_key or entity_label):
+			_append(
+				entity_type,
+				entity_key or entity_label,
+				entity_label or entity_key,
+				aliases=_entity_deictic_aliases(entity_type),
+			)
 	return out[:50]
 
 
@@ -333,18 +507,50 @@ def detect_entity_drilldown_request(
 	artifact_payload: Dict[str, Any] | None,
 	grounded_turn: Dict[str, Any] | None = None,
 ) -> Optional[Dict[str, Any]]:
+	def _candidate_identity(candidate: Dict[str, Any]) -> tuple[str, str]:
+		entity_type = _clean_text(candidate.get("entity_type"))
+		entity_key = _clean_text(candidate.get("entity_key") or candidate.get("entity_label"))
+		return entity_type, entity_key
+
 	if not _explicit_detail_request(message):
 		return None
 	explicit = _resolve_explicit_identifier(message)
 	if explicit:
 		return explicit
-	explicit_name = _resolve_named_entity_from_detail_request(message)
-	if explicit_name:
-		return explicit_name
 
 	text = _normalize_text(message)
+	artifact_candidates = _artifact_entity_candidates(artifact_payload)
+	if _message_has_deictic_entity_reference(message):
+		matching_candidates: List[Dict[str, Any]] = []
+		seen_matching: set[tuple[str, str]] = set()
+		for candidate in artifact_candidates:
+			alias_values = _clean_text_list(candidate.get("aliases") or [])
+			legacy_alias = _clean_text(candidate.get("alias"))
+			if legacy_alias:
+				alias_values.append(legacy_alias)
+			normalized_aliases = [_normalize_text(value) for value in _clean_text_list(alias_values)]
+			if not any(alias and alias in text for alias in normalized_aliases):
+				continue
+			candidate_identity = _candidate_identity(candidate)
+			if candidate_identity in seen_matching:
+				continue
+			seen_matching.add(candidate_identity)
+			matching_candidates.append(candidate)
+		if len(matching_candidates) == 1:
+			return matching_candidates[0]
+		unique_candidates: List[Dict[str, Any]] = []
+		seen_candidates: set[tuple[str, str]] = set()
+		for candidate in artifact_candidates:
+			candidate_identity = _candidate_identity(candidate)
+			if candidate_identity in seen_candidates:
+				continue
+			seen_candidates.add(candidate_identity)
+			unique_candidates.append(candidate)
+		if len(unique_candidates) == 1:
+			return unique_candidates[0]
+
 	for candidate in sorted(
-		_artifact_entity_candidates(artifact_payload),
+		artifact_candidates,
 		key=lambda item: len(_clean_text(item.get("entity_label") or item.get("entity_key"))),
 		reverse=True,
 	):
@@ -354,6 +560,10 @@ def detect_entity_drilldown_request(
 			return candidate
 		if label and label in text:
 			return candidate
+
+	explicit_name = _resolve_named_entity_from_detail_request(message)
+	if explicit_name:
+		return explicit_name
 
 	known_entities = grounded_turn.get("known_entities") if isinstance(grounded_turn, dict) else []
 	if isinstance(known_entities, list):
@@ -1374,6 +1584,42 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 
 
 def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
+	def _item_stock_snapshot(item_code: str, company_name: str = "") -> Dict[str, Any]:
+		conditions = ["b.item_code=%s", "coalesce(b.actual_qty, 0) <> 0"]
+		values: List[Any] = [item_code]
+		if company_name:
+			conditions.append("coalesce(w.company, '')=%s")
+			values.append(company_name)
+		rows = frappe.db.sql(
+			f"""
+			select b.warehouse as warehouse,
+			       coalesce(b.actual_qty, 0) as balance_qty,
+			       coalesce(b.stock_value, 0) as balance_value
+			from `tabBin` b
+			left join `tabWarehouse` w on w.name = b.warehouse
+			where {' and '.join(conditions)}
+			order by b.actual_qty desc, b.stock_value desc, b.warehouse asc
+			limit 10
+			""",
+			tuple(values),
+			as_dict=True,
+		)
+		stock_rows = [
+			{
+				"warehouse": _clean_text(row.get("warehouse")),
+				"balance_qty": _numeric(row.get("balance_qty")),
+				"balance_value": _numeric(row.get("balance_value")),
+			}
+			for row in (rows or [])
+			if isinstance(row, dict) and _clean_text(row.get("warehouse"))
+		]
+		return {
+			"rows": stock_rows,
+			"warehouse_count": len(stock_rows),
+			"balance_qty": sum(_numeric(row.get("balance_qty")) for row in stock_rows),
+			"balance_value": sum(_numeric(row.get("balance_value")) for row in stock_rows),
+		}
+
 	item_code, item_name = _resolve_item_name(entity_key)
 	if not item_code:
 		raise frappe.DoesNotExistError(f"Item `{entity_key}` not found.")
@@ -1417,6 +1663,7 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 		tuple(values),
 		as_dict=True,
 	)
+	stock_snapshot = _item_stock_snapshot(item_code, company)
 	entity_label = _clean_text(master.get("item_name")) or item_name or item_code
 	summary = [
 		("Item Name", entity_label),
@@ -1429,12 +1676,22 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 		("Total Sold Qty", _clean_text(stats.get("total_qty"))),
 		("Total Sales Amount (MMK)", _money(stats.get("total_amount"))),
 		("Latest Sale Date", _iso_date(stats.get("latest_date"))),
+		("Total On Hand Qty", _clean_text(stock_snapshot.get("balance_qty"))),
+		("Total Stock Value (MMK)", _money(stock_snapshot.get("balance_value"))),
+		("Warehouse Count", _clean_text(stock_snapshot.get("warehouse_count"))),
 	]
 	bullets = []
 	if int(stats.get("invoice_count") or 0) > 0:
 		bullets.append(f"{entity_label} appears on {int(stats.get('invoice_count') or 0)} posted sales invoices in the governed history.")
 	if _clean_text(stats.get("latest_date")):
 		bullets.append(f"Most recent sale was on {_iso_date(stats.get('latest_date'))}.")
+	if int(stock_snapshot.get("warehouse_count") or 0) > 0:
+		bullets.append(
+			f"Current on-hand stock is {_clean_text(stock_snapshot.get('balance_qty'))} "
+			f"{_clean_text(master.get('stock_uom')) or 'units'} across {int(stock_snapshot.get('warehouse_count') or 0)} warehouses."
+		)
+	else:
+		bullets.append("No on-hand stock is currently recorded for this item.")
 	recent_rows = [
 		[
 			_clean_text(row.get("invoice")),
@@ -1444,23 +1701,43 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 		]
 		for row in recent
 	]
+	stock_rows = [
+		[
+			_clean_text(row.get("warehouse")),
+			_clean_text(row.get("balance_qty")),
+			_money(row.get("balance_value")),
+		]
+		for row in (stock_snapshot.get("rows") or [])
+	]
+	blocks = [
+		_summary_block("Item Profile", summary),
+		_bullet_block("Highlights", bullets),
+	]
+	if stock_rows:
+		blocks.append(
+			_data_block(
+				"Stock by Warehouse",
+				["Warehouse", "Qty", "Stock Value (MMK)"],
+				stock_rows,
+			)
+		)
+	if recent_rows:
+		blocks.append(
+			_data_block("Recent Sales", ["Invoice", "Posting Date", "Qty", "Amount (MMK)"], recent_rows)
+		)
 	rendered = {
 		"type": "qwen_entity_detail_rendered_response",
 		"request_id": "",
 		"family_id": "entity_detail",
 		"title": f"{entity_label} Details",
-		"source_reports": ["Item", "Sales Invoice Item"],
-		"blocks": [
-			_summary_block("Item Profile", summary),
-			_bullet_block("Highlights", bullets),
-			_data_block("Recent Sales", ["Invoice", "Posting Date", "Qty", "Amount (MMK)"], recent_rows),
-		],
+		"source_reports": ["Item", "Bin", "Sales Invoice Item"],
+		"blocks": blocks,
 	}
 	artifact = {
 		"type": "qwen_entity_detail_artifact",
 		"artifact_type": "entity_detail_artifact",
 		"family_id": "entity_detail",
-		"source_reports": ["Item", "Sales Invoice Item"],
+		"source_reports": ["Item", "Bin", "Sales Invoice Item"],
 		"filters": {"company": company, "entity_key": item_code},
 		"dimensions": {
 			"entity_type": "item",
@@ -1474,9 +1751,20 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 			"invoice_count": int(stats.get("invoice_count") or 0),
 			"total_qty": _numeric(stats.get("total_qty")),
 			"total_amount": _numeric(stats.get("total_amount")),
+			"balance_qty": _numeric(stock_snapshot.get("balance_qty")),
+			"balance_value": _numeric(stock_snapshot.get("balance_value")),
+			"warehouse_count": int(stock_snapshot.get("warehouse_count") or 0),
 		},
 		"sections": {
 			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+			"stock_rows": [
+				{
+					"warehouse": _clean_text(row.get("warehouse")),
+					"balance_qty": _numeric(row.get("balance_qty")),
+					"balance_value": _numeric(row.get("balance_value")),
+				}
+				for row in (stock_snapshot.get("rows") or [])
+			],
 			"recent_transactions": [
 				{
 					"document_name": _clean_text(row.get("invoice")),

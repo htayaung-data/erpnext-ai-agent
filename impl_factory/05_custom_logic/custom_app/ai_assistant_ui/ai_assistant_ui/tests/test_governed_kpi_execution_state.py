@@ -24,8 +24,8 @@ class TestGovernedKpiExecutionState(unittest.TestCase):
 	def test_current_execution_registry_validates_and_loader_accessors_are_copy_safe(self):
 		result = validate_governed_kpi_execution_registry()
 		self.assertEqual(result.status, "pass", f"Execution registry must validate cleanly: {result.errors!r}")
-		self.assertEqual(result.stats.get("execution_count"), 10)
-		self.assertEqual(result.stats.get("activation_counts", {}).get("active"), 10)
+		self.assertEqual(result.stats.get("execution_count"), 16)
+		self.assertEqual(result.stats.get("activation_counts", {}).get("active"), 16)
 
 		payload = load_governed_kpi_execution_registry()
 		baseline_count = len(payload.get("executions") or [])
@@ -234,4 +234,3 @@ class TestGovernedKpiExecutionState(unittest.TestCase):
 		self.assertEqual(artifact.numerator_value, 820000.0)
 		self.assertEqual(artifact.denominator_value, 1000000.0)
 		self.assertEqual(artifact.unit_type, "ratio")
-

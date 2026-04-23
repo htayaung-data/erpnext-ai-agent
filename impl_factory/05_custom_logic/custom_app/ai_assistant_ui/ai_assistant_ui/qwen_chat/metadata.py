@@ -79,6 +79,10 @@ def load_semantic_resolution_registry() -> Dict[str, Any]:
 	return _load_json_copy("semantic_resolution_registry.json")
 
 
+def load_entity_reference_policy_registry() -> Dict[str, Any]:
+	return _load_json_copy("entity_reference_policy_registry.json")
+
+
 def load_financial_summary_clarification_registry() -> Dict[str, Any]:
 	return _load_json_copy("financial_summary_clarification_registry.json")
 
@@ -107,8 +111,44 @@ def load_governed_kpi_execution_registry() -> Dict[str, Any]:
 	return _load_json_copy("governed_kpi_execution_registry.json")
 
 
+def load_composite_family_registry() -> Dict[str, Any]:
+	return _load_json_copy("composite_family_registry.json")
+
+
+def load_composite_artifact_registry() -> Dict[str, Any]:
+	return _load_json_copy("composite_artifact_registry.json")
+
+
+def load_composite_compatibility_registry() -> Dict[str, Any]:
+	return _load_json_copy("composite_compatibility_registry.json")
+
+
+def load_composite_assembly_registry() -> Dict[str, Any]:
+	return _load_json_copy("composite_assembly_registry.json")
+
+
 def load_smoke_fixture_registry() -> Dict[str, Any]:
 	return _load_json_copy("smoke_fixture_registry.json")
+
+
+def load_governed_scope_registry() -> Dict[str, Any]:
+	return _load_json_copy("governed_scope_registry.json")
+
+
+def load_scope_owner_registry() -> Dict[str, Any]:
+	return _load_json_copy("scope_owner_registry.json")
+
+
+def load_family_scope_compatibility_registry() -> Dict[str, Any]:
+	return _load_json_copy("family_scope_compatibility_registry.json")
+
+
+def load_scope_projection_registry() -> Dict[str, Any]:
+	return _load_json_copy("scope_projection_registry.json")
+
+
+def load_scope_clarification_registry() -> Dict[str, Any]:
+	return _load_json_copy("scope_clarification_registry.json")
 
 
 def get_capability_spec(capability_id: str) -> Dict[str, Any]:
@@ -116,10 +156,19 @@ def get_capability_spec(capability_id: str) -> Dict[str, Any]:
 	if not isinstance(capabilities, list):
 		return {}
 	target = str(capability_id or "").strip()
+	if not target:
+		return {}
 	for item in capabilities:
 		if not isinstance(item, dict):
 			continue
 		if str(item.get("capability_id") or "").strip() == target:
+			return dict(item)
+	for item in capabilities:
+		if not isinstance(item, dict):
+			continue
+		aliases = item.get("canonical_aliases") if isinstance(item.get("canonical_aliases"), list) else []
+		alias_values = {str(value or "").strip() for value in aliases if str(value or "").strip()}
+		if target in alias_values:
 			return dict(item)
 	return {}
 
@@ -129,6 +178,43 @@ def list_capability_specs() -> List[Dict[str, Any]]:
 	if not isinstance(values, list):
 		return []
 	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def _scope_id_for_report_name(report_name: str) -> str:
+	clean_report_name = str(report_name or "").strip().lower()
+	if not clean_report_name:
+		return ""
+	for item in (load_governed_scope_registry().get("scopes") or []):
+		if not isinstance(item, dict):
+			continue
+		authority = item.get("approved_source_authority") if isinstance(item.get("approved_source_authority"), dict) else {}
+		authority_report_name = str(authority.get("report_name") or "").strip().lower()
+		if authority_report_name == clean_report_name:
+			return str(item.get("scope_id") or "").strip()
+	return ""
+
+
+def capability_contract_identity(capability_id: str, *, scope_id: str = "", report_name: str = "") -> str:
+	target = str(capability_id or "").strip()
+	if not target:
+		return ""
+	spec = get_capability_spec(target)
+	if not spec:
+		return target
+	resolved_capability_id = str(spec.get("capability_id") or target).strip()
+	aliases = [
+		str(value or "").strip()
+		for value in (spec.get("canonical_aliases") or [])
+		if str(value or "").strip()
+	]
+	if target in aliases:
+		return target
+	resolved_scope_id = str(scope_id or "").strip() or _scope_id_for_report_name(report_name)
+	scope_aliases = spec.get("scope_capability_aliases") if isinstance(spec.get("scope_capability_aliases"), dict) else {}
+	scoped_alias = str(scope_aliases.get(resolved_scope_id) or "").strip() if resolved_scope_id else ""
+	if scoped_alias:
+		return scoped_alias
+	return resolved_capability_id
 
 
 def get_report_spec(report_name: str) -> Dict[str, Any]:
@@ -156,6 +242,31 @@ def report_direct_query_filter_value_aliases(report_name: str, field_name: str) 
 	if not isinstance(values, list):
 		return []
 	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def report_direct_query_fields(report_name: str) -> List[str]:
+	report_spec = get_report_spec(report_name)
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	values = direct_query.get("fields")
+	if not isinstance(values, list):
+		return []
+	return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+
+def report_direct_query_doctype(report_name: str) -> str:
+	report_spec = get_report_spec(report_name)
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	return str(direct_query.get("doctype") or "").strip()
+
+
+def report_grouping_document_key_field(report_name: str) -> str:
+	report_spec = get_report_spec(report_name)
+	grouping = (
+		report_spec.get("governed_period_grouping")
+		if isinstance(report_spec.get("governed_period_grouping"), dict)
+		else {}
+	)
+	return str(grouping.get("document_key_field") or "").strip()
 
 
 def list_report_surface_evidence_specs() -> List[Dict[str, Any]]:
@@ -248,6 +359,60 @@ def get_intent_class_spec(intent_class_id: str) -> Dict[str, Any]:
 	return {}
 
 
+def list_entity_reference_policy_specs() -> List[Dict[str, Any]]:
+	values = load_entity_reference_policy_registry().get("entity_reference_policies")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_entity_grain_label_specs() -> List[Dict[str, Any]]:
+	values = load_entity_reference_policy_registry().get("entity_grain_labels")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_entity_grain_label_spec(entity_grain: str) -> Dict[str, Any]:
+	target = str(entity_grain or "").strip()
+	for item in list_entity_grain_label_specs():
+		if str(item.get("entity_grain") or "").strip() == target:
+			return item
+	return {}
+
+
+def get_entity_reference_policy_spec(entity_grain: str) -> Dict[str, Any]:
+	target = str(entity_grain or "").strip()
+	for item in list_entity_reference_policy_specs():
+		if str(item.get("entity_grain") or "").strip() == target:
+			return item
+	return {}
+
+
+def entity_grain_display_label(entity_grain: str, *, plural: bool = False) -> str:
+	target = str(entity_grain or "").strip()
+	if not target:
+		return ""
+	label_spec = get_entity_grain_label_spec(target)
+	label_key = "plural_label" if plural else "singular_label"
+	label = str(label_spec.get(label_key) or "").strip()
+	if label:
+		return label
+	policy_spec = get_entity_reference_policy_spec(target)
+	policy_label = str(
+		policy_spec.get(label_key)
+		or policy_spec.get("display_label")
+		or policy_spec.get("label")
+		or ""
+	).strip()
+	if policy_label:
+		return policy_label
+	default_label = target.replace("_", " ")
+	if plural and default_label and not default_label.endswith("s"):
+		return f"{default_label}s"
+	return default_label
+
+
 def list_semantic_resolution_slot_definitions() -> List[Dict[str, Any]]:
 	values = load_semantic_resolution_registry().get("slot_definitions")
 	if not isinstance(values, list):
@@ -271,6 +436,68 @@ def list_semantic_resolution_alias_entries(slot_name: str) -> List[Dict[str, Any
 	if not isinstance(values, list):
 		return []
 	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def semantic_resolution_display_label(slot_name: str, canonical_value: str) -> str:
+	target_slot = str(slot_name or "").strip()
+	target_value = str(canonical_value or "").strip()
+	if not target_slot or not target_value:
+		return ""
+	for item in list_semantic_resolution_alias_entries(target_slot):
+		if str(item.get("canonical_value") or "").strip() != target_value:
+			continue
+		return str(item.get("display_label") or "").strip()
+	return ""
+
+
+def capability_report_name_for_concept(
+	capability_id: str,
+	concept: str,
+	*,
+	default_groups: List[str] | None = None,
+) -> str:
+	spec = get_capability_spec(capability_id)
+	if not spec:
+		return ""
+	fresh_query_defaults = (
+		spec.get("fresh_query_defaults")
+		if isinstance(spec.get("fresh_query_defaults"), dict)
+		else {}
+	)
+	group_names = list(default_groups or ["financial_statement", "financial_summary"])
+	target_concept = str(concept or "").strip()
+	if not target_concept:
+		return ""
+	for group_name in group_names:
+		defaults = (
+			fresh_query_defaults.get(group_name)
+			if isinstance(fresh_query_defaults.get(group_name), dict)
+			else {}
+		)
+		mapping = (
+			defaults.get("report_overrides_by_concept")
+			if isinstance(defaults.get("report_overrides_by_concept"), dict)
+			else {}
+		)
+		report_name = str(mapping.get(target_concept) or "").strip()
+		if report_name:
+			return report_name
+	return ""
+
+
+def financial_statement_report_name(statement_variant: str) -> str:
+	return capability_report_name_for_concept(
+		"financial_statement_read",
+		statement_variant,
+		default_groups=["financial_statement", "financial_summary"],
+	)
+
+
+def financial_statement_display_label(statement_variant: str) -> str:
+	label = semantic_resolution_display_label("statement_variant", statement_variant)
+	if label:
+		return label
+	return financial_statement_report_name(statement_variant)
 
 
 def list_financial_summary_clarification_specs() -> List[Dict[str, Any]]:
@@ -426,6 +653,205 @@ def list_governed_kpi_execution_specs_for_shape(execution_shape: str) -> List[Di
 		for item in list_governed_kpi_execution_specs()
 		if str(item.get("execution_shape") or "").strip() == target
 	]
+
+
+def list_composite_family_specs() -> List[Dict[str, Any]]:
+	values = load_composite_family_registry().get("families")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_composite_family_spec(family_id: str) -> Dict[str, Any]:
+	target = str(family_id or "").strip()
+	for item in list_composite_family_specs():
+		if str(item.get("family_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_composite_artifact_specs() -> List[Dict[str, Any]]:
+	values = load_composite_artifact_registry().get("artifacts")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_composite_artifact_spec(composite_id: str) -> Dict[str, Any]:
+	target = str(composite_id or "").strip()
+	for item in list_composite_artifact_specs():
+		if str(item.get("composite_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_composite_artifact_specs_for_family(family_id: str) -> List[Dict[str, Any]]:
+	target = str(family_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_composite_artifact_specs()
+		if str(item.get("family_id") or "").strip() == target
+	]
+
+
+def list_composite_compatibility_specs() -> List[Dict[str, Any]]:
+	values = load_composite_compatibility_registry().get("rules")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_composite_compatibility_spec(compatibility_rule_id: str) -> Dict[str, Any]:
+	target = str(compatibility_rule_id or "").strip()
+	for item in list_composite_compatibility_specs():
+		if str(item.get("compatibility_rule_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_composite_assembly_specs() -> List[Dict[str, Any]]:
+	values = load_composite_assembly_registry().get("assemblies")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_composite_assembly_spec(assembly_id: str) -> Dict[str, Any]:
+	target = str(assembly_id or "").strip()
+	for item in list_composite_assembly_specs():
+		if str(item.get("assembly_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_composite_assembly_specs_for_family(family_id: str) -> List[Dict[str, Any]]:
+	target = str(family_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_composite_assembly_specs()
+		if str(item.get("family_id") or "").strip() == target
+	]
+
+
+def list_governed_scope_specs() -> List[Dict[str, Any]]:
+	values = load_governed_scope_registry().get("scopes")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_governed_scope_spec(scope_id: str) -> Dict[str, Any]:
+	target = str(scope_id or "").strip()
+	for item in list_governed_scope_specs():
+		if str(item.get("scope_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_scope_owner_specs() -> List[Dict[str, Any]]:
+	values = load_scope_owner_registry().get("entries")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_scope_owner_spec(scope_id: str) -> Dict[str, Any]:
+	target = str(scope_id or "").strip()
+	for item in list_scope_owner_specs():
+		if str(item.get("scope_id") or "").strip() == target:
+			return item
+	return {}
+
+
+def list_family_scope_compatibility_specs() -> List[Dict[str, Any]]:
+	values = load_family_scope_compatibility_registry().get("entries")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_family_scope_compatibility_spec(scope_id: str, family_id: str) -> Dict[str, Any]:
+	target_scope = str(scope_id or "").strip()
+	target_family = str(family_id or "").strip()
+	for item in list_family_scope_compatibility_specs():
+		if str(item.get("scope_id") or "").strip() == target_scope and str(item.get("family_id") or "").strip() == target_family:
+			return item
+	return {}
+
+
+def list_scope_projection_specs() -> List[Dict[str, Any]]:
+	values = load_scope_projection_registry().get("entries")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_scope_projection_specs_for_scope(scope_id: str) -> List[Dict[str, Any]]:
+	target = str(scope_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_scope_projection_specs()
+		if str(item.get("scope_id") or "").strip() == target
+	]
+
+
+def get_scope_projection_spec(scope_id: str, family_id: str) -> Dict[str, Any]:
+	target_scope = str(scope_id or "").strip()
+	target_family = str(family_id or "").strip()
+	if not target_scope or not target_family:
+		return {}
+	for item in list_scope_projection_specs():
+		if (
+			str(item.get("scope_id") or "").strip() == target_scope
+			and str(item.get("family_id") or "").strip() == target_family
+		):
+			return item
+	return {}
+
+
+def list_scope_clarification_specs() -> List[Dict[str, Any]]:
+	values = load_scope_clarification_registry().get("entries")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def list_scope_clarification_specs_for_scope(scope_id: str) -> List[Dict[str, Any]]:
+	target = str(scope_id or "").strip()
+	if not target:
+		return []
+	return [
+		item
+		for item in list_scope_clarification_specs()
+		if str(item.get("scope_id") or "").strip() == target
+	]
+
+
+def list_scope_clarification_template_specs() -> List[Dict[str, Any]]:
+	values = load_scope_clarification_registry().get("clarification_templates")
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def get_scope_clarification_template_spec(reason_type: str, *, template_group: str = "") -> Dict[str, Any]:
+	target_reason = str(reason_type or "").strip()
+	target_group = str(template_group or "").strip()
+	if not target_reason:
+		return {}
+	for item in list_scope_clarification_template_specs():
+		if str(item.get("reason_type") or "").strip() != target_reason:
+			continue
+		if target_group and str(item.get("template_group") or "").strip() != target_group:
+			continue
+		return item
+	return {}
 
 
 def get_smoke_fixture_spec(fixture_id: str) -> Dict[str, Any]:
@@ -781,6 +1207,8 @@ def capability_business_family_ids(capability_id: str) -> List[str]:
 	target = str(capability_id or "").strip()
 	if not target:
 		return []
+	resolved_spec = get_capability_spec(target)
+	target = str(resolved_spec.get("capability_id") or target).strip()
 	out: List[str] = []
 	for spec in list_report_family_specs():
 		values = spec.get("capability_ids")
@@ -1036,6 +1464,19 @@ def report_approved_followup_modes(report_name: str) -> List[str]:
 	if not isinstance(values, list):
 		return []
 	return [str(x or "").strip() for x in values if str(x or "").strip()]
+
+
+_FOLLOWUP_MODE_RUNTIME_ALIASES = {
+	"column_projection": "column_refinement",
+	"metric_change": "metric_refinement",
+}
+
+
+def normalize_followup_mode_for_runtime(mode: str) -> str:
+	clean = str(mode or "").strip()
+	if not clean:
+		return ""
+	return str(_FOLLOWUP_MODE_RUNTIME_ALIASES.get(clean, clean) or "").strip()
 
 
 def capability_dimensions_for_report(report_name: str) -> List[str]:

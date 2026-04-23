@@ -122,6 +122,13 @@
       }
     },
     {
+      "concept_id": "payment_entry",
+      "aliases": {
+        "en": ["payment entry", "payment entries", "payment"],
+        "my": []
+      }
+    },
+    {
       "concept_id": "fulfillment",
       "aliases": {
         "en": [

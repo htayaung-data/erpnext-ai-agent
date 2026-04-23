@@ -73,6 +73,15 @@ class TestGovernedKpiFrontdoor(unittest.TestCase):
 			signal.get("internal_details", {}).get("resolved_message_by_option", {}).get("Average Order Value by Sales Order"),
 			"what is average order value sales order",
 		)
+		self.assertEqual(signal.get("internal_details", {}).get("semantic_slot_name"), "listing_view")
+		self.assertEqual(
+			signal.get("internal_details", {}).get("semantic_slot_value_by_option", {}).get("Average Order Value by Sales Order"),
+			"sales_order",
+		)
+		self.assertEqual(
+			signal.get("internal_details", {}).get("carryover_slot_values", {}).get("lookup_value"),
+			"average order value",
+		)
 
 	def test_meaning_query_with_erp_context_suffix_stays_governed(self):
 		result = maybe_build_governed_kpi_frontdoor_response(
@@ -88,6 +97,10 @@ class TestGovernedKpiFrontdoor(unittest.TestCase):
 		self.assertEqual(
 			result.get("clarification_signal_payload", {}).get("internal_details", {}).get("resolved_message_by_option", {}).get("Average Order Value by Sales Invoice"),
 			"what is average order value sales invoice",
+		)
+		self.assertEqual(
+			result.get("clarification_signal_payload", {}).get("internal_details", {}).get("carryover_slot_values", {}).get("query_kind"),
+			"meaning",
 		)
 
 	def test_collection_ratio_definition_is_now_active(self):

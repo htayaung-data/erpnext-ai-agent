@@ -25,6 +25,9 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	detect_language,
 )
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
+from ai_assistant_ui.qwen_chat.clarification_translation import (
+	render_shared_choice_list_clarification,
+)
 from ai_assistant_ui.qwen_chat.defaults_repository import single_company_name
 from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	SemanticFrontDoorIntent,
@@ -938,6 +941,50 @@ def _option_value_for_axis(family_spec: Dict[str, Any], axis: str, option_label:
 	return ""
 
 
+def _requested_time_scope_from_family_resolution(family_resolution: CompositeFamilyResolutionContract) -> str:
+	if family_resolution.requested_period_start and family_resolution.requested_period_end:
+		for candidate in _PERIOD_SCOPE_ORDER:
+			start_date, end_date = _date_range_from_time_scope(candidate)
+			if start_date == family_resolution.requested_period_start and end_date == family_resolution.requested_period_end:
+				return candidate
+	return ""
+
+
+def _clarification_semantic_slot_name(axis: str) -> str:
+	if axis == "primary_sort_metric":
+		return "requested_primary_metric"
+	if axis == "basis":
+		return "requested_basis"
+	if axis == "scope":
+		return "selected_time_scope"
+	return ""
+
+
+def _clarification_carryover_slot_values(
+	*,
+	family_spec: Dict[str, Any],
+	family_resolution: CompositeFamilyResolutionContract,
+	axis: str,
+) -> Dict[str, str]:
+	requested_time_scope = _requested_time_scope_from_family_resolution(family_resolution)
+	values = {
+		"family_id": family_resolution.family_id or _clean_text(family_spec.get("family_id")),
+		"requested_limit": str(int(family_resolution.requested_limit or 0)) if int(family_resolution.requested_limit or 0) > 0 else "",
+		"requested_sort_direction": _clean_text(family_resolution.requested_sort_direction),
+	}
+	if axis != "primary_sort_metric" and family_resolution.requested_primary_metric:
+		values["requested_primary_metric"] = _clean_text(family_resolution.requested_primary_metric)
+	if axis != "basis" and family_resolution.requested_basis:
+		values["requested_basis"] = _clean_text(family_resolution.requested_basis)
+	if axis != "scope" and requested_time_scope:
+		values["selected_time_scope"] = requested_time_scope
+	return {
+		key: value
+		for key, value in values.items()
+		if _clean_text(key) and _clean_text(value)
+	}
+
+
 def _clarification_answer(
 	*,
 	family_spec: Dict[str, Any],
@@ -947,30 +994,68 @@ def _clarification_answer(
 ) -> str:
 	period_start = _clean_text(family_resolution.requested_period_start)
 	period_end = _clean_text(family_resolution.requested_period_end)
+	subject_label = _clean_text(family_spec.get("subject_alias_value"))
+	subject_label_plural = f"{subject_label}s" if subject_label else "entities"
 	if axis == "primary_sort_metric":
 		if period_start and period_end:
-			lead = (
-				f"I can rank {_clean_text(family_spec.get('subject_alias_value'))}s for "
-				f"{period_start} to {period_end}, but I still need the primary metric."
+			return render_shared_choice_list_clarification(
+				reason_type="composite_family_variation",
+				variant="primary_sort_metric_with_period",
+				template_values={
+					"subject_label_plural": subject_label_plural,
+					"period_start": period_start,
+					"period_end": period_end,
+				},
+				options=options,
+				default_question=(
+					f"I can rank {subject_label_plural} for "
+					f"{period_start} to {period_end}, but I still need the primary metric."
+				),
 			)
-		else:
-			lead = f"I can rank {_clean_text(family_spec.get('subject_alias_value'))}s, but I still need the primary metric."
-	elif axis == "basis":
-		lead = (
-			f"I can rank {_clean_text(family_spec.get('subject_alias_value'))}s by "
-			f"{_primary_metric_phrase(family_resolution.requested_primary_metric)}, but I still need the approved basis."
+		return render_shared_choice_list_clarification(
+			reason_type="composite_family_variation",
+			variant="primary_sort_metric_default",
+			template_values={
+				"subject_label_plural": subject_label_plural,
+			},
+			options=options,
+			default_question=f"I can rank {subject_label_plural}, but I still need the primary metric.",
 		)
-	else:
-		lead = (
-			f"I can rank {_clean_text(family_spec.get('subject_alias_value'))}s by "
-			f"{_primary_metric_phrase(family_resolution.requested_primary_metric)}"
-			f"{f' for {_basis_context_phrase(family_resolution.requested_basis)}' if family_resolution.requested_basis else ''}, "
-			"but I still need the business period."
+	if axis == "basis":
+		primary_metric_phrase = _primary_metric_phrase(family_resolution.requested_primary_metric)
+		return render_shared_choice_list_clarification(
+			reason_type="composite_family_variation",
+			variant="basis",
+			template_values={
+				"subject_label_plural": subject_label_plural,
+				"primary_metric_phrase": primary_metric_phrase,
+			},
+			options=options,
+			default_question=(
+				f"I can rank {subject_label_plural} by "
+				f"{primary_metric_phrase}, but I still need the approved basis."
+			),
 		)
-	answer_lines = [lead, "", "Choose one:"]
-	for option in options:
-		answer_lines.append(f"- {option}")
-	return "\n".join(answer_lines).strip()
+	basis_suffix = (
+		f" for {_basis_context_phrase(family_resolution.requested_basis)}"
+		if family_resolution.requested_basis
+		else ""
+	)
+	primary_metric_phrase = _primary_metric_phrase(family_resolution.requested_primary_metric)
+	return render_shared_choice_list_clarification(
+		reason_type="composite_family_variation",
+		variant="scope",
+		template_values={
+			"subject_label_plural": subject_label_plural,
+			"primary_metric_phrase": primary_metric_phrase,
+			"basis_suffix": basis_suffix,
+		},
+		options=options,
+		default_question=(
+			f"I can rank {subject_label_plural} by "
+			f"{primary_metric_phrase}{basis_suffix}, but I still need the business period."
+		),
+	)
 
 
 def _build_family_clarification_signal(
@@ -984,17 +1069,12 @@ def _build_family_clarification_signal(
 ) -> Dict[str, Any]:
 	resolved_message_by_option: Dict[str, str] = {}
 	option_aliases_by_option: Dict[str, List[str]] = {}
+	semantic_slot_value_by_option: Dict[str, str] = {}
 	for option in options:
 		value = _option_value_for_axis(family_spec, axis, option)
 		primary_metric = family_resolution.requested_primary_metric
 		basis = family_resolution.requested_basis
-		time_scope = ""
-		if family_resolution.requested_period_start and family_resolution.requested_period_end:
-			for candidate in _PERIOD_SCOPE_ORDER:
-				start_date, end_date = _date_range_from_time_scope(candidate)
-				if start_date == family_resolution.requested_period_start and end_date == family_resolution.requested_period_end:
-					time_scope = candidate
-					break
+		time_scope = _requested_time_scope_from_family_resolution(family_resolution)
 		if axis == "primary_sort_metric":
 			primary_metric = value
 		elif axis == "basis":
@@ -1010,6 +1090,14 @@ def _build_family_clarification_signal(
 			limit=int(family_resolution.requested_limit or 10),
 		)
 		option_aliases_by_option[option] = _option_aliases_for_axis(family_spec, axis, option)
+		if value:
+			semantic_slot_value_by_option[option] = value
+	semantic_slot_name = _clarification_semantic_slot_name(axis)
+	carryover_slot_values = _clarification_carryover_slot_values(
+		family_spec=family_spec,
+		family_resolution=family_resolution,
+		axis=axis,
+	)
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage="frontdoor",
@@ -1020,8 +1108,12 @@ def _build_family_clarification_signal(
 		internal_details={
 			"continuation_lane": "front_door",
 			"continuation_intent_class": "governed_composite_value",
+			"clarification_template_group": "shared_clarification",
 			"resolved_message_by_option": resolved_message_by_option,
 			"option_aliases_by_option": option_aliases_by_option,
+			"semantic_slot_name": semantic_slot_name if semantic_slot_value_by_option else "",
+			"semantic_slot_value_by_option": semantic_slot_value_by_option,
+			"carryover_slot_values": carryover_slot_values,
 			"family_id": family_resolution.family_id or _clean_text(family_spec.get("family_id")),
 			"clarification_axis": axis,
 		},

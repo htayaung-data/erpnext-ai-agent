@@ -38,6 +38,20 @@ class TestCustomerKpiRuntimeSupport(unittest.TestCase):
 		self.assertEqual(scope.get("customer_name"), "Zegyo Mobile Supply House")
 		self.assertTrue(scope.get("has_customer_scope"))
 
+	def test_resolve_customer_scope_from_message_accepts_high_confidence_partial_alias(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.customer_kpi_runtime_support.frappe.get_all",
+			return_value=[
+				{"name": "Ko Nay Lin Mobile Center", "customer_name": "Ko Nay Lin Mobile Center"},
+				{"name": "Mandalay Mobile Hub", "customer_name": "Mandalay Mobile Hub"},
+			],
+		):
+			scope = resolve_customer_scope_from_message("do u have customer name similar to Ko Nay Lin Mobile")
+		self.assertEqual(scope.get("customer"), "Ko Nay Lin Mobile Center")
+		self.assertEqual(scope.get("matched_by"), "token_overlap")
+		self.assertTrue(scope.get("match_confidence") >= 0.8)
+		self.assertTrue(scope.get("has_customer_scope"))
+
 	def test_customer_receivable_snapshot_uses_matching_party_row(self):
 		with patch(
 			"ai_assistant_ui.qwen_chat.customer_kpi_runtime_support.execute_governed_report",

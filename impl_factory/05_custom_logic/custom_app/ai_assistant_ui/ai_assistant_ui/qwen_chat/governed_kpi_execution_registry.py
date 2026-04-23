@@ -24,12 +24,16 @@ REQUIRED_ACTIVATION_STATES = {
 
 _EXECUTION_SHAPE_SCOPE_MAP = {
 	"company_period_scalar": "company",
+	"entity_period_ranking": "entity_set",
+	"customer_period_ranking": "customer_set",
 	"customer_as_of_scalar": "customer",
 	"customer_as_of_ranking": "customer_set",
 }
 
 _EXECUTION_SHAPE_TIME_SCOPE_MAP = {
 	"company_period_scalar": "period_required",
+	"entity_period_ranking": "period_required",
+	"customer_period_ranking": "period_required",
 	"customer_as_of_scalar": "as_of_date_required",
 	"customer_as_of_ranking": "as_of_date_required",
 }
@@ -130,11 +134,12 @@ def validate_governed_kpi_execution_registry(
 		if isinstance(governed_formula_payload, dict)
 		else load_governed_formula_registry()
 	)
-	known_definition_ids = {
-		str(item.get("definition_id") or "").strip()
+	known_definition_specs = {
+		str(item.get("definition_id") or "").strip(): dict(item)
 		for item in (definition_source.get("definitions") or [])
 		if isinstance(item, dict) and str(item.get("definition_id") or "").strip()
 	}
+	known_definition_ids = set(known_definition_specs.keys())
 	known_formula_specs = {
 		str(item.get("formula_id") or "").strip(): dict(item)
 		for item in (formula_source.get("formulas") or [])
@@ -171,6 +176,8 @@ def validate_governed_kpi_execution_registry(
 				errors.append(f"executions[{idx}].{field_name} must be a non-empty string.")
 
 		definition_id = str(item.get("definition_id") or "").strip()
+		definition_spec = known_definition_specs.get(definition_id, {})
+		definition_entity_grain = str(definition_spec.get("entity_grain") or "").strip()
 		if definition_id not in known_definition_ids:
 			errors.append(
 				f"executions[{idx}].definition_id references unknown definition '{definition_id}'."
@@ -248,10 +255,25 @@ def validate_governed_kpi_execution_registry(
 		required_dimensions = item.get("required_dimensions")
 		if not isinstance(required_dimensions, list):
 			errors.append(f"executions[{idx}].required_dimensions must be a list.")
-		elif scope_type in {"customer", "customer_set"} and "customer" not in _as_str_list(required_dimensions):
-			errors.append(
-				f"executions[{idx}].required_dimensions must include 'customer' for scope_type '{scope_type}'."
-			)
+		else:
+			required_dimension_values = _as_str_list(required_dimensions)
+			if scope_type in {"customer", "customer_set"} and "customer" not in required_dimension_values:
+				errors.append(
+					f"executions[{idx}].required_dimensions must include 'customer' for scope_type '{scope_type}'."
+				)
+			if execution_shape == "customer_period_ranking" and definition_entity_grain != "customer":
+				errors.append(
+					f"executions[{idx}] uses execution_shape 'customer_period_ranking' but definition '{definition_id}' has entity_grain '{definition_entity_grain}'."
+				)
+			if scope_type == "entity_set":
+				if not definition_entity_grain:
+					errors.append(
+						f"executions[{idx}] could not resolve entity_grain from definition '{definition_id}'."
+					)
+				elif definition_entity_grain not in required_dimension_values:
+					errors.append(
+						f"executions[{idx}].required_dimensions must include '{definition_entity_grain}' for scope_type 'entity_set'."
+					)
 
 		value_unit_type = str(item.get("value_unit_type") or "").strip()
 		if value_unit_type not in allowed_value_unit_types:
@@ -298,10 +320,15 @@ def validate_governed_kpi_execution_registry(
 				for value in (formula_spec.get("grain_requirements") or [])
 				if str(value or "").strip()
 			}
-			expected_grain = "customer" if scope_type in {"customer", "customer_set"} else scope_type
-			if expected_grain not in formula_grains:
-				errors.append(
-					f"executions[{idx}] scope_type '{scope_type}' is incompatible with formula grain requirements {sorted(formula_grains)}."
+			if scope_type in {"customer", "customer_set"}:
+				expected_grain = "customer"
+			elif scope_type == "entity_set":
+				expected_grain = definition_entity_grain
+			else:
+				expected_grain = scope_type
+				if expected_grain not in formula_grains:
+					errors.append(
+						f"executions[{idx}] scope_type '{scope_type}' is incompatible with formula grain requirements {sorted(formula_grains)}."
 				)
 
 	return RegistryValidationResult(

@@ -10,11 +10,15 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	NormalizedFamilyArtifactContract,
 	build_normalized_family_artifact_contract,
 )
+from ai_assistant_ui.qwen_chat.governed_scope_registry import scope_id_for_entity_grain
 from ai_assistant_ui.qwen_chat.metadata import (
+	capability_fresh_query_defaults,
+	entity_grain_display_label,
 	get_report_spec,
 	report_business_family_ids,
 	report_family_entity_dimension_label,
 )
+
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key
 
 
@@ -85,6 +89,25 @@ def _is_total_like_row(row: Dict[str, Any]) -> bool:
 def _metric_label(metric_key: str, fallback: str = "Value") -> str:
 	key = str(metric_key or "").strip().lower()
 	clean_fallback = str(fallback or "").strip()
+	fallback_key = {
+		"sales amount": "sales_amount",
+		"gross profit": "gross_profit",
+		"gross profit %": "gross_profit_percent",
+		"gross profit percent": "gross_profit_percent",
+		"buying amount": "buying_amount",
+		"quantity": "quantity",
+		"outstanding amount": "outstanding_total",
+		"total amount due": "total_due",
+		"balance value": "balance_value",
+		"balance qty": "balance_qty",
+		"contribution %": "contribution_percent",
+		"grand total": "grand_total",
+		"received amount": "received_amount",
+		"total allocated amount": "total_allocated_amount",
+		"paid amount": "paid_amount",
+	}.get(clean_fallback.lower().replace("_", " "))
+	if fallback_key and fallback_key != key:
+		clean_fallback = ""
 	if clean_fallback and clean_fallback.lower() not in {"value", "primary metric"}:
 		if clean_fallback == clean_fallback.lower():
 			return clean_fallback.replace("_", " ").title()
@@ -100,7 +123,20 @@ def _metric_label(metric_key: str, fallback: str = "Value") -> str:
 		"balance_value": "Balance Value",
 		"balance_qty": "Balance Qty",
 		"contribution_percent": "Contribution %",
+		"grand_total": "Grand Total",
+		"received_amount": "Received Amount",
+		"total_allocated_amount": "Total Allocated Amount",
+		"paid_amount": "Paid Amount",
 	}.get(key, fallback or "Value")
+
+
+def _summary_total_metric_label(metric_label: str) -> str:
+	label = str(metric_label or "").strip()
+	if not label:
+		return "Total Amount"
+	if label.lower().startswith("total "):
+		return label
+	return f"Total {label}"
 
 
 def _tool_trace_items(runtime_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -365,6 +401,7 @@ def _requested_output_columns_from_contract(
 			dimension_or_metric="metric",
 		)
 	)
+	has_explicit_projection_request = bool(requested_dimensions or requested_metrics)
 	columns: List[str] = []
 	if requested_dimensions:
 		columns.append("entity")
@@ -2441,7 +2478,12 @@ def _build_aging_artifact(
 	)
 
 
-def _requested_transaction_columns(compiler_contract: Dict[str, Any]) -> List[str]:
+def _requested_transaction_columns(
+	compiler_contract: Dict[str, Any],
+	*,
+	available_metric_keys: List[str] | None = None,
+	primary_metric_key: str = "",
+) -> List[str]:
 	requested_dimensions = set(
 		_canonical_requested_values(
 			compiler_contract,
@@ -2457,23 +2499,242 @@ def _requested_transaction_columns(compiler_contract: Dict[str, Any]) -> List[st
 		)
 	)
 	columns: List[str] = []
+	available = {
+		str(value or "").strip()
+		for value in (available_metric_keys or [])
+		if str(value or "").strip()
+	}
 	if "document_name" in requested_dimensions:
 		columns.append("document_name")
-	if "posting_date" in requested_dimensions:
+	if requested_dimensions.intersection({"posting_date", "transaction_date"}):
 		columns.append("posting_date")
+	if "delivery_date" in requested_dimensions:
+		columns.append("delivery_date")
+	if "schedule_date" in requested_dimensions:
+		columns.append("schedule_date")
 	if "customer" in requested_dimensions:
 		columns.append("customer")
 	elif requested_dimensions.intersection({"supplier", "party"}):
 		columns.append("party_name")
-	if requested_metrics.intersection({"grand_total", "sales_amount"}):
-		columns.append("grand_total")
+	metric_column_map = {
+		"grand_total": "grand_total",
+		"sales_amount": "grand_total",
+		"received_amount": "received_amount",
+		"total_allocated_amount": "total_allocated_amount",
+		"paid_amount": "paid_amount",
+	}
+	for metric_key, column_name in metric_column_map.items():
+		if metric_key in requested_metrics and (not available or column_name in available):
+			columns.append(column_name)
 	if requested_metrics.intersection({"quantity"}):
 		columns.append("quantity")
 	if requested_metrics.intersection({"outstanding_amount", "outstanding_total"}):
 		columns.append("outstanding_amount")
 	if requested_dimensions.intersection({"document_status", "status"}):
 		columns.append("status")
+	if not columns and primary_metric_key and (not available or primary_metric_key in available):
+		columns.append(primary_metric_key)
 	return list(dict.fromkeys([value for value in columns if value]))
+
+
+def _transaction_listing_default_metric_keys(
+	report_name: str,
+	compiler_contract: Dict[str, Any],
+) -> List[str]:
+	capability_id = str(compiler_contract.get("capability_id") or "").strip()
+	report_spec = get_report_spec(report_name)
+	if not capability_id:
+		capability_ids = report_spec.get("capability_ids") if isinstance(report_spec.get("capability_ids"), list) else []
+		for value in capability_ids:
+			capability_id = str(value or "").strip()
+			if capability_id:
+				break
+	if not capability_id:
+		return []
+	defaults = capability_fresh_query_defaults(capability_id, intent_class="transaction_listing")
+	default_metrics = defaults.get("default_metrics") if isinstance(defaults.get("default_metrics"), list) else []
+	out: List[str] = []
+	for value in default_metrics:
+		raw = str(value or "").strip()
+		if not raw:
+			continue
+		canonical = get_canonical_key(
+			raw,
+			capability_id=capability_id,
+			dimension_or_metric="metric",
+		)
+		metric_key = str(canonical or _clean_metric_key(raw)).strip()
+		if metric_key:
+			out.append(metric_key)
+	return list(dict.fromkeys(out))
+
+
+def _transaction_listing_amount_metric_context(
+	report_name: str,
+	rows: List[Dict[str, Any]],
+	compiler_contract: Dict[str, Any],
+) -> Tuple[str, str]:
+	report_spec = get_report_spec(report_name)
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	direct_fields = {
+		str(value or "").strip()
+		for value in (direct_query.get("fields") or [])
+		if str(value or "").strip()
+	}
+	available_metric_keys: List[str] = []
+	for candidate in ["grand_total", "received_amount", "total_allocated_amount", "paid_amount"]:
+		if candidate in direct_fields or any(isinstance(row, dict) and candidate in row for row in rows):
+			available_metric_keys.append(candidate)
+	if not available_metric_keys:
+		return "grand_total", "Grand Total"
+	default_metric_key = ""
+	for candidate in _transaction_listing_default_metric_keys(report_name, compiler_contract):
+		if candidate in available_metric_keys:
+			default_metric_key = candidate
+			break
+	if not default_metric_key:
+		for candidate in ["grand_total", "received_amount", "total_allocated_amount", "paid_amount"]:
+			if candidate in available_metric_keys:
+				default_metric_key = candidate
+				break
+	primary_metric_key = _requested_metric_key_from_contract(
+		compiler_contract,
+		available_metric_keys,
+		default_metric_key,
+	)
+	if not primary_metric_key:
+		primary_metric_key = default_metric_key
+	primary_metric_label = _requested_metric_label_from_contract(
+		compiler_contract,
+		primary_metric_key,
+		_metric_label(primary_metric_key, "Value"),
+	)
+	return primary_metric_key, primary_metric_label
+
+
+def _requested_master_directory_columns(
+	compiler_contract: Dict[str, Any],
+	*,
+	entity_type: str,
+) -> List[str]:
+	extracted_slots = (
+		dict(compiler_contract.get("extracted_slots"))
+		if isinstance(compiler_contract.get("extracted_slots"), dict)
+		else {}
+	)
+	lookup_projection = str(extracted_slots.get("lookup_projection") or "").strip()
+	requested_dimensions = set(
+		_canonical_requested_values(
+			compiler_contract,
+			"requested_dimensions",
+			dimension_or_metric="dimension",
+		)
+	)
+	columns: List[str] = []
+	if entity_type in requested_dimensions or "party" in requested_dimensions:
+		columns.append("entity")
+	if entity_type == "customer":
+		if "territory" in requested_dimensions:
+			columns.append("region")
+		if "customer_group" in requested_dimensions:
+			columns.append("group")
+	else:
+		if "country" in requested_dimensions:
+			columns.append("region")
+		if "supplier_group" in requested_dimensions:
+			columns.append("group")
+	if "creation" in requested_dimensions:
+		columns.append("creation")
+	if "status" in requested_dimensions:
+		columns.append("status")
+	if "default_price_list" in requested_dimensions:
+		columns.append("default_price_list")
+	if "payment_terms" in requested_dimensions:
+		columns.append("payment_terms")
+	columns = list(dict.fromkeys([value for value in columns if value]))
+	if columns == ["entity"] and lookup_projection == "standard_directory":
+		return []
+	if not columns and lookup_projection in {"", "names_only"}:
+		return ["entity"]
+	return columns
+
+
+def _master_directory_requested_column_alias_map(entity_type: str) -> Dict[str, str]:
+	aliases: Dict[str, str] = {
+		"entity": "entity",
+		"name": "entity",
+		"customer": "entity",
+		"customer_name": "entity",
+		"supplier": "entity",
+		"supplier_name": "entity",
+		"item": "entity",
+		"item_name": "entity",
+		"product": "entity",
+		"product_name": "entity",
+		"region": "region",
+		"territory": "region",
+		"country": "region",
+		"brand": "region",
+		"group": "group",
+		"customer_group": "group",
+		"supplier_group": "group",
+		"item_group": "group",
+		"creation": "creation",
+		"created_date": "creation",
+		"status": "status",
+		"default_price_list": "default_price_list",
+		"payment_terms": "payment_terms",
+	}
+	entity_key = str(entity_type or "").strip().lower()
+	if entity_key == "customer":
+		aliases["that_customer"] = "entity"
+	elif entity_key == "supplier":
+		aliases["that_supplier"] = "entity"
+	elif entity_key == "item":
+		aliases["that_item"] = "entity"
+		aliases["that_product"] = "entity"
+	return aliases
+
+
+def _master_directory_context(report_name: str) -> Dict[str, str]:
+	report_spec = get_report_spec(report_name)
+	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
+	doctype = str(direct_query.get("doctype") or "").strip()
+	if doctype == "Item":
+		return {
+			"entity_type": "item",
+			"entity_label": entity_grain_display_label("item", plural=False).title() or "Item",
+			"entity_plural_label": entity_grain_display_label("item", plural=True).title() or "Items",
+			"name_field": "item_name",
+			"group_field": "item_group",
+			"region_field": "brand",
+			"region_label": "Brand",
+			"group_label": "Item Group",
+			"source_grain": "item_master_list",
+		}
+	if doctype == "Supplier":
+		return {
+			"entity_type": "supplier",
+			"entity_label": entity_grain_display_label("supplier", plural=False).title() or "Supplier",
+			"entity_plural_label": entity_grain_display_label("supplier", plural=True).title() or "Suppliers",
+			"name_field": "supplier_name",
+			"group_field": "supplier_group",
+			"region_field": "country",
+			"region_label": "Country",
+			"group_label": "Supplier Group",
+			"source_grain": "supplier_master_list",
+		}
+	return {
+		"entity_type": "customer",
+		"entity_label": entity_grain_display_label("customer", plural=False).title() or "Customer",
+		"entity_plural_label": entity_grain_display_label("customer", plural=True).title() or "Customers",
+		"name_field": "customer_name",
+		"group_field": "customer_group",
+		"region_field": "territory",
+		"region_label": "Territory",
+		"group_label": "Customer Group",
+		"source_grain": "customer_master_list",
+	}
 
 
 def _transaction_listing_context(report_name: str, rows: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -2519,8 +2780,18 @@ def _build_transaction_listing_artifact(
 	filters = _report_filters(report_tool, result)
 	period = _period_from_filters(filters)
 	party_field = str(context.get("party_field") or "").strip()
+	primary_metric_key, primary_metric_label = _transaction_listing_amount_metric_context(
+		report_name,
+		rows,
+		compiler_contract,
+	)
 	source_has_outstanding = any(isinstance(row, dict) and "outstanding_amount" in row for row in rows)
 	document_rows = []
+	aux_metric_keys = [
+		candidate
+		for candidate in ["grand_total", "received_amount", "total_allocated_amount", "paid_amount"]
+		if candidate and candidate != primary_metric_key
+	]
 	for row in rows:
 		if not isinstance(row, dict):
 			continue
@@ -2530,23 +2801,49 @@ def _build_transaction_listing_artifact(
 		document_row = {
 			"document_name": str(row.get("name") or "").strip(),
 			"posting_date": str(row.get("posting_date") or row.get("transaction_date") or "").strip(),
+			"delivery_date": str(row.get("delivery_date") or "").strip(),
+			"schedule_date": str(row.get("schedule_date") or "").strip(),
 			"customer": str(row.get("customer") or "").strip(),
 			"party_name": str(row.get(party_field) or "").strip() if party_field else "",
-			"grand_total": _numeric_value(row.get("grand_total")),
 			"quantity": _numeric_value(row.get("total_qty") if row.get("total_qty") not in (None, "") else row.get("qty")),
 			"status": str(row.get("status") or "").strip(),
 			"docstatus": _numeric_value(row.get("docstatus")),
 		}
+		if primary_metric_key:
+			document_row[primary_metric_key] = _numeric_value(row.get(primary_metric_key))
+		metric_values = {
+			candidate: _numeric_value(row.get(candidate))
+			for candidate in aux_metric_keys
+			if candidate in row
+		}
+		if metric_values:
+			document_row["metric_values"] = metric_values
 		if source_has_outstanding:
 			document_row["outstanding_amount"] = _numeric_value(row.get("outstanding_amount"))
 		document_rows.append(document_row)
 	requested_top_n = _requested_top_n_from_contract(compiler_contract)
 	if requested_top_n > 0:
 		document_rows = document_rows[:requested_top_n]
-	total_amount = sum(_numeric_value(row.get("grand_total")) for row in document_rows)
+	total_amount = sum(_numeric_value(row.get(primary_metric_key)) for row in document_rows)
 	total_outstanding = sum(_numeric_value(row.get("outstanding_amount")) for row in document_rows)
 	total_quantity = sum(_numeric_value(row.get("quantity")) for row in document_rows)
-	requested_columns = _requested_transaction_columns(compiler_contract)
+	has_explicit_projection_request = bool(
+		_canonical_requested_values(
+			compiler_contract,
+			"requested_dimensions",
+			dimension_or_metric="dimension",
+		)
+		or _canonical_requested_values(
+			compiler_contract,
+			"requested_metrics",
+			dimension_or_metric="metric",
+		)
+	)
+	requested_columns = _requested_transaction_columns(
+		compiler_contract,
+		available_metric_keys=[primary_metric_key] if primary_metric_key else [],
+		primary_metric_key=primary_metric_key,
+	)
 	metrics = {
 		"document_count": len(document_rows),
 		"total_amount": total_amount,
@@ -2557,7 +2854,11 @@ def _build_transaction_listing_artifact(
 		metrics["quantity"] = total_quantity
 	summary = [
 		{"label": "Document Count", "metric_key": "document_count", "value": len(document_rows)},
-		{"label": "Total Amount", "metric_key": "total_amount", "amount": total_amount},
+		{
+			"label": "Total Amount" if primary_metric_key == "grand_total" else _summary_total_metric_label(primary_metric_label),
+			"metric_key": "total_amount",
+			"amount": total_amount,
+		},
 	]
 	if "quantity" in metrics:
 		summary.insert(
@@ -2575,16 +2876,26 @@ def _build_transaction_listing_artifact(
 		period=period,
 		filters=filters,
 		dimensions={
+			"scope_id": context.get("transaction_type"),
 			"transaction_type": context.get("transaction_type"),
 			"document_entity_type": context.get("transaction_type"),
 			"document_label": context.get("document_label"),
 			"party_field": party_field,
 			"party_label": context.get("party_label"),
 			"date_label": context.get("date_label") or "Posting Date",
-			"primary_metric_key": "grand_total",
-			"primary_metric_label": "Grand Total",
+			"primary_metric_key": primary_metric_key or "grand_total",
+			"primary_metric_label": primary_metric_label or "Grand Total",
+			"metric_label_map": {
+				"grand_total": "Grand Total",
+				"received_amount": "Received Amount",
+				"total_allocated_amount": "Total Allocated Amount",
+				"paid_amount": "Paid Amount",
+				"outstanding_amount": "Outstanding Amount",
+				"quantity": "Quantity",
+			},
 			"requested_top_n": requested_top_n or len(document_rows),
 			"requested_columns": requested_columns,
+			"has_explicit_projection_request": has_explicit_projection_request,
 			"source_grain": "document_list",
 		},
 		metrics=metrics,
@@ -2593,7 +2904,7 @@ def _build_transaction_listing_artifact(
 			"summary": summary,
 		},
 		warnings=(
-			["No governed rows matched the requested filters for this transaction listing."]
+			["No documents matched these filters."]
 			if not document_rows
 			else []
 		),
@@ -2601,6 +2912,108 @@ def _build_transaction_listing_artifact(
 	return FamilyArtifactOutcome(
 		status="adapted",
 		family_id="transaction_listing",
+		report_name=report_name,
+		artifact_contract=artifact,
+	)
+
+
+def _build_master_data_directory_artifact(
+	*,
+	request_id: str,
+	report_name: str,
+	report_tool: Dict[str, Any],
+	compiler_contract: Dict[str, Any],
+) -> FamilyArtifactOutcome:
+	result = _report_result(report_tool)
+	rows = [row for row in _report_rows(result) if isinstance(row, dict)]
+	filters = _report_filters(report_tool, result)
+	period = _period_from_filters(filters)
+	requested_top_n = _requested_top_n_from_contract(compiler_contract)
+	context = _master_directory_context(report_name)
+	directory_rows: List[Dict[str, Any]] = []
+	for row in rows:
+		entity_key = str(row.get("name") or "").strip()
+		entity_label = str(row.get(context.get("name_field")) or "").strip() or entity_key
+		if not entity_key and not entity_label:
+			continue
+		disabled = _numeric_value(row.get("disabled"))
+		is_frozen = _numeric_value(row.get("is_frozen"))
+		status = "Disabled" if disabled else ("Frozen" if is_frozen else "Active")
+		directory_rows.append(
+			{
+				"entity": entity_label or entity_key,
+				"entity_name": entity_label or entity_key,
+				"entity_code": entity_key,
+				"region": str(row.get(context.get("region_field")) or "").strip(),
+				"group": str(row.get(context.get("group_field")) or "").strip(),
+				"creation": str(row.get("creation") or "").strip()[:10],
+				"status": status,
+				"default_price_list": str(row.get("default_price_list") or "").strip(),
+				"payment_terms": str(row.get("payment_terms") or "").strip(),
+				"disabled": disabled,
+				"is_frozen": is_frozen,
+			}
+		)
+	if requested_top_n > 0:
+		directory_rows = directory_rows[:requested_top_n]
+	requested_columns = _requested_master_directory_columns(
+		compiler_contract,
+		entity_type=str(context.get("entity_type") or "").strip(),
+	)
+	extracted_slots = (
+		dict(compiler_contract.get("extracted_slots"))
+		if isinstance(compiler_contract.get("extracted_slots"), dict)
+		else {}
+	)
+	entity_reference_resolution = (
+		dict(extracted_slots.get("entity_reference_resolution"))
+		if isinstance(extracted_slots.get("entity_reference_resolution"), dict)
+		else {}
+	)
+	summary = [
+		{"label": f"{context.get('entity_label')} Count", "metric_key": "row_count", "value": len(directory_rows)},
+	]
+	artifact = build_normalized_family_artifact_contract(
+		request_id=request_id,
+		family_id="master_data_directory",
+		source_reports=[report_name],
+		period=period,
+		filters=filters,
+		dimensions={
+			"scope_id": str(extracted_slots.get("scope_id") or "").strip() or scope_id_for_entity_grain(str(context.get("entity_type") or "").strip()),
+			"entity_type": context.get("entity_type"),
+			"entity_label": context.get("entity_label"),
+			"entity_plural_label": context.get("entity_plural_label"),
+			"region_label": context.get("region_label"),
+			"group_label": context.get("group_label"),
+			"requested_top_n": requested_top_n or len(directory_rows),
+			"requested_columns": requested_columns,
+			"requested_column_alias_map": _master_directory_requested_column_alias_map(
+				str(context.get("entity_type") or "").strip()
+			),
+			"suppress_summary_by_default": True,
+			"source_grain": context.get("source_grain"),
+			"lookup_mode": str(extracted_slots.get("lookup_mode") or "").strip(),
+			"lookup_projection": str(extracted_slots.get("lookup_projection") or "").strip(),
+			"lookup_search_text": str(extracted_slots.get("lookup_search_text") or "").strip(),
+		},
+		metrics={
+			"row_count": len(directory_rows),
+		},
+		sections={
+			"directory_rows": directory_rows,
+			"summary": summary,
+			"entity_reference_resolution": entity_reference_resolution,
+		},
+		warnings=(
+			[f"No governed {str(context.get('entity_type') or 'entity')} master rows matched the current filters."]
+			if not directory_rows
+			else []
+		),
+	)
+	return FamilyArtifactOutcome(
+		status="adapted",
+		family_id="master_data_directory",
 		report_name=report_name,
 		artifact_contract=artifact,
 	)
@@ -2676,6 +3089,13 @@ def build_normalized_family_artifact(
 		)
 	if target_family_id == "transaction_listing":
 		return _build_transaction_listing_artifact(
+			request_id=request_id,
+			report_name=report_name,
+			report_tool=report_tool,
+			compiler_contract=compiler_contract,
+		)
+	if target_family_id in {"customer_master_list", "master_data_directory"}:
+		return _build_master_data_directory_artifact(
 			request_id=request_id,
 			report_name=report_name,
 			report_tool=report_tool,

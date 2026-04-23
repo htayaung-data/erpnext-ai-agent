@@ -1,5 +1,6 @@
 import unittest
 
+from ai_assistant_ui.qwen_chat.metadata import load_semantic_resolution_registry
 from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
 	validate_semantic_resolution_registry,
 )
@@ -64,3 +65,60 @@ class TestSemanticResolutionRegistry(unittest.TestCase):
 			any("missing_family" in message for message in result.errors),
 			f"Expected unknown family validation error, got: {result.errors!r}",
 		)
+
+	def test_validator_allows_clarify_rule_without_execution_targets(self):
+		result = validate_semantic_resolution_registry(
+			{
+				"contract_version": "1.0",
+				"slot_definitions": [
+					{
+						"slot_name": "entity_grain",
+						"allowed_values": ["customer", "supplier"],
+						"required_for_intent_classes": ["master_data_lookup"],
+						"resolution_mode": "required_or_clarify",
+					}
+				],
+				"alias_maps": {
+					"entity_grain": [
+						{
+							"canonical_value": "supplier",
+							"aliases": ["supplier", "suppliers"],
+						}
+					]
+				},
+				"family_resolution_rules": [
+					{
+						"rule_id": "supplier_scope_unavailable",
+						"intent_class": "master_data_lookup",
+						"required_slots": {"entity_grain": "supplier"},
+						"candidate_family_ids": [],
+						"candidate_capability_ids": [],
+						"candidate_reports": [],
+						"governed_decision": "clarify",
+						"ambiguity_policy": "unsupported_scope",
+					}
+				],
+				"ambiguity_policies": [
+					{
+						"policy_id": "unsupported_scope",
+						"intent_class": "master_data_lookup",
+						"missing_slots": ["entity_grain"],
+						"decision": "clarify",
+						"reason": "unsupported_scope",
+					}
+				],
+				"defaults": {},
+			}
+		)
+		self.assertEqual(result.status, "pass", f"Clarify-only rules should validate: {result.errors!r}")
+
+	def test_master_data_lookup_registry_exposes_lookup_slots(self):
+		registry = load_semantic_resolution_registry()
+		slot_definitions = registry.get("slot_definitions") if isinstance(registry.get("slot_definitions"), list) else []
+		slot_names = {
+			str(item.get("slot_name") or "").strip()
+			for item in slot_definitions
+			if isinstance(item, dict)
+		}
+		self.assertIn("lookup_mode", slot_names)
+		self.assertIn("lookup_projection", slot_names)

@@ -1,0 +1,330 @@
+{
+  "contract_version": "1.0",
+  "description": "Projection policy for governed scopes by family contract.",
+  "allowed_family_ids": [
+    "master_data_lookup",
+    "entity_detail",
+    "transaction_listing",
+    "ranking_analytics",
+    "aging",
+    "inventory_snapshot",
+    "product_profitability",
+    "followup_boundary",
+    "clarification"
+  ],
+  "allowed_default_projection_shapes": [
+    "names_plus_key_attributes",
+    "entity_profile_sections",
+    "document_core_columns",
+    "document_detail_sections"
+  ],
+  "entries": [
+    {
+      "scope_id": "customer_master",
+      "family_id": "master_data_lookup",
+      "projection_group_id": "customer_directory_core",
+      "allowed_dimensions": [
+        "Customer",
+        "Creation",
+        "Territory",
+        "Customer Group",
+        "Status"
+      ],
+      "allowed_metrics": [],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "names_plus_key_attributes",
+      "projection_notes": "Default customer directory shape should stay simple and lookup-oriented."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "entity_detail",
+      "projection_group_id": "customer_profile_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Total Amount",
+        "Outstanding Amount",
+        "Credit Used"
+      ],
+      "allowed_detail_sections": [
+        "profile",
+        "lifecycle",
+        "credit_status",
+        "aging_buckets",
+        "commercial_policy",
+        "recent_sales_invoices"
+      ],
+      "default_projection_shape": "entity_profile_sections",
+      "projection_notes": "Customer detail exposes approved profile sections rather than a directory table."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "master_data_lookup",
+      "projection_group_id": "supplier_directory_core",
+      "allowed_dimensions": [
+        "Supplier",
+        "Creation",
+        "Country",
+        "Supplier Group",
+        "Status"
+      ],
+      "allowed_metrics": [],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "names_plus_key_attributes",
+      "projection_notes": "Default supplier directory shape should stay simple and lookup-oriented."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "entity_detail",
+      "projection_group_id": "supplier_profile_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Total Amount",
+        "Outstanding Amount",
+        "Invoice Count"
+      ],
+      "allowed_detail_sections": [
+        "profile",
+        "highlights",
+        "recent_purchase_invoices"
+      ],
+      "default_projection_shape": "entity_profile_sections",
+      "projection_notes": "Supplier detail is currently profile-oriented even without direct supplier directory activation."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "master_data_lookup",
+      "projection_group_id": "item_directory_core",
+      "allowed_dimensions": [
+        "Item",
+        "Creation",
+        "Brand",
+        "Item Group",
+        "Status"
+      ],
+      "allowed_metrics": [],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "names_plus_key_attributes",
+      "projection_notes": "Default item directory shape should stay simple and lookup-oriented."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "entity_detail",
+      "projection_group_id": "item_profile_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Total Sales Amount",
+        "Total Sold Qty",
+        "Invoice Count"
+      ],
+      "allowed_detail_sections": [
+        "item_profile",
+        "highlights",
+        "recent_sales"
+      ],
+      "default_projection_shape": "entity_profile_sections",
+      "projection_notes": "Item detail is profile-oriented and keyed by a known item identifier."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "transaction_listing",
+      "projection_group_id": "sales_invoice_list_core",
+      "allowed_dimensions": [
+        "Sales Invoice",
+        "Posting Date",
+        "Customer",
+        "Status"
+      ],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity",
+        "Outstanding Amount"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Sales invoice list projection follows the approved report surface."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "entity_detail",
+      "projection_group_id": "sales_invoice_detail_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Grand Total",
+        "Outstanding Amount",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [
+        "invoice_summary",
+        "key_facts",
+        "items"
+      ],
+      "default_projection_shape": "document_detail_sections",
+      "projection_notes": "Document detail should expose summary, key facts, and line-item sections."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "transaction_listing",
+      "projection_group_id": "purchase_invoice_list_core",
+      "allowed_dimensions": [
+        "Purchase Invoice",
+        "Posting Date",
+        "Supplier",
+        "Status"
+      ],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity",
+        "Outstanding Amount"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Purchase-invoice list projection follows the approved report surface."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "entity_detail",
+      "projection_group_id": "purchase_invoice_detail_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Grand Total",
+        "Outstanding Amount",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [
+        "invoice_summary",
+        "key_facts",
+        "items"
+      ],
+      "default_projection_shape": "document_detail_sections",
+      "projection_notes": "Purchase-invoice detail exposes summary, key facts, and line-item sections."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "transaction_listing",
+      "projection_group_id": "delivery_note_list_core",
+      "allowed_dimensions": [
+        "Delivery Note",
+        "Posting Date",
+        "Customer",
+        "Status"
+      ],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Delivery-note list projection follows the approved report surface."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "entity_detail",
+      "projection_group_id": "delivery_note_detail_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [
+        "delivery_summary",
+        "key_facts",
+        "items"
+      ],
+      "default_projection_shape": "document_detail_sections",
+      "projection_notes": "Delivery-note detail should expose summary and item evidence."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "transaction_listing",
+      "projection_group_id": "sales_order_list_core",
+      "allowed_dimensions": [
+        "Sales Order",
+        "Transaction Date",
+        "Customer",
+        "Status",
+        "Delivery Date"
+      ],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Sales-order list projection follows the approved report surface."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "entity_detail",
+      "projection_group_id": "sales_order_detail_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity",
+        "Delivered Percent",
+        "Billed Percent"
+      ],
+      "allowed_detail_sections": [
+        "order_summary",
+        "key_facts",
+        "items"
+      ],
+      "default_projection_shape": "document_detail_sections",
+      "projection_notes": "Sales-order detail should expose summary and item evidence."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "transaction_listing",
+      "projection_group_id": "purchase_order_list_core",
+      "allowed_dimensions": [
+        "Purchase Order",
+        "Transaction Date",
+        "Supplier",
+        "Status",
+        "Schedule Date"
+      ],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Purchase-order list projection follows the approved report surface."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "entity_detail",
+      "projection_group_id": "purchase_order_detail_core",
+      "allowed_dimensions": [],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity",
+        "Received Percent",
+        "Billed Percent"
+      ],
+      "allowed_detail_sections": [
+        "order_summary",
+        "key_facts",
+        "items"
+      ],
+      "default_projection_shape": "document_detail_sections",
+      "projection_notes": "Purchase-order detail should expose summary and item evidence."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "transaction_listing",
+      "projection_group_id": "payment_entry_list_core",
+      "allowed_dimensions": [
+        "Payment Entry",
+        "Posting Date",
+        "Customer"
+      ],
+      "allowed_metrics": [
+        "Received Amount",
+        "Total Allocated Amount"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Payment-entry listing follows the approved Payment Entry List projection."
+    }
+  ]
+}

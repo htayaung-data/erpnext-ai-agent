@@ -37,7 +37,9 @@ def handle_artifact_boundary_turn(
 	append_tool_payload: Callable[..., None],
 	append_message: Callable[..., None],
 	assistant_text_payload: Callable[[str], str],
+	store_pending_clarification_signal: Callable[..., None],
 	save_session: Callable[..., None],
+	clear_pending_clarification_signal: Callable[..., None] | None = None,
 ) -> Tuple[bool, Dict[str, Any] | None]:
 	evidence_response = dict(precomputed_evidence_response or {}) if isinstance(precomputed_evidence_response, dict) else {}
 	if not evidence_response:
@@ -76,8 +78,25 @@ def handle_artifact_boundary_turn(
 			if isinstance(evidence_response.get("narrative_contract_payload"), dict)
 			else {}
 		)
+		evidence_request_contract_payload = (
+			evidence_response.get("evidence_request_contract_payload")
+			if isinstance(evidence_response.get("evidence_request_contract_payload"), dict)
+			else {}
+		)
+		clarification_signal_payload = (
+			evidence_response.get("clarification_signal_payload")
+			if isinstance(evidence_response.get("clarification_signal_payload"), dict)
+			else {}
+		)
+		if evidence_request_contract_payload:
+			append_tool_payload(session_doc, evidence_request_contract_payload)
 		if narrative_contract_payload:
 			append_tool_payload(session_doc, narrative_contract_payload)
+		if clarification_signal_payload:
+			append_tool_payload(session_doc, clarification_signal_payload)
+			store_pending_clarification_signal(session_doc, clarification_signal_payload)
+		elif callable(clear_pending_clarification_signal):
+			clear_pending_clarification_signal(session_doc)
 		append_message(session_doc, "assistant", assistant_text_payload(evidence_answer))
 		append_tool_payload(
 			session_doc,
@@ -152,6 +171,8 @@ def handle_artifact_boundary_turn(
 			grounded_turn_available=bool(latest_grounded_turn),
 		)
 		append_tool_payload(session_doc, execution_path.to_payload())
+		if callable(clear_pending_clarification_signal):
+			clear_pending_clarification_signal(session_doc)
 		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
 		append_tool_payload(
 			session_doc,
@@ -226,6 +247,8 @@ def handle_artifact_boundary_turn(
 		grounded_turn_available=bool(latest_grounded_turn),
 	)
 	append_tool_payload(session_doc, execution_path.to_payload())
+	if callable(clear_pending_clarification_signal):
+		clear_pending_clarification_signal(session_doc)
 	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
 	append_tool_payload(
 		session_doc,

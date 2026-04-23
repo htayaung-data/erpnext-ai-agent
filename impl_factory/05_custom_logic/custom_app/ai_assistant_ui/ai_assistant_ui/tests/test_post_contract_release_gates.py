@@ -27,6 +27,8 @@ from ai_assistant_ui.qwen_chat.service import (
 	run_phase2_4_governed_kpi_frontdoor_smoke,
 	run_phase2_5_governed_kpi_customer_execution_smoke,
 	run_phase2_5_governed_kpi_period_execution_smoke,
+	run_phase3_2_customer_commercial_composite_smoke,
+	run_phase3_3b_customer_detail_clarification_followup_smoke,
 )
 
 
@@ -188,4 +190,16 @@ class TestPostContractReleaseGates(unittest.TestCase):
 		self._assert_ok_tree(
 			run_phase2_5_governed_kpi_customer_execution_smoke(),
 			"phase2_5_governed_kpi_customer_execution_smoke",
+		)
+
+	def test_phase3_2_customer_commercial_composite_smoke(self):
+		self._assert_ok_tree(
+			run_phase3_2_customer_commercial_composite_smoke(),
+			"phase3_2_customer_commercial_composite_smoke",
+		)
+
+	def test_phase3_3b_customer_detail_clarification_followup_smoke(self):
+		self._assert_ok_tree(
+			run_phase3_3b_customer_detail_clarification_followup_smoke(),
+			"phase3_3b_customer_detail_clarification_followup_smoke",
 		)

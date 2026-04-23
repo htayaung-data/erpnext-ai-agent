@@ -139,6 +139,7 @@ def handle_repair_turn(
 				message=synthesized_message,
 				recent_messages=[],
 				clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
+				front_door_contract=frontdoor_contract.to_payload() if frontdoor_contract is not None else None,
 				governed_target_limit=governed_target_limit,
 			)
 			_, payload = handle_compiled_first_turn_result(

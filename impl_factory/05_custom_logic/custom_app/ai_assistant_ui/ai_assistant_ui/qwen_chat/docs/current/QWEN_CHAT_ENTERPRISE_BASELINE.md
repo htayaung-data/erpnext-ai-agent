@@ -257,6 +257,39 @@ As of this checkpoint:
      - [test_entity_detail_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_entity_detail_contracts.py)
    - the site release-gate module now includes `run_phase2_5_governed_kpi_customer_execution_smoke`
    - the callable seam `run_phase2_5_governed_kpi_customer_execution_probe` and the live smoke `run_phase2_5_governed_kpi_customer_execution_smoke` are green
+43. Phase `3.1` composite contract foundation is now complete:
+   - family-based composite metadata now exists in:
+     - [composite_family_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_family_registry.json)
+     - [composite_artifact_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_artifact_registry.json)
+     - [composite_compatibility_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_compatibility_registry.json)
+     - [composite_assembly_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_assembly_registry.json)
+   - typed family and composite runtime seams now live in:
+     - [composite_artifact_state.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/composite_artifact_state.py)
+     - [composite_artifact_registry.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/composite_artifact_registry.py)
+   - required variation axes such as metric basis and time scope now block at typed clarification instead of resolving early
+   - current scaffold intentionally stops at `blocked_missing_component` until Phase `3.2` activates customer commercial composite executions
+   - deterministic coverage now lives in:
+     - [test_composite_artifact_registry.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_composite_artifact_registry.py)
+     - [test_composite_artifact_state.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_composite_artifact_state.py)
+   - callable probe verification is green through:
+     - `run_composite_artifact_registry_probe`
+     - `run_composite_artifact_contract_probe`
+44. Phase `3.2` customer commercial composites are now active:
+   - reusable customer-period commercial aggregation now lives in [customer_commercial_period_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/customer_commercial_period_support.py)
+   - family-based composite execution now lives in [governed_composite_runtime_execution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/governed_composite_runtime_execution.py)
+   - the active family supports customer commercial ranking by:
+     - sales-order revenue with quantity and average order value
+     - sales-invoice revenue with quantity and average invoice value
+   - governed family resolution now clarifies missing `basis` and missing primary metric without falling back to prompt-led logic
+   - row assembly stays metadata-owned through:
+     - [composite_family_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_family_registry.json)
+     - [composite_artifact_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_artifact_registry.json)
+     - [composite_assembly_registry.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/composite_assembly_registry.json)
+   - deterministic coverage now lives in:
+     - [test_customer_commercial_period_support.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_customer_commercial_period_support.py)
+     - [test_governed_composite_runtime_execution.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_governed_composite_runtime_execution.py)
+   - the site release-gate module now includes `run_phase3_2_customer_commercial_composite_smoke`
+   - the callable seam `run_phase3_2_customer_commercial_composite_probe` and the live smoke `run_phase3_2_customer_commercial_composite_smoke` are green
 
 ## 2. Release-Gate Command
 

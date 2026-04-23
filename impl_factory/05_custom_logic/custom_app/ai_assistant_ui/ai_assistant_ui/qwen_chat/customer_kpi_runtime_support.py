@@ -100,6 +100,38 @@ def _contains_phrase(text: str, phrase: str) -> bool:
 	return bool(re.search(pattern, value))
 
 
+def _text_tokens(value: Any) -> List[str]:
+	text = re.sub(r"[^a-z0-9]+", " ", _normalize_text(value))
+	return [token for token in text.split() if token]
+
+
+def _customer_alias_match(
+	*,
+	message: str,
+	alias: str,
+) -> Dict[str, Any]:
+	if _contains_phrase(message, alias):
+		return {
+			"match_mode": "exact_phrase",
+			"confidence": 1.0,
+			"overlap_count": len(_text_tokens(alias)),
+		}
+	message_tokens = set(_text_tokens(message))
+	alias_tokens = _text_tokens(alias)
+	if len(alias_tokens) < 2:
+		return {}
+	overlap_count = len(message_tokens.intersection(alias_tokens))
+	overlap_ratio = float(overlap_count) / float(len(alias_tokens) or 1)
+	min_overlap = 2 if len(alias_tokens) <= 3 else max(3, len(alias_tokens) - 1)
+	if overlap_count < min_overlap or overlap_ratio < 0.8:
+		return {}
+	return {
+		"match_mode": "token_overlap",
+		"confidence": overlap_ratio,
+		"overlap_count": overlap_count,
+	}
+
+
 def _customer_master_rows() -> List[Dict[str, Any]]:
 	rows = frappe.get_all(
 		"Customer",
@@ -137,21 +169,71 @@ def _customer_aliases(row: Dict[str, Any]) -> List[str]:
 
 
 def _best_customer_match_from_message(message: str) -> Dict[str, Any]:
-	best_row: Dict[str, Any] = {}
-	best_alias = ""
-	best_score = -1
+	best_exact_row: Dict[str, Any] = {}
+	best_exact_alias = ""
+	best_exact_score = -1
+	best_fuzzy_row: Dict[str, Any] = {}
+	best_fuzzy_alias = ""
+	best_fuzzy_confidence = 0.0
+	second_fuzzy_confidence = 0.0
+	best_fuzzy_overlap = 0
+	best_fuzzy_alias_length = 0
 	for row in _customer_master_rows():
 		for alias in _customer_aliases(row):
-			if not _contains_phrase(message, alias):
+			match = _customer_alias_match(message=message, alias=alias)
+			match_mode = _clean_text(match.get("match_mode"))
+			if not match_mode:
 				continue
-			score = len(_normalize_text(alias))
-			if score > best_score:
-				best_row = dict(row or {})
-				best_alias = alias
-				best_score = score
+			alias_token_count = len(_text_tokens(alias))
+			if match_mode == "exact_phrase":
+				score = len(_normalize_text(alias))
+				if score > best_exact_score:
+					best_exact_row = dict(row or {})
+					best_exact_alias = alias
+					best_exact_score = score
+				continue
+			confidence = float(match.get("confidence") or 0.0)
+			overlap_count = int(match.get("overlap_count") or 0)
+			is_better = (
+				confidence > best_fuzzy_confidence
+				or (
+					confidence == best_fuzzy_confidence
+					and overlap_count > best_fuzzy_overlap
+				)
+				or (
+					confidence == best_fuzzy_confidence
+					and overlap_count == best_fuzzy_overlap
+					and alias_token_count > best_fuzzy_alias_length
+				)
+			)
+			if is_better:
+				second_fuzzy_confidence = best_fuzzy_confidence
+				best_fuzzy_row = dict(row or {})
+				best_fuzzy_alias = alias
+				best_fuzzy_confidence = confidence
+				best_fuzzy_overlap = overlap_count
+				best_fuzzy_alias_length = alias_token_count
+			elif confidence > second_fuzzy_confidence:
+				second_fuzzy_confidence = confidence
+	if best_exact_row:
+		return {
+			"row": best_exact_row,
+			"matched_alias": best_exact_alias,
+			"match_mode": "exact_phrase",
+			"confidence": 1.0,
+		}
+	if best_fuzzy_row and best_fuzzy_confidence >= 0.8 and (best_fuzzy_confidence - second_fuzzy_confidence) >= 0.05:
+		return {
+			"row": best_fuzzy_row,
+			"matched_alias": best_fuzzy_alias,
+			"match_mode": "token_overlap",
+			"confidence": best_fuzzy_confidence,
+		}
 	return {
-		"row": best_row,
-		"matched_alias": best_alias,
+		"row": {},
+		"matched_alias": "",
+		"match_mode": "",
+		"confidence": 0.0,
 	}
 
 
@@ -168,6 +250,8 @@ def resolve_customer_scope_from_message(message: str) -> Dict[str, Any]:
 		"entity_name": customer_key,
 		"entity_label": customer_label,
 		"matched_alias": _clean_text(match.get("matched_alias")),
+		"matched_by": _clean_text(match.get("match_mode")),
+		"match_confidence": float(match.get("confidence") or 0.0),
 		"has_customer_scope": True,
 	}
 

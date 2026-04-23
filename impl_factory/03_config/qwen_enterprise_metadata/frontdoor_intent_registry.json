@@ -56,6 +56,15 @@
       "requires_grounded_context": false
     },
     {
+      "intent_class_id": "governed_composite_value",
+      "label": "Governed Composite Value",
+      "description": "A request to execute an approved governed composite family from the composite family runtime for an explicit period or as-of scope.",
+      "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
       "intent_class_id": "session_flow",
       "label": "Session Flow",
       "description": "A request to continue or advance the current grounded session flow.",
@@ -78,6 +87,24 @@
       "label": "Closure / Signoff",
       "description": "A conversational turn that politely ends or pauses the session without requesting ERP data.",
       "response_mode": "direct_answer",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "compound_request_clarification",
+      "label": "Compound Request Clarification",
+      "description": "A single user turn that contains multiple self-contained ERP requests and needs execution-order clarification.",
+      "response_mode": "clarification_signal",
+      "route_target": "front_door",
+      "handle_in_front_door": true,
+      "requires_grounded_context": false
+    },
+    {
+      "intent_class_id": "master_data_grain_clarification",
+      "label": "Master Data Grain Clarification",
+      "description": "A master-data request where the entity group is still ambiguous and needs clarification before the main lanes continue.",
+      "response_mode": "clarification_signal",
       "route_target": "front_door",
       "handle_in_front_door": true,
       "requires_grounded_context": false

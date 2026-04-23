@@ -21,6 +21,9 @@ def artifact_metric_columns_available(
 	artifact_payload: Dict[str, Any],
 	requested_columns: List[str],
 ) -> bool:
+	def _normalize_column_key(value: Any) -> str:
+		return normalized_key_fallback(str(value or "").strip())
+
 	def _collect_row_keys(value: Any) -> set[str]:
 		keys: set[str] = set()
 		if isinstance(value, list):
@@ -54,15 +57,46 @@ def artifact_metric_columns_available(
 		for value in (dimensions.get("available_metric_keys") or [])
 		if str(value or "").strip()
 	}
+	column_alias_map = (
+		{
+			_normalize_column_key(key): str(value or "").strip()
+			for key, value in (dimensions.get("requested_column_alias_map") or {}).items()
+			if _normalize_column_key(key) and str(value or "").strip()
+		}
+		if isinstance(dimensions.get("requested_column_alias_map"), dict)
+		else {}
+	)
 	if primary_metric_key:
 		available_metric_keys.add(primary_metric_key)
 	row_keys = _collect_row_keys(sections)
 	if not row_keys and not available_metric_keys:
 		return True
+	available_metric_keys_normalized = {
+		_normalize_column_key(value)
+		for value in available_metric_keys
+		if _normalize_column_key(value)
+	}
+	row_keys_normalized = {
+		_normalize_column_key(value)
+		for value in row_keys
+		if _normalize_column_key(value)
+	}
 	for column in requested:
-		if column in available_metric_keys:
+		candidate_keys = {
+			str(column or "").strip(),
+			_normalize_column_key(column),
+		}
+		alias_target = column_alias_map.get(_normalize_column_key(column))
+		if alias_target:
+			candidate_keys.add(alias_target)
+			candidate_keys.add(_normalize_column_key(alias_target))
+		canonical_metric_key = get_canonical_key(column, dimension_or_metric="metric")
+		if canonical_metric_key:
+			candidate_keys.add(str(canonical_metric_key or "").strip())
+			candidate_keys.add(_normalize_column_key(canonical_metric_key))
+		if any(key in available_metric_keys or key in row_keys for key in candidate_keys if str(key or "").strip()):
 			continue
-		if column in row_keys:
+		if any(key in available_metric_keys_normalized or key in row_keys_normalized for key in candidate_keys if str(key or "").strip()):
 			continue
 		return False
 	return True

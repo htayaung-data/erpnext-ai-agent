@@ -14,6 +14,9 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	FrontDoorIntentGateContract,
 	build_clarification_signal_contract,
 )
+from ai_assistant_ui.qwen_chat.clarification_translation import (
+	render_shared_choice_list_clarification,
+)
 from ai_assistant_ui.qwen_chat.defaults_repository import single_company_name
 from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	SemanticFrontDoorIntent,
@@ -513,16 +516,20 @@ def _render_blocked_answer(
 
 
 def _render_ambiguous_answer(definition_state: BusinessDefinitionStateContract) -> str:
-	answer_lines = [
-		f"{definition_state.lookup_value} is not a single governed KPI here yet. Please choose the approved basis first.",
-		"",
-		"Choose one:",
+	options = [
+		str(item.get("label") or "").strip()
+		for item in definition_state.candidate_definitions
+		if str(item.get("label") or "").strip()
 	]
-	for item in definition_state.candidate_definitions:
-		label = str(item.get("label") or "").strip()
-		if label:
-			answer_lines.append(f"- {label}")
-	return "\n".join(answer_lines).strip()
+	return render_shared_choice_list_clarification(
+		reason_type="governed_kpi_definition_ambiguity",
+		variant="default",
+		template_values={
+			"lookup_label": str(definition_state.lookup_value or "").strip() or "this KPI",
+		},
+		options=options,
+		default_question=f"{definition_state.lookup_value} is not a single governed KPI here yet. Please choose the approved basis first.",
+	)
 
 
 def _render_undefined_answer(subject: str) -> str:
@@ -583,6 +590,14 @@ def _build_ambiguous_clarification_signal(
 		if isinstance(item, dict) and str(item.get("label") or "").strip()
 		for option in [str(item.get("label") or "").strip()]
 	}
+	semantic_slot_value_by_option = {
+		option: canonical_value
+		for item in (definition_state.candidate_definitions or [])
+		if isinstance(item, dict)
+		for option in [str(item.get("label") or "").strip()]
+		for canonical_value in [_definition_listing_view_canonical(str(item.get("definition_id") or "").strip())]
+		if option and canonical_value
+	}
 	option_aliases_by_option = {
 		option: aliases
 		for item in (definition_state.candidate_definitions or [])
@@ -590,6 +605,11 @@ def _build_ambiguous_clarification_signal(
 		for option in [str(item.get("label") or "").strip()]
 		for aliases in [_listing_view_aliases_for_canonical(_definition_listing_view_canonical(str(item.get("definition_id") or "").strip()))]
 		if option and aliases
+	}
+	carryover_slot_values = {
+		"lookup_value": str(definition_state.lookup_value or "").strip(),
+		"query_kind": str(query_kind or "").strip(),
+		"include_business_purpose": "true" if include_business_purpose else "",
 	}
 	return build_clarification_signal_contract(
 		request_id=request_id,
@@ -604,8 +624,16 @@ def _build_ambiguous_clarification_signal(
 		internal_details={
 			"continuation_lane": "front_door",
 			"continuation_intent_class": "governed_kpi_definition",
+			"clarification_template_group": "shared_clarification",
 			"resolved_message_by_option": resolved_message_by_option,
 			"option_aliases_by_option": option_aliases_by_option,
+			"semantic_slot_name": "listing_view" if semantic_slot_value_by_option else "",
+			"semantic_slot_value_by_option": semantic_slot_value_by_option,
+			"carryover_slot_values": {
+				key: value
+				for key, value in carryover_slot_values.items()
+				if str(value or "").strip()
+			},
 			"lookup_value": str(definition_state.lookup_value or "").strip(),
 			"query_kind": str(query_kind or "").strip(),
 			"include_business_purpose": bool(include_business_purpose),

@@ -8,9 +8,16 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_clarification_reason_contract_from_sources,
 	build_clarification_signal_contract,
 )
+from ai_assistant_ui.qwen_chat.governed_scope_registry import listing_view_display_label
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_capability_spec,
+	entity_grain_display_label,
+	financial_statement_display_label,
+	financial_statement_report_name,
 	get_financial_summary_clarification_spec,
+	get_scope_clarification_template_spec,
+	list_capability_specs,
+	list_semantic_resolution_alias_entries,
 )
 
 
@@ -24,15 +31,6 @@ def _clean_list(values: Any) -> List[str]:
 	return [str(item or "").strip() for item in values if str(item or "").strip()]
 
 
-_CAPABILITY_LABEL_OVERRIDES = {
-	"accounts_receivable_read": "receivables (AR)",
-	"accounts_payable_read": "payables (AP)",
-	"financial_statement_read": "profitability or financial statements",
-	"sales_read": "sales",
-	"stock_read": "inventory",
-	"product_performance_read": "product performance",
-}
-
 _DEFAULT_TIME_SCOPE_OPTIONS = ["today", "last month", "all time"]
 
 
@@ -40,9 +38,10 @@ def _capability_business_label(capability_id: str) -> str:
 	clean_id = _clean_text(capability_id)
 	if not clean_id:
 		return ""
-	if clean_id in _CAPABILITY_LABEL_OVERRIDES:
-		return _CAPABILITY_LABEL_OVERRIDES[clean_id]
 	spec = get_capability_spec(clean_id)
+	value = _clean_text(spec.get("clarification_business_area_label"))
+	if value:
+		return value
 	for key in ("capability_label", "label", "name"):
 		value = _clean_text(spec.get(key))
 		if value:
@@ -62,28 +61,386 @@ def _human_join(values: List[str]) -> str:
 
 
 def _group_business_options(capability_ids: List[str]) -> List[str]:
+	capability_set = {_clean_text(value) for value in capability_ids if _clean_text(value)}
+	if not capability_set:
+		return []
+	ranked_labels: List[tuple[int, str]] = []
+	for item in list_capability_specs():
+		if not isinstance(item, dict):
+			continue
+		capability_id = _clean_text(item.get("capability_id"))
+		if capability_id not in capability_set:
+			continue
+		label = _clean_text(item.get("clarification_business_area_label")) or _capability_business_label(capability_id)
+		if not label:
+			continue
+		try:
+			order = int(item.get("clarification_business_area_order") or 9999)
+		except Exception:
+			order = 9999
+		ranked_labels.append((order, label))
+	ranked_labels.sort(key=lambda item: (item[0], item[1].lower()))
 	options: List[str] = []
-	capability_set = set(capability_ids)
-	if capability_set & {"accounts_receivable_read", "accounts_payable_read"}:
-		options.append("AR / AP")
-	if "financial_statement_read" in capability_set:
-		options.extend(["profitability", "cash flow"])
-	if "sales_read" in capability_set:
-		options.append("sales")
-	if "stock_read" in capability_set:
-		options.append("inventory")
-	if "product_performance_read" in capability_set:
-		options.append("product performance")
-	for capability_id in capability_ids:
-		label = _capability_business_label(capability_id)
-		if label and label not in options:
+	for _, label in ranked_labels:
+		if label not in options:
 			options.append(label)
-	return list(dict.fromkeys(options))[:5]
+	return options[:5]
+
+
+def _default_capability_missing_options() -> List[str]:
+	ranked_labels: List[tuple[int, str]] = []
+	for item in list_capability_specs():
+		if not isinstance(item, dict):
+			continue
+		label = _clean_text(item.get("clarification_business_area_label"))
+		if not label:
+			continue
+		try:
+			order = int(item.get("clarification_business_area_order") or 9999)
+		except Exception:
+			order = 9999
+		ranked_labels.append((order, label))
+	ranked_labels.sort(key=lambda item: (item[0], item[1].lower()))
+	options: List[str] = []
+	for _, label in ranked_labels:
+		if label not in options:
+			options.append(label)
+	return options[:5]
 
 
 def _time_scope_options(details: Dict[str, Any]) -> List[str]:
 	options = _clean_list(details.get("suggested_time_scope_options"))
 	return options or list(_DEFAULT_TIME_SCOPE_OPTIONS)
+
+
+def _report_option_bindings_by_option(options: List[str]) -> Dict[str, Dict[str, Any]]:
+	statement_alias_entries = list_semantic_resolution_alias_entries("statement_variant")
+	statement_aliases_by_canonical = {
+		_clean_text(item.get("canonical_value")): _clean_list(item.get("aliases"))
+		for item in statement_alias_entries
+		if _clean_text(item.get("canonical_value"))
+	}
+	financial_statement_spec = get_capability_spec("financial_statement_read")
+	fresh_query_defaults = (
+		financial_statement_spec.get("fresh_query_defaults")
+		if isinstance(financial_statement_spec.get("fresh_query_defaults"), dict)
+		else {}
+	)
+	report_name_by_canonical: Dict[str, str] = {}
+	canonical_values_by_report: Dict[str, set[str]] = {}
+	for defaults_key in ("financial_statement", "financial_summary"):
+		defaults = fresh_query_defaults.get(defaults_key) if isinstance(fresh_query_defaults.get(defaults_key), dict) else {}
+		mapping = defaults.get("report_overrides_by_concept") if isinstance(defaults.get("report_overrides_by_concept"), dict) else {}
+		for canonical_value, report_name in mapping.items():
+			clean_report_name = _clean_text(report_name)
+			clean_canonical_value = _clean_text(canonical_value)
+			if clean_report_name and clean_canonical_value:
+				report_name_by_canonical.setdefault(clean_canonical_value, clean_report_name)
+				canonical_values_by_report.setdefault(clean_report_name, set()).add(clean_canonical_value)
+
+	def _matches_phrase(option_text: str, candidate_text: str) -> bool:
+		return _clean_text(option_text).lower() == _clean_text(candidate_text).lower()
+
+	out: Dict[str, Dict[str, Any]] = {}
+	for option in options:
+		clean_option = _clean_text(option)
+		if not clean_option:
+			continue
+		canonical_value = ""
+		for candidate in sorted(canonical_values_by_report.get(clean_option, set())):
+			canonical_value = candidate
+			break
+		if not canonical_value:
+			for candidate_canonical, aliases in statement_aliases_by_canonical.items():
+				match_phrases = [candidate_canonical.replace("_", " ")] + list(aliases)
+				if any(_matches_phrase(clean_option, phrase) for phrase in match_phrases):
+					canonical_value = candidate_canonical
+					break
+		if not canonical_value:
+			continue
+		report_name = (
+			financial_statement_report_name(canonical_value)
+			or report_name_by_canonical.get(canonical_value, clean_option)
+		)
+		aliases = list(statement_aliases_by_canonical.get(canonical_value, []))
+		if report_name:
+			aliases.append(report_name)
+		out[clean_option] = {
+			"statement_variant": canonical_value,
+			"report_name": report_name,
+			"display_label": financial_statement_display_label(canonical_value) or report_name,
+			"aliases": list(dict.fromkeys([alias for alias in aliases if _clean_text(alias) and _clean_text(alias) != clean_option])),
+		}
+	return out
+
+
+def _report_option_aliases_by_option(options: List[str]) -> Dict[str, List[str]]:
+	bindings = _report_option_bindings_by_option(options)
+	return {
+		option: _clean_list(binding.get("aliases"))
+		for option, binding in bindings.items()
+		if _clean_list(binding.get("aliases"))
+	}
+
+
+def _report_option_slot_values_by_option(options: List[str]) -> Dict[str, str]:
+	bindings = _report_option_bindings_by_option(options)
+	return {
+		option: _clean_text(binding.get("statement_variant"))
+		for option, binding in bindings.items()
+		if _clean_text(binding.get("statement_variant"))
+	}
+
+
+def _report_option_report_names_by_option(options: List[str]) -> Dict[str, str]:
+	bindings = _report_option_bindings_by_option(options)
+	return {
+		option: _clean_text(binding.get("report_name"))
+		for option, binding in bindings.items()
+		if _clean_text(binding.get("report_name"))
+	}
+
+
+def _report_option_display_labels_by_option(options: List[str]) -> Dict[str, str]:
+	bindings = _report_option_bindings_by_option(options)
+	return {
+		option: _clean_text(binding.get("display_label"))
+		for option, binding in bindings.items()
+		if _clean_text(binding.get("display_label"))
+	}
+
+
+def _report_option_resolved_message_by_option(options: List[str]) -> Dict[str, str]:
+	report_names = _report_option_report_names_by_option(options)
+	return {
+		option: f"show me {report_name}"
+		for option, report_name in report_names.items()
+		if _clean_text(option) and _clean_text(report_name)
+	}
+
+
+def _scope_clarification_question(
+	*,
+	reason_type: str,
+	template_group: str,
+	variant: str,
+	default_question: str = "",
+	template_values: Dict[str, str],
+) -> str:
+	spec = get_scope_clarification_template_spec(reason_type, template_group=template_group)
+	question_templates = spec.get("question_templates") if isinstance(spec.get("question_templates"), dict) else {}
+	template = _clean_text(question_templates.get(variant)) or _clean_text(question_templates.get("default"))
+	fallback_question = _clean_text(default_question)
+	if not fallback_question and template_group == "shared_clarification":
+		fallback_spec = get_scope_clarification_template_spec(
+			"generic_clarification",
+			template_group="shared_clarification",
+		)
+		fallback_templates = (
+			fallback_spec.get("question_templates")
+			if isinstance(fallback_spec.get("question_templates"), dict)
+			else {}
+		)
+		fallback_question = _clean_text(fallback_templates.get("default"))
+	if not template:
+		return fallback_question
+	try:
+		return template.format(**template_values)
+	except KeyError:
+		return fallback_question or template
+
+
+def _shared_clarification_question(
+	*,
+	reason_type: str,
+	variant: str,
+	default_question: str = "",
+	template_values: Dict[str, str],
+) -> str:
+	return _scope_clarification_question(
+		reason_type=reason_type,
+		template_group="shared_clarification",
+		variant=variant,
+		default_question=default_question,
+		template_values=template_values,
+	)
+
+
+def render_shared_choice_list_clarification(
+	*,
+	reason_type: str,
+	variant: str,
+	template_values: Dict[str, str],
+	options: List[str],
+	default_question: str = "",
+	default_heading: str = "Choose one:",
+) -> str:
+	spec = get_scope_clarification_template_spec(
+		reason_type,
+		template_group="shared_clarification",
+	)
+	question = _shared_clarification_question(
+		reason_type=reason_type,
+		variant=variant,
+		default_question=default_question,
+		template_values=template_values,
+	)
+	clean_question = _clean_text(question)
+	clean_options = [value for value in options if _clean_text(value)]
+	if not clean_options:
+		return clean_question
+	list_heading_templates = (
+		spec.get("list_heading_templates")
+		if isinstance(spec.get("list_heading_templates"), dict)
+		else {}
+	)
+	list_heading = (
+		_clean_text(list_heading_templates.get(variant))
+		or _clean_text(list_heading_templates.get("default"))
+		or _clean_text(default_heading)
+	)
+	lines = [clean_question]
+	if list_heading:
+		lines.extend(["", list_heading])
+	for option in clean_options:
+		lines.append(f"- {option}")
+	return "\n".join(lines).strip()
+
+
+def render_clarification_signal_user_text(
+	signal_payload: Dict[str, Any],
+	*,
+	max_inline_options: int = 5,
+) -> str:
+	if not isinstance(signal_payload, dict):
+		return ""
+	question = _clean_text(signal_payload.get("user_question"))
+	options = _clean_list(signal_payload.get("suggested_options"))
+	internal_details = (
+		signal_payload.get("internal_details")
+		if isinstance(signal_payload.get("internal_details"), dict)
+		else {}
+	)
+	if not question:
+		return ""
+	if not bool(internal_details.get("inline_options_on_first_turn")):
+		return question
+	if not options or len(options) > int(max(1, max_inline_options)):
+		return question
+	normalized_question = question.lower()
+	if len([option for option in options if _clean_text(option).lower() in normalized_question]) >= len(options):
+		return question
+	list_heading = _clean_text(internal_details.get("inline_option_heading")) or "Here are the options I found:"
+	lines = [question, ""]
+	if list_heading:
+		lines.append(list_heading)
+	for option in options:
+		lines.append(f"- {option}")
+	return "\n".join(lines).strip()
+
+
+def _with_clarification_template_group(
+	details: Dict[str, Any],
+	*,
+	template_group: str,
+	**extra_fields: Any,
+) -> Dict[str, Any]:
+	out = dict(details or {})
+	clean_group = _clean_text(template_group)
+	if clean_group:
+		out["clarification_template_group"] = clean_group
+	for key, value in extra_fields.items():
+		if value not in (None, ""):
+			out[str(key or "").strip()] = value
+	return out
+
+
+def _unsupported_scope_variant(
+	*,
+	requested_label: str,
+	supported_options: List[str],
+) -> str:
+	if requested_label and supported_options:
+		return "requested_and_supported"
+	if requested_label:
+		return "requested_only"
+	if supported_options:
+		return "supported_only"
+	return "default"
+
+
+def _build_unsupported_scope_clarification_signal(
+	*,
+	request_id: str,
+	reason_type: str,
+	internal_reason: str,
+	details: Dict[str, Any],
+	requested_label: str,
+	supported_options: List[str],
+) -> ClarificationSignalContract:
+	clean_requested_label = _clean_text(requested_label)
+	clean_supported_options = list(dict.fromkeys([value for value in supported_options if _clean_text(value)]))
+	variant = _unsupported_scope_variant(
+		requested_label=clean_requested_label,
+		supported_options=clean_supported_options,
+	)
+	question = _scope_clarification_question(
+		reason_type=reason_type,
+		template_group="unsupported_scope_clarification",
+		variant=variant,
+		template_values={
+			"requested_label": clean_requested_label,
+			"supported_options": _human_join(clean_supported_options),
+		},
+	)
+	return build_clarification_signal_contract(
+		request_id=request_id,
+		stage="compiler",
+		reason_type=reason_type,
+		user_question=question,
+		suggested_options=clean_supported_options[:5],
+		internal_reason=_clean_text(internal_reason),
+		internal_details=_with_clarification_template_group(
+			details,
+			template_group="unsupported_scope_clarification",
+			requested_label=clean_requested_label,
+		),
+	)
+
+
+def _build_shared_clarification_signal(
+	*,
+	request_id: str,
+	reason_type: str,
+	internal_reason: str,
+	details: Dict[str, Any],
+	suggested_options: List[str] | None = None,
+	variant: str = "default",
+	template_values: Dict[str, str] | None = None,
+	extra_internal_details: Dict[str, Any] | None = None,
+	stage: str = "compiler",
+) -> ClarificationSignalContract:
+	clean_options = list(dict.fromkeys([value for value in (suggested_options or []) if _clean_text(value)]))
+	merged_details = {
+		**dict(details or {}),
+		**(dict(extra_internal_details or {}) if isinstance(extra_internal_details, dict) else {}),
+	}
+	return build_clarification_signal_contract(
+		request_id=request_id,
+		stage=stage,
+		reason_type=reason_type,
+		user_question=_shared_clarification_question(
+			reason_type=reason_type,
+			variant=variant,
+			template_values=dict(template_values or {}),
+		),
+		suggested_options=clean_options,
+		internal_reason=_clean_text(internal_reason),
+		internal_details=_with_clarification_template_group(
+			merged_details,
+			template_group="shared_clarification",
+		),
+	)
 
 
 def _translate_financial_summary_signal(
@@ -106,7 +463,10 @@ def _translate_financial_summary_signal(
 		user_question=question,
 		suggested_options=options,
 		internal_reason=_clean_text(compiler_reason),
-		internal_details=details,
+		internal_details=_with_clarification_template_group(
+			details,
+			template_group="shared_clarification",
+		),
 	)
 
 
@@ -121,73 +481,118 @@ def _translate_compiler_signal(
 	details = dict(compiler_details or {})
 	if reason_type == "capability_ambiguity":
 		options = _group_business_options(_clean_list(details.get("capability_candidates")))
-		question = "Which area would you like me to analyze?"
-		if options:
-			question = f"Which area would you like me to analyze: {_human_join(options)}?"
-		return build_clarification_signal_contract(
+		return _build_shared_clarification_signal(
 			request_id=request_id,
-			stage="compiler",
 			reason_type=reason_type,
-			user_question=question,
+			internal_reason=compiler_reason,
+			details=details,
 			suggested_options=options,
-			internal_reason=_clean_text(compiler_reason),
-			internal_details=details,
+			variant="with_options" if options else "default",
+			template_values={"supported_options": _human_join(options)},
 		)
 	if reason_type == "report_ambiguity":
 		options = _clean_list(details.get("report_candidates"))
-		question = "Which report would you like me to use?"
-		if {"Profit and Loss", "Balance Sheet", "Cash Flow"} & set(options):
-			question = "Which financial view would you like to see: Profit & Loss, Balance Sheet, or Cash Flow?"
+		option_aliases_by_option = _report_option_aliases_by_option(options)
+		option_slot_values_by_option = _report_option_slot_values_by_option(options)
+		option_report_names_by_option = _report_option_report_names_by_option(options)
+		option_display_labels_by_option = _report_option_display_labels_by_option(options)
+		resolved_message_by_option = _report_option_resolved_message_by_option(options)
+		variant = "default"
+		supported_options = _human_join(list(dict.fromkeys(options))[:3])
+		financial_view_values = {
+			value
+			for value in option_slot_values_by_option.values()
+			if value in {"profit_and_loss", "balance_sheet", "cash_flow"}
+		}
+		if financial_view_values:
+			variant = "financial_views"
+			financial_labels = [
+				option_display_labels_by_option.get(option) or option
+				for option in options
+				if _clean_text(option_display_labels_by_option.get(option) or option)
+			]
+			supported_options = _human_join(list(dict.fromkeys(financial_labels))[:3])
 		elif options:
-			question = f"Which report would you like me to use: {_human_join(list(dict.fromkeys(options))[:3])}?"
-		return build_clarification_signal_contract(
+			variant = "with_options"
+		return _build_shared_clarification_signal(
 			request_id=request_id,
-			stage="compiler",
 			reason_type=reason_type,
-			user_question=question,
+			internal_reason=compiler_reason,
+			details=details,
 			suggested_options=list(dict.fromkeys(options))[:5],
-			internal_reason=_clean_text(compiler_reason),
-			internal_details=details,
+			variant=variant,
+			template_values={"supported_options": supported_options},
+			extra_internal_details={
+				"option_aliases_by_option": option_aliases_by_option,
+				"semantic_slot_name": "statement_variant" if option_slot_values_by_option else "",
+				"semantic_slot_value_by_option": option_slot_values_by_option,
+				"selected_report_by_option": option_report_names_by_option,
+				"resolved_message_by_option": resolved_message_by_option,
+			},
 		)
 	if reason_type == "time_scope_missing":
-		return build_clarification_signal_contract(
+		return _build_shared_clarification_signal(
 			request_id=request_id,
-			stage="compiler",
 			reason_type=reason_type,
-			user_question="Which period would you like me to use for this?",
+			internal_reason=compiler_reason,
+			details=details,
 			suggested_options=_time_scope_options(details),
-			internal_reason=_clean_text(compiler_reason),
-			internal_details=details,
 		)
 	if reason_type == "filter_missing":
-		return build_clarification_signal_contract(
+		return _build_shared_clarification_signal(
 			request_id=request_id,
-			stage="compiler",
 			reason_type=reason_type,
-			user_question="I can help with that, but I need one more detail before I run it. Which specific scope would you like me to use?",
-			suggested_options=[],
-			internal_reason=_clean_text(compiler_reason),
-			internal_details=details,
+			internal_reason=compiler_reason,
+			details=details,
 		)
 	if reason_type == "capability_missing":
-		return build_clarification_signal_contract(
+		suggested_options = _default_capability_missing_options()
+		return _build_shared_clarification_signal(
 			request_id=request_id,
-			stage="compiler",
 			reason_type=reason_type,
-			user_question="Which business area would you like me to focus on: sales, AR / AP, financial statements, inventory, or product performance?",
-			suggested_options=["sales", "AR / AP", "financial statements", "inventory", "product performance"],
-			internal_reason=_clean_text(compiler_reason),
-			internal_details=details,
+			internal_reason=compiler_reason,
+			details=details,
+			suggested_options=suggested_options,
+			template_values={"supported_options": _human_join(suggested_options)},
 		)
 	if reason_type == "request_underspecified":
-		return build_clarification_signal_contract(
+		return _build_shared_clarification_signal(
 			request_id=request_id,
-			stage="compiler",
 			reason_type=reason_type,
-			user_question="I can help with that, but I need one more detail before I proceed. Could you clarify the metric, scope, or period you want?",
-			suggested_options=[],
-			internal_reason=_clean_text(compiler_reason),
-			internal_details=details,
+			internal_reason=compiler_reason,
+			details=details,
+		)
+	if reason_type == "transaction_listing_surface_unsupported":
+		requested_view = _clean_text(details.get("requested_listing_view"))
+		requested_label = listing_view_display_label(requested_view, plural=True, lowercase=True)
+		supported_views = [
+			listing_view_display_label(value, plural=True, lowercase=True)
+			for value in _clean_list(details.get("supported_listing_views"))
+			if _clean_text(value)
+		]
+		return _build_unsupported_scope_clarification_signal(
+			request_id=request_id,
+			reason_type=reason_type,
+			internal_reason=compiler_reason,
+			details=details,
+			requested_label=requested_label,
+			supported_options=supported_views,
+		)
+	if reason_type == "master_data_scope_unsupported":
+		requested_grain = _clean_text(details.get("requested_entity_grain"))
+		requested_label = entity_grain_display_label(requested_grain, plural=True)
+		supported_grains = [
+			entity_grain_display_label(value, plural=True)
+			for value in _clean_list(details.get("supported_entity_grains"))
+			if _clean_text(value)
+		]
+		return _build_unsupported_scope_clarification_signal(
+			request_id=request_id,
+			reason_type=reason_type,
+			internal_reason=compiler_reason,
+			details=details,
+			requested_label=requested_label,
+			supported_options=supported_grains,
 		)
 	financial_summary_signal = _translate_financial_summary_signal(
 		request_id=request_id,
@@ -201,10 +606,17 @@ def _translate_compiler_signal(
 		request_id=request_id,
 		stage="compiler",
 		reason_type=reason_type or "generic_clarification",
-		user_question="I can help with that, but I need one more detail before I proceed. Could you clarify the area or time period you want?",
+		user_question=_shared_clarification_question(
+			reason_type="generic_clarification",
+			variant="default",
+			template_values={},
+		),
 		suggested_options=[],
 		internal_reason=_clean_text(compiler_reason),
-		internal_details=details,
+		internal_details=_with_clarification_template_group(
+			details,
+			template_group="shared_clarification",
+		),
 	)
 
 
@@ -220,16 +632,14 @@ def _translate_validation_signal(
 	suggested_options: List[str] = []
 	if payload.get("time_scope_match") is False:
 		reason_type = "time_scope_clarification"
-		user_question = "I couldn't confirm the right grounded period for that answer. Would you like me to try a different time scope?"
 		suggested_options = list(_DEFAULT_TIME_SCOPE_OPTIONS)
-	return build_clarification_signal_contract(
+	return _build_shared_clarification_signal(
 		request_id=request_id,
-		stage=stage,
 		reason_type=reason_type,
-		user_question=user_question,
-		suggested_options=suggested_options,
 		internal_reason=_clean_text(payload.get("decision")),
-		internal_details=payload,
+		details=payload,
+		suggested_options=suggested_options,
+		stage=stage,
 	)
 
 
@@ -280,8 +690,12 @@ def translate_clarification_signal(
 		request_id=request_id,
 		stage="unknown",
 		reason_type="generic_clarification",
-		user_question="I need one more detail before I continue. Could you clarify the area or time period you want?",
+		user_question=_shared_clarification_question(
+			reason_type="generic_clarification",
+			variant="default",
+			template_values={},
+		),
 		suggested_options=[],
 		internal_reason="",
-		internal_details={},
+		internal_details={"clarification_template_group": "shared_clarification"},
 	)

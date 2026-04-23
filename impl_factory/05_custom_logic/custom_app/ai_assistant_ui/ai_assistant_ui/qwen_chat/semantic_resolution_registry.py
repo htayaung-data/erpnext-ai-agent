@@ -207,15 +207,17 @@ def validate_semantic_resolution_registry(
 		candidate_family_ids = _as_str_list(rule.get("candidate_family_ids"))
 		candidate_capability_ids = _as_str_list(rule.get("candidate_capability_ids"))
 		candidate_reports = _as_str_list(rule.get("candidate_reports"))
-		if not candidate_family_ids:
+		governed_decision = str(rule.get("governed_decision") or "").strip()
+		requires_execution_targets = governed_decision == "execute"
+		if requires_execution_targets and not candidate_family_ids:
 			errors.append(
 				f"family_resolution_rules[{idx}].candidate_family_ids must be a non-empty list."
 			)
-		if not candidate_capability_ids:
+		if requires_execution_targets and not candidate_capability_ids:
 			errors.append(
 				f"family_resolution_rules[{idx}].candidate_capability_ids must be a non-empty list."
 			)
-		if not candidate_reports:
+		if requires_execution_targets and not candidate_reports:
 			errors.append(
 				f"family_resolution_rules[{idx}].candidate_reports must be a non-empty list."
 			)
@@ -256,7 +258,6 @@ def validate_semantic_resolution_registry(
 						f"family_resolution_rules[{idx}] report '{report_name}' is not declared by its candidate_capability_ids."
 					)
 
-		governed_decision = str(rule.get("governed_decision") or "").strip()
 		if governed_decision not in ALLOWED_GOVERNED_DECISIONS:
 			errors.append(
 				f"family_resolution_rules[{idx}].governed_decision must be one of {sorted(ALLOWED_GOVERNED_DECISIONS)}."

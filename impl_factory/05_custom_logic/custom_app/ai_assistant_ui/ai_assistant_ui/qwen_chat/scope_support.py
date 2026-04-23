@@ -70,13 +70,15 @@ def reasoning_preempted_by_followup_refinement(followup_resolution: Dict[str, An
 	mode = str(getattr(followup_resolution, "mode", "") or "").strip()
 	if mode == "new_query":
 		return bool(getattr(followup_resolution, "self_contained", False))
-	if mode not in {"local_grounded_transform", "capability_requery"}:
-		return False
 	requested_modes = {
 		str(mode_value or "").strip()
 		for mode_value in (getattr(followup_resolution, "requested_modes", []) or [])
 		if str(mode_value or "").strip()
 	}
+	if mode == "grounded_follow_up":
+		return "detail_followup" in requested_modes
+	if mode not in {"local_grounded_transform", "capability_requery"}:
+		return False
 	if not requested_modes:
 		return False
 	return bool(

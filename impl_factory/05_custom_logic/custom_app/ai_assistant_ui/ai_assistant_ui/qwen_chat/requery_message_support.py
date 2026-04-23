@@ -39,7 +39,7 @@ def _time_scope_from_range(from_date: str, to_date: str, fallback: str = "") -> 
 	start = _clean_text(from_date)
 	end = _clean_text(to_date)
 	if start and end:
-		for candidate in ("last_month", "current_fiscal_year_to_date", "last_year"):
+		for candidate in ("last_month", "open_fiscal_year_to_date", "current_fiscal_year_to_date", "last_year"):
 			candidate_start, candidate_end = _date_range_from_time_scope(candidate)
 			if candidate_start == start and candidate_end == end:
 				return candidate
@@ -50,6 +50,8 @@ def _time_scope_phrase(time_scope: str) -> str:
 	value = _clean_text(time_scope)
 	if value == "last_month":
 		return "last month"
+	if value == "open_fiscal_year_to_date":
+		return "from the last closed fiscal period to today"
 	if value == "current_fiscal_year_to_date":
 		return "current fiscal year to date"
 	if value == "last_year":
@@ -165,6 +167,8 @@ def _compile_transaction_listing_requery_message(
 		parts.append("Use the last year date range.")
 	elif requested_time_scope == "current_period":
 		parts.append("Use the current month to date.")
+	elif requested_time_scope == "open_fiscal_year_to_date":
+		parts.append("Use the period from the last closed fiscal period to today.")
 	elif requested_time_scope == "current_fiscal_year_to_date":
 		parts.append("Use the current fiscal year to date range.")
 	elif requested_time_scope == "as_of_today":
@@ -309,6 +313,8 @@ def compile_capability_requery_message(
 		time_phrase = " for last year"
 	elif requested_time_scope == "current_period":
 		time_phrase = " for the current month"
+	elif requested_time_scope == "open_fiscal_year_to_date":
+		time_phrase = " from the last closed fiscal period to today"
 	elif requested_time_scope == "current_fiscal_year_to_date":
 		time_phrase = " for the current fiscal year to date"
 	elif requested_time_scope == "as_of_today":
@@ -406,6 +412,8 @@ def compile_capability_requery_message(
 		parts.append("Use the last year date range.")
 	elif requested_time_scope == "current_period":
 		parts.append("Use the current month to date.")
+	elif requested_time_scope == "open_fiscal_year_to_date":
+		parts.append("Use the period from the last closed fiscal period to today.")
 	elif requested_time_scope == "current_fiscal_year_to_date":
 		parts.append("Use the current fiscal year to date range.")
 	elif requested_time_scope == "as_of_today":

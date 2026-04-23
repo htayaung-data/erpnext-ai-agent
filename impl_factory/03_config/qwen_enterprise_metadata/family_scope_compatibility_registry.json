@@ -1,0 +1,500 @@
+{
+  "contract_version": "1.0",
+  "description": "Compatibility matrix between governed scopes and shared family contracts.",
+  "allowed_family_ids": [
+    "master_data_lookup",
+    "entity_detail",
+    "transaction_listing",
+    "ranking_analytics",
+    "aging",
+    "inventory_snapshot",
+    "product_profitability",
+    "followup_boundary",
+    "clarification"
+  ],
+  "allowed_compatibility_levels": [
+    "full_consumption",
+    "projection_only",
+    "followup_only",
+    "clarification_only",
+    "not_allowed"
+  ],
+  "allowed_modes": [
+    "directory_list",
+    "candidate_resolution",
+    "profile_target",
+    "document_list",
+    "document_detail",
+    "profile_section_evidence",
+    "column_projection",
+    "sort_or_limit",
+    "filter_refinement",
+    "presentation_transform",
+    "time_scope_restatement",
+    "clarify_scope"
+  ],
+  "allowed_followup_compatibility": [
+    "preserve_scope",
+    "requery_same_scope",
+    "clarify_before_followup",
+    "not_supported"
+  ],
+  "entries": [
+    {
+      "scope_id": "customer_master",
+      "family_id": "master_data_lookup",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "directory_list",
+        "candidate_resolution",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Shared discovery and candidate resolution are fully approved for customer master."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "profile_target"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Known customer entities may be consumed by the shared entity-detail path."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Follow-up may preserve the same customer lookup or customer detail scope."
+    },
+    {
+      "scope_id": "customer_master",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarification is approved for candidate resolution and projection narrowing."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "master_data_lookup",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "directory_list",
+        "candidate_resolution",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Supplier directory and candidate resolution are fully approved in the shared master-data lookup seam."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "profile_target"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Supplier profile detail is already implemented in the shared entity-detail runtime."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "filter_refinement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Once a supplier is resolved in detail, follow-up can continue on the same supplier context."
+    },
+    {
+      "scope_id": "supplier_master",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify when the user requests supplier discovery beyond the current approved route."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "master_data_lookup",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "directory_list",
+        "candidate_resolution",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Item and product directory lookup are approved in the shared master-data lookup seam."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "profile_target"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Known items already have shared entity-detail support."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Item directory and item detail follow-up may preserve the same item scope for projection, limit, and filter refinement."
+    },
+    {
+      "scope_id": "item_master",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify item match or projection ambiguity when item discovery needs user narrowing."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Sales invoices are a fully active shared listing scope."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_detail"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Sales invoice IDs are directly supported by shared entity detail."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Standard transaction-list follow-up is approved for sales invoices."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify date, projection, and document target ambiguities when needed."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Purchase invoices are a fully active shared listing scope."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_detail",
+        "profile_section_evidence"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Purchase invoice IDs already have shared entity-detail support and may also appear in supplier detail evidence."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Standard transaction-list follow-up is approved for purchase invoices."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify date, projection, and target ambiguities when needed."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Delivery notes are a fully active shared listing scope."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_detail"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Delivery note IDs are directly supported by shared entity detail."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Standard transaction-list follow-up is approved for delivery notes."
+    },
+    {
+      "scope_id": "delivery_note",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify date, projection, and target ambiguities when needed."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Sales orders are a fully active shared listing scope."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_detail"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Sales order IDs are directly supported by shared entity detail."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Standard transaction-list follow-up is approved for sales orders."
+    },
+    {
+      "scope_id": "sales_order",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify date, projection, and target ambiguities when needed."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Purchase orders are a fully active shared listing scope."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "entity_detail",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_detail"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "requery_same_scope",
+      "policy_notes": "Purchase order IDs are directly supported by shared entity detail."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Standard transaction-list follow-up is approved for purchase orders."
+    },
+    {
+      "scope_id": "purchase_order",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarify date, projection, and target ambiguities when needed."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Payment entries are an active shared document-list scope through Payment Entry List."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Payment-entry follow-ups may refine projection, limit, filters, or time scope without leaving the same scope."
+    },
+    {
+      "scope_id": "payment_entry",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarification remains available when a payment-entry request still needs scope repair or redirection."
+    }
+  ]
+}

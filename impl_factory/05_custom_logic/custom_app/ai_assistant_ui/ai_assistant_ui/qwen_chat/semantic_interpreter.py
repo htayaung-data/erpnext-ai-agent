@@ -7,8 +7,12 @@ from typing import Any, Dict, List
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_dimensions_for_report,
 	capability_metrics_for_report,
+	get_report_family_spec,
+	get_report_spec,
+	list_semantic_resolution_alias_entries,
 	report_approved_followup_modes,
 	report_capability_ids,
+	report_family_semantic_tags,
 	report_local_followup_adapter,
 	report_semantic_tags,
 	report_sibling_capability_specs,
@@ -23,6 +27,21 @@ try:
 	import frappe  # type: ignore
 except Exception:  # pragma: no cover
 	frappe = None
+
+
+_ARTIFACT_LOCAL_FOLLOWUP_FAMILIES = {
+	"ranking_analytics",
+	"product_profitability",
+	"trend_analytics",
+	"financial_statement",
+	"aging",
+	"inventory_snapshot",
+}
+_ARTIFACT_LOCAL_PROJECTION_CUE_PATTERN = re.compile(
+	r"\b(column|columns|only|just|show|give|display|keep)\b",
+	re.IGNORECASE,
+)
+_TOP_N_PATTERN = re.compile(r"\btop\s+\d{1,3}\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -118,7 +137,19 @@ def _build_interpretation_context(
 	latest_grounded_turn: Dict[str, Any],
 	latest_assistant_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
-	report_name = str(latest_grounded_turn.get("source_name") or "").strip()
+	source_name = str(latest_grounded_turn.get("source_name") or "").strip()
+	source_family_id = str(latest_grounded_turn.get("artifact_family_id") or "").strip()
+	source_report_names = [
+		str(value or "").strip()
+		for value in (latest_grounded_turn.get("artifact_source_reports") or [])
+		if str(value or "").strip()
+	]
+	report_name = source_name if get_report_spec(source_name) else ""
+	if not report_name and source_family_id and get_report_family_spec(source_family_id):
+		for candidate in source_report_names:
+			if get_report_spec(candidate):
+				report_name = candidate
+				break
 	source_capability_ids = report_capability_ids(report_name)
 	siblings: List[Dict[str, Any]] = []
 	for item in report_sibling_capability_specs(report_name):
@@ -144,15 +175,19 @@ def _build_interpretation_context(
 		available_dimensions = [display_dimension] + available_dimensions
 
 	return {
-		"source_report_name": report_name,
-		"source_family_id": str(latest_grounded_turn.get("artifact_family_id") or "").strip(),
+		"source_surface_name": source_name,
+		"source_report_name": report_name or source_name,
+		"source_family_id": source_family_id,
 		"source_capability_ids": source_capability_ids,
-		"source_semantic_tags": report_semantic_tags(report_name),
-		"latest_grounded_source_reports": [
-			str(value or "").strip()
-			for value in (latest_grounded_turn.get("artifact_source_reports") or [])
-			if str(value or "").strip()
-		],
+		"source_semantic_tags": list(
+			dict.fromkeys(
+				[
+					*report_semantic_tags(report_name),
+					*report_family_semantic_tags(source_family_id),
+				]
+			)
+		),
+		"latest_grounded_source_reports": source_report_names,
 		"approved_follow_up_modes": approved_follow_up_modes,
 		"grounded_followup_supported": bool(approved_follow_up_modes),
 		"available_dimensions": available_dimensions,
@@ -162,6 +197,108 @@ def _build_interpretation_context(
 		"latest_assistant_title": str(latest_assistant_payload.get("title") or "").strip(),
 		"available_sibling_capabilities": siblings,
 	}
+
+
+def _normalize_message_text(value: Any) -> str:
+	return " ".join(str(value or "").strip().lower().split())
+
+
+def _word_boundary_pattern(value: str) -> str:
+	return r"(^|[^a-z0-9])(" + re.escape(value) + r")([^a-z0-9]|$)"
+
+
+def _slot_alias_present(slot_name: str, message: str) -> bool:
+	normalized_message = _normalize_message_text(message)
+	if not normalized_message:
+		return False
+	for entry in list_semantic_resolution_alias_entries(slot_name):
+		for alias in (entry.get("aliases") or []):
+			alias_text = _normalize_message_text(alias)
+			if alias_text and re.search(_word_boundary_pattern(alias_text), normalized_message):
+				return True
+	return False
+
+
+def _artifact_column_alias_targets(
+	*,
+	message: str,
+	artifact_payload: Dict[str, Any],
+) -> List[str]:
+	dimensions = artifact_payload.get("dimensions") if isinstance(artifact_payload.get("dimensions"), dict) else {}
+	column_alias_map = (
+		dimensions.get("requested_column_alias_map")
+		if isinstance(dimensions.get("requested_column_alias_map"), dict)
+		else {}
+	)
+	normalized_message = _normalize_message_text(message)
+	if not normalized_message or not column_alias_map:
+		return []
+	matches: List[tuple[int, str]] = []
+	for alias, target in column_alias_map.items():
+		alias_text = _normalize_message_text(alias)
+		target_key = str(target or "").strip().lower().replace(" ", "_")
+		if not alias_text or not target_key:
+			continue
+		for match in re.finditer(_word_boundary_pattern(alias_text), normalized_message):
+			matches.append((match.start(2), target_key))
+	matches.sort(key=lambda item: item[0])
+	out: List[str] = []
+	for _position, target in matches:
+		if target not in out:
+			out.append(target)
+	return out
+
+
+def interpret_artifact_local_projection_deterministically(
+	*,
+	message: str,
+	latest_grounded_turn: Dict[str, Any],
+	latest_family_artifact: Dict[str, Any],
+) -> SemanticFollowUpResult:
+	artifact_payload = latest_family_artifact if isinstance(latest_family_artifact, dict) else {}
+	family_id = str(artifact_payload.get("family_id") or "").strip()
+	if family_id not in _ARTIFACT_LOCAL_FOLLOWUP_FAMILIES:
+		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	normalized_message = _normalize_message_text(message)
+	if not normalized_message:
+		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	if _TOP_N_PATTERN.search(normalized_message):
+		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	if _slot_alias_present("time_scope", normalized_message) or _slot_alias_present("listing_view", normalized_message):
+		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	requested_columns = _artifact_column_alias_targets(
+		message=normalized_message,
+		artifact_payload=artifact_payload,
+	)
+	projection_cue_present = bool(_ARTIFACT_LOCAL_PROJECTION_CUE_PATTERN.search(normalized_message))
+	if not requested_columns:
+		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	if len(requested_columns) < 2 and not projection_cue_present:
+		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	if "entity" not in requested_columns and "entity_code" not in requested_columns:
+		requested_columns.insert(0, "entity")
+	metric_targets = [value for value in requested_columns if value not in {"entity", "entity_code"}]
+	return SemanticFollowUpResult(
+		status="accepted",
+		confidence_threshold=_confidence_threshold(),
+		intent=SemanticFollowUpIntent(
+			requested_modes=["column_projection"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric=str(metric_targets[0] if metric_targets else "").strip(),
+			requested_columns=requested_columns,
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			confidence=0.81,
+			reason=(
+				"Artifact-local deterministic follow-up fallback matched requested projection columns from the "
+				"grounded family artifact alias map."
+			),
+			source="artifact_local_projection_fallback",
+		),
+	)
 
 
 def _validate_semantic_payload(

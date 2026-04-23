@@ -101,7 +101,353 @@
         "average order value",
         "aov",
         "sales invoice aov",
-        "average order value sales invoice"
+        "average order value sales invoice",
+        "average invoice value",
+        "invoice average value"
+      ]
+    },
+    {
+      "definition_id": "customer_sales_order_revenue_period",
+      "label": "Customer Sales Order Revenue by Period",
+      "description": "Submitted sales-order grand total aggregated by customer over an explicitly requested business period.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order List",
+        "date_field": "Transaction Date",
+        "group_by_dimension": "Customer",
+        "numerator_metric": "Grand Total"
+      },
+      "business_purpose": "it helps commercial teams see which customers are driving order value during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "customer sales order revenue",
+        "sales order revenue by customer",
+        "customer revenue by sales order"
+      ]
+    },
+    {
+      "definition_id": "customer_sales_order_quantity_period",
+      "label": "Customer Sales Order Quantity by Period",
+      "description": "Submitted sales-order quantity aggregated by customer over an explicitly requested business period.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order List",
+        "date_field": "Transaction Date",
+        "group_by_dimension": "Customer",
+        "numerator_metric": "Quantity"
+      },
+      "business_purpose": "it helps sales teams compare customer demand volume over the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "customer sales order quantity",
+        "sales order quantity by customer",
+        "customer quantity by sales order"
+      ]
+    },
+    {
+      "definition_id": "customer_average_order_value_sales_order_period",
+      "label": "Customer Average Order Value by Sales Order",
+      "description": "Average submitted sales-order grand total per customer over an explicitly requested business period.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order List",
+        "date_field": "Transaction Date",
+        "group_by_dimension": "Customer",
+        "numerator_metric": "Grand Total",
+        "denominator_basis": "submitted_sales_order_count_per_customer"
+      },
+      "business_purpose": "it helps commercial teams compare customer order quality and average deal size over the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "customer average order value",
+        "customer sales order aov",
+        "customer average order value by sales order"
+      ]
+    },
+    {
+      "definition_id": "customer_sales_invoice_revenue_period",
+      "label": "Customer Sales Invoice Revenue by Period",
+      "description": "Submitted sales-invoice grand total aggregated by customer over an explicitly requested business period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice List",
+        "date_field": "Posting Date",
+        "group_by_dimension": "Customer",
+        "numerator_metric": "Grand Total"
+      },
+      "business_purpose": "it helps finance and sales teams compare realized billed value by customer over the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "customer sales invoice revenue",
+        "sales invoice revenue by customer",
+        "customer revenue by sales invoice"
+      ]
+    },
+    {
+      "definition_id": "customer_sales_invoice_quantity_period",
+      "label": "Customer Sales Invoice Quantity by Period",
+      "description": "Submitted sales-invoice quantity aggregated by customer over an explicitly requested business period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice List",
+        "date_field": "Posting Date",
+        "group_by_dimension": "Customer",
+        "numerator_metric": "Quantity"
+      },
+      "business_purpose": "it helps teams compare billed quantity by customer over the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "customer sales invoice quantity",
+        "sales invoice quantity by customer",
+        "customer quantity by sales invoice"
+      ]
+    },
+    {
+      "definition_id": "customer_average_invoice_value_sales_invoice_period",
+      "label": "Customer Average Invoice Value by Sales Invoice",
+      "description": "Average submitted sales-invoice grand total per customer over an explicitly requested business period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice List",
+        "date_field": "Posting Date",
+        "group_by_dimension": "Customer",
+        "numerator_metric": "Grand Total",
+        "denominator_basis": "submitted_sales_invoice_count_per_customer"
+      },
+      "business_purpose": "it helps finance and sales teams compare invoice mix and billed deal size by customer over the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "customer average invoice value",
+        "customer sales invoice aiv",
+        "customer average invoice value by sales invoice"
+      ]
+    },
+    {
+      "definition_id": "item_sales_order_revenue_period",
+      "label": "Item Sales Order Revenue by Period",
+      "description": "Submitted sales-order line amount aggregated by item over an explicitly requested business period.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "item",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order Item List",
+        "date_field": "Transaction Date",
+        "group_by_dimension": "Item",
+        "numerator_metric": "Amount"
+      },
+      "business_purpose": "it helps commercial teams see which items are driving ordered value during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "product sales order revenue",
+        "item sales order revenue",
+        "sales order revenue by product",
+        "sales order revenue by item"
+      ]
+    },
+    {
+      "definition_id": "item_sales_order_quantity_period",
+      "label": "Item Sales Order Quantity by Period",
+      "description": "Submitted sales-order quantity aggregated by item over an explicitly requested business period.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "item",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order Item List",
+        "date_field": "Transaction Date",
+        "group_by_dimension": "Item",
+        "numerator_metric": "Quantity"
+      },
+      "business_purpose": "it helps teams compare item demand volume during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "product sales order quantity",
+        "item sales order quantity",
+        "sales order quantity by product",
+        "sales order quantity by item"
+      ]
+    },
+    {
+      "definition_id": "item_average_selling_price_sales_order_period",
+      "label": "Item Average Selling Price by Sales Order",
+      "description": "Average ordered selling price per item over an explicitly requested business period, calculated as submitted sales-order line amount divided by submitted sales-order quantity.",
+      "owner": "sales_ops",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "item",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_order_read",
+        "report_name": "Sales Order Item List",
+        "date_field": "Transaction Date",
+        "group_by_dimension": "Item",
+        "numerator_metric": "Amount",
+        "denominator_basis": "submitted_sales_order_quantity_per_item"
+      },
+      "business_purpose": "it helps teams compare item-level pricing realized on ordered demand during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "average selling price by sales order",
+        "product average selling price sales order",
+        "item average selling price sales order"
+      ]
+    },
+    {
+      "definition_id": "item_sales_invoice_revenue_period",
+      "label": "Item Sales Invoice Revenue by Period",
+      "description": "Submitted sales-invoice line amount aggregated by item over an explicitly requested business period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "item",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice Item List",
+        "date_field": "Posting Date",
+        "group_by_dimension": "Item",
+        "numerator_metric": "Amount"
+      },
+      "business_purpose": "it helps finance and sales teams compare billed item value during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "product sales invoice revenue",
+        "item sales invoice revenue",
+        "sales invoice revenue by product",
+        "sales invoice revenue by item"
+      ]
+    },
+    {
+      "definition_id": "item_sales_invoice_quantity_period",
+      "label": "Item Sales Invoice Quantity by Period",
+      "description": "Submitted sales-invoice quantity aggregated by item over an explicitly requested business period.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "item",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice Item List",
+        "date_field": "Posting Date",
+        "group_by_dimension": "Item",
+        "numerator_metric": "Quantity"
+      },
+      "business_purpose": "it helps teams compare billed item volume during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "product sales invoice quantity",
+        "item sales invoice quantity",
+        "sales invoice quantity by product",
+        "sales invoice quantity by item"
+      ]
+    },
+    {
+      "definition_id": "item_average_selling_price_sales_invoice_period",
+      "label": "Item Average Selling Price by Sales Invoice",
+      "description": "Average billed selling price per item over an explicitly requested business period, calculated as submitted sales-invoice line amount divided by submitted sales-invoice quantity.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "item",
+      "time_basis": "transaction_period",
+      "semantic_category": "sales_efficiency",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "sales_read",
+        "report_name": "Sales Invoice Item List",
+        "date_field": "Posting Date",
+        "group_by_dimension": "Item",
+        "numerator_metric": "Amount",
+        "denominator_basis": "submitted_sales_invoice_quantity_per_item"
+      },
+      "business_purpose": "it helps finance and commercial teams compare billed item-level pricing during the requested period.",
+      "clarify_policy": "clarify_document_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "average selling price by sales invoice",
+        "product average selling price sales invoice",
+        "item average selling price sales invoice"
       ]
     },
     {

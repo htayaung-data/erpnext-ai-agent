@@ -47,6 +47,7 @@ def authoritative_continuation_resolution(
 		if str(value or "").strip()
 	}
 	source_family_id = str(getattr(continuation_contract, "source_family_id", "") or "").strip()
+	source_composite_family_id = str(getattr(continuation_contract, "source_composite_family_id", "") or "").strip()
 	source_capability_id = str(getattr(continuation_contract, "source_capability_id", "") or "").strip()
 	source_report = str(getattr(continuation_contract, "source_report", "") or "").strip()
 	current_row_count = artifact_rank_row_count(artifact_payload, grounded_turn)
@@ -59,6 +60,9 @@ def authoritative_continuation_resolution(
 		for value in (getattr(followup_resolution, "requested_columns", []) or [])
 		if str(value or "").strip()
 	]
+	local_metric_columns = list(requested_columns)
+	if target_metric and target_metric not in local_metric_columns:
+		local_metric_columns.append(target_metric)
 	target_limit = int(max(0, getattr(followup_resolution, "target_limit", 0) or 0))
 	sort_direction = str(getattr(followup_resolution, "sort_direction", "") or "").strip()
 	requested_time_scope = str(getattr(followup_resolution, "requested_time_scope", "") or "").strip()
@@ -119,11 +123,10 @@ def authoritative_continuation_resolution(
 
 	mode = str(getattr(followup_resolution, "mode", "") or "").strip()
 	if (
-		source_family_id == "ranking_analytics"
-		and "column_refinement" in requested_modes
-		and requested_modes.issubset({"column_refinement"})
-		and requested_columns
-		and artifact_metric_columns_available(artifact_payload, requested_columns)
+		(source_family_id == "ranking_analytics" or source_composite_family_id)
+		and requested_modes.issubset({"column_refinement", "metric_refinement"})
+		and local_metric_columns
+		and artifact_metric_columns_available(artifact_payload, local_metric_columns)
 	):
 		return clone_followup_resolution(
 			followup_resolution,
@@ -137,7 +140,34 @@ def authoritative_continuation_resolution(
 			requested_time_scope=requested_time_scope,
 			depends_on_grounded_turn=True,
 			self_contained=False,
-			reason="Ranking column refinements stay local when the grounded artifact already exposes the requested governed columns.",
+			reason=(
+				"Composite column refinements stay local when the grounded artifact already exposes "
+				"the requested governed columns."
+				if source_composite_family_id
+				else "Ranking column refinements stay local when the grounded artifact already exposes the requested governed columns."
+			),
+		)
+	if source_composite_family_id and requested_modes.intersection(
+		{"sort_or_limit", "metric_refinement", "column_refinement", "time_scope_restatement"}
+	):
+		return clone_followup_resolution(
+			followup_resolution,
+			request_id=request_id,
+			mode="capability_requery",
+			target_dimension=target_dimension,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_time_scope=requested_time_scope,
+			target_capability_id=source_capability_id,
+			target_report=source_report,
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			reason=(
+				"Composite ranking follow-ups that change governed scope, ranking depth, or period "
+				"must re-enter the preserved governed composite family runtime."
+			),
 		)
 	if source_family_id == "ranking_analytics" and requested_modes.intersection({"sort_or_limit", "metric_refinement", "column_refinement"}):
 		return clone_followup_resolution(

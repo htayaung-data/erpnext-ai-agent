@@ -7,6 +7,7 @@
       "label": "Sales Amount",
       "aliases": [
         "revenue",
+        "rev",
         "selling_amount",
         "value",
         "billed_amount",
@@ -28,6 +29,7 @@
       "canonical_key": "quantity",
       "label": "Quantity",
       "aliases": [
+        "quantity",
         "qty",
         "delivered_quantity",
         "balance_qty",
@@ -46,15 +48,14 @@
         "Delivery Note Trends": ["Delivered Quantity"]
       }
     },
-    {
-      "canonical_key": "gross_profit",
-      "label": "Gross Profit",
-      "aliases": [
-        "gross profit",
-        "gp",
-        "margin",
-        "profit"
-      ],
+      {
+        "canonical_key": "gross_profit",
+        "label": "Gross Profit",
+        "aliases": [
+          "gross profit",
+          "gp",
+          "profit"
+        ],
       "capability_scope": ["product_performance_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
@@ -62,18 +63,55 @@
       }
     },
     {
-      "canonical_key": "gross_profit_percent",
-      "label": "Gross Profit Percent",
+      "canonical_key": "average_order_value",
+      "label": "Average Order Value",
       "aliases": [
-        "gross profit percent",
-        "gross profit percentage",
-        "gross profit %",
-        "gp percent",
-        "gp %",
-        "margin percent",
-        "margin percentage",
-        "margin %"
+        "average order value",
+        "aov",
+        "average sales order value"
       ],
+      "capability_scope": ["sales_order_read", "sales_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "average_invoice_value",
+      "label": "Average Invoice Value",
+      "aliases": [
+        "average invoice value",
+        "average sales invoice value"
+      ],
+      "capability_scope": ["sales_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "average_selling_price",
+      "label": "Average Selling Price",
+      "aliases": [
+        "average selling price",
+        "asp"
+      ],
+      "capability_scope": ["sales_read", "product_performance_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+      {
+        "canonical_key": "gross_profit_percent",
+        "label": "Gross Profit Percent",
+        "aliases": [
+          "gross profit percent",
+          "gross profit percentage",
+          "gross profit %",
+          "gp percent",
+          "gp %",
+          "gross margin",
+          "profit margin",
+          "margin",
+          "margin percent",
+          "margin percentage",
+          "margin %"
+        ],
       "capability_scope": ["product_performance_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
@@ -121,6 +159,7 @@
       "aliases": [
         "overdue customers",
         "overdue customer",
+        "customer overdue",
         "overdue accounts",
         "past due customers",
         "past due customer",
@@ -146,6 +185,21 @@
       "erp_field_mappings": {}
     },
     {
+      "canonical_key": "overdue_total",
+      "label": "Overdue Amount",
+      "aliases": [
+        "overdue amount",
+        "amount overdue",
+        "how much overdue",
+        "past due amount",
+        "overdue total",
+        "overdue balance"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
       "canonical_key": "credit_balance_only",
       "label": "Credit Balance Customers",
       "aliases": [
@@ -157,6 +211,19 @@
         "customers with negative balance",
         "overpaid customers",
         "credit customer balance"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "credit_balance_amount",
+      "label": "Credit Balance Amount",
+      "aliases": [
+        "credit balance amount",
+        "amount of credit balance",
+        "how much credit balance",
+        "negative balance amount"
       ],
       "capability_scope": ["accounts_receivable_read"],
       "dimension_or_metric": "metric",
@@ -332,13 +399,14 @@
         "buyers",
         "party"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "fulfillment_read", "customer_master_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Analytics": ["Customer"],
         "Sales Order List": ["customer"],
         "Accounts Receivable Summary": ["Party"],
-        "Delivery Note List": ["customer"]
+        "Delivery Note List": ["customer"],
+        "Customer Master List": ["name", "customer_name"]
       }
     },
     {
@@ -500,6 +568,109 @@
       }
     },
     {
+      "canonical_key": "tenure",
+      "label": "Tenure",
+      "aliases": [
+        "tenure",
+        "customer tenure",
+        "how long"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "customer_created_tenure_days",
+      "label": "Customer Created Tenure",
+      "aliases": [
+        "tenure by customer created date",
+        "customer created tenure",
+        "tenure from customer created date"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "first_sales_order_tenure_days",
+      "label": "First Sales Order Tenure",
+      "aliases": [
+        "tenure by first sales order date",
+        "tenure by first order date",
+        "first sales order tenure",
+        "first order tenure"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "first_sales_invoice_tenure_days",
+      "label": "First Sales Invoice Tenure",
+      "aliases": [
+        "tenure by first sales invoice date",
+        "tenure by first invoice date",
+        "first sales invoice tenure",
+        "first invoice tenure"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "metric",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "customer_created_date",
+      "label": "Customer Created Date",
+      "aliases": [
+        "customer created date",
+        "customer creation date",
+        "when was this customer created",
+        "when was the customer created"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "first_sales_order_date",
+      "label": "First Sales Order Date",
+      "aliases": [
+        "first sales order date",
+        "first order date",
+        "when was the first sales order",
+        "when was the first order"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "first_sales_invoice_date",
+      "label": "First Sales Invoice Date",
+      "aliases": [
+        "first sales invoice date",
+        "first invoice date",
+        "when was the first sales invoice",
+        "when was the first invoice"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {}
+    },
+    {
+      "canonical_key": "dominant_aging_bucket",
+      "label": "Dominant Aging Bucket",
+      "aliases": [
+        "aging bucket",
+        "highest aging bucket",
+        "top aging bucket",
+        "dominant aging bucket",
+        "which aging bucket"
+      ],
+      "capability_scope": ["accounts_receivable_read"],
+      "dimension_or_metric": "dimension",
+      "erp_field_mappings": {}
+    },
+    {
       "canonical_key": "payment_terms_template",
       "label": "Payment Terms",
       "aliases": [
@@ -553,6 +724,8 @@
         "delivery completion",
         "fulfilled percentage",
         "fulfillment status",
+        "delivery status",
+        "delivered status",
         "how much is delivered",
         "is it delivered"
       ],
@@ -590,6 +763,8 @@
         "received percent",
         "receipt completion",
         "receiving status",
+        "receipt status",
+        "received status",
         "how much is received",
         "is it received"
       ],
@@ -607,6 +782,8 @@
         "billed percentage",
         "billed percent",
         "billing completion",
+        "billing status",
+        "billed status",
         "how much is billed",
         "is it billed"
       ],

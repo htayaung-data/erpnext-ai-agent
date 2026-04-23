@@ -1,0 +1,72 @@
+{
+  "contract_version": "1.0",
+  "status": "phase3_1_compatibility_contracts_active",
+  "description": "Governed compatibility rules for composite artifacts, defining which scalar artifacts may be combined safely.",
+  "allowed_activation_states": [
+    "active",
+    "blocked_missing_policy",
+    "blocked_missing_data",
+    "draft_unapproved",
+    "deprecated"
+  ],
+  "allowed_entity_grains": [
+    "customer",
+    "item"
+  ],
+  "allowed_time_scope_types": [
+    "period_required",
+    "as_of_date_required"
+  ],
+  "allowed_join_key_policies": [
+    "customer_name_exact",
+    "item_code_exact"
+  ],
+  "allowed_freshness_policies": [
+    "same_period_required",
+    "same_as_of_required"
+  ],
+  "rules": [
+    {
+      "compatibility_rule_id": "customer_period_same_basis_commercial_metrics",
+      "label": "Customer Period Same-Basis Commercial Metrics",
+      "allowed_entity_grain": "customer",
+      "allowed_time_scope_type": "period_required",
+      "required_period_alignment": true,
+      "required_as_of_alignment": false,
+      "required_scope_alignment": true,
+      "join_key_policy": "customer_name_exact",
+      "freshness_policy": "same_period_required",
+      "block_on_missing_metric": true,
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "compatibility_rule_id": "item_period_same_basis_commercial_metrics",
+      "label": "Item Period Same-Basis Commercial Metrics",
+      "allowed_entity_grain": "item",
+      "allowed_time_scope_type": "period_required",
+      "required_period_alignment": true,
+      "required_as_of_alignment": false,
+      "required_scope_alignment": true,
+      "join_key_policy": "item_code_exact",
+      "freshness_policy": "same_period_required",
+      "block_on_missing_metric": true,
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "compatibility_rule_id": "customer_as_of_same_scope_credit_metrics",
+      "label": "Customer As-Of Same-Scope Credit Metrics",
+      "allowed_entity_grain": "customer",
+      "allowed_time_scope_type": "as_of_date_required",
+      "required_period_alignment": false,
+      "required_as_of_alignment": true,
+      "required_scope_alignment": true,
+      "join_key_policy": "customer_name_exact",
+      "freshness_policy": "same_as_of_required",
+      "block_on_missing_metric": false,
+      "activation_state": "active",
+      "blocked_reason": ""
+    }
+  ]
+}

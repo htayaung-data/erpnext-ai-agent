@@ -313,27 +313,35 @@
       "validation_profile": "report_grounded_read",
       "capability_ids": [
         "sales_read",
+        "purchase_invoice_read",
         "fulfillment_read",
         "sales_order_read",
-        "purchase_order_read"
+        "purchase_order_read",
+        "collections_read"
       ],
       "report_names": [
         "Sales Invoice List",
+        "Purchase Invoice List",
         "Delivery Note List",
         "Sales Order List",
-        "Purchase Order List"
+        "Purchase Order List",
+        "Payment Entry List"
       ],
       "source_report_families": [
         "sales_invoice_list",
+        "purchase_invoice_list",
         "delivery_note_list",
         "sales_order_list",
-        "purchase_order_list"
+        "purchase_order_list",
+        "payment_entry_list"
       ],
       "semantic_tags": [
         "transaction",
         "invoice",
         "fulfillment",
         "purchase",
+        "payment",
+        "collection",
         "order",
         "document"
       ],
@@ -341,8 +349,12 @@
         "ontology_concepts": [
           "sales",
           "sales_invoice",
+          "purchase_invoice",
           "sales_order",
-          "fulfillment"
+          "fulfillment",
+          "payable",
+          "receivable",
+          "payment_entry"
         ],
         "intent_markers": [
           "invoice list",
@@ -350,11 +362,91 @@
           "latest invoices",
           "last invoice",
           "last invoices",
+          "purchase invoice list",
+          "recent purchase invoices",
+          "latest purchase invoices",
+          "last purchase invoice",
+          "last purchase invoices",
           "sales order list",
           "recent sales orders",
           "latest sales orders",
           "last sales order",
-          "last sales orders"
+          "last sales orders",
+          "payment entry list",
+          "payment entries",
+          "recent payment entries",
+          "latest payment entries"
+        ]
+      },
+      "coverage_status": "active"
+    },
+    {
+      "family_id": "master_data_directory",
+      "family_label": "Master Data Directory",
+      "description": "Canonical governed family for approved master-data directory and named-entity lookup reads.",
+      "supported_intent_classes": [
+        "master_data_lookup"
+      ],
+      "default_intent_class": "master_data_lookup",
+      "canonical_metrics": [
+        "row_count"
+      ],
+      "canonical_dimensions": [
+        "entity",
+        "region",
+        "group",
+        "creation"
+      ],
+      "adapter_id": "master_data_directory_adapter",
+      "agent_tool_id": "get_master_data_directory",
+      "agent_prompt_hint": "Use the governed master-data directory route for approved customer, supplier, and item directory lookup requests.",
+      "renderer_id": "master_data_directory_renderer",
+      "composite_allowed": false,
+      "validation_profile": "report_grounded_read",
+      "capability_ids": [
+        "customer_master_read",
+        "supplier_master_read",
+        "item_master_read"
+      ],
+      "report_names": [
+        "Customer Master List",
+        "Supplier Master List",
+        "Item Master List"
+      ],
+      "source_report_families": [
+        "customer_master_list",
+        "supplier_master_list",
+        "item_master_list"
+      ],
+      "semantic_tags": [
+        "master_data",
+        "directory",
+        "lifecycle",
+        "customer",
+        "supplier",
+        "item",
+        "product"
+      ],
+      "routing_hints": {
+        "ontology_concepts": [
+          "customer",
+          "supplier",
+          "item",
+          "product"
+        ],
+        "intent_markers": [
+          "customer names",
+          "customer list",
+          "customer directory",
+          "supplier names",
+          "supplier list",
+          "supplier directory",
+          "item names",
+          "item list",
+          "item directory",
+          "product names",
+          "product list",
+          "product directory"
         ]
       },
       "coverage_status": "active"

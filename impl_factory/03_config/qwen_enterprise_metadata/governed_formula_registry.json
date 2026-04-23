@@ -10,6 +10,7 @@
     "deprecated"
   ],
   "allowed_formula_types": [
+    "sum",
     "ratio",
     "average",
     "duration",
@@ -115,6 +116,386 @@
         "sales invoice aov",
         "average order value sales invoice"
       ]
+    },
+    {
+      "formula_id": "customer_sales_order_revenue_period_formula",
+      "definition_id": "customer_sales_order_revenue_period",
+      "label": "Customer Sales Order Revenue by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "grand_total"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "grand_total",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_sales_order_quantity_period_formula",
+      "definition_id": "customer_sales_order_quantity_period",
+      "label": "Customer Sales Order Quantity by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "total_qty"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "total_qty",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_average_order_value_sales_order_period_formula",
+      "definition_id": "customer_average_order_value_sales_order_period",
+      "label": "Customer Average Order Value by Sales Order Formula",
+      "formula_type": "sum_divided_by_count",
+      "input_metrics": [
+        "grand_total",
+        "document_count"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "grand_total",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "document_count",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order List"
+      ],
+      "aggregation_rule": "average",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_sales_invoice_revenue_period_formula",
+      "definition_id": "customer_sales_invoice_revenue_period",
+      "label": "Customer Sales Invoice Revenue by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "grand_total"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "grand_total",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_sales_invoice_quantity_period_formula",
+      "definition_id": "customer_sales_invoice_quantity_period",
+      "label": "Customer Sales Invoice Quantity by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "total_qty"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "total_qty",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "customer_average_invoice_value_sales_invoice_period_formula",
+      "definition_id": "customer_average_invoice_value_sales_invoice_period",
+      "label": "Customer Average Invoice Value by Sales Invoice Formula",
+      "formula_type": "sum_divided_by_count",
+      "input_metrics": [
+        "grand_total",
+        "document_count"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "grand_total",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "document_count",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice List"
+      ],
+      "aggregation_rule": "average",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "item_sales_order_revenue_period_formula",
+      "definition_id": "item_sales_order_revenue_period",
+      "label": "Item Sales Order Revenue by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "amount"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "amount",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order Item List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "item"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "item_sales_order_quantity_period_formula",
+      "definition_id": "item_sales_order_quantity_period",
+      "label": "Item Sales Order Quantity by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "qty"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "qty",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order Item List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "item"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "item_average_selling_price_sales_order_period_formula",
+      "definition_id": "item_average_selling_price_sales_order_period",
+      "label": "Item Average Selling Price by Sales Order Formula",
+      "formula_type": "ratio",
+      "input_metrics": [
+        "amount",
+        "qty"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "amount",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "qty",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_order_read"
+      ],
+      "source_reports": [
+        "Sales Order Item List"
+      ],
+      "aggregation_rule": "ratio_of_sums",
+      "grain_requirements": [
+        "item"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "item_sales_invoice_revenue_period_formula",
+      "definition_id": "item_sales_invoice_revenue_period",
+      "label": "Item Sales Invoice Revenue by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "amount"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "amount",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice Item List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "item"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "item_sales_invoice_quantity_period_formula",
+      "definition_id": "item_sales_invoice_quantity_period",
+      "label": "Item Sales Invoice Quantity by Period Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "qty"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "qty",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice Item List"
+      ],
+      "aggregation_rule": "sum",
+      "grain_requirements": [
+        "item"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "formula_id": "item_average_selling_price_sales_invoice_period_formula",
+      "definition_id": "item_average_selling_price_sales_invoice_period",
+      "label": "Item Average Selling Price by Sales Invoice Formula",
+      "formula_type": "ratio",
+      "input_metrics": [
+        "amount",
+        "qty"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "amount",
+          "requirement_type": "required"
+        },
+        {
+          "metric_key": "qty",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "sales_read"
+      ],
+      "source_reports": [
+        "Sales Invoice Item List"
+      ],
+      "aggregation_rule": "ratio_of_sums",
+      "grain_requirements": [
+        "item"
+      ],
+      "time_scope_requirements": [
+        "period_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": ""
     },
     {
       "formula_id": "customer_tenure_first_sales_order_date_formula",

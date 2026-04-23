@@ -83,6 +83,7 @@ def handle_compiled_query_turn(
 		message=message,
 		recent_messages=[],
 		clarification_resolution=clarification_response_contract.to_payload() if clarification_response_contract is not None else None,
+		front_door_contract=frontdoor_contract.to_payload() if frontdoor_contract is not None else None,
 	)
 	return handle_compiled_first_turn_result(
 		session_doc=session_doc,

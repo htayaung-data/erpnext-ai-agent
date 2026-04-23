@@ -24,7 +24,8 @@ def apply_local_followup_transforms(
 	render_local_followup,
 	ensure_table_from_grounded_context,
 	transform_markdown_to_million,
-) -> Tuple[str, List[str], Dict[str, Any]]:
+	refine_local_family_artifact,
+) -> Tuple[str, List[str], Dict[str, Any], Dict[str, Any]]:
 	requested_mode_set = {
 		str(value or "").strip()
 		for value in (requested_modes or [])
@@ -33,6 +34,7 @@ def apply_local_followup_transforms(
 	transformed = str(initial_text or "").strip()
 	applied_transforms: List[str] = []
 	family_followup_payload: Dict[str, Any] = {}
+	family_artifact_update_payload: Dict[str, Any] = {}
 
 	if supports_local_family_followup(
 		family_artifact_payload,
@@ -43,9 +45,18 @@ def apply_local_followup_transforms(
 		requested_modes=list(requested_mode_set),
 		show_million=show_million,
 	):
-		family_render = render_local_family_followup(
+		family_artifact_update_payload = refine_local_family_artifact(
 			request_id=request_id,
 			artifact_payload=family_artifact_payload,
+			target_limit=target_limit,
+			sort_direction=sort_direction,
+			target_metric=target_metric,
+			requested_columns=requested_columns,
+			requested_modes=list(requested_mode_set),
+		)
+		family_render = render_local_family_followup(
+			request_id=request_id,
+			artifact_payload=family_artifact_update_payload or family_artifact_payload,
 			target_limit=target_limit,
 			sort_direction=sort_direction,
 			target_metric=target_metric,
@@ -103,7 +114,7 @@ def apply_local_followup_transforms(
 			transformed = scaled
 			applied_transforms.append("presentation_transform")
 
-	return transformed, applied_transforms, family_followup_payload
+	return transformed, applied_transforms, family_followup_payload, family_artifact_update_payload
 
 
 def resolve_local_followup_rendered_payload(
@@ -203,6 +214,7 @@ def try_local_followup_transform(
 	render_local_followup,
 	ensure_table_from_grounded_context,
 	transform_markdown_to_million,
+	refine_local_family_artifact,
 ) -> Tuple[bool, Dict[str, Any]] | None:
 	requested_modes = {
 		str(mode or "").strip()
@@ -260,7 +272,7 @@ def try_local_followup_transform(
 		getattr(followup_resolution, "requested_modes", []) or [],
 	)
 	show_million = bool((display_preferences or {}).get("million")) or ("presentation_transform" in requested_modes)
-	transformed, applied_transforms, family_followup_payload = apply_local_followup_transforms(
+	transformed, applied_transforms, family_followup_payload, family_artifact_update_payload = apply_local_followup_transforms(
 		request_id=request_id,
 		initial_text=text,
 		requested_modes=list(requested_modes),
@@ -280,11 +292,13 @@ def try_local_followup_transform(
 		render_local_followup=render_local_followup,
 		ensure_table_from_grounded_context=ensure_table_from_grounded_context,
 		transform_markdown_to_million=transform_markdown_to_million,
+		refine_local_family_artifact=refine_local_family_artifact,
 	)
 
 	if not transformed or not applied_transforms:
 		return None
 
+	effective_family_artifact_payload = family_artifact_update_payload or family_artifact_payload
 	narrative_contract_payload: Dict[str, Any] = {}
 	narrative_text, narrative_contract_payload, narrative_applied = maybe_apply_local_followup_narrative(
 		request_id=request_id,
@@ -292,7 +306,7 @@ def try_local_followup_transform(
 		raw_message=raw_message,
 		interaction_contract=interaction_contract,
 		response_policy_contract=response_policy_contract,
-		family_artifact_payload=family_artifact_payload,
+		family_artifact_payload=effective_family_artifact_payload,
 		family_followup_payload=family_followup_payload,
 		requested_modes=list(requested_modes),
 		tool_payloads=session_tool_payloads(session_doc),
@@ -302,6 +316,8 @@ def try_local_followup_transform(
 		applied_transforms.append("artifact_narrative_followup")
 
 	append_message(session_doc, "assistant", assistant_text_payload(transformed))
+	if family_artifact_update_payload:
+		append_tool_payload(session_doc, family_artifact_update_payload)
 	if family_followup_payload:
 		append_tool_payload(session_doc, family_followup_payload)
 	if narrative_contract_payload:

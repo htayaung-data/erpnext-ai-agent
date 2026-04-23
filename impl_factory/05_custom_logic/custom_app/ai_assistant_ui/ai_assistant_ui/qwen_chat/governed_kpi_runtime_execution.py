@@ -20,6 +20,9 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	FrontDoorIntentGateContract,
 	build_clarification_signal_contract,
 )
+from ai_assistant_ui.qwen_chat.clarification_translation import (
+	render_shared_choice_list_clarification,
+)
 from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import (
 	current_date_iso,
 	get_customer_kpi_scalar_snapshot,
@@ -30,6 +33,9 @@ from ai_assistant_ui.qwen_chat.defaults_repository import single_company_name
 from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	SemanticFrontDoorIntent,
 	SemanticFrontDoorResult,
+)
+from ai_assistant_ui.qwen_chat.entity_period_aggregation_support import (
+	list_entity_period_commercial_rows,
 )
 from ai_assistant_ui.qwen_chat.governed_kpi_execution_state import (
 	GovernedKpiExecutionStateContract,
@@ -102,6 +108,16 @@ def _days_text(value: Any) -> str:
 	except Exception:
 		numeric = 0
 	return f"{numeric:,} day" if numeric == 1 else f"{numeric:,} days"
+
+
+def _count_text(value: Any) -> str:
+	try:
+		numeric = float(value or 0.0)
+	except Exception:
+		numeric = 0.0
+	if abs(numeric - int(numeric)) < 0.000001:
+		return f"{int(numeric):,}"
+	return f"{numeric:,.2f}".rstrip("0").rstrip(".")
 
 
 def _format_title_case_token(value: Any) -> str:
@@ -931,6 +947,9 @@ def _build_missing_customer_clarification_signal(
 		internal_details={
 			"continuation_lane": "front_door",
 			"continuation_intent_class": "governed_kpi_value",
+			"entity_grain": "customer",
+			"resolved_slot_key": "selected_customer",
+			"resolved_message_placeholder": "customer",
 			"resolved_message_template": resolved_message_template,
 			"definition_id": definition_state.definition_id,
 			"requested_as_of_date": _clean_text(as_of_date),
@@ -1377,6 +1396,216 @@ def _execute_customer_ranking_artifact(
 	)
 
 
+def _entity_period_metric_id(execution_state: GovernedKpiExecutionStateContract) -> str:
+	value_mapping = dict(execution_state.value_metric_mapping or {})
+	family_metric_id = _clean_text(value_mapping.get("family_metric_id"))
+	if family_metric_id:
+		return family_metric_id
+	value_metric = _clean_text(value_mapping.get("value_metric"))
+	fallback_map = {
+		"customer_revenue": "revenue",
+		"customer_quantity": "quantity",
+		"customer_average_order_value": "average_order_value",
+		"customer_average_invoice_value": "average_invoice_value",
+		"item_revenue": "revenue",
+		"item_quantity": "quantity",
+		"item_average_selling_price": "average_selling_price",
+	}
+	return fallback_map.get(value_metric, value_metric)
+
+
+def _entity_period_display_label(row: Dict[str, Any], entity_grain: str) -> str:
+	if entity_grain == "item":
+		return (
+			_clean_text(row.get("item_name"))
+			or _clean_text(row.get("entity_label"))
+			or _clean_text(row.get("item_code"))
+			or _clean_text(row.get("entity_code"))
+			or _clean_text(row.get("entity_key"))
+		)
+	return (
+		_clean_text(row.get("customer_name"))
+		or _clean_text(row.get("entity_label"))
+		or _clean_text(row.get("customer"))
+		or _clean_text(row.get("entity_key"))
+	)
+
+
+def _entity_period_join_key(entity_grain: str, row: Dict[str, Any]) -> Dict[str, Any]:
+	if entity_grain == "item":
+		return {"item_code": _clean_text(row.get("item_code") or row.get("entity_code") or row.get("entity_key"))}
+	return {"customer": _clean_text(row.get("customer") or row.get("entity_key"))}
+
+
+def _entity_period_metric_value(
+	*,
+	metric_id: str,
+	row: Dict[str, Any],
+) -> Tuple[float | None, str]:
+	metric_key = _clean_text(metric_id)
+	if metric_key == "revenue":
+		value = _numeric(row.get("revenue_total"))
+		return value, f"{_money(value)} MMK"
+	if metric_key == "quantity":
+		value = _numeric(row.get("quantity_total"))
+		return value, f"{_count_text(value)} units"
+	if metric_key in {"average_order_value", "average_invoice_value"}:
+		value = _numeric(row.get("average_document_value"))
+		return value, f"{_money(value)} MMK"
+	if metric_key == "average_selling_price":
+		value = _numeric(row.get("average_unit_price"))
+		return value, f"{_money(value)} MMK"
+	return None, ""
+
+
+def _execute_entity_period_ranking_artifact(
+	*,
+	definition_state: BusinessDefinitionStateContract,
+	formula_state: GovernedFormulaStateContract,
+	execution_state: GovernedKpiExecutionStateContract,
+	requested_scope: Dict[str, Any],
+) -> GovernedKpiRankingArtifactContract:
+	company_name = _clean_text(definition_state.requested_company_name)
+	period_start = _clean_text(requested_scope.get("period_start"))
+	period_end = _clean_text(requested_scope.get("period_end"))
+	ranking_limit = int(requested_scope.get("ranking_limit") or 0)
+	sort_direction = _clean_text(requested_scope.get("sort_direction") or "desc").lower() or "desc"
+	report_name = _clean_text((execution_state.source_reports or [""])[0])
+	rows = list_entity_period_commercial_rows(
+		report_name=report_name,
+		company=company_name,
+		from_date=period_start,
+		to_date=period_end,
+	)
+	entity_grain = _clean_text(definition_state.entity_grain)
+	metric_id = _entity_period_metric_id(execution_state)
+	for row in rows:
+		value, display_value = _entity_period_metric_value(metric_id=metric_id, row=row)
+		row["value"] = value
+		row["display_value"] = display_value
+	if any(row.get("value") is None for row in rows):
+		return build_governed_kpi_ranking_artifact_contract(
+			execution_state=execution_state,
+			entity_grain=definition_state.entity_grain,
+			scope={"company": company_name},
+			period_start=period_start,
+			period_end=period_end,
+			status="unsupported_execution_shape",
+			blocked_reason=f"Unhandled governed entity period KPI execution metric '{metric_id}'.",
+		)
+	reverse = sort_direction != "asc"
+	sorted_rows = sorted(
+		rows,
+		key=lambda row: (
+			_numeric(row.get("value")),
+			_numeric(row.get("revenue_total")),
+			_entity_period_display_label(row, entity_grain),
+			_clean_text(row.get("entity_code")),
+		),
+		reverse=reverse,
+	)
+	if ranking_limit > 0:
+		sorted_rows = sorted_rows[:ranking_limit]
+	row_payloads = [
+		{
+			"entity": _entity_period_display_label(row, entity_grain),
+			"entity_name": _entity_period_display_label(row, entity_grain),
+			"entity_key": _clean_text(row.get("entity_key")),
+			"entity_code": _clean_text(row.get("entity_code")),
+			"entity_grain": entity_grain,
+			"customer": _clean_text(row.get("customer")),
+			"customer_name": _clean_text(row.get("customer_name") or row.get("customer")),
+			"item": _clean_text(row.get("item")),
+			"item_code": _clean_text(row.get("item_code")),
+			"item_name": _clean_text(row.get("item_name") or row.get("entity_label") or row.get("item_code")),
+			"value": _numeric(row.get("value")),
+			"display_value": _clean_text(row.get("display_value")),
+			"revenue_total": _numeric(row.get("revenue_total")),
+			"quantity_total": _numeric(row.get("quantity_total")),
+			"document_count": int(_numeric(row.get("document_count"))),
+			"average_document_value": _numeric(row.get("average_document_value")),
+			"average_unit_price": _numeric(row.get("average_unit_price")),
+			"row_provenance": [
+				{
+					"execution_id": execution_state.execution_id,
+					"definition_id": definition_state.definition_id,
+					"formula_id": formula_state.formula_id,
+					"report_name": report_name,
+					"metric_id": metric_id,
+					"join_key": _entity_period_join_key(entity_grain, row),
+				}
+			],
+		}
+		for row in sorted_rows
+	]
+	return build_governed_kpi_ranking_artifact_contract(
+		execution_state=execution_state,
+		entity_grain=definition_state.entity_grain,
+		scope={"company": company_name},
+		period_start=period_start,
+		period_end=period_end,
+		ranking_mode="top_n_desc" if reverse else "top_n_asc",
+		sort_direction="desc" if reverse else "asc",
+		applied_limit=ranking_limit if ranking_limit > 0 else len(row_payloads),
+		rows=row_payloads,
+		source_evidence=[
+			{
+				"report_name": report_name,
+				"period_start": period_start,
+				"period_end": period_end,
+			}
+		],
+		status="active_value",
+	)
+
+
+def execute_governed_kpi_artifact_from_states(
+	*,
+	definition_state: BusinessDefinitionStateContract,
+	formula_state: GovernedFormulaStateContract,
+	execution_state: GovernedKpiExecutionStateContract,
+	requested_scope: Dict[str, Any],
+	message: str = "",
+) -> Dict[str, Any]:
+	execution_shape = _clean_text(execution_state.execution_shape or execution_state.requested_execution_shape)
+	value_artifact = None
+	ranking_artifact = None
+	if execution_shape == "company_period_scalar":
+		value_artifact = _execute_company_period_value_artifact(
+			definition_state=definition_state,
+			formula_state=formula_state,
+			execution_state=execution_state,
+			requested_scope=requested_scope,
+		)
+	elif execution_shape == "customer_as_of_scalar":
+		value_artifact = _execute_customer_as_of_value_artifact(
+			definition_state=definition_state,
+			formula_state=formula_state,
+			execution_state=execution_state,
+			requested_scope=requested_scope,
+			message=message,
+		)
+	elif execution_shape == "customer_as_of_ranking":
+		ranking_artifact = _execute_customer_ranking_artifact(
+			definition_state=definition_state,
+			formula_state=formula_state,
+			execution_state=execution_state,
+			requested_scope=requested_scope,
+			message=message,
+		)
+	elif execution_shape in {"customer_period_ranking", "entity_period_ranking"}:
+		ranking_artifact = _execute_entity_period_ranking_artifact(
+			definition_state=definition_state,
+			formula_state=formula_state,
+			execution_state=execution_state,
+			requested_scope=requested_scope,
+		)
+	return {
+		"value_artifact": value_artifact,
+		"ranking_artifact": ranking_artifact,
+	}
+
+
 def _render_active_value_answer(
 	*,
 	definition_state: BusinessDefinitionStateContract,
@@ -1592,41 +1821,113 @@ def _render_active_customer_ranking_answer(
 	return "\n".join(answer_lines).strip()
 
 
+def _render_active_entity_period_ranking_answer(
+	*,
+	definition_state: BusinessDefinitionStateContract,
+	formula_state: GovernedFormulaStateContract,
+	artifact: GovernedKpiRankingArtifactContract,
+	requested_time_scope: str,
+	include_business_purpose: bool,
+	detail_requested: bool,
+) -> str:
+	period_phrase = f"{_period_scope_phrase(requested_time_scope)} ({artifact.period_start} to {artifact.period_end})"
+	entity_grain = _clean_text(definition_state.entity_grain or artifact.entity_grain)
+	entity_label = "products" if entity_grain == "item" else "customers"
+	primary_noun = "revenue"
+	if definition_state.definition_id.endswith("_quantity_period"):
+		primary_noun = "quantity"
+	elif "average_order_value" in definition_state.definition_id:
+		primary_noun = "average order value"
+	elif "average_invoice_value" in definition_state.definition_id:
+		primary_noun = "average invoice value"
+	elif "average_selling_price" in definition_state.definition_id:
+		primary_noun = "average selling price"
+	source_phrase = _source_report_phrase(definition_state, formula_state)
+	basis_phrase = _source_documents_phrase(source_phrase)
+	answer_lines = [
+		f"For {period_phrase}, here are the top {int(max(1, artifact.applied_limit))} {entity_label} by {primary_noun} based on {basis_phrase}."
+	]
+	business_purpose = _definition_business_purpose(definition_state.definition_id)
+	if include_business_purpose and business_purpose:
+		answer_lines.append(_sentence(f"It matters because {business_purpose}"))
+	if not artifact.rows:
+		answer_lines.append(f"No {entity_label} matched the current governed ranking scope.")
+	else:
+		for index, row in enumerate(artifact.rows, start=1):
+			entity_name = (
+				_clean_text(row.get("entity_name"))
+				or _clean_text(row.get("item_name"))
+				or _clean_text(row.get("customer_name"))
+				or _clean_text(row.get("item_code"))
+				or _clean_text(row.get("customer"))
+			)
+			answer_lines.append(
+				f"- {index}. {entity_name}: {_clean_text(row.get('display_value'))}"
+			)
+	if detail_requested:
+		formula_basis = _formula_basis_phrase(definition_state, formula_state)
+		source_report_phrase = _source_report_phrase(definition_state, formula_state)
+		answer_lines.append("")
+		answer_lines.append("How it was ranked")
+		if formula_basis:
+			answer_lines.append(f"- Formula basis: {formula_basis}")
+		if source_report_phrase:
+			answer_lines.append(f"- Source: {source_report_phrase}")
+	return "\n".join(answer_lines).strip()
+
+
 def _render_ambiguous_value_answer(
 	*,
 	definition_state: BusinessDefinitionStateContract,
 	requested_time_scope: str,
 ) -> str:
 	lookup_value = _clean_text(definition_state.lookup_value) or "this KPI"
-	answer_lines = []
+	options = [
+		_clean_text(item.get("label"))
+		for item in definition_state.candidate_definitions
+		if _clean_text(item.get("label"))
+	]
 	if requested_time_scope:
 		start_date, end_date = _date_range_from_time_scope(requested_time_scope)
-		answer_lines.append(
-			f"I can calculate {lookup_value} for {_period_scope_phrase(requested_time_scope)} "
-			f"({start_date} to {end_date}), but I need the approved basis first."
+		return render_shared_choice_list_clarification(
+			reason_type="governed_kpi_definition_ambiguity",
+			variant="kpi_value_with_period",
+			template_values={
+				"lookup_label": lookup_value,
+				"period_phrase": _period_scope_phrase(requested_time_scope),
+				"period_start": start_date,
+				"period_end": end_date,
+			},
+			options=options,
+			default_question=(
+				f"I can calculate {lookup_value} for {_period_scope_phrase(requested_time_scope)} "
+				f"({start_date} to {end_date}), but I need the approved basis first."
+			),
 		)
-	else:
-		answer_lines.append(f"I can calculate {lookup_value}, but I need the approved basis first.")
-	answer_lines.extend(["", "Choose one:"])
-	for item in definition_state.candidate_definitions:
-		label = _clean_text(item.get("label"))
-		if label:
-			answer_lines.append(f"- {label}")
-	return "\n".join(answer_lines).strip()
+	return render_shared_choice_list_clarification(
+		reason_type="governed_kpi_definition_ambiguity",
+		variant="kpi_value_default",
+		template_values={
+			"lookup_label": lookup_value,
+		},
+		options=options,
+		default_question=f"I can calculate {lookup_value}, but I need the approved basis first.",
+	)
 
 
 def _render_missing_period_answer(
 	*,
 	definition_state: BusinessDefinitionStateContract,
 ) -> str:
-	answer_lines = [
-		f"I can calculate {definition_state.label}, but I still need the business period.",
-		"",
-		"Choose one:",
-	]
-	for option in _period_scope_options():
-		answer_lines.append(f"- {option}")
-	return "\n".join(answer_lines).strip()
+	return render_shared_choice_list_clarification(
+		reason_type="time_scope_missing",
+		variant="kpi_value_period_missing",
+		template_values={
+			"lookup_label": _clean_text(definition_state.label) or "this KPI",
+		},
+		options=_period_scope_options(),
+		default_question=f"I can calculate {definition_state.label}, but I still need the business period.",
+	)
 
 
 def _execution_continuation_message(
@@ -1688,6 +1989,7 @@ def _build_ambiguous_execution_clarification_signal(
 		return {}
 	resolved_message_by_option: Dict[str, str] = {}
 	option_aliases_by_option: Dict[str, List[str]] = {}
+	semantic_slot_value_by_option: Dict[str, str] = {}
 	for item in (definition_state.candidate_definitions or []):
 		if not isinstance(item, dict):
 			continue
@@ -1707,6 +2009,13 @@ def _build_ambiguous_execution_clarification_signal(
 		option_aliases = _definition_option_aliases(definition_id, label)
 		if option_aliases:
 			option_aliases_by_option[label] = option_aliases
+		listing_view_canonical = _definition_listing_view_canonical(definition_id)
+		if listing_view_canonical:
+			semantic_slot_value_by_option[label] = listing_view_canonical
+	carryover_slot_values = {
+		"lookup_value": _clean_text(definition_state.lookup_value),
+		"requested_time_scope": _clean_text(requested_time_scope),
+	}
 	return build_clarification_signal_contract(
 		request_id=request_id,
 		stage="frontdoor",
@@ -1717,8 +2026,16 @@ def _build_ambiguous_execution_clarification_signal(
 		internal_details={
 			"continuation_lane": "front_door",
 			"continuation_intent_class": "governed_kpi_value",
+			"clarification_template_group": "shared_clarification",
 			"resolved_message_by_option": resolved_message_by_option,
 			"option_aliases_by_option": option_aliases_by_option,
+			"semantic_slot_name": "listing_view" if semantic_slot_value_by_option else "",
+			"semantic_slot_value_by_option": semantic_slot_value_by_option,
+			"carryover_slot_values": {
+				key: value
+				for key, value in carryover_slot_values.items()
+				if _clean_text(value)
+			},
 			"requested_time_scope": requested_time_scope,
 			"candidate_definition_ids": [
 				_clean_text(item.get("definition_id"))
@@ -1736,12 +2053,17 @@ def _build_missing_period_clarification_signal(
 	answer_text: str,
 ) -> Dict[str, Any]:
 	options = _period_scope_options()
+	listing_view = _definition_listing_view_canonical(_clean_text(definition_state.definition_id))
 	resolved_message_by_option = {
 		option: _execution_continuation_message(
 			lookup_term=definition_state.lookup_value or definition_state.label,
 			requested_time_scope=_PERIOD_SCOPE_ORDER[idx],
 		)
 		for idx, option in enumerate(options)
+	}
+	carryover_slot_values = {
+		"lookup_value": _clean_text(definition_state.lookup_value or definition_state.label),
+		"listing_view": listing_view,
 	}
 	return build_clarification_signal_contract(
 		request_id=request_id,
@@ -1753,7 +2075,13 @@ def _build_missing_period_clarification_signal(
 		internal_details={
 			"continuation_lane": "front_door",
 			"continuation_intent_class": "governed_kpi_value",
+			"clarification_template_group": "shared_clarification",
 			"resolved_message_by_option": resolved_message_by_option,
+			"carryover_slot_values": {
+				key: value
+				for key, value in carryover_slot_values.items()
+				if _clean_text(value)
+			},
 			"suggested_time_scope_options": options,
 		},
 	).to_payload()
@@ -1794,7 +2122,11 @@ def maybe_build_governed_kpi_value_frontdoor_response(
 				company_name=resolved_company_name,
 			)
 			requested_scope = _build_period_requested_scope(requested_time_scope)
-			execution_shape = "company_period_scalar"
+			if _clean_text(definition_state.entity_grain) == "customer" and is_customer_ranking_request:
+				requested_scope["ranking_limit"] = _requested_top_n(normalized_message, default_limit=10)
+				execution_shape = "entity_period_ranking"
+			else:
+				execution_shape = "company_period_scalar"
 			execution_state = resolve_governed_kpi_execution_state(
 				definition_state=definition_state,
 				formula_state=formula_state,
@@ -1869,13 +2201,16 @@ def maybe_build_governed_kpi_value_frontdoor_response(
 				answer_text=answer_text,
 			)
 	elif execution_state.resolution_state == "active_value":
-		if execution_shape == "company_period_scalar":
-			artifact = _execute_company_period_value_artifact(
-				definition_state=definition_state,
-				formula_state=formula_state,
-				execution_state=execution_state,
-				requested_scope=requested_scope,
-			)
+		execution_payload = execute_governed_kpi_artifact_from_states(
+			definition_state=definition_state,
+			formula_state=formula_state,
+			execution_state=execution_state,
+			requested_scope=requested_scope,
+			message=normalized_message,
+		)
+		artifact = execution_payload.get("value_artifact")
+		ranking_artifact = execution_payload.get("ranking_artifact")
+		if execution_shape == "company_period_scalar" and artifact is not None:
 			answer_text = _render_active_value_answer(
 				definition_state=definition_state,
 				formula_state=formula_state,
@@ -1884,14 +2219,7 @@ def maybe_build_governed_kpi_value_frontdoor_response(
 				include_business_purpose=include_business_purpose,
 				detail_requested=_runtime_detail_requested(normalized_message),
 			)
-		elif execution_shape == "customer_as_of_scalar":
-			artifact = _execute_customer_as_of_value_artifact(
-				definition_state=definition_state,
-				formula_state=formula_state,
-				execution_state=execution_state,
-				requested_scope=requested_scope,
-				message=normalized_message,
-			)
+		elif execution_shape == "customer_as_of_scalar" and artifact is not None:
 			answer_text = _render_active_customer_scalar_answer(
 				definition_state=definition_state,
 				formula_state=formula_state,
@@ -1899,18 +2227,20 @@ def maybe_build_governed_kpi_value_frontdoor_response(
 				include_business_purpose=include_business_purpose,
 				message=normalized_message,
 			)
-		elif execution_shape == "customer_as_of_ranking":
-			ranking_artifact = _execute_customer_ranking_artifact(
-				definition_state=definition_state,
-				formula_state=formula_state,
-				execution_state=execution_state,
-				requested_scope=requested_scope,
-				message=normalized_message,
-			)
+		elif execution_shape == "customer_as_of_ranking" and ranking_artifact is not None:
 			answer_text = _render_active_customer_ranking_answer(
 				definition_state=definition_state,
 				formula_state=formula_state,
 				artifact=ranking_artifact,
+				include_business_purpose=include_business_purpose,
+				detail_requested=_runtime_detail_requested(normalized_message),
+			)
+		elif execution_shape in {"customer_period_ranking", "entity_period_ranking"} and ranking_artifact is not None:
+			answer_text = _render_active_entity_period_ranking_answer(
+				definition_state=definition_state,
+				formula_state=formula_state,
+				artifact=ranking_artifact,
+				requested_time_scope=requested_time_scope,
 				include_business_purpose=include_business_purpose,
 				detail_requested=_runtime_detail_requested(normalized_message),
 			)

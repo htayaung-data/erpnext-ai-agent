@@ -12,6 +12,9 @@ from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import (
 	get_customer_kpi_scalar_snapshot,
 	list_customer_kpi_rows,
 )
+from ai_assistant_ui.qwen_chat.customer_commercial_period_support import (
+	list_customer_commercial_period_rows,
+)
 
 
 def _with_compiled_first_turn_full_rollout(
@@ -1362,6 +1365,141 @@ def run_customer_credit_detail_followup_smoke(
 	)
 
 
+def run_customer_detail_clarification_followup_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+	session_tool_payloads,
+	latest_tool_payload_by_type,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase3.3B Customer Detail Clarification Followup Smoke",
+		)
+		try:
+			ok, detail_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="tell me more about Zegyo Mobile Supply House",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.3B Customer Detail Clarification Followup Smoke failed on customer detail request.")
+			if str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "entity_detail":
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: customer detail did not use governed entity-detail engine."
+				)
+
+			ok, clarify_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="what is this customer's tenure?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.3B Customer Detail Clarification Followup Smoke failed on generic tenure request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			clarify_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			clarify_tool_payloads = session_tool_payloads(session_doc)
+			clarify_signal = latest_tool_payload_by_type(clarify_tool_payloads, "qwen_clarification_signal_contract")
+			if (
+				str((clarify_signal or {}).get("stage") or "").strip() != "artifact_boundary"
+				or str((clarify_signal or {}).get("reason_type") or "").strip() != "customer_tenure_basis_missing"
+			):
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: generic tenure request did not produce the governed artifact-boundary clarification contract."
+				)
+
+			ok, tenure_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="by first sales order",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.3B Customer Detail Clarification Followup Smoke failed on tenure basis clarification response.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			tenure_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "first submitted sales order date 2026-03-30" not in tenure_text:
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: tenure clarification did not stay anchored to the governed customer detail artifact. "
+					f"Observed answer: {tenure_text!r}"
+				)
+			if "today, 2026-04-12" in tenure_text.lower():
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: tenure clarification escaped to a fresh daily sales-order query."
+				)
+
+			ok, invoice_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="when was the first sales invoice for this customer?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.3B Customer Detail Clarification Followup Smoke failed on first-sales-invoice follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			invoice_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "first observed submitted sales invoice" not in invoice_text.lower() or "2026-03-30" not in invoice_text:
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: first-sales-invoice follow-up did not reuse the governed customer lifecycle evidence."
+				)
+
+			ok, overdue_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="is this customer overdue?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.3B Customer Detail Clarification Followup Smoke failed on overdue follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			overdue_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "not overdue" not in overdue_text.lower():
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: overdue follow-up did not stay anchored to the customer artifact after clarification."
+				)
+
+			ok, overdue_amount_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="how much overdue does this customer have?",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.3B Customer Detail Clarification Followup Smoke failed on overdue-amount follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			overdue_amount_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "overdue amount for zegyo mobile supply house is 0 mmk" not in overdue_amount_text.lower():
+				raise RuntimeError(
+					"Phase3.3B Customer Detail Clarification Followup Smoke failed: overdue-amount follow-up did not stay anchored after clarification."
+				)
+
+			return {
+				"ok": True,
+				"detail_mode": str((detail_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"clarify_mode": str((clarify_payload or {}).get("mode") or (clarify_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				"tenure_mode": str((tenure_payload or {}).get("mode") or "").strip(),
+				"invoice_mode": str((invoice_payload or {}).get("mode") or "").strip(),
+				"overdue_mode": str((overdue_payload or {}).get("mode") or "").strip(),
+				"overdue_amount_mode": str((overdue_amount_payload or {}).get("mode") or "").strip(),
+				"clarify_text": clarify_text,
+				"tenure_text": tenure_text,
+				"invoice_text": invoice_text,
+				"overdue_text": overdue_text,
+				"overdue_amount_text": overdue_amount_text,
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_customer_credit_policy_followup_smoke(
 	*,
 	frappe_module,
@@ -1704,6 +1842,15 @@ def run_governed_kpi_period_execution_smoke(
 			numeric = float(value or 0.0)
 		except Exception:
 			numeric = 0.0
+		return f"{numeric:,.2f}".rstrip("0").rstrip(".")
+
+	def _count(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		if abs(numeric - int(numeric)) < 0.000001:
+			return f"{int(numeric):,}"
 		return f"{numeric:,.2f}".rstrip("0").rstrip(".")
 
 	def _percent(value: Any) -> str:
@@ -2130,6 +2277,265 @@ def run_governed_kpi_customer_execution_smoke(
 				"top_customer": _clean_text(top_credit_row.get("customer_label")),
 				"top_utilization_text": expected_top_ratio,
 				"above_limit_count": len(exceeded_rows),
+			}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
+def run_governed_customer_commercial_composite_smoke(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _money(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		return f"{numeric:,.2f}".rstrip("0").rstrip(".")
+
+	def _count(value: Any) -> str:
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		if abs(numeric - int(numeric)) < 0.000001:
+			return f"{int(numeric):,}"
+		return f"{numeric:,.2f}".rstrip("0").rstrip(".")
+
+	def _last_month_bounds() -> tuple[str, str]:
+		today = date.today()
+		first_day_current_month = today.replace(day=1)
+		last_day_previous_month = first_day_current_month - timedelta(days=1)
+		first_day_previous_month = last_day_previous_month.replace(day=1)
+		return first_day_previous_month.isoformat(), last_day_previous_month.isoformat()
+
+	def _last_year_bounds() -> tuple[str, str]:
+		today = date.today()
+		current_fiscal_year_start_year = today.year if today.month >= 4 else today.year - 1
+		last_year_start = date(current_fiscal_year_start_year - 1, 4, 1)
+		last_year_end = date(current_fiscal_year_start_year, 3, 31)
+		return last_year_start.isoformat(), last_year_end.isoformat()
+
+	def _top_customer_sales_order_revenue_last_month() -> Dict[str, Any]:
+		start_date, end_date = _last_month_bounds()
+		rows = list_customer_commercial_period_rows(
+			report_name="Sales Order List",
+			company="Mingalar Mobile Distribution Co., Ltd.",
+			from_date=start_date,
+			to_date=end_date,
+		)
+		rows = sorted(
+			rows,
+			key=lambda row: (float(row.get("revenue_total") or 0.0), str(row.get("customer_name") or "")),
+			reverse=True,
+		)
+		top_row = dict(rows[0] or {}) if rows else {}
+		return {
+			"period_start": start_date,
+			"period_end": end_date,
+			"customer_name": str(top_row.get("customer_name") or "").strip(),
+			"revenue_total": float(top_row.get("revenue_total") or 0.0),
+		}
+
+	def _top_customer_sales_order_revenue_last_year() -> Dict[str, Any]:
+		start_date, end_date = _last_year_bounds()
+		rows = list_customer_commercial_period_rows(
+			report_name="Sales Order List",
+			company="Mingalar Mobile Distribution Co., Ltd.",
+			from_date=start_date,
+			to_date=end_date,
+		)
+		rows = sorted(
+			rows,
+			key=lambda row: (float(row.get("revenue_total") or 0.0), str(row.get("customer_name") or "")),
+			reverse=True,
+		)
+		top_row = dict(rows[0] or {}) if rows else {}
+		return {
+			"period_start": start_date,
+			"period_end": end_date,
+			"customer_name": str(top_row.get("customer_name") or "").strip(),
+			"revenue_total": float(top_row.get("revenue_total") or 0.0),
+			"row_count": len(rows),
+		}
+
+	def _top_customer_sales_invoice_quantity_last_month() -> Dict[str, Any]:
+		start_date, end_date = _last_month_bounds()
+		rows = list_customer_commercial_period_rows(
+			report_name="Sales Invoice List",
+			company="Mingalar Mobile Distribution Co., Ltd.",
+			from_date=start_date,
+			to_date=end_date,
+		)
+		rows = sorted(
+			rows,
+			key=lambda row: (float(row.get("quantity_total") or 0.0), str(row.get("customer_name") or "")),
+			reverse=True,
+		)
+		top_row = dict(rows[0] or {}) if rows else {}
+		return {
+			"period_start": start_date,
+			"period_end": end_date,
+			"customer_name": str(top_row.get("customer_name") or "").strip(),
+			"quantity_total": float(top_row.get("quantity_total") or 0.0),
+		}
+
+	def _run() -> Dict[str, Any]:
+		expected = _top_customer_sales_order_revenue_last_month()
+		expected_last_year = _top_customer_sales_order_revenue_last_year()
+		expected_invoice_quantity = _top_customer_sales_invoice_quantity_last_month()
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase3.2 Customer Commercial Composite Smoke",
+		)
+		try:
+			ok, direct_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show top 5 customers by revenue for sales orders last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on direct composite request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			direct_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((direct_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct composite request did not stay in front door.")
+			if str((direct_payload or {}).get("agent_meta", {}).get("intent_class") or "").strip() != "governed_composite_value":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct composite request did not use governed_composite_value intent.")
+			if str(expected.get("customer_name") or "") not in direct_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct composite answer did not expose the expected top customer.")
+			if "| Rank | Customer |" not in direct_text or "Revenue" not in direct_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct composite answer did not keep the default table at customer and revenue only.")
+			if "Average Order Value" in direct_text or "Quantity" in direct_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct composite answer exposed extra metrics without an explicit user request.")
+
+			ok, projection_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me Customer , Revenue and AOV columns only",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on local projection follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			projection_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((projection_payload or {}).get("agent_meta", {}).get("engine") or "").strip() != "local_transform":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: projection follow-up did not stay in governed local transform.")
+			if "| Rank | Customer | Revenue | Average Order Value |" not in projection_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: projection follow-up did not render the expected customer/revenue/AOV table.")
+
+			ok, breakout_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show top 5 customers by revenue for sales orders last year",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on self-contained breakout request after projection follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			breakout_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str(expected_last_year.get("customer_name") or "") not in breakout_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: breakout request after projection follow-up did not return the expected last-year top customer.")
+
+			ok, last_year_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show top customers for sales orders last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on primary-metric clarification request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			last_year_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((last_year_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: primary-metric clarification request did not stay in front door.")
+			if "Revenue" not in last_year_text or "Quantity" not in last_year_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: primary-metric clarification request did not expose approved options.")
+
+			ok, clarified_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Rev",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on revenue alias clarification follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			clarified_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((clarified_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: revenue alias clarification did not return to the front door family runtime.")
+			if str(expected.get("customer_name") or "") not in clarified_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: revenue alias clarification did not resolve to the expected composite answer.")
+
+			ok, top_seven_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="give me top 7",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on top-7 follow-up after last-year composite answer.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			top_seven_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((top_seven_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: top-7 follow-up after last-year composite answer did not stay in front door.")
+			if str(expected_last_year.get("customer_name") or "") not in top_seven_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: top-7 follow-up after last-year composite answer lost the governed composite ranking context.")
+			if "35th Street Mobile Wholesale" in top_seven_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: top-7 follow-up regressed into legacy sales-invoice ranking output.")
+
+			ok, top_seven_projection_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="Show together with Customer , Sale amount and AOV",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on top-7 projection follow-up.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			top_seven_projection_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			top_seven_projection_engine = str((top_seven_projection_payload or {}).get("agent_meta", {}).get("engine") or "").strip()
+			if top_seven_projection_engine not in {"local_transform", "frontdoor_response_renderer"}:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: top-7 projection follow-up did not remain in a governed continuation path.")
+			if "| Rank | Customer | Revenue | Average Order Value |" not in top_seven_projection_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: top-7 projection follow-up did not render the expected customer/revenue/AOV table.")
+
+			ok, invoice_quantity_payload = handle_qwen_user_message(
+				session_name=doc.name,
+				message="show top 5 customers by quantity for sales invoices last month",
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed on direct sales-invoice quantity composite request.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			invoice_quantity_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+			if str((invoice_quantity_payload or {}).get("mode") or "").strip() != "front_door":
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct sales-invoice quantity composite request did not stay in front door.")
+			if str(expected_invoice_quantity.get("customer_name") or "") not in invoice_quantity_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct sales-invoice quantity composite request did not expose the expected top customer.")
+			if "| Rank | Customer |" not in invoice_quantity_text or "Quantity" not in invoice_quantity_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct sales-invoice quantity composite request did not keep the default table at customer and quantity only.")
+			if "Revenue" in invoice_quantity_text or "Average Invoice Value" in invoice_quantity_text:
+				raise RuntimeError("Phase3.2 Customer Commercial Composite Smoke failed: direct sales-invoice quantity composite request exposed extra metrics without an explicit user request.")
+
+			return {
+				"ok": True,
+				"period_start": str(expected.get("period_start") or ""),
+				"period_end": str(expected.get("period_end") or ""),
+				"top_customer": str(expected.get("customer_name") or ""),
+				"top_customer_revenue": f"{_money(expected.get('revenue_total'))} MMK",
+				"last_year_top_customer": str(expected_last_year.get("customer_name") or ""),
+				"last_year_row_count": int(expected_last_year.get("row_count") or 0),
+				"invoice_quantity_top_customer": str(expected_invoice_quantity.get("customer_name") or ""),
+				"invoice_quantity_top_value": f"{_count(expected_invoice_quantity.get('quantity_total'))} units",
+				"projection_header": "Customer + Average Order Value",
 			}
 		finally:
 			_delete_committed_smoke_session_doc(

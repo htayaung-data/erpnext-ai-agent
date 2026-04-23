@@ -24,6 +24,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_semantic_resolution_alias_entries,
 	ontology_detect_concepts,
 	ontology_self_contained_prefixes,
+	normalize_followup_mode_for_runtime,
 	report_capability_ids,
 	report_family_report_names,
 	report_semantic_tags,
@@ -366,6 +367,7 @@ class ClarificationResolutionContract:
 	resolved_slot: Dict[str, Any]
 	clarification_attempt_count: int
 	is_final_attempt: bool
+	internal_details: Dict[str, Any]
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -385,6 +387,7 @@ class ClarificationResolutionContract:
 			"resolved_slot": dict(self.resolved_slot),
 			"clarification_attempt_count": int(max(0, self.clarification_attempt_count)),
 			"is_final_attempt": bool(self.is_final_attempt),
+			"internal_details": dict(self.internal_details),
 			"created_at": _utc_now(),
 		}
 
@@ -1941,6 +1944,110 @@ class CompoundRequestAssessmentContract:
 
 
 @dataclass(frozen=True)
+class MultiStepExecutionPlanContract:
+	request_id: str
+	plan_id: str
+	relationship_type: str
+	entry_step_id: str
+	step_count: int
+	steps: List[Dict[str, Any]]
+	interruption_policy: Dict[str, Any]
+	clarification_policy: Dict[str, Any]
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_multi_step_execution_plan_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"plan_id": self.plan_id,
+			"plan_kind": "multi_step_execution",
+			"relationship_type": self.relationship_type,
+			"entry_step_id": self.entry_step_id,
+			"step_count": int(max(0, self.step_count)),
+			"steps": [dict(step or {}) for step in self.steps if isinstance(step, dict) and step],
+			"interruption_policy": dict(self.interruption_policy),
+			"clarification_policy": dict(self.clarification_policy),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MultiStepExecutionStateContract:
+	request_id: str
+	execution_id: str
+	plan_id: str
+	state: str
+	current_step_id: str
+	current_step_index: int
+	current_step_status: str
+	completed_step_ids: List[str]
+	remaining_step_ids: List[str]
+	last_completed_step_id: str
+	waiting_step_id: str
+	interruption_reason: str
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_multi_step_execution_state_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"execution_id": self.execution_id,
+			"plan_id": self.plan_id,
+			"state": self.state,
+			"current_step_id": self.current_step_id,
+			"current_step_index": int(max(0, self.current_step_index)),
+			"current_step_status": self.current_step_status,
+			"completed_step_ids": list(self.completed_step_ids),
+			"remaining_step_ids": list(self.remaining_step_ids),
+			"last_completed_step_id": self.last_completed_step_id,
+			"waiting_step_id": self.waiting_step_id,
+			"interruption_reason": self.interruption_reason,
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
+class MultiStepStepResultIntegrationContract:
+	request_id: str
+	execution_id: str
+	plan_id: str
+	source_step_id: str
+	source_step_index: int
+	result_kind: str
+	result_request_id: str
+	update_recent_focus: bool
+	recent_focus_source_request_id: str
+	carryover_classes: List[str]
+	result_handle: Dict[str, Any]
+	interruption_policy: Dict[str, Any]
+	internal_details: Dict[str, Any]
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_multi_step_step_result_integration_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"execution_id": self.execution_id,
+			"plan_id": self.plan_id,
+			"source_step_id": self.source_step_id,
+			"source_step_index": int(max(0, self.source_step_index)),
+			"result_kind": self.result_kind,
+			"result_request_id": self.result_request_id,
+			"update_recent_focus": bool(self.update_recent_focus),
+			"recent_focus_source_request_id": self.recent_focus_source_request_id,
+			"carryover_classes": list(self.carryover_classes),
+			"result_handle": dict(self.result_handle),
+			"interruption_policy": dict(self.interruption_policy),
+			"internal_details": dict(self.internal_details),
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class ConversationControlDecisionContract:
 	request_id: str
 	decision_class: str
@@ -2328,6 +2435,152 @@ def build_compound_request_assessment_contract(
 	)
 
 
+def build_multi_step_execution_plan_contract(
+	*,
+	request_id: str,
+	plan_id: str,
+	relationship_type: str,
+	entry_step_id: str,
+	steps: List[Dict[str, Any]] | None = None,
+	interruption_policy: Dict[str, Any] | None = None,
+	clarification_policy: Dict[str, Any] | None = None,
+	internal_details: Dict[str, Any] | None = None,
+) -> MultiStepExecutionPlanContract:
+	normalized_steps: List[Dict[str, Any]] = []
+	for index, raw_step in enumerate(steps or [], start=1):
+		if not isinstance(raw_step, dict):
+			continue
+		step = dict(raw_step)
+		step_id = str(step.get("step_id") or "").strip() or f"step_{index}"
+		step_index = int(max(1, step.get("step_index") or index))
+		normalized_steps.append(
+			{
+				"step_id": step_id,
+				"step_index": step_index,
+				"step_message": str(step.get("step_message") or "").strip(),
+				"step_label": str(step.get("step_label") or "").strip(),
+				"dependency_step_ids": [
+					str(value or "").strip()
+					for value in (step.get("dependency_step_ids") or [])
+					if str(value or "").strip()
+				],
+				"carryover_classes": [
+					str(value or "").strip()
+					for value in (step.get("carryover_classes") or [])
+					if str(value or "").strip()
+				],
+				"interpretation_source": str(step.get("interpretation_source") or "").strip(),
+				"intent_class": str(step.get("intent_class") or "").strip(),
+				"route_target": str(step.get("route_target") or "").strip(),
+				"response_mode": str(step.get("response_mode") or "").strip(),
+				"candidate_capability_ids": [
+					str(value or "").strip()
+					for value in (step.get("candidate_capability_ids") or [])
+					if str(value or "").strip()
+				],
+				"candidate_reports": [
+					str(value or "").strip()
+					for value in (step.get("candidate_reports") or [])
+					if str(value or "").strip()
+				],
+				"requested_dimensions": [
+					str(value or "").strip()
+					for value in (step.get("requested_dimensions") or [])
+					if str(value or "").strip()
+				],
+			}
+		)
+	return MultiStepExecutionPlanContract(
+		request_id=str(request_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		relationship_type=str(relationship_type or "").strip(),
+		entry_step_id=str(entry_step_id or "").strip(),
+		step_count=len(normalized_steps),
+		steps=normalized_steps,
+		interruption_policy=dict(interruption_policy or {}),
+		clarification_policy=dict(clarification_policy or {}),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_multi_step_execution_state_contract(
+	*,
+	request_id: str,
+	execution_id: str,
+	plan_id: str,
+	state: str,
+	current_step_id: str = "",
+	current_step_index: int = 0,
+	current_step_status: str = "",
+	completed_step_ids: List[str] | None = None,
+	remaining_step_ids: List[str] | None = None,
+	last_completed_step_id: str = "",
+	waiting_step_id: str = "",
+	interruption_reason: str = "",
+	internal_details: Dict[str, Any] | None = None,
+) -> MultiStepExecutionStateContract:
+	return MultiStepExecutionStateContract(
+		request_id=str(request_id or "").strip(),
+		execution_id=str(execution_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		state=str(state or "").strip(),
+		current_step_id=str(current_step_id or "").strip(),
+		current_step_index=int(max(0, current_step_index or 0)),
+		current_step_status=str(current_step_status or "").strip(),
+		completed_step_ids=[
+			str(value or "").strip()
+			for value in (completed_step_ids or [])
+			if str(value or "").strip()
+		],
+		remaining_step_ids=[
+			str(value or "").strip()
+			for value in (remaining_step_ids or [])
+			if str(value or "").strip()
+		],
+		last_completed_step_id=str(last_completed_step_id or "").strip(),
+		waiting_step_id=str(waiting_step_id or "").strip(),
+		interruption_reason=str(interruption_reason or "").strip(),
+		internal_details=dict(internal_details or {}),
+	)
+
+
+def build_multi_step_step_result_integration_contract(
+	*,
+	request_id: str,
+	execution_id: str,
+	plan_id: str,
+	source_step_id: str,
+	source_step_index: int,
+	result_kind: str,
+	result_request_id: str,
+	update_recent_focus: bool,
+	recent_focus_source_request_id: str = "",
+	carryover_classes: List[str] | None = None,
+	result_handle: Dict[str, Any] | None = None,
+	interruption_policy: Dict[str, Any] | None = None,
+	internal_details: Dict[str, Any] | None = None,
+) -> MultiStepStepResultIntegrationContract:
+	return MultiStepStepResultIntegrationContract(
+		request_id=str(request_id or "").strip(),
+		execution_id=str(execution_id or "").strip(),
+		plan_id=str(plan_id or "").strip(),
+		source_step_id=str(source_step_id or "").strip(),
+		source_step_index=int(max(0, source_step_index or 0)),
+		result_kind=str(result_kind or "").strip(),
+		result_request_id=str(result_request_id or "").strip(),
+		update_recent_focus=bool(update_recent_focus),
+		recent_focus_source_request_id=str(recent_focus_source_request_id or "").strip(),
+		carryover_classes=[
+			str(value or "").strip()
+			for value in (carryover_classes or [])
+			if str(value or "").strip()
+		],
+		result_handle=dict(result_handle or {}),
+		interruption_policy=dict(interruption_policy or {}),
+		internal_details=dict(internal_details or {}),
+	)
+
+
 def build_conversation_control_decision_contract(
 	*,
 	request_id: str,
@@ -2591,6 +2844,7 @@ def build_clarification_resolution_contract(
 	resolved_slot: Dict[str, Any] | None = None,
 	clarification_attempt_count: int = 0,
 	is_final_attempt: bool = False,
+	internal_details: Dict[str, Any] | None = None,
 ) -> ClarificationResolutionContract:
 	return ClarificationResolutionContract(
 		request_id=str(request_id or "").strip(),
@@ -2611,6 +2865,7 @@ def build_clarification_resolution_contract(
 		resolved_slot=dict(resolved_slot or {}),
 		clarification_attempt_count=int(max(0, clarification_attempt_count or 0)),
 		is_final_attempt=bool(is_final_attempt),
+		internal_details=dict(internal_details or {}),
 	)
 
 
@@ -5190,6 +5445,62 @@ def _message_has_explicit_projection_selection_cue(message: str) -> bool:
 	return bool(_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN.search(text))
 
 
+_CONTEXTUAL_DETAIL_FOLLOWUP_PREFIXES = (
+	"tell me more",
+	"show me details",
+	"show details",
+	"give me more info",
+	"give me more information",
+	"show me more",
+	"more detail",
+	"more details",
+)
+
+
+_CONTEXTUAL_DEICTIC_REFERENCE_PATTERN = re.compile(
+	r"\b(?:that|this|it|that\s+one|this\s+one|same\s+one|same\s+record|same\s+document)\b",
+	re.IGNORECASE,
+)
+
+
+def _looks_like_contextual_detail_followup(message: str) -> bool:
+	normalized = " ".join(str(message or "").strip().lower().split())
+	if not normalized:
+		return False
+	if normalized in {"detail", "details", "more detail", "more details"}:
+		return True
+	if not any(normalized.startswith(prefix) for prefix in _CONTEXTUAL_DETAIL_FOLLOWUP_PREFIXES):
+		return False
+	return bool(_CONTEXTUAL_DEICTIC_REFERENCE_PATTERN.search(normalized))
+
+
+def _grounded_turn_has_single_row_contextual_focus(latest_grounded_turn: Dict[str, Any] | None = None) -> bool:
+	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	artifact_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
+	if artifact_family_id not in {"transaction_listing", "master_data_directory", "customer_master_list"}:
+		return False
+	rows = [row for row in (grounded_turn.get("table_rows") or []) if isinstance(row, dict)]
+	if len(rows) == 1:
+		return True
+	known_documents = grounded_turn.get("known_documents") or []
+	if artifact_family_id == "transaction_listing":
+		document_refs = []
+		for item in known_documents:
+			if isinstance(item, dict):
+				name = str(item.get("name") or item.get("document_name") or item.get("document_id") or "").strip()
+			else:
+				name = str(item or "").strip()
+			if name and name not in document_refs:
+				document_refs.append(name)
+		if len(document_refs) == 1:
+			return True
+	row_count = grounded_turn.get("row_count")
+	try:
+		return int(row_count or 0) == 1
+	except Exception:
+		return False
+
+
 def _looks_like_base_transaction_listing_reask(
 	*,
 	message: str,
@@ -5201,6 +5512,8 @@ def _looks_like_base_transaction_listing_reask(
 	if artifact_family_id and artifact_family_id != "transaction_listing":
 		return False
 	if str(requested_time_scope or "").strip():
+		return False
+	if _looks_like_contextual_detail_followup(message):
 		return False
 	source_report = str(grounded_turn.get("source_name") or "").strip()
 	source_listing_view = listing_view_for_report_name(source_report)
@@ -5227,9 +5540,9 @@ def build_followup_resolution(
 	message_language = detect_language(message)
 	if semantic_intent is not None:
 		requested_modes = [
-			"column_refinement" if str(mode or "").strip() == "column_projection" else str(mode or "").strip()
+			normalize_followup_mode_for_runtime(str(mode or "").strip())
 			for mode in (getattr(semantic_intent, "requested_modes", []) or [])
-			if str(mode or "").strip()
+			if normalize_followup_mode_for_runtime(str(mode or "").strip())
 		]
 		target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip()
 		target_limit = int(max(0, getattr(semantic_intent, "target_limit", 0) or 0))
@@ -5260,6 +5573,29 @@ def build_followup_resolution(
 		message=message,
 		requested_time_scope=requested_time_scope,
 	)
+	contextual_detail_followup = _looks_like_contextual_detail_followup(message)
+	if (
+		latest_grounded_turn_available
+		and contextual_detail_followup
+		and _grounded_turn_has_single_row_contextual_focus(latest_grounded_turn)
+	):
+		return build_followup_resolution_contract(
+			request_id=request_id,
+			mode="grounded_follow_up",
+			requested_modes=["detail_followup"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope=requested_time_scope,
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The request is a contextual detail follow-up on a single grounded ERP row and should stay anchored to that focus.",
+		)
 	if latest_grounded_turn_available and _looks_like_base_transaction_listing_reask(
 		message=message,
 		latest_grounded_turn=latest_grounded_turn,
@@ -5337,6 +5673,7 @@ def build_followup_resolution(
 		and inherited_date_context_present
 		and not requested_time_scope
 		and not self_contained
+		and not contextual_detail_followup
 		and message_looks_self_contained_business_query
 		and not local_projection_or_metric_refinement_requested
 	):

@@ -83,6 +83,15 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 			signal.get("internal_details", {}).get("resolved_message_by_option", {}).get("Average Order Value by Sales Order"),
 			"show average order value sales order last month",
 		)
+		self.assertEqual(signal.get("internal_details", {}).get("semantic_slot_name"), "listing_view")
+		self.assertEqual(
+			signal.get("internal_details", {}).get("semantic_slot_value_by_option", {}).get("Average Order Value by Sales Order"),
+			"sales_order",
+		)
+		self.assertEqual(
+			signal.get("internal_details", {}).get("carryover_slot_values", {}).get("requested_time_scope"),
+			"last_month",
+		)
 		self.assertIn(
 			"sales order",
 			signal.get("internal_details", {}).get("option_aliases_by_option", {}).get("Average Order Value by Sales Order", []),
@@ -104,6 +113,14 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertEqual(
 			signal.get("internal_details", {}).get("resolved_message_by_option", {}).get("Last Month"),
 			"show average order value sales order last month",
+		)
+		self.assertEqual(
+			signal.get("internal_details", {}).get("carryover_slot_values", {}).get("listing_view"),
+			"sales_order",
+		)
+		self.assertEqual(
+			signal.get("internal_details", {}).get("carryover_slot_values", {}).get("lookup_value"),
+			"average order value sales order",
 		)
 
 	def test_sales_invoice_aov_last_month_executes_without_basis_clarification(self):

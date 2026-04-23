@@ -12,9 +12,31 @@ def _fake_get_all(doctype, *args, **kwargs):
 	if doctype == "Fiscal Year":
 		return [
 			{
+				"name": "FY-2025",
+				"year_start_date": "2024-04-01",
+				"year_end_date": "2025-03-31",
+			},
+			{
 				"name": "FY-2026",
-				"year_start_date": "2026-01-01",
-				"year_end_date": "2026-12-31",
+				"year_start_date": "2025-04-01",
+				"year_end_date": "2026-03-31",
+			},
+			{
+				"name": "FY-2027",
+				"year_start_date": "2026-04-01",
+				"year_end_date": "2027-03-31",
+			}
+		]
+	if doctype == "Period Closing Voucher":
+		return [
+			{
+				"name": "PCV-2025-0001",
+				"company": "Enterprise Co",
+				"fiscal_year": "FY-2025",
+				"period_start_date": "2024-04-01",
+				"period_end_date": "2025-03-31",
+				"transaction_date": "2025-03-31",
+				"gle_processing_status": "Completed",
 			}
 		]
 	return []
@@ -32,6 +54,7 @@ from ai_assistant_ui.qwen_chat.clarification_translation import _translate_compi
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_artifact_enrichment_compatibility_contract,
 	build_artifact_continuation_contract,
+	build_clarification_reason_contract_from_sources,
 	build_compiled_query_request_contract,
 	build_composite_read_plan_contract,
 	build_followup_boundary_contract,
@@ -67,6 +90,7 @@ from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 	_allow_deterministic_family_surface_fallback,
 	_apply_governed_interpretation_biases,
 	_build_interpretation_context,
+	_augment_master_data_lookup_interpretation_from_message,
 	SemanticFreshQueryResult,
 	compile_from_fresh_query_message,
 	execute_compiled_fresh_query_message,
@@ -76,11 +100,13 @@ from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 )
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_fresh_query_defaults,
+	entity_grain_display_label,
 	get_report_spec,
 	get_report_family_spec,
 	load_business_ontology,
 	load_semantic_resolution_registry,
 )
+from ai_assistant_ui.qwen_chat.governed_scope_registry import listing_view_display_label
 from ai_assistant_ui.qwen_chat.semantic_interpreter import (
 	_build_interpretation_context as _build_semantic_followup_context,
 	interpret_artifact_local_projection_deterministically,
@@ -114,6 +140,7 @@ from ai_assistant_ui.qwen_chat.semantic_resolution import (
 	resolve_financial_summary_interpretation,
 	resolve_financial_statement_interpretation,
 	resolve_inventory_summary_interpretation,
+	resolve_master_data_lookup_interpretation,
 	resolve_product_performance_interpretation,
 	resolve_ranked_entities_interpretation,
 	resolve_trend_analysis_interpretation,
@@ -126,7 +153,10 @@ from ai_assistant_ui.qwen_chat.scope_support import (
 	reasoning_supersedes_contradictory_presentation_followup,
 )
 from ai_assistant_ui.qwen_chat.service import (
+	_frontdoor_context_isolation_retry_needed,
+	_frontdoor_recent_messages_for_message,
 	_message_looks_like_self_contained_governed_business_query,
+	_should_skip_artifact_boundary,
 )
 
 
@@ -182,10 +212,58 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		)
 
+
+	def test_recovery_semantic_bypass_detects_payment_entry_self_contained_query(self):
+		self.assertTrue(
+			_message_looks_like_self_contained_governed_business_query(
+				message="show me payment entries",
+			)
+		)
+
 	def test_recovery_semantic_bypass_does_not_trigger_on_short_acknowledgement(self):
 		self.assertFalse(
 			_message_looks_like_self_contained_governed_business_query(
 				message="yes",
+			)
+		)
+
+	def test_frontdoor_recent_messages_preserve_grounded_anchor_followup(self):
+		recent_messages = [
+			{"role": "user", "content": "show me payment entries"},
+			{"role": "assistant", "content": "Here are the payment entries."},
+		]
+		self.assertEqual(
+			_frontdoor_recent_messages_for_message(
+				message="show me those payment entries today",
+				recent_messages=recent_messages,
+				grounded_context_available=True,
+			),
+			recent_messages,
+		)
+
+	def test_frontdoor_context_isolation_retry_needed_for_unanchored_clarification(self):
+		contract = types.SimpleNamespace(
+			handle_in_front_door=True,
+			intent_class="master_data_grain_clarification",
+		)
+		self.assertTrue(
+			_frontdoor_context_isolation_retry_needed(
+				message="show me payment entries today",
+				grounded_context_available=True,
+				frontdoor_contract=contract,
+			)
+		)
+
+	def test_frontdoor_context_isolation_retry_skips_anchored_followup(self):
+		contract = types.SimpleNamespace(
+			handle_in_front_door=True,
+			intent_class="master_data_grain_clarification",
+		)
+		self.assertFalse(
+			_frontdoor_context_isolation_retry_needed(
+				message="show me those payment entries today",
+				grounded_context_available=True,
+				frontdoor_contract=contract,
 			)
 		)
 
@@ -933,6 +1011,119 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.requested_time_scope, "last_month")
 		self.assertEqual(outcome.target_limit, 0)
 
+
+	def test_build_followup_resolution_treats_bare_payment_entry_reask_as_new_query_when_prior_scope_exists(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=[],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User is restating the base payment entry listing.",
+		)
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-payment-entry-bare-reask",
+			message="show me payment entries",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "Payment Entry List",
+				"artifact_family_id": "transaction_listing",
+				"date_range": {
+					"from_date": "2026-03-01",
+					"to_date": "2026-03-31",
+				},
+				"dimensions": ["Payment Entry", "Posting Date", "Party"],
+				"returned_schema": ["Payment Entry", "Posting Date", "Party", "Received Amount"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+		self.assertEqual(outcome.mode, "new_query")
+		self.assertTrue(outcome.self_contained)
+		self.assertFalse(outcome.depends_on_grounded_turn)
+		self.assertEqual(outcome.requested_time_scope, "")
+
+
+	def test_build_followup_resolution_clears_projection_noise_for_base_payment_entry_reask(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["column_refinement"],
+			target_dimension="Customer",
+			target_limit=0,
+			sort_direction="",
+			target_metric="received amount",
+			requested_columns=["payment entry", "posting date", "customer", "received amount"],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User requested payment entries, and the follow-up mode 'column_projection' is appropriate to refine the display.",
+		)
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-payment-entry-projection-noise",
+			message="show me payment entries",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "Payment Entry List",
+				"artifact_family_id": "transaction_listing",
+				"date_range": {
+					"from_date": "2026-03-01",
+					"to_date": "2026-03-31",
+				},
+				"dimensions": ["Payment Entry"],
+				"returned_schema": ["Payment Entry", "Posting Date", "Party", "Received Amount"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+		self.assertEqual(outcome.mode, "new_query")
+		self.assertTrue(outcome.self_contained)
+		self.assertFalse(outcome.depends_on_grounded_turn)
+		self.assertEqual(list(outcome.requested_modes), [])
+		self.assertEqual(outcome.target_dimension, "")
+		self.assertEqual(outcome.target_metric, "")
+		self.assertEqual(list(outcome.requested_columns), [])
+
+
+	def test_build_followup_resolution_uses_source_report_when_transaction_listing_family_id_is_blank(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["column_refinement"],
+			target_dimension="Customer",
+			target_limit=10,
+			sort_direction="",
+			target_metric="received amount",
+			requested_columns=["payment entry", "posting date", "customer", "received amount"],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=False,
+			reason="User asked to show payment entries, and the follow-up is a refinement of the existing result by projecting columns related to customers.",
+		)
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-payment-entry-blank-family-id",
+			message="show me payment entries",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "Payment Entry List",
+				"artifact_family_id": "",
+				"date_range": {
+					"from_date": "2026-03-01",
+					"to_date": "2026-03-31",
+				},
+				"dimensions": ["Payment Entry"],
+				"returned_schema": ["Payment Entry", "Posting Date", "Party", "Received Amount"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+		self.assertEqual(outcome.mode, "new_query")
+		self.assertTrue(outcome.self_contained)
+		self.assertEqual(list(outcome.requested_modes), [])
+
 	def test_build_followup_resolution_treats_self_contained_transaction_listing_reask_as_new_query(self):
 		semantic_intent = types.SimpleNamespace(
 			requested_modes=["filter_refinement"],
@@ -1368,6 +1559,60 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 		self.assertIn("different governed document-listing target", payload["decision_reason"])
 
+	def test_build_followup_boundary_contract_forces_fresh_query_on_payment_entry_to_supplier_directory_switch(self):
+		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
+			"give me some supplier list",
+			request_id="followup-boundary-from-context-6e-payment-supplier",
+			session_id="session-ctx-6e-payment-supplier",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Payment Entry List",
+				"artifact_family_id": "transaction_listing",
+				"dimensions": ["Posting Date", "Customer"],
+				"metrics": ["Received Amount"],
+				"returned_schema": ["Payment Entry", "Posting Date", "Party"],
+			},
+		)
+		payload = contract.to_payload()
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
+		self.assertIn("entity-navigation", payload["decision_reason"])
+
+	def test_build_followup_boundary_contract_forces_fresh_query_on_customer_master_to_payment_entries_switch(self):
+		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
+			"show me payment entries",
+			request_id="followup-boundary-from-context-6e-customer-payment",
+			session_id="session-ctx-6e-customer-payment",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Customer Master List",
+				"artifact_family_id": "master_data_lookup",
+				"dimensions": ["Customer", "Territory"],
+				"metrics": [],
+				"returned_schema": ["Customer", "Territory", "Customer Group", "Creation"],
+			},
+		)
+		payload = contract.to_payload()
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
+		self.assertIn("document list", payload["decision_reason"])
+
+	def test_build_followup_boundary_contract_forces_fresh_query_on_customer_master_to_supplier_list_switch(self):
+		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
+			"give me some supplier list",
+			request_id="followup-boundary-from-context-6e-customer-supplier",
+			session_id="session-ctx-6e-customer-supplier",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Customer Master List",
+				"artifact_family_id": "master_data_lookup",
+				"dimensions": ["Customer", "Territory"],
+				"metrics": [],
+				"returned_schema": ["Customer", "Territory", "Customer Group", "Creation"],
+			},
+		)
+		payload = contract.to_payload()
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
+		self.assertIn("different entity list", payload["decision_reason"])
+
 	def test_build_followup_boundary_contract_infers_transaction_listing_family_from_report_when_missing(self):
 		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
 			"show me last 7 sale invoices",
@@ -1478,6 +1723,179 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertTrue(
 			"different governed business area" in result.reason
 			or "self-contained" in result.reason
+		)
+
+	def test_assess_context_isolation_breaks_out_from_payment_entry_to_customer_directory(self):
+		result = assess_context_isolation(
+			"give me some customer list",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Payment Entry List",
+				"artifact_family_id": "transaction_listing",
+				"dimensions": ["Posting Date", "Customer"],
+				"metrics": ["Received Amount"],
+				"returned_schema": ["Payment Entry", "Posting Date", "Party"],
+			},
+		)
+		self.assertTrue(result.force_new_query)
+		self.assertFalse(result.out_of_scope)
+		self.assertIn("entity-navigation", result.reason)
+
+	def test_assess_context_isolation_breaks_out_from_customer_master_to_payment_entries(self):
+		result = assess_context_isolation(
+			"show me payment entries",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Customer Master List",
+				"artifact_family_id": "master_data_lookup",
+				"dimensions": ["Customer", "Territory"],
+				"metrics": [],
+				"returned_schema": ["Customer", "Territory", "Customer Group", "Creation"],
+			},
+		)
+		self.assertTrue(result.force_new_query)
+		self.assertFalse(result.out_of_scope)
+		self.assertIn("document list", result.reason)
+
+	def test_assess_context_isolation_breaks_out_from_customer_master_to_supplier_list(self):
+		result = assess_context_isolation(
+			"give me some supplier list",
+			grounded_turn={
+				"grounded": True,
+				"source_name": "Customer Master List",
+				"artifact_family_id": "master_data_lookup",
+				"dimensions": ["Customer", "Territory"],
+				"metrics": [],
+				"returned_schema": ["Customer", "Territory", "Customer Group", "Creation"],
+			},
+		)
+		self.assertTrue(result.force_new_query)
+		self.assertFalse(result.out_of_scope)
+		self.assertIn("different entity list", result.reason)
+
+	def test_master_data_lookup_augmentation_infers_entity_grain_from_message(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="master-data-augment-supplier",
+			session_id="semantic-master-data",
+			intent_class="master_data_lookup",
+			candidate_capability_ids=["customer_master_read"],
+			candidate_reports=["Customer Master List"],
+			requested_dimensions=["Customer"],
+			requested_metrics=[],
+			requested_time_scope="as_of_today",
+			requested_presentation=["table_presentation"],
+			extracted_slots={},
+			ambiguity_flags=["ambiguous_business_object"],
+			ambiguity_reason="Supplier vs customer scope is unresolved.",
+			confidence=0.6,
+		)
+		augmented = _augment_master_data_lookup_interpretation_from_message(
+			message="give me some supplier list",
+			interpretation=interpretation,
+		)
+		self.assertEqual((augmented.extracted_slots or {}).get("entity_grain"), "supplier")
+		self.assertIn("ambiguous_business_object", list(augmented.ambiguity_flags))
+
+	def test_master_data_lookup_resolution_clarifies_unsupported_inferred_supplier_scope(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="master-data-unsupported-supplier",
+			session_id="semantic-master-data",
+			intent_class="master_data_lookup",
+			candidate_capability_ids=["customer_master_read"],
+			candidate_reports=["Customer Master List"],
+			requested_dimensions=["Customer"],
+			requested_metrics=[],
+			requested_time_scope="as_of_today",
+			requested_presentation=["table_presentation"],
+			extracted_slots={"entity_grain": "supplier"},
+			ambiguity_flags=["ambiguous_business_object"],
+			ambiguity_reason="Supplier scope was requested but customer scope was suggested.",
+			confidence=0.6,
+		)
+		outcome = resolve_master_data_lookup_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.governed_decision, "clarify")
+		self.assertEqual(outcome.clarification_reason_type, "master_data_scope_unsupported")
+		self.assertEqual(list(outcome.interpretation.candidate_capability_ids), [])
+		self.assertIn("unsupported_request", list(outcome.interpretation.ambiguity_flags))
+
+	def test_compile_from_fresh_query_message_clarifies_supplier_scope_when_only_customer_directory_is_active(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="master-data-pipeline-supplier",
+			session_id="semantic-master-data",
+			intent_class="master_data_lookup",
+			candidate_capability_ids=["customer_master_read"],
+			candidate_reports=["Customer Master List"],
+			requested_dimensions=["Customer"],
+			requested_metrics=[],
+			requested_time_scope="as_of_today",
+			requested_presentation=["table_presentation"],
+			extracted_slots={},
+			ambiguity_flags=["ambiguous_business_object"],
+			ambiguity_reason="Supplier was requested but only customer directory was proposed.",
+			confidence=0.6,
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.interpret_fresh_query_semantically",
+			return_value=SemanticFreshQueryResult(
+				status="low_confidence",
+				interpretation=interpretation,
+				confidence_threshold=0.72,
+				validation_error="Semantic fresh-query interpretation fell below the governed confidence threshold.",
+				agent_meta={},
+			),
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-master-data",
+				user_id="Administrator",
+				site_name="test-site",
+				message="give me some supplier list",
+				recent_messages=[],
+			)
+		semantic_resolution_contract = (
+			pipeline.get("semantic_resolution_contract")
+			if isinstance(pipeline.get("semantic_resolution_contract"), dict)
+			else {}
+		)
+		compiler_payload = (
+			pipeline.get("fresh_query_compiler")
+			if isinstance(pipeline.get("fresh_query_compiler"), dict)
+			else {}
+		)
+		semantic_payload = (
+			pipeline.get("fresh_query_interpretation")
+			if isinstance(pipeline.get("fresh_query_interpretation"), dict)
+			else {}
+		)
+		semantic_interpretation = (
+			semantic_payload.get("interpretation")
+			if isinstance(semantic_payload.get("interpretation"), dict)
+			else {}
+		)
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("entity_grain"), "supplier")
+		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "clarify")
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("scope_id"), "supplier_master")
+		self.assertEqual(semantic_resolution_contract.get("scope_id"), "supplier_master")
+		self.assertEqual(semantic_resolution_contract.get("resolved_slots", {}).get("entity_grain"), "supplier")
+		self.assertEqual(compiler_payload.get("decision"), "clarify")
+		self.assertEqual(compiler_payload.get("clarification_reason_type"), "master_data_scope_unsupported")
+
+	def test_should_skip_artifact_boundary_when_boundary_requires_fresh_query(self):
+		self.assertTrue(
+			_should_skip_artifact_boundary(
+				scope_decision_contract=types.SimpleNamespace(
+					governed_scope_status="fresh_query_breakout",
+				)
+			)
+		)
+
+	def test_should_not_skip_artifact_boundary_when_boundary_stays_grounded(self):
+		self.assertFalse(
+			_should_skip_artifact_boundary(
+				scope_decision_contract=types.SimpleNamespace(
+					governed_scope_status="grounded_followup",
+				)
+			)
 		)
 
 	def test_assess_context_isolation_treats_repeated_self_contained_business_request_as_new_query(self):
@@ -3971,6 +4389,84 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(signal.user_question, "Which inventory summary focus do you want?")
 		self.assertEqual(signal.suggested_options, ["value snapshot", "current position"])
 
+	def test_transaction_listing_surface_unsupported_translation_stays_business_natural(self):
+		signal = _translate_compiler_signal(
+			request_id="transaction-listing-surface-unsupported-signal",
+			compiler_reason="Purchase invoice list is not active.",
+			compiler_reason_type="transaction_listing_surface_unsupported",
+			compiler_details={
+				"requested_listing_view": "purchase_invoice",
+				"supported_listing_views": ["sales_invoice", "delivery_note", "sales_order", "purchase_order", "payment_entry"],
+			},
+		)
+		self.assertEqual(
+			signal.user_question,
+			"I can't show purchase invoices as a list right now. I can show sales invoices, delivery notes, sales orders, purchase orders, or payment entries instead. Which one would you like?",
+		)
+		self.assertEqual(
+			signal.suggested_options,
+			["sales invoices", "delivery notes", "sales orders", "purchase orders", "payment entries"],
+		)
+
+	def test_clarification_reason_preserves_canonical_capability_candidates(self):
+		reason = build_clarification_reason_contract_from_sources(
+			request_id="clarification-payment-entry-identity",
+			compiler_reason="Need confirmation before running the listing.",
+			compiler_reason_type="capability_ambiguity",
+			compiler_details={
+				"capability_candidates": ["collections_read"],
+				"canonical_capability_candidates": ["payment_entry_read"],
+				"report_candidates": ["Payment Entry List"],
+				"scope_id": "payment_entry",
+			},
+		)
+		self.assertIsNotNone(reason)
+		payload = reason.to_payload()
+		self.assertEqual(payload.get("candidate_capability_ids"), ["collections_read"])
+		self.assertEqual(payload.get("canonical_candidate_capability_ids"), ["payment_entry_read"])
+
+	def test_translate_capability_ambiguity_signal_preserves_canonical_capability_candidates(self):
+		signal = _translate_compiler_signal(
+			request_id="clarification-signal-payment-entry-identity",
+			compiler_reason="Need confirmation before running the listing.",
+			compiler_reason_type="capability_ambiguity",
+			compiler_details={
+				"capability_candidates": ["collections_read"],
+				"canonical_capability_candidates": ["payment_entry_read"],
+				"report_candidates": ["Payment Entry List"],
+				"scope_id": "payment_entry",
+			},
+		)
+		payload = signal.to_payload()
+		self.assertEqual(payload.get("candidate_capability_ids"), ["collections_read"])
+		self.assertEqual(payload.get("canonical_candidate_capability_ids"), ["payment_entry_read"])
+
+	def test_master_data_scope_unsupported_translation_stays_plain_and_does_not_overpromise_detail_path(self):
+		signal = _translate_compiler_signal(
+			request_id="master-data-scope-unsupported-signal",
+			compiler_reason="Supplier directory is not active.",
+			compiler_reason_type="master_data_scope_unsupported",
+			compiler_details={
+				"requested_entity_grain": "supplier",
+				"supported_entity_grains": ["customer"],
+			},
+		)
+		self.assertEqual(
+			signal.user_question,
+			"I can list customers right now. I can't open a suppliers list yet.",
+		)
+		self.assertEqual(signal.suggested_options, ["customers"])
+
+	def test_entity_grain_display_label_uses_governed_registry(self):
+		self.assertEqual(entity_grain_display_label("customer"), "customer")
+		self.assertEqual(entity_grain_display_label("customer", plural=True), "customers")
+		self.assertEqual(entity_grain_display_label("supplier", plural=True), "suppliers")
+
+	def test_listing_view_display_label_uses_governed_scope_registry(self):
+		self.assertEqual(listing_view_display_label("payment_entry"), "payment entries")
+		self.assertEqual(listing_view_display_label("purchase_order"), "purchase orders")
+		self.assertEqual(listing_view_display_label("sales_invoice", lowercase=False), "Sales Invoices")
+
 	def test_financial_summary_clarifies_when_no_domain_is_resolved(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="semantic-fin-summary-no-domain",
@@ -4069,10 +4565,263 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.contract.governed_decision, "execute")
 		self.assertEqual(outcome.contract.resolved_slots.get("listing_view"), "sales_invoice")
 		self.assertEqual(outcome.contract.resolution_source.get("listing_view"), "metadata_default")
-		self.assertEqual(outcome.interpretation.candidate_capability_ids, ["sales_read"])
-		self.assertEqual(outcome.interpretation.candidate_reports, ["Sales Invoice List"])
+
+	def test_deterministic_family_surface_does_not_collapse_purchase_invoices_into_sales_invoices(self):
+		contract = _deterministic_family_surface_interpretation(
+			request_id="semantic-listing-purchase-fallback",
+			session_id="semantic-listing",
+			message="show me purchase invoices",
+			confidence_threshold=0.72,
+		)
+		self.assertIsNone(contract)
+
+	def test_transaction_listing_resolution_clarifies_unsupported_purchase_invoice_view(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-purchase-unsupported",
+			session_id="semantic-listing",
+			intent_class="transaction_listing",
+			candidate_capability_ids=["sales_read"],
+			candidate_reports=["Sales Invoice List"],
+			requested_dimensions=["Invoice"],
+			requested_metrics=["Grand Total"],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={"listing_view": "purchase_invoice"},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.9,
+		)
+		outcome = resolve_transaction_listing_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.governed_decision, "clarify")
+		self.assertEqual(outcome.clarification_reason_type, "transaction_listing_surface_unsupported")
+		self.assertTrue(outcome.blocks_legacy_fallback)
+		self.assertEqual(outcome.contract.resolved_slots.get("listing_view"), "purchase_invoice")
+		self.assertIn("unsupported", outcome.contract.ambiguity_reason.lower())
+		self.assertEqual(outcome.interpretation.candidate_reports, [])
+		self.assertEqual(outcome.interpretation.candidate_capability_ids, [])
 		self.assertEqual(outcome.interpretation.requested_dimensions, ["Invoice"])
 		self.assertEqual(outcome.interpretation.requested_metrics, ["Grand Total"])
+
+	def test_transaction_listing_resolution_executes_payment_entry_view(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-payment-entry",
+			session_id="semantic-listing",
+			intent_class="transaction_listing",
+			candidate_capability_ids=[],
+			candidate_reports=[],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={"listing_view": "payment_entry"},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.92,
+		)
+		outcome = resolve_transaction_listing_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.governed_decision, "execute")
+		self.assertEqual(outcome.contract.resolved_slots.get("listing_view"), "payment_entry")
+		self.assertEqual(outcome.contract.scope_id, "payment_entry")
+		self.assertEqual(outcome.interpretation.extracted_slots.get("scope_id"), "payment_entry")
+		self.assertEqual(list(outcome.interpretation.candidate_capability_ids), ["collections_read"])
+		self.assertEqual(list(outcome.interpretation.canonical_candidate_capability_ids), ["payment_entry_read"])
+		self.assertEqual(list(outcome.contract.canonical_candidate_capability_ids), ["payment_entry_read"])
+		self.assertEqual(list(outcome.interpretation.candidate_reports), ["Payment Entry List"])
+		self.assertEqual(list(outcome.interpretation.requested_dimensions), ["Payment Entry", "Customer"])
+		self.assertEqual(list(outcome.interpretation.requested_metrics), ["Received Amount"])
+
+	def test_compile_from_fresh_query_message_reconciles_explicit_purchase_invoice_view(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation",
+			return_value={
+				"ok": True,
+				"interpretation": {
+					"intent_class": "transaction_listing",
+					"candidate_capability_ids": ["sales_read"],
+					"candidate_reports": ["Sales Invoice List"],
+					"requested_dimensions": ["Invoice"],
+					"requested_metrics": ["Grand Total"],
+					"requested_time_scope": "as_of_today",
+					"requested_presentation": ["table_presentation"],
+					"extracted_slots": {},
+					"ambiguity_flags": [],
+					"ambiguity_reason": "",
+					"confidence": 1.0,
+				},
+				"agent_meta": {},
+			},
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-listing-purchase-runtime",
+				user_id="Administrator",
+				site_name="test-site",
+				message="show me purchase invoices",
+				recent_messages=[],
+			)
+		semantic_payload = pipeline.get("fresh_query_interpretation") if isinstance(pipeline.get("fresh_query_interpretation"), dict) else {}
+		semantic_interpretation = semantic_payload.get("interpretation") if isinstance(semantic_payload.get("interpretation"), dict) else {}
+		semantic_resolution_contract = pipeline.get("semantic_resolution_contract") if isinstance(pipeline.get("semantic_resolution_contract"), dict) else {}
+		compiler_payload = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("listing_view"), "purchase_invoice")
+		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "clarify")
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("scope_id"), "purchase_invoice")
+		self.assertEqual(semantic_resolution_contract.get("scope_id"), "purchase_invoice")
+		self.assertEqual(semantic_resolution_contract.get("resolved_slots", {}).get("listing_view"), "purchase_invoice")
+		self.assertEqual(compiler_payload.get("decision"), "clarify")
+		self.assertEqual(compiler_payload.get("clarification_reason_type"), "transaction_listing_surface_unsupported")
+
+	def test_compile_from_fresh_query_message_preserves_explicit_today_for_payment_entry_listing(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation",
+			return_value={
+				"ok": True,
+				"interpretation": {
+					"intent_class": "transaction_listing",
+					"candidate_capability_ids": [],
+					"candidate_reports": [],
+					"requested_dimensions": [],
+					"requested_metrics": [],
+					"requested_time_scope": "as_of_today",
+					"requested_presentation": ["table_presentation"],
+					"extracted_slots": {
+						"report_date": "2026-04-14"
+					},
+					"ambiguity_flags": [],
+					"ambiguity_reason": "",
+					"confidence": 1.0,
+				},
+				"agent_meta": {},
+			},
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-listing-payment-entry-explicit-today",
+				user_id="Administrator",
+				site_name="test-site",
+				message="show me payment entries today",
+				recent_messages=[],
+			)
+		semantic_payload = pipeline.get("fresh_query_interpretation") if isinstance(pipeline.get("fresh_query_interpretation"), dict) else {}
+		semantic_interpretation = semantic_payload.get("interpretation") if isinstance(semantic_payload.get("interpretation"), dict) else {}
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("listing_view"), "payment_entry")
+		self.assertEqual(semantic_interpretation.get("requested_time_scope"), "as_of_today")
+
+	def test_compile_from_fresh_query_message_resolves_payment_entry_listing(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation",
+			return_value={
+				"ok": True,
+				"interpretation": {
+					"intent_class": "transaction_listing",
+					"candidate_capability_ids": [],
+					"candidate_reports": [],
+					"requested_dimensions": [],
+					"requested_metrics": [],
+					"requested_time_scope": "as_of_today",
+					"requested_presentation": ["table_presentation"],
+					"extracted_slots": {},
+					"ambiguity_flags": [],
+					"ambiguity_reason": "",
+					"confidence": 1.0,
+				},
+				"agent_meta": {},
+			},
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-listing-payment-entry-runtime",
+				user_id="Administrator",
+				site_name="test-site",
+				message="show me payment entries",
+				recent_messages=[],
+			)
+		semantic_payload = pipeline.get("fresh_query_interpretation") if isinstance(pipeline.get("fresh_query_interpretation"), dict) else {}
+		semantic_interpretation = semantic_payload.get("interpretation") if isinstance(semantic_payload.get("interpretation"), dict) else {}
+		semantic_resolution_contract = pipeline.get("semantic_resolution_contract") if isinstance(pipeline.get("semantic_resolution_contract"), dict) else {}
+		compiler_payload = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+		compiled_request_payload = pipeline.get("compiled_query_request") if isinstance(pipeline.get("compiled_query_request"), dict) else {}
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("listing_view"), "payment_entry")
+		self.assertEqual(semantic_interpretation.get("requested_time_scope"), "")
+		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "execute")
+		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("scope_id"), "payment_entry")
+		self.assertEqual(semantic_resolution_contract.get("scope_id"), "payment_entry")
+		self.assertEqual(semantic_resolution_contract.get("resolved_slots", {}).get("listing_view"), "payment_entry")
+		self.assertEqual(semantic_interpretation.get("canonical_candidate_capability_ids"), ["payment_entry_read"])
+		self.assertEqual(semantic_resolution_contract.get("canonical_candidate_capability_ids"), ["payment_entry_read"])
+		self.assertEqual(compiler_payload.get("selected_report"), "Payment Entry List")
+		self.assertEqual(compiler_payload.get("capability_id"), "collections_read")
+		self.assertEqual(compiler_payload.get("canonical_capability_id"), "payment_entry_read")
+		self.assertEqual(compiled_request_payload.get("canonical_capability_id"), "payment_entry_read")
+
+	def test_compile_from_fresh_query_message_normalizes_payment_entry_default_metric_bundle(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation",
+			return_value={
+				"ok": True,
+				"interpretation": {
+					"intent_class": "transaction_listing",
+					"candidate_capability_ids": ["collections_read"],
+					"candidate_reports": ["Payment Entry List"],
+					"requested_dimensions": ["Payment Entry", "Posting Date", "Customer"],
+					"requested_metrics": ["Total Allocated Amount", "Received Amount"],
+					"requested_time_scope": "",
+					"requested_presentation": ["table_presentation"],
+					"extracted_slots": {"listing_view": "payment_entry"},
+					"ambiguity_flags": [],
+					"ambiguity_reason": "",
+					"confidence": 1.0,
+				},
+				"agent_meta": {},
+			},
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-listing-payment-entry-default-metric-bundle",
+				user_id="Administrator",
+				site_name="test-site",
+				message="show me payment entries",
+				recent_messages=[],
+			)
+		semantic_payload = pipeline.get("fresh_query_interpretation") if isinstance(pipeline.get("fresh_query_interpretation"), dict) else {}
+		semantic_interpretation = semantic_payload.get("interpretation") if isinstance(semantic_payload.get("interpretation"), dict) else {}
+		compiler_payload = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+		self.assertEqual(semantic_interpretation.get("requested_metrics"), ["Received Amount"])
+		self.assertEqual(compiler_payload.get("requested_metrics"), ["Received Amount"])
+		self.assertEqual(compiler_payload.get("selected_report"), "Payment Entry List")
+
+	def test_compile_from_fresh_query_message_preserves_explicit_payment_entry_metric(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation",
+			return_value={
+				"ok": True,
+				"interpretation": {
+					"intent_class": "transaction_listing",
+					"candidate_capability_ids": ["collections_read"],
+					"candidate_reports": ["Payment Entry List"],
+					"requested_dimensions": ["Payment Entry", "Posting Date", "Customer"],
+					"requested_metrics": ["Total Allocated Amount", "Received Amount"],
+					"requested_time_scope": "",
+					"requested_presentation": ["table_presentation"],
+					"extracted_slots": {"listing_view": "payment_entry"},
+					"ambiguity_flags": [],
+					"ambiguity_reason": "",
+					"confidence": 1.0,
+				},
+				"agent_meta": {},
+			},
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-listing-payment-entry-explicit-metric",
+				user_id="Administrator",
+				site_name="test-site",
+				message="show me payment entries by total allocated amount",
+				recent_messages=[],
+			)
+		semantic_payload = pipeline.get("fresh_query_interpretation") if isinstance(pipeline.get("fresh_query_interpretation"), dict) else {}
+		semantic_interpretation = semantic_payload.get("interpretation") if isinstance(semantic_payload.get("interpretation"), dict) else {}
+		compiler_payload = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
+		self.assertEqual(semantic_interpretation.get("requested_metrics"), ["Total Allocated Amount"])
+		self.assertEqual(compiler_payload.get("requested_metrics"), ["Total Allocated Amount"])
+		self.assertEqual(compiler_payload.get("selected_report"), "Payment Entry List")
 
 	def test_transaction_listing_resolution_preserves_explicit_sales_invoice_report(self):
 		interpretation = build_fresh_query_interpretation_contract(
@@ -4162,6 +4911,34 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				]
 				break
 		self.assertIn("last_year", time_scope_values)
+
+	def test_semantic_resolution_registry_time_scope_admits_open_fiscal_year_to_date(self):
+		registry = load_semantic_resolution_registry()
+		slot_definitions = registry.get("slot_definitions") if isinstance(registry.get("slot_definitions"), list) else []
+		time_scope_values = []
+		for item in slot_definitions:
+			if not isinstance(item, dict):
+				continue
+			if str(item.get("slot_name") or "").strip() == "time_scope":
+				time_scope_values = [
+					str(value or "").strip()
+					for value in (item.get("allowed_values") or [])
+					if str(value or "").strip()
+				]
+				break
+		self.assertIn("open_fiscal_year_to_date", time_scope_values)
+
+	def test_financial_statement_defaults_use_open_fiscal_year_to_date(self):
+		statement_defaults = capability_fresh_query_defaults(
+			"financial_statement_read",
+			intent_class="financial_statement",
+		)
+		summary_defaults = capability_fresh_query_defaults(
+			"financial_statement_read",
+			intent_class="financial_summary",
+		)
+		self.assertEqual(statement_defaults.get("default_time_scope"), "open_fiscal_year_to_date")
+		self.assertEqual(summary_defaults.get("default_time_scope"), "open_fiscal_year_to_date")
 
 	def test_trend_analytics_family_admits_delivery_note_trends_and_fulfillment_capability(self):
 		spec = get_report_family_spec("trend_analytics")
@@ -4484,6 +5261,64 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			).get("governed_decision"),
 			"execute",
 		)
+
+	@patch("ai_assistant_ui.qwen_chat.compiler._today_date", return_value=__import__("datetime").date(2026, 4, 16))
+	@patch("ai_assistant_ui.qwen_chat.compiler._today_iso", return_value="2026-04-16")
+	def test_compiler_uses_last_closed_period_for_profit_and_loss_defaults(self, _mock_today_iso, _mock_today_date):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-financial-open-period-pnl",
+			session_id="semantic-financial",
+			intent_class="financial_statement",
+			candidate_capability_ids=["financial_statement_read"],
+			candidate_reports=["Profit and Loss Statement"],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="open_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.95,
+		)
+		outcome = compile_fresh_query(
+			request_id="semantic-financial-open-period-pnl",
+			session_id="semantic-financial",
+			interpretation=interpretation,
+			response_policy={},
+		)
+		self.assertEqual(outcome.compiler_contract.decision, "execute")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("period_start_date"), "2025-04-01")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("period_end_date"), "2026-04-16")
+
+	@patch("ai_assistant_ui.qwen_chat.compiler._today_date", return_value=__import__("datetime").date(2026, 4, 16))
+	@patch("ai_assistant_ui.qwen_chat.compiler._today_iso", return_value="2026-04-16")
+	def test_compiler_uses_cross_fiscal_year_bounds_for_cash_flow_open_period(self, _mock_today_iso, _mock_today_date):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-financial-open-period-cash-flow",
+			session_id="semantic-financial",
+			intent_class="financial_statement",
+			candidate_capability_ids=["financial_statement_read"],
+			candidate_reports=["Cash Flow"],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="open_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.95,
+		)
+		outcome = compile_fresh_query(
+			request_id="semantic-financial-open-period-cash-flow",
+			session_id="semantic-financial",
+			interpretation=interpretation,
+			response_policy={},
+		)
+		self.assertEqual(outcome.compiler_contract.decision, "execute")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("from_fiscal_year"), "FY-2026")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("to_fiscal_year"), "FY-2027")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("period_start_date"), "2025-04-01")
+		self.assertEqual(outcome.compiler_contract.completed_filters.get("period_end_date"), "2026-04-16")
 
 	def test_inventory_summary_resolution_executes_warehouse_report(self):
 		interpretation = build_fresh_query_interpretation_contract(
@@ -6095,6 +6930,317 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			["posting_date", "customer", "outstanding_amount"],
 		)
 
+	def test_transaction_listing_family_adapter_uses_payment_entry_primary_metric(self):
+		compiler_contract = {
+			"request_id": "adapter-payment-entry-1",
+			"capability_id": "collections_read",
+			"selected_report": "Payment Entry List",
+			"requested_dimensions": ["Posting Date", "Customer"],
+			"requested_metrics": ["Received Amount"],
+			"requested_time_scope": "",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Payment Entry List",
+						"filters": {"company": "Enterprise Co"},
+					},
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"name": "ACC-PAY-0001",
+									"posting_date": "2026-04-15",
+									"party": "Sunflower Accessories Co.",
+									"party_type": "Supplier",
+									"received_amount": 1500000,
+									"total_allocated_amount": 1500000,
+									"paid_amount": 1500000,
+									"docstatus": 1,
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-payment-entry-1",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertIsNotNone(outcome.artifact_contract)
+		dimensions = dict(outcome.artifact_contract.dimensions)
+		metrics = dict(outcome.artifact_contract.metrics)
+		summary = list((outcome.artifact_contract.sections or {}).get("summary") or [])
+		self.assertEqual(dimensions.get("primary_metric_key"), "received_amount")
+		self.assertEqual(dimensions.get("primary_metric_label"), "Received Amount")
+		self.assertEqual(dimensions.get("requested_columns"), ["posting_date", "customer", "received_amount"])
+		self.assertEqual(metrics.get("total_amount"), 1500000.0)
+		self.assertTrue(any(str(item.get("label") or "").strip() == "Total Received Amount" for item in summary))
+
+	def test_transaction_listing_family_adapter_uses_metadata_default_metric_for_payment_entries(self):
+		compiler_contract = {
+			"request_id": "adapter-payment-entry-default-1",
+			"selected_report": "Payment Entry List",
+			"requested_dimensions": [],
+			"requested_metrics": [],
+			"requested_time_scope": "",
+		}
+		runtime_payload = {
+			"tool_trace": [
+				{
+					"tool": "erp_fac-generate_report",
+					"detail_obj": {
+						"report_name": "Payment Entry List",
+						"filters": {"company": "Enterprise Co"},
+					},
+					"output_obj": {
+						"result": {
+							"data": [
+								{
+									"name": "ACC-PAY-0001",
+									"posting_date": "2026-04-15",
+									"party": "Sunflower Accessories Co.",
+									"party_type": "Supplier",
+									"received_amount": 2000000,
+									"total_allocated_amount": 3500000,
+									"paid_amount": 3500000,
+									"docstatus": 1,
+								}
+							]
+						}
+					},
+				}
+			]
+		}
+		outcome = build_normalized_family_artifact(
+			request_id="adapter-payment-entry-default-1",
+			compiler_contract=compiler_contract,
+			runtime_payload=runtime_payload,
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertIsNotNone(outcome.artifact_contract)
+		dimensions = dict(outcome.artifact_contract.dimensions)
+		metrics = dict(outcome.artifact_contract.metrics)
+		summary = list((outcome.artifact_contract.sections or {}).get("summary") or [])
+		self.assertEqual(dimensions.get("primary_metric_key"), "received_amount")
+		self.assertEqual(dimensions.get("primary_metric_label"), "Received Amount")
+		self.assertEqual(dimensions.get("requested_columns"), ["received_amount"])
+		self.assertEqual(metrics.get("total_amount"), 2000000.0)
+		self.assertTrue(any(str(item.get("label") or "").strip() == "Total Received Amount" for item in summary))
+
+
+	def test_transaction_listing_renderer_uses_payment_entry_primary_metric_label(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-payment-entry-2",
+			compiler_contract={
+				"request_id": "adapter-payment-entry-2",
+				"capability_id": "collections_read",
+				"selected_report": "Payment Entry List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Received Amount"],
+				"requested_time_scope": "",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Payment Entry List",
+							"filters": {"company": "Enterprise Co"},
+						},
+						"output_obj": {
+							"result": {
+								"data": [
+									{
+										"name": "ACC-PAY-0001",
+										"posting_date": "2026-04-15",
+										"party": "Sunflower Accessories Co.",
+										"party_type": "Supplier",
+										"received_amount": 1500000,
+										"total_allocated_amount": 1500000,
+										"paid_amount": 1500000,
+										"docstatus": 1,
+									}
+								]
+							}
+						},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="adapter-payment-entry-2",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		blocks = list((rendered.contract.to_payload() if rendered.contract is not None else {}).get("blocks") or [])
+		summary_block = next((block for block in blocks if isinstance(block, dict) and str(block.get("title") or "").strip() == "Summary"), {})
+		documents_block = next((block for block in blocks if isinstance(block, dict) and str(block.get("title") or "").strip() == "Documents"), {})
+		self.assertIn(["Total Received Amount", "1,500,000"], list(summary_block.get("rows") or []))
+		self.assertIn("Received Amount", list(documents_block.get("columns") or []))
+
+	def test_transaction_listing_renderer_avoids_duplicate_total_metric_label(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-payment-entry-2b",
+			compiler_contract={
+				"request_id": "adapter-payment-entry-2b",
+				"capability_id": "collections_read",
+				"selected_report": "Payment Entry List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Total Allocated Amount"],
+				"requested_time_scope": "",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Payment Entry List",
+							"filters": {"company": "Enterprise Co"},
+						},
+						"output_obj": {
+							"result": {
+								"data": [
+									{
+										"name": "ACC-PAY-0001",
+										"posting_date": "2026-04-15",
+										"party": "Sunflower Accessories Co.",
+										"party_type": "Supplier",
+										"received_amount": 1500000,
+										"total_allocated_amount": 1500000,
+										"paid_amount": 1500000,
+										"docstatus": 1,
+									}
+								]
+							}
+						},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="adapter-payment-entry-2b",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		blocks = list((rendered.contract.to_payload() if rendered.contract is not None else {}).get("blocks") or [])
+		summary_block = next((block for block in blocks if isinstance(block, dict) and str(block.get("title") or "").strip() == "Summary"), {})
+		self.assertIn(["Total Allocated Amount", "1,500,000"], list(summary_block.get("rows") or []))
+		self.assertNotIn(["Total Total Allocated Amount", "1,500,000"], list(summary_block.get("rows") or []))
+
+	def test_transaction_listing_renderer_pluralizes_document_title(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-payment-entry-title-1",
+			compiler_contract={
+				"request_id": "adapter-payment-entry-title-1",
+				"capability_id": "collections_read",
+				"selected_report": "Payment Entry List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Total Allocated Amount"],
+				"requested_time_scope": "",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Payment Entry List",
+							"filters": {"company": "Enterprise Co"},
+						},
+						"output_obj": {
+							"result": {
+								"data": [
+									{
+										"name": "ACC-PAY-0001",
+										"posting_date": "2026-04-15",
+										"party": "Sunflower Accessories Co.",
+										"party_type": "Supplier",
+										"total_allocated_amount": 1500000,
+										"docstatus": 1,
+									},
+									{
+										"name": "ACC-PAY-0002",
+										"posting_date": "2026-04-16",
+										"party": "Golden Dragon Trading Co. Ltd.",
+										"party_type": "Supplier",
+										"total_allocated_amount": 500000,
+										"docstatus": 1,
+									}
+								]
+							}
+						},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="adapter-payment-entry-title-1",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		self.assertEqual(str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("title") or ""), "Last 2 Payment Entries")
+
+	def test_transaction_listing_renderer_keeps_singular_document_title(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="adapter-sales-invoice-title-1",
+			compiler_contract={
+				"request_id": "adapter-sales-invoice-title-1",
+				"capability_id": "sales_invoice_read",
+				"selected_report": "Sales Invoice List",
+				"requested_dimensions": ["Posting Date", "Customer"],
+				"requested_metrics": ["Grand Total"],
+				"requested_time_scope": "today",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Sales Invoice List",
+							"filters": {"company": "Enterprise Co", "from_date": "2026-04-15", "to_date": "2026-04-15"},
+						},
+						"output_obj": {
+							"result": {
+								"data": [
+									{
+										"name": "ACC-SINV-0001",
+										"posting_date": "2026-04-15",
+										"customer": "35th Street Mobile Wholesale",
+										"grand_total": 300000,
+										"outstanding_amount": 0,
+										"docstatus": 1,
+									}
+								],
+							}
+						},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="adapter-sales-invoice-title-1",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		self.assertEqual(str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("title") or ""), "Last 1 Sales Invoice (2026-04-15 to 2026-04-15)")
+
 	def test_transaction_listing_family_adapter_generalizes_delivery_note_list(self):
 		compiler_contract = {
 			"request_id": "adapter-structured-2b",
@@ -6521,7 +7667,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		self.assertEqual(rendered.status, "rendered")
 		answer_text = str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("answer_text") or "")
-		self.assertIn("No matching governed documents were found for the current filters.", answer_text)
+		self.assertIn("No documents matched these filters.", answer_text)
 
 	def test_transaction_listing_renderer_preserves_zero_summary_values(self):
 		artifact_contract = build_normalized_family_artifact(

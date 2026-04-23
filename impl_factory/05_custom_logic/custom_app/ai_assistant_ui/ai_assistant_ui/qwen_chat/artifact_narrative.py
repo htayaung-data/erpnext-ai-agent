@@ -113,6 +113,19 @@ def _artifact_narrative_system_prompt(
 		rules.append(
 			"Do not recommend actions, escalation, collections strategy, policy changes, or management decisions."
 		)
+	if family_id == "financial_statement":
+		rules.append(
+			"For financial statements, keep the answer factual unless the response policy explicitly allows analysis."
+		)
+		rules.append(
+			"Use the exact amounts and units already shown in the governed support blocks."
+		)
+		rules.append(
+			"Do not rescale full MMK amounts into abbreviated MMK, MMK million, or rounded shorthand unless that unit is already present in the support blocks or the user explicitly asked for it."
+		)
+		rules.append(
+			"Do not add a 'Business implication' section or interpretive commentary unless the response policy explicitly allows implications."
+		)
 	if family_id == "aging":
 		rules.append(
 			"For aging and customer credit exposure artifacts, describe overdue, current, due, and negative balances only as reported facts or explicit derived percentages."

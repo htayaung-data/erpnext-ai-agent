@@ -1,0 +1,258 @@
+{
+  "contract_version": "1.0",
+  "description": "Canonical governed scope inventory for Phase A governed scope activation and cross-family alignment.",
+  "allowed_scope_classes": [
+    "master_data",
+    "document",
+    "financial_operation"
+  ],
+  "allowed_statuses": [
+    "active",
+    "partial",
+    "deferred"
+  ],
+  "allowed_support_states": [
+    "active_reference",
+    "active_broad",
+    "contract_ready_policy_inactive",
+    "contract_ready_ownership_sensitive",
+    "runtime_real_listing_restricted",
+    "runtime_real_frontdoor_inactive"
+  ],
+  "allowed_source_kinds": [
+    "report",
+    "specialized_runtime",
+    "pending"
+  ],
+  "allowed_authority_statuses": [
+    "approved",
+    "restricted",
+    "frontdoor_inactive",
+    "pending"
+  ],
+  "scopes": [
+    {
+      "scope_id": "customer_master",
+      "scope_label": "Customer Master",
+      "scope_class": "master_data",
+      "status": "active",
+      "primary_owner_family": "master_data_lookup",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Customer Master List",
+        "capability_id": "customer_master_read",
+        "notes": "Approved direct-query directory for customer discovery and customer-target resolution."
+      },
+      "canonical_grains": [
+        "customer"
+      ],
+      "canonical_alias_groups": [
+        "customer",
+        "customer_master",
+        "customer_directory"
+      ],
+      "support_state": "active_reference",
+      "notes": "Reference active master-data scope with shared lookup, detail continuation, and follow-up support."
+    },
+    {
+      "scope_id": "supplier_master",
+      "scope_label": "Supplier Master",
+      "scope_class": "master_data",
+      "status": "active",
+      "primary_owner_family": "master_data_lookup",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Supplier Master List",
+        "capability_id": "supplier_master_read",
+        "notes": "Approved direct-query directory for supplier discovery and supplier-target resolution."
+      },
+      "canonical_grains": [
+        "supplier"
+      ],
+      "canonical_alias_groups": [
+        "supplier",
+        "vendor",
+        "supplier_master"
+      ],
+      "support_state": "active_reference",
+      "notes": "Active master-data scope with shared lookup, detail continuation, and follow-up support."
+    },
+    {
+      "scope_id": "item_master",
+      "scope_label": "Item Master",
+      "scope_class": "master_data",
+      "status": "active",
+      "primary_owner_family": "master_data_lookup",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Item Master List",
+        "capability_id": "item_master_read",
+        "notes": "Approved direct-query directory for item and product discovery through the shared master-data lookup family."
+      },
+      "canonical_grains": [
+        "item"
+      ],
+      "canonical_alias_groups": [
+        "item",
+        "product",
+        "item_master",
+        "product_master"
+      ],
+      "support_state": "active_reference",
+      "notes": "Active item/product master-data scope with shared lookup, detail continuation, and follow-up support."
+    },
+    {
+      "scope_id": "sales_invoice",
+      "scope_label": "Sales Invoice",
+      "scope_class": "document",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Sales Invoice List",
+        "capability_id": "sales_read",
+        "notes": "Approved shared transaction-listing route for sales invoice reads."
+      },
+      "canonical_grains": [
+        "sales_invoice",
+        "customer"
+      ],
+      "canonical_alias_groups": [
+        "sales_invoice",
+        "invoice",
+        "customer_invoice"
+      ],
+      "support_state": "active_broad",
+      "notes": "Broadly routed document scope with shared listing, detail, and follow-up compatibility."
+    },
+    {
+      "scope_id": "purchase_invoice",
+      "scope_label": "Purchase Invoice",
+      "scope_class": "document",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Purchase Invoice List",
+        "capability_id": "purchase_invoice_read",
+        "notes": "Approved shared transaction-listing route for purchase-invoice reads."
+      },
+      "canonical_grains": [
+        "purchase_invoice",
+        "supplier"
+      ],
+      "canonical_alias_groups": [
+        "purchase_invoice",
+        "supplier_invoice",
+        "ap_invoice"
+      ],
+      "support_state": "active_broad",
+      "notes": "Shared document scope with active listing, detail, and follow-up support."
+    },
+    {
+      "scope_id": "delivery_note",
+      "scope_label": "Delivery Note",
+      "scope_class": "document",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Delivery Note List",
+        "capability_id": "fulfillment_read",
+        "notes": "Approved shared transaction-listing route for delivery-note reads."
+      },
+      "canonical_grains": [
+        "delivery_note",
+        "customer"
+      ],
+      "canonical_alias_groups": [
+        "delivery_note",
+        "delivery",
+        "shipment_note"
+      ],
+      "support_state": "active_broad",
+      "notes": "Shared document scope with listing and direct detail support."
+    },
+    {
+      "scope_id": "sales_order",
+      "scope_label": "Sales Order",
+      "scope_class": "document",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Sales Order List",
+        "capability_id": "sales_order_read",
+        "notes": "Approved shared transaction-listing route for sales-order reads."
+      },
+      "canonical_grains": [
+        "sales_order",
+        "customer"
+      ],
+      "canonical_alias_groups": [
+        "sales_order",
+        "order",
+        "customer_order"
+      ],
+      "support_state": "active_broad",
+      "notes": "Shared document scope with active listing, detail, and follow-up behavior."
+    },
+    {
+      "scope_id": "purchase_order",
+      "scope_label": "Purchase Order",
+      "scope_class": "document",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Purchase Order List",
+        "capability_id": "purchase_order_read",
+        "notes": "Approved shared transaction-listing route for purchase-order reads."
+      },
+      "canonical_grains": [
+        "purchase_order",
+        "supplier"
+      ],
+      "canonical_alias_groups": [
+        "purchase_order",
+        "po",
+        "supplier_order"
+      ],
+      "support_state": "active_broad",
+      "notes": "Shared document scope with active listing and detail support."
+    },
+    {
+      "scope_id": "payment_entry",
+      "scope_label": "Payment Entry",
+      "scope_class": "financial_operation",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Payment Entry List",
+        "capability_id": "collections_read",
+        "notes": "Shared transaction-listing activation is approved through Payment Entry List."
+      },
+      "canonical_grains": [
+        "payment_entry"
+      ],
+      "canonical_alias_groups": [
+        "payment_entry",
+        "receipt",
+        "payment",
+        "collection"
+      ],
+      "support_state": "active_broad",
+      "notes": "Active report-backed scope with approved shared transaction-listing activation."
+    }
+  ]
+}

@@ -26,7 +26,7 @@
         },
         {
           "fieldname": "from_date",
-          "strategy": "fiscal_year_start_date"
+          "strategy": "open_fiscal_year_start_date"
         },
         {
           "fieldname": "to_date",
@@ -97,15 +97,16 @@
       ],
       "grounding_mode": "direct_query",
       "direct_query": {
-        "doctype": "Sales Invoice",
-        "fields": [
-          "name",
-          "posting_date",
-          "customer",
-          "grand_total",
-          "outstanding_amount",
-          "status",
-          "docstatus"
+      "doctype": "Sales Invoice",
+      "fields": [
+        "name",
+        "posting_date",
+        "customer",
+        "grand_total",
+        "total_qty",
+        "outstanding_amount",
+        "status",
+        "docstatus"
         ],
         "order_by": "posting_date desc, modified desc",
         "fixed_filters": {
@@ -116,6 +117,18 @@
         ],
         "date_field": "posting_date",
         "default_limit": 10
+      },
+      "governed_period_grouping": {
+        "entity_grain": "customer",
+        "entity_key_fields": [
+          "customer"
+        ],
+        "entity_label_fields": [
+          "customer"
+        ],
+        "document_key_field": "name",
+        "revenue_field": "grand_total",
+        "quantity_field": "total_qty"
       },
       "validation_profile": "report_grounded_read",
       "required_filters": [
@@ -141,8 +154,92 @@
         "Customer",
         "Posting Date"
       ],
+    "supported_metrics": [
+      "Grand Total",
+      "Quantity",
+      "Outstanding Amount"
+    ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
+      "report_name": "Purchase Invoice List",
+      "module": "Accounts",
+      "family": "purchase_invoice_list",
+      "capability_ids": [
+        "purchase_invoice_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Purchase Invoice",
+        "fields": [
+          "name",
+          "posting_date",
+          "supplier",
+          "status",
+          "company",
+          "grand_total",
+          "total_qty",
+          "outstanding_amount",
+          "docstatus"
+        ],
+        "order_by": "posting_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "filterable_fields": [
+          "status"
+        ],
+        "date_field": "posting_date",
+        "default_limit": 10
+      },
+      "governed_period_grouping": {
+        "entity_grain": "supplier",
+        "entity_key_fields": [
+          "supplier"
+        ],
+        "entity_label_fields": [
+          "supplier"
+        ],
+        "document_key_field": "name",
+        "revenue_field": "grand_total",
+        "quantity_field": "total_qty"
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "purchase",
+        "invoice",
+        "transaction",
+        "document",
+        "payable"
+      ],
+      "supported_dimensions": [
+        "Purchase Invoice",
+        "Supplier",
+        "Posting Date",
+        "Status"
+      ],
       "supported_metrics": [
         "Grand Total",
+        "Quantity",
         "Outstanding Amount"
       ],
       "approved_follow_up_modes": [
@@ -300,6 +397,18 @@
         "date_field": "transaction_date",
         "default_limit": 10
       },
+      "governed_period_grouping": {
+        "entity_grain": "customer",
+        "entity_key_fields": [
+          "customer"
+        ],
+        "entity_label_fields": [
+          "customer"
+        ],
+        "document_key_field": "name",
+        "revenue_field": "grand_total",
+        "quantity_field": "total_qty"
+      },
       "validation_profile": "report_grounded_read",
       "required_filters": [
         "company"
@@ -340,9 +449,155 @@
       "chartable_fields": []
     },
     {
+      "report_name": "Sales Order Item List",
+      "module": "Selling",
+      "family": "sales_order_item_list",
+      "capability_ids": [
+        "sales_order_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Sales Order Item",
+        "fields": [
+          "parent",
+          "item_code",
+          "item_name",
+          "qty",
+          "amount"
+        ],
+        "order_by": "modified desc",
+        "parent_join": {
+          "doctype": "Sales Order",
+          "child_link_field": "parent",
+          "date_field": "transaction_date",
+          "company_field": "company",
+          "fixed_filters": {
+            "docstatus": 1
+          }
+        },
+        "default_limit": 10
+      },
+      "governed_period_grouping": {
+        "entity_grain": "item",
+        "entity_key_fields": [
+          "item_code"
+        ],
+        "entity_label_fields": [
+          "item_name",
+          "item_code"
+        ],
+        "entity_code_field": "item_code",
+        "document_key_field": "parent",
+        "revenue_field": "amount",
+        "quantity_field": "qty"
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "sales",
+        "order",
+        "item",
+        "product"
+      ],
+      "supported_dimensions": [
+        "Item",
+        "Sales Order",
+        "Transaction Date"
+      ],
+      "supported_metrics": [
+        "Amount",
+        "Quantity"
+      ],
+      "approved_follow_up_modes": [],
+      "chartable_fields": []
+    },
+    {
+      "report_name": "Sales Invoice Item List",
+      "module": "Selling",
+      "family": "sales_invoice_item_list",
+      "capability_ids": [
+        "sales_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Sales Invoice Item",
+        "fields": [
+          "parent",
+          "item_code",
+          "item_name",
+          "qty",
+          "amount"
+        ],
+        "order_by": "modified desc",
+        "parent_join": {
+          "doctype": "Sales Invoice",
+          "child_link_field": "parent",
+          "date_field": "posting_date",
+          "company_field": "company",
+          "fixed_filters": {
+            "docstatus": 1
+          }
+        },
+        "default_limit": 10
+      },
+      "governed_period_grouping": {
+        "entity_grain": "item",
+        "entity_key_fields": [
+          "item_code"
+        ],
+        "entity_label_fields": [
+          "item_name",
+          "item_code"
+        ],
+        "entity_code_field": "item_code",
+        "document_key_field": "parent",
+        "revenue_field": "amount",
+        "quantity_field": "qty"
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [],
+      "semantic_tags": [
+        "sales",
+        "invoice",
+        "item",
+        "product"
+      ],
+      "supported_dimensions": [
+        "Item",
+        "Sales Invoice",
+        "Posting Date"
+      ],
+      "supported_metrics": [
+        "Amount",
+        "Quantity"
+      ],
+      "approved_follow_up_modes": [],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Customer Master List",
       "module": "Selling",
-      "family": "customer_master_list",
+      "family": "master_data_directory",
       "capability_ids": [
         "customer_master_read"
       ],
@@ -363,6 +618,8 @@
         ],
         "order_by": "creation desc, modified desc",
         "filterable_fields": [
+          "name",
+          "customer_name",
           "customer_group",
           "territory",
           "disabled",
@@ -374,7 +631,9 @@
       "validation_profile": "report_grounded_read",
       "required_filters": [],
       "defaultable_filters": [],
-      "supported_intent_classes": [],
+      "supported_intent_classes": [
+        "master_data_lookup"
+      ],
       "semantic_tags": [
         "customer",
         "master_data",
@@ -385,6 +644,127 @@
         "Creation",
         "Territory",
         "Customer Group"
+      ],
+      "supported_metrics": [],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
+      "report_name": "Supplier Master List",
+      "module": "Buying",
+      "family": "master_data_directory",
+      "capability_ids": [
+        "supplier_master_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Supplier",
+        "fields": [
+          "name",
+          "supplier_name",
+          "creation",
+          "modified",
+          "supplier_group",
+          "country",
+          "default_price_list",
+          "payment_terms",
+          "disabled",
+          "is_frozen"
+        ],
+        "order_by": "creation desc, modified desc",
+        "filterable_fields": [
+          "name",
+          "supplier_name",
+          "supplier_group",
+          "country",
+          "disabled",
+          "is_frozen"
+        ],
+        "date_field": "creation",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [],
+      "defaultable_filters": [],
+      "supported_intent_classes": [
+        "master_data_lookup"
+      ],
+      "semantic_tags": [
+        "supplier",
+        "master_data",
+        "directory"
+      ],
+      "supported_dimensions": [
+        "Supplier",
+        "Creation",
+        "Country",
+        "Supplier Group"
+      ],
+      "supported_metrics": [],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
+      "report_name": "Item Master List",
+      "module": "Stock",
+      "family": "master_data_directory",
+      "capability_ids": [
+        "item_master_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Item",
+        "fields": [
+          "name",
+          "item_name",
+          "creation",
+          "modified",
+          "item_group",
+          "brand",
+          "disabled",
+          "is_stock_item"
+        ],
+        "order_by": "creation desc, modified desc",
+        "filterable_fields": [
+          "name",
+          "item_name",
+          "item_group",
+          "brand",
+          "disabled",
+          "is_stock_item"
+        ],
+        "date_field": "creation",
+        "default_limit": 10
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [],
+      "defaultable_filters": [],
+      "supported_intent_classes": [
+        "master_data_lookup"
+      ],
+      "semantic_tags": [
+        "item",
+        "product",
+        "master_data",
+        "directory"
+      ],
+      "supported_dimensions": [
+        "Item",
+        "Creation",
+        "Brand",
+        "Item Group"
       ],
       "supported_metrics": [],
       "approved_follow_up_modes": [
@@ -610,11 +990,22 @@
         "balance"
       ],
       "supported_dimensions": [
-        "Item"
+        "Item",
+        "Warehouse"
       ],
       "supported_metrics": [
         "Balance Qty",
         "Balance Value (MMK)"
+      ],
+      "entity_scope_support": [
+        {
+          "entity_grain": "item",
+          "filter_field": "item_code",
+          "supported_dimensions": [
+            "Item",
+            "Warehouse"
+          ]
+        }
       ],
       "approved_follow_up_modes": [
         "presentation_transform",
@@ -1121,7 +1512,7 @@
         },
         {
           "fieldname": "period_start_date",
-          "strategy": "fiscal_year_start_date"
+          "strategy": "open_fiscal_year_start_date"
         },
         {
           "fieldname": "period_end_date",
@@ -1216,7 +1607,7 @@
         },
         {
           "fieldname": "period_start_date",
-          "strategy": "fiscal_year_start_date"
+          "strategy": "open_fiscal_year_start_date"
         },
         {
           "fieldname": "period_end_date",
@@ -1309,7 +1700,7 @@
         },
         {
           "fieldname": "period_start_date",
-          "strategy": "fiscal_year_start_date"
+          "strategy": "open_fiscal_year_start_date"
         },
         {
           "fieldname": "period_end_date",

@@ -6,9 +6,11 @@
       "slot_name": "listing_view",
       "allowed_values": [
         "sales_invoice",
+        "purchase_invoice",
         "delivery_note",
         "sales_order",
-        "purchase_order"
+        "purchase_order",
+        "payment_entry"
       ],
       "required_for_intent_classes": [
         "transaction_listing"
@@ -97,6 +99,26 @@
       "resolution_mode": "optional"
     },
     {
+      "slot_name": "lookup_mode",
+      "allowed_values": [
+        "directory_list",
+        "candidate_resolution",
+        "profile_target"
+      ],
+      "required_for_intent_classes": [],
+      "resolution_mode": "optional"
+    },
+    {
+      "slot_name": "lookup_projection",
+      "allowed_values": [
+        "names_only",
+        "standard_directory",
+        "selected_columns"
+      ],
+      "required_for_intent_classes": [],
+      "resolution_mode": "optional"
+    },
+    {
       "slot_name": "performance_view",
       "allowed_values": [
         "profitability",
@@ -114,6 +136,7 @@
         "this_month",
         "last_month",
         "last_year",
+        "open_fiscal_year_to_date",
         "current_fiscal_year_to_date",
         "as_of_today"
       ],
@@ -130,6 +153,15 @@
           "sales invoices",
           "invoice",
           "invoices"
+        ]
+      },
+      {
+        "canonical_value": "purchase_invoice",
+        "aliases": [
+          "purchase invoice",
+          "purchase invoices",
+          "vendor invoice",
+          "vendor invoices"
         ]
       },
       {
@@ -156,33 +188,50 @@
           "vendor order",
           "vendor orders"
         ]
-      }
-    ],
-    "statement_variant": [
-      {
-        "canonical_value": "profit_and_loss",
-        "aliases": [
-          "profit and loss",
-          "p&l",
-          "income statement",
-          "income report"
-        ]
       },
       {
-        "canonical_value": "balance_sheet",
+        "canonical_value": "payment_entry",
         "aliases": [
-          "balance sheet",
-          "financial position"
-        ]
-      },
-      {
-        "canonical_value": "cash_flow",
-        "aliases": [
-          "cash flow",
-          "cashflow"
+          "payment entry",
+          "payment entries",
+          "payment entry list"
         ]
       }
     ],
+      "statement_variant": [
+        {
+          "canonical_value": "profit_and_loss",
+          "display_label": "Profit & Loss",
+          "aliases": [
+            "profit and loss",
+            "profit & loss",
+            "p&l",
+            "p & l",
+            "pl",
+            "pl statement",
+            "income statement",
+            "income report"
+          ]
+        },
+        {
+          "canonical_value": "balance_sheet",
+          "display_label": "Balance Sheet",
+          "aliases": [
+            "balance sheet",
+            "balance sheet statement",
+            "financial position"
+          ]
+        },
+        {
+          "canonical_value": "cash_flow",
+          "display_label": "Cash Flow",
+          "aliases": [
+            "cash flow",
+            "cashflow",
+            "cash flow statement"
+          ]
+        }
+      ],
     "inventory_axis": [
       {
         "canonical_value": "warehouse",
@@ -256,6 +305,105 @@
         ]
       }
     ],
+    "entity_grain": [
+      {
+        "canonical_value": "customer",
+        "aliases": [
+          "customer",
+          "customers",
+          "customer name",
+          "customer names",
+          "client",
+          "clients"
+        ]
+      },
+      {
+        "canonical_value": "supplier",
+        "aliases": [
+          "supplier",
+          "suppliers",
+          "supplier name",
+          "supplier names",
+          "vendor",
+          "vendors"
+        ]
+      },
+      {
+        "canonical_value": "item",
+        "aliases": [
+          "item",
+          "items",
+          "item name",
+          "item names",
+          "product",
+          "products",
+          "product name",
+          "product names"
+        ]
+      }
+    ],
+    "lookup_mode": [
+      {
+        "canonical_value": "directory_list",
+        "aliases": [
+          "list",
+          "show me some",
+          "give me some",
+          "names",
+          "name list"
+        ]
+      },
+      {
+        "canonical_value": "candidate_resolution",
+        "aliases": [
+          "similar to",
+          "similar name",
+          "matching",
+          "named",
+          "called"
+        ]
+      },
+      {
+        "canonical_value": "profile_target",
+        "aliases": [
+          "details about",
+          "detail about",
+          "details for",
+          "detail for",
+          "profile of",
+          "tell me more about"
+        ]
+      }
+    ],
+    "lookup_projection": [
+      {
+        "canonical_value": "names_only",
+        "aliases": [
+          "names only",
+          "just names",
+          "name only",
+          "customer names",
+          "supplier names",
+          "item names",
+          "product names"
+        ]
+      },
+      {
+        "canonical_value": "standard_directory",
+        "aliases": [
+          "directory",
+          "full list",
+          "more details"
+        ]
+      },
+      {
+        "canonical_value": "selected_columns",
+        "aliases": [
+          "columns only",
+          "selected columns"
+        ]
+      }
+    ],
     "ranking_metric": [
       {
         "canonical_value": "sales_amount",
@@ -292,6 +440,16 @@
       }
     ],
     "time_scope": [
+      {
+        "canonical_value": "open_fiscal_year_to_date",
+        "aliases": [
+          "open fiscal year to date",
+          "since last fiscal close",
+          "from last fiscal close",
+          "from the last closed fiscal period",
+          "last closed date to today"
+        ]
+      },
       {
         "canonical_value": "current_fiscal_year_to_date",
         "aliases": [
@@ -336,6 +494,60 @@
   },
   "family_resolution_rules": [
     {
+      "rule_id": "master_customer_directory",
+      "intent_class": "master_data_lookup",
+      "required_slots": {
+        "entity_grain": "customer"
+      },
+      "candidate_family_ids": [
+        "master_data_directory"
+      ],
+      "candidate_capability_ids": [
+        "customer_master_read"
+      ],
+      "candidate_reports": [
+        "Customer Master List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "master_supplier_directory",
+      "intent_class": "master_data_lookup",
+      "required_slots": {
+        "entity_grain": "supplier"
+      },
+      "candidate_family_ids": [
+        "master_data_directory"
+      ],
+      "candidate_capability_ids": [
+        "supplier_master_read"
+      ],
+      "candidate_reports": [
+        "Supplier Master List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "master_item_directory",
+      "intent_class": "master_data_lookup",
+      "required_slots": {
+        "entity_grain": "item"
+      },
+      "candidate_family_ids": [
+        "master_data_directory"
+      ],
+      "candidate_capability_ids": [
+        "item_master_read"
+      ],
+      "candidate_reports": [
+        "Item Master List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
       "rule_id": "transaction_listing_sales_invoice",
       "intent_class": "transaction_listing",
       "required_slots": {
@@ -352,6 +564,24 @@
       ],
       "governed_decision": "execute",
       "ambiguity_policy": "transaction_listing_default"
+    },
+    {
+      "rule_id": "transaction_listing_purchase_invoice",
+      "intent_class": "transaction_listing",
+      "required_slots": {
+        "listing_view": "purchase_invoice"
+      },
+      "candidate_family_ids": [
+        "transaction_listing"
+      ],
+      "candidate_capability_ids": [
+        "purchase_invoice_read"
+      ],
+      "candidate_reports": [
+        "Purchase Invoice List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
     },
     {
       "rule_id": "transaction_listing_delivery_note",
@@ -403,6 +633,24 @@
       ],
       "candidate_reports": [
         "Purchase Order List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "transaction_listing_payment_entry",
+      "intent_class": "transaction_listing",
+      "required_slots": {
+        "listing_view": "payment_entry"
+      },
+      "candidate_family_ids": [
+        "transaction_listing"
+      ],
+      "candidate_capability_ids": [
+        "collections_read"
+      ],
+      "candidate_reports": [
+        "Payment Entry List"
       ],
       "governed_decision": "execute",
       "ambiguity_policy": "none"

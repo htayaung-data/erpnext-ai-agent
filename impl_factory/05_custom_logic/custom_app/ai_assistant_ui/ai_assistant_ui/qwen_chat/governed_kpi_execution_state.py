@@ -227,6 +227,8 @@ class GovernedKpiRankingArtifactContract:
 	entity_grain: str
 	scope: Dict[str, Any]
 	as_of_date: str = ""
+	period_start: str = ""
+	period_end: str = ""
 	unit_type: str = ""
 	ranking_mode: str = ""
 	sort_direction: str = ""
@@ -249,6 +251,8 @@ class GovernedKpiRankingArtifactContract:
 			"entity_grain": self.entity_grain,
 			"scope": dict(self.scope),
 			"as_of_date": self.as_of_date,
+			"period_start": self.period_start,
+			"period_end": self.period_end,
 			"unit_type": self.unit_type,
 			"ranking_mode": self.ranking_mode,
 			"sort_direction": self.sort_direction,
@@ -385,6 +389,8 @@ def build_governed_kpi_ranking_artifact_contract(
 	entity_grain: str,
 	scope: Dict[str, Any] | None = None,
 	as_of_date: str = "",
+	period_start: str = "",
+	period_end: str = "",
 	unit_type: str = "",
 	ranking_mode: str = "",
 	sort_direction: str = "",
@@ -409,6 +415,8 @@ def build_governed_kpi_ranking_artifact_contract(
 		entity_grain=str(entity_grain or "").strip(),
 		scope=dict(scope or {}),
 		as_of_date=str(as_of_date or "").strip(),
+		period_start=str(period_start or "").strip(),
+		period_end=str(period_end or "").strip(),
 		unit_type=str(unit_type or execution_state.value_unit_type or "").strip(),
 		ranking_mode=str(ranking_mode or "").strip(),
 		sort_direction=str(sort_direction or "").strip(),

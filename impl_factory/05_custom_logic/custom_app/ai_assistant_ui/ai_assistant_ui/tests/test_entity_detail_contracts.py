@@ -36,6 +36,7 @@ sys.modules.setdefault("frappe", fake_frappe)
 
 from ai_assistant_ui.qwen_chat import entity_detail as entity_detail_module
 from ai_assistant_ui.qwen_chat import boundary_support as boundary_support_module
+from ai_assistant_ui.qwen_chat import contracts as contracts_module
 
 
 class _FakeDoc:
@@ -211,6 +212,309 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertEqual(outcome["entity_key"], "Zegyo Mobile Supply House")
 		self.assertEqual(outcome["source"], "explicit_name")
 
+	def test_detect_entity_drilldown_request_accepts_tell_me_details_phrase(self):
+		with patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			side_effect=lambda doctype, name=None: doctype == "Customer" and name == "Ko Nay Lin Mobile Center",
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value="Ko Nay Lin Mobile Center",
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me details about Ko Nay Lin Mobile Center",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["source"], "explicit_name")
+
+	def test_detect_entity_drilldown_request_resolves_partial_customer_name_via_governed_scope(self):
+		with patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			return_value=False,
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value=None,
+		), patch.object(
+			entity_detail_module,
+			"resolve_entity_reference_from_message",
+			return_value={
+				"resolution_status": "resolved",
+				"resolved_entity": {
+					"entity_key": "Ko Nay Lin Mobile Center",
+					"entity_label": "Ko Nay Lin Mobile Center",
+					"resolution_source": "governed_fuzzy",
+				},
+				"reason": "The request matched one governed entity confidently through approved fuzzy resolution.",
+			},
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me details about Ko Nay Lin Mobile",
+				artifact_payload=None,
+				grounded_turn=None,
+		)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["source"], "governed_fuzzy")
+
+	def test_detect_entity_drilldown_request_resolves_supplier_name_via_active_profile_policy(self):
+		with patch.object(
+			entity_detail_module,
+			"list_entity_reference_policy_specs",
+			return_value=[
+				{
+					"entity_grain": "customer",
+					"doctype": "Customer",
+					"identity_field": "name",
+					"display_field": "customer_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+				{
+					"entity_grain": "supplier",
+					"doctype": "Supplier",
+					"identity_field": "name",
+					"display_field": "supplier_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+			],
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			return_value=False,
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value=None,
+		), patch.object(
+			entity_detail_module,
+			"resolve_entity_reference_from_message",
+			side_effect=[
+				{"resolution_status": "not_found", "resolved_entity": {}},
+				{
+					"resolution_status": "resolved",
+					"resolved_entity": {
+						"entity_key": "Myanmar Tech Import Services",
+						"entity_label": "Myanmar Tech Import Services",
+						"resolution_source": "governed_fuzzy",
+					},
+				},
+			],
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Myanmar Tech Import",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "supplier")
+		self.assertEqual(outcome["entity_key"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["source"], "governed_fuzzy")
+
+	def test_detect_entity_drilldown_request_uses_shared_profile_target_slot_normalization(self):
+		with patch.object(
+			entity_detail_module,
+			"list_entity_reference_policy_specs",
+			return_value=[
+				{
+					"entity_grain": "customer",
+					"doctype": "Customer",
+					"identity_field": "name",
+					"display_field": "customer_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+				{
+					"entity_grain": "supplier",
+					"doctype": "Supplier",
+					"identity_field": "name",
+					"display_field": "supplier_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+			],
+		), patch.object(
+			entity_detail_module,
+			"normalize_master_data_lookup_slots",
+			side_effect=lambda message, entity_grain, preferred_slots=None: (
+				{"lookup_mode": "profile_target", "lookup_search_text": "Myanmar Tech Import"}
+				if entity_grain == "supplier"
+				else {}
+			),
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			return_value=False,
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value=None,
+		), patch.object(
+			entity_detail_module,
+			"resolve_entity_reference_from_message",
+			return_value={
+				"resolution_status": "resolved",
+				"resolved_entity": {
+					"entity_key": "Myanmar Tech Import Services",
+					"entity_label": "Myanmar Tech Import Services",
+					"resolution_source": "governed_fuzzy",
+				},
+			},
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="anything at all",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "supplier")
+		self.assertEqual(outcome["entity_key"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["source"], "governed_fuzzy")
+
+	def test_detect_entity_drilldown_request_item_fallback_uses_shared_profile_target_slot_normalization(self):
+		with patch.object(
+			entity_detail_module,
+			"list_entity_reference_policy_specs",
+			return_value=[
+				{
+					"entity_grain": "customer",
+					"doctype": "Customer",
+					"identity_field": "name",
+					"display_field": "customer_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+				{
+					"entity_grain": "supplier",
+					"doctype": "Supplier",
+					"identity_field": "name",
+					"display_field": "supplier_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+			],
+		), patch.object(
+			entity_detail_module,
+			"normalize_master_data_lookup_slots",
+			return_value={"lookup_mode": "profile_target", "lookup_search_text": "Demo Item"},
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			return_value=False,
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value=None,
+		), patch.object(
+			entity_detail_module,
+			"resolve_entity_reference_from_message",
+			return_value={"resolution_status": "not_found", "resolved_entity": {}},
+		), patch.object(
+			entity_detail_module,
+			"_resolve_item_name",
+			return_value=("ITEM-001", "Demo Item"),
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="something unrelated",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "item")
+		self.assertEqual(outcome["entity_key"], "ITEM-001")
+		self.assertEqual(outcome["source"], "explicit_name")
+
+	def test_detect_entity_drilldown_request_uses_policy_order_for_exact_profile_targets(self):
+		with patch.object(
+			entity_detail_module,
+			"list_entity_reference_policy_specs",
+			return_value=[
+				{
+					"entity_grain": "supplier",
+					"doctype": "Supplier",
+					"identity_field": "name",
+					"display_field": "supplier_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+				{
+					"entity_grain": "customer",
+					"doctype": "Customer",
+					"identity_field": "name",
+					"display_field": "customer_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+			],
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			side_effect=lambda doctype, name=None: doctype == "Supplier" and name == "Myanmar Tech Import Services",
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			side_effect=lambda doctype, filters=None, fieldname=None, as_dict=False: "Myanmar Tech Import Services",
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Myanmar Tech Import Services",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "supplier")
+		self.assertEqual(outcome["entity_key"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["source"], "explicit_name")
+
+	def test_detect_entity_drilldown_request_keeps_item_as_bounded_explicit_fallback(self):
+		with patch.object(
+			entity_detail_module,
+			"list_entity_reference_policy_specs",
+			return_value=[
+				{
+					"entity_grain": "customer",
+					"doctype": "Customer",
+					"identity_field": "name",
+					"display_field": "customer_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+				{
+					"entity_grain": "supplier",
+					"doctype": "Supplier",
+					"identity_field": "name",
+					"display_field": "supplier_name",
+					"allowed_lookup_modes": ["profile_target"],
+					"activation_state": "active",
+				},
+			],
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"exists",
+			return_value=False,
+		), patch.object(
+			entity_detail_module.frappe.db,
+			"get_value",
+			return_value=None,
+		), patch.object(
+			entity_detail_module,
+			"resolve_entity_reference_from_message",
+			return_value={"resolution_status": "not_found", "resolved_entity": {}},
+		), patch.object(
+			entity_detail_module,
+			"_resolve_item_name",
+			return_value=("ITEM-001", "Demo Item"),
+		):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Demo Item",
+				artifact_payload=None,
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "item")
+		self.assertEqual(outcome["entity_key"], "ITEM-001")
+		self.assertEqual(outcome["source"], "explicit_name")
+
 	def test_customer_detail_narrative_blocks_explanatory_credit_balance_language(self):
 		self.assertFalse(
 			entity_detail_module._entity_detail_narrative_is_safe(
@@ -254,6 +558,258 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertEqual(outcome["entity_type"], "delivery_note")
 		self.assertEqual(outcome["entity_key"], "MAT-DN-2026-00016")
 		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_customer_master_artifact_context(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Ko Nay Lin Mobile Center",
+				artifact_payload={
+					"family_id": "customer_master_list",
+					"sections": {
+						"customer_rows": [
+							{
+								"customer_code": "Ko Nay Lin Mobile Center",
+								"customer_name": "Ko Nay Lin Mobile Center",
+							}
+						]
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_master_data_directory_customer_context(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Ko Nay Lin Mobile Center",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "customer"},
+					"sections": {
+						"directory_rows": [
+							{
+								"entity_code": "Ko Nay Lin Mobile Center",
+								"entity_name": "Ko Nay Lin Mobile Center",
+							}
+						]
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_deictic_customer_master_resolution(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that customer",
+				artifact_payload={
+					"family_id": "customer_master_list",
+					"sections": {
+						"entity_reference_resolution": {
+							"resolution_status": "resolved",
+							"resolved_entity": {
+								"entity_key": "Ko Nay Lin Mobile Center",
+								"entity_label": "Ko Nay Lin Mobile Center",
+							},
+						}
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["entity_label"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_deictic_entity_detail_customer_context(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that customer",
+				artifact_payload={
+					"family_id": "entity_detail",
+					"dimensions": {
+						"entity_type": "customer",
+						"entity_key": "Ko Nay Lin Mobile Center",
+						"entity_label": "Ko Nay Lin Mobile Center",
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "customer")
+		self.assertEqual(outcome["entity_key"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["entity_label"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_deictic_supplier_master_resolution(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that supplier",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "supplier"},
+					"sections": {
+						"entity_reference_resolution": {
+							"resolution_status": "resolved",
+							"resolved_entity": {
+								"entity_key": "Myanmar Tech Import Services",
+								"entity_label": "Myanmar Tech Import Services",
+							},
+						}
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "supplier")
+		self.assertEqual(outcome["entity_key"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["entity_label"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_master_data_directory_item_context(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about Demo Item",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "item"},
+					"sections": {
+						"directory_rows": [
+							{
+								"entity_code": "ITEM-001",
+								"entity_name": "Demo Item",
+							}
+						]
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "item")
+		self.assertEqual(outcome["entity_key"], "ITEM-001")
+		self.assertEqual(outcome["entity_label"], "Demo Item")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_deictic_item_master_resolution(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that item",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "item"},
+					"sections": {
+						"entity_reference_resolution": {
+							"resolution_status": "resolved",
+							"resolved_entity": {
+								"entity_key": "ITEM-001",
+								"entity_label": "Demo Item",
+							},
+						}
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "item")
+		self.assertEqual(outcome["entity_key"], "ITEM-001")
+		self.assertEqual(outcome["entity_label"], "Demo Item")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_request_uses_deictic_product_alias_from_item_context(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that product",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "item"},
+					"sections": {
+						"entity_reference_resolution": {
+							"resolution_status": "resolved",
+							"resolved_entity": {
+								"entity_key": "ITEM-001",
+								"entity_label": "Demo Item",
+							},
+						}
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "item")
+		self.assertEqual(outcome["entity_key"], "ITEM-001")
+		self.assertEqual(outcome["entity_label"], "Demo Item")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_uses_generic_deictic_when_master_data_context_has_one_entity(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that one",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "supplier"},
+					"sections": {
+						"entity_reference_resolution": {
+							"resolution_status": "resolved",
+							"resolved_entity": {
+								"entity_key": "Myanmar Tech Import Services",
+								"entity_label": "Myanmar Tech Import Services",
+							},
+						}
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertEqual(outcome["entity_type"], "supplier")
+		self.assertEqual(outcome["entity_key"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["entity_label"], "Myanmar Tech Import Services")
+		self.assertEqual(outcome["source"], "artifact_context")
+
+	def test_detect_entity_drilldown_does_not_guess_from_generic_deictic_when_multiple_entities_exist(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that one",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "customer"},
+					"sections": {
+						"directory_rows": [
+							{
+								"entity_code": "Ko Nay Lin Mobile Center",
+								"entity_name": "Ko Nay Lin Mobile Center",
+							},
+							{
+								"entity_code": "Zegyo Mobile Supply House",
+								"entity_name": "Zegyo Mobile Supply House",
+							},
+						]
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertIsNone(outcome)
+
+	def test_detect_entity_drilldown_does_not_guess_from_deictic_product_when_multiple_items_exist(self):
+		with patch.object(entity_detail_module.frappe.db, "exists", return_value=False):
+			outcome = entity_detail_module.detect_entity_drilldown_request(
+				message="tell me more about that product",
+				artifact_payload={
+					"family_id": "master_data_directory",
+					"dimensions": {"entity_type": "item"},
+					"sections": {
+						"directory_rows": [
+							{
+								"entity_code": "ITEM-001",
+								"entity_name": "Demo Item",
+							},
+							{
+								"entity_code": "ITEM-002",
+								"entity_name": "Second Demo Item",
+							},
+						]
+					},
+				},
+				grounded_turn=None,
+			)
+		self.assertIsNone(outcome)
 
 	def test_execute_entity_drilldown_supports_delivery_note(self):
 		fake_doc = _FakeDoc(
@@ -760,6 +1316,48 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertIn("2026-04-02", answer)
 		self.assertIn("planned delivery date", answer.lower())
 
+	def test_grounded_artifact_direct_evidence_answer_uses_typed_sales_order_contract_without_raw_phrase(self):
+		artifact_payload = {
+			"family_id": "entity_detail",
+			"dimensions": {"entity_type": "sales_order", "entity_label": "SAL-ORD-2026-00022"},
+			"sections": {
+				"document_rows": [
+					{
+						"customer": "Zegyo Mobile Supply House",
+						"status": "To Deliver and Bill",
+						"delivery_status": "Partly Delivered",
+						"billing_status": "Partly Billed",
+						"delivery_date": "2026-04-02",
+						"quantity": 2,
+						"per_delivered": 50,
+						"per_billed": 10.460526,
+					}
+				],
+				"item_rows": [
+					{
+						"item_name": "OPPO A58 (6GB 128GB)",
+						"qty": 2,
+						"delivered_qty": 1,
+						"billed_amount": 795000,
+					}
+				],
+			},
+		}
+		evidence_request_contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="typed-sales-order-progress",
+			raw_message="is it delivered?",
+			artifact_payload=artifact_payload,
+		).to_payload()
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="please continue with the same governed detail",
+			artifact_payload=artifact_payload,
+			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+			evidence_request_contract=evidence_request_contract,
+		)
+		self.assertIn("Partly.", answer)
+		self.assertIn("50%", answer)
+		self.assertIn("1 of 2 units", answer)
+
 	def test_grounded_artifact_direct_evidence_answer_returns_customer_overdue_status(self):
 		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
 			raw_message="is this customer overdue?",
@@ -936,7 +1534,7 @@ class TestEntityDetailContracts(unittest.TestCase):
 			},
 			grounded_turn={"source_name": "Customer Detail"},
 		)
-		self.assertIn("three approved bases", answer.lower())
+		self.assertIn("three date bases", answer.lower())
 		self.assertIn("customer created date", answer.lower())
 		self.assertIn("first submitted sales order date", answer.lower())
 
@@ -957,6 +1555,24 @@ class TestEntityDetailContracts(unittest.TestCase):
 		)
 		self.assertIn("2026-03-30", answer)
 		self.assertIn("first observed submitted sales invoice", answer.lower())
+
+	def test_grounded_artifact_direct_evidence_answer_clarifies_customer_operational_document_missing(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "customer", "entity_label": "Ko Nay Lin Mobile Center"},
+				"sections": {
+					"credit_policy": [
+						{"label": "Company", "value": "Enterprise Co"},
+					]
+				},
+			},
+			grounded_turn={"source_name": "Customer Detail"},
+		)
+		self.assertIn("exact sales document or date basis", answer.lower())
+		self.assertIn("first sales order date", answer.lower())
+		self.assertIn("specific sales order or sales invoice", answer.lower())
 
 	def test_grounded_artifact_evidence_boundary_answer_blocks_actual_sales_order_delivery_event_date(self):
 		answer = boundary_support_module.grounded_artifact_evidence_boundary_answer(
@@ -981,6 +1597,40 @@ class TestEntityDetailContracts(unittest.TestCase):
 				},
 			},
 			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+		)
+		self.assertIn("does not prove the actual shipment event date", answer)
+		self.assertIn("delivery-note", answer.lower())
+
+	def test_grounded_artifact_evidence_boundary_answer_uses_typed_sales_order_contract_without_raw_phrase(self):
+		artifact_payload = {
+			"family_id": "entity_detail",
+			"dimensions": {"entity_type": "sales_order", "entity_label": "SAL-ORD-2026-00022"},
+			"sections": {
+				"document_rows": [
+					{
+						"customer": "Zegyo Mobile Supply House",
+						"status": "To Deliver and Bill",
+						"delivery_status": "Partly Delivered",
+						"billing_status": "Partly Billed",
+						"delivery_date": "2026-04-02",
+						"quantity": 2,
+						"per_delivered": 50,
+						"per_billed": 10.460526,
+					}
+				],
+				"item_rows": [],
+			},
+		}
+		evidence_request_contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="typed-sales-order-boundary",
+			raw_message="when was it delivered?",
+			artifact_payload=artifact_payload,
+		).to_payload()
+		answer = boundary_support_module.grounded_artifact_evidence_boundary_answer(
+			raw_message="keep the same order context",
+			artifact_payload=artifact_payload,
+			grounded_turn={"source_name": "SAL-ORD-2026-00022 Detail"},
+			evidence_request_contract=evidence_request_contract,
 		)
 		self.assertIn("does not prove the actual shipment event date", answer)
 		self.assertIn("delivery-note", answer.lower())
@@ -1025,6 +1675,40 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertIn("Partly.", answer)
 		self.assertIn("79.96%", answer)
 		self.assertIn("166 of 1,008 units", answer)
+
+	def test_grounded_artifact_direct_evidence_answer_returns_purchase_order_receipt_status(self):
+		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
+			raw_message="what is the receipt status?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {"entity_type": "purchase_order", "entity_label": "PUR-ORD-2026-00004"},
+				"sections": {
+					"document_rows": [
+						{
+							"supplier": "Shwe Taung Electronics Supply",
+							"status": "To Receive and Bill",
+							"receipt_status": "Partly Received",
+							"billing_status": "Not Billed",
+							"schedule_date": "2026-01-20",
+							"quantity": 1008,
+							"per_received": 79.96,
+							"per_billed": 0,
+						}
+					],
+					"item_rows": [
+						{
+							"qty": 8,
+							"received_qty": 6,
+							"billed_amount": 0,
+						}
+					],
+				},
+			},
+			grounded_turn={"source_name": "PUR-ORD-2026-00004 Detail"},
+		)
+		self.assertIn("Partly.", answer)
+		self.assertIn("Partly Received", answer)
+		self.assertIn("79.96%", answer)
 
 	def test_grounded_artifact_direct_evidence_answer_returns_purchase_order_billing_progress(self):
 		answer = boundary_support_module.grounded_artifact_direct_evidence_answer(
@@ -1113,3 +1797,211 @@ class TestEntityDetailContracts(unittest.TestCase):
 		)
 		self.assertIn("does not prove the actual receipt event date", answer)
 		self.assertIn("purchase-receipt", answer.lower())
+
+	def test_sales_order_contract_resolves_actual_delivery_event_date(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-sales-order-actual-event",
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "sales_order",
+					"entity_label": "SAL-ORD-2026-00022",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "sales_order_actual_delivery_event_date")
+		self.assertEqual(contract.question_shape, "date_lookup")
+		self.assertEqual(contract.value_mode, "actual_value")
+
+	def test_purchase_order_contract_resolves_actual_receipt_event_date(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-purchase-order-actual-event",
+			raw_message="when was it received?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "purchase_order",
+					"entity_label": "PUR-ORD-2026-00004",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "purchase_order_actual_receipt_event_date")
+		self.assertEqual(contract.question_shape, "date_lookup")
+		self.assertEqual(contract.value_mode, "actual_value")
+
+	def test_purchase_order_contract_resolves_receipt_status_as_receipt_progress(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-purchase-order-receipt-status",
+			raw_message="what is the receipt status?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "purchase_order",
+					"entity_label": "PUR-ORD-2026-00004",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "purchase_order_receipt_progress")
+		self.assertEqual(contract.question_shape, "boolean_status")
+		self.assertEqual(contract.value_mode, "current_value")
+
+	def test_sales_order_contract_resolves_delivery_status_as_delivery_progress(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-sales-order-delivery-status",
+			raw_message="what is the delivery status?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "sales_order",
+					"entity_label": "SAL-ORD-2026-00022",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "sales_order_delivery_progress")
+		self.assertEqual(contract.question_shape, "boolean_status")
+		self.assertEqual(contract.value_mode, "current_value")
+
+	def test_purchase_order_contract_resolves_billing_status_as_billing_progress(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-purchase-order-billing-status",
+			raw_message="what is the billing status?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "purchase_order",
+					"entity_label": "PUR-ORD-2026-00004",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "purchase_order_billing_progress")
+		self.assertEqual(contract.question_shape, "scalar_ratio")
+		self.assertEqual(contract.value_mode, "current_value")
+
+	def test_sales_invoice_contract_resolves_delivery_evidence_question_type(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-sales-invoice-delivery",
+			raw_message="is this invoice delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "sales_invoice",
+					"entity_label": "ACC-SINV-2026-00194",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "sales_invoice_delivery_evidence")
+		self.assertEqual(contract.question_shape, "boolean_status")
+		self.assertEqual(contract.value_mode, "current_value")
+
+	def test_customer_operational_document_contract_requires_clarification(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-customer-operational-doc-missing",
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Ko Nay Lin Mobile Center",
+				},
+			},
+		)
+		self.assertTrue(contract.clarification_required)
+		self.assertEqual(contract.clarification_reason_type, "customer_operational_document_missing")
+		self.assertIn("First Sales Order Date", contract.clarification_options)
+
+	def test_customer_operational_document_clarification_signal_uses_artifact_boundary_continuations(self):
+		signal = contracts_module.build_entity_detail_clarification_signal_contract(
+			request_id="entity-detail-customer-operational-doc-signal",
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Ko Nay Lin Mobile Center",
+				},
+			},
+		)
+		self.assertIsNotNone(signal)
+		signal_payload = signal.to_payload()
+		self.assertEqual(signal_payload.get("reason_type"), "customer_operational_document_missing")
+		self.assertEqual(signal_payload.get("stage"), "artifact_boundary")
+		internal_details = signal_payload.get("internal_details") or {}
+		self.assertEqual(internal_details.get("continuation_lane"), "artifact_boundary")
+		self.assertEqual(
+			(internal_details.get("resolved_message_by_option") or {}).get("First Sales Invoice Date"),
+			"when was the first sales invoice for this customer?",
+		)
+
+	def test_customer_tenure_contract_requires_basis_clarification(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-clarify",
+			raw_message="what is this customer's tenure?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Zegyo Mobile Supply House",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_type, "customer")
+		self.assertEqual(contract.entity_question_type, "customer_tenure")
+		self.assertTrue(contract.clarification_required)
+		self.assertEqual(contract.clarification_reason_type, "customer_tenure_basis_missing")
+		self.assertEqual(len(contract.clarification_options), 3)
+
+	def test_customer_tenure_contract_resolves_first_sales_order_basis_from_dimension(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-tenure-basis",
+			raw_message="what is this customer's tenure by first sales order date?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Zegyo Mobile Supply House",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "customer_tenure")
+		self.assertEqual(contract.basis, "first_sales_order_date")
+		self.assertFalse(contract.clarification_required)
+
+	def test_customer_lifecycle_contract_resolves_first_sales_invoice_basis(self):
+		contract = contracts_module.build_entity_detail_evidence_request_contract(
+			request_id="entity-detail-lifecycle",
+			raw_message="when was the first sales invoice for this customer?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Zegyo Mobile Supply House",
+				},
+			},
+		)
+		self.assertEqual(contract.entity_question_type, "customer_lifecycle_date")
+		self.assertEqual(contract.basis, "first_sales_invoice_date")
+		self.assertFalse(contract.clarification_required)
+
+	def test_customer_tenure_clarification_signal_uses_artifact_boundary_continuations(self):
+		signal = contracts_module.build_entity_detail_clarification_signal_contract(
+			request_id="entity-detail-signal",
+			raw_message="what is this customer's tenure?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Zegyo Mobile Supply House",
+				},
+			},
+		)
+		self.assertIsNotNone(signal)
+		signal_payload = signal.to_payload()
+		self.assertEqual(signal_payload.get("stage"), "artifact_boundary")
+		self.assertEqual(signal_payload.get("reason_type"), "customer_tenure_basis_missing")
+		internal_details = signal_payload.get("internal_details") or {}
+		self.assertEqual(internal_details.get("continuation_lane"), "artifact_boundary")
+		self.assertEqual(
+			(internal_details.get("resolved_message_by_option") or {}).get("Customer Tenure by First Sales Order"),
+			"what is this customer's tenure by first sales order date?",
+		)
