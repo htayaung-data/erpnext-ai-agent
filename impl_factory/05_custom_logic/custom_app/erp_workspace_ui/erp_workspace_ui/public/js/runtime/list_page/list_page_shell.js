@@ -1,6 +1,189 @@
 (function () {
   const root = window;
   const listPageRuntime = root.erpWorkspaceUiListPage = root.erpWorkspaceUiListPage || {};
+  const STYLE_ID = 'erpw-list-shell-runtime-overrides';
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      .erpw-list-table {
+        width: 100%;
+        table-layout: fixed;
+      }
+      .erpw-list-table th {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+      .erpw-list-table td {
+        font-size: 13.5px;
+        font-weight: 400;
+        color: #0f172a;
+        vertical-align: top;
+      }
+      .erpw-list-cell-primary,
+      .erpw-list-cell-link,
+      .erpw-list-inline-open,
+      .erpw-list-inline-open-label,
+      .erpw-list-inline-open-icon,
+      .erpw-list-inline-open *,
+      .erpw-list-cell-link * {
+        text-decoration: none !important;
+      }
+      .erpw-list-cell-primary {
+        font-weight: 500;
+        line-height: 1.45;
+        color: #334155;
+      }
+      .erpw-list-cell-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: #334155;
+        font-size: 13.5px;
+        font-weight: 500;
+        line-height: 1.45;
+        text-align: left;
+      }
+      .erpw-list-cell-link:hover,
+      .erpw-list-cell-link:focus-visible {
+        color: #0f172a;
+        text-decoration: none;
+      }
+      .erpw-list-inline-open {
+        display: inline-grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: #1e293b;
+        text-align: left;
+      }
+      .erpw-list-inline-open-label {
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.4;
+        color: inherit;
+      }
+      .erpw-list-inline-open-icon {
+        font-size: 14px;
+        font-weight: 700;
+        color: #94a3b8;
+        transition: transform 140ms ease, color 140ms ease;
+      }
+      .erpw-list-inline-open:hover,
+      .erpw-list-inline-open:focus-visible {
+        color: #0f172a;
+        text-decoration: none;
+      }
+      .erpw-list-inline-open:hover .erpw-list-inline-open-label,
+      .erpw-list-inline-open:focus-visible .erpw-list-inline-open-label {
+        text-decoration: none !important;
+      }
+      .erpw-list-inline-open:hover .erpw-list-inline-open-icon,
+      .erpw-list-inline-open:focus-visible .erpw-list-inline-open-icon {
+        color: #64748b;
+        transform: translateX(2px) scale(1.08);
+      }
+      .erpw-list-cell-meta {
+        margin-top: 3px;
+        font-size: 12px;
+        font-weight: 400;
+        line-height: 1.45;
+        color: #64748b;
+      }
+      .erpw-list-controls-strip {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      .erpw-list-control-form {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        align-items: end;
+      }
+      .erpw-list-control-field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .erpw-list-control-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        text-transform: uppercase;
+      }
+      .erpw-list-control-input,
+      .erpw-list-control-select {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid #cbd5e1;
+        border-radius: 14px;
+        background: #fff;
+        color: #0f172a;
+        padding: 0 14px;
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .erpw-list-control-input:focus,
+      .erpw-list-control-select:focus {
+        outline: none;
+        border-color: #94a3b8;
+        box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+      }
+      .erpw-list-toolbar-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: flex-end;
+        align-items: center;
+        margin-top: 0;
+        padding-top: 2px;
+      }
+      .erpw-list-metric {
+        position: relative;
+      }
+      .erpw-list-metric.attention {
+        border-color: #dbe4ee;
+        background: #ffffff;
+        box-shadow:
+          inset 0 3px 0 #f0b44c,
+          var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
+      }
+      .erpw-list-metric.warning {
+        border-color: #dbe4ee;
+        background: #ffffff;
+        box-shadow:
+          inset 0 3px 0 #94a3b8,
+          var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
+      }
+      .erpw-list-cell-meta-line {
+        display: block;
+        margin-top: 2px;
+      }
+      @media (max-width: 1180px) {
+        .erpw-list-control-form {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+      @media (max-width: 760px) {
+        .erpw-list-control-form {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
   function escapeHtml(value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
@@ -54,15 +237,42 @@
     if (!controls) return "";
 
     const actions = normalizeItems(controls.actions).filter((action) => action.key !== 'open_native');
-    const hasContent = actions.length || controls.searchHint;
+    const fields = normalizeItems(controls.fields);
+    const hasContent = actions.length || controls.searchHint || fields.length;
     if (!hasContent) return "";
+
+    const fieldsMarkup = fields.length
+      ? '<div class="erpw-list-control-form">' + fields.map((field) => {
+          if (!field || !field.key || !field.label) return '';
+          const baseAttrs =
+            ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
+            ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"';
+
+          const controlMarkup = field.type === 'select'
+            ? '<select class="erpw-list-control-select"' + baseAttrs + '>' + normalizeItems(field.options).map((option) => {
+                const optionValue = option && typeof option === 'object' ? option.value : option;
+                const optionLabel = option && typeof option === 'object' ? option.label : option;
+                const selected = String(optionValue == null ? '' : optionValue) === String(field.value == null ? '' : field.value) ? ' selected' : '';
+                return '<option value="' + escapeHtml(optionValue == null ? '' : optionValue) + '"' + selected + '>' + escapeHtml(optionLabel == null ? '' : optionLabel) + '</option>';
+              }).join('') + '</select>'
+            : '<input type="text" class="erpw-list-control-input"' + baseAttrs + (field.placeholder ? ' placeholder="' + escapeHtml(field.placeholder) + '"' : '') + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
+
+          return [
+            '<label class="erpw-list-control-field">',
+              '<span class="erpw-list-control-label">' + escapeHtml(field.label) + '</span>',
+              controlMarkup,
+            '</label>'
+          ].join('');
+        }).join('') + '</div>'
+      : '';
 
     return [
       '<section class="erpw-list-controls-strip">',
         '<div class="erpw-list-controls-inline">',
           controls.searchHint ? '<div class="erpw-list-search-hint">' + escapeHtml(controls.searchHint) + '</div>' : '',
-          actions.length ? '<div class="erpw-list-toolbar-actions">' + actions.map((action) => renderToolbarAction(action)).join('') + '</div>' : '',
         '</div>',
+        fieldsMarkup,
+        actions.length ? '<div class="erpw-list-toolbar-actions">' + actions.map((action) => renderToolbarAction(action)).join('') + '</div>' : '',
       '</section>'
     ].join('');
   }
@@ -91,6 +301,7 @@
       return {
         value: cell.value == null ? '--' : cell.value,
         meta: cell.meta || '',
+        metaLines: normalizeItems(cell.metaLines),
         tone: cell.tone || '',
         className: cell.className || '',
         actionKey: cell.actionKey || '',
@@ -99,6 +310,7 @@
     return {
       value: cell == null ? '--' : cell,
       meta: '',
+      metaLines: [],
       tone: '',
       className: '',
       actionKey: '',
@@ -126,7 +338,12 @@
     return [
       '<td class="' + joinClassNames(column.align || '', cell.className, cell.tone ? 'tone-' + cell.tone : '') + '">',
         primary,
-        cell.meta ? '<div class="erpw-list-cell-meta">' + escapeHtml(cell.meta) + '</div>' : '',
+        cell.meta || (cell.metaLines && cell.metaLines.length)
+          ? '<div class="erpw-list-cell-meta">'
+              + (cell.meta ? '<span class="erpw-list-cell-meta-line">' + escapeHtml(cell.meta) + '</span>' : '')
+              + normalizeItems(cell.metaLines).map((line) => '<span class="erpw-list-cell-meta-line">' + escapeHtml(line) + '</span>').join('')
+            + '</div>'
+          : '',
       '</td>'
     ].join('');
   }
@@ -178,9 +395,12 @@
         config.state && config.state.kind && config.state.kind !== 'ready'
           ? renderResultsState(config.state)
           : columns.length
-            ? [
+              ? [
                 '<div class="erpw-list-table-wrap">',
                   '<table class="erpw-list-table">',
+                    columns.some((column) => column && column.width)
+                      ? '<colgroup>' + columns.map((column) => '<col' + (column && column.width ? ' style="width:' + escapeHtml(column.width) + '"' : '') + '>').join('') + (config.rowActions && !showInlinePrimaryAction ? '<col style="width:120px">' : '') + '</colgroup>'
+                      : '',
                     '<thead><tr>',
                       columns.map((column) => '<th class="' + escapeHtml(column.align || '') + '">' + escapeHtml(column.label || '') + '</th>').join(''),
                       config.rowActions && !showInlinePrimaryAction ? '<th class="actions">Action</th>' : '',
@@ -257,6 +477,7 @@
   }
 
   function mountWorklist(target, config) {
+    ensureStyles();
     const $shell = ensureShell(target);
     if (!$shell.length) return $();
 

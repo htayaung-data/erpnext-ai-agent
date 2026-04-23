@@ -90,6 +90,35 @@
     return targets[details.scope + ':' + details.key] || null;
   }
 
+  function collectFilterValues($host) {
+    const values = {};
+    if (!$host || !$host.length) return values;
+
+    $host.find('[data-erpw-list-field-key]').each(function () {
+      const $field = $(this);
+      const key = ($field.attr('data-erpw-list-field-key') || '').trim();
+      if (!key) return;
+      const value = ($field.val() || '').toString().trim();
+      if (value) {
+        values[key] = value;
+      }
+    });
+
+    return values;
+  }
+
+  function bindFilterInteractions(viewState) {
+    if (!viewState || !viewState.$host || !viewState.$host.length) return;
+    const $host = viewState.$host;
+
+    $host.off('.erpwListFilterInputs');
+    $host.on('keydown.erpwListFilterInputs', '[data-erpw-list-field-key]', function (event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      loadRoute(viewState, collectFilterValues($host));
+    });
+  }
+
   function mountPayload(viewState, payload) {
     const runtime = window.erpWorkspaceUiListPage && window.erpWorkspaceUiListPage.shell;
     if (!runtime || typeof runtime.mountWorklist !== 'function') {
@@ -100,18 +129,23 @@
     runtime.mountWorklist(viewState.$host, Object.assign({}, payload || {}, {
       onAction(details) {
         if (!details) return;
-        if (details.key === 'refresh') return loadRoute(viewState);
+        if (details.key === 'refresh') return loadRoute(viewState, viewState.activeFilters || {});
         if (details.key === 'back_to_console') return frappe.set_route('sales-console');
+        if (details.key === 'apply_filters') return loadRoute(viewState, collectFilterValues(viewState.$host));
+        if (details.key === 'reset_filters') return loadRoute(viewState, {});
         executeTarget(resolveActionTarget(payload, details));
       },
     }));
+
+    bindFilterInteractions(viewState);
   }
 
-  function loadRoute(viewState) {
+  function loadRoute(viewState, nextFilters) {
     const route = frappe.get_route ? frappe.get_route() : [];
     const queueKey = Array.isArray(route) && route.length > 1 ? String(route[1] || '').replace(/-/g, '_') : '';
     const routeSignature = Array.isArray(route) ? route.join('|') : '';
     viewState.routeSignature = routeSignature;
+    viewState.activeFilters = nextFilters !== undefined ? nextFilters : (viewState.activeFilters || {});
 
     if (!queueKey) {
       mountPayload(viewState, errorConfig('Open this page from a Sales Console card so the queue key is passed through.'));
@@ -120,7 +154,13 @@
 
     mountPayload(viewState, loadingConfig(queueKey));
 
-    frappe.call({ method: CONTEXT_METHOD, args: { queue_key: queueKey } }).then((response) => {
+    frappe.call({
+      method: CONTEXT_METHOD,
+      args: {
+        queue_key: queueKey,
+        filters: viewState.activeFilters || {},
+      },
+    }).then((response) => {
       if (viewState.routeSignature !== routeSignature) return;
       const payload = response && response.message ? response.message : {};
       if (viewState.page && typeof viewState.page.set_title === 'function' && payload.page && payload.page.title) {
@@ -143,6 +183,7 @@
       page,
       $host: ensureHost(page, wrapper),
       routeSignature: '',
+      activeFilters: {},
     };
     wrapper.__erpwSalesConsoleWorklist = viewState;
     loadRoute(viewState);

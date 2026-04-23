@@ -213,7 +213,7 @@
       }
       .sales-console-action-groups {
         display: grid;
-        gap: 12px;
+        gap: 10px;
       }
       .sales-console-action-strip {
         display: grid;
@@ -224,7 +224,7 @@
       }
       .sales-console-action-strip.secondary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
+        gap: 10px;
       }
       .sales-console-action-strip.secondary[hidden] {
         display: none;
@@ -275,7 +275,7 @@
         background: linear-gradient(90deg, #0f766e 0%, #2dd4bf 100%);
       }
       .sales-console-action.secondary {
-        padding-top: 16px;
+        padding-top: 15px;
         background: #ffffff;
       }
       .sales-console-action.secondary::before {
@@ -1588,6 +1588,14 @@
   }
 
   function runNavigation(pageState, group, key, fallback) {
+    if (group === "actions" && key === "open_customer") {
+      routeToWorklist("customer_directory");
+      return;
+    }
+    if (group === "actions" && key === "open_item") {
+      routeToWorklist("item_directory");
+      return;
+    }
     const navigation = (pageState && pageState.payload && pageState.payload.navigation) || {};
     const groupTargets = navigation[group] || {};
     executeTarget(groupTargets[key], fallback);
@@ -1599,9 +1607,8 @@
     const actionFallbacks = {
       new_quotation: () => frappe.new_doc("Quotation"),
       new_sales_order: () => frappe.new_doc("Sales Order"),
-      open_customer: () => routeToList("Customer"),
-      new_opportunity: () => frappe.new_doc("Opportunity"),
-      open_item: () => routeToList("Item"),
+      open_customer: () => routeToWorklist("customer_directory"),
+      open_item: () => routeToWorklist("item_directory"),
     };
 
     $root.off(".salesConsoleActions");
@@ -2617,6 +2624,7 @@
         meta: "Create a customer quotation",
         icon: "quotation",
         primary: true,
+        tier: "primary",
         onClick: () => runNavigation(
           pageState,
           "actions",
@@ -2630,6 +2638,7 @@
         meta: "Create a sales order",
         icon: "order",
         primary: true,
+        tier: "primary",
         onClick: () => runNavigation(
           pageState,
           "actions",
@@ -2637,43 +2646,32 @@
           () => frappe.new_doc("Sales Order")
         ),
       }),
+    );
+    $secondaryActions.append(
       makeAction({
         key: "open_customer",
-        title: "Open Customer",
-        meta: "Jump into customer records",
+        title: "Customers",
+        meta: "Browse customer records",
         icon: "customer",
-        primary: true,
+        tier: "secondary",
         onClick: () => runNavigation(
           pageState,
           "actions",
           "open_customer",
-          () => routeToList("Customer")
-        ),
-      }),
-    );
-    $secondaryActions.append(
-      makeAction({
-        key: "new_opportunity",
-        title: "Opportunity",
-        meta: "Open a new opportunity",
-        icon: "opportunity",
-        onClick: () => runNavigation(
-          pageState,
-          "actions",
-          "new_opportunity",
-          () => frappe.new_doc("Opportunity")
+          () => routeToWorklist("customer_directory")
         ),
       }),
       makeAction({
         key: "open_item",
-        title: "Item",
-        meta: "Open item records",
+        title: "Items",
+        meta: "Browse item records",
         icon: "item",
+        tier: "secondary",
         onClick: () => runNavigation(
           pageState,
           "actions",
           "open_item",
-          () => routeToList("Item")
+          () => routeToWorklist("item_directory")
         ),
       })
     );

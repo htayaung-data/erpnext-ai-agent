@@ -120,8 +120,9 @@
 
   function makeAction(config) {
     const variantClass = config.primary ? "primary" : "secondary";
+    const actionTier = config.tier || (config.primary ? "primary" : "secondary");
     const $button = $(`
-      <button class="sales-console-action ${variantClass}" data-action-key="${escapeHtml(config.key)}" type="button">
+      <button class="sales-console-action ${variantClass}" data-action-key="${escapeHtml(config.key)}" data-action-tier="${escapeHtml(actionTier)}" type="button">
         <span class="sales-console-action-icon">${iconMarkup(config.icon || "square")}</span>
         <span class="sales-console-action-copy">
           <span class="sales-console-action-title">${escapeHtml(config.title)}</span>
@@ -374,13 +375,24 @@
     $primary.empty();
     $secondary.empty();
 
-    arranged.forEach((element, index) => {
+    const primaryTier = [];
+    const secondaryTier = [];
+    arranged.forEach((element) => {
+      if (element.getAttribute("data-action-tier") === "secondary") {
+        secondaryTier.push(element);
+      } else {
+        primaryTier.push(element);
+      }
+    });
+
+    primaryTier.forEach((element, index) => {
       if (index < 3) {
         $primary.append(element);
       } else {
         $secondary.append(element);
       }
     });
+    secondaryTier.forEach((element) => $secondary.append(element));
   }
 
   function rebalanceActionStrips($root) {
@@ -403,19 +415,30 @@
     $primary.empty();
     $secondary.empty();
 
-    visible.forEach((element, index) => {
+    const visiblePrimary = [];
+    const visibleSecondary = [];
+    visible.forEach((element) => {
+      if (element.getAttribute("data-action-tier") === "secondary") {
+        visibleSecondary.push(element);
+      } else {
+        visiblePrimary.push(element);
+      }
+    });
+
+    visiblePrimary.forEach((element, index) => {
       if (index < 3) {
         $primary.append(element);
       } else {
         $secondary.append(element);
       }
     });
+    visibleSecondary.forEach((element) => $secondary.append(element));
     hidden.forEach((element) => {
       $secondary.append(element);
     });
 
-    const primaryVisibleCount = Math.min(visible.length, 3);
-    const secondaryVisibleCount = Math.max(visible.length - 3, 0);
+    const primaryVisibleCount = Math.min(visiblePrimary.length, 3);
+    const secondaryVisibleCount = Math.max(visiblePrimary.length - 3, 0) + visibleSecondary.length;
 
     const primaryColumns = Math.max(primaryVisibleCount, 1);
     $primary.css("grid-template-columns", `repeat(${primaryColumns}, minmax(0, 1fr))`);

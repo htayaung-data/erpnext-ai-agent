@@ -297,7 +297,6 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"new_quotation",
 				"new_sales_order",
 				"open_customer",
-				"new_opportunity",
 				"open_item",
 			],
 			"queue_order": [
@@ -330,7 +329,6 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"new_quotation",
 				"new_sales_order",
 				"open_customer",
-				"new_opportunity",
 				"open_item",
 			],
 			"queue_order": [
@@ -364,7 +362,6 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"new_quotation",
 				"new_sales_order",
 				"open_item",
-				"new_opportunity",
 			],
 			"queue_order": [
 				"customer_follow_up_tasks",
@@ -404,7 +401,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"customer_follow_up_tasks",
 				"expiring_quotations",
 			],
-			"hidden_actions": ["new_opportunity"],
+			"hidden_actions": [],
 			"hidden_insights": [],
 			"show_reports": False,
 			"section_order": ["inquiry", "work", "lifecycle", "approvals", "reports"],
@@ -428,7 +425,6 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"open_item",
 				"new_quotation",
 				"new_sales_order",
-				"new_opportunity",
 			],
 			"queue_order": [
 				"sales_orders_pending_fulfillment",
@@ -436,7 +432,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"expiring_quotations",
 				"customer_follow_up_tasks",
 			],
-			"hidden_actions": ["new_quotation", "new_sales_order", "new_opportunity"],
+			"hidden_actions": ["new_quotation", "new_sales_order"],
 			"hidden_insights": [],
 			"show_reports": True,
 			"section_order": ["approvals", "inquiry", "reports", "work", "lifecycle"],
@@ -508,7 +504,6 @@ def _build_navigation(today, context: dict[str, object], scope: dict[str, object
 
 	return {
 		"actions": {
-			"new_opportunity": {"kind": "new_doc", "doctype": "Opportunity"},
 			"new_quotation": {"kind": "new_doc", "doctype": "Quotation"},
 			"new_sales_order": {"kind": "new_doc", "doctype": "Sales Order"},
 			"open_customer": _customer_list_target(context, scope),
@@ -753,13 +748,24 @@ def _sales_returns_in_progress_metric(today, scope: dict[str, object]) -> dict[s
 	return _access_metric("Delivery Note")
 
 
-def _customer_list_target(context: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
-	filters = {"disabled": ["!=", 1]}
-	role_variant = context.get("role_variant")
+def _customer_scope_filters(context: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
+	filters = {}
 	fields = _fieldnames("Customer")
+	if "disabled" in fields:
+		filters["disabled"] = ["!=", 1]
+	role_variant = context.get("role_variant")
 	owner_user_ids = list(scope.get("owner_user_ids") or [])
 	if role_variant in {"sales_executive", "key_account_sales", "showroom_sales"} and owner_user_ids and "owner" in fields:
 		filters["owner"] = ["in", owner_user_ids]
+	return filters
+
+
+def _customer_list_target(context: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
+	return _worklist_target("customer_directory")
+
+
+def _customer_native_target(context: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
+	filters = _customer_scope_filters(context, scope)
 
 	return {
 		"kind": "list",
@@ -769,6 +775,10 @@ def _customer_list_target(context: dict[str, object], scope: dict[str, object]) 
 
 
 def _item_list_target() -> dict[str, object]:
+	return _worklist_target("item_directory")
+
+
+def _item_native_target() -> dict[str, object]:
 	filters = {}
 	fields = _fieldnames("Item")
 	if "disabled" in fields:
