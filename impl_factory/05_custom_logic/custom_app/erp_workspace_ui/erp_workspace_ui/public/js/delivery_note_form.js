@@ -26,14 +26,42 @@
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
 
-  const routeToDoc = childPageHelpers.routeToDoc || function (doctype, name) {
+  function routeToDoc(doctype, name) {
     if (!doctype || !name) return;
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "form", doctype, name })
+    ) {
+      return;
+    }
     frappe.set_route("Form", doctype, name);
-  };
+  }
 
-  const routeToList = childPageHelpers.routeToList || function (doctype, filters) {
+  function routeToList(doctype, filters) {
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "list", doctype, filters })
+    ) {
+      return;
+    }
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
+  }
+  const applySalesConsoleDocumentActionPolicy = childPageHelpers.applySalesConsoleDocumentActionPolicy || function (actions) {
+    return (Array.isArray(actions) ? actions : []).filter((action) => {
+      if (!action) return false;
+      const category = String(action.category || "").trim();
+      if (["linked_document", "reference_document", "supporting_navigation"].includes(category)) return false;
+      if (category === "follow_up") return !!action.attention;
+      return category === "primary_business_action" || category === "business_next_step";
+    }).slice(0, 2);
+  };
+  const applySalesConsoleGuidancePolicy = childPageHelpers.applySalesConsoleGuidancePolicy || function (cards) {
+    return (Array.isArray(cards) ? cards : []).filter((card) => card && (card.attention || card.priority)).slice(0, 2);
   };
 
   const hasVisibleControls = childPageSections.hasVisibleControls || function ($container, options) {
@@ -1961,6 +1989,7 @@
 
     if (Array.isArray(linked.sales_orders) && linked.sales_orders.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Sales Order", "Open Sales Orders", linked.sales_orders.length),
         variant: "primary",
         icon: "sales_order",
@@ -1976,6 +2005,7 @@
 
     if (Array.isArray(linked.invoices) && linked.invoices.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Invoice", "Open Invoices", linked.invoices.length),
         variant: "primary",
         icon: "invoice",
@@ -1991,6 +2021,7 @@
 
     if (summary.customer) {
       actions.push({
+        category: "reference_document",
         title: "Open Customer",
         variant: actions.length ? "secondary" : "primary",
         icon: "customer",
@@ -1999,6 +2030,8 @@
     }
 
     actions.push({
+      attention: Number(support.open_task_count || 0) > 0,
+      category: "follow_up",
       title: support.open_task_count ? `Review Follow-Up (${support.open_task_count})` : "Create Follow-Up Task",
       variant: "secondary",
       icon: "follow_up",
@@ -2013,6 +2046,7 @@
 
     if (linked.source_delivery && linked.source_delivery.name) {
       actions.push({
+        category: "linked_document",
         title: "Open Source Delivery",
         variant: "secondary",
         icon: "return_doc",
@@ -2020,6 +2054,7 @@
       });
     } else if (Array.isArray(linked.returns) && linked.returns.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Return", "Open Returns", linked.returns.length),
         variant: "secondary",
         icon: "return_doc",
@@ -2033,7 +2068,9 @@
       });
     }
 
-    return actions;
+    return applySalesConsoleDocumentActionPolicy(actions, {
+      maxTopActions: 2,
+    });
   }
 
   function getConnectionDocStatus(config) {
@@ -2172,6 +2209,8 @@
         doctype: item.doctype,
         title: item.title,
         note: item.note,
+        count: item.count,
+        visibility: item.required === false ? "optional" : "meaningful-empty",
         iconMarkup: connectionDocIconMarkup(item.doctype),
         status: getConnectionDocStatus(item),
         actions: item.onOpen ? [{ label: "Open linked", run: item.onOpen }] : [],
@@ -2202,6 +2241,8 @@
         doctype: item.doctype,
         title: item.title,
         note: item.note,
+        count: item.count,
+        visibility: "meaningful-empty",
         iconMarkup: connectionDocIconMarkup(item.doctype),
         status: getConnectionDocStatus(item),
         actions: item.onOpen ? [{ label: "Open linked", run: item.onOpen }] : [],
@@ -2282,6 +2323,8 @@
           doctype: item.doctype,
           title: item.title,
           note: item.note,
+          count: item.count,
+          visibility: item.required === false ? "optional" : "meaningful-empty",
           iconMarkup: connectionDocIconMarkup(item.doctype),
           status: getConnectionDocStatus(item),
           actions: item.onOpen ? [{ label: "Open linked", run: item.onOpen }] : [],
@@ -2318,6 +2361,7 @@
         workspaceClassName: "erpw-so-connections-workspace",
         pendingNoteClass: "erpw-so-connections-pending-note",
         groupClass: "erpw-so-connection-primary-group",
+        groupCompactClass: "erpw-so-connection-primary-group-compact",
         groupHeadClass: "erpw-so-connection-primary-head",
         groupSummaryClass: "erpw-so-connection-primary-summary",
         groupIconClass: "erpw-so-connection-primary-icon",
@@ -2327,6 +2371,7 @@
         groupStatusClass: "erpw-so-connection-primary-status",
         itemsClass: "erpw-so-connection-primary-grid",
         itemClass: "erpw-so-connection-doc-card",
+        itemCompactClass: "erpw-so-connection-doc-card-compact",
         itemHeadClass: "erpw-so-connection-doc-head",
         itemMainClass: "erpw-so-connection-doc-main",
         itemIconClass: "erpw-so-connection-doc-icon",
@@ -2349,6 +2394,7 @@
         secondaryNoteClass: "erpw-so-connections-secondary-note",
         secondaryRowsClass: "erpw-so-connections-secondary-rows",
         secondaryRowClass: "erpw-so-connections-secondary-row",
+        secondaryRowCompactClass: "erpw-so-connections-secondary-row-compact",
         secondaryRowIconClass: "erpw-so-connections-secondary-row-icon",
         secondaryRowCopyClass: "erpw-so-connections-secondary-row-copy",
         secondaryRowTitleClass: "erpw-so-connections-secondary-row-title",
@@ -2535,7 +2581,7 @@
       chips,
       insertMode: "prepend-body",
       metrics,
-      note: "Read discount, rounding, and return valuation posture here while ERP totals stay authoritative.",
+      note: "Review delivery value, discount, rounding, and return impact before operational follow-up.",
       removeSelector: ".erpw-child-inline-summary-soft",
       summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
       title: "Commercial Posture",
@@ -2702,7 +2748,7 @@
 
     childPageDetails.renderSectionHeader($itemsSection, {
       headerClass: "erpw-child-section-header",
-      note: "Keep stock movement native here, then use the summaries for faster order, warehouse, and billing reading.",
+      note: "Review delivered items, warehouses, quantities, and linked order context before follow-up.",
       removeSelector: ".erpw-child-section-header",
       statusText: statusLabel,
       statusTone: "neutral",
@@ -2900,38 +2946,36 @@
         meta: billingMeta,
       },
     ];
-    const guidanceCards = [
-      {
+    const hasReturns = Number(summary.is_return || 0) || Number(summary.return_count || 0) > 0;
+    const unbilled = Number(summary.per_billed || 0) < 100 && Number(summary.grand_total || 0) > 0;
+    const guidanceCards = applySalesConsoleGuidancePolicy([
+      hasReturns || unbilled ? {
+        attention: true,
         chipLabel: "Priority",
         className: "erpw-child-guidance-card-primary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.next_action || "Continue normal fulfillment follow-through.",
-        title: "Next Action",
-      },
-      {
+        text: support.next_action || (hasReturns
+          ? "Review return impact before confirming fulfillment status."
+          : "Confirm billing follow-through for this delivered value."),
+        title: hasReturns ? "Return Impact" : "Billing Follow-Up",
+      } : null,
+      support.customer_response_hint && (hasReturns || unbilled) ? {
+        attention: true,
         chipClass: "erpw-child-guidance-chip-secondary",
         chipLabel: "Communication",
         className: "erpw-child-guidance-card-secondary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 13a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zm-6 6a6 6 0 0 1 12 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.customer_response_hint || "Confirm delivery and billing posture before giving customer-facing status updates.",
+        text: support.customer_response_hint,
         title: "Customer Response",
-      },
-      {
-        chipClass: "erpw-child-guidance-chip-secondary",
-        chipLabel: "Operations",
-        className: "erpw-child-guidance-card-secondary",
-        iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 6v6l4 2M12 21a9 9 0 1 0 0-18a9 9 0 0 0 0 18z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.fulfillment_note || support.approval_note || "Use the summary above as the main operating read for this delivery note.",
-        title: "Fulfillment Note",
-      },
-    ];
+      } : null,
+    ]);
     if (typeof childPageShellContent.renderShellContent === "function") {
       childPageShellContent.renderShellContent($shell, {
         actionIconMarkup,
         actions,
         guidance: {
           cards: guidanceCards,
-          title: "What To Do Now",
+          title: "Attention",
         },
         summary: {
           chips: summaryChips,

@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import get_fullname, getdate, now_datetime, nowdate
+from frappe.utils import cint, cstr, get_fullname, getdate, now_datetime, nowdate
 
 try:
 	from ai_assistant_ui.qwen_chat.artifact_narrative import (
@@ -69,6 +69,23 @@ INQUIRY_DOCUMENT_HINTS = {
 	"Delivery Note": {"date_field": "posting_date"},
 	"Customer": {"date_field": "modified"},
 }
+SIDEBAR_REVIEW_ITEMS = (
+	"open_orders",
+	"awaiting_approval",
+)
+SIDEBAR_REVIEW_META = {
+	"open_orders": {"label": "Open Orders", "icon": "order"},
+	"awaiting_approval": {"label": "Awaiting Approval", "icon": "review"},
+	"sales_orders_pending_fulfillment": {"label": "Pending Fulfillment", "icon": "order"},
+	"quotations_waiting_action": {"label": "Quotations Waiting Action", "icon": "quotation"},
+	"expiring_quotations": {"label": "Expiring Quotations", "icon": "quotation"},
+	"customer_follow_up_tasks": {"label": "Follow-Up Tasks", "icon": "follow_up"},
+	"orders_due_soon": {"label": "Orders Due Soon", "icon": "order"},
+	"invoices_outstanding": {"label": "Outstanding Invoices", "icon": "invoice"},
+	"sales_returns_in_progress": {"label": "Sales Returns", "icon": "return_doc"},
+	"orders_blocked_by_approval": {"label": "Blocked Orders", "icon": "review"},
+	"quotations_awaiting_approval": {"label": "Quotations Awaiting Approval", "icon": "quotation"},
+}
 
 
 @frappe.whitelist()
@@ -79,19 +96,82 @@ def get_sales_console_bootstrap() -> dict[str, object]:
 	today = getdate(nowdate())
 	context = _build_context()
 	scope = _build_scope(context)
+	ui_profile = _build_ui_profile(context["role_variant"])
+	reports_catalog = _build_reports_catalog(context["role_variant"])
+	navigation = _build_navigation(today, context, scope)
 
 	return {
 		"context": context,
 		"scope": scope,
-		"ui_profile": _build_ui_profile(context["role_variant"]),
+		"ui_profile": ui_profile,
 		"work": _build_work(today, scope),
 		"lifecycle": _build_lifecycle(today, scope),
 		"blockers": _build_blockers(scope),
 		"queues": _build_queues(today, scope),
 		"insights": _build_insights(scope),
-		"reports_catalog": _build_reports_catalog(context["role_variant"]),
-		"navigation": _build_navigation(today, context, scope),
+		"reports_catalog": reports_catalog,
+		"navigation": navigation,
+		"sidebar": _build_sales_console_sidebar(context, scope, ui_profile, navigation, reports_catalog),
 		"fetched_at": str(now_datetime()),
+	}
+
+
+@frappe.whitelist()
+def get_sales_console_sidebar_context() -> dict[str, object]:
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Authentication required"), frappe.PermissionError)
+
+	today = getdate(nowdate())
+	context = _build_context()
+	scope = _build_scope(context)
+	ui_profile = _build_ui_profile(context["role_variant"])
+	reports_catalog = _build_reports_catalog(context["role_variant"])
+	navigation = _build_navigation(today, context, scope)
+
+	return {
+		"context": context,
+		"scope": scope,
+		"ui_profile": ui_profile,
+		"sidebar": _build_sales_console_sidebar(context, scope, ui_profile, navigation, reports_catalog),
+		"fetched_at": str(now_datetime()),
+	}
+
+
+@frappe.whitelist()
+def search_sales_console_workspace(query: str, limit: int = 12) -> dict[str, object]:
+	if frappe.session.user == "Guest":
+		frappe.throw(_("Authentication required"), frappe.PermissionError)
+
+	needle = (query or "").strip()
+	if len(needle) < 2:
+		return {
+			"state": "idle",
+			"query": needle,
+			"message": "Type at least 2 characters to search customers, items, quotations, and sales orders.",
+			"results": [],
+		}
+
+	context = _build_context()
+	scope = _build_scope(context)
+	results = _build_sales_console_workspace_search_results(
+		query=needle,
+		context=context,
+		scope=scope,
+		limit=limit,
+	)
+	if not results:
+		return {
+			"state": "empty",
+			"query": needle,
+			"message": "No visible Sales Console records match this search yet.",
+			"results": [],
+		}
+
+	return {
+		"state": "ready",
+		"query": needle,
+		"message": f"{len(results)} Sales Console result{'s' if len(results) != 1 else ''} found.",
+		"results": results,
 	}
 
 
@@ -500,7 +580,7 @@ def _build_navigation(today, context: dict[str, object], scope: dict[str, object
 		key = report_card.get("key")
 		report_name = report_card.get("report_name")
 		if key and report_name:
-			report_targets[key] = _report_target(report_name)
+			report_targets[key] = _report_target(str(key), report_name)
 
 	return {
 		"actions": {
@@ -508,6 +588,12 @@ def _build_navigation(today, context: dict[str, object], scope: dict[str, object
 			"new_sales_order": {"kind": "new_doc", "doctype": "Sales Order"},
 			"open_customer": _customer_list_target(context, scope),
 			"open_item": _item_list_target(),
+		},
+		"browse": {
+			"quotation_directory": _quotation_list_target(scope),
+			"sales_order_directory": _sales_order_list_target(scope),
+			"customer_directory": _customer_list_target(context, scope),
+			"item_directory": _item_list_target(),
 		},
 		"insights": {
 			"awaiting_approval": _approval_review_target(scope),
@@ -539,6 +625,75 @@ def _build_navigation(today, context: dict[str, object], scope: dict[str, object
 		},
 		"reports": report_targets,
 	}
+
+
+def _build_sales_console_sidebar(
+	context: dict[str, object],
+	scope: dict[str, object],
+	ui_profile: dict[str, object],
+	navigation: dict[str, dict[str, object]],
+	reports_catalog: list[dict[str, object]],
+) -> dict[str, object]:
+	sections: list[dict[str, object]] = []
+
+	browse_items: list[dict[str, object]] = [
+		{
+			"key": "sales_console_home",
+			"label": "Overview",
+			"icon": "home",
+			"target": {"kind": "page", "route": "sales-console"},
+		}
+	]
+	if (navigation.get("browse") or {}).get("quotation_directory"):
+		browse_items.append(
+			{
+				"key": "quotation_directory",
+				"label": "Quotations",
+				"icon": "quotation",
+				"target": navigation["browse"]["quotation_directory"],
+			}
+		)
+	if (navigation.get("browse") or {}).get("sales_order_directory"):
+		browse_items.append(
+			{
+				"key": "sales_order_directory",
+				"label": "Sales Orders",
+				"icon": "order",
+				"target": navigation["browse"]["sales_order_directory"],
+			}
+		)
+	if (navigation.get("browse") or {}).get("customer_directory"):
+		browse_items.append(
+			{
+				"key": "customer_directory",
+				"label": "Customers",
+				"icon": "customer",
+				"target": navigation["browse"]["customer_directory"],
+			}
+		)
+	if (navigation.get("browse") or {}).get("item_directory"):
+		browse_items.append(
+			{
+				"key": "item_directory",
+				"label": "Items",
+				"icon": "item",
+				"target": navigation["browse"]["item_directory"],
+			}
+		)
+	if browse_items:
+		sections.append({"key": "browse", "label": "Browse", "items": browse_items})
+
+	return {
+		"title": "Sales Console",
+		"mode_label": ui_profile.get("mode_label") or "Sales Workspace",
+		"scope_label": scope.get("scope_label") or "",
+		"role_label": context.get("primary_role") or "Sales",
+		"sections": sections,
+	}
+
+
+def _sidebar_review_label(key: str) -> str:
+	return str(key or "").replace("_", " ").strip().title() or "Review"
 
 
 def _quotations_waiting_action_metric(scope: dict[str, object]) -> dict[str, object]:
@@ -760,6 +915,14 @@ def _customer_scope_filters(context: dict[str, object], scope: dict[str, object]
 	return filters
 
 
+def _quotation_list_target(scope: dict[str, object]) -> dict[str, object]:
+	return _worklist_target("quotation_directory")
+
+
+def _sales_order_list_target(scope: dict[str, object]) -> dict[str, object]:
+	return _worklist_target("sales_order_directory")
+
+
 def _customer_list_target(context: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
 	return _worklist_target("customer_directory")
 
@@ -786,6 +949,16 @@ def _item_native_target() -> dict[str, object]:
 	if "is_sales_item" in fields:
 		filters["is_sales_item"] = 1
 	return {"kind": "list", "doctype": "Item", "filters": filters}
+
+
+def _quotation_native_target(scope: dict[str, object]) -> dict[str, object]:
+	filters, _scope_note = _apply_scope_filters("Quotation", [], scope)
+	return {"kind": "list", "doctype": "Quotation", "filters": _route_filter_options(filters)}
+
+
+def _sales_order_native_target(scope: dict[str, object]) -> dict[str, object]:
+	filters, _scope_note = _apply_scope_filters("Sales Order", [], scope)
+	return {"kind": "list", "doctype": "Sales Order", "filters": _route_filter_options(filters)}
 
 
 def _worklist_target(queue_key: str, notice: str | None = None) -> dict[str, object]:
@@ -926,8 +1099,20 @@ def _sales_returns_target(today, scope: dict[str, object]) -> dict[str, object]:
 	return {"kind": "list", "doctype": "Delivery Note", "filters": {}}
 
 
-def _report_target(report_name: str, filters: dict[str, object] | None = None) -> dict[str, object]:
-	target = {"kind": "report", "report_name": report_name}
+def _report_target(
+	report_key: str,
+	report_name: str,
+	filters: dict[str, object] | None = None,
+) -> dict[str, object]:
+	productized_report_keys = {"sales_analytics", "sales_order_analysis", "quotation_trends", "collections_status", "item_wise_sales_history", "lost_quotations"}
+	if report_key in productized_report_keys:
+		target = {
+			"kind": "report_page",
+			"report_key": report_key,
+			"report_name": report_name,
+		}
+	else:
+		target = {"kind": "report", "report_name": report_name}
 	if filters:
 		target["filters"] = filters
 	return target
@@ -938,14 +1123,14 @@ def _build_reports_catalog(role_variant: str | None) -> list[dict[str, object]]:
 		"sales_executive": [
 			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation movement and expiring commercial momentum", "quotation"),
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review order execution quality and operational follow-through", "order"),
-			("payment_terms_status_sales_order", "Payment Terms Status for Sales Order", "Payment Terms Status", "Check payment schedule exposure without leaving sales context", "chart"),
+			("collections_status", "Collections Status", "Collections Status", "Review actual receivable exposure and invoice settlement without leaving sales context", "chart"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check product-level sales history when speaking with customers", "item"),
 		],
 		"key_account_sales": [
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review account order execution and commercial follow-through", "order"),
 			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation behavior and account conversion direction", "quotation"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check customer-facing item history for account follow-up", "item"),
-			("payment_terms_status_sales_order", "Payment Terms Status for Sales Order", "Payment Terms Status", "Review sales-order payment schedule exposure", "chart"),
+			("collections_status", "Collections Status", "Collections Status", "Review actual receivable exposure for assigned accounts", "chart"),
 		],
 		"showroom_sales": [
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Keep order review simple and operationally clear", "order"),
@@ -957,21 +1142,21 @@ def _build_reports_catalog(role_variant: str | None) -> list[dict[str, object]]:
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review operational order execution and exception patterns", "order"),
 			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation flow, conversion direction, and aging", "quotation"),
 			("lost_quotations", "Lost Quotations", "Lost Quotations", "Review commercial loss patterns and follow-up quality", "quotation"),
-			("payment_terms_status_sales_order", "Payment Terms Status for Sales Order", "Payment Terms Status", "Check sales-order payment schedule exposure", "chart"),
+			("collections_status", "Collections Status", "Collections Status", "Review actual collections exposure and overdue invoice reality", "chart"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Item-level commercial history for deeper review", "item"),
 		],
 		"executive_review": [
 			("sales_analytics", "Sales Analytics", "Sales Analytics", "High-level performance review across sales execution", "chart"),
-			("sales_order_trends", "Sales Order Trends", "Sales Order Trends", "Review directional order movement over time", "order"),
 			("lost_quotations", "Lost Quotations", "Lost Quotations", "Review lost business patterns before approving major exceptions", "quotation"),
-			("payment_terms_status_sales_order", "Payment Terms Status for Sales Order", "Payment Terms Status", "Review downstream payment exposure attached to sales orders", "chart"),
+			("collections_status", "Collections Status", "Collections Status", "Review real receivable exposure before making management decisions", "chart"),
 		],
 	}
 
 	selected = role_map.get(role_variant or "", role_map["sales_executive"])
 	catalog = []
+	always_on_productized_pages = {"collections_status"}
 	for key, report_name, title, meta, icon in selected:
-		if not _report_exists(report_name):
+		if key not in always_on_productized_pages and not _report_exists(report_name):
 			continue
 		catalog.append({
 			"key": key,
@@ -1658,6 +1843,294 @@ def _build_customer_inquiry_suggestions(query: str, limit: int = 8) -> list[dict
 		}
 		for item in candidates[:limit]
 	]
+
+
+def _build_sales_console_workspace_search_results(
+	*,
+	query: str,
+	context: dict[str, object],
+	scope: dict[str, object],
+	limit: int = 12,
+) -> list[dict[str, object]]:
+	needle = cstr(query).strip()
+	if not needle:
+		return []
+
+	doctype_order = _sales_console_search_doctype_priority(needle)
+	doctype_priority = {doctype: index for index, doctype in enumerate(doctype_order)}
+	per_doctype_limit = max(2, min(6, int(limit or 12)))
+	candidates: list[dict[str, object]] = []
+	seen: set[tuple[str, str]] = set()
+
+	for doctype in doctype_order:
+		for candidate in _search_sales_console_workspace_candidates(
+			doctype=doctype,
+			query=needle,
+			context=context,
+			scope=scope,
+			limit=per_doctype_limit,
+		):
+			key = (cstr(candidate.get("doctype")), cstr(candidate.get("name")))
+			if not all(key) or key in seen:
+				continue
+			seen.add(key)
+			candidates.append(candidate)
+
+	candidates.sort(key=lambda item: item.get("_sort_modified") or "", reverse=True)
+	candidates.sort(key=lambda item: doctype_priority.get(cstr(item.get("doctype")), len(doctype_order)))
+	candidates.sort(key=lambda item: cint(item.get("_sort_score") or 0), reverse=True)
+	return [
+		{
+			"doctype": item["doctype"],
+			"name": item["name"],
+			"label": item["label"],
+			"meta": item["meta"],
+			"target": item["target"],
+		}
+		for item in candidates[: max(1, cint(limit or 12))]
+	]
+
+
+def _sales_console_search_doctype_priority(query: str) -> list[str]:
+	if re.search(r"[\d-]", query or ""):
+		return ["Quotation", "Sales Order", "Item", "Customer"]
+	return ["Customer", "Item", "Quotation", "Sales Order"]
+
+
+def _search_sales_console_workspace_candidates(
+	*,
+	doctype: str,
+	query: str,
+	context: dict[str, object],
+	scope: dict[str, object],
+	limit: int,
+) -> list[dict[str, object]]:
+	if doctype == "Customer":
+		return _search_sales_console_customer_candidates(query=query, context=context, scope=scope, limit=limit)
+	if doctype == "Item":
+		return _search_sales_console_item_candidates(query=query, limit=limit)
+	if doctype in {"Quotation", "Sales Order"}:
+		return _search_sales_console_document_candidates(doctype=doctype, query=query, context=context, scope=scope, limit=limit)
+	return []
+
+
+def _search_sales_console_customer_candidates(
+	*,
+	query: str,
+	context: dict[str, object],
+	scope: dict[str, object],
+	limit: int,
+) -> list[dict[str, object]]:
+	if not _can_read("Customer"):
+		return []
+
+	fields = _fieldnames("Customer")
+	or_filters: list[list[object]] = []
+	for fieldname in ("name", "customer_name"):
+		if fieldname in fields:
+			or_filters.append([fieldname, "like", f"%{query}%"])
+	if not or_filters:
+		return []
+
+	rows = frappe.get_list(
+		"Customer",
+		fields=[fieldname for fieldname in ("name", "customer_name", "territory", "modified") if fieldname in fields],
+		filters=_customer_scope_filters(context, scope),
+		or_filters=or_filters,
+		order_by="modified desc",
+		page_length=limit,
+	)
+	results = []
+	for row in rows:
+		score = max(
+			_score_inquiry_value(query, row.get("customer_name"), exact_bonus=40),
+			_score_inquiry_value(query, row.get("name"), exact_bonus=20),
+		)
+		if score <= 0:
+			continue
+		keyword = cstr(row.get("name") or row.get("customer_name")).strip()
+		if not keyword:
+			continue
+		results.append(
+			{
+				"doctype": "Customer",
+				"name": row.get("name"),
+				"label": row.get("customer_name") or row.get("name"),
+				"meta": _build_customer_choice_meta(row),
+				"target": {"kind": "worklist", "queue_key": "customer_directory", "filters": {"keyword": keyword}},
+				"_sort_score": score,
+				"_sort_modified": row.get("modified") or "",
+			}
+		)
+	return results
+
+
+def _search_sales_console_item_candidates(*, query: str, limit: int) -> list[dict[str, object]]:
+	if not _can_read("Item"):
+		return []
+
+	fields = _fieldnames("Item")
+	or_filters: list[list[object]] = []
+	for fieldname in ("name", "item_code", "item_name"):
+		if fieldname in fields:
+			or_filters.append([fieldname, "like", f"%{query}%"])
+	if not or_filters:
+		return []
+
+	filters: dict[str, object] = {}
+	if "disabled" in fields:
+		filters["disabled"] = ["!=", 1]
+	if "is_sales_item" in fields:
+		filters["is_sales_item"] = 1
+
+	rows = frappe.get_list(
+		"Item",
+		fields=[fieldname for fieldname in ("name", "item_code", "item_name", "item_group", "modified") if fieldname in fields],
+		filters=filters,
+		or_filters=or_filters,
+		order_by="modified desc",
+		page_length=limit,
+	)
+	results = []
+	for row in rows:
+		score = max(
+			_score_inquiry_value(query, row.get("item_code"), exact_bonus=40),
+			_score_inquiry_value(query, row.get("item_name"), exact_bonus=20),
+			_score_inquiry_value(query, row.get("name"), exact_bonus=10),
+		)
+		if score <= 0:
+			continue
+		item_code = cstr(row.get("item_code") or row.get("name") or row.get("item_name")).strip()
+		if not item_code:
+			continue
+		results.append(
+			{
+				"doctype": "Item",
+				"name": row.get("name"),
+				"label": row.get("item_name") or row.get("item_code") or row.get("name"),
+				"meta": _build_sales_console_item_search_meta(row),
+				"target": {"kind": "worklist", "queue_key": "item_directory", "filters": {"keyword": item_code}},
+				"_sort_score": score,
+				"_sort_modified": row.get("modified") or "",
+			}
+		)
+	return results
+
+
+def _search_sales_console_document_candidates(
+	*,
+	doctype: str,
+	query: str,
+	context: dict[str, object],
+	scope: dict[str, object],
+	limit: int,
+) -> list[dict[str, object]]:
+	if not _can_read(doctype):
+		return []
+
+	fields = _fieldnames(doctype)
+	or_filters: list[list[object]] = []
+	search_fields = ["name"]
+	if doctype == "Quotation":
+		for fieldname in ("customer_name", "party_name"):
+			if fieldname in fields:
+				search_fields.append(fieldname)
+	if doctype == "Sales Order" and "customer" in fields:
+		search_fields.append("customer")
+
+	for fieldname in search_fields:
+		if fieldname in fields:
+			or_filters.append([fieldname, "like", f"%{query}%"])
+	if not or_filters:
+		return []
+
+	base_filters, _scope_note = _sales_console_browse_scope_filters(doctype, context, scope)
+	if "docstatus" in fields:
+		base_filters = [["docstatus", "!=", 2], *base_filters]
+
+	fetch_fields = [fieldname for fieldname in ("name", "status", "transaction_date", "valid_till", "delivery_date", "customer_name", "party_name", "customer", "modified") if fieldname in fields]
+	rows = frappe.get_list(
+		doctype,
+		fields=fetch_fields,
+		filters=base_filters,
+		or_filters=or_filters,
+		order_by="modified desc",
+		page_length=limit,
+	)
+	results = []
+	for row in rows:
+		score = max(*[_score_inquiry_value(query, row.get(fieldname), exact_bonus=40 if fieldname == "name" else 0) for fieldname in search_fields])
+		if score <= 0 or not row.get("name"):
+			continue
+		results.append(
+			{
+				"doctype": doctype,
+				"name": row.get("name"),
+				"label": row.get("name"),
+				"meta": _build_sales_console_document_search_meta(doctype, row),
+				"target": {"kind": "form", "doctype": doctype, "name": row.get("name")},
+				"_sort_score": score,
+				"_sort_modified": row.get("modified") or "",
+			}
+		)
+	return results
+
+
+def _sales_console_browse_scope_filters(
+	doctype: str,
+	context: dict[str, object],
+	scope: dict[str, object],
+) -> tuple[list[list[object]], str]:
+	role_variant = cstr(context.get("role_variant")).strip()
+	fields = _fieldnames(doctype)
+	branch_name = scope.get("branch_name")
+	owner_user_ids = list(scope.get("owner_user_ids") or [])
+	scoped_filters: list[list[object]] = []
+
+	if role_variant in {"sales_manager", "executive_review"}:
+		return scoped_filters, "Browse scope remains broad for manager or executive review."
+
+	if owner_user_ids and "owner" in fields and doctype in {"Quotation", "Sales Order", "Opportunity", "Lead"}:
+		scoped_filters.append(["owner", "in", owner_user_ids])
+
+	if branch_name and scope.get("apply_branch_filter") and "branch" in fields:
+		scoped_filters.append(["branch", "=", branch_name])
+		if owner_user_ids:
+			return scoped_filters, f"Browse scope uses current-user and branch context: {branch_name}."
+		return scoped_filters, f"Browse scope uses branch context: {branch_name}."
+
+	if owner_user_ids and doctype in {"Quotation", "Sales Order", "Opportunity", "Lead"}:
+		return scoped_filters, "Browse scope uses current-user document ownership."
+
+	return scoped_filters, "Browse scope uses current permission context."
+
+
+def _build_sales_console_item_search_meta(row: dict[str, object]) -> str:
+	parts = []
+	item_code = row.get("item_code") or row.get("name")
+	item_name = row.get("item_name")
+	if item_code and item_name and item_code != item_name:
+		parts.append(item_code)
+	if row.get("item_group"):
+		parts.append(row.get("item_group"))
+	if not parts:
+		parts.append("Item directory")
+	return " · ".join(cstr(part).strip() for part in parts if part not in (None, ""))
+
+
+def _build_sales_console_document_search_meta(doctype: str, row: dict[str, object]) -> str:
+	parts = []
+	if doctype == "Quotation":
+		for fieldname in ("customer_name", "party_name", "status", "transaction_date", "valid_till"):
+			if row.get(fieldname):
+				parts.append(row.get(fieldname))
+	elif doctype == "Sales Order":
+		for fieldname in ("customer", "status", "transaction_date", "delivery_date"):
+			if row.get(fieldname):
+				parts.append(row.get(fieldname))
+	if not parts:
+		parts.append(doctype)
+	return " · ".join(cstr(part).strip() for part in parts if part not in (None, ""))
 
 
 def _search_inquiry_candidates(doctype: str, query: str) -> list[dict[str, object]]:

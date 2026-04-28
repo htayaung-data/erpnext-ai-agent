@@ -7,6 +7,9 @@
   const escapeHtml = childPageHelpers.escapeHtml || function (value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
+  const resolveBusinessNote = childPageHelpers.resolveBusinessNote || function (note) {
+    return note == null ? "" : String(note).trim();
+  };
 
   function ensureCriticalStyles() {
     const styleId = "erpw-child-terms-critical-styles";
@@ -88,6 +91,7 @@
       icon: "policy",
       iconMarkup: "",
       note: "",
+      noteIntent: "",
       statusText: "",
       statusTone: "neutral",
       title: "",
@@ -117,7 +121,13 @@
 
     $header.find(".erpw-so-terms-header-icon").html(settings.iconMarkup || termsSectionIconMarkup(settings.icon));
     $header.find(".erpw-so-terms-header-title").text(settings.title || "");
-    $header.find(".erpw-so-terms-header-note").text(settings.note || "");
+    const noteText = resolveBusinessNote(settings.note, {
+      intent: settings.noteIntent,
+      statusText: settings.statusText,
+      statusTone: settings.statusTone,
+      surface: "terms-section-header",
+    });
+    $header.find(".erpw-so-terms-header-note").text(noteText).prop("hidden", !noteText);
 
     const $status = $header.find(".erpw-so-terms-header-status").first();
     const statusText = String(settings.statusText || "").trim();

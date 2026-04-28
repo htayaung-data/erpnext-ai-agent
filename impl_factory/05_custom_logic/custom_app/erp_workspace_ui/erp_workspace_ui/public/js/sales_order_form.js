@@ -12,6 +12,7 @@
   const childPageSupport = childPageRuntime.support || {};
   const childPageSidebar = childPageRuntime.sidebar || {};
   const childPageShellContent = childPageRuntime.shellContent || {};
+  const childPageOperatingActions = childPageRuntime.operatingActions || {};
 
   // Keep a local fallback so the form stays usable even if the shared asset is stale or delayed.
   const formatMoney = childPageHelpers.formatMoney || function (value, currency) {
@@ -32,14 +33,43 @@
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
 
-  const routeToDoc = childPageHelpers.routeToDoc || function (doctype, name) {
+  function routeToDoc(doctype, name) {
     if (!doctype || !name) return;
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "form", doctype, name })
+    ) {
+      return;
+    }
     frappe.set_route("Form", doctype, name);
-  };
+  }
 
-  const routeToList = childPageHelpers.routeToList || function (doctype, filters) {
+  function routeToList(doctype, filters) {
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "list", doctype, filters })
+    ) {
+      return;
+    }
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
+  }
+  const applySalesConsoleDocumentActionPolicy = childPageHelpers.applySalesConsoleDocumentActionPolicy || function (actions) {
+    return (Array.isArray(actions) ? actions : []).filter((action) => {
+      if (!action) return false;
+      const category = String(action.category || "").trim();
+      if (action.family === "commit" || action.forceTopAction) return true;
+      if (["linked_document", "reference_document", "supporting_navigation"].includes(category)) return false;
+      if (category === "follow_up") return !!action.attention;
+      return category === "primary_business_action" || category === "business_next_step";
+    }).slice(0, 2);
+  };
+  const applySalesConsoleGuidancePolicy = childPageHelpers.applySalesConsoleGuidancePolicy || function (cards) {
+    return (Array.isArray(cards) ? cards : []).filter((card) => card && (card.attention || card.priority)).slice(0, 2);
   };
 
   const hasVisibleControls = childPageSections.hasVisibleControls || function ($container, options) {
@@ -202,6 +232,20 @@
       fn();
     }, Math.max(0, Number(delay || 0)));
   };
+
+  function scheduleSalesConsoleSidebarSync(frm) {
+    scheduleFormTask(frm, "sales_console_sidebar_sync_fast", 0, () => {
+      if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+        window.erpWorkspaceConsoleSidebar.refresh();
+      }
+    });
+    scheduleFormTask(frm, "sales_console_sidebar_sync_late", 220, () => {
+      if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+        window.erpWorkspaceConsoleSidebar.refresh();
+      }
+    });
+  }
+
   const setSharedDraftBodyPending = childPageHelpers.setDraftBodyPending || function () {};
   const watchSharedDraftBodyStability = childPageHelpers.watchDraftBodyStability || function (frm, options) {
     if (options && typeof options.onStable === "function") {
@@ -347,7 +391,14 @@
         </svg>
       `,
     };
-    return icons[kind] || icons.invoice;
+    if (icons[kind]) return icons[kind];
+    if (
+      window.erpWorkspaceConsoleRuntime
+      && typeof window.erpWorkspaceConsoleRuntime.iconMarkup === "function"
+    ) {
+      return window.erpWorkspaceConsoleRuntime.iconMarkup(kind);
+    }
+    return icons.invoice;
   }
 
   function addressSectionIconMarkup(kind) {
@@ -739,7 +790,7 @@
       support: {
         latest_task: null,
         open_task_count: 0,
-        approval_note: "Use the standard toolbar to save, submit, or route approval for this order.",
+        approval_note: "Use the action band to save, submit, or route approval for this order.",
         customer_response_hint: "Complete customer, item, and delivery commitment details before confirming a customer-facing commitment.",
         execution_note: "This draft will become the main execution-control page after the order is saved.",
         next_action: "Complete the core order details, then save so the execution workspace can evaluate linked delivery and billing context.",
@@ -832,6 +883,7 @@
 
     if (Array.isArray(linked.deliveries) && linked.deliveries.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Delivery", "Open Deliveries", linked.deliveries.length),
         variant: "primary",
         icon: "delivery",
@@ -847,6 +899,7 @@
 
     if (Array.isArray(linked.invoices) && linked.invoices.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Invoice", "Open Invoices", linked.invoices.length),
         variant: "primary",
         icon: "invoice",
@@ -862,6 +915,7 @@
 
     if (summary.customer) {
       actions.push({
+        category: "reference_document",
         title: "Open Customer",
         variant: "secondary",
         icon: "customer",
@@ -870,6 +924,8 @@
     }
 
     actions.push({
+      attention: Number(support.open_task_count || 0) > 0,
+      category: "follow_up",
       title: support.open_task_count ? `Review Follow-Up (${support.open_task_count})` : "Create Follow-Up Task",
       variant: "secondary",
       icon: "follow_up",
@@ -886,6 +942,7 @@
 
     if (linked.quotation && linked.quotation.name) {
       actions.push({
+        category: "linked_document",
         title: "Open Source Quotation",
         variant: "secondary",
         icon: "quotation",
@@ -895,6 +952,7 @@
 
     if (Array.isArray(linked.returns) && linked.returns.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Return", "Open Returns", linked.returns.length),
         variant: "secondary",
         icon: "return_doc",
@@ -914,7 +972,9 @@
       });
     }
 
-    return actions;
+    return applySalesConsoleDocumentActionPolicy(actions, {
+      maxTopActions: 2,
+    });
   }
 
   function linkConfig(data) {
@@ -2935,168 +2995,148 @@
     `;
   }
 
-  function buildConnectionsModel(frm, $documents, countsReady) {
-    const groups = [];
-    const availableItems = [];
-    let hasPendingCounts = false;
+  function routeLinkedRows(doctype, rows) {
+    const linkedRows = (Array.isArray(rows) ? rows : []).filter((row) => row && row.name);
+    if (!linkedRows.length) {
+      routeToList(doctype);
+      return;
+    }
+    if (linkedRows.length === 1) {
+      routeToDoc(doctype, linkedRows[0].name);
+      return;
+    }
+    routeToList(doctype, { name: ["in", linkedRows.map((row) => row.name)] });
+  }
 
-    $documents.find(".col-md-4").each((_, groupElement) => {
-      const $group = $(groupElement);
-      const $title = $group.find(".form-link-title").first();
-      const rawLabel = $.trim($title.find("span").first().text())
-        || $.trim($title.find(".erpw-so-connection-group-title").first().text())
-        || $.trim($title.text())
-        || "Connections";
-      const label = rawLabel
-        .replace(/\s+\d+\s+(open|linked)$/i, "")
-        .replace(/\s+linked$/i, "")
-        .trim();
-      const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-      const groupStatusCounts = { linked: 0, open: 0, unknown: false };
-      const primaryItems = [];
-
-      $group.find(".document-link").each((__, linkElement) => {
-        const $link = $(linkElement);
-        const doctype = $link.attr("data-doctype") || $.trim($link.find(".badge-link").text()) || "Linked Document";
-        const countState = parseDashboardCount($link.find(".count").first(), countsReady);
-        const openState = parseDashboardCount($link.find(".open-notification").first(), countsReady);
-        const status = getConnectionRowStatus(countState, openState, countsReady);
-        const $newButton = $link.find(".btn-new");
-        const createAllowed = $newButton.length > 0 && !$newButton.hasClass("hidden");
-        const countsPending = !countsReady && !countState.ready && !openState.ready;
-
-        if (countState.value != null) groupStatusCounts.linked += countState.value;
-        if (openState.value != null) groupStatusCounts.open += openState.value;
-        if (countState.unknown) groupStatusCounts.unknown = true;
-        if (countsPending) hasPendingCounts = true;
-
-        const description = getConnectionDocDescription(doctype);
-        const item = {
-          doctype,
-          title: doctype,
-          note: description,
-          iconMarkup: connectionDocIconMarkup(doctype),
-          status: normalizeConnectionStatus(status),
-          countsPending,
-          actions: [
-            {
-              label: countsPending ? "Open list" : "View linked",
-              tone: "primary",
-              run: () => {
-                const $sourceLink = getConnectionSourceLink($documents, doctype);
-                if (!$sourceLink.length) return;
-                frm.dashboard.open_document_list($sourceLink);
-              },
-            },
-          ],
-        };
-
-        if (createAllowed) {
-          item.actions.push({
-            label: "Create new",
-            tone: "secondary",
-            run: () => {
-              const $sourceLink = getConnectionSourceLink($documents, doctype);
-              const $newButton = $sourceLink.find(".btn-new").first();
-              if ($newButton.length) {
-                $newButton.trigger("click");
-                return;
-              }
-              frm.make_new(doctype);
-            },
-          });
-        }
-
-        if (status || countsPending) {
-          primaryItems.push(item);
-        } else if (countsReady && createAllowed) {
-          availableItems.push({
-            doctype,
-            title: doctype,
-            note: description,
-            iconMarkup: connectionDocIconMarkup(doctype),
-            actions: [
-              {
-                label: "Create",
-                tone: "tertiary",
-                run: () => {
-                  const $sourceLink = getConnectionSourceLink($documents, doctype);
-                  const $newButton = $sourceLink.find(".btn-new").first();
-                  if ($newButton.length) {
-                    $newButton.trigger("click");
-                    return;
-                  }
-                  frm.make_new(doctype);
-                },
-              },
-            ],
-          });
-        }
-      });
-
-      if (primaryItems.length) {
-        primaryItems.sort((left, right) => {
-          const statusOrder = getConnectionStatusRank(right.status) - getConnectionStatusRank(left.status);
-          if (statusOrder !== 0) return statusOrder;
-          return left.doctype.localeCompare(right.doctype);
-        });
-
-        groups.push({
-          title: label,
-          key,
-          note: getConnectionGroupDescription(label),
-          iconMarkup: connectionGroupIconMarkup(key),
-          status: normalizeConnectionStatus(getConnectionGroupStatus(
-            groupStatusCounts.linked,
-            groupStatusCounts.open,
-            groupStatusCounts.unknown,
-            countsReady
-          )),
-          items: primaryItems,
-        });
-      }
-    });
-
-    groups.sort((left, right) => {
-      const statusOrder = getConnectionStatusRank(right.status) - getConnectionStatusRank(left.status);
-      if (statusOrder !== 0) return statusOrder;
-      return left.title.localeCompare(right.title);
-    });
-
-    availableItems.sort((left, right) => left.doctype.localeCompare(right.doctype));
-
-    const model = {
-      groups,
-      pendingNote: !countsReady && hasPendingCounts
-        ? "Live counts are updating. You can already open related lists."
-        : "",
+  function makeOwnedConnectionItem(config) {
+    const rows = Array.isArray(config.rows) ? config.rows.filter((row) => row && row.name) : [];
+    const count = rows.length || Number(config.count || 0);
+    const status = count > 0
+      ? { label: `${count} ${config.countLabel || "linked"}`, tone: "active" }
+      : { label: config.emptyLabel || "Not linked", tone: config.emptyTone || "neutral" };
+    return {
+      doctype: config.doctype,
+      title: config.title || config.doctype,
+      note: config.note || getConnectionDocDescription(config.doctype),
+      iconMarkup: connectionDocIconMarkup(config.iconDoctype || config.doctype),
+      status,
+      count,
+      visibility: config.visibility || (config.required === false ? "optional" : "meaningful-empty"),
+      actions: count > 0 ? [{
+        label: "View linked",
+        tone: "primary",
+        run: () => routeLinkedRows(config.doctype, rows),
+      }] : [],
     };
+  }
 
-    if (!countsReady && !groups.length && !availableItems.length) {
-      model.loading = {
-        title: "Loading relationship status",
-        note: "Checking linked downstream documents and available creation paths for this order.",
-      };
-      return model;
+  function buildConnectionsModel(frm) {
+    const data = frm.__erpwSalesOrderContext || draftContext(frm);
+    const summary = data.summary || {};
+    const linked = data.linked_documents || {};
+    const deliveries = Array.isArray(linked.deliveries) ? linked.deliveries : [];
+    const invoices = Array.isArray(linked.invoices) ? linked.invoices : [];
+    const returns = Array.isArray(linked.returns) ? linked.returns : [];
+    const groups = [];
+
+    const fulfillmentItems = [
+      makeOwnedConnectionItem({
+        doctype: "Delivery Note",
+        rows: deliveries,
+        title: "Delivery Note",
+        note: deliveries.length
+          ? "Delivery documents linked to this sales order."
+          : "No delivery document is linked yet.",
+        emptyLabel: "No delivery",
+        emptyTone: "neutral",
+        required: false,
+      }),
+      makeOwnedConnectionItem({
+        doctype: "Sales Invoice",
+        rows: invoices,
+        title: "Sales Invoice",
+        note: invoices.length
+          ? "Invoice documents linked to this sales order."
+          : "No invoice is linked yet.",
+        emptyLabel: "No invoice",
+        emptyTone: "neutral",
+        required: false,
+      }),
+    ];
+
+    if (returns.length) {
+      fulfillmentItems.push(makeOwnedConnectionItem({
+        doctype: returns[0].doctype || "Sales Invoice",
+        rows: returns,
+        title: "Return",
+        note: "Return or credit documents linked against this order.",
+        iconDoctype: returns[0].doctype || "Sales Invoice",
+        countLabel: "linked",
+      }));
     }
 
-    if (availableItems.length) {
-      model.secondary = {
-        title: "Available Paths",
-        note: "Create the next related document only when execution needs it.",
-        iconMarkup: availablePathIconMarkup(),
-        items: availableItems,
+    if (fulfillmentItems.some((item) => item.actions.length || item.status.tone === "active")) {
+      groups.push({
+        title: "Fulfillment",
+        key: "fulfillment",
+        note: "Owned delivery, invoice, and return context for this order.",
+        iconMarkup: connectionGroupIconMarkup("fulfillment"),
+        status: normalizeConnectionStatus(getConnectionGroupStatus(
+          deliveries.length + invoices.length + returns.length,
+          0,
+          false,
+          true
+        )),
+        items: fulfillmentItems,
+      });
+    }
+
+    const relationshipItems = [];
+    if (linked.quotation && linked.quotation.name) {
+      relationshipItems.push(makeOwnedConnectionItem({
+        doctype: "Quotation",
+        rows: [linked.quotation],
+        title: "Source Quotation",
+        note: "Commercial quote that preceded this order.",
+      }));
+    }
+    if (summary.customer) {
+      relationshipItems.push({
+        doctype: "Customer",
+        title: "Customer",
+        note: "Customer account context for this order.",
+        iconMarkup: connectionDocIconMarkup("Customer"),
+        status: { label: "Linked", tone: "active" },
+        actions: [{
+          label: "View customer",
+          tone: "primary",
+          run: () => routeToDoc("Customer", summary.customer),
+        }],
+      });
+    }
+
+    if (relationshipItems.length) {
+      groups.push({
+        title: "Relationship",
+        key: "reference",
+        note: "Keep customer and source quotation context together.",
+        iconMarkup: connectionGroupIconMarkup("reference"),
+        status: { label: `${relationshipItems.length} linked`, tone: "active" },
+        items: relationshipItems,
+      });
+    }
+
+    if (!groups.length) {
+      return {
+        groups: [],
+        empty: {
+          title: "No Sales Console-owned connections yet",
+          note: "Delivery, invoice, return, quotation, and customer links will appear here when available.",
+        },
       };
     }
 
-    if (countsReady && !groups.length && !availableItems.length) {
-      model.empty = {
-        title: "No linked downstream documents yet",
-        note: "Create the next related record when execution moves forward from this order.",
-      };
-    }
-
-    return model;
+    return { groups };
   }
 
   function enhanceConnectionsWorkspace(frm) {
@@ -3119,7 +3159,7 @@
     if (!countsReady) {
       requestConnectionsCounts(frm);
     }
-    const model = buildConnectionsModel(frm, $documents, countsReady);
+    const model = buildConnectionsModel(frm);
     return childPageConnections.renderCardWorkspace(frm, {
       featureKey: "connection_workspace",
       layout: "card",
@@ -3135,6 +3175,7 @@
         workspaceClassName: "erpw-so-connections-workspace",
         pendingNoteClass: "erpw-so-connections-pending-note",
         groupClass: "erpw-so-connection-primary-group",
+        groupCompactClass: "erpw-so-connection-primary-group-compact",
         groupHeadClass: "erpw-so-connection-primary-head",
         groupSummaryClass: "erpw-so-connection-primary-summary",
         groupIconClass: "erpw-so-connection-primary-icon",
@@ -3144,6 +3185,7 @@
         groupStatusClass: "erpw-so-connection-primary-status",
         itemsClass: "erpw-so-connection-primary-grid",
         itemClass: "erpw-so-connection-doc-card",
+        itemCompactClass: "erpw-so-connection-doc-card-compact",
         itemHeadClass: "erpw-so-connection-doc-head",
         itemMainClass: "erpw-so-connection-doc-main",
         itemIconClass: "erpw-so-connection-doc-icon",
@@ -3166,6 +3208,7 @@
         secondaryNoteClass: "erpw-so-connections-secondary-note",
         secondaryRowsClass: "erpw-so-connections-secondary-rows",
         secondaryRowClass: "erpw-so-connections-secondary-row",
+        secondaryRowCompactClass: "erpw-so-connections-secondary-row-compact",
         secondaryRowIconClass: "erpw-so-connections-secondary-row-icon",
         secondaryRowCopyClass: "erpw-so-connections-secondary-row-copy",
         secondaryRowTitleClass: "erpw-so-connections-secondary-row-title",
@@ -3482,6 +3525,9 @@
       enhanceTermsTab(frm);
       enhanceMoreInfoTab(frm);
       cleanSidebarUtilityRail(frm);
+      if (typeof childPageOperatingActions.curateNativeSalesMenu === "function") {
+        childPageOperatingActions.curateNativeSalesMenu(frm);
+      }
       if (settings.releaseDraftBody) {
         watchSharedDraftBodyStability(frm, {
           isReady: () => isSalesOrderDraftBodyReady(frm),
@@ -3523,7 +3569,15 @@
         lateKey: "sidebar_retry_late",
         fastDelay: 420,
         lateDelay: 980,
-        run: () => cleanSidebarUtilityRail(frm),
+        run: () => {
+          cleanSidebarUtilityRail(frm);
+          if (typeof childPageOperatingActions.enhanceNativeDocumentActions === "function") {
+            childPageOperatingActions.enhanceNativeDocumentActions(frm);
+          }
+          if (typeof childPageOperatingActions.curateNativeSalesMenu === "function") {
+            childPageOperatingActions.curateNativeSalesMenu(frm);
+          }
+        },
       },
     ]);
     const supportReady = enhanceSupportArea(frm);
@@ -3614,7 +3668,7 @@
       ? `Some items do not have a price in ${pricingDiagnostics.activePriceList}. Fix pricing before execution commitment.`
       : pricingDiagnostics.zeroRateRows.length
         ? "One or more lines still have zero rate. Review pricing before execution commitment."
-        : "Read quantity, value, and billing posture here while ERP totals stay authoritative.";
+        : "";
 
     const metrics = [
       {
@@ -3648,6 +3702,7 @@
           value: metric.value,
         })),
         note: summaryNote,
+        noteIntent: summaryNote ? "exception" : "",
         removeSelector: ".erpw-so-inline-summary",
         summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
         title: "Commercial Summary",
@@ -3659,7 +3714,7 @@
       <div class="erpw-so-inline-summary erpw-child-inline-summary-soft">
         <div class="erpw-so-inline-summary-head">
           <div class="erpw-so-inline-summary-title">Commercial Summary</div>
-          <div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(summaryNote)}</div>
+          ${summaryNote ? `<div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(summaryNote)}</div>` : ""}
           ${chips.length ? `
             <div class="erpw-child-chip-row">
               ${chips.map((chip) => `
@@ -3889,7 +3944,7 @@
     childPageDetails.renderDetailSnapshot($itemsSection, {
       kicker: "Order Snapshot",
       metrics,
-      note: "Read the committed order context here, then work the native execution grid and downstream follow-through below.",
+      note: "",
       removeSelector: ".erpw-child-detail-snapshot",
       snapshotClass: "erpw-child-detail-snapshot",
       statusText,
@@ -3918,7 +3973,7 @@
     }
     childPageDetails.renderSectionHeader($itemsSection, {
       headerClass: "erpw-child-section-header",
-      note: "Keep ERP item entry native here, then use the summary below for quantity, value, and downstream fulfillment reading.",
+      note: "",
       removeSelector: ".erpw-child-section-header",
       statusText: statusParts.join(" / "),
       statusTone: pricingDiagnostics.missingPriceListRows.length || pricingDiagnostics.zeroRateRows.length ? "attention" : "neutral",
@@ -3938,7 +3993,28 @@
     const dueSoon = summary.delivery_date && frappe.datetime.get_diff(summary.delivery_date, frappe.datetime.get_today()) <= 3 && Number(summary.per_delivered || 0) === 0;
     const blocker = String(summary.workflow_state || "").includes("Pending");
     const returnCount = Array.isArray(linked.returns) ? linked.returns.length : 0;
-    const actions = actionConfig(frm, data);
+    const pageActions = actionConfig(frm, data);
+    const operatingActions = typeof childPageOperatingActions.buildDocumentActions === "function"
+      ? childPageOperatingActions.buildDocumentActions(frm, {
+        docLabel: "Sales Order",
+      })
+      : [];
+    if (typeof childPageOperatingActions.enhanceNativeDocumentActions === "function") {
+      childPageOperatingActions.enhanceNativeDocumentActions(frm);
+    }
+    if (typeof childPageOperatingActions.curateNativeSalesMenu === "function") {
+      childPageOperatingActions.curateNativeSalesMenu(frm);
+    }
+    const combinedActions = typeof childPageOperatingActions.combineActionLists === "function"
+      ? childPageOperatingActions.combineActionLists(operatingActions, pageActions)
+      : operatingActions.concat(pageActions);
+    const operatingActionSet = new Set(operatingActions);
+    const actions = Number(frm.doc.docstatus || 0) === 0 && operatingActions.some((action) => action.family === "commit" && action.variant === "primary")
+      ? combinedActions.map((action) => {
+        if (operatingActionSet.has(action) || action.variant !== "primary") return action;
+        return { ...action, variant: "secondary" };
+      })
+      : combinedActions;
     const links = linkConfig(data);
     const deliveryStage = blocker ? "Approval gate" : Number(summary.per_delivered || 0) >= 100 ? "Delivered" : Number(summary.per_delivered || 0) > 0 ? "In progress" : "Queued";
     const deliveryDateMeta = dueSoon ? "Due soon" : "";
@@ -3973,23 +4049,36 @@
         meta: executionMeta,
       },
     ];
-    const guidanceCards = [
-      {
+    const overdue = !!(summary.delivery_date && frappe.datetime.get_diff(summary.delivery_date, frappe.datetime.get_today()) < 0 && Number(summary.per_delivered || 0) < 100);
+    const hasReturns = returnCount > 0;
+    const partiallyDelivered = Number(summary.per_delivered || 0) > 0 && Number(summary.per_delivered || 0) < 100;
+    const guidanceCards = applySalesConsoleGuidancePolicy([
+      overdue || hasReturns ? {
+        attention: true,
         chipLabel: "Priority",
         className: "erpw-child-guidance-card-primary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.next_action || "Continue normal execution follow-through.",
-        title: "Next Action",
-      },
-      {
+        text: support.next_action || `${overdue ? "Overdue delivery needs review" : "Return activity needs review"} before confirming the next customer commitment.`,
+        title: overdue && hasReturns ? "Overdue With Returns" : (overdue ? "Overdue Delivery" : "Return Review"),
+      } : null,
+      partiallyDelivered && !overdue ? {
+        attention: true,
+        chipLabel: "Execution",
+        className: "erpw-child-guidance-card-primary",
+        iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+        text: support.next_action || "Confirm the remaining delivery plan before giving the customer a final execution update.",
+        title: "Partial Delivery",
+      } : null,
+      support.customer_response_hint && (overdue || hasReturns || partiallyDelivered) ? {
+        attention: true,
         chipClass: "erpw-child-guidance-chip-secondary",
         chipLabel: "Communication",
         className: "erpw-child-guidance-card-secondary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 13a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zm-6 6a6 6 0 0 1 12 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.customer_response_hint || "Use linked delivery and invoice context before confirming customer-facing status.",
+        text: support.customer_response_hint,
         title: "Customer Response",
-      },
-    ];
+      } : null,
+    ]);
     const actionsWithIndex = actions.map((action, idx) => ({ ...action, idx }));
     const primaryActions = actionsWithIndex.filter((action) => action.variant === "primary");
     const secondaryActions = actionsWithIndex.filter((action) => action.variant !== "primary");
@@ -4050,7 +4139,7 @@
         actions,
         guidance: {
           cards: guidanceCards,
-          title: "What To Do Now",
+          title: "Attention",
         },
         summary: {
           chips: summaryChips,
@@ -4307,8 +4396,10 @@
     },
     onload(frm) {
       prepareFormShell(frm, "Loading sales order execution context...");
+      scheduleSalesConsoleSidebarSync(frm);
     },
     refresh(frm) {
+      scheduleSalesConsoleSidebarSync(frm);
       if (typeof frm.is_new === "function" && frm.is_new()) {
         const draftPerfKey = getDraftStabilitySessionKey(frm);
         if (frm.__erpwDraftPerformanceResetKey !== draftPerfKey) {

@@ -102,19 +102,105 @@
       }
       .erpw-list-controls-strip {
         display: grid;
-        gap: 16px;
-        margin-bottom: 16px;
+        width: fit-content;
+        max-width: 100%;
+        gap: 10px;
+        margin: 2px 0 18px;
+        padding: 12px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 20px;
+        background:
+          linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.96));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.96),
+          0 10px 24px rgba(15, 23, 42, 0.035);
+      }
+      .erpw-list-controls-strip.is-form-panel {
+        width: min(920px, 100%);
+        padding: 14px;
+        border-radius: 22px;
+        background: #ffffff;
+        justify-self: center;
+      }
+      .erpw-list-summary-card:has(+ .erpw-list-controls-strip.is-form-panel) {
+        width: min(920px, 100%);
+        justify-self: center;
+      }
+      .erpw-list-summary-card:has(+ .erpw-list-controls-strip.is-form-panel) .erpw-list-summary-head {
+        align-items: center;
+        min-height: 28px;
+      }
+      .erpw-list-summary-card:has(+ .erpw-list-controls-strip.is-form-panel) .erpw-list-title {
+        line-height: 1.25;
+      }
+      .erpw-list-filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: end;
+        justify-content: flex-start;
+      }
+      .erpw-list-unified-command {
+        display: grid;
+        gap: 8px;
+      }
+      .erpw-list-unified-command-label {
+        font-size: 11px;
+        font-weight: 750;
+        letter-spacing: 0.08em;
+        color: #64748b;
+        text-transform: uppercase;
+      }
+      .erpw-list-unified-command-row {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .erpw-list-unified-command-control {
+        width: min(280px, calc(100vw - 64px));
+      }
+      .erpw-list-navigation-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        align-items: center;
       }
       .erpw-list-control-form {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 14px;
+        flex: 0 1 auto;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 280px));
+        gap: 10px;
         align-items: end;
+        width: fit-content;
+        max-width: 100%;
+      }
+      .erpw-list-control-form.is-single-field {
+        grid-template-columns: minmax(210px, 280px);
+      }
+      .erpw-list-control-form.is-two-fields {
+        grid-template-columns: repeat(2, minmax(210px, 280px));
+      }
+      .erpw-list-control-form.is-form-panel {
+        width: 100%;
+        grid-template-columns: repeat(2, minmax(240px, 1fr));
+        gap: 14px;
+      }
+      .erpw-list-form-note {
+        max-width: 760px;
+        color: #475569;
+        font-size: 12.5px;
+        line-height: 1.55;
+        margin-top: -2px;
       }
       .erpw-list-control-field {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 7px;
+      }
+      .erpw-list-control-field.is-date {
+        position: relative;
       }
       .erpw-list-control-label {
         font-size: 11px;
@@ -126,9 +212,9 @@
       .erpw-list-control-input,
       .erpw-list-control-select {
         width: 100%;
-        min-height: 42px;
-        border: 1px solid #cbd5e1;
-        border-radius: 14px;
+        min-height: 40px;
+        border: 1px solid rgba(203, 213, 225, 0.88);
+        border-radius: 13px;
         background: #fff;
         color: #0f172a;
         padding: 0 14px;
@@ -141,14 +227,69 @@
         border-color: #94a3b8;
         box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
       }
+      .erpw-list-control-input.erpw-list-control-date {
+        padding-right: 42px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364758b' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='17' rx='3'/%3E%3Cpath d='M8 2v4M16 2v4M3 9h18'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 13px center;
+        background-size: 16px 16px;
+        cursor: pointer;
+      }
       .erpw-list-toolbar-actions {
         display: inline-flex;
         flex-wrap: wrap;
-        gap: 12px;
+        gap: 6px;
+        justify-content: flex-start;
+        align-items: center;
+        flex: 0 0 auto;
+        margin-top: 0;
+        padding: 3px;
+        border: 1px solid rgba(226, 232, 240, 0.76);
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+      }
+      .erpw-list-toolbar-actions .erpw-list-action-button {
+        min-height: 34px;
+        padding-inline: 0.72rem;
+        border-color: transparent;
+        border-radius: 11px;
+      }
+      .erpw-list-form-action-row {
+        display: flex;
         justify-content: flex-end;
         align-items: center;
         margin-top: 0;
-        padding-top: 2px;
+      }
+      .erpw-list-form-action-row .erpw-list-toolbar-actions {
+        margin-left: auto;
+      }
+      .erpw-list-action-button.navigation {
+        min-height: 32px;
+        gap: 7px;
+        padding: 0.28rem 0.42rem;
+        border-color: transparent;
+        border-radius: 999px;
+        background: transparent;
+        color: #475569;
+        font-size: 0.75rem;
+        box-shadow: none;
+      }
+      .erpw-list-action-button.navigation:hover,
+      .erpw-list-action-button.navigation:focus-visible {
+        border-color: transparent;
+        background: rgba(248, 250, 252, 0.88);
+        color: #0f172a;
+        box-shadow: none;
+      }
+      .erpw-list-summary-card .erpw-list-navigation-actions {
+        margin-left: auto;
+      }
+      .erpw-list-action-button-navigation-icon {
+        color: #64748b;
+        font-size: 0.82rem;
+        line-height: 1;
+        transform: translateY(-0.5px);
       }
       .erpw-list-metric {
         position: relative;
@@ -177,8 +318,29 @@
         }
       }
       @media (max-width: 760px) {
+        .erpw-list-unified-command-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-list-unified-command-control {
+          width: 100%;
+        }
+        .erpw-list-filter-row {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+        }
         .erpw-list-control-form {
           grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-list-control-form.is-form-panel {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-list-form-action-row {
+          justify-content: flex-start;
+        }
+        .erpw-list-toolbar-actions,
+        .erpw-list-navigation-actions {
+          justify-content: flex-start;
         }
       }
     `;
@@ -211,6 +373,9 @@
   function renderSummary(summary, controls) {
     if (!summary || !summary.title) return "";
     const chips = normalizeItems(summary.chips);
+    const navigationActions = normalizeItems(controls && controls.actions)
+      .filter((action) => action && action.key !== 'open_native')
+      .filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
 
     return [
       '<section class="erpw-child-card erpw-list-summary-card">',
@@ -220,59 +385,138 @@
             summary.subtitle ? '<div class="erpw-list-subtitle">' + escapeHtml(summary.subtitle) + '</div>' : '',
           '</div>',
           chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '',
+          navigationActions.length ? '<div class="erpw-list-navigation-actions">' + navigationActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div>' : '',
         '</div>',
       '</section>'
     ].join('');
   }
 
-  function renderToolbarAction(action) {
+  function renderToolbarAction(action, extraClass) {
     if (!action || !action.key || !action.label) return "";
-    const buttonClass = action.kind === 'primary'
-      ? 'erpw-list-action-button primary'
-      : 'erpw-list-action-button';
-    return '<button type="button" class="' + buttonClass + '" data-erpw-list-action-key="' + escapeHtml(action.key) + '" data-erpw-list-action-scope="toolbar">' + escapeHtml(action.label) + '</button>';
+    const isNavigation = String(extraClass || '').split(/\s+/).includes('navigation');
+    const buttonClass = joinClassNames(
+      action.kind === 'primary' ? 'erpw-list-action-button primary' : 'erpw-list-action-button',
+      extraClass || ''
+    );
+    const iconMarkup = isNavigation && /^back_/.test(String(action.key || ''))
+      ? '<span class="erpw-list-action-button-navigation-icon" aria-hidden="true">&larr;</span>'
+      : '';
+    return '<button type="button" class="' + buttonClass + '" data-erpw-list-action-key="' + escapeHtml(action.key) + '" data-erpw-list-action-scope="toolbar">' + iconMarkup + '<span>' + escapeHtml(action.label) + '</span></button>';
+  }
+
+  function sortOperatingActions(actions) {
+    const order = {
+      save_customer_profile: 5,
+      apply_filters: 10,
+      reset_filters: 20,
+      refresh: 30,
+    };
+    return normalizeItems(actions).slice().sort((left, right) => {
+      const leftRank = Object.prototype.hasOwnProperty.call(order, left.key) ? order[left.key] : 100;
+      const rightRank = Object.prototype.hasOwnProperty.call(order, right.key) ? order[right.key] : 100;
+      return leftRank - rightRank;
+    });
+  }
+
+  function renderControlInput(field, baseAttrs) {
+    if (field.type === 'select') {
+      return '<select class="erpw-list-control-select"' + baseAttrs + '>' + normalizeItems(field.options).map((option) => {
+        const optionValue = option && typeof option === 'object' ? option.value : option;
+        const optionLabel = option && typeof option === 'object' ? option.label : option;
+        const selected = String(optionValue == null ? '' : optionValue) === String(field.value == null ? '' : field.value) ? ' selected' : '';
+        return '<option value="' + escapeHtml(optionValue == null ? '' : optionValue) + '"' + selected + '>' + escapeHtml(optionLabel == null ? '' : optionLabel) + '</option>';
+      }).join('') + '</select>';
+    }
+
+    return '<input type="text" class="erpw-list-control-input' + (field.type === 'date' ? ' erpw-list-control-date' : '') + '"' + baseAttrs + ' autocomplete="off"' + (field.placeholder || field.type === 'date' ? ' placeholder="' + escapeHtml(field.placeholder || 'YYYY-MM-DD') + '"' : '') + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
+  }
+
+  function renderControlField(field) {
+    if (!field || !field.key || !field.label) return '';
+    const baseAttrs =
+      ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
+      ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"';
+
+    if (field.type === 'hidden') {
+      return '<input type="hidden"' + baseAttrs + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
+    }
+
+    return [
+      '<label class="erpw-list-control-field' + (field.type === 'date' ? ' is-date' : '') + '">',
+        '<span class="erpw-list-control-label">' + escapeHtml(field.label) + '</span>',
+        renderControlInput(field, baseAttrs),
+      '</label>'
+    ].join('');
+  }
+
+  function renderUnifiedCommandField(field, hiddenFieldsMarkup, operatingActions) {
+    if (!field || !field.key || !field.label) return "";
+    const baseAttrs =
+      ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
+      ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"';
+
+    return [
+      '<div class="erpw-list-unified-command">',
+        hiddenFieldsMarkup,
+        '<div class="erpw-list-unified-command-label">' + escapeHtml(field.label) + '</div>',
+        '<div class="erpw-list-unified-command-row">',
+          '<div class="erpw-list-unified-command-control">',
+            renderControlInput(field, baseAttrs),
+          '</div>',
+          operatingActions.length ? '<div class="erpw-list-toolbar-actions">' + operatingActions.map((action) => renderToolbarAction(action)).join('') + '</div>' : '',
+        '</div>',
+      '</div>',
+    ].join('');
   }
 
   function renderControls(controls) {
     if (!controls) return "";
 
     const actions = normalizeItems(controls.actions).filter((action) => action.key !== 'open_native');
+    const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
+    const operatingActions = sortOperatingActions(actions.filter((action) => !navigationActions.includes(action)));
     const fields = normalizeItems(controls.fields);
+    const isFormPanel = controls.layout === 'form_panel';
+    const visibleFields = fields.filter((field) => field && field.type !== 'hidden');
+    const hiddenFields = fields.filter((field) => field && field.type === 'hidden');
+    const visibleFieldCount = visibleFields.length;
     const hasContent = actions.length || controls.searchHint || fields.length;
     if (!hasContent) return "";
 
-    const fieldsMarkup = fields.length
-      ? '<div class="erpw-list-control-form">' + fields.map((field) => {
-          if (!field || !field.key || !field.label) return '';
-          const baseAttrs =
-            ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
-            ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"';
-
-          const controlMarkup = field.type === 'select'
-            ? '<select class="erpw-list-control-select"' + baseAttrs + '>' + normalizeItems(field.options).map((option) => {
-                const optionValue = option && typeof option === 'object' ? option.value : option;
-                const optionLabel = option && typeof option === 'object' ? option.label : option;
-                const selected = String(optionValue == null ? '' : optionValue) === String(field.value == null ? '' : field.value) ? ' selected' : '';
-                return '<option value="' + escapeHtml(optionValue == null ? '' : optionValue) + '"' + selected + '>' + escapeHtml(optionLabel == null ? '' : optionLabel) + '</option>';
-              }).join('') + '</select>'
-            : '<input type="text" class="erpw-list-control-input"' + baseAttrs + (field.placeholder ? ' placeholder="' + escapeHtml(field.placeholder) + '"' : '') + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
-
-          return [
-            '<label class="erpw-list-control-field">',
-              '<span class="erpw-list-control-label">' + escapeHtml(field.label) + '</span>',
-              controlMarkup,
-            '</label>'
-          ].join('');
-        }).join('') + '</div>'
+    const hiddenFieldsMarkup = hiddenFields.map((field) => renderControlField(field)).join('');
+    const unifiedCommandMarkup = visibleFieldCount === 1 && operatingActions.length
+      ? renderUnifiedCommandField(visibleFields[0], hiddenFieldsMarkup, operatingActions)
       : '';
+
+    const fieldsMarkup = fields.length
+      ? '<div class="' + joinClassNames(
+          'erpw-list-control-form',
+          isFormPanel ? 'is-form-panel' : '',
+          visibleFieldCount === 1 ? 'is-single-field' : '',
+          visibleFieldCount === 2 ? 'is-two-fields' : ''
+        ) + '">' + fields.map((field) => renderControlField(field)).join('') + '</div>'
+      : '';
+
+    if (isFormPanel) {
+      return [
+        '<section class="' + joinClassNames('erpw-list-controls-strip', 'is-form-panel') + '">',
+          controls.searchHint ? '<div class="erpw-list-controls-inline"><div class="erpw-list-search-hint">' + escapeHtml(controls.searchHint) + '</div></div>' : '',
+          fieldsMarkup ? '<div class="erpw-list-filter-row">' + fieldsMarkup + '</div>' : hiddenFieldsMarkup,
+          controls.note ? '<div class="erpw-list-form-note">' + escapeHtml(controls.note) + '</div>' : '',
+          operatingActions.length ? '<div class="erpw-list-form-action-row"><div class="erpw-list-toolbar-actions">' + operatingActions.map((action) => renderToolbarAction(action)).join('') + '</div></div>' : '',
+        '</section>'
+      ].join('');
+    }
 
     return [
       '<section class="erpw-list-controls-strip">',
-        '<div class="erpw-list-controls-inline">',
-          controls.searchHint ? '<div class="erpw-list-search-hint">' + escapeHtml(controls.searchHint) + '</div>' : '',
-        '</div>',
-        fieldsMarkup,
-        actions.length ? '<div class="erpw-list-toolbar-actions">' + actions.map((action) => renderToolbarAction(action)).join('') + '</div>' : '',
+        controls.searchHint ? '<div class="erpw-list-controls-inline"><div class="erpw-list-search-hint">' + escapeHtml(controls.searchHint) + '</div></div>' : '',
+        unifiedCommandMarkup || fieldsMarkup || operatingActions.length
+          ? '<div class="erpw-list-filter-row">'
+              + (unifiedCommandMarkup || fieldsMarkup)
+              + (!unifiedCommandMarkup && operatingActions.length ? '<div class="erpw-list-toolbar-actions">' + operatingActions.map((action) => renderToolbarAction(action)).join('') + '</div>' : '')
+            + '</div>'
+          : '',
       '</section>'
     ].join('');
   }
@@ -368,6 +612,7 @@
   }
 
   function renderResults(results, controls) {
+    if (results === null || (controls && controls.layout === 'form_panel' && !results)) return "";
     const config = results || {};
     const columns = normalizeItems(config.columns);
     const rows = normalizeItems(config.rows);
@@ -476,6 +721,50 @@
     });
   }
 
+  function initDateField($input) {
+    if (!$input || !$input.length) return;
+    if (typeof $input.datepicker !== 'function') return;
+    if ($input.data('datepicker')) return;
+
+    let lang = 'en';
+    if (frappe.boot && frappe.boot.user && frappe.boot.user.language) {
+      lang = frappe.boot.user.language;
+    }
+    if (!($.fn.datepicker && $.fn.datepicker.language && $.fn.datepicker.language[lang])) {
+      lang = 'en';
+    }
+
+    const options = {
+      language: lang,
+      autoClose: true,
+      todayButton: true,
+      dateFormat: 'yyyy-mm-dd',
+      keyboardNav: false,
+      firstDay: frappe.datetime && typeof frappe.datetime.get_first_day_of_the_week_index === 'function'
+        ? frappe.datetime.get_first_day_of_the_week_index()
+        : 0,
+      onSelect: function () {
+        $input.trigger('change');
+      },
+    };
+
+    $input.datepicker(options);
+    const picker = $input.data('datepicker');
+    if (picker && picker.$datepicker) {
+      picker.$datepicker.find('[data-action="today"]').click(function () {
+        picker.selectDate(new Date());
+        picker.hide();
+      });
+    }
+  }
+
+  function bindDateFields($shell) {
+    if (!$shell || !$shell.length) return;
+    $shell.find('[data-erpw-list-field-type="date"]').each(function () {
+      initDateField($(this));
+    });
+  }
+
   function mountWorklist(target, config) {
     ensureStyles();
     const $shell = ensureShell(target);
@@ -488,6 +777,7 @@
       $shell.html(markup);
     }
 
+    bindDateFields($shell);
     bindActions($shell, config || {});
     return $shell;
   }

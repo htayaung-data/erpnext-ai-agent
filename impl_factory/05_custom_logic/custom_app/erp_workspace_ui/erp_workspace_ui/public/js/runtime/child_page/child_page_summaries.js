@@ -6,6 +6,9 @@
   const escapeHtml = childPageHelpers.escapeHtml || function (value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
+  const resolveBusinessNote = childPageHelpers.resolveBusinessNote || function (note) {
+    return note == null ? "" : String(note).trim();
+  };
 
   function renderInlineSummary($section, options) {
     if (!$section || !$section.length) return $();
@@ -15,6 +18,7 @@
       insertMode: "after-grid",
       metrics: [],
       note: "",
+      noteIntent: "",
       removeSelector: ".erpw-so-inline-summary",
       summaryClass: "erpw-so-inline-summary",
       title: "",
@@ -27,13 +31,17 @@
     const metrics = Array.isArray(settings.metrics) ? settings.metrics : [];
     const chips = Array.isArray(settings.chips) ? settings.chips.filter((chip) => chip && chip.label) : [];
     const summaryClasses = String(settings.summaryClass || "erpw-so-inline-summary").trim();
+    const noteText = resolveBusinessNote(settings.note, {
+      intent: settings.noteIntent,
+      surface: "inline-summary",
+    });
 
     const $summary = $(`
       <div class="${summaryClasses}">
         <div class="erpw-so-inline-summary-head">
           <div class="erpw-so-inline-summary-title">${escapeHtml(settings.title || "")}</div>
-          ${settings.note ? `
-            <div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(settings.note)}</div>
+          ${noteText ? `
+            <div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(noteText)}</div>
           ` : ""}
           ${chips.length ? `
             <div class="erpw-child-chip-row">

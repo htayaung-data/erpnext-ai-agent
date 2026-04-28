@@ -26,6 +26,9 @@
   const escapeHtml = childPageHelpers.escapeHtml || function (value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
+  const resolveBusinessNote = childPageHelpers.resolveBusinessNote || function (note) {
+    return note == null ? "" : String(note).trim();
+  };
 
   function getText(value, fallback) {
     const text = value == null ? "" : String(value);
@@ -43,6 +46,27 @@
         ${escapeHtml(status.text || status.label)}
       </div>
     `;
+  }
+
+  function renderBusinessNote(className, note, owner, surface) {
+    const noteText = resolveBusinessNote(note, {
+      intent: owner && (owner.noteIntent || owner.copyIntent),
+      statusTone: owner && owner.status && owner.status.tone,
+      surface,
+    });
+    return noteText ? `<div class="${className}">${escapeHtml(noteText)}</div>` : "";
+  }
+
+  function getBusinessNote(note, owner, surface) {
+    return resolveBusinessNote(note, {
+      intent: owner && (owner.noteIntent || owner.copyIntent),
+      statusTone: owner && owner.status && owner.status.tone,
+      surface,
+    });
+  }
+
+  function hasBusinessNote(note, owner, surface) {
+    return Boolean(getBusinessNote(note, owner, surface));
   }
 
   function renderActions(actions, theme, scope, groupIndex, itemIndex) {
@@ -132,6 +156,51 @@
     };
   }
 
+  function getItemCount(item) {
+    const count = Number(item && item.count);
+    return Number.isFinite(count) ? count : 0;
+  }
+
+  function hasLinkedSignal(item) {
+    if (!item) return false;
+    if (getItemCount(item) > 0) return true;
+    const status = item.status || {};
+    const statusTone = String(status.tone || status.variant || "").trim().toLowerCase();
+    const statusText = String(status.label || status.text || "").trim().toLowerCase();
+    if (statusTone === "active") return true;
+    if (statusText.includes("linked") && !statusText.includes("not linked")) return true;
+    return Array.isArray(item.actions) && item.actions.length > 0 && statusTone !== "neutral";
+  }
+
+  function shouldRenderConnectionItem(item) {
+    if (!item || item.hidden === true) return false;
+    if (hasLinkedSignal(item)) return true;
+
+    const visibility = String(item.visibility || item.emptyVisibility || (item.required === false ? "optional" : "meaningful-empty"))
+      .trim()
+      .toLowerCase();
+
+    if (visibility === "always" || visibility === "meaningful-empty" || visibility === "core") return true;
+    if (visibility === "optional" || visibility === "linked" || visibility === "linked-only") return false;
+    return true;
+  }
+
+  function filterConnectionGroups(groups) {
+    return (Array.isArray(groups) ? groups : []).map((group) => {
+      const items = (Array.isArray(group.items) ? group.items : []).filter(shouldRenderConnectionItem);
+      return Object.assign({}, group, { items });
+    }).filter((group) => {
+      if (group.hidden === true) return false;
+      if (Array.isArray(group.items) && group.items.length) return true;
+      const visibility = String(group.visibility || group.emptyVisibility || "linked-only").trim().toLowerCase();
+      return visibility === "always" || visibility === "empty";
+    });
+  }
+
+  function filterConnectionItems(items) {
+    return (Array.isArray(items) ? items : []).filter(shouldRenderConnectionItem);
+  }
+
   function bindActions($workspace, config, groups, secondaryItems) {
     const namespace = config.theme.namespace || ".erpwConnectionWorkspace";
     $workspace.find("[data-erpw-connection-action='1']").off(namespace).on(`click${namespace}`, function () {
@@ -167,9 +236,9 @@
 
   function renderCardWorkspace(frm, config) {
     const model = config && config.model ? config.model : {};
-    const groups = Array.isArray(model.groups) ? model.groups : [];
+    const groups = filterConnectionGroups(model.groups);
     const secondary = model.secondary && Array.isArray(model.secondary.items) ? model.secondary : null;
-    const secondaryItems = secondary ? secondary.items : [];
+    const secondaryItems = secondary ? filterConnectionItems(secondary.items) : [];
     const featureKey = config.featureKey || "connection_workspace";
     const $workspace = mountWorkspace(frm, Object.assign({}, config, { frm, featureKey, layout: "card" }));
 
@@ -180,7 +249,7 @@
         $workspace.html(`
           <section class="${config.theme.loadingShellClass}">
             <div class="${config.theme.loadingTitleClass}">${escapeHtml(model.loading.title || "Loading relationship status")}</div>
-            <div class="${config.theme.loadingNoteClass}">${escapeHtml(model.loading.note || "Checking linked document status.")}</div>
+            <div class="${config.theme.loadingNoteClass}">${escapeHtml(resolveBusinessNote(model.loading.note || "Checking linked document status.", { intent: "decision", surface: "connection-loading" }))}</div>
           </section>
         `);
         markFeatureReady(frm, featureKey, { layout: "card", state: "loading" });
@@ -191,7 +260,7 @@
         $workspace.html(`
           <section class="${config.theme.emptyShellClass}">
             <div class="${config.theme.emptyTitleClass}">${escapeHtml(model.empty.title || "No related documents yet")}</div>
-            <div class="${config.theme.emptyNoteClass}">${escapeHtml(model.empty.note || "Create the next related record when work moves forward.")}</div>
+            <div class="${config.theme.emptyNoteClass}">${escapeHtml(resolveBusinessNote(model.empty.note || "Create the next related record when work moves forward.", { intent: "empty", surface: "connection-empty" }))}</div>
           </section>
         `);
         markFeatureReady(frm, featureKey, { layout: "card", state: "empty" });
@@ -205,27 +274,33 @@
 
     $workspace.html(`
       ${model.pendingNote ? `<div class="${config.theme.pendingNoteClass}">${escapeHtml(model.pendingNote)}</div>` : ""}
-      ${groups.map((group, groupIndex) => `
-        <section class="${config.theme.groupClass}" data-group-index="${groupIndex}" data-group-key="${escapeHtml(group.key || "")}">
+      ${groups.map((group, groupIndex) => {
+        const groupNote = getText(group.note, group.description);
+        const groupHasNote = hasBusinessNote(groupNote, group, "connection-group");
+        return `
+        <section class="${joinClasses([config.theme.groupClass, !groupHasNote && config.theme.groupCompactClass])}" data-group-index="${groupIndex}" data-group-key="${escapeHtml(group.key || "")}" data-has-note="${groupHasNote ? "1" : "0"}">
           <div class="${config.theme.groupHeadClass}">
             <div class="${config.theme.groupSummaryClass}">
-              <span class="${config.theme.groupIconClass}" aria-hidden="true">${group.iconMarkup || ""}</span>
-              <div class="${config.theme.groupCopyClass}">
-                <div class="${config.theme.groupTitleClass}">${escapeHtml(getText(group.title, group.label))}</div>
-                <div class="${config.theme.groupNoteClass}">${escapeHtml(getText(group.note, group.description))}</div>
+                <span class="${config.theme.groupIconClass}" aria-hidden="true">${group.iconMarkup || ""}</span>
+                <div class="${config.theme.groupCopyClass}">
+                  <div class="${config.theme.groupTitleClass}">${escapeHtml(getText(group.title, group.label))}</div>
+                  ${renderBusinessNote(config.theme.groupNoteClass, groupNote, group, "connection-group")}
+                </div>
               </div>
-            </div>
             ${renderStatus(config.theme.groupStatusClass, group.status)}
           </div>
           <div class="${config.theme.itemsClass}" data-item-count="${Array.isArray(group.items) ? group.items.length : 0}">
-            ${(Array.isArray(group.items) ? group.items : []).map((item, itemIndex) => `
-              <article class="${config.theme.itemClass}" data-group-index="${groupIndex}" data-item-index="${itemIndex}" data-doctype="${escapeHtml(getText(item.doctype))}">
+            ${(Array.isArray(group.items) ? group.items : []).map((item, itemIndex) => {
+              const itemNote = getText(item.note, item.description);
+              const itemHasNote = hasBusinessNote(itemNote, item, "connection-item");
+              return `
+              <article class="${joinClasses([config.theme.itemClass, !itemHasNote && config.theme.itemCompactClass])}" data-group-index="${groupIndex}" data-item-index="${itemIndex}" data-doctype="${escapeHtml(getText(item.doctype))}" data-has-note="${itemHasNote ? "1" : "0"}">
                 <div class="${config.theme.itemHeadClass}">
                   <div class="${config.theme.itemMainClass}">
                     <span class="${config.theme.itemIconClass}" aria-hidden="true">${item.iconMarkup || ""}</span>
                     <div class="${config.theme.itemCopyClass}">
                       <div class="${config.theme.itemTitleClass}">${escapeHtml(getText(item.title, item.doctype))}</div>
-                      <div class="${config.theme.itemNoteClass}">${escapeHtml(getText(item.note, item.description))}</div>
+                      ${renderBusinessNote(config.theme.itemNoteClass, itemNote, item, "connection-item")}
                     </div>
                   </div>
                   ${renderStatus(config.theme.itemStatusClass, item.status)}
@@ -234,37 +309,40 @@
                   ${renderActions(item.actions, config.theme, "primary", groupIndex, itemIndex)}
                 </div>
               </article>
-            `).join("")}
+            `; }).join("")}
           </div>
         </section>
-      `).join("")}
+      `; }).join("")}
       ${secondaryItems.length ? `
         <section class="${config.theme.secondaryShellClass}">
           <div class="${config.theme.secondaryHeadClass}">
             <span class="${config.theme.secondaryIconClass}" aria-hidden="true">${secondary.iconMarkup || ""}</span>
-            <div class="${config.theme.secondaryCopyClass}">
-              <div class="${config.theme.secondaryTitleClass}">${escapeHtml(getText(secondary.title, "Available Paths"))}</div>
-              <div class="${config.theme.secondaryNoteClass}">${escapeHtml(getText(secondary.note, ""))}</div>
-            </div>
+              <div class="${config.theme.secondaryCopyClass}">
+                <div class="${config.theme.secondaryTitleClass}">${escapeHtml(getText(secondary.title, "Available Paths"))}</div>
+                ${renderBusinessNote(config.theme.secondaryNoteClass, getText(secondary.note, ""), secondary, "connection-secondary")}
+              </div>
           </div>
           <div class="${config.theme.secondaryRowsClass}" data-secondary-count="${secondaryItems.length}">
-            ${secondaryItems.map((item, itemIndex) => `
-              <div class="${config.theme.secondaryRowClass}" data-secondary-index="${itemIndex}" data-doctype="${escapeHtml(getText(item.doctype))}">
+            ${secondaryItems.map((item, itemIndex) => {
+              const itemNote = getText(item.note, item.description);
+              const itemHasNote = hasBusinessNote(itemNote, item, "connection-secondary-item");
+              return `
+              <div class="${joinClasses([config.theme.secondaryRowClass, !itemHasNote && config.theme.secondaryRowCompactClass])}" data-secondary-index="${itemIndex}" data-doctype="${escapeHtml(getText(item.doctype))}" data-has-note="${itemHasNote ? "1" : "0"}">
                 ${item.iconMarkup && config.theme.secondaryRowIconClass ? `<span class="${config.theme.secondaryRowIconClass}" aria-hidden="true">${item.iconMarkup}</span>` : ""}
                 <div class="${config.theme.secondaryRowCopyClass}">
                   <div class="${config.theme.secondaryRowTitleClass}">${escapeHtml(getText(item.title, item.doctype))}</div>
-                  <div class="${config.theme.secondaryRowNoteClass}">${escapeHtml(getText(item.note, item.description))}</div>
+                  ${renderBusinessNote(config.theme.secondaryRowNoteClass, itemNote, item, "connection-secondary-item")}
                 </div>
                 ${renderActions(item.actions, config.theme, "secondary", 0, itemIndex)}
               </div>
-            `).join("")}
+            `; }).join("")}
           </div>
         </section>
       ` : ""}
       ${model.empty && (groups.length || secondaryItems.length) ? `
         <section class="${config.theme.emptyShellClass}">
           <div class="${config.theme.emptyTitleClass}">${escapeHtml(model.empty.title || "No related documents yet")}</div>
-          <div class="${config.theme.emptyNoteClass}">${escapeHtml(model.empty.note || "Create the next related record when work moves forward.")}</div>
+          <div class="${config.theme.emptyNoteClass}">${escapeHtml(resolveBusinessNote(model.empty.note || "Create the next related record when work moves forward.", { intent: "empty", surface: "connection-empty" }))}</div>
         </section>
       ` : ""}
     `);
@@ -276,7 +354,7 @@
 
   function renderListWorkspace(frm, config) {
     const model = config && config.model ? config.model : {};
-    const groups = Array.isArray(model.groups) ? model.groups : [];
+    const groups = filterConnectionGroups(model.groups);
     const featureKey = config.featureKey || "connection_workspace";
     const $workspace = mountWorkspace(frm, Object.assign({}, config, { frm, featureKey, layout: "list" }));
 
@@ -287,7 +365,7 @@
         $workspace.html(`
           <section class="${config.theme.emptyShellClass}">
             <div class="${config.theme.emptyTitleClass}">${escapeHtml(model.empty.title || "No relationship context yet")}</div>
-            <div class="${config.theme.emptyNoteClass}">${escapeHtml(model.empty.note || "Relationship links will appear here.")}</div>
+            <div class="${config.theme.emptyNoteClass}">${escapeHtml(resolveBusinessNote(model.empty.note || "Relationship links will appear here.", { intent: "empty", surface: "connection-empty" }))}</div>
           </section>
         `);
         markFeatureReady(frm, featureKey, { layout: "list", state: "empty" });
@@ -303,12 +381,12 @@
       <section class="${config.theme.groupClass}" data-group-key="${escapeHtml(group.key || "")}">
         <div class="${config.theme.groupHeadClass}">
           <div class="${config.theme.groupSummaryClass}">
-            <span class="${config.theme.groupIconClass}" aria-hidden="true">${group.iconMarkup || ""}</span>
-            <div class="${config.theme.groupCopyClass}">
-              <div class="${config.theme.groupTitleClass}">${escapeHtml(getText(group.title, group.label))}</div>
-              <div class="${config.theme.groupNoteClass}">${escapeHtml(getText(group.note, group.description))}</div>
-            </div>
-          </div>
+                <span class="${config.theme.groupIconClass}" aria-hidden="true">${group.iconMarkup || ""}</span>
+                <div class="${config.theme.groupCopyClass}">
+                  <div class="${config.theme.groupTitleClass}">${escapeHtml(getText(group.title, group.label))}</div>
+                  ${renderBusinessNote(config.theme.groupNoteClass, getText(group.note, group.description), group, "connection-group")}
+                </div>
+              </div>
           ${renderStatus(config.theme.groupStatusClass, group.status)}
         </div>
         <div class="${config.theme.itemsClass}">
@@ -318,7 +396,7 @@
                 <span class="${config.theme.itemIconClass}" aria-hidden="true">${item.iconMarkup || ""}</span>
                 <div class="${config.theme.itemCopyClass}">
                   <div class="${config.theme.itemTitleClass}">${escapeHtml(getText(item.title, item.doctype))}</div>
-                  <div class="${config.theme.itemNoteClass}">${escapeHtml(getText(item.note, item.description))}</div>
+                  ${renderBusinessNote(config.theme.itemNoteClass, getText(item.note, item.description), item, "connection-item")}
                 </div>
               </div>
               <div class="${config.theme.itemMetaClass}">

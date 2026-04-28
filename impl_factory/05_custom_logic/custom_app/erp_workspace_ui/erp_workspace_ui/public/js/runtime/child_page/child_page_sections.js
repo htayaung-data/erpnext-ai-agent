@@ -6,6 +6,9 @@
   const escapeHtml = childPageHelpers.escapeHtml || function (value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
+  const resolveBusinessNote = childPageHelpers.resolveBusinessNote || function (note) {
+    return note == null ? "" : String(note).trim();
+  };
 
   function ensureSectionStack($tab, className) {
     if (!$tab || !$tab.length || !className) return $();
@@ -431,6 +434,7 @@
       headerClass: "erpw-so-address-header",
       iconMarkup: "",
       note: "",
+      noteIntent: "",
       statusText: "",
       statusTone: "neutral",
       title: "",
@@ -460,7 +464,13 @@
 
     $header.find(".erpw-so-address-header-icon").html(settings.iconMarkup || "");
     $header.find(".erpw-so-address-header-title").text(settings.title || "");
-    $header.find(".erpw-so-address-header-note").text(settings.note || "");
+    const noteText = resolveBusinessNote(settings.note, {
+      intent: settings.noteIntent,
+      statusText: settings.statusText,
+      statusTone: settings.statusTone,
+      surface: "address-section-header",
+    });
+    $header.find(".erpw-so-address-header-note").text(noteText).prop("hidden", !noteText);
     setSectionStatus($header, ".erpw-so-address-header-status", settings.statusText, settings.statusTone);
 
     return $header;
@@ -476,6 +486,7 @@
       headerClass: "erpw-so-moreinfo-header",
       interactive: false,
       note: "",
+      noteIntent: "",
       showToggle: false,
       statusText: "",
       statusTone: "neutral",
@@ -526,7 +537,13 @@
     }
 
     $header.find(".erpw-so-moreinfo-header-title").text(settings.title || "");
-    $header.find(".erpw-so-moreinfo-header-note").text(settings.note || "");
+    const noteText = resolveBusinessNote(settings.note, {
+      intent: settings.noteIntent,
+      statusText: settings.statusText,
+      statusTone: settings.statusTone,
+      surface: "more-info-section-header",
+    });
+    $header.find(".erpw-so-moreinfo-header-note").text(noteText).prop("hidden", !noteText);
     setSectionStatus($header, ".erpw-so-moreinfo-header-status", settings.statusText, settings.statusTone);
 
     return $header;

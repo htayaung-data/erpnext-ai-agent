@@ -27,14 +27,42 @@
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
 
-  const routeToDoc = childPageHelpers.routeToDoc || function (doctype, name) {
+  function routeToDoc(doctype, name) {
     if (!doctype || !name) return;
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "form", doctype, name })
+    ) {
+      return;
+    }
     frappe.set_route("Form", doctype, name);
-  };
+  }
 
-  const routeToList = childPageHelpers.routeToList || function (doctype, filters) {
+  function routeToList(doctype, filters) {
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "list", doctype, filters })
+    ) {
+      return;
+    }
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
+  }
+  const applySalesConsoleDocumentActionPolicy = childPageHelpers.applySalesConsoleDocumentActionPolicy || function (actions) {
+    return (Array.isArray(actions) ? actions : []).filter((action) => {
+      if (!action) return false;
+      const category = String(action.category || "").trim();
+      if (["linked_document", "reference_document", "supporting_navigation"].includes(category)) return false;
+      if (category === "follow_up") return !!action.attention;
+      return category === "primary_business_action" || category === "business_next_step";
+    }).slice(0, 2);
+  };
+  const applySalesConsoleGuidancePolicy = childPageHelpers.applySalesConsoleGuidancePolicy || function (cards) {
+    return (Array.isArray(cards) ? cards : []).filter((card) => card && (card.attention || card.priority)).slice(0, 2);
   };
 
   const hasVisibleControls = childPageSections.hasVisibleControls || function ($container, options) {
@@ -666,6 +694,7 @@
 
     if (Array.isArray(linked.deliveries) && linked.deliveries.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Delivery", "Open Deliveries", linked.deliveries.length),
         variant: "primary",
         icon: "delivery",
@@ -681,6 +710,7 @@
 
     if (Array.isArray(linked.sales_orders) && linked.sales_orders.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Sales Order", "Open Sales Orders", linked.sales_orders.length),
         variant: "primary",
         icon: "sales_order",
@@ -696,6 +726,7 @@
 
     if (party && party.doctype && party.name) {
       actions.push({
+        category: "reference_document",
         title: `Open ${getPartyLabel(party.doctype)}`,
         variant: actions.length ? "secondary" : "primary",
         icon: "customer",
@@ -704,6 +735,8 @@
     }
 
     actions.push({
+      attention: Number(support.open_task_count || 0) > 0,
+      category: "follow_up",
       title: support.open_task_count ? `Review Follow-Up (${support.open_task_count})` : "Create Follow-Up Task",
       variant: "secondary",
       icon: "follow_up",
@@ -723,6 +756,7 @@
       });
       if (Array.isArray(linked.payment_entries) && linked.payment_entries.length) {
         actions.push({
+          category: "linked_document",
           title: formatCountTitle("Open Payment Entry", "Open Payment Entries", linked.payment_entries.length),
           variant: "secondary",
           icon: "payment_entry",
@@ -749,6 +783,7 @@
 
     if (linked.source_invoice && linked.source_invoice.name) {
       actions.push({
+        category: "linked_document",
         title: "Open Source Invoice",
         variant: "secondary",
         icon: "return_doc",
@@ -756,6 +791,7 @@
       });
     } else if (Array.isArray(linked.returns) && linked.returns.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Return Invoice", "Open Return Invoices", linked.returns.length),
         variant: "secondary",
         icon: "return_doc",
@@ -769,7 +805,9 @@
       });
     }
 
-    return actions;
+    return applySalesConsoleDocumentActionPolicy(actions, {
+      maxTopActions: 2,
+    });
   }
 
   function addressSectionIconMarkup(kind) {
@@ -2493,7 +2531,7 @@
             value: formatMoney(frm.doc.grand_total, frm.doc.currency),
           },
         ],
-        note: "Read invoice value and tax posture here while ERP totals stay authoritative.",
+        note: "Review invoice value, tax posture, and settlement readiness before follow-up.",
         removeSelector: ".erpw-so-inline-summary",
         summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
         title: "Commercial Posture",
@@ -2620,7 +2658,7 @@
     const items = Array.isArray(frm.doc.items) ? frm.doc.items : [];
     childPageDetails.renderSectionHeader($itemsSection, {
       headerClass: "erpw-child-section-header",
-      note: "Keep invoice lines native here, then use the summaries below for settlement, tax, and value reading.",
+      note: "Review billed items, quantities, rates, and value before settlement follow-up.",
       removeSelector: ".erpw-child-section-header",
       statusText: Number(frm.doc.is_return || 0)
         ? "Return lines"
@@ -2991,6 +3029,10 @@
         doctype: item.doctype,
         title: item.title,
         note: item.note,
+        count: item.count,
+        visibility: item.required === false && !(item.doctype === "Payment Entry" && !nearlyEqual(summary.outstanding_amount || 0, 0))
+          ? "optional"
+          : "meaningful-empty",
         iconMarkup: connectionDocIconMarkup(item.doctype),
         status: getConnectionDocStatus(item),
         actions: item.onOpen ? [{ label: "Open linked", run: item.onOpen }] : [],
@@ -3021,6 +3063,8 @@
         doctype: item.doctype,
         title: item.title,
         note: item.note,
+        count: item.count,
+        visibility: "meaningful-empty",
         iconMarkup: connectionDocIconMarkup(item.doctype),
         status: getConnectionDocStatus(item),
         actions: item.onOpen ? [{ label: "Open linked", run: item.onOpen }] : [],
@@ -3065,6 +3109,8 @@
           doctype: item.doctype,
           title: item.title,
           note: item.note,
+          count: item.count,
+          visibility: item.required === false ? "optional" : "meaningful-empty",
           iconMarkup: connectionDocIconMarkup(item.doctype),
           status: getConnectionDocStatus(item),
           actions: item.onOpen ? [{ label: "Open linked", run: item.onOpen }] : [],
@@ -3101,6 +3147,7 @@
         workspaceClassName: "erpw-so-connections-workspace",
         pendingNoteClass: "erpw-so-connections-pending-note",
         groupClass: "erpw-so-connection-primary-group",
+        groupCompactClass: "erpw-so-connection-primary-group-compact",
         groupHeadClass: "erpw-so-connection-primary-head",
         groupSummaryClass: "erpw-so-connection-primary-summary",
         groupIconClass: "erpw-so-connection-primary-icon",
@@ -3110,6 +3157,7 @@
         groupStatusClass: "erpw-so-connection-primary-status",
         itemsClass: "erpw-so-connection-primary-grid",
         itemClass: "erpw-so-connection-doc-card",
+        itemCompactClass: "erpw-so-connection-doc-card-compact",
         itemHeadClass: "erpw-so-connection-doc-head",
         itemMainClass: "erpw-so-connection-doc-main",
         itemIconClass: "erpw-so-connection-doc-icon",
@@ -3132,6 +3180,7 @@
         secondaryNoteClass: "erpw-so-connections-secondary-note",
         secondaryRowsClass: "erpw-so-connections-secondary-rows",
         secondaryRowClass: "erpw-so-connections-secondary-row",
+        secondaryRowCompactClass: "erpw-so-connections-secondary-row-compact",
         secondaryRowIconClass: "erpw-so-connections-secondary-row-icon",
         secondaryRowCopyClass: "erpw-so-connections-secondary-row-copy",
         secondaryRowTitleClass: "erpw-so-connections-secondary-row-title",
@@ -3405,23 +3454,27 @@
         meta: conversionMeta,
       },
     ];
-    const guidanceCards = [
-      {
+    const invoiceWorkflowAttention = workflowPending;
+    const invoiceValidityAttention = validityState === "expired" || validityState === "expiring_soon";
+    const guidanceCards = applySalesConsoleGuidancePolicy([
+      invoiceWorkflowAttention || invoiceValidityAttention ? {
+        attention: true,
         chipLabel: "Priority",
         className: "erpw-child-guidance-card-primary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.next_action || "Continue commercial follow-through.",
-        title: "Next Action",
-      },
-      {
+        text: support.next_action || "Resolve the current exception before using this record for customer-facing follow-through.",
+        title: invoiceWorkflowAttention ? "Approval Gate" : "Validity Review",
+      } : null,
+      support.customer_response_hint && (invoiceWorkflowAttention || invoiceValidityAttention) ? {
+        attention: true,
         chipClass: "erpw-child-guidance-chip-secondary",
         chipLabel: "Communication",
         className: "erpw-child-guidance-card-secondary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 13a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zm-6 6a6 6 0 0 1 12 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.customer_response_hint || "Use the latest approval and validity context before customer confirmation.",
+        text: support.customer_response_hint,
         title: "Customer Response",
-      },
-    ];
+      } : null,
+    ]);
     const extraSectionsHtml = `
       <section class="erpw-child-card erpwq-quotation-review-band">
         <article class="erpwq-quotation-review-main">
@@ -3472,7 +3525,7 @@
         extraSectionsHtml,
         guidance: {
           cards: guidanceCards,
-          title: "What To Do Now",
+          title: "Attention",
         },
         summary: {
           chips: summaryChips,
@@ -3683,31 +3736,29 @@
       },
     ];
 
-    const guidanceCards = [
-      {
+    const invoiceOverdue = ["Overdue", "Unpaid"].includes(String(summary.status || "").trim()) && !nearlyEqual(outstandingAmount, 0);
+    const invoiceHasReturns = isReturn || Number(summary.return_count || 0) > 0;
+    const guidanceCards = applySalesConsoleGuidancePolicy([
+      invoiceOverdue || invoiceHasReturns ? {
+        attention: true,
         chipLabel: "Priority",
         className: "erpw-child-guidance-card-primary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.next_action || "Continue invoice settlement follow-through.",
-        title: "Next Action",
-      },
-      {
+        text: support.next_action || (invoiceHasReturns
+          ? "Review return impact before confirming payment or credit posture."
+          : "Follow up on the outstanding invoice amount before closing the billing loop."),
+        title: invoiceHasReturns ? "Return Impact" : "Settlement Risk",
+      } : null,
+      support.customer_response_hint && (invoiceOverdue || invoiceHasReturns) ? {
+        attention: true,
         chipClass: "erpw-child-guidance-chip-secondary",
         chipLabel: "Communication",
         className: "erpw-child-guidance-card-secondary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 13a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zm-6 6a6 6 0 0 1 12 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.customer_response_hint || "Use the latest settlement posture before giving customer-facing billing updates.",
+        text: support.customer_response_hint,
         title: "Customer Response",
-      },
-      {
-        chipClass: "erpw-child-guidance-chip-secondary",
-        chipLabel: "Finance",
-        className: "erpw-child-guidance-card-secondary",
-        iconMarkup: '<svg viewBox="0 0 24 24"><path d="M4.5 7.5h15v9h-15zM7.5 11.5h4M16.5 10a1.5 1.5 0 1 1 0 3a1.5 1.5 0 0 1 0-3z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.settlement_note || support.detail_guide || "Use this header as the billing operating read before leaving the invoice record.",
-        title: "Settlement Note",
-      },
-    ];
+      } : null,
+    ]);
 
     if (typeof childPageShellContent.renderShellContent === "function") {
       childPageShellContent.renderShellContent($shell, {
@@ -3715,7 +3766,7 @@
         actions,
         guidance: {
           cards: guidanceCards,
-          title: "What To Do Now",
+          title: "Attention",
         },
         summary: {
           chips: summaryChips,

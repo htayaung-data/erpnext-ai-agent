@@ -39,6 +39,12 @@ fake_frappe.local = types.SimpleNamespace(site="")
 fake_frappe._ = lambda message: message
 
 fake_utils = types.ModuleType("frappe.utils")
+fake_utils.add_months = lambda value, months: value
+fake_utils.cint = lambda value=0: int(value or 0)
+fake_utils.cstr = lambda value="": "" if value is None else str(value)
+fake_utils.flt = lambda value=0, precision=None: float(value or 0)
+fake_utils.fmt_money = lambda value, currency=None, precision=None: str(value)
+fake_utils.formatdate = lambda value=None, format_string=None: str(value or "")
 fake_utils.get_fullname = lambda user=None: user or ""
 fake_utils.getdate = lambda value=None: value
 fake_utils.now_datetime = lambda: "2026-04-10 00:00:00"
@@ -208,6 +214,215 @@ class TestSalesConsoleServiceContracts(unittest.TestCase):
         )
 
         self.assertEqual(summary, "79% settled; 1 payment record(s) linked")
+
+    def test_sidebar_context_builds_role_aware_sections_and_hides_hidden_actions(self):
+        navigation = {
+            "actions": {
+                "new_quotation": {"kind": "new_doc", "doctype": "Quotation"},
+                "new_sales_order": {"kind": "new_doc", "doctype": "Sales Order"},
+                "open_customer": {"kind": "worklist", "queue_key": "customer_directory"},
+                "open_item": {"kind": "worklist", "queue_key": "item_directory"},
+            },
+            "browse": {
+                "quotation_directory": {"kind": "worklist", "queue_key": "quotation_directory"},
+                "sales_order_directory": {"kind": "worklist", "queue_key": "sales_order_directory"},
+                "customer_directory": {"kind": "worklist", "queue_key": "customer_directory"},
+                "item_directory": {"kind": "worklist", "queue_key": "item_directory"},
+            },
+            "insights": {
+                "open_orders": {"kind": "worklist", "queue_key": "open_orders"},
+                "awaiting_approval": {"kind": "worklist", "queue_key": "orders_blocked_by_approval"},
+            },
+            "work": {
+                "quotations_waiting_action": {"kind": "worklist", "queue_key": "quotations_waiting_action"},
+                "customer_follow_up_tasks": {"kind": "worklist", "queue_key": "customer_follow_up_tasks"},
+            },
+            "lifecycle": {},
+            "blockers": {},
+            "queues": {},
+            "reports": {
+                "sales_order_analysis": {"kind": "report_page", "report_key": "sales_order_analysis"},
+                "quotation_trends": {"kind": "report_page", "report_key": "quotation_trends"},
+                "collections_status": {"kind": "report_page", "report_key": "collections_status"},
+                "lost_quotations": {"kind": "report_page", "report_key": "lost_quotations"},
+            },
+        }
+        reports_catalog = [
+            {"key": "sales_order_analysis", "title": "Sales Order Analysis", "icon": "order"},
+            {"key": "quotation_trends", "title": "Quotation Trends", "icon": "quotation"},
+            {"key": "collections_status", "title": "Collections Status", "icon": "chart"},
+            {"key": "lost_quotations", "title": "Lost Quotations", "icon": "quotation"},
+        ]
+
+        with patch.object(service, "_build_context", return_value={"role_variant": "sales_executive", "primary_role": "Sales"}), patch.object(
+            service,
+            "_build_scope",
+            return_value={"scope_label": "Assigned account scope"},
+        ), patch.object(
+            service,
+            "_build_ui_profile",
+            return_value={
+                "mode_label": "Execution Mode",
+                "hidden_actions": ["new_sales_order"],
+                "queue_order": ["quotations_waiting_action", "customer_follow_up_tasks"],
+                "show_reports": True,
+            },
+        ), patch.object(service, "_build_navigation", return_value=navigation), patch.object(
+            service,
+            "_build_reports_catalog",
+            return_value=reports_catalog,
+        ):
+            result = service.get_sales_console_sidebar_context()
+
+        self.assertEqual(result["ui_profile"]["mode_label"], "Execution Mode")
+        sections = {section["key"]: section for section in result["sidebar"]["sections"]}
+        self.assertEqual(
+            [item["label"] for item in sections["browse"]["items"]],
+            ["Sales Console", "Quotations", "Sales Orders", "Customers", "Items"],
+        )
+        self.assertNotIn("workspace", sections)
+        self.assertNotIn("create", sections)
+        self.assertNotIn("review", sections)
+        self.assertNotIn("reports", sections)
+
+    def test_sidebar_context_omits_create_and_reports_when_profile_hides_them(self):
+        navigation = {
+            "actions": {
+                "new_quotation": {"kind": "new_doc", "doctype": "Quotation"},
+                "new_sales_order": {"kind": "new_doc", "doctype": "Sales Order"},
+                "open_customer": {"kind": "worklist", "queue_key": "customer_directory"},
+                "open_item": {"kind": "worklist", "queue_key": "item_directory"},
+            },
+            "browse": {
+                "quotation_directory": {"kind": "worklist", "queue_key": "quotation_directory"},
+                "sales_order_directory": {"kind": "worklist", "queue_key": "sales_order_directory"},
+                "customer_directory": {"kind": "worklist", "queue_key": "customer_directory"},
+                "item_directory": {"kind": "worklist", "queue_key": "item_directory"},
+            },
+            "insights": {
+                "open_orders": {"kind": "worklist", "queue_key": "open_orders"},
+                "awaiting_approval": {"kind": "worklist", "queue_key": "orders_blocked_by_approval"},
+            },
+            "work": {},
+            "lifecycle": {},
+            "blockers": {},
+            "queues": {},
+            "reports": {
+                "sales_analytics": {"kind": "report_page", "report_key": "sales_analytics"},
+            },
+        }
+
+        with patch.object(service, "_build_context", return_value={"role_variant": "executive_review", "primary_role": "Sales"}), patch.object(
+            service,
+            "_build_scope",
+            return_value={"scope_label": "Executive review scope"},
+        ), patch.object(
+            service,
+            "_build_ui_profile",
+            return_value={
+                "mode_label": "Executive Review Mode",
+                "hidden_actions": ["new_quotation", "new_sales_order"],
+                "queue_order": [],
+                "show_reports": False,
+            },
+        ), patch.object(service, "_build_navigation", return_value=navigation), patch.object(
+            service,
+            "_build_reports_catalog",
+            return_value=[{"key": "sales_analytics", "title": "Sales Analytics", "icon": "chart"}],
+        ):
+            result = service.get_sales_console_sidebar_context()
+
+        section_keys = [section["key"] for section in result["sidebar"]["sections"]]
+        self.assertIn("browse", section_keys)
+        self.assertNotIn("workspace", section_keys)
+        self.assertNotIn("create", section_keys)
+        self.assertNotIn("review", section_keys)
+        self.assertNotIn("reports", section_keys)
+
+    def test_sales_console_workspace_search_returns_scoped_targets(self):
+        def fake_fieldnames(doctype):
+            field_map = {
+                "Customer": {"name", "customer_name", "territory", "modified", "disabled"},
+                "Item": {"name", "item_code", "item_name", "item_group", "modified", "disabled", "is_sales_item"},
+                "Quotation": {"name", "customer_name", "status", "transaction_date", "modified", "docstatus", "owner"},
+                "Sales Order": {"name", "customer", "status", "transaction_date", "modified", "docstatus", "owner"},
+            }
+            return field_map.get(doctype, {"name"})
+
+        def fake_get_list(doctype, **kwargs):
+            if doctype == "Customer":
+                return [
+                    {
+                        "name": "CUST-ACME",
+                        "customer_name": "Acme Trading",
+                        "territory": "Yangon",
+                        "modified": "2026-04-24 09:00:00",
+                    }
+                ]
+            if doctype == "Item":
+                return [
+                    {
+                        "name": "ITEM-ACME-1",
+                        "item_code": "ITEM-ACME-1",
+                        "item_name": "Acme Camera",
+                        "item_group": "Security",
+                        "modified": "2026-04-24 08:00:00",
+                    }
+                ]
+            if doctype == "Quotation":
+                return [
+                    {
+                        "name": "QTN-0001",
+                        "customer_name": "Acme Trading",
+                        "status": "Open",
+                        "transaction_date": "2026-04-20",
+                        "modified": "2026-04-24 10:00:00",
+                    }
+                ]
+            if doctype == "Sales Order":
+                return [
+                    {
+                        "name": "SO-0001",
+                        "customer": "Acme Trading",
+                        "status": "To Deliver",
+                        "transaction_date": "2026-04-21",
+                        "modified": "2026-04-24 07:00:00",
+                    }
+                ]
+            return []
+
+        with patch.object(
+            service,
+            "_build_context",
+            return_value={"role_variant": "sales_executive", "primary_role": "Sales"},
+        ), patch.object(
+            service,
+            "_build_scope",
+            return_value={"scope_mode": "permission_scope", "owner_user_ids": ["Administrator"], "apply_branch_filter": False, "branch_name": None},
+        ), patch.object(service, "_can_read", return_value=True), patch.object(
+            service,
+            "_fieldnames",
+            side_effect=fake_fieldnames,
+        ), patch.object(service.frappe, "get_list", side_effect=fake_get_list):
+            result = service.search_sales_console_workspace("Acme", limit=8)
+
+        self.assertEqual(result["state"], "ready")
+        results_by_doctype = {item["doctype"]: item for item in result["results"]}
+        self.assertEqual(results_by_doctype["Customer"]["target"]["kind"], "worklist")
+        self.assertEqual(results_by_doctype["Customer"]["target"]["queue_key"], "customer_directory")
+        self.assertEqual(results_by_doctype["Customer"]["target"]["filters"]["keyword"], "CUST-ACME")
+        self.assertEqual(results_by_doctype["Item"]["target"]["kind"], "worklist")
+        self.assertEqual(results_by_doctype["Item"]["target"]["queue_key"], "item_directory")
+        self.assertEqual(results_by_doctype["Quotation"]["target"]["kind"], "form")
+        self.assertEqual(results_by_doctype["Quotation"]["target"]["doctype"], "Quotation")
+        self.assertEqual(results_by_doctype["Sales Order"]["target"]["kind"], "form")
+        self.assertEqual(results_by_doctype["Sales Order"]["target"]["doctype"], "Sales Order")
+
+    def test_sales_console_workspace_search_stays_idle_for_short_query(self):
+        result = service.search_sales_console_workspace("a")
+
+        self.assertEqual(result["state"], "idle")
+        self.assertEqual(result["results"], [])
 
 
 if __name__ == "__main__":

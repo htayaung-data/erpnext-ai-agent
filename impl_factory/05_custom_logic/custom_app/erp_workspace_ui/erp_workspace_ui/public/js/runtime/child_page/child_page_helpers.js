@@ -23,6 +23,45 @@
     return !!(frm && typeof frm.is_new === "function" && frm.is_new());
   }
 
+  const BUSINESS_NOTE_INTENTS = Object.freeze([
+    "action",
+    "blocked",
+    "decision",
+    "empty",
+    "exception",
+    "missing",
+    "readonly",
+    "risk",
+    "warning",
+  ]);
+
+  function normalizeBusinessNoteIntent(intent) {
+    return String(intent || "").trim().toLowerCase();
+  }
+
+  function noteHasBusinessSignal(text) {
+    return /\b(add|blocked|cannot|confirm|due|empty|expired|failed|fix|link|missing|needed|not configured|not linked|overdue|readonly|required|review-only|select|short|unlock|warning|zero)\b/i
+      .test(String(text || ""));
+  }
+
+  function resolveBusinessNote(note, options) {
+    const text = note == null ? "" : String(note).trim();
+    if (!text) return "";
+
+    const settings = options || {};
+    if (settings.force === true) return text;
+
+    const intent = normalizeBusinessNoteIntent(settings.intent || settings.noteIntent || settings.copyIntent);
+    if (BUSINESS_NOTE_INTENTS.includes(intent)) return text;
+
+    const tone = String(settings.statusTone || settings.tone || "").trim().toLowerCase();
+    if (["attention", "blocker", "danger", "error", "warning"].includes(tone) && noteHasBusinessSignal(text)) {
+      return text;
+    }
+
+    return "";
+  }
+
   function getDraftPerformanceSessionKey(frm) {
     const routePath = root.location && root.location.pathname ? root.location.pathname : "";
     const identity = isDraftForm(frm)
@@ -235,12 +274,220 @@
     return frappe.utils.escape_html(value == null ? "" : String(value));
   }
 
+  const SALES_CONSOLE_DIRECTORY_BY_DOCTYPE = {
+    Customer: "customer_directory",
+    Item: "item_directory",
+    Quotation: "quotation_directory",
+    "Sales Order": "sales_order_directory",
+    ToDo: "customer_follow_up_tasks",
+  };
+
+  const SALES_CONSOLE_ENHANCED_FORM_DOCTYPES = new Set([
+    "Delivery Note",
+    "Quotation",
+    "Sales Invoice",
+    "Sales Order",
+  ]);
+
+  const SALES_CONSOLE_FORM_ONLY_DOCTYPES = new Set([
+    "Delivery Note",
+    "Sales Invoice",
+  ]);
+
+  const SALES_CONSOLE_DEFERRED_DOCTYPES = new Set([
+    "Delivery Trip",
+    "Driver",
+    "Opportunity",
+    "Payment Entry",
+    "Supplier",
+    "ToDo",
+    "Warehouse",
+  ]);
+
+  const SALES_CONSOLE_LINKED_DOCUMENT_ACTION_CATEGORIES = new Set([
+    "linked_document",
+    "reference_document",
+    "supporting_navigation",
+  ]);
+
+  function normalizeDoctype(value) {
+    return String(value || "").trim();
+  }
+
+  function getDirectoryQueueForDoctype(doctype) {
+    return SALES_CONSOLE_DIRECTORY_BY_DOCTYPE[normalizeDoctype(doctype)] || "";
+  }
+
+  function applySalesConsoleDocumentActionPolicy(actions, options) {
+    const settings = Object.assign({
+      includePassiveFollowUp: false,
+      maxTopActions: 2,
+    }, options || {});
+    const maxTopActions = Math.max(0, Number(settings.maxTopActions || 0));
+    const allowed = [];
+
+    (Array.isArray(actions) ? actions : []).forEach((action) => {
+      if (!action) return;
+      const category = String(action.category || "").trim();
+      const family = String(action.family || "").trim();
+
+      if (family === "commit" || action.forceTopAction) {
+        allowed.push(action);
+        return;
+      }
+
+      if (SALES_CONSOLE_LINKED_DOCUMENT_ACTION_CATEGORIES.has(category)) {
+        return;
+      }
+
+      if (category === "follow_up") {
+        if (action.attention || settings.includePassiveFollowUp) {
+          allowed.push(action);
+        }
+        return;
+      }
+
+      if (category === "primary_business_action" || category === "business_next_step") {
+        allowed.push(action);
+      }
+    });
+
+    return maxTopActions ? allowed.slice(0, maxTopActions) : allowed;
+  }
+
+  function applySalesConsoleGuidancePolicy(cards, options) {
+    const settings = Object.assign({
+      includeFallback: false,
+      maxCards: 2,
+    }, options || {});
+    const normalized = (Array.isArray(cards) ? cards : []).filter(Boolean);
+    const priorityCards = normalized.filter((card) => !!(card.attention || card.priority));
+    const selected = priorityCards.length
+      ? priorityCards
+      : (settings.includeFallback ? normalized : []);
+    return selected.slice(0, Math.max(0, Number(settings.maxCards || 0)));
+  }
+
+  function getKeywordFilter(name, filters) {
+    if (filters && typeof filters === "object" && Object.keys(filters).length) {
+      return Object.assign({}, filters);
+    }
+    const keyword = String(name || "").trim();
+    return keyword ? { keyword } : {};
+  }
+
+  function showDeferredRouteNotice(doctype) {
+    frappe.show_alert({
+      message: __(`${doctype} is visible as Sales Console context, but its designed workspace page is not available yet.`),
+      indicator: "orange",
+    });
+    return true;
+  }
+
+  function encodeRoutePart(value) {
+    return encodeURIComponent(String(value || "").trim());
+  }
+
+  function customerRouteValue(filters) {
+    return filters && typeof filters === "object" ? String(filters.customer || "").trim() : "";
+  }
+
+  function routeToWorklist(queueKey, filters) {
+    if (!queueKey) return false;
+    const normalizedQueueKey = String(queueKey || "").replace(/_/g, "-");
+    const nextFilters = filters && typeof filters === "object" && Object.keys(filters).length ? filters : null;
+    const routeCustomer = customerRouteValue(nextFilters);
+    if (["customer_detail", "customer_editor"].includes(String(queueKey || "").replace(/-/g, "_")) && routeCustomer) {
+      frappe.route_options = nextFilters;
+      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeCustomer));
+      return true;
+    }
+
+    const route = frappe.get_route ? frappe.get_route() : [];
+    const currentQueueKey = Array.isArray(route) && route[0] === "sales-console-worklist"
+      ? String(route[1] || "").replace(/-/g, "_")
+      : "";
+    const worklistRuntime = root.erpWorkspaceSalesConsoleWorklist || {};
+
+    if (
+      currentQueueKey === String(queueKey || "").replace(/-/g, "_")
+      && nextFilters
+      && typeof worklistRuntime.applyFilters === "function"
+      && worklistRuntime.applyFilters(String(queueKey || "").replace(/-/g, "_"), nextFilters)
+    ) {
+      return true;
+    }
+
+    frappe.route_options = nextFilters;
+    frappe.set_route("sales-console-worklist", normalizedQueueKey);
+    return true;
+  }
+
+  function routeToSalesConsoleTarget(target) {
+    if (!target || typeof target !== "object") return false;
+    if (target.notice) {
+      frappe.show_alert({ message: __(target.notice), indicator: "blue" });
+    }
+
+    if (target.kind === "worklist" && target.queue_key) {
+      return routeToWorklist(target.queue_key, target.filters || null);
+    }
+
+    if (target.kind === "form" && target.doctype && target.name) {
+      const doctype = normalizeDoctype(target.doctype);
+      if (doctype === "ToDo") {
+        return routeToWorklist("customer_follow_up_tasks", Object.assign({}, target.filters || {}, {
+          todo_name: target.name,
+        }));
+      }
+      if (doctype === "Customer") {
+        return routeToWorklist("customer_detail", Object.assign({}, target.filters || {}, {
+          customer: target.name,
+        }));
+      }
+      if (SALES_CONSOLE_ENHANCED_FORM_DOCTYPES.has(doctype)) {
+        frappe.set_route("Form", doctype, target.name);
+        return true;
+      }
+
+      const queueKey = getDirectoryQueueForDoctype(doctype);
+      if (queueKey) {
+        return routeToWorklist(queueKey, getKeywordFilter(target.name, target.filters));
+      }
+      if (SALES_CONSOLE_DEFERRED_DOCTYPES.has(doctype)) {
+        return showDeferredRouteNotice(doctype);
+      }
+    }
+
+    if (target.kind === "list" && target.doctype) {
+      const doctype = normalizeDoctype(target.doctype);
+      const queueKey = getDirectoryQueueForDoctype(doctype);
+      if (queueKey) {
+        return routeToWorklist(queueKey, target.filters || null);
+      }
+      if (SALES_CONSOLE_FORM_ONLY_DOCTYPES.has(doctype)) {
+        frappe.show_alert({
+          message: __(`${doctype} directory is not available in Sales Console yet. Open a single linked document from Connections.`),
+          indicator: "orange",
+        });
+        return true;
+      }
+      if (SALES_CONSOLE_DEFERRED_DOCTYPES.has(doctype)) {
+        return showDeferredRouteNotice(doctype);
+      }
+    }
+
+    return false;
+  }
+
   function routeToDoc(doctype, name) {
     if (!doctype || !name) return;
+    if (routeToSalesConsoleTarget({ kind: "form", doctype, name })) return;
     frappe.set_route("Form", doctype, name);
   }
 
   function routeToList(doctype, filters) {
+    if (routeToSalesConsoleTarget({ kind: "list", doctype, filters })) return;
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
   }
@@ -910,6 +1157,7 @@
     ensureChildPageHostSlot,
     escapeHtml,
     formatMoney,
+    resolveBusinessNote,
     getDraftPerformanceSessionKey,
     getDraftSupportSurfaces,
     getDraftBodyPanels,
@@ -919,6 +1167,10 @@
     getLayoutWrapper,
     getNativeLayoutAnchor,
     getPageContentRoot,
+    applySalesConsoleDocumentActionPolicy,
+    applySalesConsoleGuidancePolicy,
+    routeToSalesConsoleTarget,
+    routeToWorklist,
     routeToDoc,
     routeToList,
     scheduleFormTask,

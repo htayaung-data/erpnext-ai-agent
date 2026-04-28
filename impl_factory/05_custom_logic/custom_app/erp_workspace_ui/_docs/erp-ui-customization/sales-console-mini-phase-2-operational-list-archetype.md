@@ -1,19 +1,20 @@
 # Sales Console Mini-Phase 2 Operational List Archetype
 
-Status: active architecture foundation  
-Date: 2026-04-17  
-Source of truth: Mini-Phase 1 scope audit, shared child-page runtime, shared ERP UI CSS surface
+Status: implemented shared worklist foundation
+Date: 2026-04-17
+Last updated: 2026-04-23
+Source of truth: `sales_console/worklist.py`, `page/sales_console_worklist/sales_console_worklist.js`, and `public/js/runtime/list_page/list_page_shell.js`
 
 ## 1. Purpose
 
-This note defines the shared operational-list standard for the remaining Sales Console surfaces.
+This note defines the shared operational-list standard now used by the Sales Console worklist family.
 
 It exists so that:
 
 1. operational lists are built once as a reusable enterprise pattern
 2. later pages are implemented as variants, not as isolated page designs
 3. the list family stays visually and behaviorally aligned with the frozen Sales Console detail pages
-4. Mini-Phase 3 can build the first list cluster on a stable foundation
+4. later list variants stay thin data variants over one stable shell
 
 ## 2. Core Decision
 
@@ -28,9 +29,18 @@ The correct architecture is:
 3. keep both systems inside the same visual language, spacing system, and tone model
 4. treat each page as a thin data variant over one shared list shell
 
-Mini-Phase 2 therefore establishes a new shared runtime surface:
+Mini-Phase 2 established this shared runtime surface:
 
 1. `erpWorkspaceUiListPage`
+
+Current implementation also includes:
+
+1. route page `sales-console-worklist`
+2. backend method `erp_workspace_ui.sales_console.worklist.get_sales_console_worklist_context`
+3. queue-key routing through `/desk/sales-console-worklist/<queue-key>`
+4. filter payload support for productized list controls
+5. row action targets for opening linked ERP records
+6. guarded state for unsupported or missing queue keys
 
 ## 3. Where The Archetype Fits
 
@@ -41,13 +51,15 @@ This archetype is for:
 3. customer follow-up task worklists
 4. invoice outstanding worklists
 5. return and exception worklists
-6. later approval-review and report tables
+6. approval-review worklists
+7. customer and item review entry lists
 
 It is not for:
 
 1. full transaction forms such as Quotation, Sales Order, Delivery Note, or Sales Invoice
 2. draft create flows already handled by the child-page form architecture
 3. Inquiry, which is already productized as part of Sales Console home
+4. report pages, which use a separate report-family runtime direction
 
 ## 4. Enterprise List Structure
 
@@ -88,7 +100,8 @@ Required content:
 
 1. visible active filter chips
 2. optional quick scope chips such as team, mine, overdue, expiring, blocked
-3. page actions such as refresh, export, or save view when relevant
+3. form controls when the page is a directory-style worklist, such as Customers or Items
+4. page actions such as apply, reset, refresh, export, or save view when relevant
 
 Rule:
 
@@ -282,9 +295,60 @@ Signals:
 2. billing mismatch
 3. source document still open
 
+### 6.6 Customer directory list
+
+Implemented route:
+
+1. `/desk/sales-console-worklist/customer-directory`
+
+Primary columns:
+
+1. customer
+2. territory
+3. customer group
+4. outstanding exposure
+5. credit posture
+
+Controls:
+
+1. territory
+2. customer group
+3. keyword
+
+Signals:
+
+1. visible customers
+2. customers with outstanding exposure
+3. customers with recent sales activity
+
+### 6.7 Item directory list
+
+Implemented route:
+
+1. `/desk/sales-console-worklist/item-directory`
+
+Primary columns:
+
+1. item code
+2. item name
+3. item group
+4. stock posture
+
+Controls:
+
+1. item group
+2. availability
+3. keyword
+
+Signals:
+
+1. visible items
+2. in-stock items
+3. out-of-stock items
+
 ## 7. Technical Foundation
 
-Mini-Phase 2 establishes a shared runtime module and shared CSS layer.
+Mini-Phase 2 established a shared runtime module and shared visual layer.
 
 ### 7.1 Runtime surface
 
@@ -301,12 +365,15 @@ Purpose:
 1. mount a reusable list shell into a target node
 2. render summary, controls, signals, results, and state surfaces from one config object
 3. bind shared toolbar and row actions through one event contract
+4. render text and select filter controls from the backend contract
+5. preserve active filters while refreshing a page
 
 ### 7.2 Shared CSS surface
 
-Mini-Phase 2 adds list-shell styles into the existing:
+Mini-Phase 2 uses runtime shell styles and the existing ERP UI visual system:
 
-1. `public/css/erp_workspace_ui.css`
+1. `public/js/runtime/list_page/list_page_shell.js`
+2. `public/css/erp_workspace_ui.css`
 
 Rule:
 
@@ -358,18 +425,22 @@ Example:
 
 Explain that the queue did not load and keep a recovery action visible.
 
-## 9. Mini-Phase 3 Consumption Rule
+## 9. Current Consumption Rule
 
-When we start the first operational list cluster, implementation should happen in this order:
+When adding or changing a Sales Console worklist, implementation should happen in this order:
 
-1. wire the shared list shell into the ERP UI asset bundle
-2. build one list page from the shared contract
-3. reuse the same shell for the other operational queues with variant-only changes
-4. only after that start the review and report families
+1. add or update the backend builder in `sales_console/worklist.py`
+2. keep the page route on `sales-console-worklist`
+3. pass data through the shared list contract
+4. use row action targets instead of custom per-page click logic
+5. only add runtime behavior when it benefits more than one list page
 
-## 10. Immediate Output Of Mini-Phase 2
+## 10. Current Output Of Mini-Phase 2
 
-Mini-Phase 2 is complete only when both are true:
+Mini-Phase 2 is complete for the current Sales Console list family because:
 
-1. the shared operational-list standard is written and agreed
-2. the shared list-shell runtime and CSS foundation exist in the ERP UI package
+1. the shared operational-list standard is written
+2. the shared list-shell runtime exists in the ERP UI package
+3. operational queues, approval queues, Customers, and Items are routed through the shared shell
+4. the bare worklist route has an intentional guard state instead of silently rendering a misleading page
+5. Customers and Items were manually checked in the live Desk UI on 2026-04-23

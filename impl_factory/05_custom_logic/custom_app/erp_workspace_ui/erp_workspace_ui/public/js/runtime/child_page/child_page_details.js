@@ -6,6 +6,9 @@
   const escapeHtml = childPageHelpers.escapeHtml || function (value) {
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
+  const resolveBusinessNote = childPageHelpers.resolveBusinessNote || function (note) {
+    return note == null ? "" : String(note).trim();
+  };
 
   function ensureCriticalStyles() {
     const styleId = "erpw-child-details-critical-styles";
@@ -57,6 +60,7 @@
     const settings = Object.assign({
       kicker: "",
       note: "",
+      noteIntent: "",
       metrics: [],
       removeSelector: ".erpw-child-detail-snapshot",
       snapshotClass: "erpw-child-detail-snapshot",
@@ -69,12 +73,18 @@
     }
 
     const metrics = Array.isArray(settings.metrics) ? settings.metrics : [];
+    const noteText = resolveBusinessNote(settings.note, {
+      intent: settings.noteIntent,
+      statusText: settings.statusText,
+      statusTone: settings.statusTone,
+      surface: "detail-snapshot",
+    });
     const $snapshot = $(`
       <section class="${escapeHtml(settings.snapshotClass)}">
         <div class="erpw-child-detail-snapshot-head">
           <div class="erpw-child-detail-snapshot-copy">
             <div class="erpw-child-detail-snapshot-kicker">${escapeHtml(settings.kicker || "")}</div>
-            <div class="erpw-child-detail-snapshot-note">${escapeHtml(settings.note || "")}</div>
+            ${noteText ? `<div class="erpw-child-detail-snapshot-note">${escapeHtml(noteText)}</div>` : ""}
           </div>
           ${settings.statusText ? `<div class="erpw-child-detail-snapshot-status" data-tone="${escapeHtml(settings.statusTone || "neutral")}">${escapeHtml(settings.statusText)}</div>` : ""}
         </div>
@@ -100,6 +110,7 @@
     const settings = Object.assign({
       headerClass: "erpw-child-section-header",
       note: "",
+      noteIntent: "",
       removeSelector: ".erpw-child-section-header",
       statusText: "",
       statusTone: "neutral",
@@ -110,11 +121,17 @@
       $section.find(settings.removeSelector).remove();
     }
 
+    const noteText = resolveBusinessNote(settings.note, {
+      intent: settings.noteIntent,
+      statusText: settings.statusText,
+      statusTone: settings.statusTone,
+      surface: "detail-section-header",
+    });
     const $header = $(`
       <div class="${escapeHtml(settings.headerClass)}">
         <div class="erpw-child-section-header-copy">
           <div class="erpw-child-section-header-title">${escapeHtml(settings.title || "")}</div>
-          ${settings.note ? `<div class="erpw-child-section-header-note">${escapeHtml(settings.note)}</div>` : ""}
+          ${noteText ? `<div class="erpw-child-section-header-note">${escapeHtml(noteText)}</div>` : ""}
         </div>
         ${settings.statusText ? `<div class="erpw-child-section-header-status" data-tone="${escapeHtml(settings.statusTone || "neutral")}">${escapeHtml(settings.statusText)}</div>` : ""}
       </div>

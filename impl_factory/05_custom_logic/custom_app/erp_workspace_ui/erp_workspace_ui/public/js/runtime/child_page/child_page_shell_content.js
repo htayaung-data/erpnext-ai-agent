@@ -24,7 +24,7 @@
       && normalizedActions.length <= settings.sparseSecondaryThreshold
     ) {
       return [{
-        className: 'erpw-child-action-row erpw-child-action-row-secondary',
+        className: `erpw-child-action-row erpw-child-action-row-secondary${normalizedActions.length <= 2 ? ' erpw-child-action-row-compact' : ''}`,
         actions: normalizedActions,
       }];
     }
@@ -35,14 +35,14 @@
 
     if (primaryActions.length) {
       rows.push({
-        className: 'erpw-child-action-row erpw-child-action-row-primary',
+        className: `erpw-child-action-row erpw-child-action-row-primary${primaryActions.length <= 2 ? ' erpw-child-action-row-compact' : ''}`,
         actions: primaryActions,
       });
     }
 
     if (secondaryActions.length) {
       rows.push({
-        className: 'erpw-child-action-row erpw-child-action-row-secondary',
+        className: `erpw-child-action-row erpw-child-action-row-secondary${secondaryActions.length <= 2 ? ' erpw-child-action-row-compact' : ''}`,
         actions: secondaryActions,
       });
     }
@@ -61,6 +61,18 @@
           <span class="erpw-child-action-title">${escapeHtml(action.title)}</span>
           ${note ? `<span class="erpw-child-action-note">${escapeHtml(note)}</span>` : ''}
         </span>
+      </button>
+    `;
+  }
+
+  function renderGuidanceActionButton(action, actionIconMarkup) {
+    const disabled = !!action.disabled;
+    const note = String(action.note || action.disabledReason || '').trim();
+    const titleAttr = note ? ` title="${escapeHtml(note)}"` : '';
+    return `
+      <button type="button" class="erpw-child-guidance-action ${escapeHtml(action.variant || 'secondary')}${disabled ? ' is-disabled' : ''}" data-action-index="${action.idx}" ${disabled ? 'disabled aria-disabled="true"' : ''}${titleAttr}>
+        <span class="erpw-child-guidance-action-icon" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
+        <span class="erpw-child-guidance-action-title">${escapeHtml(action.title || '')}</span>
       </button>
     `;
   }
@@ -100,8 +112,9 @@
 
   function renderActionsBand(actionRows, actionIconMarkup) {
     if (!Array.isArray(actionRows) || !actionRows.length) return '';
+    const compact = actionRows.every((row) => Array.isArray(row.actions) && row.actions.length <= 2);
     return `
-      <section class="erpw-child-card erpw-child-actions erpw-child-actions-band">
+      <section class="erpw-child-card erpw-child-actions erpw-child-actions-band${compact ? ' erpw-child-actions-compact' : ''}">
         <div class="erpw-child-action-stack">
           ${actionRows.map((row) => `
             <div class="${escapeHtml(row.className || 'erpw-child-action-row erpw-child-action-row-secondary')}" data-count="${Array.isArray(row.actions) ? row.actions.length : 0}">
@@ -113,29 +126,65 @@
     `;
   }
 
-  function renderGuidanceSection(guidance) {
-    const cards = Array.isArray(guidance.cards) ? guidance.cards : [];
-    if (!cards.length) return '';
+  function renderDocumentActionButton(action, actionIconMarkup) {
+    const disabled = !!action.disabled;
+    const note = String(action.note || action.disabledReason || '').trim();
+    const titleAttr = note ? ` title="${escapeHtml(note)}"` : '';
+    return `
+      <button type="button" class="erpw-child-document-action ${escapeHtml(action.variant || 'secondary')}${disabled ? ' is-disabled' : ''}" data-document-action-index="${action.idx}" ${disabled ? 'disabled aria-disabled="true"' : ''}${titleAttr}>
+        <span class="erpw-child-document-action-icon" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
+        <span class="erpw-child-document-action-title">${escapeHtml(action.title || '')}</span>
+      </button>
+    `;
+  }
+
+  function renderDocumentActions(documentActions, actionIconMarkup) {
+    const actions = Array.isArray(documentActions) ? documentActions : [];
+    if (!actions.length) return '';
+    return `
+      <section class="erpw-child-card erpw-child-document-actions" aria-label="Document actions">
+        <div class="erpw-child-document-actions-head">
+          <div class="erpw-child-document-actions-title">Document</div>
+        </div>
+        <div class="erpw-child-document-actions-list">
+          ${actions.map((action) => renderDocumentActionButton(action, actionIconMarkup)).join('')}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderGuidanceSection(guidance, actionIconMarkup) {
+    const cards = (Array.isArray(guidance.cards) ? guidance.cards : []).slice(0, 2);
+    const inlineActions = Array.isArray(guidance.inlineActions) ? guidance.inlineActions : [];
+    if (!cards.length && !inlineActions.length) return '';
+    const compact = guidance.compact !== false;
 
     return `
-      <section class="erpw-child-card erpw-child-context">
+      <section class="erpw-child-card erpw-child-context${compact ? ' erpw-child-context-compact' : ''}">
         <div class="erpw-child-section-heading erpw-child-section-heading-compact">
-          <div class="erpw-child-section-title">${escapeHtml(guidance.title || 'What To Do Now')}</div>
+          <div class="erpw-child-section-title">${escapeHtml(guidance.title || 'Attention')}</div>
+          ${inlineActions.length ? `
+            <div class="erpw-child-guidance-actions">
+              ${inlineActions.map((action) => renderGuidanceActionButton(action, actionIconMarkup)).join('')}
+            </div>
+          ` : ''}
         </div>
-        <div class="erpw-child-guidance-grid">
-          ${cards.map((card) => `
-            <article class="erpw-child-guidance-card ${escapeHtml(card.className || 'erpw-child-guidance-card-secondary')}">
-              <div class="erpw-child-guidance-head">
-                <span class="erpw-child-guidance-icon" aria-hidden="true">${card.iconMarkup || ''}</span>
-                <div class="erpw-child-guidance-copy">
-                  <div class="erpw-child-guidance-title">${escapeHtml(card.title || '')}</div>
-                  <div class="erpw-child-guidance-chip ${escapeHtml(card.chipClass || '')}">${escapeHtml(card.chipLabel || '')}</div>
+        ${cards.length ? `
+          <div class="erpw-child-guidance-grid">
+            ${cards.map((card) => `
+              <article class="erpw-child-guidance-card ${escapeHtml(card.className || 'erpw-child-guidance-card-secondary')}">
+                <div class="erpw-child-guidance-head">
+                  <span class="erpw-child-guidance-icon" aria-hidden="true">${card.iconMarkup || ''}</span>
+                  <div class="erpw-child-guidance-copy">
+                    <div class="erpw-child-guidance-title">${escapeHtml(card.title || '')}</div>
+                    <div class="erpw-child-guidance-chip ${escapeHtml(card.chipClass || '')}">${escapeHtml(card.chipLabel || '')}</div>
+                  </div>
                 </div>
-              </div>
-              <div class="erpw-child-guidance-text">${escapeHtml(card.text || '')}</div>
-            </article>
-          `).join('')}
-        </div>
+                <div class="erpw-child-guidance-text">${escapeHtml(card.text || '')}</div>
+              </article>
+            `).join('')}
+          </div>
+        ` : ''}
       </section>
     `;
   }
@@ -262,10 +311,28 @@
   function buildShellContentMarkup(settings, actionRows, actionIconMarkup, useExternalRail) {
     return `
       ${renderDraftLead(settings.summary, settings.draftReadiness, settings.draftReadinessPlacement, useExternalRail)}
+      ${renderDocumentActions(settings.documentActions, actionIconMarkup)}
       ${renderActionsBand(actionRows, actionIconMarkup)}
-      ${renderGuidanceSection(settings.guidance)}
+      ${renderGuidanceSection(settings.guidance, actionIconMarkup)}
       ${settings.extraSectionsHtml || ''}
     `;
+  }
+
+  function shouldFoldActionsIntoGuidance(actions, guidance, options) {
+    const settings = Object.assign({
+      enabled: true,
+      maxActions: 1,
+    }, options || {});
+    if (!settings.enabled) return false;
+    if (!Array.isArray(actions) || !actions.length || actions.length > Number(settings.maxActions || 0)) return false;
+    if (!guidance || !Array.isArray(guidance.cards) || !guidance.cards.length) return false;
+    return actions.every((action) => {
+      const family = String(action.family || '').trim();
+      const category = String(action.category || '').trim();
+      return family !== 'commit'
+        && action.variant !== 'primary'
+        && (category === 'follow_up' || category === 'business_next_step' || category === 'primary_business_action');
+    });
   }
 
   function withShellHeightLock($shell, update) {
@@ -299,6 +366,7 @@
       actionLayout: {},
       draftReadiness: null,
       draftReadinessPlacement: 'inline',
+      documentActions: [],
       extraSectionsHtml: '',
       guidance: {},
       summary: {},
@@ -307,9 +375,18 @@
       ? settings.actionIconMarkup
       : function () { return ''; };
     const actions = normalizeActions(settings.actions);
+    const documentActions = normalizeActions(settings.documentActions);
+    const guidance = Object.assign({}, settings.guidance || {});
+    const foldIntoGuidance = shouldFoldActionsIntoGuidance(actions, guidance, settings.actionLayout);
+    const shellActions = foldIntoGuidance ? [] : actions;
+    if (foldIntoGuidance) {
+      guidance.inlineActions = (Array.isArray(guidance.inlineActions) ? guidance.inlineActions : []).concat(actions);
+    }
     const actionRows = Array.isArray(settings.actionRows)
       ? settings.actionRows
-      : buildActionRows(actions, settings.actionLayout);
+      : buildActionRows(shellActions, settings.actionLayout);
+    settings.documentActions = documentActions;
+    settings.guidance = guidance;
     const useExternalRail = syncDraftRail($shell, settings.draftReadiness, settings.draftReadinessPlacement);
     const markup = buildShellContentMarkup(settings, actionRows, actionIconMarkup, useExternalRail);
     const renderKey = [
@@ -329,6 +406,12 @@
     actions.forEach((action) => {
       if (action.disabled || typeof action.handler !== 'function') return;
       $shell.find(`[data-action-index="${action.idx}"]`).on('click.erpwShellAction', action.handler);
+    });
+
+    $shell.find('[data-document-action-index]').off('click.erpwShellDocumentAction');
+    documentActions.forEach((action) => {
+      if (action.disabled || typeof action.handler !== 'function') return;
+      $shell.find(`[data-document-action-index="${action.idx}"]`).on('click.erpwShellDocumentAction', action.handler);
     });
 
     return actions;

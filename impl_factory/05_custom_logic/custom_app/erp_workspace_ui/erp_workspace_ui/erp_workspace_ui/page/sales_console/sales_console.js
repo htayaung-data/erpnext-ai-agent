@@ -54,7 +54,7 @@
       }
       .sales-console-header-row {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-columns: minmax(0, 1fr);
         align-items: start;
         gap: 16px 20px;
         margin-bottom: 12px;
@@ -1534,6 +1534,18 @@
     }
   }
 
+  function routeToReportPage(reportKey) {
+    try {
+      frappe.set_route("sales-console-report", String(reportKey || "").replace(/_/g, "-"));
+    } catch (error) {
+      frappe.msgprint({
+        title: __("Report unavailable"),
+        message: __("Could not open the Sales Console report."),
+        indicator: "orange",
+      });
+    }
+  }
+
   function routeToWorklist(queueKey) {
     try {
       frappe.set_route("sales-console-worklist", String(queueKey || "").replace(/_/g, "-"));
@@ -1559,6 +1571,15 @@
       });
     }
 
+    const routeOwner = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      routeOwner
+      && typeof routeOwner.routeToSalesConsoleTarget === "function"
+      && routeOwner.routeToSalesConsoleTarget(target)
+    ) {
+      return;
+    }
+
     if (target.kind === "new_doc" && target.doctype) {
       frappe.new_doc(target.doctype);
       return;
@@ -1571,6 +1592,11 @@
 
     if (target.kind === "list" && target.doctype) {
       routeToList(target.doctype, target.filters || null);
+      return;
+    }
+
+    if (target.kind === "report_page" && target.report_key) {
+      routeToReportPage(target.report_key);
       return;
     }
 
@@ -1635,52 +1661,12 @@
 
   function applyHeaderContent($root, payload) {
     const profile = (payload && payload.ui_profile) || {};
-    const context = (payload && payload.context) || {};
-    const scope = (payload && payload.scope) || {};
-
     const note = String(
       profile.summary_note
-      || scope.scope_label
+      || ((payload && payload.scope) || {}).scope_label
       || "Use Sales Console as the daily starting point for commercial execution, inquiry handling, and controlled review."
     ).trim();
-    const modeLabel = String(profile.mode_label || "Sales Workspace").trim();
-    const roleLabel = String(context.primary_role || "Sales").trim();
-    const scopeMode = String(scope.scope_mode || "").trim();
-    const branchLabel = String(context.branch_label || "").trim();
-    const branchNote = String(context.branch_note || "").trim();
-
-    const scopeLabelMap = {
-      branch_and_owner_filtered: branchLabel ? `${branchLabel} branch scope` : "Branch sales scope",
-      team_review_scope: branchLabel ? `${branchLabel} team scope` : "Team review scope",
-      assigned_account_scope: "Assigned account scope",
-      showroom_scope: branchLabel ? `${branchLabel} showroom scope` : "Showroom scope",
-      executive_review_scope: "Company-wide approval scope",
-      permission_scope: branchLabel ? `${branchLabel} permission scope` : "Permission-based scope",
-    };
-
-    let scopeLabel = scopeLabelMap[scopeMode] || "";
-    if (!scopeLabel) {
-      scopeLabel = String(scope.scope_label || "Controlled by permissions").trim();
-    }
-
-    const roleScopeLine = [roleLabel, scopeLabel].filter(Boolean).join(" · ");
-
-    let contextNote = "";
-    if (scopeMode === "executive_review_scope") {
-      contextNote = "Cross-company visibility is still constrained by current permissions.";
-    } else if (branchNote) {
-      contextNote = `Branch is ${branchNote}. Scope follows current permissions.`;
-    }
-
     $root.find("[data-header-note]").text(note);
-    $root.find("[data-header-mode]").text(modeLabel);
-    $root.find("[data-header-roleline]").text(roleScopeLine || roleLabel || "Sales");
-    const $contextNote = $root.find("[data-header-branch]");
-    if (contextNote) {
-      $contextNote.text(contextNote).removeAttr("hidden");
-    } else {
-      $contextNote.text("").attr("hidden", true);
-    }
   }
 
   function makeReportLink(key, title, meta, icon, onClick) {
@@ -2478,6 +2464,10 @@
 
       const payload = response && response.message ? response.message : {};
       pageState.payload = payload;
+      if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.primePayload === "function") {
+        window.erpWorkspaceConsoleSidebar.primePayload(payload);
+        window.erpWorkspaceConsoleSidebar.refresh();
+      }
 
       applyHeaderContent($root, payload);
       applyUiProfile($root, payload.ui_profile || {});
@@ -2567,11 +2557,6 @@
           <div class="sales-console-header-copy">
             <h1 class="sales-console-title">Sales Console</h1>
             <div class="sales-console-header-note" data-header-note>Execution-first sales workspace for inquiry handling, approvals, and day-to-day control.</div>
-          </div>
-          <div class="sales-console-header-context">
-            <div class="sales-console-header-chip" data-header-mode>Sales Workspace</div>
-            <div class="sales-console-header-roleline" data-header-roleline>Sales · Controlled by permissions</div>
-            <div class="sales-console-header-context-note" data-header-branch hidden></div>
           </div>
         </div>
         <div class="sales-console-kpi-grid"></div>
@@ -2972,6 +2957,9 @@
     renderSafely(wrapper);
   };
   frappe.pages[PAGE_KEY].on_page_show = function (wrapper) {
+    if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+      window.erpWorkspaceConsoleSidebar.refresh();
+    }
     const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
     if ($(host || []).find(".sales-console-shell").length) return;
     renderSafely(wrapper);

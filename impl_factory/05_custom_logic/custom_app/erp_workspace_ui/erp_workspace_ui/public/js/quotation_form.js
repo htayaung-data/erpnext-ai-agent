@@ -12,6 +12,7 @@
   const childPageSupport = childPageRuntime.support || {};
   const childPageSidebar = childPageRuntime.sidebar || {};
   const childPageShellContent = childPageRuntime.shellContent || {};
+  const childPageOperatingActions = childPageRuntime.operatingActions || {};
 
   // Keep a local fallback so the form stays usable even if the shared asset is stale or delayed.
   const formatMoney = childPageHelpers.formatMoney || function (value, currency) {
@@ -27,14 +28,43 @@
     return frappe.utils.escape_html(value == null ? "" : String(value));
   };
 
-  const routeToDoc = childPageHelpers.routeToDoc || function (doctype, name) {
+  function routeToDoc(doctype, name) {
     if (!doctype || !name) return;
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "form", doctype, name })
+    ) {
+      return;
+    }
     frappe.set_route("Form", doctype, name);
-  };
+  }
 
-  const routeToList = childPageHelpers.routeToList || function (doctype, filters) {
+  function routeToList(doctype, filters) {
+    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+    if (
+      helpers
+      && typeof helpers.routeToSalesConsoleTarget === "function"
+      && helpers.routeToSalesConsoleTarget({ kind: "list", doctype, filters })
+    ) {
+      return;
+    }
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
+  }
+  const applySalesConsoleDocumentActionPolicy = childPageHelpers.applySalesConsoleDocumentActionPolicy || function (actions) {
+    return (Array.isArray(actions) ? actions : []).filter((action) => {
+      if (!action) return false;
+      const category = String(action.category || "").trim();
+      if (action.family === "commit" || action.forceTopAction) return true;
+      if (["linked_document", "reference_document", "supporting_navigation"].includes(category)) return false;
+      if (category === "follow_up") return !!action.attention;
+      return category === "primary_business_action" || category === "business_next_step";
+    }).slice(0, 2);
+  };
+  const applySalesConsoleGuidancePolicy = childPageHelpers.applySalesConsoleGuidancePolicy || function (cards) {
+    return (Array.isArray(cards) ? cards : []).filter((card) => card && (card.attention || card.priority)).slice(0, 2);
   };
 
   const hasVisibleControls = childPageSections.hasVisibleControls || function ($container, options) {
@@ -154,6 +184,20 @@
       fn();
     }, Math.max(0, Number(delay || 0)));
   };
+
+  function scheduleSalesConsoleSidebarSync(frm) {
+    scheduleFormTask(frm, "sales_console_sidebar_sync_fast", 0, () => {
+      if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+        window.erpWorkspaceConsoleSidebar.refresh();
+      }
+    });
+    scheduleFormTask(frm, "sales_console_sidebar_sync_late", 220, () => {
+      if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
+        window.erpWorkspaceConsoleSidebar.refresh();
+      }
+    });
+  }
+
   const setSharedDraftBodyPending = childPageHelpers.setDraftBodyPending || function () {};
   const watchSharedDraftBodyStability = childPageHelpers.watchDraftBodyStability || function (frm, options) {
     if (options && typeof options.onStable === "function") {
@@ -681,7 +725,7 @@
       support: {
         latest_task: null,
         open_task_count: 0,
-        approval_note: "Use the standard toolbar to save, submit, or route approval for this quotation.",
+        approval_note: "Use the action band to save, submit, or route approval for this quotation.",
         customer_response_hint: "Clarify pricing, validity, and customer intent before giving final commercial confirmation.",
         commercial_note: "This quotation is still being prepared and has not yet entered downstream conversion.",
         next_action: "Complete customer, pricing, and validity details, then save so the commercial workspace can evaluate approval and conversion context.",
@@ -742,7 +786,14 @@
         </svg>
       `,
     };
-    return icons[kind] || icons.sales_order;
+    if (icons[kind]) return icons[kind];
+    if (
+      window.erpWorkspaceConsoleRuntime
+      && typeof window.erpWorkspaceConsoleRuntime.iconMarkup === "function"
+    ) {
+      return window.erpWorkspaceConsoleRuntime.iconMarkup(kind);
+    }
+    return icons.sales_order;
   }
 
   function buildQuotationDraftReadiness(frm, data) {
@@ -830,6 +881,7 @@
 
     if (Array.isArray(linked.sales_orders) && linked.sales_orders.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Sales Order", "Open Sales Orders", linked.sales_orders.length),
         variant: "primary",
         icon: "sales_order",
@@ -845,6 +897,7 @@
 
     if (party && party.doctype && party.name) {
       actions.push({
+        category: "reference_document",
         title: `Open ${getPartyLabel(party.doctype)}`,
         variant: actions.length ? "secondary" : "primary",
         icon: "customer",
@@ -854,6 +907,7 @@
 
     if (linked.opportunity && linked.opportunity.name) {
       actions.push({
+        category: "linked_document",
         title: "Open Opportunity",
         variant: "secondary",
         icon: "opportunity",
@@ -862,6 +916,8 @@
     }
 
     actions.push({
+      attention: Number(support.open_task_count || 0) > 0,
+      category: "follow_up",
       title: support.open_task_count ? `Review Follow-Up (${support.open_task_count})` : "Create Follow-Up Task",
       variant: "secondary",
       icon: "follow_up",
@@ -878,6 +934,7 @@
 
     if (Array.isArray(linked.deliveries) && linked.deliveries.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Delivery", "Open Deliveries", linked.deliveries.length),
         variant: "secondary",
         icon: "delivery",
@@ -893,6 +950,7 @@
 
     if (Array.isArray(linked.invoices) && linked.invoices.length) {
       actions.push({
+        category: "linked_document",
         title: formatCountTitle("Open Invoice", "Open Invoices", linked.invoices.length),
         variant: "secondary",
         icon: "invoice",
@@ -906,7 +964,9 @@
       });
     }
 
-    return actions;
+    return applySalesConsoleDocumentActionPolicy(actions, {
+      maxTopActions: 2,
+    });
   }
 
   function addressSectionIconMarkup(kind) {
@@ -2384,7 +2444,7 @@
       ? `Some items do not have a price in ${pricingDiagnostics.activePriceList}. Fix pricing before commercial commitment.`
       : pricingDiagnostics.zeroRateRows.length
         ? "One or more lines still have zero rate. Review pricing before commercial commitment."
-        : "Read quoted value, approval pressure, and tax posture here while ERP totals stay authoritative.";
+        : "";
 
     const metrics = [
       {
@@ -2418,6 +2478,7 @@
           value: metric.value,
         })),
         note: summaryNote,
+        noteIntent: summaryNote ? "exception" : "",
         removeSelector: ".erpw-so-inline-summary",
         summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
         title: "Commercial Posture",
@@ -2429,7 +2490,7 @@
       <div class="erpw-so-inline-summary erpw-child-inline-summary-soft">
         <div class="erpw-so-inline-summary-head">
           <div class="erpw-so-inline-summary-title">Commercial Posture</div>
-          <div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(summaryNote)}</div>
+          ${summaryNote ? `<div class="erpw-child-subtitle erpw-child-inline-summary-note">${escapeHtml(summaryNote)}</div>` : ""}
           ${chips.length ? `
             <div class="erpw-child-chip-row">
               ${chips.map((chip) => `
@@ -2714,7 +2775,7 @@
     }
     childPageDetails.renderSectionHeader($itemsSection, {
       headerClass: "erpw-child-section-header",
-      note: "Keep quotation lines native here, then use the summary below for quoted value, tax posture, and approval reading.",
+      note: "",
       removeSelector: ".erpw-child-section-header",
       statusText: statusParts.join(" / "),
       statusTone: pricingDiagnostics.missingPriceListRows.length || pricingDiagnostics.zeroRateRows.length ? "attention" : "neutral",
@@ -2856,7 +2917,7 @@
     if (typeof childPageSupport.enhanceWorkflowReadonlyBanner === "function") {
       return childPageSupport.enhanceWorkflowReadonlyBanner(frm, {
         title: "Workflow review is active",
-        note: "Continue from the toolbar when commercial review is ready to proceed.",
+        note: "Use the action band when commercial review is ready to proceed.",
       });
     }
 
@@ -2891,7 +2952,7 @@
           </span>
           <div class="erpw-so-workflow-banner-copy">
             <div class="erpw-so-workflow-banner-title">Workflow review is active</div>
-            <div class="erpw-so-workflow-banner-note">Continue from the toolbar when commercial review is ready to proceed.</div>
+            <div class="erpw-so-workflow-banner-note">Use the action band when commercial review is ready to proceed.</div>
           </div>
         </div>
       `);
@@ -3054,6 +3115,8 @@
           doctype: item.doctype,
           title: item.title,
           note: item.note,
+          count: item.count,
+          visibility: item.required === false ? "optional" : "meaningful-empty",
           iconMarkup: connectionDocIconMarkup(item.doctype),
           status: getConnectionDocStatus(item),
           actions: item.onOpen ? [
@@ -3074,6 +3137,8 @@
           doctype: item.doctype,
           title: item.title,
           note: item.note,
+          count: item.count,
+          visibility: item.required === false ? "optional" : "meaningful-empty",
           iconMarkup: connectionDocIconMarkup(item.doctype),
           status: getConnectionDocStatus(item),
           actions: item.onOpen ? [
@@ -3113,6 +3178,7 @@
         workspaceClassName: "erpw-so-connections-workspace",
         pendingNoteClass: "erpw-so-connections-pending-note",
         groupClass: "erpw-so-connection-primary-group",
+        groupCompactClass: "erpw-so-connection-primary-group-compact",
         groupHeadClass: "erpw-so-connection-primary-head",
         groupSummaryClass: "erpw-so-connection-primary-summary",
         groupIconClass: "erpw-so-connection-primary-icon",
@@ -3122,6 +3188,7 @@
         groupStatusClass: "erpw-so-connection-primary-status",
         itemsClass: "erpw-so-connection-primary-grid",
         itemClass: "erpw-so-connection-doc-card",
+        itemCompactClass: "erpw-so-connection-doc-card-compact",
         itemHeadClass: "erpw-so-connection-doc-head",
         itemMainClass: "erpw-so-connection-doc-main",
         itemIconClass: "erpw-so-connection-doc-icon",
@@ -3144,6 +3211,7 @@
         secondaryNoteClass: "erpw-so-connections-secondary-note",
         secondaryRowsClass: "erpw-so-connections-secondary-rows",
         secondaryRowClass: "erpw-so-connections-secondary-row",
+        secondaryRowCompactClass: "erpw-so-connections-secondary-row-compact",
         secondaryRowIconClass: "erpw-so-connections-secondary-row-icon",
         secondaryRowCopyClass: "erpw-so-connections-secondary-row-copy",
         secondaryRowTitleClass: "erpw-so-connections-secondary-row-title",
@@ -3308,6 +3376,9 @@
       enhanceTermsTab(frm);
       enhanceMoreInfoTab(frm);
       cleanSidebarUtilityRail(frm);
+      if (typeof childPageOperatingActions.curateNativeSalesMenu === "function") {
+        childPageOperatingActions.curateNativeSalesMenu(frm);
+      }
       if (settings.releaseDraftBody) {
         watchSharedDraftBodyStability(frm, {
           isReady: () => isQuotationDraftBodyReady(frm),
@@ -3351,7 +3422,15 @@
         lateKey: "quotation_sidebar_retry_late",
         fastDelay: 420,
         lateDelay: 980,
-        run: () => cleanSidebarUtilityRail(frm),
+        run: () => {
+          cleanSidebarUtilityRail(frm);
+          if (typeof childPageOperatingActions.enhanceNativeDocumentActions === "function") {
+            childPageOperatingActions.enhanceNativeDocumentActions(frm);
+          }
+          if (typeof childPageOperatingActions.curateNativeSalesMenu === "function") {
+            childPageOperatingActions.curateNativeSalesMenu(frm);
+          }
+        },
       },
       {
         fastKey: "quotation_support_retry_fast",
@@ -3382,7 +3461,28 @@
     const linked = data.linked_documents || {};
     const support = data.support || {};
     const $shell = getShell(frm);
-    const actions = actionConfig(frm, data);
+    const pageActions = actionConfig(frm, data);
+    const operatingActions = typeof childPageOperatingActions.buildDocumentActions === "function"
+      ? childPageOperatingActions.buildDocumentActions(frm, {
+        docLabel: "Quotation",
+      })
+      : [];
+    if (typeof childPageOperatingActions.enhanceNativeDocumentActions === "function") {
+      childPageOperatingActions.enhanceNativeDocumentActions(frm);
+    }
+    if (typeof childPageOperatingActions.curateNativeSalesMenu === "function") {
+      childPageOperatingActions.curateNativeSalesMenu(frm);
+    }
+    const combinedActions = typeof childPageOperatingActions.combineActionLists === "function"
+      ? childPageOperatingActions.combineActionLists(operatingActions, pageActions)
+      : operatingActions.concat(pageActions);
+    const operatingActionSet = new Set(operatingActions);
+    const actions = Number(frm.doc.docstatus || 0) === 0 && operatingActions.some((action) => action.family === "commit" && action.variant === "primary")
+      ? combinedActions.map((action) => {
+        if (operatingActionSet.has(action) || action.variant !== "primary") return action;
+        return { ...action, variant: "secondary" };
+      })
+      : combinedActions;
     const actionIndexes = actions.map((action, idx) => ({ ...action, idx }));
     const primaryActions = actionIndexes.filter((action) => action.variant === "primary");
     const secondaryActions = actionIndexes.filter((action) => action.variant !== "primary");
@@ -3466,23 +3566,30 @@
         meta: conversionMeta,
       },
     ];
-    const guidanceCards = [
-      {
+    const expired = validityState === "expired";
+    const expiringSoon = validityState === "expiring_soon";
+    const hasWorkflowBlock = workflowPending;
+    const guidanceCards = applySalesConsoleGuidancePolicy([
+      expired || expiringSoon || hasWorkflowBlock ? {
+        attention: true,
         chipLabel: "Priority",
         className: "erpw-child-guidance-card-primary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M6 12h12M13 7l5 5l-5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.next_action || "Continue commercial follow-through.",
-        title: "Next Action",
-      },
-      {
+        text: support.next_action || (hasWorkflowBlock
+          ? "Resolve the approval gate before making a customer-facing commercial commitment."
+          : "Review validity before using this quotation for customer confirmation or conversion."),
+        title: hasWorkflowBlock ? "Approval Gate" : (expired ? "Expired Quote" : "Expiring Soon"),
+      } : null,
+      support.customer_response_hint && (expired || expiringSoon || hasWorkflowBlock) ? {
+        attention: true,
         chipClass: "erpw-child-guidance-chip-secondary",
         chipLabel: "Communication",
         className: "erpw-child-guidance-card-secondary",
         iconMarkup: '<svg viewBox="0 0 24 24"><path d="M12 13a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7zm-6 6a6 6 0 0 1 12 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        text: support.customer_response_hint || "Use the latest approval and validity context before customer confirmation.",
+        text: support.customer_response_hint,
         title: "Customer Response",
-      },
-    ];
+      } : null,
+    ]);
     const extraSectionsHtml = `
       <section class="erpw-child-card erpwq-quotation-review-band">
         <article class="erpwq-quotation-review-main">
@@ -3581,10 +3688,10 @@
           sparseSecondaryThreshold: 3,
         },
         actions,
-        extraSectionsHtml,
+        extraSectionsHtml: "",
         guidance: {
           cards: guidanceCards,
-          title: "What To Do Now",
+          title: "Attention",
         },
         summary: {
           chips: summaryChips,
@@ -3884,8 +3991,10 @@
     },
     onload(frm) {
       prepareFormShell(frm);
+      scheduleSalesConsoleSidebarSync(frm);
     },
     refresh(frm) {
+      scheduleSalesConsoleSidebarSync(frm);
       if (typeof frm.is_new === "function" && frm.is_new()) {
         const draftPerfKey = getDraftStabilitySessionKey(frm);
         if (frm.__erpwDraftPerformanceResetKey !== draftPerfKey) {

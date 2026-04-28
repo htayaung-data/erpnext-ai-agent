@@ -60,6 +60,24 @@
 
   function iconMarkup(name) {
     const icons = {
+      home: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 10.5L12 4l8 6.5"></path>
+          <path d="M6.5 9.5V20h11V9.5"></path>
+        </svg>
+      `,
+      search: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="6"></circle>
+          <path d="M20 20l-4.2-4.2"></path>
+        </svg>
+      `,
+      notification: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 9a6 6 0 1 0-12 0c0 7-2.5 7.5-2.5 7.5h17S18 16 18 9"></path>
+          <path d="M9.8 20a2.4 2.4 0 0 0 4.4 0"></path>
+        </svg>
+      `,
       quotation: `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 20h8"></path>
@@ -98,6 +116,74 @@
           <path d="M10 20V4"></path>
           <path d="M16 20v-7"></path>
           <path d="M22 20V8"></path>
+        </svg>
+      `,
+      review: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l7 3.5V12c0 4.4-2.9 7.7-7 9-4.1-1.3-7-4.6-7-9V6.5L12 3z"></path>
+          <path d="M9.5 12l1.7 1.7L15 10"></path>
+        </svg>
+      `,
+      save: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 4.5h11l3 3V19.5H5z"></path>
+          <path d="M8 4.5v6h7v-6"></path>
+          <path d="M9 15.5h6"></path>
+        </svg>
+      `,
+      print: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 8V4.5h10V8"></path>
+          <path d="M6.5 18.5h11v-5h-11z"></path>
+          <path d="M5 10h14a2 2 0 0 1 2 2v4H3v-4a2 2 0 0 1 2-2z"></path>
+        </svg>
+      `,
+      email: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 6.5h16v11H4z"></path>
+          <path d="M4.5 7l7.5 6l7.5-6"></path>
+        </svg>
+      `,
+      assign: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 12a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z"></path>
+          <path d="M5.5 20a6.5 6.5 0 0 1 13 0"></path>
+          <path d="M18.5 6.5h4"></path>
+          <path d="M20.5 4.5v4"></path>
+        </svg>
+      `,
+      comment: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 6.5h14v9H9l-4 3z"></path>
+        </svg>
+      `,
+      share: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="6" cy="12" r="2"></circle>
+          <circle cx="18" cy="6" r="2"></circle>
+          <circle cx="18" cy="18" r="2"></circle>
+          <path d="M8 11l8-4"></path>
+          <path d="M8 13l8 4"></path>
+        </svg>
+      `,
+      follow_up: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 6L9 17l-5-5"></path>
+        </svg>
+      `,
+      invoice: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 3.5h7l4 4v13H7z"></path>
+          <path d="M14 3.5v4h4"></path>
+          <path d="M10 12h5"></path>
+          <path d="M10 15.5h5"></path>
+          <path d="M10 19h3"></path>
+        </svg>
+      `,
+      return_doc: `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 7H5v4"></path>
+          <path d="M5 11a7 7 0 1 0 2.1-5"></path>
         </svg>
       `,
       guide: `
