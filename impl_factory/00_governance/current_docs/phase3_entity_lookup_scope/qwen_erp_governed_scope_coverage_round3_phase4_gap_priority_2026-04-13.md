@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 3 Phase 4 Gap Priority
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 3 Phase 4 gap classification and priority for the cross-layer alignment targets proven in Round 3
 
 ## 1. Purpose
@@ -42,13 +42,13 @@ Round 3 gaps fall into five real categories.
 
 The system already has:
 
-1. vocabulary support
+1. vocabulary suppor
 2. typed slots
 3. sometimes typed contracts
 
 but the active policy or semantic route is still narrow.
 
-### 3.2 Front-Door / Runtime Misalignment
+### 3.2 Front-Door / Runtime Misalignmen
 
 A surface exists in runtime, but the front door routes the user into the wrong family or no family.
 
@@ -62,11 +62,11 @@ The seam works, but ownership is still split across:
 2. typed contracts
 3. direct Python branching
 
-### 3.4 Specialized Path Versus Shared Family Path Split
+### 3.4 Specialized Path Versus Shared Family Path Spli
 
 A surface exists in one specialized runtime area, but not as a strong generic governed family.
 
-### 3.5 Clarification Breadth Debt
+### 3.5 Clarification Breadth Deb
 
 The clarification architecture exists, but its active reason types or activation breadth are still too narrow.
 
@@ -82,7 +82,7 @@ Observed truth:
 
 Root cause class:
 
-1. front-door / runtime misalignment
+1. front-door / runtime misalignmen
 2. mixed runtime authority
 
 Priority reading:
@@ -140,31 +140,31 @@ Observed truth:
 
 Root cause class:
 
-1. specialized path versus shared family split
+1. specialized path versus shared family spli
 2. activation narrowness
 
 Priority reading:
 
-1. important
-2. but not ready to be treated as a current Phase `3.3` implementation target
-3. first needs an ownership decision about which family should own it
+1. importan
+2. but not ready to be treated as a current Phase `3.3` implementation targe
+3. first needs an ownership decision about which family should own i
 
 ### 4.5 G5: Clarification Is Strong In Architecture But Narrow In Breadth
 
 Observed truth:
 
-1. clarification contracts exist
+1. clarification contracts exis
 2. artifact-boundary clarification works
 3. evidence-boundary behavior works
 4. active reason coverage is still narrow
 
 Root cause class:
 
-1. clarification breadth debt
+1. clarification breadth deb
 
 Priority reading:
 
-1. medium-to-high priority design debt
+1. medium-to-high priority design deb
 2. should be extended through the current typed clarification layer
 3. should not be solved by phrase-specific “delivered/received” fixes
 4. can be expanded incrementally alongside later scope activation
@@ -191,17 +191,17 @@ The current system already does something enterprise-correct:
 
 1. it can answer from real evidence when the artifact proves enough
 2. it can stop and clarify when the basis is missing
-3. it can block overclaiming when the current artifact does not prove the requested fact
+3. it can block overclaiming when the current artifact does not prove the requested fac
 
 This seam should be reused, not replaced.
 
-### 5.3 Typed Lookup And Clarification Contracts Already Exist
+### 5.3 Typed Lookup And Clarification Contracts Already Exis
 
 Round 3 confirmed that the system already has strong contract assets:
 
-1. fresh-query interpretation contract
-2. entity-reference resolution contract
-3. entity-detail evidence request contract
+1. fresh-query interpretation contrac
+2. entity-reference resolution contrac
+3. entity-detail evidence request contrac
 4. clarification fields inside typed contracts
 
 This matters because future work should align and activate these, not reinvent them.
@@ -264,7 +264,7 @@ Start with the grains or finance surfaces that already have:
 
 1. G2 supplier/item policy inactivity
 2. G4 payment entry partial activation
-3. G5 clarification breadth debt
+3. G5 clarification breadth deb
 
 ### 7.2 For The Next Expansion Chapter
 
@@ -276,7 +276,7 @@ Start with the grains or finance surfaces that already have:
 `near_blocker`
 
 1. G3 mixed entity-detail branching
-2. G5 clarification breadth debt
+2. G5 clarification breadth deb
 
 `monitor`
 
@@ -292,7 +292,7 @@ Round 3 now supports one clear enterprise recommendation:
 4. treat supplier/item/payment-entry as the first candidates for the next explicit governed scope expansion chapter
 5. expand ambiguity handling through the current typed clarification layer, not through phrase-specific repairs
 
-## 9. What Should Happen Next
+## 9. What Should Happen Nex
 
 The next safe step after this note is Round 3 Phase 5.
 
@@ -300,7 +300,7 @@ Round 3 Phase 5 should produce the bounded design decision:
 
 1. what exact implementation belongs inside current `3.3`
 2. what exact work is explicitly deferred to later scope expansion
-3. what typed contract and metadata changes should happen first
-4. what must remain untouched to avoid architecture drift
+3. what typed contract and metadata changes should happen firs
+4. what must remain untouched to avoid architecture drif
 
 That design note should be implementation-facing, not just diagnostic.

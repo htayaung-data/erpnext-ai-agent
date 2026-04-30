@@ -229,10 +229,10 @@ class TestClarificationResolutionContracts(unittest.TestCase):
 				clarification_attempt_count=0,
 				max_attempts=3,
 				grounded_turn={"grounded": True},
-			)
+		)
 		self.assertEqual(contract.decision, "resolved_option")
 		self.assertEqual(contract.resolved_option, "Customer Tenure by First Sales Order")
-		self.assertIn(contract.matched_by, {"substring", "concept_overlap", "semantic", "fuzzy_alias"})
+		self.assertIn(contract.matched_by, {"exact_token_alias", "substring", "concept_overlap", "semantic", "fuzzy_alias"})
 
 	def test_frontdoor_master_data_grain_clarification_resolves_supplier_option(self):
 		signal_payload = {

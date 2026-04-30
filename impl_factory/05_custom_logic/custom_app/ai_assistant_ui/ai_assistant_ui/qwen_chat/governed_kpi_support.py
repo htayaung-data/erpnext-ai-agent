@@ -27,9 +27,9 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	get_report_spec,
 	list_business_definition_specs,
 	list_business_rule_specs,
-	list_semantic_resolution_alias_entries,
 	list_business_threshold_specs_for_formula,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_alias_phrases_for_value
 
 
 _EXPLICIT_KPI_DEFINITION_PATTERNS = (
@@ -278,29 +278,7 @@ def _definition_listing_view_canonical(definition_id: str) -> str:
 
 
 def _listing_view_aliases_for_canonical(canonical_value: str) -> List[str]:
-	clean_canonical = str(canonical_value or "").strip()
-	if not clean_canonical:
-		return []
-	aliases: List[str] = []
-	canonical_phrase = clean_canonical.replace("_", " ")
-	for entry in list_semantic_resolution_alias_entries("listing_view"):
-		if str(entry.get("canonical_value") or "").strip() != clean_canonical:
-			continue
-		aliases.append(canonical_phrase)
-		for alias in (entry.get("aliases") or []):
-			alias_text = str(alias or "").strip()
-			if alias_text:
-				aliases.append(alias_text)
-		break
-	seen: set[str] = set()
-	unique_aliases: List[str] = []
-	for alias in aliases:
-		normalized = _normalize_phrase(alias)
-		if not normalized or normalized in seen:
-			continue
-		seen.add(normalized)
-		unique_aliases.append(alias)
-	return unique_aliases
+	return semantic_slot_alias_phrases_for_value("listing_view", canonical_value)
 
 
 def _source_report_phrase(definition_state: BusinessDefinitionStateContract, formula_state: GovernedFormulaStateContract) -> str:

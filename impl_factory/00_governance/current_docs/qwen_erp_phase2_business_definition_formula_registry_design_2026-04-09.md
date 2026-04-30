@@ -1,7 +1,7 @@
 # Qwen ERP Phase 2 Business Definition and Formula Registry Design
 
-Status: 2.4 complete  
-Date: 2026-04-09  
+Status: 2.4 complete
+Date: 2026-04-09
 Scope: detailed implementation plan for Phase 2, Business Definition and Formula Registry
 
 ## 1. Executive Decision
@@ -10,8 +10,8 @@ Phase 2 should start with governed business-definition and formula registries, n
 
 The first implementation must stay:
 
-1. metadata-first
-2. contract-first
+1. metadata-firs
+2. contract-firs
 3. fail-closed
 4. company-governed
 5. compatible with the current metadata/compiler/runtime ecosystem
@@ -51,7 +51,7 @@ What is now strong enough to build on:
 What Phase 1 still exposed:
 
 1. derived business meaning is not yet governed deeply enough
-2. KPI terms such as `tenure`, `average order value`, `collection ratio`, and `credit utilization` are not safe to treat as self-evident
+2. KPI terms such as `tenure`, `average order value`, `collection ratio`, and `credit utilization` are not safe to treat as self-eviden
 3. future composite and reasoning work will drift if those meanings remain informal
 
 So the next maturity step is not another operational family first.
@@ -62,9 +62,9 @@ It is semantic governance of business definitions and formulas.
 
 Phase 2 must obey the active enterprise guide:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
-3. runtime consumes typed definitions instead of rediscovering meaning from prompt text
+3. runtime consumes typed definitions instead of rediscovering meaning from prompt tex
 4. fail closed when a KPI is undefined, disputed, or unsupported by tenant data
 5. no keyword routing
 6. no single-case formula hacks
@@ -74,10 +74,10 @@ Phase 2 must obey the active enterprise guide:
 
 This phase is enterprise-grade only if:
 
-1. business-definition ownership is explicit
-2. formula inputs and grain are explicit
-3. threshold ownership is explicit
-4. blocked states are explicit
+1. business-definition ownership is explici
+2. formula inputs and grain are explici
+3. threshold ownership is explici
+4. blocked states are explici
 5. future runtime usage is auditable
 
 ## 4. Current ERP And Repo Findings
@@ -143,7 +143,7 @@ So Phase 2 must be able to represent:
 3. blocked-by-data definitions
 4. ambiguous definitions that require approval before runtime use
 
-### 4.4 Phase 2 should fit the current assistant, not bypass it
+### 4.4 Phase 2 should fit the current assistant, not bypass i
 
 Phase 2 should adapt to the current ecosystem by adding:
 
@@ -189,7 +189,7 @@ Deferred authority for later phases only:
 2. AI-invented KPI meaning
 3. policy recommendations based only on narrative interpretation
 4. HR, payroll, and people metrics without a dedicated domain design
-5. credit-limit-based risk claims when limit rows are absent
+5. credit-limit-based risk claims when limit rows are absen
 
 This means:
 
@@ -300,7 +300,7 @@ Required activation states:
 Acceptance for `2.1`:
 
 1. the assistant has explicit metadata homes for business definitions, formulas, and thresholds
-2. undefined KPI meaning is no longer forced into code or prompt text
+2. undefined KPI meaning is no longer forced into code or prompt tex
 3. the runtime can tell the difference between:
    - not defined
    - defined but inactive
@@ -343,7 +343,7 @@ Recommended treatment by KPI:
      - customer creation date basis
      - first sales order basis
      - first sales invoice basis
-   - if the business wants a generic `tenure`, the registry must map it to one approved variant
+   - if the business wants a generic `tenure`, the registry must map it to one approved varian
 2. `average order value`
    - do not activate a generic `AOV` without document basis
    - separate candidates should exist for:
@@ -354,17 +354,17 @@ Recommended treatment by KPI:
    - do not allow one vague `collection ratio` to stand in for multiple possible finance meanings
 4. `credit utilization`
    - define the intended ratio shape
-   - keep it blocked until both credit-limit data and approved ratio basis exist
+   - keep it blocked until both credit-limit data and approved ratio basis exis
 
 Policy choice for `2.2`:
 
 1. Phase 2 may define a KPI without making it runtime-active
-2. defined-but-blocked is a valid enterprise result
+2. defined-but-blocked is a valid enterprise resul
 
 Why:
 
-1. the purpose of Phase 2 is governed meaning first
-2. pretending that all KPIs are executable immediately would be dishonest
+1. the purpose of Phase 2 is governed meaning firs
+2. pretending that all KPIs are executable immediately would be dishones
 
 Acceptance for `2.2`:
 
@@ -421,13 +421,13 @@ Important rule:
 For example:
 
 1. overdue severity can be defined now because AR aging already exists, but user-facing labels should still stay blocked until policy approval
-2. credit-utilization-based policy bands can be active because the approved basis and tenant credit-limit data are now present
+2. credit-utilization-based policy bands can be active because the approved basis and tenant credit-limit data are now presen
 
 Acceptance for `2.3`:
 
 1. threshold semantics are owned in metadata
 2. risk labels cannot appear without an approved basis
-3. recommendation language remains blocked unless later policy phases approve it
+3. recommendation language remains blocked unless later policy phases approve i
 
 Current `2.3` checkpoint:
 
@@ -471,7 +471,7 @@ Required closure outcomes:
 Closure does not require:
 
 1. all KPI candidates to be fully executable
-2. composite artifact rollout
+2. composite artifact rollou
 3. management advice or policy recommendations
 
 Current `2.4` checkpoint:
@@ -507,8 +507,8 @@ Recommended first integration pattern:
 
 This means the first runtime usage may be:
 
-1. semantic resolution support
-2. governed clarification support
+1. semantic resolution suppor
+2. governed clarification suppor
 3. blocked-safe answer policy for undefined metrics
 
 It does not need to become:

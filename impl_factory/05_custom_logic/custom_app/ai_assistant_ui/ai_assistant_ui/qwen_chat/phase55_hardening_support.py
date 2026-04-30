@@ -177,10 +177,9 @@ def run_frontdoor_boundary_smoke(
 	latest_assistant_payload,
 ) -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
-		fixture = require_smoke_fixture("fresh_query_override_to_ar")
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("initial_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -302,7 +301,7 @@ def run_observability_smoke(
 		)
 		ok, clarification_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="yes",
+			message="show the options again",
 			user="Administrator",
 		)
 		if not ok or str((clarification_payload or {}).get("mode") or "").strip() != "clarification":
@@ -324,8 +323,8 @@ def run_observability_smoke(
 				clarification_event = item
 		if str(frontdoor_event.get("event_name") or "").strip() != "handled":
 			raise RuntimeError("Phase 5.5 observability smoke failed: missing front-door handled event.")
-		if str(clarification_event.get("event_name") or "").strip() != "empty_ack":
-			raise RuntimeError("Phase 5.5 observability smoke failed: missing clarification empty_ack event.")
+		if str(clarification_event.get("event_name") or "").strip() != "show_options":
+			raise RuntimeError("Phase 5.5 observability smoke failed: missing clarification show-options event.")
 		for item in (frontdoor_event, clarification_event):
 			if str(item.get("session_id") or "").strip() != str(doc.name):
 				raise RuntimeError("Phase 5.5 observability smoke failed: observability event session_id mismatch.")

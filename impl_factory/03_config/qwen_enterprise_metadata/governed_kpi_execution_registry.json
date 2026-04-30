@@ -632,6 +632,70 @@
       "blocked_reason": ""
     },
     {
+      "execution_id": "customer_overdue_amount_as_of_scalar_execution",
+      "definition_id": "customer_overdue_amount_as_of_date",
+      "formula_id": "customer_overdue_amount_as_of_date_formula",
+      "label": "Customer Overdue Amount as of Date Scalar Execution",
+      "execution_shape": "customer_as_of_scalar",
+      "scope_type": "customer",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "customer",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "value_metric": "customer_overdue_amount",
+        "sort_metric": "customer_overdue_amount",
+        "numerator_metric": "31+ Aging Buckets Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
+      "execution_id": "customer_overdue_amount_as_of_ranking_execution",
+      "definition_id": "customer_overdue_amount_as_of_date",
+      "formula_id": "customer_overdue_amount_as_of_date_formula",
+      "label": "Customer Overdue Amount as of Date Ranking Execution",
+      "execution_shape": "customer_as_of_ranking",
+      "scope_type": "customer_set",
+      "time_scope_type": "as_of_date_required",
+      "source_mode": "single_report",
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "supported_filters": [
+        "company",
+        "as_of_date"
+      ],
+      "required_dimensions": [
+        "customer"
+      ],
+      "value_unit_type": "currency",
+      "value_metric_mapping": {
+        "family_metric_id": "overdue_amount",
+        "value_metric": "customer_overdue_amount",
+        "sort_metric": "customer_overdue_amount",
+        "numerator_metric": "31+ Aging Buckets Total"
+      },
+      "activation_state": "active",
+      "blocked_reason": ""
+    },
+    {
       "execution_id": "customer_overdue_ratio_as_of_scalar_execution",
       "definition_id": "customer_overdue_ratio_as_of_date",
       "formula_id": "customer_overdue_ratio_as_of_date_formula",
@@ -719,6 +783,7 @@
       ],
       "value_unit_type": "ratio",
       "value_metric_mapping": {
+        "family_metric_id": "credit_utilization",
         "value_metric": "customer_credit_utilization",
         "sort_metric": "customer_credit_utilization",
         "numerator_metric": "Outstanding Amount",
@@ -751,6 +816,7 @@
       ],
       "value_unit_type": "ratio",
       "value_metric_mapping": {
+        "family_metric_id": "overdue_ratio",
         "value_metric": "customer_overdue_ratio",
         "sort_metric": "customer_overdue_ratio",
         "numerator_metric": "31+ Aging Buckets Total",

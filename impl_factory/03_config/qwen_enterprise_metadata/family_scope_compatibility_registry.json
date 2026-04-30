@@ -495,6 +495,48 @@
       "blocked_reason": "",
       "followup_compatibility": "clarify_before_followup",
       "policy_notes": "Clarification remains available when a payment-entry request still needs scope repair or redirection."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "transaction_listing",
+      "compatibility_level": "full_consumption",
+      "allowed_modes": [
+        "document_list",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Purchase receipts are active as a shared procurement document-list scope through Purchase Receipt List."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "followup_boundary",
+      "compatibility_level": "followup_only",
+      "allowed_modes": [
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "presentation_transform",
+        "time_scope_restatement"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "preserve_scope",
+      "policy_notes": "Purchase-receipt listing follow-ups may refine projection, limit, filters, or time scope without promoting to document detail."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "clarification",
+      "compatibility_level": "clarification_only",
+      "allowed_modes": [
+        "clarify_scope"
+      ],
+      "blocked_reason": "",
+      "followup_compatibility": "clarify_before_followup",
+      "policy_notes": "Clarification remains available for purchase-receipt projection, time, or target ambiguity while detail stays inactive."
     }
   ]
 }

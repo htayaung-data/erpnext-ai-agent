@@ -31,6 +31,7 @@ class _FakeFrappeModule:
 		self.db = _FakeDB()
 		self.created_docs = []
 		self.deleted_docs = []
+		self.clear_cache_count = 0
 
 	def new_doc(self, doctype):
 		doc = _FakeDoc()
@@ -39,6 +40,9 @@ class _FakeFrappeModule:
 
 	def delete_doc(self, doctype, name, *, ignore_permissions=False):
 		self.deleted_docs.append((doctype, name, ignore_permissions))
+
+	def clear_cache(self):
+		self.clear_cache_count += 1
 
 
 class TestSmokeSessionSupport(unittest.TestCase):
@@ -111,7 +115,8 @@ class TestSmokeSessionSupport(unittest.TestCase):
 		)
 
 		self.assertEqual(result["ok"], True)
-		self.assertEqual(frappe_module.db.commit_count, 2)
+		self.assertEqual(frappe_module.db.commit_count, 3)
+		self.assertEqual(frappe_module.clear_cache_count, 2)
 		self.assertEqual(
 			frappe_module.deleted_docs,
 			[("Qwen Chat Session", "TEST-SESSION-0001", False)],

@@ -1,7 +1,7 @@
 # Qwen ERP `service.py` Refactor SR0 Baseline Lock
 
-Status: active baseline checkpoint  
-Date: 2026-04-22  
+Status: active baseline checkpoin
+Date: 2026-04-22
 Scope: dedicated `service.py` refactor chapter baseline after `IC6` closure
 
 ## 1. Purpose
@@ -64,21 +64,21 @@ The refactor must integrate with the following live extracted modules rather tha
 
 ### 4.1 Shared Modules Already Imported By `service.py`
 
-1. `conversation_control_support.py`  
+1. `conversation_control_support.py`
    lines: `1152`
-2. `recent_focus_support.py`  
+2. `recent_focus_support.py`
    lines: `919`
-3. `restore_support.py`  
+3. `restore_support.py`
    lines: `542`
-4. `snapshot_defaults.py`  
+4. `snapshot_defaults.py`
    lines: `259`
-5. `compound_request_support.py`  
+5. `compound_request_support.py`
    lines: `831`
-6. `compiled_support.py`  
+6. `compiled_support.py`
    lines: `463`
-7. `boundary_support.py`  
+7. `boundary_support.py`
    lines: `1509`
-8. `requery_message_support.py`  
+8. `requery_message_support.py`
    lines: `460`
 
 ### 4.2 Existing Package Seams
@@ -103,12 +103,12 @@ They are already live imports in `service.py`, which means:
 
 The current focused characterization pack is green and should be treated as the main safety gate for early refactor slices:
 
-```text
-python3 -m unittest \
-  ai_assistant_ui.tests.test_post_contract_state_integrity \
-  ai_assistant_ui.tests.test_compound_request_support \
-  ai_assistant_ui.tests.test_compiled_support_contracts \
-  ai_assistant_ui.tests.test_frontdoor_lane_compound_request
+```tex
+python3 -m unittes
+  ai_assistant_ui.tests.test_post_contract_state_integrity
+  ai_assistant_ui.tests.test_compound_request_suppor
+  ai_assistant_ui.tests.test_compiled_support_contracts
+  ai_assistant_ui.tests.test_frontdoor_lane_compound_reques
 ```
 
 Observed result at this checkpoint:
@@ -120,15 +120,15 @@ Observed result at this checkpoint:
 
 A broader pack was also attempted:
 
-```text
-python3 -m unittest \
-  ai_assistant_ui.tests.test_post_contract_state_integrity \
-  ai_assistant_ui.tests.test_compound_request_support \
-  ai_assistant_ui.tests.test_compiled_support_contracts \
-  ai_assistant_ui.tests.test_frontdoor_lane_compound_request \
-  ai_assistant_ui.tests.test_clarification_resolution_contracts \
-  ai_assistant_ui.tests.test_restore_support_contracts \
-  ai_assistant_ui.tests.test_followup_interpreter_contracts \
+```tex
+python3 -m unittes
+  ai_assistant_ui.tests.test_post_contract_state_integrity
+  ai_assistant_ui.tests.test_compound_request_suppor
+  ai_assistant_ui.tests.test_compiled_support_contracts
+  ai_assistant_ui.tests.test_frontdoor_lane_compound_reques
+  ai_assistant_ui.tests.test_clarification_resolution_contracts
+  ai_assistant_ui.tests.test_restore_support_contracts
+  ai_assistant_ui.tests.test_followup_interpreter_contracts
   ai_assistant_ui.tests.test_family_followup_contracts
 ```
 
@@ -258,7 +258,7 @@ Verification after the extraction:
 
 Practical status reading:
 
-1. this confirms the evaluation seam can be reduced safely without changing the current hard gate result
+1. this confirms the evaluation seam can be reduced safely without changing the current hard gate resul
 2. the broader monitoring failure still exists, but this slice did not introduce a new regression signal
 
 Next recommended `SR1` move:
@@ -440,7 +440,7 @@ Verification after the seventh extraction:
 Updated practical reading after the seventh slice:
 
 1. `SR1` is still reducing real orchestration gravity in the right place: late conversation-control ownership is moving into the evaluation seam rather than expanding the facade
-2. the extracted seam now covers both targeted resumable-prior restore cases and active-sequence resume cases, which lowers the risk of precedence drift during the later stage split
+2. the extracted seam now covers both targeted resumable-prior restore cases and active-sequence resume cases, which lowers the risk of precedence drift during the later stage spli
 3. the next bounded `SR1` move should be the remaining pending-clarification / explicit-override late H3 cluster that still remains inline in `service.py`
 
 Completed in the eighth live `SR1` extraction slice:
@@ -469,7 +469,7 @@ Verification after the eighth extraction:
 Updated practical reading after the eighth slice:
 
 1. `SR1` is still progressing the right way: the facade is losing late recovery-authority logic by subsystem rather than by ad hoc cleanup
-2. the evaluation seam now owns a wider share of conversation-control precedence behavior, which makes the later stage-based service split safer and easier to reason about
+2. the evaluation seam now owns a wider share of conversation-control precedence behavior, which makes the later stage-based service split safer and easier to reason abou
 3. the next bounded `SR1` move should start from the remaining non-H3 late inline evaluation / hardening gravity that still lives in `service.py`, because the inline H3 recovery-authority cluster is now cleared
 
 Completed in the ninth live `SR1` extraction slice:
@@ -705,7 +705,7 @@ Completed in the first live `SR3` extraction slice:
    - latest non-clarification restore arbitration to contract construction
    - authoritative pending-clarification restore contracts
    - direct restore fallback contracts
-   - prior-branch restore contract construction from a conversation snapshot
+   - prior-branch restore contract construction from a conversation snapsho
 3. kept route handlers that append messages, write tool payloads, save sessions, or replay governed runtime work inside `service.py`; those are orchestration / journal responsibilities, not pure restore policy
 4. preserved service-level compatibility wrappers for existing contract tests and downstream call sites
 
@@ -986,7 +986,7 @@ Observed post-second-`SR5` turn-journal slice file position:
 
 1. `service.py` line count is `6,235`
 2. `turn_journal.py` remains `27` lines
-3. this slice does not target line-count reduction; it reduces journal idiom drift while keeping route ordering explicit
+3. this slice does not target line-count reduction; it reduces journal idiom drift while keeping route ordering explici
 
 Verification after the second `SR5` turn-journal extraction:
 
@@ -999,7 +999,7 @@ Verification after the second `SR5` turn-journal extraction:
 
 Updated practical reading after the second `SR5` turn-journal slice:
 
-1. `SR5` should pause after this cleanup unless we intentionally begin the larger `SR6` facade stage split
+1. `SR5` should pause after this cleanup unless we intentionally begin the larger `SR6` facade stage spli
 2. additional piecemeal conversions would now be mostly cosmetic and could increase precedence risk
 3. the next practical refactor decision should be whether to start a dedicated stage split for `handle_qwen_user_message` or return to feature implementation with the current facade gravity reduced
 
@@ -1037,7 +1037,7 @@ Recommended next path:
 
 1. stop current piecemeal refactor work here
 2. return to the active governed assistant feature roadmap if feature delivery is the priority
-3. separately plan `SR6` only when the team is ready for a larger stage-based facade split
+3. separately plan `SR6` only when the team is ready for a larger stage-based facade spli
 4. keep the current guard suite mandatory for any further facade or journal work
 
 Proposed future `SR6` shape, not started:

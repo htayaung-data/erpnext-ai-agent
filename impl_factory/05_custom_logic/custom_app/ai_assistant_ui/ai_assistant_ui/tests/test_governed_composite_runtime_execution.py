@@ -3,14 +3,53 @@ import types
 import unittest
 from unittest.mock import patch
 
-sys.modules.setdefault("frappe", types.ModuleType("frappe"))
+fake_frappe = types.ModuleType("frappe")
+fake_frappe.get_all = lambda *args, **kwargs: []
+fake_frappe.conf = {}
+fake_frappe.local = types.SimpleNamespace(site="")
+fake_frappe.db = types.SimpleNamespace(
+	exists=lambda *args, **kwargs: False,
+	get_value=lambda *args, **kwargs: None,
+	sql=lambda *args, **kwargs: [],
+)
+fake_frappe.get_doc = lambda *args, **kwargs: None
+fake_frappe.DoesNotExistError = type("DoesNotExistError", (Exception,), {})
+fake_frappe.ValidationError = type("ValidationError", (Exception,), {})
+if not hasattr(sys.modules.get("frappe"), "get_all"):
+	sys.modules["frappe"] = fake_frappe
 
 from ai_assistant_ui.qwen_chat.governed_composite_runtime_execution import (
+	_assemble_entity_period_commercial_rows,
+	_build_followup_ready_grounded_turn_context,
+	governed_composite_frontdoor_candidate_available,
 	maybe_build_governed_composite_frontdoor_response,
 )
 
 
 class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
+	def test_followup_ready_grounded_turn_context_normalizes_product_dimension_to_item_entity(self):
+		payload = _build_followup_ready_grounded_turn_context(
+			request_id="e13-product-owned-1",
+			raw_message="show top products by revenue",
+			resolved_company_name="Mingalar Mobile Distribution Co., Ltd.",
+			family_resolution=types.SimpleNamespace(
+				requested_period_start="2026-04-01",
+				requested_period_end="2026-04-30",
+				requested_basis="sales_invoice",
+			),
+			normalized_family_artifact_payload={
+				"dimensions": {"entity_dimension": "Product"},
+				"sections": {
+					"ranked_rows": [
+						{"entity": "Type-C Cable 1m Fast Charge", "entity_code": "ACC-CBL-BAS-TC1M"}
+					]
+				},
+			},
+			source_reports=["Gross Profit"],
+		)
+		self.assertEqual((payload.get("known_entities") or [])[0]["entity_type"], "item")
+		self.assertEqual((payload.get("known_entities") or [])[0]["code"], "ACC-CBL-BAS-TC1M")
+
 	def test_customer_commercial_family_clarifies_missing_basis(self):
 		response = maybe_build_governed_composite_frontdoor_response(
 			request_id="phase3-2-clarify-basis",
@@ -41,6 +80,48 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			(internal_details.get("carryover_slot_values") or {}).get("selected_time_scope"),
 			"last_month",
 		)
+
+	def test_customer_risk_collection_priority_language_resolves_to_customer_risk_family(self):
+		self.assertTrue(
+			governed_composite_frontdoor_candidate_available(
+				message="who should we collect from first?",
+				company_name="Mingalar Mobile Distribution Co., Ltd.",
+			)
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._execute_component_ranking_artifacts",
+			return_value=({}, [{"execution_id": "customer_risk_as_of_execution"}], ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
+			return_value=("compatible", ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
+			return_value=(
+				[
+					{
+						"rank": 1,
+						"customer": "35th Street Mobile Wholesale",
+						"customer_name": "35th Street Mobile Wholesale",
+						"metric_values": {
+							"overdue_amount": {"value": 60212000.0, "display_value": "60,212,000 MMK"},
+							"outstanding_amount": {"value": 86837000.0, "display_value": "86,837,000 MMK"},
+						},
+						"primary_metric_id": "overdue_amount",
+						"row_provenance": [],
+						"join_key": {"customer": "35th Street Mobile Wholesale"},
+					}
+				],
+				"",
+			),
+		):
+			response = maybe_build_governed_composite_frontdoor_response(
+				request_id="collection-priority-customer-risk",
+				message="who should we collect from first?",
+				company_name="Mingalar Mobile Distribution Co., Ltd.",
+			)
+		self.assertEqual(((response.get("family_resolution") or {}).get("requested_family_id")), "customer_risk_as_of")
+		self.assertEqual(((response.get("family_resolution") or {}).get("requested_primary_metric")), "overdue_amount")
+		self.assertIn("35th Street Mobile Wholesale", response.get("frontdoor_answer") or "")
 
 	def test_customer_commercial_family_clarifies_missing_primary_metric(self):
 		response = maybe_build_governed_composite_frontdoor_response(
@@ -98,7 +179,7 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
 			return_value=("compatible", ""),
 		), patch(
-			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_customer_period_commercial_rows",
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
 			return_value=(assembled_rows, ""),
 		):
 			response = maybe_build_governed_composite_frontdoor_response(
@@ -166,7 +247,7 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
 			return_value=("compatible", ""),
 		), patch(
-			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_customer_period_commercial_rows",
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
 			return_value=(assembled_rows, ""),
 		):
 			response = maybe_build_governed_composite_frontdoor_response(
@@ -221,7 +302,7 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
 			return_value=("compatible", ""),
 		), patch(
-			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_customer_period_commercial_rows",
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
 			return_value=(assembled_rows, ""),
 		):
 			response = maybe_build_governed_composite_frontdoor_response(
@@ -235,3 +316,119 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			answer,
 		)
 		self.assertNotIn("matched the governed scope", answer)
+
+	def test_customer_risk_family_uses_metadata_default_primary_and_as_of_date(self):
+		assembled_rows = [
+			{
+				"rank": 1,
+				"customer": "Ko Nay Lin Mobile Center",
+				"customer_name": "Ko Nay Lin Mobile Center",
+				"metric_values": {
+					"overdue_amount": {"value": 37335000.0, "display_value": "37,335,000 MMK"},
+					"outstanding_amount": {"value": 63125000.0, "display_value": "63,125,000 MMK"},
+					"overdue_ratio": {"value": 59.1, "display_value": "59.1%"},
+					"credit_utilization": {"value": 84.2, "display_value": "84.2%"},
+				},
+				"primary_metric_id": "overdue_amount",
+				"row_provenance": [],
+				"join_key": {"customer": "Ko Nay Lin Mobile Center"},
+			}
+		]
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution.current_date_iso",
+			return_value="2026-04-25",
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._execute_component_ranking_artifacts",
+			return_value=({}, [{"execution_id": "customer_overdue_amount_as_of_ranking_execution"}], ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
+			return_value=("compatible", ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
+			return_value=(assembled_rows, ""),
+		):
+			response = maybe_build_governed_composite_frontdoor_response(
+				request_id="phase3-4-risk-default",
+				message="show risky customers",
+				company_name="Mingalar Mobile Distribution Co., Ltd.",
+			)
+		self.assertEqual(
+			((response.get("family_resolution") or {}).get("status")),
+			"resolved_family",
+		)
+		self.assertEqual(
+			((response.get("family_resolution") or {}).get("family_id")),
+			"customer_risk_as_of",
+		)
+		self.assertEqual(
+			((response.get("family_resolution") or {}).get("requested_primary_metric")),
+			"overdue_amount",
+		)
+		self.assertEqual(
+			((response.get("family_resolution") or {}).get("requested_as_of_date")),
+			"2026-04-25",
+		)
+		self.assertIn("outstanding_amount", ((response.get("family_resolution") or {}).get("requested_secondary_metrics") or []))
+		self.assertIn("| Rank | Customer | Overdue Amount | Outstanding Amount | Overdue Ratio | Credit Utilization |", response.get("frontdoor_answer") or "")
+		self.assertIn("Ko Nay Lin Mobile Center", response.get("frontdoor_answer") or "")
+		normalized_artifact = response.get("normalized_family_artifact") or {}
+		self.assertEqual(normalized_artifact.get("family_id"), "customer_entity_detail")
+		self.assertEqual((normalized_artifact.get("period") or {}).get("as_of_date"), "2026-04-25")
+		self.assertEqual((normalized_artifact.get("filters") or {}).get("composite_family_id"), "customer_risk_as_of")
+		self.assertIn(
+			"aging_breakdown",
+			((normalized_artifact.get("dimensions") or {}).get("source_composite_followup_affordances") or []),
+		)
+		ranked_rows = (normalized_artifact.get("sections") or {}).get("ranked_rows") or []
+		self.assertEqual(ranked_rows[0]["customer"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(ranked_rows[0]["overdue_amount"], 37335000.0)
+		self.assertEqual(ranked_rows[0]["credit_utilization"], 84.2)
+		grounded_turn = response.get("grounded_turn_context") or {}
+		self.assertEqual(grounded_turn.get("artifact_family_id"), "customer_entity_detail")
+		self.assertEqual((grounded_turn.get("date_range") or {}).get("as_of_date"), "2026-04-25")
+		self.assertEqual((grounded_turn.get("known_entities") or [])[0]["entity_type"], "customer")
+		self.assertEqual((grounded_turn.get("known_entities") or [])[0]["rank"], 1)
+
+	def test_entity_composite_assembly_derives_secondary_metric_from_primary_row_metadata(self):
+		assembly_contract = types.SimpleNamespace(
+			join_key_schema=["customer"],
+			row_identity_policy="customer_name",
+			row_missing_component_policy="degrade_row_keep_primary",
+		)
+		component_artifacts = {
+			"overdue_amount": types.SimpleNamespace(
+				rows=[
+					{
+						"customer": "Ko Nay Lin Mobile Center",
+						"customer_name": "Ko Nay Lin Mobile Center",
+						"value": 37335000.0,
+						"display_value": "37,335,000 MMK",
+						"outstanding_total": 63125000.0,
+						"aging_buckets": [
+							{"bucket": "0-30", "amount": 23190000.0},
+							{"bucket": "31-60", "amount": 17760000.0},
+						],
+					}
+				]
+			)
+		}
+		rows, error = _assemble_entity_period_commercial_rows(
+			assembly_contract=assembly_contract,
+			component_artifacts=component_artifacts,
+			primary_metric_id="overdue_amount",
+			secondary_metric_ids=["outstanding_amount"],
+			requested_limit=10,
+			sort_direction="desc",
+			derived_metric_specs={
+				"outstanding_amount": {
+					"source_metric_id": "overdue_amount",
+					"value_key": "outstanding_total",
+					"display_format": "money_mmk",
+				}
+			},
+		)
+		self.assertEqual(error, "")
+		self.assertEqual(rows[0]["metric_values"]["outstanding_amount"]["value"], 63125000.0)
+		self.assertEqual(rows[0]["metric_values"]["outstanding_amount"]["display_value"], "63,125,000 MMK")
+		self.assertEqual(rows[0]["aging_buckets"][0]["bucket"], "0-30")
+		self.assertEqual(rows[0]["aging_buckets"][1]["amount"], 17760000.0)

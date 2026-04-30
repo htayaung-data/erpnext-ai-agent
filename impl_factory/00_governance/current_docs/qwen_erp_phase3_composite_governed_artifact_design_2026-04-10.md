@@ -1,7 +1,7 @@
 # Qwen ERP Phase 3 Composite Governed Artifact Expansion Design
 
-Status: `3.1` complete, `3.2` complete, `3.3` next  
-Date: 2026-04-10  
+Status: `3.1` complete, `3.2` complete, `3.3` nex
+Date: 2026-04-10
 Scope: detailed implementation plan for Phase 3, Composite Governed Artifact Expansion
 
 ## 1. Executive Decision
@@ -85,7 +85,7 @@ This phase must obey:
 
 The most important constraints are:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. fail closed
 4. explicit authority order
@@ -113,17 +113,17 @@ The ecosystem now already provides:
 4. `business_rule_registry.json`
 5. `governed_kpi_execution_registry.json`
 6. typed KPI value artifacts
-7. single-metric customer ranking support
-8. grounded entity-detail follow-up support
+7. single-metric customer ranking suppor
+8. grounded entity-detail follow-up suppor
 
 ### 4.2 What is missing
 
 The system still needs:
 
-1. a composite artifact contract
+1. a composite artifact contrac
 2. family-level composite metadata
-3. a typed family-resolution contract
-4. a reusable composite assembly contract
+3. a typed family-resolution contrac
+4. a reusable composite assembly contrac
 5. metadata-owned compatibility rules
 6. primary-metric policy
 7. same-grain validation
@@ -146,9 +146,9 @@ Phase `3` should not widen into:
 
 Composite answers must follow this authority order:
 
-1. approved family-resolution contract
-2. approved composite artifact contract
-3. approved assembly contract
+1. approved family-resolution contrac
+2. approved composite artifact contrac
+3. approved assembly contrac
 4. approved compatibility metadata
 5. approved single-metric execution artifacts
 6. governed entity or ranking evidence
@@ -171,7 +171,7 @@ This should become the typed runtime seam between frontdoor understanding and co
 Its job is to resolve:
 
 1. which composite family the user is asking for
-2. which variation axes are already explicit
+2. which variation axes are already explici
 3. which variation axes are still missing
 4. whether the request is inside an approved family at all
 
@@ -284,7 +284,7 @@ Typical variation axes should include:
 
 1. metric basis
 2. period or as-of scope
-3. top-N limit
+3. top-N limi
 4. primary sort metric
 5. optional supporting metrics
 
@@ -377,7 +377,7 @@ Supported family shape:
 Supported variation axes:
 
 1. sales-order basis or sales-invoice basis
-2. top N limit
+2. top N limi
 3. period
 4. primary ranking metric within the approved family
 5. presence or absence of one approved supporting metric
@@ -393,7 +393,7 @@ Supported family shape:
 
 Supported variation axes:
 
-1. top N limit
+1. top N limi
 2. period
 3. primary ranking metric
 4. approved item-label wording policy
@@ -416,14 +416,14 @@ Enterprise framing:
 Supported family shape:
 
 1. customer
-2. overdue amount
+2. overdue amoun
 3. overdue ratio
-4. outstanding amount
+4. outstanding amoun
 5. credit utilization
 
 Supported variation axes:
 
-1. top N limit
+1. top N limi
 2. as-of date
 3. primary ranking metric
 4. threshold-match filtering
@@ -452,7 +452,7 @@ That means:
 2. runtime selects an approved `composite_id` inside that resolved family
 3. `CompositeAssemblyAdapterContract` governs how scalar artifacts become composite rows
 4. compatibility rules validate the requested mix
-5. render logic stays generic to the family, not to one exact prompt
+5. render logic stays generic to the family, not to one exact promp
 
 This phase must not rely on:
 
@@ -467,7 +467,7 @@ If the question goes outside the family, the system should clarify or block expl
 
 ## 9. Detailed Mini-Phase Plan
 
-### 9.1 `3.1` Composite Artifact Contract
+### 9.1 `3.1` Composite Artifact Contrac
 
 Goal:
 
@@ -496,7 +496,7 @@ Implementation detail:
 What must be true before `3.1` closes:
 
 1. composite metadata can declare customer ranking, product ranking, and customer credit composite families
-2. same-grain and same-period checks are explicit
+2. same-grain and same-period checks are explici
 3. family variation axes are explicit in metadata
 4. family resolution is typed and auditable
 5. row assembly is shared and typed, not family-local
@@ -538,10 +538,10 @@ Deliver:
 
 Implementation detail:
 
-1. keep customer ranking composite limited to company-period scope first
+1. keep customer ranking composite limited to company-period scope firs
 2. revenue and quantity must share the same document basis as the chosen AOV basis
 3. the runtime must block if the user asks for a mixed-basis composite without clarifying
-4. rendered rows should stay business-natural and compact
+4. rendered rows should stay business-natural and compac
 5. new prompt phrasings inside the approved family should not require new code
 
 Example governed asks:
@@ -568,7 +568,7 @@ Current implementation note:
 4. missing `basis` and missing primary metric both clarify through governed family-variation continuations
 5. row assembly remains metadata-owned through the approved composite and assembly registries
 6. live probe and live smoke are green for:
-   - direct customer commercial composite request
+   - direct customer commercial composite reques
    - missing-basis clarification
    - `Sales Order` clarification continuation
 7. Phase `3.3` should now extend the same family-based runtime pattern to product commercial composites rather than widening customer-family logic
@@ -639,8 +639,8 @@ Implementation detail:
 1. use the same `as_of_date` across all component metrics
 2. do not include `last payment date` yet unless it first becomes an approved scalar metric with governed execution
 3. ranking order must be explicit:
-   - overdue amount first
-   - credit utilization as supporting context
+   - overdue amount firs
+   - credit utilization as supporting contex
 4. if credit limit data is missing for a customer row, the row should degrade safely rather than silently fabricate utilization
 5. new prompt phrasings inside the approved family should not require new code
 6. this slice should create no new report-specific handler; it should prove that a second archetype can be activated through the same composite runtime contracts
@@ -736,9 +736,9 @@ Expected scalar dependencies:
 4. sales-invoice revenue
 5. sales-invoice quantity
 6. average order value by sales invoice
-7. customer overdue amount
+7. customer overdue amoun
 8. customer overdue ratio
-9. customer outstanding amount
+9. customer outstanding amoun
 10. customer credit utilization
 
 If one of these is not yet available as a typed scalar artifact, it must be added as governed scalar support first.
@@ -751,7 +751,7 @@ These questions should not be solved casually during implementation:
 
 1. whether customer ranking should default to sales-order basis or sales-invoice basis
 2. whether product ranking should be called `product` or `item` in user-facing answers
-3. whether overdue customer composites should sort by overdue amount or overdue ratio by default
+3. whether overdue customer composites should sort by overdue amount or overdue ratio by defaul
 4. whether threshold labels should appear by default in overdue composites
 
 These belong in metadata or a short governance note, not in ad hoc runtime branching.
@@ -780,7 +780,7 @@ Then Phase `3` is done.
 
 The approved next implementation order should be:
 
-1. `3.1` Composite Artifact Contract
+1. `3.1` Composite Artifact Contrac
 2. `3.2` Customer Ranking Composites
 3. `3.3` Entity-Period Commercial Ranking Generalization
 4. `3.4` Customer Risk-As-Of Composite Archetype

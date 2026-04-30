@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import re
 from typing import Any, Dict, List, Tuple
 
@@ -24,6 +25,9 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_normalized_family_artifact_contract,
 	detect_language,
 )
+from ai_assistant_ui.qwen_chat.analytical_scope_policy import (
+	apply_analytical_scope_runtime_policy,
+)
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
 from ai_assistant_ui.qwen_chat.clarification_translation import (
 	render_shared_choice_list_clarification,
@@ -37,9 +41,6 @@ from ai_assistant_ui.qwen_chat.governed_kpi_execution_state import (
 	GovernedKpiRankingArtifactContract,
 	resolve_governed_kpi_execution_state,
 )
-from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
-	execute_governed_kpi_artifact_from_states,
-)
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_composite_artifact_spec,
 	get_composite_assembly_spec,
@@ -51,11 +52,23 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_semantic_resolution_alias_entries,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_aliases
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import best_semantic_slot_alias
 from ai_assistant_ui.qwen_chat.runtime_support import tool_trace_payload
+from ai_assistant_ui.qwen_chat.composite_subject_support import (
+	composite_entity_dimension_label,
+)
+from ai_assistant_ui.qwen_chat.composite_row_support import (
+	composite_join_key_label,
+	composite_row_entity_code,
+	composite_row_identity_value,
+	composite_row_join_key_payload,
+	composite_row_join_key_tuple,
+)
+from ai_assistant_ui.qwen_chat.item_product_support import normalize_item_product_grain
 
 
 _GENERIC_RANKING_REQUEST_PATTERN = re.compile(
-	r"\b(top|highest|lowest|ranking|rank|list|show)\b",
+	r"\b(top|highest|lowest|ranking|rank|bottom|least|priority|prioritize|prioritise)\b",
 	re.IGNORECASE,
 )
 _DETAIL_REQUEST_PATTERN = re.compile(
@@ -76,6 +89,10 @@ _CLARIFICATION_PRIORITY = (
 
 def _clean_text(value: Any) -> str:
 	return str(value or "").strip()
+
+
+def current_date_iso() -> str:
+	return dt.date.today().isoformat()
 
 
 def _normalize_text(value: Any) -> str:
@@ -134,24 +151,7 @@ def _current_company_name(explicit_company_name: str) -> str:
 
 
 def _extract_canonical_alias(slot_name: str, message: str) -> str:
-	best_value = ""
-	best_length = -1
-	normalized_message = _normalize_text(message)
-	for entry in list_semantic_resolution_alias_entries(slot_name):
-		canonical_value = _clean_text(entry.get("canonical_value"))
-		if not canonical_value:
-			continue
-		for alias in (entry.get("aliases") or []):
-			alias_text = _normalize_text(alias)
-			if not alias_text:
-				continue
-			pattern = r"(^|[^a-z0-9])" + re.escape(alias_text) + r"([^a-z0-9]|$)"
-			if not re.search(pattern, normalized_message):
-				continue
-			if len(alias_text) > best_length:
-				best_value = canonical_value
-				best_length = len(alias_text)
-	return best_value
+	return best_semantic_slot_alias(slot_name, message)
 
 
 def _extract_period_time_scope(message: str) -> str:
@@ -159,12 +159,62 @@ def _extract_period_time_scope(message: str) -> str:
 	return value if value in _PERIOD_SCOPE_ORDER else ""
 
 
+def _extract_as_of_date_scope(message: str) -> str:
+	explicit_iso_match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", _clean_text(message))
+	if explicit_iso_match:
+		return _clean_text(explicit_iso_match.group(1))
+	if _extract_canonical_alias("time_scope", message) == "as_of_today":
+		return current_date_iso()
+	return ""
+
+
 def _extract_listing_view_basis(message: str) -> str:
 	return _extract_canonical_alias("listing_view", message)
 
 
+def _extract_family_basis(message: str, family_spec: Dict[str, Any]) -> str:
+	supported_basis_values = [
+		_clean_text(value)
+		for value in family_spec.get("supported_variation_values", {}).get("basis", []) or []
+		if _clean_text(value)
+	]
+	resolved_basis = _extract_listing_view_basis(message)
+	if resolved_basis and resolved_basis in supported_basis_values:
+		return resolved_basis
+	normalized_message = _normalize_text(message)
+	if not normalized_message:
+		return ""
+	for basis in supported_basis_values:
+		basis_value = _clean_text(basis)
+		if not basis_value:
+			continue
+		for alias in _alias_variants(basis_value) + _alias_variants(_basis_context_phrase(basis_value)) + _alias_variants(_basis_option_label(basis_value)):
+			alias_text = _normalize_text(alias)
+			if not alias_text:
+				continue
+			pattern = r"(^|[^a-z0-9])(" + re.escape(alias_text) + r")([^a-z0-9]|$)"
+			if re.search(pattern, normalized_message):
+				return basis_value
+	return ""
+
+
 def _ranking_subject(message: str) -> str:
 	return _extract_canonical_alias("ranking_subject", message)
+
+
+def _family_subject_requested(message: str, family_spec: Dict[str, Any]) -> bool:
+	subject = _clean_text(family_spec.get("subject_alias_value"))
+	normalized_message = _normalize_text(message)
+	if not subject or not normalized_message:
+		return False
+	for alias in _alias_variants(subject) + _alias_variants(f"{subject}s"):
+		alias_text = _normalize_text(alias)
+		if not alias_text:
+			continue
+		pattern = r"(^|[^a-z0-9])(" + re.escape(alias_text) + r")([^a-z0-9]|$)"
+		if re.search(pattern, normalized_message):
+			return True
+	return False
 
 
 def _requested_top_n(message: str, default_limit: int = 10) -> int:
@@ -288,6 +338,70 @@ def _extract_secondary_metrics(
 		if metric_id in metric_positions and metric_id not in out:
 			out.append(metric_id)
 	return out
+
+
+def _default_primary_metric_from_family_spec(family_spec: Dict[str, Any]) -> str:
+	default_primary_metric = _clean_text(family_spec.get("default_primary_metric"))
+	allowed_primary = {
+		_clean_text(value)
+		for value in (family_spec.get("allowed_primary_metrics") or [])
+		if _clean_text(value)
+	}
+	return default_primary_metric if default_primary_metric in allowed_primary else ""
+
+
+def _default_secondary_metrics_from_family_spec(
+	family_spec: Dict[str, Any],
+	primary_metric_id: str,
+) -> List[str]:
+	allowed_secondary = {
+		_clean_text(value)
+		for value in (family_spec.get("allowed_secondary_metrics") or [])
+		if _clean_text(value)
+	}
+	out: List[str] = []
+	for value in family_spec.get("default_secondary_metrics") or []:
+		metric_id = _clean_text(value)
+		if metric_id and metric_id != _clean_text(primary_metric_id) and metric_id in allowed_secondary and metric_id not in out:
+			out.append(metric_id)
+	return out
+
+
+def _family_default_trigger_requested(message: str, family_spec: Dict[str, Any]) -> bool:
+	normalized_message = _normalize_text(message)
+	if not normalized_message:
+		return False
+	for alias in family_spec.get("default_primary_trigger_aliases") or []:
+		alias_text = _normalize_text(alias)
+		if not alias_text:
+			continue
+		pattern = r"(^|[^a-z0-9])(" + re.escape(alias_text) + r")([^a-z0-9]|$)"
+		if re.search(pattern, normalized_message):
+			return True
+	return False
+
+
+def _as_of_requested_scope(
+	message: str,
+	family_spec: Dict[str, Any],
+	ranking_limit: int,
+	sort_direction: str,
+) -> Dict[str, Any]:
+	as_of_date = _extract_as_of_date_scope(message)
+	if not as_of_date and _clean_text(family_spec.get("default_as_of_date_policy")) == "current_governed_report_date":
+		as_of_date = current_date_iso()
+	if not as_of_date:
+		return {
+			"ranking_limit": ranking_limit,
+			"sort_direction": sort_direction,
+		}
+	return {
+		"requested_time_scope": "as_of_date",
+		"as_of_date": as_of_date,
+		"has_as_of_date": True,
+		"ranking_limit": ranking_limit,
+		"sort_direction": sort_direction,
+	}
 
 
 def _period_requested_scope(requested_time_scope: str, ranking_limit: int, sort_direction: str) -> Dict[str, Any]:
@@ -424,6 +538,8 @@ def _basis_context_phrase(basis: str) -> str:
 		return "sales orders"
 	if value == "sales_invoice":
 		return "sales invoices"
+	if value == "approved_customer_risk_as_of_default":
+		return "approved customer risk metrics"
 	return value.replace("_", " ")
 
 
@@ -435,15 +551,6 @@ def _basis_document_phrase(basis: str) -> str:
 		return "submitted sales invoices"
 	context_phrase = _basis_context_phrase(basis)
 	return context_phrase or "documents"
-
-
-def _entity_dimension_label(entity_grain: str) -> str:
-	value = _clean_text(entity_grain)
-	if value == "item":
-		return "Product"
-	if value == "customer":
-		return "Customer"
-	return _title_case_metric(value or "entity")
 
 
 def _pluralize_label(label: str, count: int) -> str:
@@ -563,6 +670,17 @@ def _metric_row_keys(metric_id: str) -> List[str]:
 	return [value] if value else []
 
 
+def _row_evidence_sections(row: Dict[str, Any]) -> Dict[str, Any]:
+	out: Dict[str, Any] = {}
+	for key in ("aging_buckets",):
+		value = row.get(key)
+		if isinstance(value, list):
+			rows = [dict(item) for item in value if isinstance(item, dict)]
+			if rows:
+				out[key] = rows
+	return out
+
+
 def _normalized_ranked_rows_from_composite(composite_artifact_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 	rows = [dict(item) for item in (composite_artifact_payload.get("rows") or []) if isinstance(item, dict)]
 	out: List[Dict[str, Any]] = []
@@ -595,6 +713,7 @@ def _normalized_ranked_rows_from_composite(composite_artifact_payload: Dict[str,
 				continue
 			for row_key in _metric_row_keys(metric_id):
 				normalized_row[row_key] = metric_payload.get("value")
+		normalized_row.update(_row_evidence_sections(row))
 		out.append(normalized_row)
 	return out
 
@@ -628,7 +747,7 @@ def _build_followup_ready_family_artifact(
 	source_reports: List[str],
 ) -> Dict[str, Any]:
 	local_followup_family_id = _clean_text(family_spec.get("local_followup_family_id"))
-	if local_followup_family_id != "ranking_analytics":
+	if not local_followup_family_id:
 		return {}
 	primary_metric_id = _clean_text(composite_artifact_payload.get("primary_metric_id"))
 	secondary_metric_ids = [
@@ -645,7 +764,7 @@ def _build_followup_ready_family_artifact(
 	if not ranked_rows or not primary_metric_id:
 		return {}
 	entity_grain = _clean_text(family_spec.get("entity_grain") or composite_artifact_payload.get("entity_grain"))
-	entity_dimension = _entity_dimension_label(entity_grain)
+	entity_dimension = composite_entity_dimension_label(entity_grain)
 	available_metric_keys = list(
 		dict.fromkeys(
 			[
@@ -664,9 +783,43 @@ def _build_followup_ready_family_artifact(
 		family_resolution.requested_period_start,
 		family_resolution.requested_period_end,
 	)
+	as_of_date = _clean_text(family_resolution.requested_as_of_date)
 	entity_column_alias_map = _followup_column_alias_map(
 		family_spec=family_spec,
 		metric_ids=[primary_metric_id, *secondary_metric_ids],
+	)
+	dimensions = apply_analytical_scope_runtime_policy(
+		family_id=local_followup_family_id,
+		report_name=source_reports[0] if source_reports else _clean_text(family_resolution.family_label),
+		dimensions={
+			"entity_dimension": entity_dimension,
+			"primary_metric_key": primary_metric_id,
+			"primary_metric_label": _metric_label(primary_metric_id),
+			"requested_metric_key": primary_metric_id,
+			"requested_columns": requested_columns,
+			"requested_projection_mode": (
+				"explicit_selection" if display_secondary_metric_ids else "default"
+			),
+			"available_metric_keys": available_metric_keys,
+			"requested_top_n": int(max(1, family_resolution.requested_limit or len(ranked_rows) or 10)),
+			"requested_sort_direction": family_resolution.requested_sort_direction or "desc",
+			"source_grain": "entity_total",
+			"requested_column_alias_map": entity_column_alias_map,
+			"source_composite_family_id": _clean_text(family_resolution.family_id),
+			"source_composite_family_label": _clean_text(family_resolution.family_label),
+			"source_composite_subject_alias": _clean_text(family_spec.get("subject_alias_value")),
+			"source_composite_basis": _clean_text(family_resolution.requested_basis),
+			"source_composite_primary_metric_id": primary_metric_id,
+			"source_composite_secondary_metric_ids": list(display_secondary_metric_ids),
+			"source_composite_time_scope": composite_time_scope,
+			"source_composite_as_of_date": as_of_date,
+			"source_composite_followup_affordances": [
+				_clean_text(value)
+				for value in (family_spec.get("followup_affordances") or [])
+				if _clean_text(value)
+			],
+			"source_composite_id": _clean_text(composite_artifact_payload.get("composite_id")),
+		},
 	)
 	artifact_contract = build_normalized_family_artifact_contract(
 		request_id=request_id,
@@ -675,39 +828,23 @@ def _build_followup_ready_family_artifact(
 		period={
 			"from_date": family_resolution.requested_period_start,
 			"to_date": family_resolution.requested_period_end,
+			"as_of_date": as_of_date,
+			"report_date": as_of_date,
 			"time_scope": composite_time_scope,
 			"requested_time_scope": composite_time_scope,
 		},
 			filters={
 				"company": family_resolution.requested_company_name,
 				"basis": family_resolution.requested_basis,
+				"as_of_date": as_of_date,
+				"composite_family_id": _clean_text(family_resolution.family_id),
 			},
-			dimensions={
-				"entity_dimension": entity_dimension,
-				"primary_metric_key": primary_metric_id,
-				"primary_metric_label": _metric_label(primary_metric_id),
-				"requested_metric_key": primary_metric_id,
-				"requested_columns": requested_columns,
-				"requested_projection_mode": (
-					"explicit_selection" if display_secondary_metric_ids else "default"
-				),
-				"available_metric_keys": available_metric_keys,
-				"requested_top_n": int(max(1, family_resolution.requested_limit or len(ranked_rows) or 10)),
-				"requested_sort_direction": family_resolution.requested_sort_direction or "desc",
-				"source_grain": f"{entity_grain or 'entity'}_period_commercial_composite",
-				"requested_column_alias_map": entity_column_alias_map,
-				"source_composite_family_id": _clean_text(family_resolution.family_id),
-				"source_composite_family_label": _clean_text(family_resolution.family_label),
-				"source_composite_subject_alias": _clean_text(family_spec.get("subject_alias_value")),
-				"source_composite_basis": _clean_text(family_resolution.requested_basis),
-				"source_composite_primary_metric_id": primary_metric_id,
-				"source_composite_secondary_metric_ids": list(display_secondary_metric_ids),
-				"source_composite_time_scope": composite_time_scope,
-			},
+			dimensions=dimensions,
 		metrics={
 			primary_metric_id: sum(float(row.get(_metric_row_keys(primary_metric_id)[0]) or 0.0) for row in ranked_rows),
 			"entity_count": len(ranked_rows),
 			"top_value": float(ranked_rows[0].get(_metric_row_keys(primary_metric_id)[0]) or 0.0),
+			"as_of_date": as_of_date,
 		},
 		sections={
 			"ranked_rows": ranked_rows,
@@ -761,16 +898,23 @@ def _build_followup_ready_grounded_turn_context(
 	sections = dict(normalized_family_artifact_payload.get("sections") or {})
 	rows = [dict(item) for item in (sections.get("ranked_rows") or []) if isinstance(item, dict)]
 	entity_dimension = _clean_text(dimensions.get("entity_dimension")) or "Entity"
-	entity_type = "item" if entity_dimension.lower() == "product" else entity_dimension.lower()
+	entity_type = normalize_item_product_grain(entity_dimension)
 	known_entities = [
 		{
 			"entity_type": entity_type,
 			"name": _clean_text(row.get("entity_name") or row.get("entity")),
 			"code": _clean_text(row.get("entity_code") or row.get("item_code") or row.get("customer")),
+			"rank": int(row.get("rank") or 0),
+			"source_family_id": _clean_text(dimensions.get("source_composite_family_id")),
 		}
 		for row in rows[:25]
 		if _clean_text(row.get("entity_name") or row.get("entity"))
 	]
+	as_of_date = _clean_text(
+		getattr(family_resolution, "requested_as_of_date", "")
+		or (normalized_family_artifact_payload.get("period") or {}).get("as_of_date")
+		or (normalized_family_artifact_payload.get("period") or {}).get("report_date")
+	)
 	grounded_turn = GroundedTurnContext(
 		request_id=request_id,
 		trace_request_id=request_id,
@@ -781,11 +925,14 @@ def _build_followup_ready_grounded_turn_context(
 		date_range={
 			"from_date": family_resolution.requested_period_start,
 			"to_date": family_resolution.requested_period_end,
-			"report_date": "",
+			"as_of_date": as_of_date,
+			"report_date": as_of_date,
 		},
 			filters={
 				"company": resolved_company_name,
 				"basis": family_resolution.requested_basis,
+				"as_of_date": as_of_date,
+				"composite_family_id": _clean_text(getattr(family_resolution, "family_id", "")),
 			},
 			dimensions=[entity_dimension],
 			metrics=[
@@ -1155,13 +1302,13 @@ def _display_secondary_metric_ids(
 		for value in (requested_secondary_metric_ids or [])
 		if _clean_text(value) and _clean_text(value) != _clean_text(primary_metric_id)
 	]
-	if not requested:
-		return []
 	allowed = {
 		_clean_text(value)
 		for value in (available_secondary_metric_ids or [])
 		if _clean_text(value)
 	}
+	if not requested:
+		return []
 	return [value for value in requested if value in allowed]
 
 
@@ -1170,6 +1317,10 @@ def _execute_component_ranking_artifacts(
 	composite_resolution: CompositeArtifactResolutionContract,
 	family_resolution: CompositeFamilyResolutionContract,
 ) -> Tuple[Dict[str, GovernedKpiRankingArtifactContract], List[Dict[str, Any]], str]:
+	from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
+		execute_governed_kpi_artifact_from_states,
+	)
+
 	component_artifacts: Dict[str, GovernedKpiRankingArtifactContract] = {}
 	source_refs: List[Dict[str, Any]] = []
 	for execution_id in composite_resolution.required_execution_ids:
@@ -1192,6 +1343,7 @@ def _execute_component_ranking_artifacts(
 		requested_scope = {
 			"period_start": family_resolution.requested_period_start,
 			"period_end": family_resolution.requested_period_end,
+			"as_of_date": family_resolution.requested_as_of_date,
 			"ranking_limit": 0,
 			"sort_direction": family_resolution.requested_sort_direction or "desc",
 		}
@@ -1267,30 +1419,19 @@ def _evaluate_composite_compatibility(
 	return "compatible", ""
 
 
-def _row_join_key_value(row: Dict[str, Any], key: str) -> str:
-	clean_key = _clean_text(key)
-	if clean_key == "customer":
-		return _clean_text(row.get("customer") or row.get("entity_key"))
-	if clean_key == "item_code":
-		return _clean_text(row.get("item_code") or row.get("entity_code") or row.get("entity_key"))
-	return _clean_text(row.get(clean_key))
-
-
-def _row_join_key_tuple(row: Dict[str, Any], join_key_schema: List[str]) -> Tuple[str, ...]:
-	return tuple(_row_join_key_value(row, key) for key in join_key_schema)
-
-
-def _row_join_key_payload(row: Dict[str, Any], join_key_schema: List[str]) -> Dict[str, Any]:
-	return {key: _row_join_key_value(row, key) for key in join_key_schema if _row_join_key_value(row, key)}
-
-
-def _row_identity_value(row: Dict[str, Any], row_identity_policy: str) -> str:
-	policy = _clean_text(row_identity_policy)
-	if policy == "item_name_prefer_code":
-		return _clean_text(row.get("item_name") or row.get("entity_name") or row.get("item_code") or row.get("entity_code"))
-	if policy == "item_code":
-		return _clean_text(row.get("item_code") or row.get("entity_code"))
-	return _clean_text(row.get("customer_name") or row.get("entity_name") or row.get("customer"))
+def _format_derived_metric_value(value: Any, derived_spec: Dict[str, Any]) -> str:
+	format_style = _clean_text(derived_spec.get("display_format"))
+	if format_style == "money_mmk":
+		return f"{_money(value)} MMK"
+	if format_style == "percent":
+		try:
+			numeric = float(value or 0.0)
+		except Exception:
+			numeric = 0.0
+		return f"{numeric:,.1f}".rstrip("0").rstrip(".") + "%"
+	if format_style == "count":
+		return _count_text(value)
+	return _clean_text(value)
 
 
 def _assemble_entity_period_commercial_rows(
@@ -1301,6 +1442,7 @@ def _assemble_entity_period_commercial_rows(
 	secondary_metric_ids: List[str],
 	requested_limit: int,
 	sort_direction: str,
+	derived_metric_specs: Dict[str, Any] | None = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
 	primary_artifact = component_artifacts.get(primary_metric_id)
 	if primary_artifact is None:
@@ -1312,7 +1454,7 @@ def _assemble_entity_period_commercial_rows(
 	for metric_id, artifact in component_artifacts.items():
 		row_map: Dict[str, Dict[str, Any]] = {}
 		for row in artifact.rows:
-			join_key = _row_join_key_tuple(dict(row), join_key_schema)
+			join_key = composite_row_join_key_tuple(dict(row), join_key_schema)
 			if all(join_key):
 				row_map["||".join(join_key)] = dict(row)
 		component_row_maps[metric_id] = row_map
@@ -1323,16 +1465,16 @@ def _assemble_entity_period_commercial_rows(
 		primary_rows = primary_rows[:requested_limit]
 	if _clean_text(assembly_contract.row_missing_component_policy) == "block_family":
 		for row in primary_rows:
-			join_key = "||".join(_row_join_key_tuple(row, join_key_schema))
+			join_key = "||".join(composite_row_join_key_tuple(row, join_key_schema))
 			for metric_id in secondary_metric_ids:
 				if join_key and join_key not in component_row_maps.get(metric_id, {}):
 					return [], f"Composite row assembly is missing supporting metric '{metric_id}' for join key '{join_key}'."
 	assembled_rows: List[Dict[str, Any]] = []
 	for index, row in enumerate(primary_rows, start=1):
-		join_key_tuple = _row_join_key_tuple(row, join_key_schema)
+		join_key_tuple = composite_row_join_key_tuple(row, join_key_schema)
 		join_key = "||".join(join_key_tuple)
-		entity_name = _row_identity_value(row, assembly_contract.row_identity_policy)
-		entity_code = _clean_text(row.get("entity_code") or row.get("item_code") or row.get("customer"))
+		entity_name = composite_row_identity_value(row, assembly_contract.row_identity_policy)
+		entity_code = composite_row_entity_code(row)
 		metric_values: Dict[str, Dict[str, Any]] = {
 			primary_metric_id: {
 				"value": row.get("value"),
@@ -1342,6 +1484,17 @@ def _assemble_entity_period_commercial_rows(
 		row_provenance = list(row.get("row_provenance") or [])
 		for metric_id in secondary_metric_ids:
 			component_row = dict(component_row_maps.get(metric_id, {}).get(join_key) or {})
+			if not component_row:
+				derived_spec = dict((derived_metric_specs or {}).get(metric_id) or {})
+				source_metric_id = _clean_text(derived_spec.get("source_metric_id")) or primary_metric_id
+				value_key = _clean_text(derived_spec.get("value_key"))
+				source_row = row if source_metric_id == primary_metric_id else dict(component_row_maps.get(source_metric_id, {}).get(join_key) or {})
+				if source_row and value_key:
+					component_row = {
+						"value": source_row.get(value_key),
+						"display_value": _format_derived_metric_value(source_row.get(value_key), derived_spec),
+						"row_provenance": list(source_row.get("row_provenance") or []),
+					}
 			metric_values[metric_id] = {
 				"value": component_row.get("value"),
 				"display_value": component_row.get("display_value"),
@@ -1361,7 +1514,8 @@ def _assemble_entity_period_commercial_rows(
 				"metric_values": metric_values,
 				"primary_metric_id": primary_metric_id,
 				"row_provenance": row_provenance,
-				"join_key": _row_join_key_payload(row, join_key_schema),
+				"join_key": composite_row_join_key_payload(row, join_key_schema),
+				**_row_evidence_sections(row),
 			}
 		)
 	return assembled_rows, ""
@@ -1374,7 +1528,10 @@ def _render_composite_answer(
 	detail_requested: bool,
 ) -> str:
 	rows = [dict(item) for item in (composite_artifact_payload.get("rows") or []) if isinstance(item, dict)]
-	period_phrase = f"{family_resolution.requested_period_start} to {family_resolution.requested_period_end}"
+	if _clean_text(family_resolution.requested_as_of_date):
+		period_phrase = f"as of {family_resolution.requested_as_of_date}"
+	else:
+		period_phrase = f"{family_resolution.requested_period_start} to {family_resolution.requested_period_end}"
 	primary_metric_id = _clean_text(composite_artifact_payload.get("primary_metric_id"))
 	secondary_metric_ids = [
 		_clean_text(value)
@@ -1389,7 +1546,7 @@ def _render_composite_answer(
 	requested_limit = int(max(1, family_resolution.requested_limit or len(rows) or 10))
 	actual_row_count = len(rows)
 	entity_grain = _clean_text(composite_artifact_payload.get("entity_grain") or "customer")
-	entity_label = _entity_dimension_label(entity_grain)
+	entity_label = composite_entity_dimension_label(entity_grain)
 	source_document_count = int(max(0, composite_artifact_payload.get("source_document_count") or 0))
 	if actual_row_count and actual_row_count < requested_limit:
 		intro = _limited_result_intro(
@@ -1401,9 +1558,13 @@ def _render_composite_answer(
 			source_document_count=source_document_count,
 		)
 	else:
+		prefix = "As of" if _clean_text(family_resolution.requested_as_of_date) else "For"
+		basis_phrase = _basis_context_phrase(family_resolution.requested_basis)
+		basis_suffix = f" based on {basis_phrase}" if basis_phrase else ""
+		answer_scope = family_resolution.requested_as_of_date if prefix == "As of" else period_phrase
 		intro = (
-			f"For {period_phrase}, here are the top {requested_limit} "
-			f"{entity_label.lower()}s by {_primary_metric_phrase(primary_metric_id)} based on {_basis_context_phrase(family_resolution.requested_basis)}."
+			f"{prefix} {answer_scope}, here are the top {requested_limit} "
+			f"{entity_label.lower()}s by {_primary_metric_phrase(primary_metric_id)}{basis_suffix}."
 		)
 	answer_lines = [intro]
 	if display_secondary_metric_ids:
@@ -1437,7 +1598,7 @@ def _render_composite_answer(
 		answer_lines.append("")
 		answer_lines.append("How it was assembled")
 		answer_lines.append(f"- Basis: {_basis_context_phrase(family_resolution.requested_basis)}")
-		answer_lines.append(f"- Join key: {'item_code' if entity_grain == 'item' else 'customer'}")
+		answer_lines.append(f"- Join key: {composite_join_key_label(entity_grain)}")
 		answer_lines.append("- Row assembly: left primary metric")
 		answer_lines.append("- Row provenance: per-row component refs")
 	return "\n".join(answer_lines).strip()
@@ -1448,8 +1609,8 @@ def _resolve_composite_candidate(
 	message: str,
 	company_name: str,
 ) -> Tuple[Dict[str, Any], CompositeFamilyResolutionContract | None]:
-	subject = _ranking_subject(message)
-	if not subject or not _has_ranking_intent(message):
+	canonical_subject = _ranking_subject(message)
+	if not _has_ranking_intent(message):
 		return {}, None
 	requested_time_scope = _extract_period_time_scope(message)
 	requested_period = _period_requested_scope(
@@ -1461,11 +1622,21 @@ def _resolve_composite_candidate(
 	for family_spec in list_composite_family_specs():
 		if _clean_text(family_spec.get("activation_state")) != "active":
 			continue
-		if _clean_text(family_spec.get("subject_alias_value")) != subject:
+		family_subject = _clean_text(family_spec.get("subject_alias_value"))
+		default_primary_requested = False
+		default_trigger_requested = _family_default_trigger_requested(message, family_spec)
+		if canonical_subject and canonical_subject != family_subject and not _family_subject_requested(message, family_spec):
+			continue
+		if not canonical_subject and not _family_subject_requested(message, family_spec) and not default_trigger_requested:
 			continue
 		primary_metric = _extract_primary_metric(message, family_spec)
+		if not primary_metric and default_trigger_requested:
+			primary_metric = _default_primary_metric_from_family_spec(family_spec)
+			default_primary_requested = bool(primary_metric)
 		secondary_metrics = _extract_secondary_metrics(message, family_spec, primary_metric)
-		explicit_basis = _extract_listing_view_basis(message)
+		if default_primary_requested and not secondary_metrics:
+			secondary_metrics = _default_secondary_metrics_from_family_spec(family_spec, primary_metric)
+		explicit_basis = _extract_family_basis(message, family_spec)
 		generic_metric_mix = bool(
 			not explicit_basis
 			and not _family_only_metric_requested(
@@ -1481,21 +1652,32 @@ def _resolve_composite_candidate(
 			or _implied_basis_from_metric_ids([primary_metric] + list(secondary_metrics))
 			or default_basis
 		)
-		if not primary_metric and not secondary_metrics and not explicit_basis and not requested_time_scope:
+		if not primary_metric and not secondary_metrics and not explicit_basis and not default_primary_requested:
 			continue
-		if generic_metric_mix and not default_basis:
+		if generic_metric_mix and secondary_metrics and not default_basis:
 			continue
+		time_scope_type = _clean_text(family_spec.get("time_scope_type"))
+		requested_scope = (
+			_as_of_requested_scope(
+				message,
+				family_spec,
+				ranking_limit=int(requested_period.get("ranking_limit") or 10),
+				sort_direction=_clean_text(requested_period.get("sort_direction")),
+			)
+			if time_scope_type == "as_of_date_required"
+			else requested_period
+		)
 		family_resolution = resolve_composite_family_resolution(
 			requested_company_name=company_name,
 			requested_family_id=_clean_text(family_spec.get("family_id")),
 			requested_primary_metric=primary_metric,
 			requested_secondary_metrics=secondary_metrics,
 			requested_basis=requested_basis,
-			requested_period_start=_clean_text(requested_period.get("period_start")),
-			requested_period_end=_clean_text(requested_period.get("period_end")),
-			requested_as_of_date="",
-			requested_limit=int(requested_period.get("ranking_limit") or 10),
-			requested_sort_direction=_clean_text(requested_period.get("sort_direction")),
+			requested_period_start=_clean_text(requested_scope.get("period_start")),
+			requested_period_end=_clean_text(requested_scope.get("period_end")),
+			requested_as_of_date=_clean_text(requested_scope.get("as_of_date")),
+			requested_limit=int(requested_scope.get("ranking_limit") or 10),
+			requested_sort_direction=_clean_text(requested_scope.get("sort_direction")),
 		)
 		if family_resolution.status not in {"resolved_family", "clarify_family_variation"}:
 			continue
@@ -1509,6 +1691,26 @@ def _resolve_composite_candidate(
 	if len(best) != 1:
 		return {}, None
 	return best[0][1], best[0][2]
+
+
+def governed_composite_frontdoor_candidate_available(
+	*,
+	message: str,
+	company_name: str = "",
+) -> bool:
+	"""
+	Return whether a message can be owned by a governed composite front-door
+	family before any artifact-local follow-up lane suppresses runtime values.
+	"""
+	family_spec, family_resolution = _resolve_composite_candidate(
+		message=message,
+		company_name=_current_company_name(company_name),
+	)
+	return bool(
+		family_spec
+		and family_resolution is not None
+		and family_resolution.status in {"resolved_family", "clarify_family_variation"}
+	)
 
 
 def maybe_build_governed_composite_frontdoor_response(
@@ -1591,6 +1793,7 @@ def maybe_build_governed_composite_frontdoor_response(
 			secondary_metric_ids=secondary_metric_ids,
 			requested_limit=int(family_resolution.requested_limit or 10),
 			sort_direction=family_resolution.requested_sort_direction or "desc",
+			derived_metric_specs=dict(artifact_spec.get("derived_metric_specs") or {}),
 		)
 		if assembly_error:
 			return {}
@@ -1605,6 +1808,7 @@ def maybe_build_governed_composite_frontdoor_response(
 			scope={"company": family_resolution.requested_company_name},
 			period_start=family_resolution.requested_period_start,
 			period_end=family_resolution.requested_period_end,
+			as_of_date=family_resolution.requested_as_of_date,
 			row_count=len(assembled_rows),
 			source_document_count=sum(
 				int(max(0, (row.get("document_count") or 0)))

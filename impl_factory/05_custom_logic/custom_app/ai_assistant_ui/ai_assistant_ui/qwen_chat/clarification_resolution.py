@@ -44,6 +44,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_semantic_resolution_alias_entries,
 	ontology_detect_concepts,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_alias_matches
 
 
 def _normalize_text(value: Any) -> str:
@@ -60,24 +61,7 @@ def _message_contains_phrase(value: str, phrase: str) -> bool:
 
 
 def _semantic_slot_alias_matches(slot_name: str, message: str) -> List[str]:
-	matches: List[str] = []
-	for entry in list_semantic_resolution_alias_entries(slot_name):
-		if not isinstance(entry, dict):
-			continue
-		canonical_value = _normalize_text(entry.get("canonical_value"))
-		if not canonical_value:
-			continue
-		candidate_aliases = []
-		display_label = _normalize_text(entry.get("display_label"))
-		if display_label:
-			candidate_aliases.append(display_label)
-		for alias in entry.get("aliases") or []:
-			normalized_alias = _normalize_text(alias)
-			if normalized_alias:
-				candidate_aliases.append(normalized_alias)
-		if any(_message_contains_phrase(message, alias) for alias in candidate_aliases):
-			matches.append(canonical_value)
-	return list(dict.fromkeys([value for value in matches if value]))
+	return semantic_slot_alias_matches(slot_name, message)
 
 
 def _financial_statement_family_aliases() -> List[str]:
@@ -554,16 +538,23 @@ def _match_pending_clarification_option(
 			dict.fromkeys([alias for alias in existing_aliases + ordinal_aliases if _normalize_text(alias)])
 		)
 	if message_token_keys:
+		message_tokens = set(normalized_message.split())
 		for option in unique_options:
 			for variant in _candidate_phrase_variants(option):
 				if variant in message_token_keys:
 					return option, "exact_token", 0.99
+			option_tokens = set(_normalize_text(option).split())
+			if len(option_tokens) >= 2 and option_tokens.issubset(message_tokens):
+				return option, "exact_token", 0.98
 			for alias in (option_aliases_by_option.get(option) or []):
 				if normalized_message == _normalize_text(alias):
 					return option, "exact_alias", 0.97
 				for variant in _candidate_phrase_variants(alias):
 					if variant in message_token_keys:
 						return option, "exact_token_alias", 0.97
+				alias_tokens = set(_normalize_text(alias).split())
+				if len(alias_tokens) >= 2 and alias_tokens.issubset(message_tokens):
+					return option, "exact_token_alias", 0.96
 	else:
 		for option in unique_options:
 			for alias in (option_aliases_by_option.get(option) or []):
@@ -790,6 +781,85 @@ def _clarification_has_structured_resolution_authority(internal_details: Dict[st
 	carryover_slot_values = details.get("carryover_slot_values")
 	if isinstance(carryover_slot_values, dict) and carryover_slot_values:
 		return True
+	return False
+
+
+def _option_match_is_embedded_slot_value_in_self_contained_request(
+	*,
+	reason_type: str,
+	message: str,
+	matched_option: str,
+	matched_by: str,
+	option_aliases_by_option: Dict[str, List[str]] | None = None,
+	internal_details: Dict[str, Any] | None = None,
+) -> bool:
+	if not matched_option:
+		return False
+	if matched_by not in {"exact_token", "exact_token_alias", "substring", "semantic"}:
+		return False
+	details = internal_details if isinstance(internal_details, dict) else {}
+	slot_name = _normalize_text(
+		details.get("semantic_slot_name")
+		or details.get("resolved_slot_key")
+		or ""
+	)
+	slot_reason = _normalize_text(reason_type)
+	if slot_reason not in {"time_scope_missing", "time_scope_clarification"} and slot_name not in {
+		"time_scope",
+		"requested_time_scope",
+		"selected_time_scope",
+	}:
+		return False
+	normalized_message = _normalize_text(message)
+	if not normalized_message:
+		return False
+	candidate_phrases = [matched_option]
+	if isinstance(option_aliases_by_option, dict):
+		candidate_phrases.extend(option_aliases_by_option.get(matched_option) or [])
+	for phrase in candidate_phrases:
+		if normalized_message == _normalize_text(phrase):
+			return False
+	if _message_looks_like_self_contained_governed_business_query(message=message):
+		return True
+	for phrase in candidate_phrases:
+		normalized_phrase = _normalize_text(phrase)
+		if not normalized_phrase or not _message_contains_phrase(normalized_message, normalized_phrase):
+			continue
+		remainder = re.sub(
+			r"(^|\s)" + re.escape(normalized_phrase) + r"(\s|$)",
+			" ",
+			normalized_message,
+		)
+		if _message_looks_like_self_contained_governed_business_query(message=_normalize_text(remainder)):
+			return True
+		remainder_business_tokens = [
+			token
+			for token in _word_tokens(remainder)
+			if token not in {
+				"a",
+				"an",
+				"and",
+				"for",
+				"give",
+				"i",
+				"in",
+				"me",
+				"no",
+				"number",
+				"of",
+				"on",
+				"one",
+				"option",
+				"please",
+				"show",
+				"that",
+				"the",
+				"this",
+				"to",
+			}
+		]
+		if len(remainder_business_tokens) >= 2:
+			return True
 	return False
 
 
@@ -1443,33 +1513,55 @@ def resolve_pending_clarification_response(
 			or frontdoor_structured_option_match
 		)
 	)
-	new_request_detected = _master_data_clarification_breakout_detected(
-		request_id=request_id,
+	option_match_should_yield_to_new_request = _option_match_is_embedded_slot_value_in_self_contained_request(
+		reason_type=reason_type,
 		message=message,
-		signal_payload=signal_payload,
-	) or (
+		matched_option=matched_option,
+		matched_by=matched_by,
+		option_aliases_by_option=option_aliases_by_option,
+		internal_details=internal_details if isinstance(internal_details, dict) else {},
+	)
+	allow_breakout_crosscheck = bool(
 		not authoritative_option_resolution
-		and _structured_frontdoor_clarification_breakout_detected(
-		request_id=request_id,
-		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
-		message=message,
-		grounded_turn=grounded_turn,
-	)) or _semantic_new_request_detected(
-		request_id=request_id,
-		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
-		message=message,
-		signal_payload=signal_payload,
-	) or _frontdoor_new_request_detected(
-		request_id=request_id,
-		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
-		message=message,
-		grounded_turn=grounded_turn,
+		or option_match_should_yield_to_new_request
+	)
+	empty_ack = _looks_like_empty_ack(message)
+	new_request_detected = False if empty_ack else (
+		_master_data_clarification_breakout_detected(
+			request_id=request_id,
+			message=message,
+			signal_payload=signal_payload,
+		) or (
+			allow_breakout_crosscheck
+			and _structured_frontdoor_clarification_breakout_detected(
+				request_id=request_id,
+				session_id=session_id,
+				user_id=user_id,
+				site_name=site_name,
+				message=message,
+				grounded_turn=grounded_turn,
+			)
+		) or (
+			allow_breakout_crosscheck
+			and (
+				_semantic_new_request_detected(
+					request_id=request_id,
+					session_id=session_id,
+					user_id=user_id,
+					site_name=site_name,
+					message=message,
+					signal_payload=signal_payload,
+				)
+				or _frontdoor_new_request_detected(
+					request_id=request_id,
+					session_id=session_id,
+					user_id=user_id,
+					site_name=site_name,
+					message=message,
+					grounded_turn=grounded_turn,
+				)
+			)
+		)
 	)
 	if (
 		not new_request_detected
@@ -1479,10 +1571,13 @@ def resolve_pending_clarification_response(
 	):
 		new_request_detected = True
 	if matched_option and (
-		matched_by in accepted_direct_match_modes
-		or artifact_boundary_option_match
-		or frontdoor_structured_option_match
-		or not new_request_detected
+		not (new_request_detected and option_match_should_yield_to_new_request)
+		and (
+			matched_by in accepted_direct_match_modes
+			or artifact_boundary_option_match
+			or frontdoor_structured_option_match
+			or not new_request_detected
+		)
 	):
 		return build_clarification_resolution_contract(
 			request_id=request_id,
@@ -1548,7 +1643,7 @@ def resolve_pending_clarification_response(
 			clarification_attempt_count=int(max(0, clarification_attempt_count)),
 			is_final_attempt=bool(int(max(0, clarification_attempt_count)) >= max(0, int(max_attempts) - 1)),
 		)
-	if _looks_like_empty_ack(message):
+	if empty_ack:
 		return build_clarification_resolution_contract(
 			request_id=request_id,
 			session_id=session_id,

@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Access Model Phase A Execution Baseline
 
-Status: active execution baseline  
-Date: 2026-04-13  
+Status: active execution baseline
+Date: 2026-04-13
 Scope: concrete execution baseline for Phase A of the governed scope activation and cross-family alignment chapter
 
 ## 1. Purpose
@@ -28,8 +28,8 @@ That model must answer, for every approved or candidate scope:
 
 1. what the scope is
 2. what class of scope it belongs to
-3. who owns it
-4. which families may consume it
+3. who owns i
+4. which families may consume i
 5. which fields or projections are allowed by family
 6. which ambiguity classes apply
 7. what the current support state is
@@ -48,7 +48,7 @@ If Phase A is done correctly, later phases will no longer need to guess whether 
 
 Phase A must follow these rules strictly.
 
-### 3.1 Scope Is A Policy Object
+### 3.1 Scope Is A Policy Objec
 
 Scope must not remain scattered across:
 
@@ -65,7 +65,7 @@ No scope may be called active unless the access model can point to:
 
 1. a primary owner
 2. an approved source authority
-3. compatible family list
+3. compatible family lis
 4. projection policy
 5. clarification policy
 6. support-state classification
@@ -80,7 +80,7 @@ If one scope is allowed in:
 
 that asymmetry must be recorded explicitly as policy or support state, not left as accidental behavior.
 
-### 3.4 Phase A Is Contract And Metadata First
+### 3.4 Phase A Is Contract And Metadata Firs
 
 Phase A is allowed to introduce:
 
@@ -214,7 +214,7 @@ Phase A must align with these existing files rather than replacing them:
 7. [business_ontology.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/business_ontology.json)
 8. [validation_rules.json](/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata/validation_rules.json)
 
-### 5.3 Existing Contracts And Runtime Seams To Respect
+### 5.3 Existing Contracts And Runtime Seams To Respec
 
 Phase A should be designed to feed these existing contracts and shared seams:
 
@@ -285,7 +285,7 @@ Phase A compatibility work must at minimum cover these families:
 2. entity detail
 3. transaction listing
 4. ranked entities
-5. composite artifact
+5. composite artifac
 6. financial summary / aging
 7. inventory / product-performance
 8. clarification / follow-up continuity
@@ -305,14 +305,14 @@ Goal:
 Deliver:
 
 1. initial `governed_scope_registry.json`
-2. support-state classification for the seed scope set
+2. support-state classification for the seed scope se
 3. naming normalization notes for inconsistent scope names
 
 Acceptance:
 
 1. all seed scopes exist in the registry
 2. each has one support-state classification
-3. no duplicate scope representations remain in the Phase A doc set
+3. no duplicate scope representations remain in the Phase A doc se
 
 ## A.2 Ownership Baseline
 
@@ -393,7 +393,7 @@ The first bounded implementation slice after this baseline should be:
 
 Purpose:
 
-1. build the metadata backbone for the seed scope set without activating broad new runtime behavior yet
+1. build the metadata backbone for the seed scope set without activating broad new runtime behavior ye
 
 Scope:
 
@@ -477,4 +477,4 @@ It should first establish the governed scope access backbone so that later activ
 2. cross-family
 3. auditable
 4. compatible with existing contracts
-5. safe from partial-activation drift
+5. safe from partial-activation drif

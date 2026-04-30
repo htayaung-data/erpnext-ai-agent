@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 3 Phase 1 Front-Door Inventory
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 3 Phase 1 front-door and metadata inventory for the cross-layer alignment targets identified by Rounds 1 and 2
 
 ## 1. Purpose
@@ -18,8 +18,8 @@ So Round 3 Phase 1 is not another broad inventory pass.
 
 It is a focused metadata and front-door inventory for these alignment targets:
 
-1. document entity-detail alignment
-2. purchase invoice metadata/runtime alignment
+1. document entity-detail alignmen
+2. purchase invoice metadata/runtime alignmen
 3. payment entry ownership and activation
 4. ambiguity and clarification activation breadth
 5. direct entity-reference policy breadth
@@ -51,7 +51,7 @@ This note is based on direct inspection of:
 
 Round 3 Phase 1 examined five cross-layer scope groups.
 
-### 3.1 Document Entity Detail Alignment
+### 3.1 Document Entity Detail Alignmen
 
 1. sales invoice
 2. sales order
@@ -66,7 +66,7 @@ Round 3 Phase 1 examined five cross-layer scope groups.
 3. semantic-routing presence
 4. family-path presence
 
-### 3.3 Purchase Invoice Alignment
+### 3.3 Purchase Invoice Alignmen
 
 1. front-door/semantic declaration
 2. detail/runtime declaration
@@ -101,8 +101,8 @@ Round 3 alignment targets are not surfaced through specific front-door intent cl
 
 That means:
 
-1. payment entry does not appear as a front-door-specific intent
-2. purchase invoice does not appear as a front-door-specific intent
+1. payment entry does not appear as a front-door-specific inten
+2. purchase invoice does not appear as a front-door-specific inten
 3. document entity-detail alignment is not owned by a special front-door class
 
 Interpretation:
@@ -176,7 +176,7 @@ Interpretation:
 
 Purchase invoice remains one of the clearest cases where runtime support and metadata declaration are not aligned.
 
-## 5.5 Typed Lookup Contracts Already Exist
+## 5.5 Typed Lookup Contracts Already Exis
 
 The codebase already contains typed lookup support through:
 
@@ -231,7 +231,7 @@ This matters directly for:
 Because these are exactly the areas where support can be:
 
 1. real but narrow
-2. partial but not absent
+2. partial but not absen
 3. ambiguous without stronger typed clarification
 
 ## 7. Round 3 Phase 1 Classification
@@ -308,7 +308,7 @@ The next step should be runtime seam mapping focused specifically on these Round
 3. payment-entry specialized versus generic path ownership
 4. clarification and ambiguity activation breadth at the artifact/entity-detail level
 
-## 10. Current Status Statement
+## 10. Current Status Statemen
 
 Round 3 Phase 1 is now started and documented.
 

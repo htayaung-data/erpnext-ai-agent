@@ -1,7 +1,7 @@
 # Qwen ERP Deferred Implementation Register
 
-Status: active deferred implementation register  
-Date: 2026-04-09  
+Status: active deferred implementation register
+Date: 2026-04-09
 Scope: record concrete governed items that were intentionally deferred during Phase 1 and should be reopened later through explicit design rather than memory or ad hoc fixes
 
 ## 1. Purpose
@@ -10,7 +10,7 @@ This register exists to keep deferred work visible and reopenable.
 
 Use it when:
 
-1. a bounded slice proves valuable but should not widen yet
+1. a bounded slice proves valuable but should not widen ye
 2. tenant data is absent or unreliable
 3. authority is real but narrower than the user question
 4. a future phase should pick the work up cleanly without rediscovery
@@ -41,7 +41,7 @@ If those conditions are not true, the item should be:
 
 Origin:
 
-1. Phase `1.1` Delivery / Fulfillment
+1. Phase `1.1` Delivery / Fulfillmen
 
 Current state:
 
@@ -49,12 +49,12 @@ Current state:
 
 Why deferred:
 
-1. live deployment did not provide enough active `Delivery Trip` evidence to justify governed rollout
+1. live deployment did not provide enough active `Delivery Trip` evidence to justify governed rollou
 2. building the slice without live records would encourage speculative runtime behavior
 
 Reopen trigger:
 
-1. live `Delivery Trip` rows exist in the tenant
+1. live `Delivery Trip` rows exist in the tenan
 2. a bounded operational ask is confirmed
 3. report or direct-query authority is verifiable in ERP
 
@@ -82,7 +82,7 @@ Reopen trigger:
 
 1. a bounded follow-on slice is approved for sales-order-to-delivery evidence
 2. downstream `Delivery Note` linkage is explicitly governed for this path
-3. browser/UAT confirms no hidden composite drift
+3. browser/UAT confirms no hidden composite drif
 
 Recommended future home:
 
@@ -122,22 +122,22 @@ Origin:
 
 Current state:
 
-1. reopened and completed on 2026-04-09 for the current tenant
+1. reopened and completed on 2026-04-09 for the current tenan
 2. no longer an active deferred item
 
 Original defer reason:
 
-1. live `Customer Credit Limit` rows are absent
+1. live `Customer Credit Limit` rows are absen
 2. credit-limit comparison without real tenant data would be fabricated policy
 3. credit utilization and breach logic require both data presence and approved business basis
 
 Reopen trigger that was satisfied:
 
-1. real `Customer Credit Limit` records exist in the tenant
+1. real `Customer Credit Limit` records exist in the tenan
 2. the business basis is approved explicitly:
-   - outstanding vs credit limit
-   - total due vs credit limit
-   - overdue vs credit limit
+   - outstanding vs credit limi
+   - total due vs credit limi
+   - overdue vs credit limi
 3. the approved definition is recorded in the business-definition and formula registries
 
 Implemented outcome:
@@ -148,7 +148,7 @@ Implemented outcome:
 3. supporting governed context:
    - `payment_terms`
    - `default_price_list`
-   - available credit
+   - available credi
    - utilization
 4. still deferred beyond this implemented slice:
    - approval / hold decisioning
@@ -216,12 +216,12 @@ Origin:
 Current state:
 
 1. resolved on 2026-04-10
-2. active in the governed KPI registry and customer lifecycle support
+2. active in the governed KPI registry and customer lifecycle suppor
 
 Resolution note:
 
 1. a governed customer-master read capability now exists
-2. customer creation date is now exposed through governed metadata and customer lifecycle support
+2. customer creation date is now exposed through governed metadata and customer lifecycle suppor
 3. the basis is active without silently overriding generic tenure clarification
 
 Recommended future home:
@@ -251,7 +251,7 @@ Reopen trigger:
 
 1. finance approves overdue severity labels and numeric bands explicitly
 2. the approved labels are confirmed for user-facing wording
-3. browser/UAT confirms blocked-safe behavior can widen without advisory drift
+3. browser/UAT confirms blocked-safe behavior can widen without advisory drif
 
 Recommended future home:
 

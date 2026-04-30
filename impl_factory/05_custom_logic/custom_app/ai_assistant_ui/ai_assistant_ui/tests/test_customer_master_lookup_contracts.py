@@ -349,7 +349,7 @@ class TestCustomerMasterLookupContracts(unittest.TestCase):
 				return "clients" if plural else "client"
 			return ""
 
-		with patch("ai_assistant_ui.qwen_chat.family_adapters.entity_grain_display_label", side_effect=_label):
+		with patch("ai_assistant_ui.qwen_chat.master_data_directory_support.entity_grain_display_label", side_effect=_label):
 			supplier_context = _master_directory_context("Supplier Master List")
 			customer_context = _master_directory_context("Customer Master List")
 

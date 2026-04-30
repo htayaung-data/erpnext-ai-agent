@@ -8,7 +8,6 @@ from ai_assistant_ui.qwen_chat.fresh_query_interpreter import interpret_fresh_qu
 from ai_assistant_ui.qwen_chat.governed_scope_registry import list_active_master_data_scope_activations
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_frontdoor_intent_spec,
-	list_entity_reference_policy_specs,
 	list_frontdoor_intent_specs,
 )
 from ai_assistant_ui.qwen_chat.runtime_client import (
@@ -114,16 +113,6 @@ def _build_interpretation_context() -> Dict[str, Any]:
 			if clean_mode:
 				active_master_data_lookup_modes.append(clean_mode)
 		projection = str(activation.get("default_projection") or "").strip()
-		if projection:
-			active_master_data_lookup_projections.append(projection)
-	for policy in list_entity_reference_policy_specs():
-		if str(policy.get("activation_state") or "").strip() != "active":
-			continue
-		for lookup_mode in (policy.get("allowed_lookup_modes") or []):
-			clean_mode = str(lookup_mode or "").strip()
-			if clean_mode:
-				active_master_data_lookup_modes.append(clean_mode)
-		projection = str(policy.get("default_projection") or "").strip()
 		if projection:
 			active_master_data_lookup_projections.append(projection)
 	return {

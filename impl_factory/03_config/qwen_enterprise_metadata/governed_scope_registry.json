@@ -230,6 +230,33 @@
       "notes": "Shared document scope with active listing and detail support."
     },
     {
+      "scope_id": "purchase_receipt",
+      "scope_label": "Purchase Receipt",
+      "scope_class": "document",
+      "status": "active",
+      "primary_owner_family": "transaction_listing",
+      "approved_source_authority": {
+        "source_kind": "report",
+        "authority_status": "approved",
+        "report_name": "Purchase Receipt List",
+        "capability_id": "purchase_receipt_read",
+        "notes": "Approved shared transaction-listing route for purchase-receipt reads."
+      },
+      "canonical_grains": [
+        "purchase_receipt",
+        "supplier"
+      ],
+      "canonical_alias_groups": [
+        "purchase_receipt",
+        "pr",
+        "goods_receipt",
+        "goods_receipts",
+        "supplier_receipt"
+      ],
+      "support_state": "active_reference",
+      "notes": "Shared procurement document scope with active listing support. Detail promotion remains inactive until a purchase-receipt detail authority package is approved."
+    },
+    {
       "scope_id": "payment_entry",
       "scope_label": "Payment Entry",
       "scope_class": "financial_operation",

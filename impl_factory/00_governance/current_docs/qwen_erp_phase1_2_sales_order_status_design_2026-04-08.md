@@ -1,7 +1,7 @@
 # Qwen ERP Phase 1.2 Sales Order Status Design
 
-Status: checkpoint-complete implementation note  
-Date: 2026-04-08  
+Status: checkpoint-complete implementation note
+Date: 2026-04-08
 Scope: detailed implementation plan for Phase 1, Mini-phase 1.2
 
 ## 1. Executive Decision
@@ -11,7 +11,7 @@ Phase 1.2 should start with a governed `Sales Order` status surface, not a broad
 The first implementation must stay:
 
 1. read-only
-2. metadata-first
+2. metadata-firs
 3. status-authority driven
 4. bounded to real ERP order facts
 5. small enough to verify with the existing enterprise gate
@@ -41,7 +41,7 @@ What worked and should be reused:
 2. reuse the existing `transaction_listing` family before inventing a new family
 3. introduce a direct-query document-listing report before trends
 4. reuse `entity_detail` instead of inventing a new drilldown lane
-5. keep follow-up continuity grounded on typed artifacts, not raw message text
+5. keep follow-up continuity grounded on typed artifacts, not raw message tex
 6. add browser/UAT checkpoints before calling a slice complete
 7. convert important behavior into release-gated smokes only after the authority seam is stable
 
@@ -56,17 +56,17 @@ What went wrong in Phase 1.1 and must not repeat:
 
 Phase 1.2 must obey the active enterprise guide:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. compiler enforces deterministically
-4. fail closed when evidence is insufficient
+4. fail closed when evidence is insufficien
 5. no keyword routing
 6. no single-case prompt fixes
 7. two-layer verification is required:
    - fast deterministic contract tests
    - live/site verification where state matters
 8. expand only after the previous chapter is closed
-9. stop when the stop rule is met
+9. stop when the stop rule is me
 
 This means `Sales Order Status` must be built as:
 
@@ -127,7 +127,7 @@ What does not yet exist:
 1. `Sales Order List` report metadata
 2. `Sales Order` semantic-resolution entries
 3. `Sales Order` status normalization policy
-4. `Sales Order` explicit entity-detail support
+4. `Sales Order` explicit entity-detail suppor
 
 ## 5. Authority Model For Sales Order Status
 
@@ -157,7 +157,7 @@ Deferred authority for later slices only:
 
 This means:
 
-1. Phase `1.2` should answer order-status questions from order authority first
+1. Phase `1.2` should answer order-status questions from order authority firs
 2. it should not become a hidden composite engine
 3. if users ask beyond order authority, the system should fail closed or defer to a later bounded slice
 
@@ -179,7 +179,7 @@ This means:
 
 ### 6.2 Explicitly deferred
 
-1. `Sales Order Trends` as a first-slice entry point
+1. `Sales Order Trends` as a first-slice entry poin
 2. `Sales Order Analysis` as the first artifact surface
 3. `Payment Terms Status for Sales Order`
 4. draft-versus-submitted mixed policy unless a bounded extension is explicitly approved
@@ -235,7 +235,7 @@ Why:
 
 1. it mirrors the successful Delivery entry strategy
 2. it keeps the first authority surface simple
-3. it avoids mixing draft workflow policy into the first checkpoint
+3. it avoids mixing draft workflow policy into the first checkpoin
 
 Example asks covered:
 
@@ -264,9 +264,9 @@ Implementation checkpoint for `1.2A`:
    - `test_sales_order_listing_contracts`
    - `test_semantic_financial_resolution`
 7. browser/UAT is still required before `1.2A` can be treated as closure-ready
-8. the next approved implementation move remains `1.2B`, but only after that browser/UAT checkpoint
+8. the next approved implementation move remains `1.2B`, but only after that browser/UAT checkpoin
 
-### 7.2 `1.2B` Status Normalization And Date-Scope Enrichment
+### 7.2 `1.2B` Status Normalization And Date-Scope Enrichmen
 
 Goal:
 
@@ -292,7 +292,7 @@ Recommended status set for first governed support:
 
 Explicitly defer in this slice:
 
-1. broad draft-policy questions if they require special docstatus treatment
+1. broad draft-policy questions if they require special docstatus treatmen
 2. workflow-state semantics beyond the standard `status` field
 
 Example asks covered:
@@ -303,8 +303,8 @@ Example asks covered:
 
 Acceptance for `1.2B`:
 
-1. date-scope and status can coexist without continuation drift
-2. month-scoped listing returns the full governed set, not a hidden capped subset
+1. date-scope and status can coexist without continuation drif
+2. month-scoped listing returns the full governed set, not a hidden capped subse
 3. browser/UAT confirms the same prompts work outside smoke helpers
 
 Implementation checkpoint for `1.2B`:
@@ -356,7 +356,7 @@ Example asks covered:
 
 Acceptance for `1.2C`:
 
-1. fresh-chat explicit identifier goes to order detail, not list/report drift
+1. fresh-chat explicit identifier goes to order detail, not list/report drif
 2. order detail is grounded on the `Sales Order` doctype itself
 3. browser/UAT confirms parity with invoice/delivery-note detail behavior
 
@@ -423,7 +423,7 @@ Fail-closed rules:
 
 Acceptance for `1.2D`:
 
-1. the follow-up remains anchored to the current sales-order detail artifact
+1. the follow-up remains anchored to the current sales-order detail artifac
 2. no raw text heuristics become hidden authority
 3. user-facing wording can be natural, but the decision state stays deterministic
 
@@ -461,7 +461,7 @@ Implementation checkpoint for `1.2D`:
 9. `1.2C` and `1.2D` have now been promoted into [test_post_contract_release_gates.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_post_contract_release_gates.py), and the site-backed release-gate module is green
 10. Phase `1.2` is now checkpoint-complete and the next approved phase step is `1.3` Purchase Order Tracking
 
-### 7.5 `1.2E` Optional Draft Extension Checkpoint
+### 7.5 `1.2E` Optional Draft Extension Checkpoin
 
 This slice should open only if real user need appears after `1.2A-D` are green.
 
@@ -473,7 +473,7 @@ Why this is optional:
 
 1. draft visibility is valuable
 2. but it introduces docstatus-mixing policy
-3. it should not delay the first submitted-order checkpoint
+3. it should not delay the first submitted-order checkpoin
 
 If opened, this slice should:
 
@@ -521,7 +521,7 @@ Required checks:
 Proceed with `1.2` in this exact order:
 
 1. `1.2A` submitted sales-order listing baseline
-2. `1.2B` status normalization and date-scope enrichment
+2. `1.2B` status normalization and date-scope enrichmen
 3. `1.2C` sales-order detail parity
 4. `1.2D` order-status follow-up from detail
 5. `1.2E` draft extension only if justified
@@ -531,5 +531,5 @@ This is the right enterprise-grade plan because:
 
 1. it reuses what Phase `1.1` already proved
 2. it obeys the active development guideline
-3. it stays contract-first and metadata-first
+3. it stays contract-first and metadata-firs
 4. it keeps the first order chapter narrow enough to close cleanly

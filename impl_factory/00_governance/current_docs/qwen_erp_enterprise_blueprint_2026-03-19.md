@@ -1,7 +1,7 @@
-# Qwen ERP Assistant Enterprise Blueprint
+# Qwen ERP Assistant Enterprise Blueprin
 
 Date: 2026-03-19
-Status: Target Architecture Blueprint
+Status: Target Architecture Blueprin
 Scope: `Qwen Chat` path inside ERPNext using `Qwen-Agent + FAC MCP + hosted/self-hosted Qwen`
 
 ## 1. Purpose
@@ -94,7 +94,7 @@ Responsibilities:
 - resolve business request to capability family
 - accept model-proposed intent and slots
 - deterministically select allowed report family / report id
-- inject invariants such as single-company context
+- inject invariants such as single-company contex
 - complete defaults such as report date or date range when policy allows
 - decide `execute`, `clarify`, or `reject`
 - produce a typed `FreshQueryCompilerContract`
@@ -123,7 +123,7 @@ Minimum fields:
 - `source_name`
   report/tool/capability name
 - `grounded`
-  true only when backed by successful FAC/ERP result
+  true only when backed by successful FAC/ERP resul
 - `base_language`
 - `company`
 - `date_range`
@@ -168,7 +168,7 @@ Required follow-up classes:
 - `write_intent`
   example: create invoice, delete ToDo
 - `new_query`
-  no reliable dependency on prior grounded context
+  no reliable dependency on prior grounded contex
 
 This layer must operate on:
 
@@ -230,7 +230,7 @@ FAC MCP access must be wrapped by a local gateway policy layer.
 
 Responsibilities:
 
-- tool allowlist enforcement
+- tool allowlist enforcemen
 - argument sanitation
 - invalid filter recovery where deterministic
 - timeout/retry bounds
@@ -305,8 +305,8 @@ This layer owns the final answer shape shown to business users.
 
 Required structure:
 
-1. grounded answer summary first
-2. supporting table or list second when relevant
+1. grounded answer summary firs
+2. supporting table or list second when relevan
 3. concise business interpretation after the facts
 4. recommendations only when supported by grounded data or explicit derived calculations
 
@@ -338,16 +338,16 @@ Delete actions require stronger policy than create/update.
 
 Persist per turn:
 
-- interaction contract
-- grounded context snapshot
+- interaction contrac
+- grounded context snapsho
 - follow-up resolution
 - execution path
 - tool calls
-- validation result
+- validation resul
 - artifact ids
 - confirmation state
 - language
-- security context
+- security contex
 - latency
 - failure reason
 
@@ -362,9 +362,9 @@ Nothing becomes enterprise-ready without:
 - artifact output tests
 - rollback rules
 
-## 5. Core Contract Set
+## 5. Core Contract Se
 
-## 5.1 InteractionContract
+## 5.1 InteractionContrac
 
 Purpose:
 
@@ -384,11 +384,11 @@ Minimum fields:
 }
 ```
 
-## 5.1A FreshQueryCompilerContract
+## 5.1A FreshQueryCompilerContrac
 
 Purpose:
 
-- govern the first-turn transition from user business language into an executable, validated ERP request
+- govern the first-turn transition from user business language into an executable, validated ERP reques
 
 Minimum fields:
 
@@ -407,11 +407,11 @@ Minimum fields:
 }
 ```
 
-## 5.2 GroundedTurnContextContract
+## 5.2 GroundedTurnContextContrac
 
 Purpose:
 
-- structured memory of the last grounded business result
+- structured memory of the last grounded business resul
 
 Minimum fields:
 
@@ -433,11 +433,11 @@ Minimum fields:
 }
 ```
 
-## 5.3 FollowUpResolutionContract
+## 5.3 FollowUpResolutionContrac
 
 Purpose:
 
-- explicit classification of the current turn relative to prior grounded context
+- explicit classification of the current turn relative to prior grounded contex
 
 Minimum fields:
 
@@ -451,7 +451,7 @@ Minimum fields:
 }
 ```
 
-## 5.4 ExecutionPathContract
+## 5.4 ExecutionPathContrac
 
 Purpose:
 
@@ -468,7 +468,7 @@ Minimum fields:
 }
 ```
 
-## 5.5 ActionProposalContract
+## 5.5 ActionProposalContrac
 
 Purpose:
 
@@ -487,7 +487,7 @@ Minimum fields:
 }
 ```
 
-## 5.6 ArtifactContract
+## 5.6 ArtifactContrac
 
 Purpose:
 
@@ -505,7 +505,7 @@ Minimum fields:
 }
 ```
 
-## 5.7 LanguageContract
+## 5.7 LanguageContrac
 
 Purpose:
 
@@ -522,7 +522,7 @@ Minimum fields:
 }
 ```
 
-## 5.8 AuditEnvelopeContract
+## 5.8 AuditEnvelopeContrac
 
 Purpose:
 
@@ -536,7 +536,7 @@ Minimum fields:
 - confirmation events
 - validation outcome
 
-## 5.8A ResponsePolicyContract
+## 5.8A ResponsePolicyContrac
 
 Purpose:
 
@@ -565,7 +565,7 @@ Policy interpretation:
 - `analysis_level = full_analysis_requested`
   fuller interpretation and recommendations allowed because the user explicitly requested analysis
 
-## 6. Feature Blueprint
+## 6. Feature Blueprin
 
 ## 6.1 Create/Delete with Confirmation
 
@@ -592,8 +592,8 @@ Target behavior:
 
 - user asks for chart or dashboard
 - if prior grounded table exists, build locally
-- otherwise run grounded query first
-- backend emits structured chart/dashboard artifact
+- otherwise run grounded query firs
+- backend emits structured chart/dashboard artifac
 - UI renders chart card
 - user can download PNG
 
@@ -617,9 +617,9 @@ Requirements:
 - Unicode normalization
 - language detection per turn
 - glossary registry
-- multilingual replay set
+- multilingual replay se
 
-## 7. Security Blueprint
+## 7. Security Blueprin
 
 Minimum enterprise controls:
 
@@ -627,7 +627,7 @@ Minimum enterprise controls:
 - separate read and write credentials
 - scoped tool allowlists by mode
 - server-side validation for every write proposal
-- audit every tool call and confirmation event
+- audit every tool call and confirmation even
 - sanitize rendered HTML/markdown/artifacts
 - rate limiting and abuse detection
 - secret rotation policy
@@ -640,10 +640,10 @@ Do not build this product by:
 - keyword patches for follow-ups
 - prompt-only write safety
 - letting Qwen-Agent own the architecture
-- using markdown as the only artifact format
-- storing only freeform transcript without typed context
+- using markdown as the only artifact forma
+- storing only freeform transcript without typed contex
 - using Administrator credentials long-term
-- treating Burmese as a UI translation afterthought
+- treating Burmese as a UI translation afterthough
 
 ## 9. Phased Enterprise Roadmap
 
@@ -658,7 +658,7 @@ Deliver:
 
 Exit criteria:
 
-- every successful turn stores grounded typed context
+- every successful turn stores grounded typed contex
 - every follow-up records its resolution mode
 
 ## Phase B: Follow-Up System
@@ -700,7 +700,7 @@ Deliver:
 
 Exit criteria:
 
-- no write action can bypass confirmation and audit
+- no write action can bypass confirmation and audi
 
 ## Phase E: Multilingual Enterprise UX
 
@@ -749,7 +749,7 @@ The enterprise product should behave like this:
 - FAC and ERP remain the factual authority
 - contracts and policy control correctness
 - follow-ups are typed and reproducible
-- business users receive concise grounded facts plus meaningful, clearly derived insight
+- business users receive concise grounded facts plus meaningful, clearly derived insigh
 - writes are safe and confirmable
 - charts and dashboards are structured artifacts
 - Burmese and English both work as first-class languages

@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from ai_assistant_ui.qwen_chat.contracts import build_normalized_family_artifact_contract
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
+from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key
 
 
 def _artifact_contract_from_payload(payload: Dict[str, Any]):
@@ -61,6 +62,34 @@ def _artifact_column_alias_map(artifact_contract) -> Dict[str, str]:
 	return out
 
 
+def _local_projection_alias_key(value: str) -> str:
+	key = str(value or "").strip().lower().replace(" ", "_")
+	if not key:
+		return ""
+	aliases = {
+		"document": "document_name",
+		"name": "document_name",
+		"id": "document_name",
+		"date": "posting_date",
+		"transaction_date": "posting_date",
+		"customer": "party_name",
+		"supplier": "party_name",
+		"party": "party_name",
+		"amount": "grand_total",
+		"total": "grand_total",
+		"total_amount": "grand_total",
+		"outstanding": "outstanding_amount",
+		"qty": "quantity",
+		"document_status": "status",
+	}
+	if key in aliases:
+		return aliases[key]
+	canonical_metric = get_canonical_key(value, dimension_or_metric="metric")
+	if canonical_metric:
+		return str(canonical_metric or "").strip().lower().replace(" ", "_")
+	return key
+
+
 def _artifact_metric_label_map(artifact_contract) -> Dict[str, str]:
 	dimensions = artifact_contract.dimensions if isinstance(getattr(artifact_contract, "dimensions", None), dict) else {}
 	values = dimensions.get("metric_label_map")
@@ -85,7 +114,7 @@ def _normalize_requested_columns_for_artifact(
 		key = str(value or "").strip().lower().replace(" ", "_")
 		if not key:
 			continue
-		out.append(alias_map.get(key, key))
+		out.append(alias_map.get(key, _local_projection_alias_key(value)))
 	return list(dict.fromkeys(out))
 
 

@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 3 Phase 3 Behavior Truthing
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 3 Phase 3 behavior truthing for the alignment targets mapped in Round 3 Phases 1 and 2
 
 ## 1. Purpose
@@ -186,7 +186,7 @@ Direct runtime scripts confirmed two useful behaviors.
 
 For a customer detail artifact plus the question `when was it delivered?`, the system returned a clarification asking for:
 
-1. exact sales document
+1. exact sales documen
 2. first sales order date
 3. first sales invoice date
 
@@ -216,7 +216,7 @@ The ambiguity system itself is real.
 
 The missing piece is breadth and generalization.
 
-## 5. Truth Classification By Round 3 Target
+## 5. Truth Classification By Round 3 Targe
 
 ## 5.1 Verified Strong
 
@@ -297,14 +297,14 @@ The failure is deeper:
 
 That is a better enterprise posture than guessing, but still incomplete.
 
-### 6.4 Purchase Invoice Is The Clearest Alignment Defect
+### 6.4 Purchase Invoice Is The Clearest Alignment Defec
 
 Purchase invoice is the strongest Round 3 example of runtime-versus-front-door mismatch.
 
 That makes it a high-value target for later implementation because:
 
 1. the runtime seam already exists
-2. the missing work is alignment
+2. the missing work is alignmen
 3. alignment can likely be bounded without inventing a parallel subsystem
 
 ### 6.5 Payment Entry Needs Ownership Clarification Before Activation

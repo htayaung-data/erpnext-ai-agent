@@ -962,6 +962,90 @@
       "chartable_fields": []
     },
     {
+      "report_name": "Purchase Receipt List",
+      "module": "Stock",
+      "family": "purchase_receipt_list",
+      "capability_ids": [
+        "purchase_receipt_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "Purchase Receipt",
+        "fields": [
+          "name",
+          "posting_date",
+          "supplier",
+          "supplier_name",
+          "status",
+          "company",
+          "grand_total",
+          "total_qty",
+          "per_billed",
+          "docstatus"
+        ],
+        "order_by": "posting_date desc, modified desc",
+        "fixed_filters": {
+          "docstatus": 1
+        },
+        "filterable_fields": [
+          "status"
+        ],
+        "date_field": "posting_date",
+        "default_limit": 10
+      },
+      "governed_period_grouping": {
+        "entity_grain": "supplier",
+        "entity_key_fields": [
+          "supplier"
+        ],
+        "entity_label_fields": [
+          "supplier_name",
+          "supplier"
+        ],
+        "document_key_field": "name",
+        "revenue_field": "grand_total",
+        "quantity_field": "total_qty"
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "purchase",
+        "receipt",
+        "receiving",
+        "transaction",
+        "document"
+      ],
+      "supported_dimensions": [
+        "Purchase Receipt",
+        "Supplier",
+        "Posting Date",
+        "Status"
+      ],
+      "supported_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "approved_follow_up_modes": [
+        "presentation_transform",
+        "column_projection",
+        "sort_or_limit",
+        "filter_refinement",
+        "new_query"
+      ],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Stock Balance",
       "module": "Stock",
       "family": "stock_balance",

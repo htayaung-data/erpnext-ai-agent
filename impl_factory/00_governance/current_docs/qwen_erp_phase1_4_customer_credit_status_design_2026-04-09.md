@@ -1,7 +1,7 @@
 # Qwen ERP Phase 1.4 Customer Credit Status Design
 
-Status: 1.4A to 1.4F complete  
-Date: 2026-04-09  
+Status: 1.4A to 1.4F complete
+Date: 2026-04-09
 Scope: detailed implementation plan for Phase 1, Mini-phase 1.4
 
 ## 1. Executive Decision
@@ -11,7 +11,7 @@ Phase 1.4 should start with a governed `customer credit exposure` surface, not a
 The first implementation must stay:
 
 1. read-only
-2. metadata-first
+2. metadata-firs
 3. receivable-authority driven
 4. bounded to real ERP customer exposure facts
 5. small enough to verify with the existing enterprise gate
@@ -39,8 +39,8 @@ What worked and should be reused:
 
 1. start from the narrowest real operational ask
 2. reuse existing governed families before inventing new runtime lanes
-3. use the strongest live ERP authority already present in the tenant
-4. keep follow-up continuity grounded on typed artifacts, not raw message text
+3. use the strongest live ERP authority already present in the tenan
+4. keep follow-up continuity grounded on typed artifacts, not raw message tex
 5. add browser/UAT checkpoints before calling a slice complete
 6. promote smokes into the release-gate pack only after the authority seam is stable
 7. document explicit deferrals early so the phase does not widen by enthusiasm
@@ -56,17 +56,17 @@ What must not repeat:
 
 Phase `1.4` must obey the active enterprise guide:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. compiler enforces deterministically
-4. fail closed when evidence is insufficient
+4. fail closed when evidence is insufficien
 5. no keyword routing
 6. no single-case prompt fixes
 7. two-layer verification is required:
    - fast deterministic contract tests
    - live/site verification where state matters
 8. expand only after the previous chapter is closed
-9. stop when the stop rule is met
+9. stop when the stop rule is me
 
 This means `Customer Credit Status` must be built as:
 
@@ -148,7 +148,7 @@ The codebase already contains strong reuse candidates:
 
 What this means:
 
-1. `1.4` should reuse receivable and customer-detail infrastructure first
+1. `1.4` should reuse receivable and customer-detail infrastructure firs
 2. it should not start by inventing a separate free-form credit engine
 3. any new `customer credit` semantics should be thin, governed, and anchored to the same receivable authority
 
@@ -196,7 +196,7 @@ Deferred authority for later slices only:
 
 This means:
 
-1. Phase `1.4` should answer customer credit-status questions from receivable and customer-master authority first
+1. Phase `1.4` should answer customer credit-status questions from receivable and customer-master authority firs
 2. it should not become a hidden credit-policy engine
 3. if users ask beyond exposure authority, the system should fail closed or defer to a later bounded slice
 
@@ -210,9 +210,9 @@ This means:
 4. ranked customer exposure visibility
 5. explicit customer credit detail through the existing customer-entity path
 6. grounded follow-up from customer credit detail:
-   - current outstanding amount
+   - current outstanding amoun
    - overdue amount / whether overdue exists
-   - strongest aging bucket
+   - strongest aging bucke
    - whether the customer is in a negative-balance position
 7. contract tests, browser/UAT, and release-gated smokes
 
@@ -249,7 +249,7 @@ Implementation ownership:
 Recommended first-slice source:
 
 1. source report: `Accounts Receivable Summary`
-2. default company scope: governed company context
+2. default company scope: governed company contex
 3. default report date scope: `as_of_today`
 4. default primary metric: `Outstanding`
 5. first-class customer columns:
@@ -262,7 +262,7 @@ Recommended first-slice source:
 
 Why:
 
-1. this is the strongest live authority already proven in the tenant
+1. this is the strongest live authority already proven in the tenan
 2. it avoids inventing fake credit-limit certainty where the tenant has no real configured limits
 3. it gives immediate business value without opening policy risk too early
 
@@ -282,7 +282,7 @@ Acceptance for `1.4A`:
 7. same-session self-contained re-asks such as `show me customer credit exposure` after `show customer credit status as of today` must break out as a fresh governed query, not drift into the reasoning lane
 8. browser/UAT confirms the first listing shape before any detail widening
 
-### 7.2 `1.4B` Status Normalization And As-Of-Date Enrichment
+### 7.2 `1.4B` Status Normalization And As-Of-Date Enrichmen
 
 Goal:
 
@@ -291,9 +291,9 @@ Goal:
 Implementation ownership:
 
 1. metadata:
-   - normalize overdue / outstanding / credit-balance / negative-balance intent
+   - normalize overdue / outstanding / credit-balance / negative-balance inten
    - define bucket-aware credit-status aliases
-   - keep report-date semantics explicit
+   - keep report-date semantics explici
 2. runtime:
    - reuse governed aging/ranking contracts
    - propagate canonical metric intent into compiler-governed details for adapter filtering
@@ -343,7 +343,7 @@ Likely detail shape:
 2. outstanding / total due
 3. aging bucket breakdown
 4. customer group / territory
-5. disabled / frozen where relevant
+5. disabled / frozen where relevan
 6. recent governed invoice history as supporting context only
 
 Acceptance for `1.4C`:
@@ -351,7 +351,7 @@ Acceptance for `1.4C`:
 1. explicit customer drilldown stays on single-customer detail
 2. no drift into management recommendation or credit approval advice
 3. detail remains block-structured and avoids narrative invention for customer credit posture
-4. no fabricated configured-limit narrative appears when limit records are absent
+4. no fabricated configured-limit narrative appears when limit records are absen
 
 ### 7.4 `1.4D` Credit-Status Follow-Up From Detail
 
@@ -394,19 +394,19 @@ This slice is now approved and implemented for the current tenant because:
    - supporting context only:
      - `payment_terms`
      - `default_price_list`
-     - available credit
+     - available credi
      - utilization ratio
 
 Implemented surface:
 
 1. customer detail now exposes a bounded `Commercial Policy` block
 2. grounded follow-up now supports:
-   - configured credit limit
-   - whether the customer is within / above limit
-   - remaining available credit
+   - configured credit limi
+   - whether the customer is within / above limi
+   - remaining available credi
    - utilization
    - configured payment terms
-   - default price list
+   - default price lis
 3. all answers remain read-only and evidence-bounded
 
 Still out of scope inside `1.4E`:
@@ -430,13 +430,13 @@ Phase `1.4` should be considered complete when:
 Stop rule:
 
 1. if customer exposure, detail, and bounded follow-up are trustworthy without policy overreach, close the chapter
-2. do not widen into a full credit-control platform by default
+2. do not widen into a full credit-control platform by defaul
 
 ## 8. Verification Plan
 
 Every implemented `1.4` slice should follow the same verification ladder:
 
-1. deterministic contract tests first
+1. deterministic contract tests firs
 2. site-backed or live smoke second
 3. browser/UAT before promotion
 4. release-gate promotion only after the browser seam is stable
@@ -446,8 +446,8 @@ Priority verification themes:
 1. correct receivable authority selection
 2. correct handling of overdue vs outstanding vs negative balance
 3. correct configured credit-limit basis:
-   - outstanding vs configured limit
-4. no scope bleed between self-contained re-asks and prior context
+   - outstanding vs configured limi
+4. no scope bleed between self-contained re-asks and prior contex
 5. no invented credit-limit or collection-policy claims
 6. safe fail-closed behavior for unsupported policy questions
 
@@ -468,10 +468,10 @@ This is the strongest path because:
 So the approved order should be:
 
 1. `1.4A` Customer Credit Exposure Baseline
-2. `1.4B` Status Normalization And As-Of-Date Enrichment
+2. `1.4B` Status Normalization And As-Of-Date Enrichmen
 3. `1.4C` Customer Credit Detail Parity
 4. `1.4D` Credit-Status Follow-Up From Detail
-5. `1.4E` Optional Configured Credit-Limit Extension Checkpoint
+5. `1.4E` Optional Configured Credit-Limit Extension Checkpoin
 6. `1.4F` Closure And Stop Rule
 
 That is the correct Phase `1.4` starting plan.

@@ -21,7 +21,6 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	governed_self_contained_business_terms,
 	get_frontdoor_intent_spec,
 	list_capability_specs,
-	list_semantic_resolution_alias_entries,
 	ontology_detect_concepts,
 	ontology_self_contained_prefixes,
 	normalize_followup_mode_for_runtime,
@@ -34,9 +33,26 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	resolve_target_report_for_capability,
 	supported_ontology_concepts,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import best_semantic_slot_alias
 from ai_assistant_ui.qwen_chat.response_policy import derive_response_policy
 from ai_assistant_ui.qwen_chat.governed_scope_registry import listing_view_for_report_name
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_canonical_key
+from ai_assistant_ui.qwen_chat.entity_detail_clarification import (
+	entity_detail_clarification_signal_spec,
+)
+from ai_assistant_ui.qwen_chat.entity_dimension_support import entity_type_from_dimension
+from ai_assistant_ui.qwen_chat.entity_detail_request_support import (
+	resolve_entity_detail_request_interpretation,
+)
+from ai_assistant_ui.qwen_chat.composite_subject_support import (
+	composite_family_from_entity_dimension,
+)
+from ai_assistant_ui.qwen_chat.artifact_reference_support import (
+	master_data_entity_key_label,
+	ranked_entity_key_label,
+	transaction_party_label,
+)
 from ai_assistant_ui.qwen_chat.scope_decision_input import (
 	ScopeDecisionInputContract,
 	build_known_unsupported_scope_decision_input,
@@ -1333,8 +1349,26 @@ def build_recent_focus_affordance_contract(
 	deictic_reference_allowed: bool = False,
 	explicit_named_reference_allowed: bool = False,
 	supports_cross_family_followup: bool = False,
+	listing_supported: bool = False,
+	detail_supported: bool = False,
+	listing_detail_support_status: str = "",
+	reference_terms: Dict[str, List[str]] | None = None,
 	reason: str = "",
 ) -> RecentFocusAffordanceContract:
+	clean_reference_terms = {}
+	for key, values in dict(reference_terms or {}).items():
+		clean_key = str(key or "").strip()
+		if not clean_key:
+			continue
+		clean_values = list(
+			dict.fromkeys(
+				str(value or "").strip()
+				for value in (values or [])
+				if str(value or "").strip()
+			)
+		)
+		if clean_values:
+			clean_reference_terms[clean_key] = clean_values
 	return RecentFocusAffordanceContract(
 		request_id=str(request_id or "").strip(),
 		focus_kind=str(focus_kind or "").strip(),
@@ -1367,6 +1401,10 @@ def build_recent_focus_affordance_contract(
 		deictic_reference_allowed=bool(deictic_reference_allowed),
 		explicit_named_reference_allowed=bool(explicit_named_reference_allowed),
 		supports_cross_family_followup=bool(supports_cross_family_followup),
+		listing_supported=bool(listing_supported),
+		detail_supported=bool(detail_supported),
+		listing_detail_support_status=str(listing_detail_support_status or "").strip(),
+		reference_terms=clean_reference_terms,
 		reason=str(reason or "").strip(),
 	)
 
@@ -1597,6 +1635,10 @@ class RecentFocusAffordanceContract:
 	deictic_reference_allowed: bool
 	explicit_named_reference_allowed: bool
 	supports_cross_family_followup: bool
+	listing_supported: bool
+	detail_supported: bool
+	listing_detail_support_status: str
+	reference_terms: Dict[str, List[str]]
 	reason: str
 
 	def to_payload(self) -> Dict[str, Any]:
@@ -1616,6 +1658,14 @@ class RecentFocusAffordanceContract:
 			"deictic_reference_allowed": bool(self.deictic_reference_allowed),
 			"explicit_named_reference_allowed": bool(self.explicit_named_reference_allowed),
 			"supports_cross_family_followup": bool(self.supports_cross_family_followup),
+			"listing_supported": bool(self.listing_supported),
+			"detail_supported": bool(self.detail_supported),
+			"listing_detail_support_status": self.listing_detail_support_status,
+			"reference_terms": {
+				str(key): list(values)
+				for key, values in dict(self.reference_terms or {}).items()
+				if str(key or "").strip() and list(values or [])
+			},
 			"reason": self.reason,
 			"created_at": _utc_now(),
 		}
@@ -2896,7 +2946,9 @@ def _entity_detail_capability_id(entity_type: str) -> str:
 	entity_key = str(entity_type or "").strip().lower()
 	capability_by_entity_type = {
 		"customer": "accounts_receivable_read",
+		"supplier": "accounts_payable_read",
 		"item": "stock_read",
+		"product": "stock_read",
 		"purchase_order": "purchase_order_read",
 		"sales_order": "sales_order_read",
 		"sales_invoice": "sales_read",
@@ -2911,296 +2963,6 @@ def _ordered_unique_values(values: List[str] | None) -> List[str]:
 		if clean and clean not in ordered:
 			ordered.append(clean)
 	return ordered
-
-
-def _artifact_has_stock_position_sections(artifact_payload: Dict[str, Any]) -> bool:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	return bool(
-		isinstance(sections.get("stock_rows"), list)
-		or isinstance(sections.get("warehouse_totals"), list)
-		or isinstance(sections.get("item_totals"), list)
-	)
-
-
-def _normalize_stock_position_requested_metrics(requested_metrics: List[str]) -> List[str]:
-	metric_aliases = {
-		"quantity": "balance_qty",
-		"qty": "balance_qty",
-		"stock_qty": "balance_qty",
-		"stock_quantity": "balance_qty",
-		"balance_qty": "balance_qty",
-		"value": "balance_value",
-		"stock_value": "balance_value",
-		"inventory_value": "balance_value",
-		"balance_value": "balance_value",
-	}
-	return _ordered_unique_values(
-		[
-			str(metric_aliases.get(str(value or "").strip(), str(value or "").strip()) or "").strip()
-			for value in (requested_metrics or [])
-		]
-	)
-
-
-def _customer_tenure_basis_choices() -> List[Dict[str, str]]:
-	return [
-		{
-			"label": "Customer Tenure by Customer Created Date",
-			"basis": "customer_created_date",
-			"resolved_message": "what is this customer's tenure by customer created date?",
-		},
-		{
-			"label": "Customer Tenure by First Sales Order",
-			"basis": "first_sales_order_date",
-			"resolved_message": "what is this customer's tenure by first sales order date?",
-		},
-		{
-			"label": "Customer Tenure by First Sales Invoice",
-			"basis": "first_sales_invoice_date",
-			"resolved_message": "what is this customer's tenure by first sales invoice date?",
-		},
-	]
-
-
-def _customer_tenure_aliases_by_option() -> Dict[str, List[str]]:
-	aliases_by_basis = {
-		"customer_created_date": [
-			"customer created date",
-			"created date",
-			"customer creation date",
-			"by customer created date",
-		],
-		"first_sales_order_date": [
-			"first sales order",
-			"first sales order date",
-			"sales order",
-			"order date",
-			"by first sales order",
-		],
-		"first_sales_invoice_date": [
-			"first sales invoice",
-			"first sales invoice date",
-			"sales invoice",
-			"invoice date",
-			"by first sales invoice",
-		],
-	}
-	out: Dict[str, List[str]] = {}
-	for item in _customer_tenure_basis_choices():
-		label = str(item.get("label") or "").strip()
-		basis = str(item.get("basis") or "").strip()
-		out[label] = list(aliases_by_basis.get(basis) or [])
-	return out
-
-
-def _customer_operational_document_choices() -> List[Dict[str, str]]:
-	return [
-		{
-			"label": "First Sales Order Date",
-			"resolved_message": "when was the first sales order for this customer?",
-		},
-		{
-			"label": "First Sales Invoice Date",
-			"resolved_message": "when was the first sales invoice for this customer?",
-		},
-		{
-			"label": "Specific Sales Document Detail",
-			"resolved_message": "tell me more about a specific sales order or sales invoice for this customer",
-		},
-	]
-
-
-def _customer_operational_document_aliases_by_option() -> Dict[str, List[str]]:
-	return {
-		"First Sales Order Date": [
-			"first sales order",
-			"sales order date",
-			"first order date",
-		],
-		"First Sales Invoice Date": [
-			"first sales invoice",
-			"sales invoice date",
-			"first invoice date",
-		],
-		"Specific Sales Document Detail": [
-			"specific sales order",
-			"specific sales invoice",
-			"specific sales document",
-			"show the document",
-		],
-	}
-
-
-def _customer_basis_from_entity_detail_request(
-	requested_metrics: List[str],
-	requested_dimensions: List[str],
-) -> tuple[str, str]:
-	tenure_metric_basis = {
-		"customer_created_tenure_days": "customer_created_date",
-		"first_sales_order_tenure_days": "first_sales_order_date",
-		"first_sales_invoice_tenure_days": "first_sales_invoice_date",
-	}
-	lifecycle_dimension_basis = {
-		"customer_created_date": "customer_created_date",
-		"first_sales_order_date": "first_sales_order_date",
-		"first_sales_invoice_date": "first_sales_invoice_date",
-	}
-	for metric_key in requested_metrics:
-		if metric_key in tenure_metric_basis:
-			return "customer_tenure", tenure_metric_basis[metric_key]
-	for dimension_key in requested_dimensions:
-		if dimension_key in lifecycle_dimension_basis and "tenure" in requested_metrics:
-			return "customer_tenure", lifecycle_dimension_basis[dimension_key]
-	if "tenure" in requested_metrics:
-		return "customer_tenure", ""
-	for dimension_key in requested_dimensions:
-		if dimension_key in lifecycle_dimension_basis:
-			return "customer_lifecycle_date", lifecycle_dimension_basis[dimension_key]
-	if "dominant_aging_bucket" in requested_dimensions:
-		return "customer_aging_bucket", ""
-	return "", ""
-
-
-def _non_customer_entity_detail_question_type(
-	*,
-	entity_type: str,
-	requested_metrics: List[str],
-	requested_dimensions: List[str],
-	requested_concepts: List[str],
-) -> str:
-	requested_metric_set = {
-		str(value or "").strip()
-		for value in requested_metrics
-		if str(value or "").strip()
-	}
-	requested_dimension_set = {
-		str(value or "").strip()
-		for value in requested_dimensions
-		if str(value or "").strip()
-	}
-	requested_concept_set = {
-		str(value or "").strip()
-		for value in requested_concepts
-		if str(value or "").strip()
-	}
-	if entity_type == "sales_order":
-		if "posting_date" in requested_dimension_set:
-			return "sales_order_actual_delivery_event_date"
-		if "planned_delivery_date" in requested_dimension_set:
-			return "sales_order_planned_delivery_date"
-		if "billing_progress_percent" in requested_metric_set:
-			return "sales_order_billing_progress"
-		if "delivery_progress_percent" in requested_metric_set:
-			return "sales_order_delivery_progress"
-		if "document_status" in requested_dimension_set:
-			return "sales_order_document_status"
-	if entity_type == "purchase_order":
-		if "posting_date" in requested_dimension_set:
-			return "purchase_order_actual_receipt_event_date"
-		if "planned_receipt_date" in requested_dimension_set:
-			return "purchase_order_planned_receipt_date"
-		if "billing_progress_percent" in requested_metric_set:
-			return "purchase_order_billing_progress"
-		if "receipt_progress_percent" in requested_metric_set:
-			return "purchase_order_receipt_progress"
-		if "document_status" in requested_dimension_set:
-			return "purchase_order_document_status"
-	if entity_type == "sales_invoice" and "fulfillment" in requested_concept_set:
-		if "posting_date" in requested_dimension_set:
-			return "sales_invoice_delivery_event_date"
-		return "sales_invoice_delivery_evidence"
-	return ""
-
-
-def _item_entity_detail_question_type(
-	*,
-	requested_metrics: List[str],
-	requested_dimensions: List[str],
-	requested_concepts: List[str],
-	artifact_payload: Dict[str, Any],
-) -> tuple[str, List[str]]:
-	if not _artifact_has_stock_position_sections(artifact_payload):
-		return "", _ordered_unique_values(requested_metrics)
-	normalized_metrics = _normalize_stock_position_requested_metrics(requested_metrics)
-	requested_metric_set = {
-		str(value or "").strip()
-		for value in normalized_metrics
-		if str(value or "").strip()
-	}
-	requested_dimension_set = {
-		str(value or "").strip()
-		for value in requested_dimensions
-		if str(value or "").strip()
-	}
-	requested_concept_set = {
-		str(value or "").strip()
-		for value in requested_concepts
-		if str(value or "").strip()
-	}
-	stock_position_requested = bool(
-		requested_metric_set.intersection({"balance_qty", "balance_value"})
-		or "warehouse" in requested_dimension_set
-		or "inventory" in requested_concept_set
-	)
-	if not stock_position_requested:
-		return "", normalized_metrics
-	return "item_stock_position", normalized_metrics
-
-
-def _entity_detail_question_shape_and_value_mode(
-	*,
-	entity_type: str,
-	entity_question_type: str,
-	requested_metrics: List[str],
-	requested_dimensions: List[str],
-) -> tuple[str, str]:
-	if entity_question_type == "customer_tenure":
-		return "scalar_duration", "current_value"
-	if entity_question_type == "customer_lifecycle_date":
-		return "date_lookup", "first_value"
-	if entity_question_type == "customer_aging_bucket":
-		return "dimension_lookup", "dominant_value"
-	if entity_question_type in {
-		"sales_order_actual_delivery_event_date",
-		"purchase_order_actual_receipt_event_date",
-		"sales_invoice_delivery_event_date",
-	}:
-		return "date_lookup", "actual_value"
-	if entity_question_type in {
-		"sales_order_planned_delivery_date",
-		"purchase_order_planned_receipt_date",
-	}:
-		return "date_lookup", "planned_value"
-	if entity_question_type in {
-		"sales_order_document_status",
-		"purchase_order_document_status",
-	}:
-		return "dimension_lookup", "current_value"
-	if entity_question_type in {
-		"sales_order_delivery_progress",
-		"purchase_order_receipt_progress",
-		"sales_invoice_delivery_evidence",
-	}:
-		return "boolean_status", "current_value"
-	if entity_question_type in {
-		"sales_order_billing_progress",
-		"purchase_order_billing_progress",
-	}:
-		return "scalar_ratio", "current_value"
-	if entity_question_type == "item_stock_position":
-		return "dimension_lookup", "current_value"
-	if "overdue_only" in requested_metrics or "credit_balance_only" in requested_metrics:
-		return "boolean_status", "current_value"
-	if any(metric in requested_metrics for metric in ("overdue_total", "outstanding_total", "total_due", "credit_limit_available")):
-		return "scalar_amount", "current_value"
-	if any(metric in requested_metrics for metric in ("overdue_ratio", "credit_limit_utilization_ratio")):
-		return "scalar_ratio", "current_value"
-	if requested_dimensions or requested_metrics:
-		return "dimension_lookup", "current_value"
-	if str(entity_type or "").strip():
-		return "profile_request", "current_value"
-	return "", ""
 
 
 def _entity_detail_resolved_entity_ref(artifact_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -3293,49 +3055,25 @@ def build_entity_detail_evidence_request_contract(
 	clarification_required = False
 	clarification_reason_type = ""
 	clarification_options: List[str] = []
-	if entity_type == "customer":
-		entity_question_type, basis = _customer_basis_from_entity_detail_request(
-			requested_metrics=requested_metrics,
-			requested_dimensions=requested_dimensions,
-		)
-		if entity_question_type == "customer_tenure" and basis:
-			requested_metrics = [value for value in requested_metrics if value != "tenure"]
-		if entity_question_type == "customer_tenure" and not basis:
-			clarification_required = True
-			clarification_reason_type = "customer_tenure_basis_missing"
-			clarification_options = [
-				str(item.get("label") or "").strip()
-				for item in _customer_tenure_basis_choices()
-				if str(item.get("label") or "").strip()
-			]
-		elif "posting_date" in requested_dimensions and not entity_question_type:
-			clarification_required = True
-			clarification_reason_type = "customer_operational_document_missing"
-			clarification_options = [
-				str(item.get("label") or "").strip()
-				for item in _customer_operational_document_choices()
-				if str(item.get("label") or "").strip()
-			]
-	elif entity_type == "item":
-		entity_question_type, requested_metrics = _item_entity_detail_question_type(
-			requested_metrics=requested_metrics,
-			requested_dimensions=requested_dimensions,
-			requested_concepts=requested_concepts,
-			artifact_payload=artifact,
-		)
-	else:
-		entity_question_type = _non_customer_entity_detail_question_type(
-			entity_type=entity_type,
-			requested_metrics=requested_metrics,
-			requested_dimensions=requested_dimensions,
-			requested_concepts=requested_concepts,
-		)
-	question_shape, value_mode = _entity_detail_question_shape_and_value_mode(
+	request_interpretation = resolve_entity_detail_request_interpretation(
 		entity_type=entity_type,
-		entity_question_type=entity_question_type,
 		requested_metrics=requested_metrics,
 		requested_dimensions=requested_dimensions,
+		requested_concepts=requested_concepts,
+		artifact_payload=artifact,
 	)
+	requested_metrics = list(request_interpretation.get("requested_metrics") or [])
+	entity_question_type = str(request_interpretation.get("entity_question_type") or "").strip()
+	basis = str(request_interpretation.get("basis") or "").strip()
+	clarification_required = bool(request_interpretation.get("clarification_required"))
+	clarification_reason_type = str(request_interpretation.get("clarification_reason_type") or "").strip()
+	clarification_options = [
+		str(value or "").strip()
+		for value in (request_interpretation.get("clarification_options") or [])
+		if str(value or "").strip()
+	]
+	question_shape = str(request_interpretation.get("question_shape") or "").strip()
+	value_mode = str(request_interpretation.get("value_mode") or "").strip()
 	return EntityDetailEvidenceRequestContract(
 		request_id=str(request_id or "").strip(),
 		entity_type=entity_type,
@@ -3373,72 +3111,26 @@ def build_entity_detail_clarification_signal_contract(
 		return None
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this customer").strip()
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or f"this {entity_type or 'entity'}").strip()
 	reason_type = str(evidence_request_payload.get("clarification_reason_type") or "").strip()
-	if reason_type == "customer_tenure_basis_missing":
-		choices = _customer_tenure_basis_choices()
-		suggested_options = [
-			str(item.get("label") or "").strip()
-			for item in choices
-			if str(item.get("label") or "").strip()
-		]
-		resolved_message_by_option = {
-			str(item.get("label") or "").strip(): str(item.get("resolved_message") or "").strip()
-			for item in choices
-			if str(item.get("label") or "").strip() and str(item.get("resolved_message") or "").strip()
-		}
+	clarification_spec = entity_detail_clarification_signal_spec(
+		reason_type=reason_type,
+		entity_label=entity_label,
+	)
+	if clarification_spec:
 		return build_clarification_signal_contract(
 			request_id=request_id,
 			stage="artifact_boundary",
-			reason_type="customer_tenure_basis_missing",
-			user_question=(
-				f"I can calculate customer tenure for {entity_label}, but I need the date basis first.\n\n"
-				"Choose one:\n\n"
-				+ "\n".join(suggested_options)
-			),
-			suggested_options=suggested_options,
-			internal_reason=(
-				"Customer tenure is governed, but the evidence request must resolve the approved lifecycle basis before the current "
-				"artifact can answer safely."
-			),
+			reason_type=reason_type,
+			user_question=str(clarification_spec.get("user_question") or "").strip(),
+			suggested_options=list(clarification_spec.get("suggested_options") or []),
+			internal_reason=str(clarification_spec.get("internal_reason") or "").strip(),
 			internal_details={
 				"continuation_lane": "artifact_boundary",
 				"continuation_intent_class": "entity_detail_evidence",
-				"resolved_message_by_option": resolved_message_by_option,
-				"option_aliases_by_option": _customer_tenure_aliases_by_option(),
-			},
-		)
-	if reason_type == "customer_operational_document_missing":
-		choices = _customer_operational_document_choices()
-		suggested_options = [
-			str(item.get("label") or "").strip()
-			for item in choices
-			if str(item.get("label") or "").strip()
-		]
-		resolved_message_by_option = {
-			str(item.get("label") or "").strip(): str(item.get("resolved_message") or "").strip()
-			for item in choices
-			if str(item.get("label") or "").strip() and str(item.get("resolved_message") or "").strip()
-		}
-		return build_clarification_signal_contract(
-			request_id=request_id,
-			stage="artifact_boundary",
-			reason_type="customer_operational_document_missing",
-			user_question=(
-				f"I can help with that for {entity_label}, but I need the exact sales document or date basis first.\n\n"
-				"Choose one:\n\n"
-				+ "\n".join(suggested_options)
-			),
-			suggested_options=suggested_options,
-			internal_reason=(
-				"The current customer profile does not directly prove operational delivery events, so the request must resolve "
-				"to an approved sales lifecycle basis or a specific sales document."
-			),
-			internal_details={
-				"continuation_lane": "artifact_boundary",
-				"continuation_intent_class": "entity_detail_evidence",
-				"resolved_message_by_option": resolved_message_by_option,
-				"option_aliases_by_option": _customer_operational_document_aliases_by_option(),
+				"resolved_message_by_option": dict(clarification_spec.get("resolved_message_by_option") or {}),
+				"option_aliases_by_option": dict(clarification_spec.get("option_aliases_by_option") or {}),
 			},
 		)
 	return None
@@ -4879,15 +4571,6 @@ def _doc_type_to_composite_basis(value: Any) -> str:
 	return ""
 
 
-def _dimension_to_composite_family(entity_dimension: str) -> tuple[str, str]:
-	key = _normalized_key_fallback(entity_dimension)
-	if key == "customer":
-		return "customer_commercial_ranking", "customer"
-	if key in {"item", "product"}:
-		return "product_commercial_ranking", "product"
-	return "", ""
-
-
 def _metric_key_to_composite_metric_id(metric_key: str) -> str:
 	key = _normalized_key_fallback(metric_key)
 	if key in {"sales_amount", "selling_amount", "revenue", "value"}:
@@ -4915,7 +4598,7 @@ def _derive_composite_context_from_generic_ranking(
 		return {}
 	if _normalized_key_fallback(source_report) != "sales_analytics":
 		return {}
-	family_id, subject_alias = _dimension_to_composite_family(
+	family_id, subject_alias = composite_family_from_entity_dimension(
 		str(source_dimension or source_filters.get("tree_type") or "").strip()
 	)
 	if not family_id:
@@ -5360,6 +5043,38 @@ def coerce_followup_resolution_from_scope_decision(
 	)
 
 
+_TIME_SCOPE_CORRECTION_ALIASES = (
+	("last_year", ("last year", "previous year", "prior year")),
+	("last_month", ("last month", "previous month", "prior month")),
+	("current_period", ("this month", "current month")),
+	("current_fiscal_year_to_date", ("year to date", "fiscal year to date")),
+	("all_period", ("all time", "overall", "full available time range")),
+)
+
+
+def _time_scope_from_corrected_message(message: str) -> str:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return ""
+	for canonical_scope, aliases in _TIME_SCOPE_CORRECTION_ALIASES:
+		for alias in aliases:
+			escaped_alias = re.escape(alias)
+			if re.search(rf"\b(?:i\s+mean|mean|instead|rather)\s+{escaped_alias}\b", text):
+				return canonical_scope
+	negation_pattern = r"\b(?:not|instead\s+of|rather\s+than)\s+(?:" + "|".join(
+		re.escape(alias)
+		for _canonical_scope, aliases in _TIME_SCOPE_CORRECTION_ALIASES
+		for alias in aliases
+	) + r")\b"
+	cleaned_text = re.sub(negation_pattern, " ", text)
+	if cleaned_text != text:
+		for canonical_scope, aliases in _TIME_SCOPE_CORRECTION_ALIASES:
+			for alias in aliases:
+				if re.search(rf"\b{re.escape(alias)}\b", cleaned_text):
+					return canonical_scope
+	return ""
+
+
 def _infer_followup_requested_time_scope(
 	*,
 	message: str,
@@ -5371,26 +5086,15 @@ def _infer_followup_requested_time_scope(
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
 		return ""
-	alias_entries = list_semantic_resolution_alias_entries("time_scope") or list_semantic_resolution_alias_entries(
-		"requested_time_scope"
+	corrected_time_scope = _time_scope_from_corrected_message(message)
+	if corrected_time_scope:
+		return corrected_time_scope
+	semantic_time_scope = best_semantic_slot_alias("time_scope", message) or best_semantic_slot_alias(
+		"requested_time_scope",
+		message,
 	)
-	for entry in sorted(
-		alias_entries,
-		key=lambda item: max((len(str(alias or "")) for alias in (item.get("aliases") or [])), default=0),
-		reverse=True,
-	):
-		canonical_value = str(entry.get("canonical_value") or "").strip()
-		if not canonical_value:
-			continue
-		aliases = [
-			" ".join(str(alias or "").strip().lower().split())
-			for alias in (entry.get("aliases") or [])
-			if str(alias or "").strip()
-		]
-		for alias in sorted(aliases, key=len, reverse=True):
-			pattern = r"(?<!\w)" + re.escape(alias).replace(r"\ ", r"\s+") + r"(?!\w)"
-			if re.search(pattern, text):
-				return canonical_value
+	if semantic_time_scope:
+		return semantic_time_scope
 	if re.search(r"\b(?:this|current)\s+month\b", text):
 		return "current_period"
 	if re.search(r"\b(?:year\s+to\s+date|fiscal\s+year\s+to\s+date)\b", text):
@@ -5422,20 +5126,7 @@ _EXPLICIT_COLUMN_SELECTION_CUE_PATTERN = re.compile(
 
 
 def _message_slot_value(slot_name: str, message: str) -> str:
-	normalized_message = " ".join(str(message or "").strip().lower().split())
-	if not normalized_message:
-		return ""
-	for entry in list_semantic_resolution_alias_entries(slot_name):
-		if not isinstance(entry, dict):
-			continue
-		canonical_value = str(entry.get("canonical_value") or "").strip()
-		if not canonical_value:
-			continue
-		for alias in (entry.get("aliases") or []):
-			alias_text = " ".join(str(alias or "").strip().lower().split())
-			if alias_text and re.search(r"(?<!\w)" + re.escape(alias_text).replace(r"\ ", r"\s+") + r"(?!\w)", normalized_message):
-				return canonical_value
-	return ""
+	return best_semantic_slot_alias(slot_name, message)
 
 
 def _message_has_explicit_projection_selection_cue(message: str) -> bool:
@@ -5477,7 +5168,7 @@ def _looks_like_contextual_detail_followup(message: str) -> bool:
 def _grounded_turn_has_single_row_contextual_focus(latest_grounded_turn: Dict[str, Any] | None = None) -> bool:
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
 	artifact_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
-	if artifact_family_id not in {"transaction_listing", "master_data_directory", "customer_master_list"}:
+	if artifact_family_id != "transaction_listing" and not is_master_data_listing_family(artifact_family_id):
 		return False
 	rows = [row for row in (grounded_turn.get("table_rows") or []) if isinstance(row, dict)]
 	if len(rows) == 1:
@@ -5861,20 +5552,6 @@ def build_execution_path(
 		)
 
 
-def _entity_type_from_dimension(value: str) -> str:
-	dimension_keys = detect_canonical_keys(str(value or ""), dimension_or_metric="dimension")
-	for key in dimension_keys:
-		if key == "supplier":
-			return "supplier"
-		if key == "customer":
-			return "customer"
-		if key in {"item_code", "item_name"}:
-			return "item"
-		if key == "document_name":
-			return "sales_invoice"
-	return ""
-
-
 def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple[List[Dict[str, Any]], List[str]]:
 	artifact = dict(artifact_payload or {}) if isinstance(artifact_payload, dict) else {}
 	sections = dict(artifact.get("sections") or {}) if isinstance(artifact.get("sections"), dict) else {}
@@ -5907,7 +5584,7 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			if not isinstance(row, dict):
 				continue
 			document_name = str(row.get("document_name") or "").strip()
-			customer = str(row.get("customer") or row.get("party_name") or "").strip()
+			customer = transaction_party_label(row)
 			if document_name:
 				known_documents.append(document_name)
 				_append_entity(document_entity_type, document_name)
@@ -5923,11 +5600,12 @@ def _artifact_known_references(artifact_payload: Dict[str, Any] | None) -> tuple
 			if voucher_no:
 				known_documents.append(voucher_no)
 	elif family_id in {"ranking_analytics", "inventory_snapshot"}:
-		entity_type = _entity_type_from_dimension(str(dimensions.get("entity_dimension") or "").strip())
+		entity_type = entity_type_from_dimension(str(dimensions.get("entity_dimension") or "").strip(), include_documents=True)
 		for row in sections.get("ranked_rows") or []:
 			if not isinstance(row, dict):
 				continue
-			_append_entity(entity_type, row.get("entity_name") or row.get("entity"), row.get("entity_code"))
+			entity_key, entity_label = ranked_entity_key_label(row)
+			_append_entity(entity_type, entity_label, entity_key)
 	elif family_id == "product_profitability":
 		for row in sections.get("product_rows") or []:
 			if not isinstance(row, dict):

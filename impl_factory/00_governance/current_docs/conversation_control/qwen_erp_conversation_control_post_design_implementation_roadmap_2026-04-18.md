@@ -1,7 +1,7 @@
 # Qwen ERP Conversation Control Post-Design Implementation Roadmap
 
-Status: active roadmap  
-Date: 2026-04-18  
+Status: active roadmap
+Date: 2026-04-18
 Scope: implementation roadmap that converts the completed `CC0` to `CC6` design stack into practical enterprise-grade build slices
 
 Naming note:
@@ -27,68 +27,68 @@ The goal is to:
 
 ### 2.1 Completed Design Slices
 
-1. `CC0`  
-   Status: `complete`  
+1. `CC0`
+   Status: `complete`
    Contract family foundation
 
-2. `CC1`  
-   Status: `complete`  
+2. `CC1`
+   Status: `complete`
    Shared conversation-state model
 
-3. `CC2`  
-   Status: `complete`  
+3. `CC2`
+   Status: `complete`
    Normalization adapter and precedence path
 
-4. `CC3`  
-   Status: `complete`  
+4. `CC3`
+   Status: `complete`
    Shared control-language taxonomy
 
-5. `CC4`  
-   Status: `complete`  
+5. `CC4`
+   Status: `complete`
    Recent-focus follow-up activation model
 
-6. `CC5`  
-   Status: `complete`  
+6. `CC5`
+   Status: `complete`
    Resumable prior-branch restore model
 
-7. `CC6`  
-   Status: `complete`  
+7. `CC6`
+   Status: `complete`
    Governed multi-step execution model
 
 ### 2.2 Implementation Status
 
-1. shared conversation-control runtime integration  
+1. shared conversation-control runtime integration
    Status: `in progress`
 
-2. shared metadata activation for control wording  
+2. shared metadata activation for control wording
    Status: `next`
 
-3. cross-family rollout  
+3. cross-family rollou
    Status: `next`
 
-4. test matrix expansion  
+4. test matrix expansion
    Status: `next`
 
-### 2.3 Corrected Implementation Status After Code Audit
+### 2.3 Corrected Implementation Status After Code Audi
 
 This section supersedes any stale `next` markers below when the codebase already contains the implementation.
 
-1. `IC1` shared normalization adapter  
-   Status: `complete`  
+1. `IC1` shared normalization adapter
+   Status: `complete`
    Notes:
    - normalized conversation snapshot exists in runtime
-   - snapshot currently includes pending clarification, latest grounded turn, latest artifact, latest recovery contract, latest repair intent, active sequence, recent focus, and resumable prior request
-   - integrity tests already exist
+   - snapshot currently includes pending clarification, latest grounded turn, latest artifact, latest recovery contract, latest repair intent, active sequence, recent focus, and resumable prior reques
+   - integrity tests already exis
 
-2. `IC2` shared precedence evaluator  
-   Status: `close-out review`  
+2. `IC2` shared precedence evaluator
+   Status: `close-out review`
    Notes:
    - typed decision contract exists
    - clarification, sequence, recent-focus, and prior-branch decisions are partially integrated
    - shared arbitration is still incomplete
 
-3. `IC3` shared control-language evidence layer  
-   Status: `in progress`  
+3. `IC3` shared control-language evidence layer
+   Status: `in progress`
    Notes:
    - shared evidence classifier exists
    - typed evidence contract exists
@@ -97,26 +97,26 @@ This section supersedes any stale `next` markers below when the codebase already
    - the older top-level clarification-lane module is now only a compatibility facade over the live lane module, reducing duplicate owner behavior risk
    - evidence activation is still uneven across runtime seams
 
-4. `IC4` recent-focus affordance builder  
-   Status: `complete`  
+4. `IC4` recent-focus affordance builder
+   Status: `complete`
    Notes:
-   - recent-focus state and continuation decisions exist
-   - formal affordance contract and broader cross-family rollout are not complete yet
+   - recent-focus state and continuation decisions exis
+   - formal affordance contract and broader cross-family rollout are not complete ye
 
-5. `IC5` prior-branch restore evaluator  
-   Status: `in progress`  
+5. `IC5` prior-branch restore evaluator
+   Status: `in progress`
    Notes:
    - prior-branch restore contract exists
-   - restore modes exist
+   - restore modes exis
    - targeted recent-focus restore is now activated through the shared control spine
    - routing is partially integrated and still needs stabilization across runtime owners
    - `IC5-C` now includes active-sequence owner retirement when a newer business-owner turn supersedes a remaining ordered sequence
 
-6. `IC6` multi-step execution generalization  
-   Status: `complete for the current delivery chapter`  
+6. `IC6` multi-step execution generalization
+   Status: `complete for the current delivery chapter`
    Notes:
    - backward-compatible multi-step assessment bridge exists
-   - typed plan, execution-state, and step-result integration contracts now exist
+   - typed plan, execution-state, and step-result integration contracts now exis
    - clarification pause versus grounded-step advancement now composes through the shared compound-request support layer
    - broader execution generalization should not widen further unless a genuinely new governed multi-step requirement appears
 
@@ -148,7 +148,7 @@ This order is deliberate.
 Current execution note:
 
 1. `IC2` is now complete for the current delivery chapter
-2. `IC3` is complete for the current delivery chapter after the bounded closure audit
+2. `IC3` is complete for the current delivery chapter after the bounded closure audi
 3. `IC4` is complete for the current delivery chapter and should not be reopened without a newly discovered shared gap
 4. `IC5-C` and `IC5-D` are complete for the current delivery chapter, so remaining `IC5` work should be limited to truly shared restore-policy seams rather than broad facade churn
 5. `IC6-S1` is now complete: the active-sequence compound assessment carries a backward-compatible normalized multi-step bridge through assessment creation, step advancement, completion, and cancellation
@@ -185,9 +185,9 @@ Deliverables:
 1. exact source map for:
    - pending clarification
    - latest grounded turn
-   - latest normalized family artifact
-   - latest recovery contract
-   - latest compound request assessment
+   - latest normalized family artifac
+   - latest recovery contrac
+   - latest compound request assessmen
 
 2. adapter field mapping table
 
@@ -197,12 +197,12 @@ Status: `complete`
 
 Deliverables:
 
-1. shared builder/helper for normalized snapshot
+1. shared builder/helper for normalized snapsho
 2. normalized classes for:
    - pending clarification
    - recent focus
    - active sequence
-   - resumable prior request
+   - resumable prior reques
 
 ### IC1-C Snapshot Integrity Tests
 
@@ -221,7 +221,7 @@ Status: `complete for the current delivery chapter`
 Purpose:
 
 1. decide control versus business interpretation in one place
-2. eliminate scattered precedence drift
+2. eliminate scattered precedence drif
 
 Depends on:
 
@@ -239,7 +239,7 @@ Deliverables:
 1. shared `ConversationControlDecisionContract`
 2. typed decision classes and actions
 
-### IC2-B Clarification/Fresh-Request Alignment
+### IC2-B Clarification/Fresh-Request Alignmen
 
 Status: `complete for the current delivery chapter`
 
@@ -248,10 +248,10 @@ Deliverables:
 1. move existing clarification precedence into the shared evaluator path
 2. preserve current strong behavior:
    - option resolution
-   - option list request
+   - option list reques
    - fresh request override
    - meta-question handling
-3. allow explicit master-data breakout from an older pending clarification when the new request clearly changes entity grain, lookup mode, or lookup search text
+3. allow explicit master-data breakout from an older pending clarification when the new request clearly changes entity grain, lookup mode, or lookup search tex
 
 ### IC2-C Sequence/Focus/Branch Precedence Integration
 
@@ -266,9 +266,9 @@ Deliverables:
 5. generic branch-restore fallback can now restore recent focus, not only pending clarification or repair-origin replay
 6. generic branch-restore fallback is now recency-aware for resumable prior branches as well
 7. repeated strong-owner control actions are now centralized so recent-focus and sequence seams share the same precedence vocabulary
-8. sequence continuation and stop fallback now route through the shared control-language classifier instead of a separate raw-text list
+8. sequence continuation and stop fallback now route through the shared control-language classifier instead of a separate raw-text lis
 9. completed-sequence acknowledgement is now snapshot-aware and yields when a newer clarification, newer grounded focus, or newer resumable prior branch has become the true latest owner
-10. question-restore and branch-restore now share a latest non-clarification owner rule, comparing recent focus and resumable prior branch by snapshot recency instead of hard-wiring one owner first
+10. question-restore and branch-restore now share a latest non-clarification owner rule, comparing recent focus and resumable prior branch by snapshot recency instead of hard-wiring one owner firs
 
 ### IC2-D Shared Precedence Tests
 
@@ -276,7 +276,7 @@ Status: `complete for the current delivery chapter`
 
 Deliverables:
 
-1. tests for stale clarification breakout
+1. tests for stale clarification breakou
 2. tests for cross-family new request override
 3. tests for continue/stop only when valid
 4. tests proving recent-focus continuation yields to stronger shared control owners such as option-list, fresh-request override, sequence resume, and prior-branch restore
@@ -306,7 +306,7 @@ Status: `complete for the current delivery chapter`
 Deliverables:
 
 1. shared control language classes:
-   - option list request
+   - option list reques
    - clarification resolution
    - override/discard
    - resume prior branch
@@ -349,7 +349,7 @@ Current implemented notes:
 1. classifier coverage now includes chained discard-to-control turns
 2. classifier coverage now includes targeted branch-restore hints
 3. regression coverage now includes pending-clarification frontdoor skip honoring shared redirect evidence instead of trapping the user in the old clarification loop
-4. live transcript verification now covers discard-prefixed targeted restore, proving the shared control-evidence classifier reaches the same bounded restore path as the plain-language variant
+4. live transcript verification now covers discard-prefixed targeted restore, proving the shared control-evidence classifier reaches the same bounded restore path as the plain-language varian
 5. live transcript verification now covers discard-prefixed question restore, proving the shared control-evidence classifier reaches the same newer-owner restore path as `answer the last question` without the discard preamble
 
 ## 5.4 IC4 Recent-Focus Affordance Builder
@@ -358,8 +358,8 @@ Status: `in progress`
 
 Purpose:
 
-1. define what the current focus safely supports next
-2. make cross-family follow-up behavior consistent
+1. define what the current focus safely supports nex
+2. make cross-family follow-up behavior consisten
 
 Depends on:
 
@@ -377,9 +377,9 @@ Deliverables:
 
 1. focus-grain mapping for:
    - entity
-   - document
+   - documen
    - listing
-   - statement
+   - statemen
    - report/ranking
 
 Current implemented notes:
@@ -419,7 +419,7 @@ Deliverables:
 Current implemented notes:
 
 1. shared recent-focus routing now consults the normalized affordance contract before attempting family-local breakout behavior
-2. entity-detail local transform remains preserved as the strong local grounded path when the shared affordance allows it
+2. entity-detail local transform remains preserved as the strong local grounded path when the shared affordance allows i
 3. listing and report follow-up can now enter the shared recent-focus continuation path even when no family-local runtime rewrite is needed
 4. single-row master-data results now promote into entity recent focus, so restored master-data branches can continue through the same bounded entity-detail follow-up path instead of dropping back into a generic listing seam
 5. artifact-boundary ownership now accepts the same pending-clarification clear seam as the main runtime path, preventing live lane-signature drift and letting bounded artifact answers clear stale ambiguity state cleanly
@@ -471,7 +471,7 @@ Depends on:
 
 Mini phases:
 
-### IC5-A Prior Branch Snapshot
+### IC5-A Prior Branch Snapsho
 
 Status: `complete`
 
@@ -483,13 +483,13 @@ Deliverables:
    - branch kind
    - restore eligibility
 
-### IC5-B PriorBranchRestoreContract
+### IC5-B PriorBranchRestoreContrac
 
 Status: `complete`
 
 Deliverables:
 
-1. shared restore contract
+1. shared restore contrac
 2. restore modes:
    - reopen clarification
    - restore recent focus
@@ -539,7 +539,7 @@ Current implemented notes:
 2. tests now cover targeted restore to resumable prior branch
 3. tests now cover discard-prefixed targeted restore evidence
 4. tests now cover latest-owner arbitration in both directions between recent focus and resumable prior branch
-5. tests now cover recent-focus restore decision normalization for capability/reference-policy fields and shared affordance attachment
+5. tests now cover recent-focus restore decision normalization for capability/reference-policy fields and shared affordance attachmen
 6. tests now cover targeted master-data restore preservation of recent-focus reference-policy fields
 7. tests now cover weak clarification state yielding to recent-focus restore and sequence-resume control owners
 8. live transcript verification now covers ambiguous item -> explicit customer override -> customer detail follow-up without stale ambiguity leakage
@@ -583,10 +583,10 @@ Status: `complete for the current delivery chapter`
 
 Deliverables:
 
-1. extend compound request assessment into multi-step assessment
+1. extend compound request assessment into multi-step assessmen
 2. retain current ordered multi-step behavior
 
-### IC6-B Typed Plan Contract
+### IC6-B Typed Plan Contrac
 
 Status: `complete for the current delivery chapter`
 
@@ -596,7 +596,7 @@ Deliverables:
 2. explicit dependencies
 3. explicit carryover classes
 
-### IC6-C Shared Execution State Contract
+### IC6-C Shared Execution State Contrac
 
 Status: `complete for the current delivery chapter`
 
@@ -613,7 +613,7 @@ Status: `complete for the current delivery chapter`
 
 Deliverables:
 
-1. step result contract
+1. step result contrac
 2. recent-focus update from step outputs
 3. prior-branch preservation when interrupted
 
@@ -638,14 +638,14 @@ Status: `complete`
 
 Goal:
 
-1. widen the current compound-request assessment into a backward-compatible multi-step assessment without changing the user-facing ordered two-step behavior yet
+1. widen the current compound-request assessment into a backward-compatible multi-step assessment without changing the user-facing ordered two-step behavior ye
 
 Deliverables:
 
 1. introduce a normalized multi-step assessment payload that can still represent current ordered two-step turns
 2. preserve the current compound-request contract as a compatibility surface during the bridge
 3. explicitly classify step relationship type such as `independent_ordered`, `dependent_followup`, or `clarification_blocked`
-4. fail closed to the current single-step or ordered-two-step behavior when the assessment is not confident
+4. fail closed to the current single-step or ordered-two-step behavior when the assessment is not confiden
 
 Completed outcome:
 
@@ -658,9 +658,9 @@ Anti-drift rules:
 
 1. do not add transcript-local step parsing branches
 2. do not bypass current shared control precedence to force a plan
-3. do not break current ordered two-step user turns just to introduce the new contract
+3. do not break current ordered two-step user turns just to introduce the new contrac
 
-#### IC6-S2 Typed Step Plan Contract
+#### IC6-S2 Typed Step Plan Contrac
 
 Status: `complete`
 
@@ -700,7 +700,7 @@ Deliverables:
 Completed outcome:
 
 1. introduced a first-class typed `qwen_multi_step_execution_state_contract` in `contracts.py`
-2. attached that state contract through the same shared compound-request builder path as the assessment bridge and typed plan contract
+2. attached that state contract through the same shared compound-request builder path as the assessment bridge and typed plan contrac
 3. kept the state contract focused on live progress only, with lifecycle state, current step, remaining steps, completed steps, and last-completed step separated from the static plan definition
 4. added characterization coverage so the state contract is proven through assessment creation, front-door preservation, compiled-step advancement, and completion / cancellation transitions
 
@@ -714,7 +714,7 @@ Goal:
 
 Deliverables:
 
-1. typed step-result contract
+1. typed step-result contrac
 2. explicit rules for when a step output updates recent focus
 3. explicit rules for when a step output becomes carryover for a dependent later step
 4. explicit rules for when an interrupted plan preserves the prior branch versus the current step owner
@@ -732,7 +732,7 @@ Status: `complete`
 
 Goal:
 
-1. prove the new multi-step bridge works through the existing shared control spine before any broader rollout
+1. prove the new multi-step bridge works through the existing shared control spine before any broader rollou
 
 Deliverables:
 
@@ -748,7 +748,7 @@ Completed outcome:
 2. moved post-result compound-step transition ownership into shared `compound_request_support.py`, so advancement versus pause-on-clarification is no longer an implicit compiled-path choice
 3. hardened the shared assessment bridge so clarification-waiting state preserves the active step instead of blanking the current-step pointer
 4. verified the broader focused server-side characterization is green at `397` tests, including compound support, front-door preservation, compiled execution, and post-contract state integrity
-5. closure checkpoint outcome: `IC6` is now sufficiently stable to hand control back to the broader mini-phase roadmap instead of widening conversation control further without a new governed execution requirement
+5. closure checkpoint outcome: `IC6` is now sufficiently stable to hand control back to the broader mini-phase roadmap instead of widening conversation control further without a new governed execution requiremen
 
 ## 5.7 IC7 Metadata Migration And Wording Unification
 
@@ -776,7 +776,7 @@ Deliverables:
 
 1. metadata spec for control prompts and responses
 
-### IC7-B Clarification/Control Wording Alignment
+### IC7-B Clarification/Control Wording Alignmen
 
 Status: `next`
 
@@ -851,12 +851,12 @@ If we want the safest enterprise rollout, the recommended immediate build order 
 
 Why this order:
 
-1. state and precedence must come first
+1. state and precedence must come firs
 2. recent-focus and branch-restore need that spine
 3. language taxonomy is most useful once the evaluator exists
 4. multi-step generalization should sit on the completed conversation-control spine
 
-## 7. Recommended Current Sprint
+## 7. Recommended Current Sprin
 
 The current implementation sprint should stay focused on finishing the shared runtime spine already in progress.
 
@@ -896,7 +896,7 @@ This roadmap is successful when the implementation can honestly say:
 
 Immediate next step:
 
-1. continue the current shared runtime spine stabilization inside `IC2`, `IC3`, and `IC5`  
+1. continue the current shared runtime spine stabilization inside `IC2`, `IC3`, and `IC5`
    Status: `in progress`
 
 That means:
@@ -904,10 +904,10 @@ That means:
 1. finish shared state arbitration when pending clarification, recent focus, active sequence, and prior-branch restore all compete
 2. activate shared control evidence more uniformly across remaining runtime seams
 3. expand transcript-level tests for natural business turns such as:
-   - ignore that
+   - ignore tha
    - forget the first question
    - answer the last question
-   - show me the list
+   - show me the lis
    - go back to the customer
 4. only after that, move forward to `IC4` formal affordance rollout and later `IC6`
 
@@ -921,7 +921,7 @@ Recent enterprise-grade progress:
 2. realigned `clarification_resolution`, `clarification_lane`, and `service` onto the same shared conversation-control seam
 3. widened pending-clarification breakout so explicit master-data requests can safely become new business turns even when heavier cross-checks miss
 4. moved targeted verification from pure compile-only checking to real focused unittest coverage for the restored shared module seam
-5. hardened shared clarification-yield arbitration so strong restore and sequence owners can safely supersede a weak pending clarification even when no intermediate clarification-response contract is present yet
+5. hardened shared clarification-yield arbitration so strong restore and sequence owners can safely supersede a weak pending clarification even when no intermediate clarification-response contract is present ye
 6. extended recent-focus normalization so document-detail turns such as sales invoices and purchase orders now produce a shared `document` focus kind with its own bounded affordance surface
 7. extended shared recent-focus routing so document-detail follow-up now uses the same shared local-transform seam as entity detail, instead of depending on family-local fallback behavior
 8. broadened document-follow-up regression coverage so the shared recent-focus seam is now explicitly verified for sales invoice, purchase order, and delivery note detail turns
@@ -961,7 +961,7 @@ Current meaning for roadmap status:
 4. the reopen-pending-clarification restore lane is now aligned to the shared front-door artifact seam instead of remaining a thinner special-case restore branch
 5. both `question_restore` and generic `branch_restore` now have live H3 proof for pending-clarification reopen on that same shared seam
 6. generic branch-restore and discard-prefixed generic branch-restore now also have live H3 proof that newer business focus beats older pending clarification on the shared owner-arbitration seam
-7. generic branch-restore and discard-prefixed generic branch-restore now also have live H3 proof that newer recent focus beats an older historical prior branch preserved in the snapshot
+7. generic branch-restore and discard-prefixed generic branch-restore now also have live H3 proof that newer recent focus beats an older historical prior branch preserved in the snapsho
 8. targeted restore and discard-prefixed targeted restore now also have live H3 proof for replaying resumable accepted prior recovery branches through the shared targeted-resumable restore seam
 9. targeted restore and discard-prefixed targeted restore now also have live H3 proof that the same accepted-recovery replay still works cleanly when a newer active sequence is present, and that the older active sequence is retired in that same restore turn
 10. the collection-vs-detail targeted-restore gap is now closed for the current safe families, including plural directory-style wording such as supplier directories over newer supplier detail
@@ -1018,7 +1018,7 @@ Current meaning for roadmap status:
 75. widened that bridge across assessment creation, compiled-step advancement, and service-level completion / cancellation rebuilds, then verified the server-side characterization suite is green at `393` targeted tests
 76. completed `IC6-S2` by introducing a typed `qwen_multi_step_execution_plan_contract` with governed step ids, dependency edges, carryover classes, interruption policy, and clarification policy while keeping execution progress out of the plan contract itself
 77. attached that typed plan through the shared compound-request builder so the plan survives front-door preservation, compiled-step advancement, and service-level completion / cancellation without adding a parallel service-local seam
-78. completed `IC6-S3` by introducing a typed `qwen_multi_step_execution_state_contract` with governed lifecycle state, current-step focus, remaining steps, completed steps, and last-completed-step tracking while keeping plan definition separate in the static typed plan contract
+78. completed `IC6-S3` by introducing a typed `qwen_multi_step_execution_state_contract` with governed lifecycle state, current-step focus, remaining steps, completed steps, and last-completed-step tracking while keeping plan definition separate in the static typed plan contrac
 79. attached that execution-state contract through the shared compound-request builder so state survives assessment creation, front-door preservation, compiled-step advancement, and service-level completion / cancellation without adding a parallel orchestration-only state seam
 80. completed `IC6-S4` by introducing a typed `qwen_multi_step_step_result_integration_contract` that makes recent-focus promotion, carryover classes, and interruption-owner policy explicit when a compound step yields a grounded result or clarification
 81. attached that integration contract through the compiled-turn execution path and the shared multi-step support layer, then verified the focused server-side suite is green at `394` tests

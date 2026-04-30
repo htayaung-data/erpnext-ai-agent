@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 1 Phase 3 Behavior Truthing
 
-Status: active research note  
-Date: 2026-04-12  
+Status: active research note
+Date: 2026-04-12
 Scope: Round 1 Phase 3 behavior truthing for `customer`, `supplier`, and `item/product`
 
 ## 1. Purpose
@@ -12,7 +12,7 @@ Round 1 scope:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 
 This phase is not broad manual replay.
 
@@ -122,7 +122,7 @@ Observed deterministic result:
 Important nuance:
 
 1. in the controlled stubbed check, resolution status was `not_found`
-2. this is expected under the stubbed no-data environment
+2. this is expected under the stubbed no-data environmen
 3. the important truth in this phase is that the correct governed path is selected
 
 Truth status:
@@ -166,7 +166,7 @@ Truth status:
 
 This supports the same conclusion:
 
-1. supplier breakout may be understood as navigation intent
+1. supplier breakout may be understood as navigation inten
 2. but there is no symmetric direct lookup execution lane today
 
 ### 4.5 Product Names Do Not Route To A Direct Master-Data Lookup Lane
@@ -224,12 +224,12 @@ It means they are owned by a different runtime lane.
 
 ## 5. Follow-Up Breakout Truthing
 
-### 5.1 Supplier Directory Breaks Out Of Customer Detail Context
+### 5.1 Supplier Directory Breaks Out Of Customer Detail Contex
 
 Check:
 
 1. `give me some supplier names`
-2. grounded context = customer detail artifact
+2. grounded context = customer detail artifac
 
 Observed result:
 
@@ -243,15 +243,15 @@ Truth status:
 
 This proves:
 
-1. the system does not merely stay trapped in stale customer detail context
+1. the system does not merely stay trapped in stale customer detail contex
 2. breakout works at the boundary decision level
 
-### 5.2 Product Names Also Break Out Of Customer Detail Context
+### 5.2 Product Names Also Break Out Of Customer Detail Contex
 
 Check:
 
 1. `give me some product names`
-2. grounded context = customer detail artifact
+2. grounded context = customer detail artifac
 
 Observed result:
 
@@ -272,7 +272,7 @@ This is important because it separates:
 Check:
 
 1. `do u have customer name similar to Nay Lin Mobile`
-2. grounded context = customer detail artifact
+2. grounded context = customer detail artifac
 
 Observed result:
 
@@ -288,7 +288,7 @@ Truth status:
 Check:
 
 1. `what is this customer's tenure?`
-2. grounded context = customer detail artifact
+2. grounded context = customer detail artifac
 
 Observed result:
 
@@ -301,8 +301,8 @@ Truth status:
 
 Important conclusion:
 
-1. the system already distinguishes deictic continuation from self-contained breakout
-2. this is a real working enterprise behavior, not just design intent
+1. the system already distinguishes deictic continuation from self-contained breakou
+2. this is a real working enterprise behavior, not just design inten
 
 ## 6. Confirmed vs Contradicted vs Unresolved
 
@@ -363,7 +363,7 @@ Round 1 Phase 3 shows that the earlier analysis was directionally correct.
 The system truth is:
 
 1. customer direct navigation is genuinely active
-2. supplier direct navigation is not
+2. supplier direct navigation is no
 3. product/item language is currently absorbed into adjacent governed families rather than a dedicated master-data lookup lane
 4. context breakout is not the main current blocker
 5. the bigger current blocker is downstream governed activation and lane completeness
@@ -379,6 +379,6 @@ Phase 4 should separate:
 
 1. missing metadata activation
 2. missing shared runtime consumption
-3. customer-weighted downstream adaptation/rendering debt
+3. customer-weighted downstream adaptation/rendering deb
 4. naming and taxonomy unevenness
 5. behaviors that should remain deferred until later governed scope expansion

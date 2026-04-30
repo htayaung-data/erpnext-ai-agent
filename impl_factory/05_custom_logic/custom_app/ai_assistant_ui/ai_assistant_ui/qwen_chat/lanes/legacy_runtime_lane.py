@@ -91,8 +91,23 @@ def handle_legacy_runtime_turn(
 	tool_trace = runtime_payload.get("tool_trace") if isinstance(runtime_payload.get("tool_trace"), list) else []
 	agent_meta = runtime_payload.get("agent_meta") if isinstance(runtime_payload.get("agent_meta"), dict) else {}
 	error = str(runtime_payload.get("error") or "").strip()
+	grounded_validation_failed = (
+		not ok
+		and error == "Grounded read validation failed."
+		and str(((agent_meta.get("validation") or {}).get("status") if isinstance(agent_meta.get("validation"), dict) else "") or "").strip() == "fail"
+	)
 
-	if not answer_text:
+	if grounded_validation_failed:
+		answer_text = (
+			"I can't answer that safely from the current governed ERP evidence. "
+			"The runtime did not produce a grounded tool-backed answer, so I stopped rather than guess."
+		)
+		agent_meta = {
+			**agent_meta,
+			"engine": "local_grounded_boundary",
+			"status": "grounded_validation_failed",
+		}
+	elif not answer_text:
 		answer_text = "Qwen runtime could not complete the request right now. Please try again."
 
 	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
@@ -136,10 +151,17 @@ def handle_legacy_runtime_turn(
 		).to_payload(),
 	)
 	save_session(session_doc, ignore_permissions=False)
-	payload = {"ok": ok, "request_id": request_id, "error": error, "agent_meta": agent_meta}
+	payload = {
+		"ok": True if grounded_validation_failed else ok,
+		"request_id": request_id,
+		"error": error,
+		"agent_meta": agent_meta,
+	}
 	if isinstance(compiled_rollout_fallback, dict):
 		payload["mode"] = "legacy_runtime_rollout_fallback"
 		payload["compiled_rollout_fallback_reason"] = str(compiled_rollout_fallback.get("reason") or "").strip()
+	elif grounded_validation_failed:
+		payload["mode"] = "grounded_evidence_boundary"
 	else:
 		payload["mode"] = "legacy_runtime"
 	return True, payload

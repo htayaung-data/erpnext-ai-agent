@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 2 Phase 5 Bounded Design
 
-Status: active design note  
-Date: 2026-04-13  
+Status: active design note
+Date: 2026-04-13
 Scope: bounded design for the next safe Round 2 expansion and alignment chapter after the completed Round 2 research
 
 ## 1. Purpose
@@ -58,7 +58,7 @@ Keep the current shared family path for:
 
 1. transaction listing
 2. aging
-3. inventory snapshot
+3. inventory snapsho
 4. ranking
 5. trend
 
@@ -73,7 +73,7 @@ Reason:
 Keep:
 
 1. `FollowUpBoundaryContract`
-2. family-level local follow-up refinement
+2. family-level local follow-up refinemen
 3. governed requery when the continuation exceeds current artifact authority
 
 Reason:
@@ -93,9 +93,9 @@ Reason:
 1. the current problem is mixed implementation shape inside the lane
 2. the current problem is not that document detail belongs to the wrong lane
 
-## 4. What To Align Next
+## 4. What To Align Nex
 
-## 4.1 Align Document Entity Detail To A Stronger Shared Dispatch Contract
+## 4.1 Align Document Entity Detail To A Stronger Shared Dispatch Contrac
 
 Current state:
 
@@ -124,7 +124,7 @@ should all remain supported, but the path should become more policy-driven and l
 Current state:
 
 1. purchase invoice detail exists in runtime
-2. purchase invoice appears in aging-linked voucher context
+2. purchase invoice appears in aging-linked voucher contex
 3. purchase invoice is weak in current front-door/family metadata inventory
 
 Recommended move:
@@ -135,15 +135,15 @@ Recommended move:
 
 Practical meaning:
 
-1. if purchase invoice detail is a real approved path, metadata should reflect that
-2. if purchase invoice listing or analytical behavior is not yet approved, do not imply it by accident
+1. if purchase invoice detail is a real approved path, metadata should reflect tha
+2. if purchase invoice listing or analytical behavior is not yet approved, do not imply it by acciden
 
 ### 4.3 Decide Payment Entry Ownership Explicitly
 
 Current state:
 
 1. payment entry exists in report and capability layers
-2. payment entry logic exists in specialized collections/KPI support
+2. payment entry logic exists in specialized collections/KPI suppor
 3. payment entry does not currently behave like a strong generic family path
 
 Recommended move:
@@ -160,7 +160,7 @@ Important rule:
 
 That would recreate the same partial-activation problem already identified in Round 2.
 
-## 5. What Not To Generalize Yet
+## 5. What Not To Generalize Ye
 
 ### 5.1 Do Not Activate Purchase Receipt Just Because It Sounds Related
 
@@ -192,7 +192,7 @@ Payment entry touches collections behavior and may not fit a naïve listing patt
 
 So the next design step should be:
 
-1. explicit ownership decision first
+1. explicit ownership decision firs
 2. activation second
 
 not:
@@ -216,7 +216,7 @@ Reuse:
 
 Allowed bounded extension:
 
-1. strengthen document-detail dispatch typing if current entity-detail branching cannot be reduced without it
+1. strengthen document-detail dispatch typing if current entity-detail branching cannot be reduced without i
 2. add bounded activation metadata for approved purchase-invoice support if the project decides that support is official
 3. add bounded payment-entry ownership metadata only after the ownership model is chosen
 
@@ -228,7 +228,7 @@ For any Round 2 surface to be declared as newly active, add the full governed se
 2. capability mapping
 3. report/family mapping
 4. entity reference policy if direct navigation is part of the approved surface
-5. follow-up/continuation-safe ownership if the family supports it
+5. follow-up/continuation-safe ownership if the family supports i
 
 Important rule:
 
@@ -238,7 +238,7 @@ Round 2 proved that partial activation creates confusion and design debt.
 
 ## 7. Recommended Implementation Order After Research Closure
 
-### 7.1 Step A: Document Detail Alignment
+### 7.1 Step A: Document Detail Alignmen
 
 Bounded scope:
 
@@ -251,7 +251,7 @@ Acceptance goal:
 1. stronger shared dispatch shape for document detail
 2. no regression in sales invoice, sales order, purchase order, or delivery note detail behavior
 
-### 7.2 Step B: Purchase Invoice Alignment
+### 7.2 Step B: Purchase Invoice Alignmen
 
 Bounded scope:
 
@@ -279,7 +279,7 @@ Acceptance goal:
 
 Only after Steps A to C should the team revisit:
 
-1. purchase receipt
+1. purchase receip
 2. journal entry
 3. broader direct navigation for document grains
 
@@ -294,11 +294,11 @@ This Round 2 design is safer than broad activation because:
 
 In simple terms:
 
-1. do not widen first
-2. align first
+1. do not widen firs
+2. align firs
 3. then widen safely
 
-## 9. Current Status Statement
+## 9. Current Status Statemen
 
 Round 2 now supports a practical bounded design conclusion.
 

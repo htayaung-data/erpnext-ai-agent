@@ -325,6 +325,24 @@
       "allowed_detail_sections": [],
       "default_projection_shape": "document_core_columns",
       "projection_notes": "Payment-entry listing follows the approved Payment Entry List projection."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "transaction_listing",
+      "projection_group_id": "purchase_receipt_list_core",
+      "allowed_dimensions": [
+        "Purchase Receipt",
+        "Posting Date",
+        "Supplier",
+        "Status"
+      ],
+      "allowed_metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "allowed_detail_sections": [],
+      "default_projection_shape": "document_core_columns",
+      "projection_notes": "Purchase-receipt list projection follows the approved Purchase Receipt List surface. Detail sections remain intentionally inactive."
     }
   ]
 }

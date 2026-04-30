@@ -1,7 +1,7 @@
 # Qwen ERP Phase 3.3 Ranking Projection And Evidence Contract Design
 
-Status: active design note, `3.3A` next  
-Date: 2026-04-11  
+Status: active design note, `3.3A` nex
+Date: 2026-04-11
 Scope: bounded Phase `3.3` plan for ranking projection harmonization and entity-detail evidence contract cleanup inside the existing enterprise runtime
 
 ## 1. Executive Decision
@@ -23,7 +23,7 @@ This means the active bounded order inside `3.3` is:
 2. `3.3B` entity-detail evidence request contract cleanup
 3. `3.3C` metadata and semantic completion for the missing typed evidence distinctions
 
-## 2. Current Starting Point
+## 2. Current Starting Poin
 
 The current ecosystem is already strong enough to support this work without a redesign.
 
@@ -34,7 +34,7 @@ What already exists:
 3. governed continuation state already preserves ranking scope, metric, limit, sort direction, requested columns, and time scope
 4. recent shared work already corrected:
    - customer or product ranking defaulting toward minimal columns
-   - governed subject-switch behavior such as customer to product
+   - governed subject-switch behavior such as customer to produc
    - targeted diagnostics around ranking subject-switch regression
 
 Important current reality:
@@ -55,7 +55,7 @@ Why:
 
 1. the current development guide explicitly forbids letting raw message text steer runtime decisions after structured interpretation exists
 2. the same authority concern is showing up in the current ranking-harmonization work
-3. leaving the renderer lexical while the ranking runtime becomes more contract-driven would preserve two inconsistent authority standards inside the same enterprise assistant
+3. leaving the renderer lexical while the ranking runtime becomes more contract-driven would preserve two inconsistent authority standards inside the same enterprise assistan
 4. this problem is bounded enough to solve safely after `3.3A` without opening a broad refactor chapter
 
 This does not mean `3.3B` should preempt `3.3A`.
@@ -73,10 +73,10 @@ The specific rules for `3.3` are:
 
 1. do not add a parallel ranking pipeline
 2. do not add keyword routing, prompt tricks, or single-case rescue logic
-3. do not discard the recent shared subject-switch and projection work if the seam is directionally correct
+3. do not discard the recent shared subject-switch and projection work if the seam is directionally correc
 4. do not let renderer code decide business meaning from English phrases
 5. keep business meaning in contracts, metadata, semantic resolution, or governed continuation state
-6. keep runtime behavior auditable and fail closed when typed evidence is insufficient
+6. keep runtime behavior auditable and fail closed when typed evidence is insufficien
 
 ## 5. `3.3A` Ranking Projection Contract Harmonization
 
@@ -89,7 +89,7 @@ Required business behavior:
 1. default ranking display is entity plus primary metric only
 2. supporting metrics such as quantity, AOV, ASP, or other approved fields appear only when explicitly requested
 3. projection follow-ups such as `show customer and revenue only`, `add qty`, or `replace qty with AOV` stay inside the same governed scope when the current artifact already exposes the needed columns
-4. time correction follow-ups such as `I mean last year, not last month` re-enter governed requery while preserving the same ranking family, basis, and projection intent
+4. time correction follow-ups such as `I mean last year, not last month` re-enter governed requery while preserving the same ranking family, basis, and projection inten
 5. subject changes such as customer to product must not reuse stale ranked artifacts
 
 Implementation direction:
@@ -124,7 +124,7 @@ Goal:
 Problem statement:
 
 1. `grounded_artifact_direct_evidence_answer(...)` in `boundary_support.py` still resolves business meaning from phrase checks over `raw_message`
-2. this violates the active enterprise rule that structured interpretation should outrank raw text
+2. this violates the active enterprise rule that structured interpretation should outrank raw tex
 3. this makes renderer behavior harder to generalize, harder to audit, and weaker for multilingual growth
 
 Implementation direction:
@@ -175,17 +175,17 @@ Expected governed additions:
 2. date-of-first-activity evidence distinctions
 3. overdue question shape:
    - boolean status
-   - amount
+   - amoun
    - ratio
 4. credit-balance question shape:
    - boolean status
-   - amount
-5. dominant aging bucket or top aging bucket as an approved dimension or evidence slot
+   - amoun
+5. dominant aging bucket or top aging bucket as an approved dimension or evidence slo
 6. explicit distinction between `outstanding` and `total due`
 
 Implementation direction:
 
-1. extend metadata and semantic registries first
+1. extend metadata and semantic registries firs
 2. let upstream interpretation produce canonical values
 3. let the renderer consume those canonical values
 4. do not solve these by adding more phrase checks
@@ -203,7 +203,7 @@ Current judgment:
 So for this phase:
 
 1. keep the shared ranking subject-switch and projection work that is already in the right seam
-2. reimplement only the parts that still derive business meaning from raw message parsing where a typed contract should own it
+2. reimplement only the parts that still derive business meaning from raw message parsing where a typed contract should own i
 
 ## 9. Verification Order
 
@@ -216,7 +216,7 @@ The approved verification order for this slice is:
    - time correction continuity
    - subject-switch continuity
 3. compile checks for touched Python modules
-4. enterprise guardrail pass where relevant
+4. enterprise guardrail pass where relevan
 5. browser or manual UAT only after code-level verification is green
 
 Recommended manual prompts after implementation:
@@ -243,7 +243,7 @@ Recommended manual prompts after implementation:
 
 `3.3` is not trying to solve:
 
-1. a general lexical cleanup chapter across the whole assistant
+1. a general lexical cleanup chapter across the whole assistan
 2. dashboard generation
 3. management recommendations
 4. uncontrolled renderer redesign

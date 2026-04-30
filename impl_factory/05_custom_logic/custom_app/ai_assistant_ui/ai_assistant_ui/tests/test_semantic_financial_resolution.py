@@ -95,7 +95,9 @@ from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 	compile_from_fresh_query_message,
 	execute_compiled_fresh_query_message,
 	_deterministic_family_surface_interpretation,
+	_reconcile_financial_statement_default_time_scope_from_message,
 	_recover_pipeline_with_deterministic_surface_fallback,
+	_normalize_trend_requested_metrics_from_message,
 	_validate_semantic_payload,
 )
 from ai_assistant_ui.qwen_chat.metadata import (
@@ -335,6 +337,42 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				),
 			)
 		self.assertEqual(frontdoor_semantic_result.status, "guardrailed_to_route_onward")
+		self.assertEqual(frontdoor_contract.intent_class, "route_onward")
+		self.assertFalse(frontdoor_contract.handle_in_front_door)
+		self.assertEqual(frontdoor_answer, "")
+
+	def test_deferred_artifact_refinement_prevents_master_data_frontdoor_capture(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.interpret_front_door_semantically",
+			return_value=SemanticFrontDoorResult(
+				status="accepted",
+				intent=SemanticFrontDoorIntent(
+					intent_class="route_onward",
+					confidence=0.91,
+					reason="The current grounded artifact should get first chance to answer.",
+				),
+				confidence_threshold=0.8,
+			),
+		), patch(
+			"ai_assistant_ui.qwen_chat.lanes.frontdoor_lane.assess_master_data_frontdoor_request",
+			return_value={"assessment_contract": object()},
+		) as master_data_frontdoor:
+			frontdoor_semantic_result, frontdoor_contract, _render_result, frontdoor_answer = evaluate_frontdoor_lane(
+				request_id="frontdoor-deferred-artifact-evidence",
+				session_id="session-deferred-artifact-evidence",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me the aging breakdown for the first customer",
+				recent_messages=[],
+				grounded_context_available=True,
+				latest_grounded_turn={"artifact_family_id": "customer_entity_detail"},
+				latest_recovery_contract_available=False,
+				pre_frontdoor_reasoning_semantic_result=None,
+				defer_runtime_value_frontdoor=True,
+			)
+
+		master_data_frontdoor.assert_not_called()
+		self.assertEqual(frontdoor_semantic_result.status, "accepted")
 		self.assertEqual(frontdoor_contract.intent_class, "route_onward")
 		self.assertFalse(frontdoor_contract.handle_in_front_door)
 		self.assertEqual(frontdoor_answer, "")
@@ -1289,7 +1327,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(payload["resolution_source"]["requested_domains"], "semantic_runtime")
 		self.assertFalse(payload["degraded_message_fallback_allowed"])
 		self.assertFalse(payload["degraded_message_fallback_used"])
-		self.assertEqual(payload["recommended_boundary_decision"], "fail_closed_to_reasoning")
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
 	def test_build_followup_boundary_contract_from_context_denies_same_domain_message_fallback_for_supported_grounded_followup(self):
 		with patch.object(
@@ -1318,7 +1356,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(payload["resolution_source"]["requested_domains"], "message_fallback_denied")
 		self.assertFalse(payload["degraded_message_fallback_allowed"])
 		self.assertFalse(payload["degraded_message_fallback_used"])
-		self.assertEqual(payload["recommended_boundary_decision"], "fail_closed_to_reasoning")
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
 	def test_build_followup_boundary_contract_from_context_ignores_non_primary_message_concepts(self):
 		with patch.object(
@@ -1347,7 +1385,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(payload["resolution_source"]["requested_domains"], "none")
 		self.assertFalse(payload["degraded_message_fallback_allowed"])
 		self.assertFalse(payload["degraded_message_fallback_used"])
-		self.assertEqual(payload["recommended_boundary_decision"], "fail_closed_to_reasoning")
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
 	def test_build_followup_boundary_contract_from_context_does_not_use_message_fallback_when_semantic_modes_are_present(self):
 		with patch.object(
@@ -1387,7 +1425,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(payload["resolution_source"]["requested_domains"], "semantic_runtime")
 		self.assertFalse(payload["degraded_message_fallback_allowed"])
 		self.assertFalse(payload["degraded_message_fallback_used"])
-		self.assertEqual(payload["recommended_boundary_decision"], "fail_closed_to_reasoning")
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
 	def test_build_followup_boundary_contract_from_context_uses_known_uncovered_scope_for_hr(self):
 		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
@@ -1469,10 +1507,10 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		payload = contract.to_payload()
 		self.assertEqual(payload["requested_domains"], [])
-		self.assertEqual(payload["resolution_source"]["requested_domains"], "message_fallback_denied")
+		self.assertEqual(payload["resolution_source"]["requested_domains"], "semantic_runtime")
 		self.assertFalse(payload["degraded_message_fallback_allowed"])
 		self.assertFalse(payload["degraded_message_fallback_used"])
-		self.assertEqual(payload["recommended_boundary_decision"], "fail_closed_to_reasoning")
+		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
 	def test_build_followup_boundary_contract_from_context_allows_multi_domain_message_fallback_on_unsupported_artifact_without_semantic_payload(self):
 		contract = followup_interpreter_module.build_followup_boundary_contract_from_context(
@@ -1490,10 +1528,10 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			},
 		)
 		payload = contract.to_payload()
-		self.assertEqual(payload["requested_domains"], ["payable", "receivable"])
-		self.assertEqual(payload["resolution_source"]["requested_domains"], "message_fallback")
-		self.assertTrue(payload["degraded_message_fallback_allowed"])
-		self.assertTrue(payload["degraded_message_fallback_used"])
+		self.assertEqual(payload["requested_domains"], [])
+		self.assertEqual(payload["resolution_source"]["requested_domains"], "message_fallback_denied")
+		self.assertFalse(payload["degraded_message_fallback_allowed"])
+		self.assertFalse(payload["degraded_message_fallback_used"])
 		self.assertEqual(payload["recommended_boundary_decision"], "force_fresh_query")
 
 	def test_build_followup_boundary_contract_from_context_allows_contradictory_presentation_payload_to_use_bounded_message_fallback(self):
@@ -1796,7 +1834,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual((augmented.extracted_slots or {}).get("entity_grain"), "supplier")
 		self.assertIn("ambiguous_business_object", list(augmented.ambiguity_flags))
 
-	def test_master_data_lookup_resolution_clarifies_unsupported_inferred_supplier_scope(self):
+	def test_master_data_lookup_resolution_executes_supported_inferred_supplier_scope(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="master-data-unsupported-supplier",
 			session_id="semantic-master-data",
@@ -1814,12 +1852,13 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		outcome = resolve_master_data_lookup_interpretation(interpretation)
 		self.assertIsNotNone(outcome)
-		self.assertEqual(outcome.contract.governed_decision, "clarify")
-		self.assertEqual(outcome.clarification_reason_type, "master_data_scope_unsupported")
-		self.assertEqual(list(outcome.interpretation.candidate_capability_ids), [])
-		self.assertIn("unsupported_request", list(outcome.interpretation.ambiguity_flags))
+		self.assertEqual(outcome.contract.governed_decision, "execute")
+		self.assertEqual(outcome.clarification_reason_type, "")
+		self.assertEqual(outcome.contract.scope_id, "supplier_master")
+		self.assertIn("supplier_master_read", list(outcome.interpretation.candidate_capability_ids))
+		self.assertNotIn("unsupported_request", list(outcome.interpretation.ambiguity_flags))
 
-	def test_compile_from_fresh_query_message_clarifies_supplier_scope_when_only_customer_directory_is_active(self):
+	def test_compile_from_fresh_query_message_executes_supported_supplier_scope(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="master-data-pipeline-supplier",
 			session_id="semantic-master-data",
@@ -1873,12 +1912,12 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			else {}
 		)
 		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("entity_grain"), "supplier")
-		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "clarify")
+		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "execute")
 		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("scope_id"), "supplier_master")
 		self.assertEqual(semantic_resolution_contract.get("scope_id"), "supplier_master")
 		self.assertEqual(semantic_resolution_contract.get("resolved_slots", {}).get("entity_grain"), "supplier")
-		self.assertEqual(compiler_payload.get("decision"), "clarify")
-		self.assertEqual(compiler_payload.get("clarification_reason_type"), "master_data_scope_unsupported")
+		self.assertEqual(compiler_payload.get("decision"), "execute")
+		self.assertEqual(compiler_payload.get("selected_report"), "Supplier Master List")
 
 	def test_should_skip_artifact_boundary_when_boundary_requires_fresh_query(self):
 		self.assertTrue(
@@ -2336,7 +2375,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				"returned_schema": ["Customer", "Quantity"],
 			},
 		)
-		self.assertFalse(result.force_new_query)
+		self.assertTrue(result.force_new_query)
 		self.assertFalse(result.out_of_scope)
 
 	def test_assess_context_isolation_marks_known_uncovered_hr_domain_from_governed_scope_registry(self):
@@ -2373,9 +2412,9 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			},
 			semantic_intent=types.SimpleNamespace(self_contained=False),
 		)
-		self.assertFalse(result.force_new_query)
+		self.assertTrue(result.force_new_query)
 		self.assertFalse(result.out_of_scope)
-		self.assertEqual(result.reason, "")
+		self.assertIn("fresh governed ERP question", result.reason)
 
 	def test_assess_context_isolation_blank_semantic_intent_breaks_out_on_unsupported_grounded_artifact(self):
 		result = assess_context_isolation(
@@ -2429,9 +2468,9 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				self_contained=False,
 			),
 		)
-		self.assertFalse(result.force_new_query)
+		self.assertTrue(result.force_new_query)
 		self.assertFalse(result.out_of_scope)
-		self.assertEqual(result.reason, "")
+		self.assertIn("fresh governed ERP question", result.reason)
 
 	def test_assess_context_isolation_blank_semantic_intent_does_not_promote_customer_guarantee_to_fresh_query(self):
 		result = assess_context_isolation(
@@ -2485,9 +2524,9 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 				self_contained=False,
 			),
 		)
-		self.assertFalse(result.force_new_query)
+		self.assertTrue(result.force_new_query)
 		self.assertFalse(result.out_of_scope)
-		self.assertEqual(result.reason, "")
+		self.assertIn("fresh governed ERP question", result.reason)
 
 	def test_assess_context_isolation_prefers_explicit_ranking_subject_over_stale_semantic_dimension(self):
 		result = assess_context_isolation(
@@ -2770,13 +2809,17 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(family_resolution.requested_primary_metric, "revenue")
 		self.assertEqual(family_resolution.requested_secondary_metrics, ["quantity"])
 
-	def test_resolve_composite_candidate_keeps_generic_single_metric_product_ranking_on_generic_path(self):
+	def test_resolve_composite_candidate_clarifies_generic_single_metric_product_ranking_basis(self):
 		family_spec, family_resolution = _resolve_composite_candidate(
 			message="show top 5 products by revenue last month",
 			company_name="Enterprise Co",
 		)
-		self.assertEqual(family_spec, {})
-		self.assertIsNone(family_resolution)
+		self.assertEqual(str(family_spec.get("family_id") or ""), "product_commercial_ranking")
+		self.assertIsNotNone(family_resolution)
+		self.assertEqual(family_resolution.status, "clarify_family_variation")
+		self.assertEqual(family_resolution.requested_basis, "")
+		self.assertEqual(family_resolution.requested_primary_metric, "revenue")
+		self.assertEqual(family_resolution.requested_secondary_metrics, [])
 
 	def test_compile_capability_requery_message_prefers_explicit_last_year_for_composite_ranking_and_does_not_add_unrequested_secondary_metrics(self):
 		followup_resolution = build_followup_resolution_contract(
@@ -3729,6 +3772,41 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			"working_capital_health",
 		)
 
+	def test_composite_plan_normalizes_period_parent_scope_for_as_of_aging_steps(self):
+		base_interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-fin-summary-composite-period-parent",
+			session_id="semantic-fin-summary",
+			intent_class="financial_summary",
+			candidate_capability_ids=["accounts_receivable_read", "accounts_payable_read"],
+			candidate_reports=["Accounts Receivable Summary", "Accounts Payable Summary"],
+			requested_dimensions=[],
+			requested_metrics=["Outstanding"],
+			requested_time_scope="open_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={"composite_profile_context": ["working_capital_health"]},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.92,
+		)
+		resolution_outcome = resolve_financial_summary_interpretation(base_interpretation)
+		self.assertIsNotNone(resolution_outcome)
+		outcome = plan_composite_read(
+			request_id="semantic-fin-summary-composite-period-parent",
+			session_id="semantic-fin-summary",
+			message="Analyze AR / AP amount and evaluate the company health",
+			interpretation=resolution_outcome.interpretation,
+			response_policy={},
+		)
+
+		self.assertEqual(outcome.status, "execute")
+		self.assertEqual(
+			[
+				str(step.requested_time_scope or "").strip()
+				for step in outcome.step_compiler_contracts
+			],
+			["as_of_today", "as_of_today"],
+		)
+
 	def test_compiler_executes_financial_summary_payable_via_normalization(self):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="semantic-fin-summary-2",
@@ -4300,17 +4378,19 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			return_value={"answer_text": "Working capital looks stable."},
 		), patch(
 			"ai_assistant_ui.qwen_chat.composite_reads._composite_validation_payload",
-			return_value={"status": "fail", "validation_errors": [], "validation_warnings": [], "completed_steps": 1},
+			return_value={"status": "pass", "validation_errors": [], "validation_warnings": [], "completed_steps": 1},
 		), patch(
 			"ai_assistant_ui.qwen_chat.composite_reads._composite_semantic_payload",
-			return_value={"status": "not_run", "errors": [], "warnings": []},
+			return_value={"status": "pass", "errors": [], "warnings": []},
 		), patch(
 			"ai_assistant_ui.qwen_chat.composite_reads.render_composite_family_response",
 			return_value=fake_render,
 		), patch(
 			"ai_assistant_ui.qwen_chat.composite_reads.build_qwen_runtime_chat_request_config",
 			return_value={},
-		):
+		), patch(
+			"ai_assistant_ui.qwen_chat.composite_reads.narrate_governed_artifact"
+		) as narrative_runtime:
 			result = execute_composite_read_plan(
 				session_id="semantic-composite",
 				user_id="Administrator",
@@ -4335,6 +4415,11 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			.get("semantic_resolution_contract", {})
 			.get("decision"),
 			"execute_composite",
+		)
+		narrative_runtime.assert_not_called()
+		self.assertEqual(
+			result.get("runtime_payload", {}).get("answer_text"),
+			"Working capital looks stable.",
 		)
 
 	def test_financial_summary_clarifies_sales_scope_without_guessing(self):
@@ -4396,16 +4481,29 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			compiler_reason_type="transaction_listing_surface_unsupported",
 			compiler_details={
 				"requested_listing_view": "purchase_invoice",
-				"supported_listing_views": ["sales_invoice", "delivery_note", "sales_order", "purchase_order", "payment_entry"],
+				"supported_listing_views": [
+					"sales_invoice",
+					"delivery_note",
+					"sales_order",
+					"purchase_order",
+					"purchase_receipt",
+					"payment_entry",
+				],
 			},
 		)
 		self.assertEqual(
 			signal.user_question,
-			"I can't show purchase invoices as a list right now. I can show sales invoices, delivery notes, sales orders, purchase orders, or payment entries instead. Which one would you like?",
+			"I can't show purchase invoices as a list right now. I can show sales invoices, delivery notes, sales orders, purchase orders, purchase receipts, or payment entries instead. Which one would you like?",
 		)
 		self.assertEqual(
 			signal.suggested_options,
-			["sales invoices", "delivery notes", "sales orders", "purchase orders", "payment entries"],
+			[
+				"sales invoices",
+				"delivery notes",
+				"sales orders",
+				"purchase orders",
+				"purchase receipts",
+			],
 		)
 
 	def test_clarification_reason_preserves_canonical_capability_candidates(self):
@@ -4453,7 +4551,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		self.assertEqual(
 			signal.user_question,
-			"I can list customers right now. I can't open a suppliers list yet.",
+			"I can list customers right now. I can't open suppliers as a list yet.",
 		)
 		self.assertEqual(signal.suggested_options, ["customers"])
 
@@ -4573,11 +4671,32 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			message="show me purchase invoices",
 			confidence_threshold=0.72,
 		)
-		self.assertIsNone(contract)
+		self.assertIsNotNone(contract)
+		self.assertEqual(contract.intent_class, "transaction_listing")
+		self.assertEqual(contract.extracted_slots.get("listing_view"), "purchase_invoice")
+		self.assertEqual(list(contract.candidate_capability_ids), ["purchase_invoice_read"])
+		self.assertEqual(list(contract.candidate_reports), ["Purchase Invoice List"])
+		self.assertIn("Purchase Invoice", contract.requested_dimensions)
+		self.assertIn("Supplier", contract.requested_dimensions)
 
-	def test_transaction_listing_resolution_clarifies_unsupported_purchase_invoice_view(self):
+	def test_deterministic_family_surface_executes_purchase_receipts_from_metadata(self):
+		contract = _deterministic_family_surface_interpretation(
+			request_id="semantic-listing-purchase-receipt-fallback",
+			session_id="semantic-listing",
+			message="show me purchase receipts",
+			confidence_threshold=0.72,
+		)
+		self.assertIsNotNone(contract)
+		self.assertEqual(contract.intent_class, "transaction_listing")
+		self.assertEqual(contract.extracted_slots.get("listing_view"), "purchase_receipt")
+		self.assertEqual(list(contract.candidate_capability_ids), ["purchase_receipt_read"])
+		self.assertEqual(list(contract.candidate_reports), ["Purchase Receipt List"])
+		self.assertIn("Purchase Receipt", contract.requested_dimensions)
+		self.assertIn("Supplier", contract.requested_dimensions)
+
+	def test_transaction_listing_resolution_executes_supported_purchase_invoice_view(self):
 		interpretation = build_fresh_query_interpretation_contract(
-			request_id="semantic-listing-purchase-unsupported",
+			request_id="semantic-listing-purchase-supported",
 			session_id="semantic-listing",
 			intent_class="transaction_listing",
 			candidate_capability_ids=["sales_read"],
@@ -4593,15 +4712,14 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		outcome = resolve_transaction_listing_interpretation(interpretation)
 		self.assertIsNotNone(outcome)
-		self.assertEqual(outcome.contract.governed_decision, "clarify")
-		self.assertEqual(outcome.clarification_reason_type, "transaction_listing_surface_unsupported")
-		self.assertTrue(outcome.blocks_legacy_fallback)
+		self.assertEqual(outcome.contract.governed_decision, "execute")
+		self.assertEqual(outcome.contract.scope_id, "purchase_invoice")
 		self.assertEqual(outcome.contract.resolved_slots.get("listing_view"), "purchase_invoice")
-		self.assertIn("unsupported", outcome.contract.ambiguity_reason.lower())
-		self.assertEqual(outcome.interpretation.candidate_reports, [])
-		self.assertEqual(outcome.interpretation.candidate_capability_ids, [])
-		self.assertEqual(outcome.interpretation.requested_dimensions, ["Invoice"])
-		self.assertEqual(outcome.interpretation.requested_metrics, ["Grand Total"])
+		self.assertEqual(list(outcome.interpretation.candidate_reports), ["Purchase Invoice List"])
+		self.assertEqual(list(outcome.interpretation.candidate_capability_ids), ["purchase_invoice_read"])
+		self.assertEqual(list(outcome.interpretation.canonical_candidate_capability_ids), ["purchase_invoice_read"])
+		self.assertEqual(list(outcome.interpretation.requested_dimensions), ["Invoice"])
+		self.assertEqual(list(outcome.interpretation.requested_metrics), ["Grand Total"])
 
 	def test_transaction_listing_resolution_executes_payment_entry_view(self):
 		interpretation = build_fresh_query_interpretation_contract(
@@ -4631,6 +4749,35 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(list(outcome.interpretation.candidate_reports), ["Payment Entry List"])
 		self.assertEqual(list(outcome.interpretation.requested_dimensions), ["Payment Entry", "Customer"])
 		self.assertEqual(list(outcome.interpretation.requested_metrics), ["Received Amount"])
+
+	def test_transaction_listing_resolution_executes_purchase_receipt_view(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-listing-purchase-receipt",
+			session_id="semantic-listing",
+			intent_class="transaction_listing",
+			candidate_capability_ids=[],
+			candidate_reports=[],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="",
+			requested_presentation=[],
+			extracted_slots={"listing_view": "purchase_receipt"},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.92,
+		)
+		outcome = resolve_transaction_listing_interpretation(interpretation)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.governed_decision, "execute")
+		self.assertEqual(outcome.contract.resolved_slots.get("listing_view"), "purchase_receipt")
+		self.assertEqual(outcome.contract.scope_id, "purchase_receipt")
+		self.assertEqual(outcome.interpretation.extracted_slots.get("scope_id"), "purchase_receipt")
+		self.assertEqual(list(outcome.interpretation.candidate_capability_ids), ["purchase_receipt_read"])
+		self.assertEqual(list(outcome.interpretation.canonical_candidate_capability_ids), ["purchase_receipt_read"])
+		self.assertEqual(list(outcome.contract.canonical_candidate_capability_ids), ["purchase_receipt_read"])
+		self.assertEqual(list(outcome.interpretation.candidate_reports), ["Purchase Receipt List"])
+		self.assertEqual(list(outcome.interpretation.requested_dimensions), ["Purchase Receipt", "Supplier", "Status"])
+		self.assertEqual(list(outcome.interpretation.requested_metrics), ["Grand Total", "Quantity"])
 
 	def test_compile_from_fresh_query_message_reconciles_explicit_purchase_invoice_view(self):
 		with patch(
@@ -4665,12 +4812,13 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		semantic_resolution_contract = pipeline.get("semantic_resolution_contract") if isinstance(pipeline.get("semantic_resolution_contract"), dict) else {}
 		compiler_payload = pipeline.get("fresh_query_compiler") if isinstance(pipeline.get("fresh_query_compiler"), dict) else {}
 		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("listing_view"), "purchase_invoice")
-		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "clarify")
+		self.assertEqual(semantic_resolution_contract.get("governed_decision"), "execute")
 		self.assertEqual(semantic_interpretation.get("extracted_slots", {}).get("scope_id"), "purchase_invoice")
+		self.assertEqual(list(semantic_interpretation.get("candidate_capability_ids") or []), ["purchase_invoice_read"])
+		self.assertEqual(list(semantic_interpretation.get("candidate_reports") or []), ["Purchase Invoice List"])
 		self.assertEqual(semantic_resolution_contract.get("scope_id"), "purchase_invoice")
 		self.assertEqual(semantic_resolution_contract.get("resolved_slots", {}).get("listing_view"), "purchase_invoice")
-		self.assertEqual(compiler_payload.get("decision"), "clarify")
-		self.assertEqual(compiler_payload.get("clarification_reason_type"), "transaction_listing_surface_unsupported")
+		self.assertEqual(compiler_payload.get("decision"), "execute")
 
 	def test_compile_from_fresh_query_message_preserves_explicit_today_for_payment_entry_listing(self):
 		with patch(
@@ -4870,7 +5018,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.interpretation.candidate_capability_ids, ["fulfillment_read"])
 		self.assertEqual(outcome.interpretation.candidate_reports, ["Delivery Note List"])
 		self.assertEqual(outcome.interpretation.requested_dimensions, ["Delivery Note"])
-		self.assertEqual(outcome.interpretation.requested_metrics, ["Grand Total"])
+		self.assertEqual(outcome.interpretation.requested_metrics, ["Grand Total", "Quantity"])
 
 	def test_fulfillment_transaction_listing_defaults_do_not_use_concept_report_override(self):
 		defaults = capability_fresh_query_defaults("fulfillment_read", intent_class="transaction_listing")
@@ -4885,7 +5033,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		defaults = capability_fresh_query_defaults("fulfillment_read", intent_class="trend_analysis")
 		self.assertEqual(defaults.get("default_report_name"), "Delivery Note Trends")
 		self.assertEqual(defaults.get("default_dimensions"), ["Customer"])
-		self.assertEqual(defaults.get("default_metrics"), ["Delivered Amount"])
+		self.assertEqual(defaults.get("default_metrics"), ["Delivered Amount", "Delivered Quantity"])
 		self.assertEqual(defaults.get("default_time_scope"), "current_fiscal_year_to_date")
 		self.assertEqual(
 			defaults.get("metric_overrides_by_canonical_key", {}).get("sales_amount"),
@@ -4939,6 +5087,50 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		)
 		self.assertEqual(statement_defaults.get("default_time_scope"), "open_fiscal_year_to_date")
 		self.assertEqual(summary_defaults.get("default_time_scope"), "open_fiscal_year_to_date")
+
+	def test_financial_statement_default_reconciler_uses_open_period_when_no_time_is_requested(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-financial-default-period",
+			session_id="semantic-financial",
+			intent_class="financial_statement",
+			candidate_capability_ids=["financial_statement_read"],
+			candidate_reports=["Profit and Loss Statement"],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="current_period",
+			requested_presentation=[],
+			extracted_slots={"statement_variant": "profit_and_loss"},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.95,
+		)
+		outcome = _reconcile_financial_statement_default_time_scope_from_message(
+			message="P & L",
+			interpretation=interpretation,
+		)
+		self.assertEqual(outcome.requested_time_scope, "open_fiscal_year_to_date")
+
+	def test_financial_statement_default_reconciler_preserves_explicit_time_scope(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-financial-explicit-period",
+			session_id="semantic-financial",
+			intent_class="financial_statement",
+			candidate_capability_ids=["financial_statement_read"],
+			candidate_reports=["Profit and Loss Statement"],
+			requested_dimensions=[],
+			requested_metrics=[],
+			requested_time_scope="current_period",
+			requested_presentation=[],
+			extracted_slots={"statement_variant": "profit_and_loss"},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.95,
+		)
+		outcome = _reconcile_financial_statement_default_time_scope_from_message(
+			message="show P&L this month",
+			interpretation=interpretation,
+		)
+		self.assertEqual(outcome.requested_time_scope, "current_period")
 
 	def test_trend_analytics_family_admits_delivery_note_trends_and_fulfillment_capability(self):
 		spec = get_report_family_spec("trend_analytics")
@@ -5765,21 +5957,22 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			intent_class="trend_analysis",
 			preferred_family_id="trend_analytics",
 		).artifact_contract
-		validation = validate_normalized_family_artifact(
-			request_id="adapter-trend-fulfillment-validate",
-			compiler_contract={
-				"request_id": "adapter-trend-fulfillment-validate",
-				"capability_id": "fulfillment_read",
-				"selected_report": "Delivery Note Trends",
-				"requested_dimensions": ["Customer"],
-				"requested_metrics": ["Delivered Amount"],
-				"requested_time_scope": "current_fiscal_year_to_date",
-			},
-			artifact_contract=artifact,
-			family_id="trend_analytics",
-			adapter_errors=[],
-			adapter_warnings=[],
-		)
+		with patch("ai_assistant_ui.qwen_chat.family_validator._current_fiscal_year_name", return_value="FY-2026"):
+			validation = validate_normalized_family_artifact(
+				request_id="adapter-trend-fulfillment-validate",
+				compiler_contract={
+					"request_id": "adapter-trend-fulfillment-validate",
+					"capability_id": "fulfillment_read",
+					"selected_report": "Delivery Note Trends",
+					"requested_dimensions": ["Customer"],
+					"requested_metrics": ["Delivered Amount"],
+					"requested_time_scope": "current_fiscal_year_to_date",
+				},
+				artifact_contract=artifact,
+				family_id="trend_analytics",
+				adapter_errors=[],
+				adapter_warnings=[],
+			)
 		self.assertEqual(validation.status, "pass")
 
 	def test_trend_family_validation_accepts_previous_fiscal_year_name_for_last_year(self):
@@ -5865,6 +6058,58 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.contract.resolved_slots.get("trend_metric"), "sales_amount")
 		self.assertEqual(outcome.contract.resolution_source.get("trend_metric"), "metadata_default")
 		self.assertEqual(outcome.interpretation.requested_metrics, ["Sales Amount"])
+
+	def test_trend_metric_reconciliation_prefers_explicit_sales_amount_from_message(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-trend-sales-message",
+			session_id="semantic-trend",
+			intent_class="trend_analysis",
+			candidate_capability_ids=["sales_read"],
+			candidate_reports=["Sales Analytics"],
+			requested_dimensions=[],
+			requested_metrics=["Quantity"],
+			requested_time_scope="current_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.84,
+		)
+		reconciled = _normalize_trend_requested_metrics_from_message(
+			message="Show monthly sales trend",
+			interpretation=interpretation,
+		)
+		self.assertEqual(reconciled.requested_metrics, ["Sales Amount"])
+		outcome = resolve_trend_analysis_interpretation(reconciled)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.resolved_slots.get("trend_metric"), "sales_amount")
+		self.assertEqual(outcome.interpretation.requested_metrics, ["Sales Amount"])
+
+	def test_trend_metric_reconciliation_preserves_explicit_quantity_from_message(self):
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id="semantic-trend-quantity-message",
+			session_id="semantic-trend",
+			intent_class="trend_analysis",
+			candidate_capability_ids=["sales_read"],
+			candidate_reports=["Sales Analytics"],
+			requested_dimensions=[],
+			requested_metrics=["Sales Amount"],
+			requested_time_scope="current_fiscal_year_to_date",
+			requested_presentation=[],
+			extracted_slots={},
+			ambiguity_flags=[],
+			ambiguity_reason="",
+			confidence=0.84,
+		)
+		reconciled = _normalize_trend_requested_metrics_from_message(
+			message="Show monthly sales quantity trend",
+			interpretation=interpretation,
+		)
+		self.assertEqual(reconciled.requested_metrics, ["Quantity"])
+		outcome = resolve_trend_analysis_interpretation(reconciled)
+		self.assertIsNotNone(outcome)
+		self.assertEqual(outcome.contract.resolved_slots.get("trend_metric"), "quantity")
+		self.assertEqual(outcome.interpretation.requested_metrics, ["Quantity"])
 
 	def test_compiler_executes_default_trend_metric(self):
 		interpretation = build_fresh_query_interpretation_contract(
@@ -6047,7 +6292,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertIn("missing_ranking_metric", outcome.contract.ambiguity_flags)
 		self.assertEqual(outcome.interpretation.candidate_reports, [])
 
-	def test_runtime_ranking_payload_does_not_repair_noisy_receivable_bundle_from_message(self):
+	def test_runtime_ranking_payload_uses_deterministic_surface_fallback_for_noisy_receivable_bundle(self):
 		with patch(
 			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation",
 			return_value={
@@ -6087,7 +6332,11 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			pipeline.get("fresh_query_interpretation", {}).get("validation_error"),
 			"Runtime fresh-query interpretation did not pass governed validation.",
 		)
-		self.assertNotIn("fresh_query_compiler", pipeline)
+		self.assertIn("fresh_query_compiler", pipeline)
+		compiler_payload = pipeline.get("fresh_query_compiler", {})
+		self.assertEqual(compiler_payload.get("decision"), "execute")
+		self.assertEqual(compiler_payload.get("capability_id"), "sales_read")
+		self.assertEqual(compiler_payload.get("selected_report"), "Sales Analytics")
 
 	def test_runtime_payload_validation_does_not_derive_time_scope_from_message(self):
 		context = _build_interpretation_context()
@@ -6111,7 +6360,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			message="Top 5 customers by revenue last month",
 		)
 		self.assertIsNotNone(contract)
-		self.assertEqual(contract.requested_time_scope, "current_fiscal_year_to_date")
+		self.assertEqual(contract.requested_time_scope, "open_fiscal_year_to_date")
 
 	def test_ranking_column_refinement_stays_local_when_quantity_exists(self):
 		resolution = build_followup_resolution_contract(
@@ -7516,7 +7765,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.artifact_contract.metrics.get("document_count"), 0)
 		self.assertEqual((outcome.artifact_contract.sections or {}).get("transaction_rows"), [])
 		self.assertIn(
-			"No governed rows matched the requested filters for this transaction listing.",
+			"No documents matched these filters.",
 			list(outcome.artifact_contract.warnings),
 		)
 

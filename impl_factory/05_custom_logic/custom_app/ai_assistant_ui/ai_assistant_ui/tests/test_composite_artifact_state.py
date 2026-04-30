@@ -62,8 +62,8 @@ class TestCompositeArtifactState(unittest.TestCase):
 
 	def test_composite_artifact_contract_preserves_row_provenance_fields(self):
 		artifact = build_composite_governed_artifact_contract(
-			composite_id="customer_credit_overdue_composite",
-			label="Customer Credit And Overdue Composite",
+			composite_id="customer_risk_as_of_default_composite",
+			label="Customer Risk As-Of Default Composite",
 			composite_kind="risk_table",
 			primary_metric_id="overdue_amount",
 			secondary_metric_ids=["overdue_ratio", "credit_utilization"],
@@ -95,6 +95,27 @@ class TestCompositeArtifactState(unittest.TestCase):
 		self.assertEqual(payload.get("row_count"), 1)
 		self.assertEqual(payload.get("source_document_count"), 0)
 		self.assertEqual(payload.get("rows")[0].get("join_key", {}).get("customer"), "Zegyo Mobile Supply House")
+
+	def test_customer_risk_as_of_resolution_is_active_after_primary_execution_exists(self):
+		family_resolution = resolve_composite_family_resolution(
+			requested_company_name="Mingalar Mobile Distribution Co., Ltd.",
+			requested_family_id="customer_risk_as_of",
+			requested_primary_metric="overdue_amount",
+			requested_secondary_metrics=["overdue_ratio", "outstanding_amount", "credit_utilization"],
+			requested_as_of_date="2026-04-25",
+		)
+		artifact_resolution = resolve_composite_artifact_resolution(
+			family_resolution=family_resolution
+		)
+
+		self.assertEqual(family_resolution.status, "resolved_family")
+		self.assertEqual(family_resolution.family_id, "customer_risk_as_of")
+		self.assertEqual(artifact_resolution.status, "active_composite")
+		self.assertEqual(
+			artifact_resolution.composite_id,
+			"customer_risk_as_of_default_composite",
+		)
+		self.assertEqual(artifact_resolution.activation_state, "active")
 
 	def test_contract_probe_reports_ok(self):
 		probe = run_composite_artifact_contract_probe()

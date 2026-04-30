@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict
 from ai_assistant_ui.qwen_chat.smoke_fixtures import (
 	require_smoke_fixture,
 	smoke_fixture_action_message,
+	smoke_fixture_replacement_message,
 )
 
 
@@ -230,7 +231,7 @@ def run_evidence_boundary_observability_smoke(
 	def _runner(doc) -> Dict[str, Any]:
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="show me sales invoice list",
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -241,7 +242,7 @@ def run_evidence_boundary_observability_smoke(
 			raise RuntimeError("Phase 8 evidence observability smoke failed: setup artifact turn did not complete.")
 		ok, second_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="can you also tell me delivery status from here",
+			message="can you tell me warehouse stock from here",
 			user="Administrator",
 		)
 		if not ok or str((second_payload or {}).get("mode") or "").strip() != "grounded_evidence_boundary":
@@ -309,10 +310,9 @@ def run_enrichment_boundary_observability_smoke(
 	session_tool_payloads,
 ) -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
-		fixture = require_smoke_fixture("fresh_query_override_to_ar")
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("initial_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {

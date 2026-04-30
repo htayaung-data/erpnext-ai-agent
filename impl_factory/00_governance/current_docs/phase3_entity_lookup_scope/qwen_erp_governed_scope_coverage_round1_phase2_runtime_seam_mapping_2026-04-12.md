@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 1 Phase 2 Runtime Seam Mapping
 
-Status: active research note  
-Date: 2026-04-12  
+Status: active research note
+Date: 2026-04-12
 Scope: Round 1 Phase 2 runtime seam mapping for `customer`, `supplier`, and `item/product`
 
 ## 1. Purpose
@@ -12,7 +12,7 @@ Round 1 scope:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 
 Phase 1 already established what is declared in metadata.
 
@@ -139,7 +139,7 @@ Important conclusion:
 
 1. deterministic fresh-query fallback is metadata-driven
 2. customer works here because there is one unique `master_customer_directory` rule
-3. supplier/item do not work in the same seam because the equivalent rules are not present
+3. supplier/item do not work in the same seam because the equivalent rules are not presen
 
 This is a good example of:
 
@@ -158,9 +158,9 @@ not a pure code hardcode.
 
 No equivalent runtime artifact builders were found for:
 
-1. supplier master list
-2. item master list
-3. product master list
+1. supplier master lis
+2. item master lis
+3. product master lis
 
 Important conclusion:
 
@@ -237,7 +237,7 @@ Important conclusion:
 
 1. the recent customer master detail handoff is not accidental
 2. it is explicitly wired
-3. there is no equivalent supplier/item master artifact path because those artifact families do not exist yet
+3. there is no equivalent supplier/item master artifact path because those artifact families do not exist ye
 
 ### 6.3 Follow-Up Breakout Logic Is Shared And Better Than Rendering
 
@@ -245,11 +245,11 @@ Important conclusion:
 
 That function is relatively shared:
 
-1. it detects entity-navigation style follow-ups from an `entity_detail` artifact
+1. it detects entity-navigation style follow-ups from an `entity_detail` artifac
 2. it uses lookup-mode inference
 3. it reads `entity_grain` slot values from the message
 4. it checks message domains and context domains
-5. it already treats `product` specially in domain detection for breakout
+5. it already treats `product` specially in domain detection for breakou
 
 Important conclusion:
 
@@ -272,7 +272,7 @@ Examples:
 Important conclusion:
 
 1. the runtime already contains translation helpers for this seam
-2. but the naming is still uneven enough that it should be treated as a real runtime complexity point
+2. but the naming is still uneven enough that it should be treated as a real runtime complexity poin
 3. this is not yet proof of a defect by itself
 4. it is a real factor in future generalization work
 
@@ -294,9 +294,9 @@ The current regression surface is also customer-weighted.
 
 `test_followup_interpreter_contracts.py` includes:
 
-1. customer-resolution breakout from customer detail context
-2. supplier directory breakout from customer detail context
-3. grounded deictic customer follow-up staying in context
+1. customer-resolution breakout from customer detail contex
+2. supplier directory breakout from customer detail contex
+3. grounded deictic customer follow-up staying in contex
 
 Important conclusion:
 
@@ -351,7 +351,7 @@ This note does not yet claim:
 
 1. whether the current live behavior always matches the mapped seams
 2. whether supplier/item have hidden governed source routes that could be activated with metadata only
-3. whether a future supplier/item expansion should reuse the customer master lane shape exactly or generalize the family layer first
+3. whether a future supplier/item expansion should reuse the customer master lane shape exactly or generalize the family layer firs
 
 Those belong to Phase 3 behavior truthing and then Phase 4 gap classification.
 
@@ -360,7 +360,7 @@ Those belong to Phase 3 behavior truthing and then Phase 4 gap classification.
 Next step:
 
 1. Round 1, Phase 3
-2. behavior truthing for customer, supplier, and item/product
+2. behavior truthing for customer, supplier, and item/produc
 
 Phase 3 should verify:
 

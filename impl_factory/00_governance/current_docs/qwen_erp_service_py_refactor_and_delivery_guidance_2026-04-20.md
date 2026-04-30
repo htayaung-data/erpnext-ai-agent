@@ -1,7 +1,7 @@
 # Qwen ERP `service.py` Refactor And Delivery Guidance
 
-Status: active technical implementation note  
-Date: 2026-04-20  
+Status: active technical implementation note
+Date: 2026-04-20
 Scope: delivery guidance for the current AI assistant implementation phase, plus the controlled refactor plan for `ai_assistant_ui/qwen_chat/service.py`
 
 ## 1. Purpose
@@ -46,12 +46,12 @@ is not just one service function.
 
 It is currently acting as all of the following:
 
-1. public assistant runtime entrypoint
+1. public assistant runtime entrypoin
 2. orchestration layer for governed turn handling
 3. compatibility facade over already-extracted helper modules
-4. conversation-state and control logic host
-5. evidence and boundary helper host
-6. smoke, probe, regression, and debug runner host
+4. conversation-state and control logic hos
+5. evidence and boundary helper hos
+6. smoke, probe, regression, and debug runner hos
 
 That is why it grows continuously.
 
@@ -110,7 +110,7 @@ It reduces file gravity now without turning the active delivery wave into a broa
 
 Every team member working on assistant features should follow these implementation rules immediately.
 
-### 6.1 New domain logic goes to a module first
+### 6.1 New domain logic goes to a module firs
 
 If the change introduces any of the following:
 
@@ -145,7 +145,7 @@ That means:
 
 1. use focused helper names
 2. avoid giant anonymous local blocks
-3. keep input and output shapes explicit
+3. keep input and output shapes explici
 4. avoid hidden mutation where possible
 5. keep domain vocabulary aligned with existing contracts and lanes
 
@@ -207,7 +207,7 @@ This is important because the project must not drift into:
 
 After the current feature chapter is complete, the target role of `service.py` should become:
 
-1. load session and request context
+1. load session and request contex
 2. normalize current-turn control overrides
 3. call named orchestration stages
 4. persist output artifacts through a controlled recorder/journal seam
@@ -283,7 +283,7 @@ Move out:
 
 Reason:
 
-1. boundary handling is already a first-class governed concept
+1. boundary handling is already a first-class governed concep
 2. it deserves its own stable implementation home
 
 ### 9.5 Runtime message compilation seam
@@ -341,7 +341,7 @@ When the dedicated refactor chapter begins, use this order:
 This order is recommended because it gives:
 
 1. quick size reduction early
-2. low-risk wins first
+2. low-risk wins firs
 3. better understanding before touching the orchestration core
 
 ### 11.1 Immediate execution inside the current delivery chapter
@@ -360,8 +360,8 @@ The future top-level function should read like a pipeline.
 
 Recommended high-level stages:
 
-1. load session and turn context
-2. build conversation snapshot
+1. load session and turn contex
+2. build conversation snapsho
 3. apply control override normalization
 4. resolve restore and pending clarification state
 5. evaluate front door
@@ -398,7 +398,7 @@ Any meaningful extraction or orchestration change should preserve characterizati
 1. pending clarification handling
 2. prior-branch restore handling
 3. compound-request continuation, completion, and cancellation
-4. context isolation and fresh-query reset
+4. context isolation and fresh-query rese
 5. evidence direct-answer versus evidence-boundary handling
 6. local transform versus runtime fallback handling
 7. out-of-scope guarded behavior
@@ -415,7 +415,7 @@ The team should pause feature expansion and prioritize the refactor earlier if a
 1. developers are afraid to touch `service.py`
 2. most new bugs come from flow-order interactions
 3. the same orchestration pattern is being copied repeatedly
-4. merge conflicts in `service.py` become frequent
+4. merge conflicts in `service.py` become frequen
 5. it becomes difficult to identify which stage owns a decision
 6. one feature requires edits across many unrelated service-level clusters
 
@@ -495,7 +495,7 @@ Current facts:
 Practical implication:
 
 1. do not create many new concept modules unless current extracted modules are clearly the wrong ownership home
-2. prefer finishing ownership transfer into existing shared modules first
+2. prefer finishing ownership transfer into existing shared modules firs
 3. only introduce a new module when it creates a stable seam, not just because the file is large
 
 Additional audit conclusion:
@@ -520,7 +520,7 @@ The goal of this chapter is:
 
 This chapter is successful when:
 
-1. `handle_qwen_user_message` becomes stage-shaped and easier to reason about
+1. `handle_qwen_user_message` becomes stage-shaped and easier to reason abou
 2. snapshot/control/runtime-message/evaluation logic no longer have large inline clusters in `service.py`
 3. the refactor does not invent new business behavior
 
@@ -587,7 +587,7 @@ Purpose:
 
 Why second:
 
-1. snapshot logic is coherent
+1. snapshot logic is coheren
 2. `snapshot_defaults.py` already exists
 3. this seam is conceptually stable and largely data-shaping focused
 
@@ -649,13 +649,13 @@ Status: `next`
 Purpose:
 
 1. pull runtime-message rewriting and requery-message compilation out of the facade
-2. make front-door and follow-up message shaping easier to audit
+2. make front-door and follow-up message shaping easier to audi
 
 Why fourth:
 
 1. this logic grows whenever continuation sophistication grows
 2. parts already exist in `compiled_support.py` and `requery_message_support.py`
-3. this seam should be stabilized before the final facade-stage split
+3. this seam should be stabilized before the final facade-stage spli
 
 Deliverables:
 
@@ -700,7 +700,7 @@ Verification:
 2. audit payload ordering preserved
 3. no save-path regressions
 
-#### SR6 Facade Stage Split
+#### SR6 Facade Stage Spli
 
 Status: `next`
 
@@ -711,8 +711,8 @@ Purpose:
 
 Target stages:
 
-1. load session and turn context
-2. build conversation snapshot
+1. load session and turn contex
+2. build conversation snapsho
 3. normalize control overrides
 4. resolve restore and pending clarification state
 5. evaluate front door
@@ -731,7 +731,7 @@ Deliverables:
 Verification:
 
 1. full focused characterization suite green
-2. no lane precedence drift
+2. no lane precedence drif
 3. no contract payload regressions unless explicitly approved
 
 #### SR7 Refactor Closure Review
@@ -766,7 +766,7 @@ Execution note:
 
 1. each mini phase should begin with an ownership check against already-extracted modules
 2. “move out of `service.py`” does not automatically mean “create a brand-new file”
-3. the default should be to complete existing seams first
+3. the default should be to complete existing seams firs
 
 ### 19.5 What We Should Not Do In This Chapter
 
@@ -789,7 +789,7 @@ Reason:
 
 1. it is the safest place to begin
 2. it matches the already-approved guidance sequence
-3. it reduces `service.py` gravity immediately without touching the highest-risk precedence logic first
+3. it reduces `service.py` gravity immediately without touching the highest-risk precedence logic firs
 
 ## 20. Consultant Addendum: Acceptance Criteria And Governance Tightening
 
@@ -797,7 +797,7 @@ This addendum records a second careful project re-evaluation after the `IC6` clo
 
 Conclusion:
 
-1. the current refactor chapter direction is correct
+1. the current refactor chapter direction is correc
 2. the project is not starting from zero
 3. the primary improvement needed is stronger ownership governance during execution, not a redesign of the chapter
 
@@ -833,7 +833,7 @@ Before moving any cluster out of `service.py`, the team must first answer:
 
 1. does an existing module already provide the correct ownership home
 2. if yes, why should the logic not move there now
-3. if no, why is a new module genuinely required instead of just convenient
+3. if no, why is a new module genuinely required instead of just convenien
 
 This must be explicit for every meaningful extraction.
 
@@ -850,7 +850,7 @@ Default ownership candidates should be considered first:
 9. `evaluation/`
 10. `lanes/`
 
-### 20.4 Strengthened SR0 Requirement
+### 20.4 Strengthened SR0 Requiremen
 
 `SR0` should not stop at file metrics and test inventory.
 
@@ -910,7 +910,7 @@ One of the biggest risks in this chapter is false progress through relocation.
 Examples of false progress:
 
 1. moving a large block from `service.py` into one new oversized helper without clear subsystem ownership
-2. creating a second competing orchestration module set while the first extracted modules already exist
+2. creating a second competing orchestration module set while the first extracted modules already exis
 3. mixing behavior change with extraction and then calling the result “just refactor”
 
 The chapter should optimize for stable ownership, not for visual neatness alone.
@@ -919,11 +919,11 @@ The chapter should optimize for stable ownership, not for visual neatness alone.
 
 The refactor chapter should proceed, but with stricter execution discipline:
 
-1. perform `SR0` as a true ownership-lock checkpoint
+1. perform `SR0` as a true ownership-lock checkpoin
 2. begin with `SR1` evaluation seam completion
 3. prefer completing existing extracted seams over creating new files
 4. treat `SR2` and `SR3` as high-sensitivity characterization-led extractions
-5. return to main roadmap work only after the refactor chapter reaches a deliberate closure checkpoint
+5. return to main roadmap work only after the refactor chapter reaches a deliberate closure checkpoin
 
 ### 20.9 Current Execution Baseline
 

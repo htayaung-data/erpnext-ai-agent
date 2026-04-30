@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 1 Phase 4 Gap Priority
 
-Status: active research note  
-Date: 2026-04-12  
+Status: active research note
+Date: 2026-04-12
 Scope: Round 1 Phase 4 gap classification and priority for `customer`, `supplier`, and `item/product`
 
 ## 1. Purpose
@@ -10,7 +10,7 @@ This note turns the Round 1 evidence into a practical priority map.
 
 It answers:
 
-1. what kinds of gaps actually exist
+1. what kinds of gaps actually exis
 2. which gaps are blockers for current Phase `3.3`
 3. which gaps are blockers for later Round 1 scope expansion
 4. which gaps should stay deferred instead of being forced into the current slice
@@ -50,7 +50,7 @@ Examples:
 2. family rendering
 3. detail handoff
 
-### 3.3 Mixed Authority Runtime Debt
+### 3.3 Mixed Authority Runtime Deb
 
 Some runtime seams still mix:
 
@@ -80,7 +80,7 @@ Round 1 example:
 That can point toward:
 
 1. direct master-data navigation
-2. inventory snapshot
+2. inventory snapsho
 3. product-performance families
 
 This is not always a bug.
@@ -104,7 +104,7 @@ Evidence:
 
 1. no `master_supplier_directory` rule
 2. no `supplier_master_read`
-3. no `supplier_master_list` family/report
+3. no `supplier_master_list` family/repor
 4. no supplier entity reference policy
 
 Priority reading:
@@ -130,7 +130,7 @@ Evidence:
 
 1. no `master_item_directory` rule
 2. no `item_master_read` or `product_master_read`
-3. no direct item/product master family/report
+3. no direct item/product master family/repor
 4. product wording is currently absorbed by adjacent governed families
 
 Priority reading:
@@ -143,7 +143,7 @@ Priority reading:
 Observed truth:
 
 1. customer has end-to-end direct lookup rendering
-2. supplier and item/product do not
+2. supplier and item/product do no
 
 Root cause class:
 
@@ -170,7 +170,7 @@ Observed truth:
 
 Root cause class:
 
-1. mixed authority runtime debt
+1. mixed authority runtime deb
 
 Priority reading:
 
@@ -226,7 +226,7 @@ Reason:
 
 1. Round 1 evidence does not show supplier/item activation as a hidden easy win inside the current lane
 2. widening now would mix seam completion and scope expansion
-3. that would create architecture drift
+3. that would create architecture drif
 
 For current `3.3`, the only Round 1 gap that matters directly is:
 
@@ -316,7 +316,7 @@ Reason:
 
 ### 8.3 First Expansion Implementation Slice
 
-1. generalize the direct master-data lane shape first
+1. generalize the direct master-data lane shape firs
 2. then activate the next approved grain
 
 ### 8.4 Grain Order Recommendation
@@ -324,7 +324,7 @@ Reason:
 Recommended order:
 
 1. supplier
-2. item/product
+2. item/produc
 
 Reason:
 

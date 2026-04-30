@@ -1,7 +1,7 @@
 # Qwen ERP Phase 2.5 Governed KPI Runtime Execution Design
 
-Status: 2.5B complete  
-Date: 2026-04-10  
+Status: 2.5B complete
+Date: 2026-04-10
 Scope: detailed implementation plan for Phase 2.5, Governed KPI Runtime Execution
 
 ## 1. Executive Decision
@@ -34,7 +34,7 @@ This phase must not be implemented as:
 4. single smoke-driven case branching
 5. free-form narrative computation outside governed source authority
 
-## 2. Why Phase 2 Was Necessary But Not Sufficient
+## 2. Why Phase 2 Was Necessary But Not Sufficien
 
 Phase `2` solved the semantic problem:
 
@@ -76,7 +76,7 @@ This phase must obey the active development guide in:
 
 The most important constraints are:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. fail closed
 4. explicit authority order
@@ -88,7 +88,7 @@ This means:
 
 1. execution shape must be declared in a typed contract before runtime widening
 2. KPI execution policy must live in metadata, not in ad hoc Python branches
-3. period and as-of scope must come from structured resolution, not prompt heuristics after the fact
+3. period and as-of scope must come from structured resolution, not prompt heuristics after the fac
 4. if a KPI cannot be executed through approved authority, it must block or clarify explicitly
 
 ## 4. Current Ecosystem Readiness
@@ -121,7 +121,7 @@ The assistant already has:
 The assistant still lacks:
 
 1. a governed KPI execution registry
-2. a typed KPI value artifact
+2. a typed KPI value artifac
 3. an execution seam that maps approved KPI formulas to approved report/direct-query authority
 4. deterministic blocked-safe behavior for executable versus non-executable KPI value asks
 5. governed ranking behavior for KPI-based listings
@@ -147,12 +147,12 @@ Primary authority:
 2. approved governed formula
 3. approved KPI execution metadata
 4. approved capability and report metadata
-5. live ERP/Frappe output
+5. live ERP/Frappe outpu
 
 Supporting authority:
 
 1. threshold metadata when user-facing activation is approved
-2. customer or entity context when already grounded and current
+2. customer or entity context when already grounded and curren
 
 Never authoritative:
 
@@ -233,7 +233,7 @@ The runtime must distinguish:
 
 ### 7.1 In scope
 
-1. KPI value artifact contract
+1. KPI value artifact contrac
 2. KPI execution metadata
 3. period KPI execution
 4. as-of KPI execution
@@ -253,7 +253,7 @@ The runtime must distinguish:
 
 ## 8. Detailed Mini-Phase Plan
 
-### 8.1 `2.5A` KPI Value Artifact Contract
+### 8.1 `2.5A` KPI Value Artifact Contrac
 
 Goal:
 
@@ -276,7 +276,7 @@ Acceptance:
    - company-period scope
    - entity-as-of scope
    - ranking scope
-3. blocked or unsupported execution shapes are explicit
+3. blocked or unsupported execution shapes are explici
 
 Current `2.5A` checkpoint:
 
@@ -432,7 +432,7 @@ Required closure outcomes:
 1. execution metadata exists and validates
 2. KPI value artifact contract exists and is runtime-active
 3. live executable KPI questions work for both period and as-of shapes
-4. blocked-safe behavior remains intact
+4. blocked-safe behavior remains intac
 5. release-gate coverage is promoted
 6. docs and baseline references are updated
 
@@ -477,7 +477,7 @@ Live or site-backed verification should include:
 
 Stop Phase `2.5` when:
 
-1. governed KPI values can be executed for the approved KPI set
+1. governed KPI values can be executed for the approved KPI se
 2. period and as-of shapes are typed and auditable
 3. ranking remains single-metric and governed
 4. blocked-safe policy handling still holds
@@ -495,7 +495,7 @@ Do not widen Phase `2.5` into:
 
 The approved next implementation order should be:
 
-1. `2.5A` KPI Value Artifact Contract
+1. `2.5A` KPI Value Artifact Contrac
 2. `2.5B` Period KPI Execution
 3. `2.5C` As-Of And Entity KPI Execution
 4. `2.5D` KPI Runtime Closure

@@ -1,8 +1,8 @@
 # Qwen ERP Enterprise Development Guidelines
 
-Status: active development guide  
-Date: 2026-04-04  
-Scope: future implementation, refactor, hardening, and expansion work for the governed Qwen ERP assistant
+Status: active development guide
+Date: 2026-04-04
+Scope: future implementation, refactor, hardening, and expansion work for the governed Qwen ERP assistan
 
 ## 1. Purpose
 
@@ -26,13 +26,13 @@ Future work should use this guide to:
 
 ## 2. Executive Lessons
 
-### 2.1 What We Did Right
+### 2.1 What We Did Righ
 
 These were the strongest success patterns:
 
 1. we moved business meaning into contracts and metadata instead of prompt hacks
 2. we enforced the rule `model proposes, compiler enforces`
-3. we used typed grounded context instead of relying on raw chat text
+3. we used typed grounded context instead of relying on raw chat tex
 4. we hardened behavior in bounded slices rather than broad uncontrolled rewrites
 5. we used executable release gates instead of manual confidence
 6. we kept docs honest about what was closed, partial, exploratory, or deferred
@@ -47,8 +47,8 @@ These were the most expensive or misleading patterns:
 3. mixing large refactor movement with behavior hardening in the same slice
 4. promoting desirable but unstable behavior into CI too early
 5. checking stale answer wording instead of testing contract authority
-6. continuing cleanup after the architectural stop rule was already met
-7. treating “more tests” as a substitute for real hardening judgment
+6. continuing cleanup after the architectural stop rule was already me
+7. treating “more tests” as a substitute for real hardening judgmen
 
 ## 3. Non-Negotiable Principles
 
@@ -60,10 +60,10 @@ Every future chapter must obey these principles.
 2. the model may classify, propose, summarize, or translate
 3. the model must not invent ERP facts, totals, statuses, dates, or entity relationships
 
-### 3.2 Contract First
+### 3.2 Contract Firs
 
-1. new business behavior should enter through a typed contract
-2. runtime should consume contracts, not rediscover business meaning from text
+1. new business behavior should enter through a typed contrac
+2. runtime should consume contracts, not rediscover business meaning from tex
 3. if a new behavior cannot be expressed as a stable contract, it is not ready for enterprise runtime
 
 ### 3.3 Metadata Owns Business Policy
@@ -86,7 +86,7 @@ Metadata should define the business surface.
 When structured evidence is insufficient:
 
 1. clarify
-2. reject
+2. rejec
 3. block
 4. fall back only through an explicit, bounded, audited exception
 
@@ -100,8 +100,8 @@ Authority order must always be visible and testable.
 
 Examples:
 
-1. latest grounded context wins over stale grounded context
-2. current unsupported intent must override stale but legitimate prior context
+1. latest grounded context wins over stale grounded contex
+2. current unsupported intent must override stale but legitimate prior contex
 3. accepted semantic payload must outrank raw-message fallback
 4. explicit governed contradiction rules must outrank convenience rescue logic
 
@@ -138,7 +138,7 @@ Do not:
 If fallback exists, it must be:
 
 1. bounded
-2. explicit
+2. explici
 3. auditable
 4. test-protected
 
@@ -169,9 +169,9 @@ For this project, enterprise grade means:
 1. typed contracts exist for every meaningful runtime seam
 2. metadata and policy layers own business decisions
 3. runtime behavior is auditable and replayable
-4. fallback is bounded and explicit
+4. fallback is bounded and explici
 5. release criteria are executable
-6. docs distinguish active truth from historical context
+6. docs distinguish active truth from historical contex
 7. expansion follows a governed order instead of opportunistic feature jumps
 
 It does not mean:
@@ -212,7 +212,7 @@ If ownership is fuzzy, implementation should pause until it is clear.
 
 Preferred order:
 
-1. define contract
+1. define contrac
 2. define metadata
 3. add contract tests
 4. implement producer
@@ -226,8 +226,8 @@ Do not start from string-handling or UI behavior first.
 For a multi-domain phase:
 
 1. ship one domain at a time
-2. fully verify it
-3. document its stop point
+2. fully verify i
+3. document its stop poin
 4. then move to the next domain
 
 Never ship four domains in one uncontrolled burst.
@@ -256,7 +256,7 @@ Compiler owns:
 2. report-family/report selection
 3. invariant injection
 4. default completion when policy allows
-5. clarify vs execute vs reject
+5. clarify vs execute vs rejec
 
 Compiler must remain deterministic and policy-controlled.
 
@@ -264,7 +264,7 @@ Compiler must remain deterministic and policy-controlled.
 
 Follow-up behavior must be resolved from:
 
-1. structured grounded context
+1. structured grounded contex
 2. structured semantic follow-up payload
 3. governed metadata
 
@@ -300,7 +300,7 @@ That means:
 
 1. language detection is contract state
 2. normalization is governed
-3. same-language reply policy is explicit
+3. same-language reply policy is explici
 4. translation must not change business facts
 
 ### 7.7 OCR Layer
@@ -308,7 +308,7 @@ That means:
 OCR must enter as:
 
 1. typed extracted evidence
-2. confidence-scored input
+2. confidence-scored inpu
 3. deterministic normalization
 4. clarify/reject on weak evidence
 
@@ -322,7 +322,7 @@ All write behavior must follow:
 2. preview
 3. confirm
 4. execute
-5. audit
+5. audi
 
 No exception.
 
@@ -337,11 +337,11 @@ Use both:
 
 Neither layer is sufficient alone.
 
-### 8.2 Test Contract Authority First
+### 8.2 Test Contract Authority Firs
 
 When a contract field exists:
 
-1. assert on the contract first
+1. assert on the contract firs
 2. use user-facing prose only as a secondary anchor
 
 Do not make stale wording the primary test authority.
@@ -371,7 +371,7 @@ It is not automatically correct for live state validation.
 Always include tests for:
 
 1. latest-turn authority
-2. stale context replacement
+2. stale context replacemen
 3. clarification/recovery interaction
 4. repeated user actions
 5. contradictory payloads
@@ -396,7 +396,7 @@ Refactor is justified when it:
 
 1. improves real runtime behavior
 2. reduces meaningful architectural risk
-3. removes meaningful verification debt
+3. removes meaningful verification deb
 4. clarifies real ownership boundaries
 
 Refactor is not justified merely because:
@@ -415,13 +415,13 @@ Preferred order:
 
 Mixing big code movement with hardening or product expansion makes failures harder to interpret.
 
-### 9.3 Stop When The Stop Rule Is Met
+### 9.3 Stop When The Stop Rule Is Me
 
 A chapter is ready to close when:
 
 1. the real authority seam is corrected
 2. residual exceptions are explicit and bounded
-3. docs are honest
+3. docs are hones
 4. the release gate is green
 
 After that, move on.
@@ -486,14 +486,14 @@ Preferred order for this project:
 5. multilingual layer
 6. chart/graph/dashboard/export artifacts
 7. OCR
-8. write actions last
+8. write actions las
 
 ### 11.3 Do Not Jump To “Exciting” Features Too Early
 
 Do not jump into:
 
 1. OCR
-2. chart/export
+2. chart/expor
 3. multilingual expansion
 4. CRUD/write paths
 
@@ -519,18 +519,18 @@ If these questions cannot be answered clearly, the change is not ready.
 
 If a team needs a short version, use this:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. compiler and policy layers enforce
 4. no keyword routing
 5. no single-case patches
 6. fail closed when evidence is weak
-7. make fallback explicit or remove it
+7. make fallback explicit or remove i
 8. test contract authority before wording
 9. use live tests where state matters
-10. stop polishing when the stop rule is met
+10. stop polishing when the stop rule is me
 11. expand one governed slice at a time
-12. keep current docs clean and archive the rest
+12. keep current docs clean and archive the res
 
 ## 14. Final Rule
 

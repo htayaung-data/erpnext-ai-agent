@@ -15,9 +15,13 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	financial_statement_display_label,
 	financial_statement_report_name,
 	get_financial_summary_clarification_spec,
-	get_scope_clarification_template_spec,
 	list_capability_specs,
 	list_semantic_resolution_alias_entries,
+)
+from ai_assistant_ui.qwen_chat.clarification_templates import (
+	scope_clarification_question as _scope_clarification_question_helper,
+	shared_clarification_question as _shared_clarification_question_helper,
+	render_shared_choice_list_clarification as _render_shared_choice_list_clarification_helper,
 )
 
 
@@ -227,27 +231,13 @@ def _scope_clarification_question(
 	default_question: str = "",
 	template_values: Dict[str, str],
 ) -> str:
-	spec = get_scope_clarification_template_spec(reason_type, template_group=template_group)
-	question_templates = spec.get("question_templates") if isinstance(spec.get("question_templates"), dict) else {}
-	template = _clean_text(question_templates.get(variant)) or _clean_text(question_templates.get("default"))
-	fallback_question = _clean_text(default_question)
-	if not fallback_question and template_group == "shared_clarification":
-		fallback_spec = get_scope_clarification_template_spec(
-			"generic_clarification",
-			template_group="shared_clarification",
-		)
-		fallback_templates = (
-			fallback_spec.get("question_templates")
-			if isinstance(fallback_spec.get("question_templates"), dict)
-			else {}
-		)
-		fallback_question = _clean_text(fallback_templates.get("default"))
-	if not template:
-		return fallback_question
-	try:
-		return template.format(**template_values)
-	except KeyError:
-		return fallback_question or template
+	return _scope_clarification_question_helper(
+		reason_type=reason_type,
+		template_group=template_group,
+		variant=variant,
+		default_question=default_question,
+		template_values=template_values,
+	)
 
 
 def _shared_clarification_question(
@@ -257,9 +247,8 @@ def _shared_clarification_question(
 	default_question: str = "",
 	template_values: Dict[str, str],
 ) -> str:
-	return _scope_clarification_question(
+	return _shared_clarification_question_helper(
 		reason_type=reason_type,
-		template_group="shared_clarification",
 		variant=variant,
 		default_question=default_question,
 		template_values=template_values,
@@ -275,36 +264,14 @@ def render_shared_choice_list_clarification(
 	default_question: str = "",
 	default_heading: str = "Choose one:",
 ) -> str:
-	spec = get_scope_clarification_template_spec(
-		reason_type,
-		template_group="shared_clarification",
-	)
-	question = _shared_clarification_question(
+	return _render_shared_choice_list_clarification_helper(
 		reason_type=reason_type,
 		variant=variant,
-		default_question=default_question,
 		template_values=template_values,
+		options=options,
+		default_question=default_question,
+		default_heading=default_heading,
 	)
-	clean_question = _clean_text(question)
-	clean_options = [value for value in options if _clean_text(value)]
-	if not clean_options:
-		return clean_question
-	list_heading_templates = (
-		spec.get("list_heading_templates")
-		if isinstance(spec.get("list_heading_templates"), dict)
-		else {}
-	)
-	list_heading = (
-		_clean_text(list_heading_templates.get(variant))
-		or _clean_text(list_heading_templates.get("default"))
-		or _clean_text(default_heading)
-	)
-	lines = [clean_question]
-	if list_heading:
-		lines.extend(["", list_heading])
-	for option in clean_options:
-		lines.append(f"- {option}")
-	return "\n".join(lines).strip()
 
 
 def render_clarification_signal_user_text(

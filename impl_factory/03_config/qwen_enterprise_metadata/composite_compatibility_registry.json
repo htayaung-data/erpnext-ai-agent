@@ -55,8 +55,8 @@
       "blocked_reason": ""
     },
     {
-      "compatibility_rule_id": "customer_as_of_same_scope_credit_metrics",
-      "label": "Customer As-Of Same-Scope Credit Metrics",
+      "compatibility_rule_id": "customer_risk_as_of_same_scope_metrics",
+      "label": "Customer Risk As-Of Same-Scope Metrics",
       "allowed_entity_grain": "customer",
       "allowed_time_scope_type": "as_of_date_required",
       "required_period_alignment": false,

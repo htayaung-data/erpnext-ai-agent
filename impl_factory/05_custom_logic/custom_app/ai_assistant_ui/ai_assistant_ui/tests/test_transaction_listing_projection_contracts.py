@@ -3,6 +3,7 @@ import types
 import unittest
 
 
+_previous_frappe = sys.modules.get("frappe")
 fake_frappe = types.ModuleType("frappe")
 fake_frappe.get_all = lambda *args, **kwargs: []
 fake_frappe.conf = {}
@@ -19,6 +20,11 @@ sys.modules.setdefault("frappe", fake_frappe)
 
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
+
+if _previous_frappe is None and sys.modules.get("frappe") is fake_frappe:
+	del sys.modules["frappe"]
+elif _previous_frappe is not None:
+	sys.modules["frappe"] = _previous_frappe
 
 
 class TestTransactionListingProjectionContracts(unittest.TestCase):
@@ -318,6 +324,98 @@ class TestTransactionListingProjectionContracts(unittest.TestCase):
 		answer_text = str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("answer_text") or "")
 		self.assertIn("| Purchase Order | Transaction Date | Supplier | Status | Schedule Date | Grand Total | Quantity |", answer_text)
 		self.assertIn("| PUR-ORD-0001 | 2026-04-16 | Myanmar Tech Import Services | To Receive and Bill | 2026-04-20 | 7,900,000 | 10 |", answer_text)
+
+	def test_purchase_receipt_renderer_uses_supplier_and_quantity_projection_defaults(self):
+		artifact_contract = build_normalized_family_artifact(
+			request_id="purchase-receipt-registry-defaults",
+			compiler_contract={
+				"request_id": "purchase-receipt-registry-defaults",
+				"capability_id": "purchase_receipt_read",
+				"selected_report": "Purchase Receipt List",
+				"requested_dimensions": [],
+				"requested_metrics": [],
+				"requested_time_scope": "",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Purchase Receipt List",
+							"filters": {"company": "Enterprise Co"},
+						},
+						"output_obj": {
+							"result": {
+								"data": [
+									{
+										"name": "MAT-PRE-0001",
+										"posting_date": "2026-04-16",
+										"supplier": "Myanmar Tech Import Services",
+										"status": "Completed",
+										"grand_total": 22730000,
+										"total_qty": 22,
+										"docstatus": 1,
+									}
+								]
+							}
+						},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		).artifact_contract
+		rendered = render_normalized_family_response(
+			request_id="purchase-receipt-registry-defaults",
+			artifact_contract=artifact_contract,
+		)
+		self.assertEqual(rendered.status, "rendered")
+		answer_text = str((rendered.contract.to_payload() if rendered.contract is not None else {}).get("answer_text") or "")
+		self.assertIn("| Purchase Receipt | Posting Date | Supplier | Status | Grand Total | Quantity |", answer_text)
+		self.assertIn("| MAT-PRE-0001 | 2026-04-16 | Myanmar Tech Import Services | Completed | 22,730,000 | 22 |", answer_text)
+
+	def test_purchase_receipt_adapter_carries_scope_id_without_promoting_detail(self):
+		outcome = build_normalized_family_artifact(
+			request_id="purchase-receipt-scope-id",
+			compiler_contract={
+				"request_id": "purchase-receipt-scope-id",
+				"capability_id": "purchase_receipt_read",
+				"selected_report": "Purchase Receipt List",
+				"requested_dimensions": [],
+				"requested_metrics": [],
+				"requested_time_scope": "",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Purchase Receipt List",
+							"filters": {"company": "Enterprise Co"},
+						},
+						"output_obj": {
+							"result": {
+								"data": [
+									{
+										"name": "MAT-PRE-0001",
+										"posting_date": "2026-04-16",
+										"supplier": "Myanmar Tech Import Services",
+										"grand_total": 22730000,
+										"total_qty": 22,
+										"docstatus": 1,
+									}
+								]
+							}
+						},
+					}
+				]
+			},
+			intent_class="transaction_listing",
+			preferred_family_id="transaction_listing",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		self.assertEqual(dict(outcome.artifact_contract.dimensions).get("scope_id"), "purchase_receipt")
+		self.assertEqual(dict(outcome.artifact_contract.dimensions).get("source_grain"), "document_list")
 
 	def test_purchase_invoice_adapter_carries_scope_id(self):
 		outcome = build_normalized_family_artifact(

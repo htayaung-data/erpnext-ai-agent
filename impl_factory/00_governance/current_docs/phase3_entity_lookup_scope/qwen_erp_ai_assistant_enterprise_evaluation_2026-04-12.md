@@ -1,7 +1,7 @@
 # Qwen ERP AI Assistant Enterprise Evaluation
 
-Status: active evaluation note  
-Date: 2026-04-12  
+Status: active evaluation note
+Date: 2026-04-12
 Scope: project-level evaluation of the AI Assistant implementation before further Phase `3.3` runtime changes
 
 ## 1. Purpose
@@ -12,11 +12,11 @@ It exists to prevent the next implementation slice from being driven only by the
 
 The goal is to restate, in one place:
 
-1. what has already been built
+1. what has already been buil
 2. what is already enterprise-grade
 3. where the real current gaps are
 4. what types of fixes must be avoided
-5. how the next slice should proceed without architecture drift
+5. how the next slice should proceed without architecture drif
 
 This note is design truth, not a closure note.
 
@@ -30,7 +30,7 @@ The current architecture already includes:
 
 1. contract-governed interaction layers
 2. metadata-owned business policy
-3. fresh-query semantic interpretation plus compiler enforcement
+3. fresh-query semantic interpretation plus compiler enforcemen
 4. grounded follow-up boundary handling
 5. governed report-family execution
 6. governed KPI definition and KPI value execution
@@ -77,7 +77,7 @@ Those docs already establish:
 1. `model proposes, compiler enforces`
 2. contracts before runtime widening
 3. metadata owns business policy
-4. fail closed when typed evidence is insufficient
+4. fail closed when typed evidence is insufficien
 5. no keyword routing
 6. no hardcoded single-case fixes
 7. no raw-message business branching after structured interpretation exists
@@ -140,7 +140,7 @@ The assistant already has meaningful governed runtime behavior for:
 
 The project already has strong enterprise verification habits:
 
-1. guardrail audit
+1. guardrail audi
 2. semantic verification
 3. post-contract verification
 4. container-backed release-gate execution
@@ -158,16 +158,16 @@ The assistant is already strong in these areas:
 When a question fits an approved business capability, the system has a strong architecture for:
 
 1. semantic proposal
-2. compiler enforcement
+2. compiler enforcemen
 3. metadata-governed source selection
 4. grounded execution
-5. fail-closed behavior when scope is insufficient
+5. fail-closed behavior when scope is insufficien
 
 ### 4.2 Follow-Up Governance
 
 The project has already invested heavily in:
 
-1. typed grounded context
+1. typed grounded contex
 2. follow-up boundary contracts
 3. continuation protection
 4. explicit lane selection
@@ -224,11 +224,11 @@ They are valid ERP asks.
 
 But they are not yet represented through a clean enough typed seam across all supported grains.
 
-### 5.2 Remaining Lexical Authority Drift
+### 5.2 Remaining Lexical Authority Drif
 
 The current `3.3` design note already identified an authority problem:
 
-1. some renderer or detail logic still recovers business meaning from raw message text
+1. some renderer or detail logic still recovers business meaning from raw message tex
 2. some runtime seams still use lexical rescue where typed state should own the decision
 
 This remains the most important anti-pattern to remove in the next bounded slice.
@@ -240,7 +240,7 @@ The project has strong contracts in some areas, but not all adjacent surfaces ar
 For example:
 
 1. KPI and composite family contracts are strongly established
-2. detail evidence contracts exist
+2. detail evidence contracts exis
 3. but some lookup/discovery/resolution asks still rely on partial runtime heuristics
 
 So the assistant is currently more mature in metric/composite questions than in some master-data navigation questions.
@@ -257,7 +257,7 @@ These do not justify a broad refactor-first chapter now.
 
 But they should affect how narrowly the next change is designed.
 
-## 6. What Must Be Avoided Next
+## 6. What Must Be Avoided Nex
 
 The current project state makes the following especially dangerous:
 
@@ -300,7 +300,7 @@ Do not:
 If fallback exists, it must remain:
 
 1. bounded
-2. explicit
+2. explici
 3. auditable
 4. test-protected
 
@@ -328,7 +328,7 @@ The wrong parts were:
 
 This means the right action is:
 
-1. keep the valid governed intent
+1. keep the valid governed inten
 2. remove the lexical and customer-specific rescue shape
 3. re-implement through existing contracts and metadata
 
@@ -338,7 +338,7 @@ It does **not** mean:
 2. deny the business need
 3. start from zero
 
-## 8. Phase Placement
+## 8. Phase Placemen
 
 This gap belongs inside the active Phase `3.3` authority-alignment work, not in a disconnected side track.
 
@@ -383,7 +383,7 @@ The system needs a cleaner typed seam for valid ERP lookup-style requests that c
 
 This should be done through existing contract and metadata patterns, not through raw-message scanning.
 
-### 9.3 Keep Unsupported Scope Honest
+### 9.3 Keep Unsupported Scope Hones
 
 Where a request is:
 

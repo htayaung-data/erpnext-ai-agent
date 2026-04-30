@@ -9,7 +9,6 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_metrics_for_report,
 	get_report_family_spec,
 	get_report_spec,
-	list_semantic_resolution_alias_entries,
 	report_approved_followup_modes,
 	report_capability_ids,
 	report_family_semantic_tags,
@@ -17,7 +16,9 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_semantic_tags,
 	report_sibling_capability_specs,
 )
+from ai_assistant_ui.qwen_chat.business_language_guards import looks_like_predictive_guarantee_claim
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_alias_matches
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_followup_interpretation,
@@ -108,12 +109,7 @@ def _clean_list(values: Any) -> List[str]:
 
 
 def _looks_like_predictive_guarantee_claim(message: str) -> bool:
-	text = str(message or "").strip().lower()
-	if not text:
-		return False
-	if re.search(r"\b(?:guarantee|forecast|predict)\b", text):
-		return True
-	return bool(re.search(r"\bwho\s+will\s+\w+", text))
+	return looks_like_predictive_guarantee_claim(message)
 
 
 def _normalize_direction(value: Any) -> str:
@@ -208,15 +204,7 @@ def _word_boundary_pattern(value: str) -> str:
 
 
 def _slot_alias_present(slot_name: str, message: str) -> bool:
-	normalized_message = _normalize_message_text(message)
-	if not normalized_message:
-		return False
-	for entry in list_semantic_resolution_alias_entries(slot_name):
-		for alias in (entry.get("aliases") or []):
-			alias_text = _normalize_message_text(alias)
-			if alias_text and re.search(_word_boundary_pattern(alias_text), normalized_message):
-				return True
-	return False
+	return bool(semantic_slot_alias_matches(slot_name, message))
 
 
 def _artifact_column_alias_targets(

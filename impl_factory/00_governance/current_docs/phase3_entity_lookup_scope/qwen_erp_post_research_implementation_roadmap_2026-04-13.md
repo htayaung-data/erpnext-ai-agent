@@ -1,7 +1,7 @@
 # Qwen ERP Post-Research Implementation Roadmap
 
-Status: active implementation roadmap  
-Date: 2026-04-13  
+Status: active implementation roadmap
+Date: 2026-04-13
 Scope: exact execution order after the completed three-round governed scope research program and ambiguity-handling evaluation
 
 ## 1. Purpose
@@ -75,7 +75,7 @@ The system already has:
 2. strong customer direct-lookup reference behavior
 3. real entity drilldown lane
 4. real clarification and evidence-boundary architecture
-5. real typed entity-reference resolution contract
+5. real typed entity-reference resolution contrac
 6. strong follow-up boundary and continuity system
 
 ### 4.2 Current Confirmed Open Gaps
@@ -105,7 +105,7 @@ Those must be separated explicitly.
 
 Research conclusion:
 
-1. Phase `3.3` should not be treated as automatically closed yet
+1. Phase `3.3` should not be treated as automatically closed ye
 2. but it also should not be widened into broader supplier/item/payment-entry expansion
 
 So the current Phase `3.3` status is:
@@ -151,7 +151,7 @@ Acceptance:
 
 Bounded implementation scope:
 
-1. purchase-invoice routing alignment
+1. purchase-invoice routing alignmen
 2. small shared guard against wrong-family document collapse if needed
 
 Important boundary:
@@ -219,7 +219,7 @@ Recommended shape:
 
 Allowed:
 
-1. purchase-invoice routing alignment
+1. purchase-invoice routing alignmen
 2. bounded shared guard against wrong-family document collapse
 3. narrow tests and verification needed for that slice
 
@@ -228,7 +228,7 @@ Not allowed:
 1. supplier direct navigation activation
 2. item/product direct navigation activation
 3. payment-entry generic activation
-4. broad ambiguity family rollout
+4. broad ambiguity family rollou
 5. large mixed-branch cleanup campaign
 
 ### 7.2 Later Expansion
@@ -254,7 +254,7 @@ Current roadmap position:
 Reason:
 
 1. ambiguity architecture already exists
-2. current `3.3` problem is narrower and more urgent
+2. current `3.3` problem is narrower and more urgen
 3. broad ambiguity rollout without the next scope chapter would become abstract and hard to verify
 
 ## 9. Practical Implementation Sequence

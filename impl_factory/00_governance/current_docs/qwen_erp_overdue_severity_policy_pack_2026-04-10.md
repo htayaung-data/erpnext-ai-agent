@@ -1,7 +1,7 @@
 # Qwen ERP Overdue Severity Policy Pack
 
-Status: active policy approval pack  
-Date: 2026-04-10  
+Status: active policy approval pack
+Date: 2026-04-10
 Scope: define the governed overdue-severity policy pack for customer overdue ratio so the remaining Phase 2 blocked threshold set can be approved and activated later without ad hoc interpretation
 
 ## 1. Purpose

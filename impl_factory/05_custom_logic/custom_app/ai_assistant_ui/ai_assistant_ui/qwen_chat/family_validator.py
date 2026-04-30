@@ -18,6 +18,7 @@ from ai_assistant_ui.qwen_chat.defaults_repository import (
 	fiscal_year_row_for_date as defaults_fiscal_year_row_for_date,
 	open_fiscal_year_bounds as defaults_open_fiscal_year_bounds,
 )
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 
 
 def _today_iso() -> str:
@@ -1189,7 +1190,7 @@ def validate_normalized_family_artifact(
 				adapter_errors=_clean_list(adapter_errors),
 				adapter_warnings=_clean_list(adapter_warnings),
 			)
-		if target in {"customer_master_list", "master_data_directory"}:
+		if is_master_data_listing_family(target):
 			return _validate_master_data_directory_artifact(
 				request_id=request_id,
 				compiler_contract=compiler_contract,

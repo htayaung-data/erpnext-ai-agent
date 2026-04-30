@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from ai_assistant_ui.qwen_chat.governed_scope_registry import listing_view_display_label
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 from ai_assistant_ui.qwen_chat.metadata import entity_grain_display_label
 
 
@@ -104,6 +105,9 @@ def clarification_decision_allows_immediate_control_override(*, clarification_de
 		"resolved_option",
 		"show_options",
 		"abandon_current_branch",
+		"meta_question",
+		"empty_ack",
+		"reask_pending_clarification",
 	}
 
 
@@ -119,10 +123,13 @@ def clarification_response_should_yield_initial_control_decision(
 	)
 	if not str(selection.get("owner") or "").strip():
 		return False
-	if not str(clarification_decision or "").strip():
+	decision = str(clarification_decision or "").strip()
+	if not decision:
 		return True
+	if decision == "reask_pending_clarification":
+		return str(selection.get("basis") or "").strip() != "current_control_replay_as_fresh_governed_query"
 	return clarification_decision_allows_immediate_control_override(
-		clarification_decision=clarification_decision,
+		clarification_decision=decision,
 	)
 
 
@@ -138,10 +145,13 @@ def pending_clarification_should_yield_to_current_control_decision(
 	)
 	if not str(selection.get("owner") or "").strip():
 		return False
-	if not str(clarification_decision or "").strip():
+	decision = str(clarification_decision or "").strip()
+	if not decision:
 		return True
+	if decision == "reask_pending_clarification":
+		return str(selection.get("basis") or "").strip() != "current_control_replay_as_fresh_governed_query"
 	return clarification_decision_allows_immediate_control_override(
-		clarification_decision=clarification_decision,
+		clarification_decision=decision,
 	)
 
 
@@ -862,7 +872,7 @@ def recent_focus_restore_runtime_message(*, recent_focus_state: Dict[str, object
 	if focus_kind == "statement":
 		return f"show me {target_label}".strip()
 	if focus_kind == "listing":
-		if source_family in {"master_data_directory", "customer_master_list"} or focus_grain in {
+		if is_master_data_listing_family(source_family) or focus_grain in {
 			"customer",
 			"supplier",
 			"item",

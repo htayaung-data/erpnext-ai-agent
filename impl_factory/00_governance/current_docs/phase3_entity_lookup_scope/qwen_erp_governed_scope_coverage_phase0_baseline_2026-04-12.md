@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Phase 0 Baseline
 
-Status: active baseline note  
-Date: 2026-04-12  
+Status: active baseline note
+Date: 2026-04-12
 Scope: Phase 0 baseline for governed scope coverage research before Round 1 analysis
 
 ## 1. Purpose
@@ -30,7 +30,7 @@ The following documents are the current authority for this baseline.
 
 Key governing rules from that note:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. runtime consumes typed contracts and fails closed
 4. no keyword routing
@@ -71,7 +71,7 @@ Key conclusion from that evaluation:
 2. the current issue is uneven seam maturity, not lack of foundation
 3. the correct next move is bounded seam completion, not reinvention
 
-## 3. Current Phase Placement
+## 3. Current Phase Placemen
 
 This research does not replace the current roadmap.
 
@@ -87,7 +87,7 @@ Current placement:
 Practical decision:
 
 1. finish the current bounded `3.3` work on the current approved governed scope
-2. use this research program to prepare safe expansion after that
+2. use this research program to prepare safe expansion after tha
 
 ## 4. What Phase 0 Must Define
 
@@ -123,7 +123,7 @@ Use these terms exactly during later research.
 1. a request can be interpreted into typed state
 2. routed through approved metadata/capability/family seams
 3. executed against approved ERP authority
-4. rendered without rediscovering business meaning from raw text
+4. rendered without rediscovering business meaning from raw tex
 5. followed up safely or failed closed explicitly
 
 ### 4.2 Evidence Standard
@@ -145,7 +145,7 @@ Later research phases must stop when:
    - missing metadata
    - missing runtime consumption
    - missing governed source
-   - missing renderer/follow-up support
+   - missing renderer/follow-up suppor
 3. extra digging would not change the implementation decision
 
 Later research phases must not stop because:
@@ -187,7 +187,7 @@ Later rounds should classify scope using the same taxonomy.
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 4. warehouse
 5. sales person
 6. territory
@@ -225,7 +225,7 @@ Later rounds should classify scope using the same taxonomy.
 2. projection change
 3. time correction
 4. subject switch
-5. fresh breakout
+5. fresh breakou
 
 ## 6. Round Structure
 
@@ -237,7 +237,7 @@ Recommended early rounds:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 
 Reason:
 
@@ -269,7 +269,7 @@ Further rounds may be added later, but only after the first rounds prove useful.
 Phase 0 is complete only when the following are true:
 
 1. the authority docs are identified
-2. the current roadmap placement is explicit
+2. the current roadmap placement is explici
 3. the definitions for declared, active, verified, and generalized are fixed
 4. the evidence standard is fixed
 5. the round structure is fixed
@@ -281,7 +281,7 @@ Round 1 should now begin with:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 
 Round 1 objective:
 
@@ -317,4 +317,4 @@ Next step:
 2. inventory front-door and metadata coverage for:
    - customer
    - supplier
-   - item or product
+   - item or produc

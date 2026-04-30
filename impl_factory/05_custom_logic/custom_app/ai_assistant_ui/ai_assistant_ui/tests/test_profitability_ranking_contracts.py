@@ -92,6 +92,12 @@ class TestProfitabilityRankingContracts(unittest.TestCase):
 		self.assertEqual(outcome.status, "adapted")
 		self.assertEqual(outcome.artifact_contract.family_id, "ranking_analytics")
 		self.assertEqual(outcome.artifact_contract.dimensions.get("primary_metric_key"), "gross_profit_percent")
+		self.assertEqual(outcome.artifact_contract.dimensions.get("scope_id"), "profitability_ranking")
+		self.assertEqual(outcome.artifact_contract.dimensions.get("scope_class"), "ranked_entities")
+		self.assertEqual(
+			(outcome.artifact_contract.dimensions.get("governed_scope_runtime_policy") or {}).get("family_id"),
+			"ranking_analytics",
+		)
 		self.assertEqual(
 			outcome.artifact_contract.dimensions.get("requested_columns"),
 			["entity", "gross_profit_percent"],

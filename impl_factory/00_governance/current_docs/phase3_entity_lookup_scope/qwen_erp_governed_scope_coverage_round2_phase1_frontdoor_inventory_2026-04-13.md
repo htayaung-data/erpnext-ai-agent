@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 2 Phase 1 Front-Door Inventory
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 2 Phase 1 front-door and metadata inventory for the next governed ERP scope groups beyond Round 1
 
 ## 1. Purpose
@@ -10,7 +10,7 @@ Round 1 Phase 1 focused on the sample entity-navigation group:
 
 1. customer
 2. supplier
-3. item / product
+3. item / produc
 
 Round 2 Phase 1 now widens the inventory to the next practical governed scope groups:
 
@@ -25,9 +25,9 @@ The goal is to answer, at metadata level:
 
 1. what the front door can already classify generically
 2. which of these scope groups already have semantic family-resolution rules
-3. which already have capability and report support
+3. which already have capability and report suppor
 4. which are only partially activated
-5. which are absent and therefore should not be claimed yet
+5. which are absent and therefore should not be claimed ye
 
 ## 2. Evidence Basis
 
@@ -57,7 +57,7 @@ This note examined these grouped surfaces.
 
 1. purchase order
 2. purchase invoice
-3. purchase receipt
+3. purchase receip
 
 ### 3.3 Finance Operations
 
@@ -80,13 +80,13 @@ It contains generic intent classes such as:
 
 1. greeting
 2. thanks
-3. acknowledgement
+3. acknowledgemen
 4. capability question
 5. KPI definition
 6. KPI execution
 7. composite execution
 8. continuation
-9. governed ERP request
+9. governed ERP reques
 
 Important finding:
 
@@ -103,7 +103,7 @@ So the correct reading is:
 
 ## 5. Metadata Inventory Findings
 
-## 5.1 Sales Document Navigation Is Broadly Present
+## 5.1 Sales Document Navigation Is Broadly Presen
 
 Sales document surfaces are strongly represented in metadata.
 
@@ -154,11 +154,11 @@ Observed report:
 Observed absences in the inspected registries:
 
 1. no semantic rule for purchase invoice
-2. no semantic rule for purchase receipt
+2. no semantic rule for purchase receip
 3. no capability for purchase invoice
-4. no capability for purchase receipt
+4. no capability for purchase receip
 5. no report entry for purchase invoice
-6. no report entry for purchase receipt
+6. no report entry for purchase receip
 
 Interpretation:
 
@@ -191,7 +191,7 @@ Observed reports:
 
 Important partial activation finding:
 
-1. `Payment Entry List` exists as a report
+1. `Payment Entry List` exists as a repor
 2. `collections_read` exists as a capability
 3. but no semantic family rule for payment entry was found in the inspected semantic registry
 
@@ -231,7 +231,7 @@ Observed reports:
 
 Interpretation:
 
-1. inventory coverage is clearly present
+1. inventory coverage is clearly presen
 2. the visible declared shape is snapshot-oriented rather than master-navigation-oriented
 3. warehouse appears as a supported axis inside inventory surfaces
 4. this is different from a direct entity-navigation lane for warehouse master data
@@ -254,14 +254,14 @@ Interpretation:
 
 1. direct governed entity-reference policy is still customer-first in the current declared surface
 2. Round 2 scopes such as delivery note, payment entry, warehouse, and purchase document entities are not yet shown as active entity-reference policies in this registry
-3. this is important because capability/report presence alone does not imply direct named-entity navigation support
+3. this is important because capability/report presence alone does not imply direct named-entity navigation suppor
 
 ## 6.2 Composite Registries Are Richer Than Entity Reference Policy
 
 Observed composite presence includes references to:
 
 1. customer
-2. item / product
+2. item / produc
 3. sales order
 4. sales invoice
 
@@ -302,7 +302,7 @@ The next governed scope groups can be classified as follows.
 ### 7.3 Absent In The Current Inspected Metadata Surface
 
 1. purchase invoice
-2. purchase receipt
+2. purchase receip
 3. journal entry
 
 These are absent in the specific registries inspected for this phase and should be treated as not currently declared in this governed path until later evidence proves otherwise.
@@ -362,9 +362,9 @@ Special attention should go to:
 
 1. declared-but-partial activation such as payment entry
 2. axis-based scopes such as warehouse
-3. the difference between listing support and direct named-entity navigation support
+3. the difference between listing support and direct named-entity navigation suppor
 
-## 10. Current Status Statement
+## 10. Current Status Statemen
 
 Round 2 Phase 1 is now started and documented.
 

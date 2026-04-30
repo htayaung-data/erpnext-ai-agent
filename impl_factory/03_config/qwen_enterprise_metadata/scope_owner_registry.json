@@ -145,6 +145,23 @@
       "policy_notes": "Operational detail may consume the same scope under listing ownership."
     },
     {
+      "scope_id": "purchase_receipt",
+      "primary_owner_family": "transaction_listing",
+      "secondary_compatible_families": [
+        "entity_detail",
+        "followup_boundary",
+        "clarification"
+      ],
+      "prohibited_families": [
+        "master_data_lookup",
+        "ranking_analytics",
+        "inventory_snapshot",
+        "product_profitability"
+      ],
+      "ownership_reason": "Purchase-receipt scope is a procurement document listing scope owned by shared transaction listing.",
+      "policy_notes": "Purchase-receipt listing is active through the shared transaction-listing family. Detail remains future-compatible only until a governed detail authority package is approved."
+    },
+    {
       "scope_id": "payment_entry",
       "primary_owner_family": "transaction_listing",
       "secondary_compatible_families": [

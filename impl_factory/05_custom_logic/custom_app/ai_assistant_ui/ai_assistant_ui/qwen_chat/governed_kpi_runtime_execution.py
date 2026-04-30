@@ -52,6 +52,10 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_semantic_resolution_alias_entries,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
+	best_semantic_slot_alias,
+	semantic_slot_alias_phrases_for_value,
+)
 
 
 _GENERIC_VALUE_REQUEST_PATTERN = re.compile(
@@ -369,20 +373,7 @@ def _time_scope_alias_matches_message(message: str, alias: str) -> bool:
 
 
 def _extract_canonical_alias(slot_name: str, message: str) -> str:
-	best_value = ""
-	best_length = -1
-	for entry in list_semantic_resolution_alias_entries(slot_name):
-		canonical_value = _clean_text(entry.get("canonical_value"))
-		if not canonical_value:
-			continue
-		for alias in (entry.get("aliases") or []):
-			if not _time_scope_alias_matches_message(message, alias):
-				continue
-			length = len(_normalize_text(alias))
-			if length > best_length:
-				best_value = canonical_value
-				best_length = length
-	return best_value
+	return best_semantic_slot_alias(slot_name, message)
 
 
 def _extract_period_time_scope(message: str) -> str:
@@ -438,29 +429,7 @@ def _definition_listing_view_canonical(definition_id: str) -> str:
 
 
 def _listing_view_aliases_for_canonical(canonical_value: str) -> List[str]:
-	clean_canonical = _clean_text(canonical_value)
-	if not clean_canonical:
-		return []
-	aliases: List[str] = []
-	canonical_phrase = clean_canonical.replace("_", " ")
-	for entry in list_semantic_resolution_alias_entries("listing_view"):
-		if _clean_text(entry.get("canonical_value")) != clean_canonical:
-			continue
-		aliases.append(canonical_phrase)
-		for alias in (entry.get("aliases") or []):
-			alias_text = _clean_text(alias)
-			if alias_text:
-				aliases.append(alias_text)
-		break
-	seen: set[str] = set()
-	unique_aliases: List[str] = []
-	for alias in aliases:
-		normalized = _normalize_text(alias)
-		if not normalized or normalized in seen:
-			continue
-		seen.add(normalized)
-		unique_aliases.append(alias)
-	return unique_aliases
+	return semantic_slot_alias_phrases_for_value("listing_view", canonical_value)
 
 
 def _looks_like_runtime_value_request(
@@ -815,6 +784,7 @@ def _resolve_customer_definition_state_from_message(
 			for item in matches
 			if _clean_text(item.get("definition_id")) in {
 				"credit_utilization_customer_as_of_date",
+				"customer_overdue_amount_as_of_date",
 				"customer_overdue_ratio_as_of_date",
 			}
 		]
@@ -1205,6 +1175,26 @@ def _execute_customer_as_of_value_artifact(
 			],
 			status="active_value",
 		)
+	if execution_id == "customer_overdue_amount_as_of_scalar_execution":
+		overdue_total = _numeric(receivable_metrics.get("overdue_total"))
+		outstanding_total = _numeric(receivable_metrics.get("outstanding_total"))
+		return build_governed_kpi_value_artifact_contract(
+			execution_state=execution_state,
+			entity_grain=definition_state.entity_grain,
+			scope=scope,
+			as_of_date=as_of_date,
+			value=overdue_total,
+			display_value=f"{_money(overdue_total)} MMK",
+			numerator_label="31+ Aging Buckets Total",
+			numerator_value=overdue_total,
+			denominator_label="Outstanding Amount",
+			denominator_value=outstanding_total,
+			source_evidence=[
+				{"report_name": "Accounts Receivable Summary", "metric_key": "overdue_total", "value": overdue_total},
+				{"report_name": "Accounts Receivable Summary", "metric_key": "outstanding_total", "value": outstanding_total},
+			],
+			status="active_value",
+		)
 	if execution_id == "customer_tenure_customer_created_at_scalar_execution":
 		customer_created_date = _clean_text(lifecycle_snapshot.get("customer_created_date"))
 		if not customer_created_date:
@@ -1301,6 +1291,16 @@ def _execute_customer_ranking_artifact(
 	requested_scope: Dict[str, Any],
 	message: str,
 ) -> GovernedKpiRankingArtifactContract:
+	def _customer_aging_bucket_rows(row: Dict[str, Any]) -> List[Dict[str, Any]]:
+		return [
+			{"bucket": "<0", "amount": _numeric(row.get("future_bucket_total"))},
+			{"bucket": "0-30", "amount": _numeric(row.get("current_bucket_total"))},
+			{"bucket": "31-60", "amount": _numeric(row.get("bucket_31_60_total"))},
+			{"bucket": "61-90", "amount": _numeric(row.get("bucket_61_90_total"))},
+			{"bucket": "91-120", "amount": _numeric(row.get("bucket_91_120_total"))},
+			{"bucket": "121-Above", "amount": _numeric(row.get("bucket_121_above_total"))},
+		]
+
 	as_of_date = _clean_text(requested_scope.get("as_of_date")) or current_date_iso()
 	company_name = _clean_text(definition_state.requested_company_name)
 	execution_id = _clean_text(execution_state.execution_id)
@@ -1336,6 +1336,12 @@ def _execute_customer_ranking_artifact(
 			key=lambda row: (_numeric(row.get("overdue_ratio")), _numeric(row.get("overdue_total"))),
 			reverse=True,
 		)[:ranking_limit]
+	elif execution_id == "customer_overdue_amount_as_of_ranking_execution":
+		selected_rows = sorted(
+			all_rows,
+			key=lambda row: (_numeric(row.get("overdue_total")), _numeric(row.get("outstanding_total"))),
+			reverse=True,
+		)[:ranking_limit]
 	else:
 		return build_governed_kpi_ranking_artifact_contract(
 			execution_state=execution_state,
@@ -1363,10 +1369,11 @@ def _execute_customer_ranking_artifact(
 				"credit_limit": _numeric(row.get("credit_limit")),
 				"credit_limit_excess": _numeric(row.get("credit_limit_excess")),
 				"threshold_state": dict(row.get("credit_threshold_state") or {}),
+				"aging_buckets": _customer_aging_bucket_rows(row),
 			}
 			for row in selected_rows
 		]
-	else:
+	elif execution_id == "customer_overdue_ratio_as_of_ranking_execution":
 		row_payloads = [
 			{
 				"customer": _clean_text(row.get("customer")),
@@ -1375,6 +1382,21 @@ def _execute_customer_ranking_artifact(
 				"display_value": f"{_percent(row.get('overdue_ratio'))}%",
 				"overdue_total": _numeric(row.get("overdue_total")),
 				"outstanding_total": _numeric(row.get("outstanding_total")),
+				"aging_buckets": _customer_aging_bucket_rows(row),
+			}
+			for row in selected_rows
+		]
+	else:
+		row_payloads = [
+			{
+				"customer": _clean_text(row.get("customer")),
+				"customer_name": _clean_text(row.get("customer_label")),
+				"value": _numeric(row.get("overdue_total")),
+				"display_value": f"{_money(row.get('overdue_total'))} MMK",
+				"overdue_total": _numeric(row.get("overdue_total")),
+				"outstanding_total": _numeric(row.get("outstanding_total")),
+				"overdue_ratio": _numeric(row.get("overdue_ratio")),
+				"aging_buckets": _customer_aging_bucket_rows(row),
 			}
 			for row in selected_rows
 		]
@@ -1708,6 +1730,13 @@ def _render_active_customer_scalar_answer(
 		answer_lines.append(
 			f"That is {_money(artifact.numerator_value)} MMK overdue out of {_money(artifact.denominator_value)} MMK outstanding."
 		)
+	elif definition_state.definition_id == "customer_overdue_amount_as_of_date":
+		answer_lines.append(
+			f"As of {as_of_date}, {customer_label} had {value_text} overdue."
+		)
+		answer_lines.append(
+			f"That is the 31+ aging bucket total out of {_money(artifact.denominator_value)} MMK outstanding."
+		)
 	elif definition_state.definition_id == "customer_tenure_customer_created_at":
 		customer_created_date = _source_date_value(artifact, "customer_created_date")
 		answer_lines.append(
@@ -1800,6 +1829,11 @@ def _render_active_customer_ranking_answer(
 						f"- {index}. {customer_label}: {display_value} used "
 						f"(Outstanding {outstanding} MMK; Credit Limit {credit_limit} MMK)"
 					)
+			elif artifact.execution_id == "customer_overdue_amount_as_of_ranking_execution":
+				answer_lines.append(
+					f"- {index}. {customer_label}: {display_value} overdue "
+					f"(Outstanding {_money(row.get('outstanding_total'))} MMK; Overdue Ratio {_percent(row.get('overdue_ratio'))}%)"
+				)
 			else:
 				answer_lines.append(
 					f"- {index}. {customer_label}: {display_value} overdue ratio "

@@ -18,7 +18,19 @@ from ai_assistant_ui.qwen_chat.governed_scope_registry import (
 	list_active_master_data_scope_activations,
 	master_data_scope_activation,
 )
-from ai_assistant_ui.qwen_chat.metadata import entity_grain_display_label
+from ai_assistant_ui.qwen_chat.metadata import (
+	entity_grain_display_label,
+	ontology_detect_concepts,
+)
+
+
+_MASTER_DATA_COMPATIBLE_CONCEPTS = {
+	"customer",
+	"supplier",
+	"product",
+	"territory",
+	"warehouse",
+}
 
 
 def _clean_text(value: Any) -> str:
@@ -29,6 +41,19 @@ def _frontdoor_slot_text(slots: Dict[str, Any] | None, key: str) -> str:
 	if not isinstance(slots, dict):
 		return ""
 	return _clean_text(slots.get(key))
+
+
+def _master_data_blocking_business_concepts(message: str) -> List[str]:
+	concepts = [
+		_clean_text(value)
+		for value in ontology_detect_concepts(message)
+		if _clean_text(value)
+	]
+	return [
+		value
+		for value in list(dict.fromkeys(concepts))
+		if value not in _MASTER_DATA_COMPATIBLE_CONCEPTS
+	]
 
 
 def _active_master_data_grains(*, request_mode: str = "") -> List[str]:
@@ -183,6 +208,22 @@ def assess_master_data_frontdoor_request(
 				request_id=request_id,
 				status="not_applicable",
 				supported_entity_grains=all_active_grains,
+			),
+			"clarification_signal": None,
+		}
+	blocking_concepts = _master_data_blocking_business_concepts(message)
+	if blocking_concepts:
+		return {
+			"assessment_contract": build_master_data_frontdoor_assessment_contract(
+				request_id=request_id,
+				status="not_applicable",
+				request_mode=lookup_mode,
+				supported_entity_grains=all_active_grains,
+				internal_details={
+					"blocked_by_business_concepts": list(blocking_concepts),
+					"frontdoor_extracted_slots": dict(typed_slots),
+					"source": "frontdoor_master_data_assessment",
+				},
 			),
 			"clarification_signal": None,
 		}

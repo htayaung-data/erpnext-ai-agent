@@ -3,12 +3,24 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import build_entity_detail_evidence_request_contract
+from ai_assistant_ui.qwen_chat.composite_evidence_support import (
+	composite_ranked_row_evidence_boundary_answer,
+	composite_ranked_row_direct_evidence_answer,
+	composite_ranked_row_direct_evidence_rendered_payload,
+)
+from ai_assistant_ui.qwen_chat.customer_boundary_answer_support import customer_boundary_direct_evidence_answer
+from ai_assistant_ui.qwen_chat.item_stock_boundary_support import (
+	item_stock_direct_evidence_answer,
+	item_stock_direct_evidence_rendered_payload,
+	item_stock_evidence_boundary_answer,
+)
 from ai_assistant_ui.qwen_chat.metadata import ontology_concept_aliases, ontology_detect_concepts
 from ai_assistant_ui.qwen_chat.observability import (
 	record_phase6_observability_event,
 	record_phase6_performance_metric,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_canonical_key, get_metric_label
+from ai_assistant_ui.qwen_chat.supplier_boundary_answer_support import supplier_boundary_direct_evidence_answer
 
 
 def _artifact_delivery_proof(artifact_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -89,11 +101,6 @@ def _money(value: Any) -> str:
 	return f"{_numeric(value):,.2f}".rstrip("0").rstrip(".")
 
 
-def _days_text(value: Any) -> str:
-	days = int(max(_numeric(value), 0))
-	return f"{days} day" if days == 1 else f"{days} days"
-
-
 def _summary_block(title: str, rows: List[List[str]]) -> Dict[str, Any]:
 	return {
 		"block_type": "summary_table",
@@ -155,188 +162,6 @@ def _ensure_entity_detail_evidence_request_contract(
 	).to_payload()
 
 
-def _artifact_stock_rows(artifact_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	rows = sections.get("stock_rows") if isinstance(sections.get("stock_rows"), list) else []
-	return [dict(row or {}) for row in rows if isinstance(row, dict)]
-
-
-def _artifact_warehouse_totals(artifact_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	rows = sections.get("warehouse_totals") if isinstance(sections.get("warehouse_totals"), list) else []
-	return [dict(row or {}) for row in rows if isinstance(row, dict)]
-
-
-def _artifact_item_totals(artifact_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	rows = sections.get("item_totals") if isinstance(sections.get("item_totals"), list) else []
-	return [dict(row or {}) for row in rows if isinstance(row, dict)]
-
-
-def _stock_metric_alias(value: str) -> str:
-	key = str(value or "").strip()
-	return {
-		"quantity": "balance_qty",
-		"qty": "balance_qty",
-		"stock_qty": "balance_qty",
-		"stock_quantity": "balance_qty",
-		"value": "balance_value",
-		"stock_value": "balance_value",
-		"inventory_value": "balance_value",
-	}.get(key, key)
-
-
-def _stock_position_request_signal(
-	*,
-	raw_message: str,
-	artifact_payload: Dict[str, Any],
-	evidence_request_contract: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	family_id = str(artifact.get("family_id") or "").strip()
-	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
-	requested_metrics: List[str] = []
-	requested_dimensions: List[str] = []
-	requested_concepts: List[str] = []
-	entity_question_type = ""
-	if family_id == "entity_detail":
-		typed_request = _ensure_entity_detail_evidence_request_contract(
-			raw_message=raw_message,
-			artifact_payload=artifact,
-			evidence_request_contract=evidence_request_contract,
-		)
-		requested_metrics = [
-			str(_stock_metric_alias(value) or "").strip()
-			for value in (typed_request.get("requested_metrics") or [])
-			if str(_stock_metric_alias(value) or "").strip()
-		]
-		requested_dimensions = [
-			str(value or "").strip()
-			for value in (typed_request.get("requested_dimensions") or [])
-			if str(value or "").strip()
-		]
-		requested_concepts = [
-			str(value or "").strip()
-			for value in (typed_request.get("requested_concepts") or [])
-			if str(value or "").strip()
-		]
-		entity_question_type = str(typed_request.get("entity_question_type") or "").strip()
-	else:
-		requested_metrics = [
-			str(_stock_metric_alias(value) or "").strip()
-			for value in detect_canonical_keys(
-				raw_message,
-				capability_id="stock_read",
-				dimension_or_metric="metric",
-			)
-			if str(_stock_metric_alias(value) or "").strip()
-		]
-		requested_dimensions = [
-			str(value or "").strip()
-			for value in detect_canonical_keys(
-				raw_message,
-				capability_id="stock_read",
-				dimension_or_metric="dimension",
-			)
-			if str(value or "").strip()
-		]
-		requested_concepts = [
-			str(value or "").strip()
-			for value in ontology_detect_concepts(raw_message)
-			if str(value or "").strip()
-		]
-	metric_set = set(requested_metrics)
-	dimension_set = set(requested_dimensions)
-	concept_set = set(requested_concepts)
-	stock_position_requested = bool(
-		entity_question_type == "item_stock_position"
-		or metric_set.intersection({"balance_qty", "balance_value"})
-		or "warehouse" in dimension_set
-		or "inventory" in concept_set
-	)
-	wants_warehouse = "warehouse" in dimension_set
-	wants_quantity = "balance_qty" in metric_set or (stock_position_requested and wants_warehouse and "balance_value" not in metric_set)
-	wants_value = "balance_value" in metric_set
-	return {
-		"family_id": family_id,
-		"entity_type": entity_type,
-		"requested_metrics": requested_metrics,
-		"requested_dimensions": requested_dimensions,
-		"requested_concepts": requested_concepts,
-		"entity_question_type": entity_question_type,
-		"stock_position_requested": stock_position_requested,
-		"wants_warehouse": wants_warehouse,
-		"wants_quantity": wants_quantity,
-		"wants_value": wants_value,
-	}
-
-
-def _item_stock_subject_label(artifact_payload: Dict[str, Any]) -> str:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	return str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this item").strip()
-
-
-def _item_stock_uom(artifact_payload: Dict[str, Any]) -> str:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	summary_rows = sections.get("summary") if isinstance(sections.get("summary"), list) else []
-	for row in summary_rows:
-		if not isinstance(row, dict):
-			continue
-		label = str(row.get("label") or "").strip().lower()
-		value = str(row.get("value") or "").strip()
-		if label == "uom" and value:
-			return value
-	return "units"
-
-
-def _stock_position_context(artifact_payload: Dict[str, Any]) -> Dict[str, Any]:
-	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	family_id = str(artifact.get("family_id") or "").strip()
-	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
-	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
-	if family_id == "entity_detail" and entity_type == "item":
-		rows = _artifact_stock_rows(artifact)
-		return {
-			"title": f"Stock Position for {_item_stock_subject_label(artifact)}",
-			"subject_label": _item_stock_subject_label(artifact),
-			"subject_kind": "item",
-			"row_label": "warehouse",
-			"rows": rows,
-			"uom": _item_stock_uom(artifact),
-			"total_qty": _numeric(metrics.get("balance_qty")) or sum(_numeric(row.get("balance_qty")) for row in rows),
-			"total_value": _numeric(metrics.get("balance_value")) or sum(_numeric(row.get("balance_value")) for row in rows),
-			"row_count": int(metrics.get("warehouse_count") or len(rows) or 0),
-		}
-	if family_id == "inventory_snapshot":
-		warehouse_rows = _artifact_warehouse_totals(artifact)
-		item_rows = _artifact_item_totals(artifact)
-		rows = warehouse_rows or item_rows
-		return {
-			"title": "Inventory Snapshot Evidence",
-			"subject_label": "the current inventory snapshot",
-			"subject_kind": "snapshot",
-			"row_label": "warehouse" if warehouse_rows else "item",
-			"rows": rows,
-			"uom": "units",
-			"total_qty": _numeric(metrics.get("balance_qty")) or sum(_numeric(row.get("balance_qty")) for row in rows),
-			"total_value": _numeric(metrics.get("balance_value")) or sum(_numeric(row.get("balance_value")) for row in rows),
-			"row_count": int(
-				metrics.get("warehouse_count")
-				or metrics.get("item_count")
-				or len(rows)
-				or 0
-			),
-		}
-	return {}
-
-
 def build_grounded_artifact_direct_evidence_rendered_payload(
 	*,
 	raw_message: str,
@@ -345,65 +170,23 @@ def build_grounded_artifact_direct_evidence_rendered_payload(
 	evidence_request_contract: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	family_id = str(artifact.get("family_id") or "").strip()
-	if family_id not in {"entity_detail", "inventory_snapshot"}:
-		return {}
-	stock_signal = _stock_position_request_signal(
+	stock_payload = item_stock_direct_evidence_rendered_payload(
 		raw_message=raw_message,
 		artifact_payload=artifact,
 		evidence_request_contract=evidence_request_contract,
 	)
-	stock_context = _stock_position_context(artifact)
-	if stock_signal.get("stock_position_requested") and stock_context:
-		rows = list(stock_context.get("rows") or [])
-		if rows:
-			row_label = str(stock_context.get("row_label") or "warehouse").strip()
-			primary_label = "Warehouse" if row_label == "warehouse" else "Item"
-			table_rows = [
-				[
-					str(row.get(row_label) or "").strip(),
-					_money(row.get("balance_qty")),
-					_money(row.get("balance_value")),
-				]
-				for row in rows
-				if str(row.get(row_label) or "").strip()
-			]
-			summary_label = "Item" if str(stock_context.get("subject_kind") or "").strip() == "item" else "Scope"
-			return {
-				"type": "qwen_rendered_family_response_contract",
-				"contract_version": "1.0",
-				"request_id": str(artifact.get("request_id") or "").strip(),
-				"family_id": family_id,
-				"renderer_id": "grounded_artifact_direct_evidence",
-				"title": str(stock_context.get("title") or "Stock Position").strip(),
-				"answer_text": "",
-				"source_reports": [
-					str(value or "").strip()
-					for value in (artifact.get("source_reports") or [])
-					if str(value or "").strip()
-				],
-				"blocks": [
-					_summary_block(
-						"Stock Summary",
-						[
-							[summary_label, str(stock_context.get("subject_label") or "").strip()],
-							["Total On Hand Qty", _money(stock_context.get("total_qty"))],
-							["Total Stock Value (MMK)", _money(stock_context.get("total_value"))],
-							["Warehouse Count" if row_label == "warehouse" else "Item Count", str(int(stock_context.get("row_count") or 0))],
-						],
-					),
-					_data_block(
-						"Stock by Warehouse" if row_label == "warehouse" else "Stock by Item",
-						[primary_label, "Qty", "Stock Value (MMK)"],
-						table_rows,
-					),
-				],
-				"warnings": [
-					str(value or "").strip()
-					for value in (artifact.get("warnings") or [])
-					if str(value or "").strip()
-				],
-			}
+	if stock_payload:
+		return stock_payload
+	composite_payload = composite_ranked_row_direct_evidence_rendered_payload(
+		raw_message=raw_message,
+		artifact_payload=artifact,
+		grounded_turn=grounded_turn,
+	)
+	if composite_payload:
+		return composite_payload
+	family_id = str(artifact.get("family_id") or "").strip()
+	if family_id not in {"entity_detail", "inventory_snapshot"}:
+		return {}
 	if family_id != "entity_detail":
 		return {}
 	typed_request = _ensure_entity_detail_evidence_request_contract(
@@ -740,63 +523,30 @@ def grounded_artifact_direct_evidence_answer(
 	evidence_request_contract: Dict[str, Any] | None = None,
 ) -> str:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	family_id = str(artifact.get("family_id") or "").strip()
-	if family_id not in {"entity_detail", "inventory_snapshot"}:
-		return ""
-	stock_signal = _stock_position_request_signal(
+	stock_answer = item_stock_direct_evidence_answer(
 		raw_message=raw_message,
 		artifact_payload=artifact,
 		evidence_request_contract=evidence_request_contract,
 	)
-	stock_context = _stock_position_context(artifact)
-	if stock_signal.get("stock_position_requested") and stock_context:
-		rows = list(stock_context.get("rows") or [])
-		if rows:
-			subject_label = str(stock_context.get("subject_label") or "this item").strip()
-			uom = str(stock_context.get("uom") or "units").strip()
-			total_qty = _numeric(stock_context.get("total_qty"))
-			total_value = _numeric(stock_context.get("total_value"))
-			row_count = int(stock_context.get("row_count") or len(rows) or 0)
-			wants_warehouse = bool(stock_signal.get("wants_warehouse"))
-			wants_quantity = bool(stock_signal.get("wants_quantity"))
-			wants_value = bool(stock_signal.get("wants_value"))
-			if wants_warehouse:
-				header = (
-					f"{subject_label} currently has {_money(total_qty)} {uom} on hand across {row_count} warehouses."
-					if str(stock_context.get("subject_kind") or "").strip() == "item"
-					else f"The current inventory snapshot shows {_money(total_qty)} {uom} across {row_count} warehouses."
-				)
-				lines = []
-				for row in rows:
-					label_key = str(stock_context.get("row_label") or "warehouse").strip()
-					label_value = str(row.get(label_key) or "").strip()
-					if not label_value:
-						continue
-					if wants_value and not wants_quantity:
-						lines.append(f"{label_value}: {_money(row.get('balance_value'))} MMK")
-					elif wants_value:
-						lines.append(
-							f"{label_value}: {_money(row.get('balance_qty'))} {uom}, {_money(row.get('balance_value'))} MMK"
-						)
-					else:
-						lines.append(f"{label_value}: {_money(row.get('balance_qty'))} {uom}")
-				return header + ("\n\n" + "\n".join(lines) if lines else "")
-			if wants_value and not wants_quantity:
-				if str(stock_context.get("subject_kind") or "").strip() == "item":
-					return (
-						f"The current stock value for {subject_label} is {_money(total_value)} MMK "
-						f"across {row_count} warehouses."
-					)
-				return f"The current inventory snapshot value is {_money(total_value)} MMK."
-			if str(stock_context.get("subject_kind") or "").strip() == "item":
-				return (
-					f"{subject_label} currently has {_money(total_qty)} {uom} on hand "
-					f"across {row_count} warehouses."
-				)
-			return (
-				f"The current inventory snapshot shows {_money(total_qty)} {uom} "
-				f"across {row_count} warehouses."
-			)
+	if stock_answer:
+		return stock_answer
+	composite_answer = composite_ranked_row_direct_evidence_answer(
+		raw_message=raw_message,
+		artifact_payload=artifact,
+		grounded_turn=grounded_turn,
+	)
+	if composite_answer:
+		return composite_answer
+	composite_boundary = composite_ranked_row_evidence_boundary_answer(
+		raw_message=raw_message,
+		artifact_payload=artifact,
+		grounded_turn=grounded_turn,
+	)
+	if composite_boundary:
+		return composite_boundary
+	family_id = str(artifact.get("family_id") or "").strip()
+	if family_id not in {"entity_detail", "inventory_snapshot"}:
+		return ""
 	if family_id != "entity_detail":
 		return ""
 	typed_request = _ensure_entity_detail_evidence_request_contract(
@@ -855,7 +605,7 @@ def grounded_artifact_direct_evidence_answer(
 			if billed_amount > 0:
 				detail += f", which is {_money(billed_amount)} MMK on the current order lines"
 			return f"Partly. {entity_label} is not fully billed yet.\n\n{detail} ({billing_status or 'Partly Billed'})."
-		if "document_status" in requested_dimensions:
+		if "document_status" in requested_dimensions and entity_question_type == "purchase_order_document_status":
 			return (
 				f"The current status of {entity_label} is {status}.\n\n"
 				f"Receipt status is {receipt_status or 'Unknown'}, and billing status is {billing_status or 'Unknown'}."
@@ -924,7 +674,7 @@ def grounded_artifact_direct_evidence_answer(
 			if billed_amount > 0:
 				detail += f", which is {_money(billed_amount)} MMK on the current order lines"
 			return f"Partly. {entity_label} is not fully billed yet{customer_phrase}.\n\n{detail} ({billing_status or 'Partly Billed'})."
-		if "document_status" in requested_dimensions:
+		if "document_status" in requested_dimensions and entity_question_type == "sales_order_document_status":
 			return (
 				f"The current status of {entity_label}{customer_phrase} is {status}.\n\n"
 				f"Delivery status is {delivery_status or 'Unknown'}, and billing status is {billing_status or 'Unknown'}."
@@ -946,193 +696,19 @@ def grounded_artifact_direct_evidence_answer(
 			return f"Partly. {entity_label} is not fully delivered yet{customer_phrase}.\n\n{detail} ({delivery_status or 'Partly Delivered'})."
 		return ""
 	if entity_type == "customer":
-		requested_metrics = set(
-			str(value or "").strip()
-			for value in (typed_request.get("requested_metrics") or [])
-			if str(value or "").strip()
+		return customer_boundary_direct_evidence_answer(
+			typed_request=typed_request,
+			artifact=artifact,
+			dimensions=dimensions,
+			clarification_required=clarification_required,
+			clarification_reason_type=clarification_reason_type,
 		)
-		requested_dimensions = set(
-			str(value or "").strip()
-			for value in (typed_request.get("requested_dimensions") or [])
-			if str(value or "").strip()
+	if entity_type == "supplier":
+		return supplier_boundary_direct_evidence_answer(
+			typed_request=typed_request,
+			artifact=artifact,
+			dimensions=dimensions,
 		)
-		basis = str(typed_request.get("basis") or "").strip()
-		entity_question_type = str(typed_request.get("entity_question_type") or "").strip()
-		sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-		metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
-		credit_buckets = sections.get("credit_buckets") if isinstance(sections.get("credit_buckets"), list) else []
-		credit_policy = sections.get("credit_policy") if isinstance(sections.get("credit_policy"), list) else []
-		lifecycle_rows = sections.get("lifecycle") if isinstance(sections.get("lifecycle"), list) else []
-		outstanding_total = _numeric(metrics.get("outstanding_total"))
-		total_due = _numeric(metrics.get("total_due"))
-		overdue_total = _numeric(metrics.get("overdue_total"))
-		overdue_ratio = _numeric(metrics.get("overdue_ratio"))
-		credit_limit = _numeric(metrics.get("credit_limit"))
-		credit_limit_available = _numeric(metrics.get("credit_limit_available"))
-		credit_limit_excess = _numeric(metrics.get("credit_limit_excess"))
-		credit_limit_utilization = _numeric(metrics.get("credit_limit_utilization_ratio"))
-		credit_limit_configured = bool(metrics.get("credit_limit_configured")) or credit_limit > 0
-		credit_limit_exceeded = bool(metrics.get("credit_limit_exceeded")) or credit_limit_excess > 0
-		credit_limit_bypass = bool(metrics.get("credit_limit_bypass_sales_order"))
-		entity_label = str(dimensions.get("entity_label") or dimensions.get("entity_key") or "this customer").strip()
-		policy_values = {
-			str(item.get("label") or "").strip().lower(): str(item.get("value") or "").strip()
-			for item in credit_policy
-			if isinstance(item, dict) and str(item.get("label") or "").strip()
-		}
-		lifecycle_values = {
-			str(item.get("label") or "").strip().lower(): str(item.get("value") or "").strip()
-			for item in lifecycle_rows
-			if isinstance(item, dict) and str(item.get("label") or "").strip()
-		}
-		policy_company = policy_values.get("company", "")
-		company_phrase = f" for {policy_company}" if policy_company else ""
-		payment_terms = policy_values.get("payment terms", "")
-		default_price_list = policy_values.get("default price list", "")
-		customer_created_date = lifecycle_values.get("customer created date", "")
-		first_sales_order_date = lifecycle_values.get("first sales order date", "")
-		first_sales_invoice_date = lifecycle_values.get("first sales invoice date", "")
-		customer_created_tenure_days = int(_numeric(metrics.get("customer_created_tenure_days")))
-		first_sales_order_tenure_days = int(_numeric(metrics.get("first_sales_order_tenure_days")))
-		first_sales_invoice_tenure_days = int(_numeric(metrics.get("first_sales_invoice_tenure_days")))
-		if clarification_required and clarification_reason_type == "customer_operational_document_missing":
-			return (
-				f"I can help with that for {entity_label}{company_phrase}, but I need the exact sales document or date basis first.\n\n"
-				"You can ask for the first sales order date, the first sales invoice date, or details for a specific sales order or sales invoice."
-			)
-		if entity_question_type == "customer_tenure":
-			if basis == "customer_created_date":
-				if customer_created_date:
-					return (
-						f"{entity_label} has a governed tenure of {_days_text(customer_created_tenure_days)}"
-						f"{company_phrase}, measured from customer created date {customer_created_date}."
-					)
-				return f"I couldn't find a governed customer created date for {entity_label}{company_phrase}."
-			if basis == "first_sales_order_date":
-				if first_sales_order_date:
-					return (
-						f"{entity_label} has a governed tenure of {_days_text(first_sales_order_tenure_days)}"
-						f"{company_phrase}, measured from first submitted sales order date {first_sales_order_date}."
-					)
-				return f"I couldn't find a governed first submitted sales order date for {entity_label}{company_phrase}."
-			if basis == "first_sales_invoice_date":
-				if first_sales_invoice_date:
-					return (
-						f"{entity_label} has a governed tenure of {_days_text(first_sales_invoice_tenure_days)}"
-						f"{company_phrase}, measured from first submitted sales invoice date {first_sales_invoice_date}."
-					)
-				return f"I couldn't find a governed first submitted sales invoice date for {entity_label}{company_phrase}."
-			return (
-				f"I can calculate tenure for {entity_label}{company_phrase} using one of three date bases: "
-				"customer created date, first submitted sales order date, or first submitted sales invoice date."
-			)
-		if entity_question_type == "customer_lifecycle_date":
-			if basis == "customer_created_date":
-				if customer_created_date:
-					return f"{entity_label} was created on {customer_created_date}{company_phrase}."
-				return f"I couldn't find a governed customer created date for {entity_label}{company_phrase}."
-			if basis == "first_sales_order_date":
-				if first_sales_order_date:
-					return f"The first observed submitted sales order for {entity_label}{company_phrase} was on {first_sales_order_date}."
-				return f"I couldn't find a governed first submitted sales order date for {entity_label}{company_phrase}."
-			if basis == "first_sales_invoice_date":
-				if first_sales_invoice_date:
-					return f"The first observed submitted sales invoice for {entity_label}{company_phrase} was on {first_sales_invoice_date}."
-				return f"I couldn't find a governed first submitted sales invoice date for {entity_label}{company_phrase}."
-		if "credit_limit_status" in requested_metrics:
-			if not credit_limit_configured:
-				return (
-					f"{entity_label} does not have a configured credit limit{company_phrase}, "
-					"so I can't determine limit status from governed policy data."
-				)
-			if credit_limit_exceeded:
-				answer = (
-					f"Yes. {entity_label} has exceeded the configured credit limit{company_phrase}.\n\n"
-					f"Current outstanding is {_money(outstanding_total)} MMK against a credit limit of {_money(credit_limit)} MMK, "
-					f"so it is over by {_money(credit_limit_excess)} MMK."
-				)
-			else:
-				answer = (
-					f"No. {entity_label} is still within the configured credit limit{company_phrase}.\n\n"
-					f"Current outstanding is {_money(outstanding_total)} MMK against a credit limit of {_money(credit_limit)} MMK, "
-					f"leaving {_money(credit_limit_available)} MMK available."
-				)
-			if credit_limit_bypass:
-				answer += "\n\nSales-order credit-limit check is currently bypassed in master data."
-			return answer
-		if "credit_limit_available" in requested_metrics:
-			if not credit_limit_configured:
-				return (
-					f"{entity_label} does not have a configured credit limit{company_phrase}, "
-					"so available credit cannot be calculated from governed policy data."
-				)
-			if credit_limit_exceeded:
-				return (
-					f"{entity_label} has no remaining configured credit{company_phrase}.\n\n"
-					f"Current outstanding exceeds the limit by {_money(credit_limit_excess)} MMK."
-				)
-			return (
-				f"The remaining available credit for {entity_label}{company_phrase} is {_money(credit_limit_available)} MMK.\n\n"
-				f"Configured credit limit is {_money(credit_limit)} MMK and current outstanding is {_money(outstanding_total)} MMK."
-			)
-		if "credit_limit_utilization" in requested_metrics:
-			if not credit_limit_configured:
-				return (
-					f"{entity_label} does not have a configured credit limit{company_phrase}, "
-					"so utilization cannot be calculated from governed policy data."
-				)
-			return (
-				f"{entity_label} is currently using {credit_limit_utilization * 100:.1f}% of the configured credit limit{company_phrase}.\n\n"
-				f"This is based on outstanding amount {_money(outstanding_total)} MMK against credit limit {_money(credit_limit)} MMK."
-			)
-		if "payment_terms_template" in requested_dimensions:
-			if payment_terms:
-				return f"The configured payment terms for {entity_label}{company_phrase} are {payment_terms}."
-			return f"{entity_label} does not have configured payment terms{company_phrase}."
-		if "default_price_list" in requested_dimensions:
-			if default_price_list:
-				return f"The default price list for {entity_label}{company_phrase} is {default_price_list}."
-			return f"{entity_label} does not have a configured default price list{company_phrase}."
-		if "credit_limit_amount" in requested_metrics:
-			if credit_limit_configured:
-				return f"The configured credit limit for {entity_label}{company_phrase} is {_money(credit_limit)} MMK."
-			return f"{entity_label} does not have a configured credit limit{company_phrase}."
-		if "credit_balance_amount" in requested_metrics:
-			if outstanding_total < 0:
-				return f"The credit balance for {entity_label} is {_money(abs(outstanding_total))} MMK."
-			return f"{entity_label} does not have a credit balance."
-		if "credit_balance_only" in requested_metrics:
-			if outstanding_total < 0:
-				return f"Yes. {entity_label} has a credit balance of {_money(abs(outstanding_total))} MMK."
-			return f"No. {entity_label} does not have a credit balance."
-		if "overdue_ratio" in requested_metrics:
-			if outstanding_total <= 0:
-				return (
-					f"As of the current governed receivable snapshot, {entity_label} has an overdue ratio of 0.0%{company_phrase}.\n\n"
-					"There is no positive outstanding balance in the current governed artifact."
-				)
-			return (
-				f"As of the current governed receivable snapshot, {entity_label} has an overdue ratio of {overdue_ratio * 100:.1f}%{company_phrase}.\n\n"
-					f"This is based on overdue amount {_money(overdue_total)} MMK against outstanding amount {_money(outstanding_total)} MMK."
-				)
-		if "overdue_total" in requested_metrics:
-			return f"The overdue amount for {entity_label} is {_money(overdue_total)} MMK."
-		if "overdue_only" in requested_metrics:
-			if overdue_total > 0:
-				return f"Yes. {entity_label} is overdue with {_money(overdue_total)} MMK past due."
-			return f"No. {entity_label} is not overdue."
-		if "outstanding_total" in requested_metrics:
-			return f"The outstanding balance for {entity_label} is {_money(outstanding_total)} MMK."
-		if "dominant_aging_bucket" in requested_dimensions or entity_question_type == "customer_aging_bucket":
-			if credit_buckets:
-				top_bucket = max(credit_buckets, key=lambda row: _numeric(row.get("amount")))
-				bucket_label = str(top_bucket.get("bucket") or "").strip()
-				amount = _numeric(top_bucket.get("amount"))
-				if bucket_label:
-					return f"The highest aging bucket for {entity_label} is {bucket_label} with {_money(amount)} MMK."
-		if "total_due" in requested_metrics:
-			return f"The total due amount for {entity_label} is {_money(total_due)} MMK."
-		return ""
 	if entity_question_type not in {"sales_invoice_delivery_evidence", "sales_invoice_delivery_event_date"}:
 		return ""
 	if entity_type != "sales_invoice":
@@ -1217,26 +793,22 @@ def grounded_artifact_evidence_boundary_answer(
 	evidence_request_contract: Dict[str, Any] | None = None,
 ) -> str:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	if str(artifact.get("family_id") or "").strip() not in {"entity_detail", "transaction_listing", "inventory_snapshot"}:
-		return ""
-	stock_signal = _stock_position_request_signal(
+	stock_boundary = item_stock_evidence_boundary_answer(
 		raw_message=raw_message,
 		artifact_payload=artifact,
 		evidence_request_contract=evidence_request_contract,
 	)
-	stock_context = _stock_position_context(artifact)
-	if stock_signal.get("stock_position_requested") and not bool(stock_context.get("rows")):
-		family_id = str(artifact.get("family_id") or "").strip()
-		if family_id == "entity_detail":
-			entity_label = _item_stock_subject_label(artifact)
-			return (
-				f"I can help with the stock position for {entity_label}, but the current result does not include warehouse-level stock rows.\n\n"
-				"Please ask me to refresh the stock view for this item so I can show quantity by warehouse."
-			)
-		return (
-			"The current inventory result does not include the warehouse-level stock rows needed for that answer.\n\n"
-			"Please ask for a warehouse stock view so I can show the quantity by warehouse."
-		)
+	if stock_boundary:
+		return stock_boundary
+	composite_boundary = composite_ranked_row_evidence_boundary_answer(
+		raw_message=raw_message,
+		artifact_payload=artifact,
+		grounded_turn=grounded_turn,
+	)
+	if composite_boundary:
+		return composite_boundary
+	if str(artifact.get("family_id") or "").strip() not in {"entity_detail", "transaction_listing", "inventory_snapshot"}:
+		return ""
 	entity_type = ""
 	if isinstance(artifact.get("dimensions"), dict):
 		entity_type = str((artifact.get("dimensions") or {}).get("entity_type") or "").strip().lower()

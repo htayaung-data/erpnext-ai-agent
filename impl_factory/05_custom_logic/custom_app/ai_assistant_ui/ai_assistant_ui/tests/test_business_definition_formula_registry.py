@@ -46,16 +46,16 @@ class TestBusinessDefinitionFormulaRegistry(unittest.TestCase):
 			"pass",
 			f"Business threshold registry must validate cleanly: {threshold_result.errors!r}",
 		)
-		self.assertEqual(definition_result.stats.get("definition_count"), 8)
-		self.assertEqual(formula_result.stats.get("formula_count"), 8)
+		self.assertEqual(definition_result.stats.get("definition_count"), 21)
+		self.assertEqual(formula_result.stats.get("formula_count"), 21)
 		self.assertEqual(threshold_result.stats.get("threshold_count"), 3)
 		self.assertEqual(
 			definition_result.stats.get("activation_counts", {}).get("active"),
-			8,
+			21,
 		)
 		self.assertEqual(
 			formula_result.stats.get("activation_counts", {}).get("active"),
-			8,
+			21,
 		)
 		self.assertEqual(
 			threshold_result.stats.get("activation_counts", {}).get("active"),

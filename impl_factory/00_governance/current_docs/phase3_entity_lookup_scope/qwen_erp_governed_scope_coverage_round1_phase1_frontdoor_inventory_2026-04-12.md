@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 1 Phase 1 Front-Door Inventory
 
-Status: active research note  
-Date: 2026-04-12  
+Status: active research note
+Date: 2026-04-12
 Scope: Round 1 Phase 1 inventory for `customer`, `supplier`, and `item/product` across front-door and metadata activation seams
 
 ## 1. Purpose
@@ -12,7 +12,7 @@ Round 1 scope:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 
 This phase is inventory only.
 
@@ -201,7 +201,7 @@ That report is direct-query backed and already defines:
 1. doctype `Customer`
 2. supported lookup fields
 3. filterable fields
-4. default limit
+4. default limi
 5. approved follow-up modes
 
 This is a full master-data route, not just a semantic hint.
@@ -254,7 +254,7 @@ That policy declares:
    - `candidate_resolution`
    - `profile_target`
 5. default projection
-6. default limit
+6. default limi
 7. match policy
 
 No equivalent entity reference policies were found for:
@@ -283,7 +283,7 @@ Important conclusion:
 
 1. Round 1 grains are already present in the system
 2. but presence is fragmented across families
-3. direct lookup/navigation activation is much stronger for customer than for supplier and item/product
+3. direct lookup/navigation activation is much stronger for customer than for supplier and item/produc
 
 ## 9. Naming And Taxonomy Unevenness
 
@@ -351,5 +351,5 @@ Next step:
 Phase 2 should answer:
 
 1. where metadata is already consumed correctly
-2. where customer currently has special runtime treatment
+2. where customer currently has special runtime treatmen
 3. where supplier and item/product lack runtime consumption versus merely lacking metadata activation

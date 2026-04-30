@@ -15,7 +15,8 @@ fake_frappe.db = types.SimpleNamespace(
 fake_frappe.get_doc = lambda *args, **kwargs: None
 fake_frappe.DoesNotExistError = type("DoesNotExistError", (Exception,), {})
 fake_frappe.ValidationError = type("ValidationError", (Exception,), {})
-sys.modules.setdefault("frappe", fake_frappe)
+if not hasattr(sys.modules.get("frappe"), "get_all"):
+	sys.modules["frappe"] = fake_frappe
 
 from ai_assistant_ui.qwen_chat.governed_kpi_execution_state import (
 	build_governed_kpi_ranking_artifact_contract,
@@ -23,6 +24,22 @@ from ai_assistant_ui.qwen_chat.governed_kpi_execution_state import (
 )
 from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
 	maybe_build_governed_kpi_value_frontdoor_response,
+)
+from ai_assistant_ui.qwen_chat.customer_lifecycle_basis import (
+	customer_lifecycle_basis_ids,
+	customer_lifecycle_dimension_basis_map,
+	customer_lifecycle_source_capability_by_basis,
+	customer_lifecycle_source_report_by_basis,
+	customer_lifecycle_tenure_metric_basis_map,
+)
+from ai_assistant_ui.qwen_chat.entity_detail_clarification import (
+	customer_tenure_aliases_by_option,
+	customer_tenure_basis_choices,
+)
+from ai_assistant_ui.qwen_chat.metadata import (
+	list_business_definition_specs,
+	list_governed_formula_specs,
+	list_governed_kpi_execution_specs,
 )
 
 
@@ -190,6 +207,50 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertIn("17,889,000 MMK", answer)
 		self.assertNotIn("Formula basis:", answer)
 
+	def test_e3_3_collection_ratio_specialized_kpi_stays_report_evidence_aligned(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.collections_support.compute_collection_ratio_by_sales_invoice_period",
+			return_value={
+				"company": self.COMPANY,
+				"from_date": "2026-03-01",
+				"to_date": "2026-03-31",
+				"invoice_count": 21,
+				"sales_invoice_grand_total": 26109000.0,
+				"allocated_customer_receipt_amount": 17889000.0,
+				"collection_ratio": 0.6851660347006779,
+			},
+		):
+			result = maybe_build_governed_kpi_value_frontdoor_response(
+				request_id="test-e3-3-collection-ratio-alignment",
+				message="show collection ratio last month",
+				company_name=self.COMPANY,
+			)
+
+		self.assertTrue(result)
+		execution_state = result.get("execution_state") or {}
+		artifact = result.get("kpi_value_artifact") or {}
+		source_reports = set(execution_state.get("source_reports") or [])
+		source_capabilities = set(execution_state.get("source_capabilities") or [])
+		evidence_reports = {
+			str(item.get("report_name") or "").strip()
+			for item in (artifact.get("source_evidence") or [])
+			if isinstance(item, dict)
+		}
+		evidence_metrics = {
+			str(item.get("metric_key") or "").strip()
+			for item in (artifact.get("source_evidence") or [])
+			if isinstance(item, dict)
+		}
+
+		self.assertEqual(execution_state.get("execution_id"), "collection_ratio_sales_invoice_period_company_scalar_execution")
+		self.assertIn("collections_read", source_capabilities)
+		self.assertIn("Sales Invoice List", source_reports)
+		self.assertIn("Payment Entry List", source_reports)
+		self.assertEqual(evidence_reports, {"Sales Invoice List", "Payment Entry List"})
+		self.assertEqual(evidence_metrics, {"sales_invoice_grand_total", "allocated_customer_receipt_amount"})
+		self.assertEqual(artifact.get("numerator_label"), "Allocated Customer Receipt Amount")
+		self.assertEqual(artifact.get("denominator_label"), "Sales Invoice Grand Total")
+
 	def test_customer_overdue_ratio_as_of_today_executes_governed_scalar_value(self):
 		with patch(
 			"ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution.get_customer_kpi_scalar_snapshot",
@@ -227,6 +288,43 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertIn("10,000,000 MMK", answer)
 		self.assertIn("12,000,000 MMK", answer)
 		self.assertNotIn("Source:", answer)
+
+	def test_customer_overdue_amount_as_of_today_executes_governed_scalar_value(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution.get_customer_kpi_scalar_snapshot",
+			return_value={
+				"receivable_snapshot": {
+					"metrics": {
+						"outstanding_total": 12000000,
+						"overdue_total": 10000000,
+						"overdue_ratio": 0.8333333333333334,
+					}
+				},
+				"policy_snapshot": {},
+				"lifecycle_snapshot": {},
+				"credit_threshold_state": {},
+			},
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution.resolve_customer_scope_from_message",
+			return_value={
+				"customer": "Bayint Naung Wholesale Mobile",
+				"customer_name": "Bayint Naung Wholesale Mobile",
+				"entity_name": "Bayint Naung Wholesale Mobile",
+				"entity_label": "Bayint Naung Wholesale Mobile",
+				"has_customer_scope": True,
+			},
+		):
+			result = maybe_build_governed_kpi_value_frontdoor_response(
+				request_id="test-overdue-amount-customer",
+				message="what is overdue amount for Bayint Naung Wholesale Mobile as of today",
+				company_name=self.COMPANY,
+			)
+		self.assertTrue(result)
+		self.assertEqual(result.get("definition_state", {}).get("definition_id"), "customer_overdue_amount_as_of_date")
+		self.assertEqual(result.get("execution_state", {}).get("resolution_state"), "active_value")
+		answer = result.get("frontdoor_answer", "")
+		self.assertIn("10,000,000 MMK", answer)
+		self.assertIn("31+ aging bucket total", answer)
 
 	def test_credit_limit_status_question_uses_governed_scalar_threshold_answer(self):
 		with patch(
@@ -358,6 +456,40 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertEqual(result.get("execution_state", {}).get("resolution_state"), "active_value")
 		self.assertIn("top 5 customers", result.get("frontdoor_answer", "").lower())
 		self.assertIn("120%", result.get("frontdoor_answer", ""))
+
+	def test_top_customers_by_overdue_amount_executes_governed_ranking(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution.list_customer_kpi_rows",
+			return_value=[
+				{
+					"customer": "Bayint Naung Wholesale Mobile",
+					"customer_label": "Bayint Naung Wholesale Mobile",
+					"outstanding_total": 12000000,
+					"overdue_total": 10000000,
+					"overdue_ratio": 0.8333333333333334,
+				},
+				{
+					"customer": "Ko Nay Lin Mobile Center",
+					"customer_label": "Ko Nay Lin Mobile Center",
+					"outstanding_total": 8000000,
+					"overdue_total": 2000000,
+					"overdue_ratio": 0.25,
+				},
+			],
+		):
+			result = maybe_build_governed_kpi_value_frontdoor_response(
+				request_id="test-overdue-amount-ranking",
+				message="show top 2 customers by overdue amount",
+				company_name=self.COMPANY,
+			)
+		self.assertTrue(result)
+		self.assertEqual(result.get("definition_state", {}).get("definition_id"), "customer_overdue_amount_as_of_date")
+		self.assertEqual(result.get("execution_state", {}).get("execution_shape"), "customer_as_of_ranking")
+		self.assertEqual(result.get("execution_state", {}).get("resolution_state"), "active_value")
+		answer = result.get("frontdoor_answer", "")
+		self.assertIn("Bayint Naung Wholesale Mobile", answer)
+		self.assertIn("10,000,000 MMK", answer)
+		self.assertIn("Overdue Ratio 83.33%", answer)
 
 	def test_customers_above_credit_limit_executes_threshold_match_ranking(self):
 		fake_execution_state = None
@@ -504,3 +636,153 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertIn("How it was calculated", answer)
 		self.assertIn("Formula basis:", answer)
 		self.assertIn("Source:", answer)
+
+	def test_e4_1_customer_lifecycle_event_taxonomy_is_explicit_and_basis_bound(self):
+		choices = customer_tenure_basis_choices()
+		choice_by_basis = {
+			item.get("basis"): item
+			for item in choices
+			if isinstance(item, dict)
+		}
+		self.assertEqual(
+			set(choice_by_basis),
+			{
+				"customer_created_date",
+				"first_sales_order_date",
+				"first_sales_invoice_date",
+			},
+		)
+		self.assertEqual(
+			choice_by_basis["customer_created_date"].get("resolved_message"),
+			"what is this customer's tenure by customer created date?",
+		)
+		self.assertEqual(
+			choice_by_basis["first_sales_order_date"].get("resolved_message"),
+			"what is this customer's tenure by first sales order date?",
+		)
+		self.assertEqual(
+			choice_by_basis["first_sales_invoice_date"].get("resolved_message"),
+			"what is this customer's tenure by first sales invoice date?",
+		)
+
+		aliases_by_option = customer_tenure_aliases_by_option()
+		self.assertIn(
+			"created date",
+			aliases_by_option.get("Customer Tenure by Customer Created Date", []),
+		)
+		self.assertIn(
+			"first sales order",
+			aliases_by_option.get("Customer Tenure by First Sales Order", []),
+		)
+		self.assertIn(
+			"first sales invoice",
+			aliases_by_option.get("Customer Tenure by First Sales Invoice", []),
+		)
+
+		definition_ids = {
+			item.get("definition_id")
+			for item in list_business_definition_specs()
+			if str(item.get("definition_id") or "").startswith("customer_tenure_")
+		}
+		self.assertEqual(
+			definition_ids,
+			{
+				"customer_tenure_customer_created_at",
+				"customer_tenure_first_sales_order_date",
+				"customer_tenure_first_sales_invoice_date",
+			},
+		)
+
+		formula_by_definition = {
+			item.get("definition_id"): item
+			for item in list_governed_formula_specs()
+			if item.get("definition_id") in definition_ids
+		}
+		execution_by_definition = {
+			item.get("definition_id"): item
+			for item in list_governed_kpi_execution_specs()
+			if item.get("definition_id") in definition_ids
+		}
+		self.assertEqual(set(formula_by_definition), definition_ids)
+		self.assertEqual(set(execution_by_definition), definition_ids)
+		self.assertEqual(
+			formula_by_definition["customer_tenure_customer_created_at"].get("source_reports"),
+			["Customer Master List"],
+		)
+		self.assertEqual(
+			formula_by_definition["customer_tenure_first_sales_order_date"].get("source_reports"),
+			["Sales Order List"],
+		)
+		self.assertEqual(
+			formula_by_definition["customer_tenure_first_sales_invoice_date"].get("source_reports"),
+			["Sales Invoice List"],
+		)
+		self.assertEqual(
+			{
+				item.get("execution_shape")
+				for item in execution_by_definition.values()
+			},
+			{"customer_as_of_scalar"},
+		)
+
+	def test_e4_2_customer_lifecycle_basis_alignment_uses_shared_basis_contract(self):
+		expected_basis_ids = [
+			"customer_created_date",
+			"first_sales_order_date",
+			"first_sales_invoice_date",
+		]
+		self.assertEqual(customer_lifecycle_basis_ids(), expected_basis_ids)
+		self.assertEqual(
+			customer_lifecycle_tenure_metric_basis_map(),
+			{
+				"customer_created_tenure_days": "customer_created_date",
+				"first_sales_order_tenure_days": "first_sales_order_date",
+				"first_sales_invoice_tenure_days": "first_sales_invoice_date",
+			},
+		)
+		self.assertEqual(
+			customer_lifecycle_dimension_basis_map(),
+			{
+				"customer_created_date": "customer_created_date",
+				"first_sales_order_date": "first_sales_order_date",
+				"first_sales_invoice_date": "first_sales_invoice_date",
+			},
+		)
+		self.assertEqual(
+			customer_lifecycle_source_report_by_basis(),
+			{
+				"customer_created_date": "Customer Master List",
+				"first_sales_order_date": "Sales Order List",
+				"first_sales_invoice_date": "Sales Invoice List",
+			},
+		)
+		self.assertEqual(
+			customer_lifecycle_source_capability_by_basis(),
+			{
+				"customer_created_date": "customer_master_read",
+				"first_sales_order_date": "sales_order_read",
+				"first_sales_invoice_date": "sales_read",
+			},
+		)
+
+		formula_by_definition = {
+			item.get("definition_id"): item
+			for item in list_governed_formula_specs()
+			if str(item.get("definition_id") or "").startswith("customer_tenure_")
+		}
+		expected_report_by_definition = {
+			"customer_tenure_customer_created_at": "Customer Master List",
+			"customer_tenure_first_sales_order_date": "Sales Order List",
+			"customer_tenure_first_sales_invoice_date": "Sales Invoice List",
+		}
+		expected_capability_by_definition = {
+			"customer_tenure_customer_created_at": "customer_master_read",
+			"customer_tenure_first_sales_order_date": "sales_order_read",
+			"customer_tenure_first_sales_invoice_date": "sales_read",
+		}
+		for definition_id, expected_report in expected_report_by_definition.items():
+			self.assertEqual(formula_by_definition[definition_id].get("source_reports"), [expected_report])
+			self.assertEqual(
+				formula_by_definition[definition_id].get("source_capabilities"),
+				[expected_capability_by_definition[definition_id]],
+			)

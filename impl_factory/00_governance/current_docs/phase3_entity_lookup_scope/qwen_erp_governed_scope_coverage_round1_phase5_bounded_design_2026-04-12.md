@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 1 Phase 5 Bounded Design
 
-Status: active design note  
-Date: 2026-04-12  
+Status: active design note
+Date: 2026-04-12
 Scope: bounded design for the next safe Round 1 expansion chapter after current Phase `3.3` closure
 
 ## 1. Purpose
@@ -106,7 +106,7 @@ Reason:
 Current state:
 
 1. customer has a dedicated family adapter and renderer
-2. supplier and item/product do not
+2. supplier and item/product do no
 
 Recommended change:
 
@@ -154,7 +154,7 @@ Important boundary:
 1. do not break document identifier drilldown for invoice/order/delivery types
 2. this chapter is about master-data grain cleanup, not document detail redesign
 
-## 5. What Not To Generalize Yet
+## 5. What Not To Generalize Ye
 
 ### 5.1 Do Not Create A Universal ERP Entity Resolver
 
@@ -217,7 +217,7 @@ For each newly activated grain, add the full governed set together or not at all
 2. capability
 3. report family/report or approved direct query source
 4. entity reference policy
-5. directory projection metadata if the shared renderer needs it
+5. directory projection metadata if the shared renderer needs i
 
 Important rule:
 
@@ -285,13 +285,13 @@ Only after that decision:
 Recommended next-grain order:
 
 1. supplier
-2. item/product
+2. item/produc
 
 Reason:
 
 1. supplier is cleaner semantically
 2. supplier has less overlap with competing analytical families
-3. item/product has a real ownership overlap that should be decided explicitly first
+3. item/product has a real ownership overlap that should be decided explicitly firs
 
 ## 9. Verification Design For The Next Chapter
 
@@ -309,10 +309,10 @@ Add or extend tests for:
 
 For supplier first:
 
-1. direct names list
+1. direct names lis
 2. candidate resolution
 3. profile handoff
-4. deictic follow-up from supplier directory/detail context
+4. deictic follow-up from supplier directory/detail contex
 
 ### 9.3 Boundary-Level
 

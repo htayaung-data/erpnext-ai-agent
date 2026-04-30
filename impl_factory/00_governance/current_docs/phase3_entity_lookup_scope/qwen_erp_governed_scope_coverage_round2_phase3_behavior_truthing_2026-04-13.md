@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 2 Phase 3 Behavior Truthing
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 2 Phase 3 behavior truthing for document-navigation, finance-operation, and inventory-operation surfaces mapped in Round 2 Phases 1 and 2
 
 ## 1. Purpose
@@ -14,7 +14,7 @@ Round 2 Phase 3 now answers the practical truth question:
 
 1. which Round 2 paths are verified by executable tests
 2. which are verified only by code inspection
-3. which have no clean generic truthing path yet
+3. which have no clean generic truthing path ye
 4. which existing failures are relevant to this scope
 5. which existing failures are unrelated noise
 
@@ -58,7 +58,7 @@ The following targeted tests were executed together and passed:
 7. payable aging execution
 8. aging clarification for missing aging view
 9. delivery note transaction-listing family adapter generalization
-10. delivery note transaction-listing family validation without outstanding amount
+10. delivery note transaction-listing family validation without outstanding amoun
 
 Result:
 
@@ -88,7 +88,7 @@ Important relevant coverage found inside that suite includes tests for:
 6. sales invoice delivery proof
 7. sales order delivery progress and planned delivery date
 8. purchase order receipt progress and planned receipt date
-9. typed contract mapping for actual sales-order delivery event and actual purchase-order receipt event
+9. typed contract mapping for actual sales-order delivery event and actual purchase-order receipt even
 
 Interpretation:
 
@@ -109,13 +109,13 @@ Interpretation:
 1. this broad suite is not clean enough to use as a direct Round 2 pass/fail gate by itself
 2. the targeted Round 2 tests remain the more reliable truthing evidence for this phase
 
-## 4.4 Existing Probe Utilities Were Found But Not Directly Usable In This Shell Context
+## 4.4 Existing Probe Utilities Were Found But Not Directly Usable In This Shell Contex
 
 The repo already contains family smoke probes for:
 
 1. aging
-2. inventory/product
-3. financial statement
+2. inventory/produc
+3. financial statemen
 
 However, a direct attempt to run the probe utilities from the current shell context failed because the standalone invocation could not import the full `frappe` environment.
 
@@ -182,7 +182,7 @@ These should not be promoted to "strongly verified generic family paths" yet.
 
 The following Round 2 candidate scopes remain unverified in this phase:
 
-1. purchase receipt
+1. purchase receip
 2. journal entry
 
 And based on earlier phases, they also remain absent or weak in the inspected metadata/runtime path.
@@ -243,5 +243,5 @@ Current truth status:
 
 1. Round 2 strong family paths are verified enough to support gap prioritization
 2. partial paths remain partial
-3. no evidence from this phase justifies claiming purchase receipt or journal entry support
+3. no evidence from this phase justifies claiming purchase receipt or journal entry suppor
 4. the remaining work is now mainly classification and sequencing, not fresh discovery of the strongest paths

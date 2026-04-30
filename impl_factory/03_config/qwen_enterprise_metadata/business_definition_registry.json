@@ -565,6 +565,34 @@
       ]
     },
     {
+      "definition_id": "customer_overdue_amount_as_of_date",
+      "label": "Customer Overdue Amount as of Date",
+      "description": "Customer overdue open amount from the 31+ receivable aging buckets as of a governed report date.",
+      "owner": "finance",
+      "company_scope": [
+        "Mingalar Mobile Distribution Co., Ltd."
+      ],
+      "entity_grain": "customer",
+      "time_basis": "as_of_date",
+      "semantic_category": "risk_semantics",
+      "activation_state": "active",
+      "source_of_truth": {
+        "capability_id": "accounts_receivable_read",
+        "report_name": "Accounts Receivable Summary",
+        "required_followup_mode": "aging_bucket_view",
+        "metric_basis": "31+ aging buckets total"
+      },
+      "business_purpose": "it shows the amount of a customer's open balance that is already overdue, which provides the primary exposure basis for customer risk review.",
+      "clarify_policy": "clarify_basis",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "overdue amount",
+        "customer overdue amount",
+        "past due amount",
+        "receivable overdue amount"
+      ]
+    },
+    {
       "definition_id": "customer_overdue_ratio_as_of_date",
       "label": "Customer Overdue Ratio as of Date",
       "description": "Customer overdue amount divided by outstanding amount as of a governed report date.",

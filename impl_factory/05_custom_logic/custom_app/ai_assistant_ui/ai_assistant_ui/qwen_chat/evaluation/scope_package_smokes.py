@@ -149,6 +149,159 @@ def run_phase_e2_1b_purchase_invoice_listing_smoke(*, deps: ScopePackageSmokeDep
     return deps.run_phase55_smoke_session("Phase E2.1B Purchase Invoice Listing Smoke", _runner)
 
 
+def run_phase_e2_4_purchase_receipt_listing_smoke(*, deps: ScopePackageSmokeDependencies) -> Dict[str, Any]:
+    def _runner(doc) -> Dict[str, Any]:
+        deps.frappe_module.clear_cache()
+        ok, first_payload = deps.run_smoke_fresh_query_turn_with_retry(
+            session_name=doc.name,
+            message="show me purchase receipts",
+            user="Administrator",
+            allowed_modes={
+                "compiled_first_turn",
+                "legacy_runtime",
+                "legacy_runtime_rollout_fallback",
+            },
+        )
+        if not ok:
+            session_doc = deps.frappe_module.get_doc(deps.session_doctype, doc.name)
+            raise RuntimeError(
+                "Phase E2.4 purchase receipt smoke failed: initial purchase receipt list request did not execute. "
+                f"payload={first_payload!r} latest_assistant={deps.latest_assistant_payload(session_doc)!r}"
+            )
+
+        session_doc = deps.frappe_module.get_doc(deps.session_doctype, doc.name)
+        first_grounded_turn = deps.latest_grounded_turn_contract(session_doc)
+        first_artifact = deps.latest_normalized_family_artifact(session_doc, grounded_turn=first_grounded_turn)
+        first_assistant_text = str(deps.latest_assistant_payload(session_doc).get("text") or "").strip()
+        first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+        first_reports = {
+            str(value or "").strip()
+            for value in (first_grounded_turn.get("artifact_source_reports") or [])
+            if str(value or "").strip()
+        }
+        first_family_id = str(first_grounded_turn.get("artifact_family_id") or "").strip()
+        first_scope_id = str(((first_artifact.get("dimensions") or {}).get("scope_id") or "")).strip()
+        if "Purchase Receipt List" not in ({first_source_name} | first_reports):
+            raise RuntimeError(
+                "Phase E2.4 purchase receipt smoke failed: grounded source did not bind to Purchase Receipt List. "
+                f"grounded_turn={first_grounded_turn!r}"
+            )
+        if first_family_id != "transaction_listing":
+            raise RuntimeError(
+                "Phase E2.4 purchase receipt smoke failed: purchase receipt list did not land in transaction_listing family. "
+                f"grounded_turn={first_grounded_turn!r}"
+            )
+        if first_scope_id != "purchase_receipt":
+            raise RuntimeError(
+                "Phase E2.4 purchase receipt smoke failed: normalized artifact did not preserve purchase_receipt scope. "
+                f"artifact={first_artifact!r}"
+            )
+        if _contains_any(
+            first_assistant_text,
+            (
+                "can't show purchase receipts",
+                "can't open purchase receipts",
+                "which one would you like",
+                "can't answer it safely",
+            ),
+        ):
+            raise RuntimeError(
+                "Phase E2.4 purchase receipt smoke failed: user-facing answer still reflected a blocked or clarify path. "
+                f"assistant_text={first_assistant_text!r}"
+            )
+
+        return {
+            "ok": True,
+            "first_mode": str((first_payload or {}).get("mode") or "").strip(),
+            "first_source_name": first_source_name,
+            "first_family_id": first_family_id,
+            "first_scope_id": first_scope_id,
+            "first_answer_text": first_assistant_text,
+        }
+
+    return deps.run_phase55_smoke_session("Phase E2.4 Purchase Receipt Listing Smoke", _runner)
+
+
+def run_phase_e3_2_payment_entry_listing_smoke(*, deps: ScopePackageSmokeDependencies) -> Dict[str, Any]:
+    def _runner(doc) -> Dict[str, Any]:
+        deps.frappe_module.clear_cache()
+        ok, first_payload = deps.run_smoke_fresh_query_turn_with_retry(
+            session_name=doc.name,
+            message="show me payment entries",
+            user="Administrator",
+            allowed_modes={
+                "compiled_first_turn",
+                "legacy_runtime",
+                "legacy_runtime_rollout_fallback",
+            },
+        )
+        if not ok:
+            session_doc = deps.frappe_module.get_doc(deps.session_doctype, doc.name)
+            raise RuntimeError(
+                "Phase E3.2 payment entry smoke failed: initial payment entry list request did not execute. "
+                f"payload={first_payload!r} latest_assistant={deps.latest_assistant_payload(session_doc)!r}"
+            )
+
+        session_doc = deps.frappe_module.get_doc(deps.session_doctype, doc.name)
+        first_grounded_turn = deps.latest_grounded_turn_contract(session_doc)
+        first_artifact = deps.latest_normalized_family_artifact(session_doc, grounded_turn=first_grounded_turn)
+        first_assistant_text = str(deps.latest_assistant_payload(session_doc).get("text") or "").strip()
+        first_source_name = str(first_grounded_turn.get("source_name") or "").strip()
+        first_reports = {
+            str(value or "").strip()
+            for value in (first_grounded_turn.get("artifact_source_reports") or [])
+            if str(value or "").strip()
+        }
+        first_family_id = str(first_grounded_turn.get("artifact_family_id") or "").strip()
+        first_scope_id = str(((first_artifact.get("dimensions") or {}).get("scope_id") or "")).strip()
+        first_source_capability = str(first_grounded_turn.get("source_capability") or "").strip()
+        if "Payment Entry List" not in ({first_source_name} | first_reports):
+            raise RuntimeError(
+                "Phase E3.2 payment entry smoke failed: grounded source did not bind to Payment Entry List. "
+                f"grounded_turn={first_grounded_turn!r}"
+            )
+        if first_family_id != "transaction_listing":
+            raise RuntimeError(
+                "Phase E3.2 payment entry smoke failed: payment entry list did not land in transaction_listing family. "
+                f"grounded_turn={first_grounded_turn!r}"
+            )
+        if first_scope_id != "payment_entry":
+            raise RuntimeError(
+                "Phase E3.2 payment entry smoke failed: normalized artifact did not preserve payment_entry scope. "
+                f"artifact={first_artifact!r}"
+            )
+        if first_source_capability and first_source_capability not in {"collections_read", "payment_entry_read"}:
+            raise RuntimeError(
+                "Phase E3.2 payment entry smoke failed: grounded source capability was not the approved payment-entry capability identity. "
+                f"grounded_turn={first_grounded_turn!r}"
+            )
+        if _contains_any(
+            first_assistant_text,
+            (
+                "can't show payment entries",
+                "can't open payment entries",
+                "which one would you like",
+                "can't answer it safely",
+            ),
+        ):
+            raise RuntimeError(
+                "Phase E3.2 payment entry smoke failed: user-facing answer still reflected a blocked or clarify path. "
+                f"assistant_text={first_assistant_text!r}"
+            )
+
+        return {
+            "ok": True,
+            "first_mode": str((first_payload or {}).get("mode") or "").strip(),
+            "first_source_name": first_source_name,
+            "first_source_capability": first_source_capability,
+            "first_family_id": first_family_id,
+            "first_scope_id": first_scope_id,
+            "first_answer_text": first_assistant_text,
+        }
+
+    return deps.run_phase55_smoke_session("Phase E3.2 Payment Entry Listing Smoke", _runner)
+
+
 def run_phase_e1_4_item_master_activation_smoke(*, deps: ScopePackageSmokeDependencies) -> Dict[str, Any]:
     def _runner(doc) -> Dict[str, Any]:
         deps.frappe_module.clear_cache()

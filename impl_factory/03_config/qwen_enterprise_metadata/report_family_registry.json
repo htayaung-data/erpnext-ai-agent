@@ -317,6 +317,7 @@
         "fulfillment_read",
         "sales_order_read",
         "purchase_order_read",
+        "purchase_receipt_read",
         "collections_read"
       ],
       "report_names": [
@@ -325,6 +326,7 @@
         "Delivery Note List",
         "Sales Order List",
         "Purchase Order List",
+        "Purchase Receipt List",
         "Payment Entry List"
       ],
       "source_report_families": [
@@ -333,6 +335,7 @@
         "delivery_note_list",
         "sales_order_list",
         "purchase_order_list",
+        "purchase_receipt_list",
         "payment_entry_list"
       ],
       "semantic_tags": [
@@ -340,6 +343,8 @@
         "invoice",
         "fulfillment",
         "purchase",
+        "receipt",
+        "receiving",
         "payment",
         "collection",
         "order",
@@ -350,6 +355,7 @@
           "sales",
           "sales_invoice",
           "purchase_invoice",
+          "purchase_receipt",
           "sales_order",
           "fulfillment",
           "payable",
@@ -375,7 +381,15 @@
           "payment entry list",
           "payment entries",
           "recent payment entries",
-          "latest payment entries"
+          "latest payment entries",
+          "purchase receipt list",
+          "purchase receipts",
+          "recent purchase receipts",
+          "latest purchase receipts",
+          "last purchase receipt",
+          "last purchase receipts",
+          "goods receipts",
+          "supplier receipts"
         ]
       },
       "coverage_status": "active"

@@ -27,6 +27,7 @@ from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import (
 	SemanticFrontDoorIntent,
 	SemanticFrontDoorResult,
+	_build_interpretation_context,
 )
 from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_lane
 from ai_assistant_ui.qwen_chat.master_data_frontdoor_support import (
@@ -35,6 +36,17 @@ from ai_assistant_ui.qwen_chat.master_data_frontdoor_support import (
 
 
 class TestMasterDataFrontDoorContracts(unittest.TestCase):
+	def test_frontdoor_context_uses_governed_master_data_scope_activations(self):
+		context = _build_interpretation_context()
+
+		self.assertEqual(
+			set(context.get("active_master_data_entity_grains") or []),
+			{"customer", "supplier", "item"},
+		)
+		self.assertIn("directory_list", list(context.get("active_master_data_lookup_modes") or []))
+		self.assertIn("candidate_resolution", list(context.get("active_master_data_lookup_modes") or []))
+		self.assertIn("names_only", list(context.get("active_master_data_lookup_projections") or []))
+
 	def test_master_data_frontdoor_assessment_resolves_supplier_directory(self):
 		payload = assess_master_data_frontdoor_request(
 			request_id="frontdoor-supplier-directory",

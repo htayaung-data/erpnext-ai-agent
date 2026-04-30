@@ -1,7 +1,7 @@
 # Qwen ERP Phase Implementation Roadmap
 
-Status: active implementation roadmap  
-Date: 2026-04-04  
+Status: active implementation roadmap
+Date: 2026-04-04
 Scope: enterprise implementation order after refactor, hardening, and follow-up-boundary closure
 
 ## 1. Executive Summary
@@ -23,7 +23,7 @@ to:
 
 This roadmap replaces scattered wave notes with one active phase-by-phase delivery order.
 
-## 2. Current Starting Point
+## 2. Current Starting Poin
 
 The following are already materially complete for the current surface:
 
@@ -31,7 +31,7 @@ The following are already materially complete for the current surface:
 2. read-query hardening
 3. semantic family layer and governed fresh-query compilation
 4. post-contract hardening and full release-gate validation
-5. bounded `financial_summary` second-wave rollout
+5. bounded `financial_summary` second-wave rollou
 6. `FollowUpBoundaryContract` redesign and closure
 
 The release gate remains:
@@ -46,9 +46,9 @@ Every new phase must follow these rules:
 
 1. implement one domain or one governed capability slice at a time
 2. metadata and contracts own business policy
-3. runtime consumes typed contracts and fails closed when evidence is insufficient
+3. runtime consumes typed contracts and fails closed when evidence is insufficien
 4. no phrase-specific routing or prompt-led business logic
-5. full release gate must be green at each phase checkpoint
+5. full release gate must be green at each phase checkpoin
 
 ## 4. Phase Preflight And Debt Rule
 
@@ -66,10 +66,10 @@ Use the active debt register:
 
 Rules:
 
-1. do not stop a phase for non-blocking debt
+1. do not stop a phase for non-blocking deb
 2. do not defer blocker debt into “later”
 3. do not turn the roadmap into a cleanup-only plan
-4. solve debt gradually when it is phase-relevant
+4. solve debt gradually when it is phase-relevan
 5. if a phase reveals that a monitored debt is now a blocker, update the register and pause only that phase
 
 ### 4.1 Phase Debt Classification
@@ -88,7 +88,7 @@ Use these categories:
 Before Phase 1.1:
 
 1. confirm the governance status of the external Qwen runtime dependency
-2. confirm whether service-user / Administrator usage is production debt or test/support-only debt
+2. confirm whether service-user / Administrator usage is production debt or test/support-only deb
 3. keep `service.py` and lane-shape debt tracked as near-blockers, not stop-work blockers
 4. prefer delivery progress over speculative pre-refactor unless a real blocker is proven
 
@@ -102,14 +102,14 @@ Goal: expand governed read coverage across high-value operational business asks.
 
 This is the next implementation chapter.
 
-### Mini-phase 1.1: Delivery / Fulfillment
+### Mini-phase 1.1: Delivery / Fulfillmen
 
 Deliver:
 
 1. governed capability metadata for fulfillment visibility
 2. report-family mapping for delivery / shipment / fulfillment status
 3. clarification rules for missing scope such as company, date, or status basis
-4. bounded reasoning support where grounded facts are sufficient
+4. bounded reasoning support where grounded facts are sufficien
 5. regression and live verification
 
 Current checkpoint:
@@ -124,7 +124,7 @@ Current checkpoint:
 4. `Show me last 7 sale invoices` and invoice-detail follow-up still work after the Delivery Note sequence
 5. the remaining `Top 5 customers by revenue last month` clarification should be treated as a separate governed ranking item, not as a Delivery / Fulfillment blocker
 6. the next Phase 1.1 step should remain bounded and should not widen into broad fulfillment expansion without another explicit checkpoint decision
-7. `1.1C` discovery should begin with `Delivery Note Trends`, while `Delivery Trip` remains deferred until live records exist in the deployment
+7. `1.1C` discovery should begin with `Delivery Note Trends`, while `Delivery Trip` remains deferred until live records exist in the deploymen
 8. `Delivery Note Trends` is now active through the existing governed `trend_analytics` family with the explicit contract:
    - required filters: `company`, `fiscal_year`, `period`, `based_on`
    - trusted scope: `Customer` + `Monthly`
@@ -136,7 +136,7 @@ Current checkpoint:
 10. current `1.1C` operational note:
    - `last_year` support was restored by propagating the existing governed time-scope contract through metadata, compiler fiscal-year resolution, and validator behavior
    - the external Qwen runtime required an image rebuild because runtime code changes are not mounted live into the container
-11. `Delivery Trip` remains deferred until live records exist in the deployment
+11. `Delivery Trip` remains deferred until live records exist in the deploymen
 12. browser/UAT is now also green for governed `Delivery Note` detail continuity:
    - `give me latest 5 delivery note`
    - `tell me more about MAT-DN-2026-00016`
@@ -147,7 +147,7 @@ Current correction-track note:
 1. the bounded `1.1R` Delivery correction track is now closed
 2. what it restored:
    - shared `latest N` document-listing inheritance
-   - shared transaction-listing continuation behavior during time-scope refinement
+   - shared transaction-listing continuation behavior during time-scope refinemen
    - governed `Delivery Note` detail drilldown parity from the listing surface
 3. `Top 5 customers by revenue last month` remains a separate live-path ranking issue and should not be bundled into Delivery acceptance
 4. the next bounded Phase `1.1` slice should be `1.1D` Invoice-to-Delivery Proof
@@ -164,7 +164,7 @@ Current `1.1D-0` foundation note:
    - `update_stock = 1` invoices
    - invoices whose items are all linked to submitted `Delivery Note` rows
    - otherwise fail closed
-3. direct live census did not find any current `sales_order only` invoice bucket in this deployment
+3. direct live census did not find any current `sales_order only` invoice bucket in this deploymen
 4. `Sales Invoice Item.delivered_qty` should not be used as the primary proof signal
 5. return invoices must be handled explicitly as reversal context, not as ordinary outbound delivery confirmation
 
@@ -187,7 +187,7 @@ Current `1.1D-2` closure note:
    - `tell me more about ACC-SINV-2026-00194`
    - `that item already delivered to the customer?`
    - `when it was delivered?`
-2. explicit invoice identifiers now route through the shared governed `entity_detail` path even in a new chat
+2. explicit invoice identifiers now route through the shared governed `entity_detail` path even in a new cha
 3. both the standard invoice-delivery proof smoke and the fresh-chat parity smoke are release-gated
 4. the release-gate module is green with those smokes included
 5. `1.1D` should now be treated as closed
@@ -197,8 +197,8 @@ Phase `1.1` closure note:
 1. the bounded Delivery / Fulfillment chapter is now checkpoint-complete
 2. what is closed inside `1.1`:
    - `1.1A` Delivery Note listing
-   - `1.1B` date-scope and status enrichment
-   - `1.1C` Delivery Note trend checkpoint
+   - `1.1B` date-scope and status enrichmen
+   - `1.1C` Delivery Note trend checkpoin
    - `1.1R` Delivery correction track
    - `1.1D` invoice-to-delivery proof
 3. current next operational expansion should move to `1.2` Sales Order Status
@@ -245,7 +245,7 @@ Phase `1.1.5` stabilization note:
 
 Phase 1.1 preflight:
 
-1. verify which ERPNext delivery / fulfillment doctypes and reports are truly active in this deployment
+1. verify which ERPNext delivery / fulfillment doctypes and reports are truly active in this deploymen
 2. verify whether the external Qwen runtime dependency is governed enough for another compiled capability slice
 3. measure whether Delivery / Fulfillment can be added metadata-first or whether Python routing debt is still too high
 4. do not refactor `service.py` as part of this slice unless a real blocker appears
@@ -284,7 +284,7 @@ Current checkpoint:
    - [test_sales_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_sales_order_listing_contracts.py)
    - `test_semantic_financial_resolution`
 5. browser/UAT is the next gate before widening scope
-6. the next planned slice remains `1.2B` Status Normalization And Date-Scope Enrichment
+6. the next planned slice remains `1.2B` Status Normalization And Date-Scope Enrichmen
 7. `1.2B` is now browser-valid and ERP-validated:
    - Sales Order status values and aliases are now governed in metadata for `Sales Order List`
    - shared direct-query scalar-filter grounding now consumes governed filter-value aliases generically
@@ -351,7 +351,7 @@ Deliver:
 
 Current approved preflight:
 
-1. do not open a `1.2.5` stabilization slice by default
+1. do not open a `1.2.5` stabilization slice by defaul
 2. use a design-first readiness step instead:
    - [qwen_erp_phase1_3_purchase_order_tracking_design_2026-04-08.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_3_purchase_order_tracking_design_2026-04-08.md)
 3. live ERP evidence confirms the first bounded chapter is viable:
@@ -367,7 +367,7 @@ Current approved preflight:
      - `per_billed`
 4. the next approved implementation order is:
    - `1.3A` submitted purchase-order listing baseline
-   - `1.3B` status normalization and date-scope enrichment
+   - `1.3B` status normalization and date-scope enrichmen
    - `1.3C` purchase-order detail drilldown parity
    - `1.3D` order-status follow-up from detail
    - `1.3E` optional draft / receipt extension only if justified
@@ -379,7 +379,7 @@ Current approved preflight:
 6. shared-core reuse stayed bounded:
    - no new lane
    - no purchase-order-specific routing patch
-   - no status-alias widening yet
+   - no status-alias widening ye
 7. deterministic validation is green:
    - guardrails
    - [test_purchase_order_listing_contracts.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_purchase_order_listing_contracts.py)
@@ -415,7 +415,7 @@ Current approved preflight:
 18. browser/UAT is now green for `1.3C`:
    - explicit `PUR-ORD-...` drilldowns stay on single-document purchase-order detail
    - detail remains bounded to purchase-order authority only
-   - unsupported receipt-event and payable-style claims are no longer present
+   - unsupported receipt-event and payable-style claims are no longer presen
 19. `1.3D` Purchase Order status follow-up is now implemented at the governed contract level:
    - the follow-up stays on the existing grounded artifact evidence path, not a new lane
    - governed aliases now cover:
@@ -436,7 +436,7 @@ Current approved preflight:
    - `test_semantic_financial_resolution`
    - `run_phase1_3_purchase_order_status_followup_smoke`
 22. browser/UAT is now green for `1.3D`:
-   - receipt-progress follow-up stays anchored to the current purchase-order detail artifact
+   - receipt-progress follow-up stays anchored to the current purchase-order detail artifac
    - billed-progress and planned-receipt-date follow-ups answer from purchase-order authority only
    - actual receipt-event date still stops safely at the governed boundary
 23. `1.3C` and `1.3D` are now promoted into [test_post_contract_release_gates.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_post_contract_release_gates.py)
@@ -461,7 +461,7 @@ Deliver:
 
 Current approved preflight:
 
-1. do not open a `1.3.5` stabilization slice by default
+1. do not open a `1.3.5` stabilization slice by defaul
 2. use a design-first readiness step instead:
    - [qwen_erp_phase1_4_customer_credit_status_design_2026-04-09.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase1_4_customer_credit_status_design_2026-04-09.md)
 3. live ERP evidence shows the strongest first authority seam is receivable exposure, not configured credit-limit policy:
@@ -474,10 +474,10 @@ Current approved preflight:
    - the existing customer detail seam in [entity_detail.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/entity_detail.py)
 5. the approved `1.4` implementation order is:
    - `1.4A` Customer Credit Exposure Baseline
-   - `1.4B` Status Normalization And As-Of-Date Enrichment
+   - `1.4B` Status Normalization And As-Of-Date Enrichmen
    - `1.4C` Customer Credit Detail Parity
    - `1.4D` Credit-Status Follow-Up From Detail
-   - `1.4E` Optional Configured Credit-Limit Extension Checkpoint
+   - `1.4E` Optional Configured Credit-Limit Extension Checkpoin
    - `1.4F` Closure And Stop Rule
 6. `1.4A` and `1.4B` are complete, `1.4C` and `1.4D` are complete, `1.4E` is complete, and `1.4F` is complete:
    - bounded customer-credit phrasing now resolves to `Accounts Receivable Summary` through the existing `aging` family, not a new lane
@@ -497,11 +497,11 @@ Current approved preflight:
      - now resolves as `followup_mode = new_query` with governed scope status `fresh_query_breakout`, instead of drifting into `erp_business_reasoning`
    - browser/UAT confirmed overdue-only and credit-balance-only filters in fresh sessions
    - `1.4E` now extends the same customer detail surface with configured commercial policy:
-     - configured credit limit
-     - remaining available credit
+     - configured credit limi
+     - remaining available credi
      - utilization
      - payment terms
-     - default price list
+     - default price lis
    - approved `1.4E` basis is explicit:
      - `Outstanding Amount > Configured Credit Limit`
    - same-session deictic follow-ups such as `what is this customer's credit limit?` now stay on the grounded artifact path instead of breaking out as self-contained fresh queries
@@ -514,7 +514,7 @@ Current approved preflight:
 Deliver:
 
 1. full-gate pass with all Wave 1 operational slices active
-2. updated metadata audit
+2. updated metadata audi
 3. updated active baseline docs
 
 Current closure checkpoint:
@@ -525,7 +525,7 @@ Current closure checkpoint:
    - exposure
    - overdue-only
    - credit-balance-only
-   - scope-reset
+   - scope-rese
    - customer detail follow-up
 3. closure verification exposed and fixed one shared transaction-listing validator drift:
    - canonical outstanding requests now validate correctly against document-list `outstanding_amount`
@@ -670,7 +670,7 @@ Current design note:
 
 1. [qwen_erp_phase2_5_governed_kpi_runtime_execution_design_2026-04-10.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase2_5_governed_kpi_runtime_execution_design_2026-04-10.md)
 
-### Mini-phase 2.5A: KPI Value Artifact Contract
+### Mini-phase 2.5A: KPI Value Artifact Contrac
 
 Deliver:
 
@@ -726,7 +726,7 @@ Deliver:
 1. customer credit utilization as of date
 2. customer overdue ratio as of date
 3. customer tenure by approved basis
-4. single-metric customer rankings such as customers above credit limit
+4. single-metric customer rankings such as customers above credit limi
 
 ### Mini-phase 2.5D: KPI Runtime Closure
 
@@ -744,7 +744,7 @@ Current status:
 
 1. `3.1` complete
 2. `3.2` complete
-3. `3.3` next
+3. `3.3` nex
 
 Current design note:
 
@@ -752,7 +752,7 @@ Current design note:
 2. active `3.3` design note:
    - [qwen_erp_phase3_3_ranking_projection_and_evidence_contract_design_2026-04-11.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/phase3_entity_lookup_scope/qwen_erp_phase3_3_ranking_projection_and_evidence_contract_design_2026-04-11.md)
 
-### Mini-phase 3.1: Composite Artifact Contract
+### Mini-phase 3.1: Composite Artifact Contrac
 
 Deliver:
 
@@ -799,7 +799,7 @@ Deliver:
 2. activate item grain through metadata and shared assembly rules
 3. activate product and item commercial ranking as one governed grain variation of the same family
 4. governed item-grain and period compatibility checks
-5. bounded render and row-follow-up support
+5. bounded render and row-follow-up suppor
 
 Current checkpoint:
 
@@ -839,17 +839,17 @@ Deliver:
 2. composite artifact checkpoint docs
 3. updated current baseline docs
 4. proof that approved alternate phrasings work without new code
-5. proof that new composites inside an existing family can be activated metadata-first
+5. proof that new composites inside an existing family can be activated metadata-firs
 
 ## 8. Phase 4: Complex Business Question Decomposition
 
 Goal: support larger business asks only after enough governed endpoints exist.
 
-### Mini-phase 4.1: Decomposition Contract
+### Mini-phase 4.1: Decomposition Contrac
 
 Deliver:
 
-1. typed decomposition request contract
+1. typed decomposition request contrac
 2. bounded sub-question planning
 3. auditability for sub-plan generation
 
@@ -885,7 +885,7 @@ Goal: make Burmese and English first-class product behavior, not UI translation 
 
 Deliver:
 
-1. language detection contract
+1. language detection contrac
 2. Burmese Unicode normalization
 3. language-aware audit envelope
 
@@ -910,18 +910,18 @@ Deliver:
 Deliver:
 
 1. multilingual replay packs
-2. validation support
+2. validation suppor
 3. full-gate pass with multilingual additions
 
 ## 10. Phase 6: Chart, Graph, Dashboard, and Export Artifacts
 
 Goal: deliver governed visual artifacts from grounded structured data.
 
-### Mini-phase 6.1: Chart Artifact Contract
+### Mini-phase 6.1: Chart Artifact Contrac
 
 Deliver:
 
-1. chart artifact contract
+1. chart artifact contrac
 2. chartable-field policy from report metadata
 3. grounded chart generation path
 
@@ -929,17 +929,17 @@ Deliver:
 
 Deliver:
 
-1. dashboard proposal contract
+1. dashboard proposal contrac
 2. governed dashboard composition rules
-3. save/proposal UX contract
+3. save/proposal UX contrac
 
 ### Mini-phase 6.3: Export Artifacts
 
 Deliver:
 
 1. PNG download path
-2. CSV export
-3. Excel export
+2. CSV expor
+3. Excel expor
 4. export auditability
 
 ### Mini-phase 6.4: Visual Phase Closure
@@ -954,11 +954,11 @@ Deliver:
 
 Goal: support governed OCR-driven read workflows only after the read and artifact surface is strong.
 
-### Mini-phase 7.1: OCR Input Contract
+### Mini-phase 7.1: OCR Input Contrac
 
 Deliver:
 
-1. OCR ingestion contract
+1. OCR ingestion contrac
 2. document-source metadata
 3. extraction confidence and audit fields
 
@@ -966,7 +966,7 @@ Deliver:
 
 Deliver:
 
-1. grounded validation rules for OCR output
+1. grounded validation rules for OCR outpu
 2. reject/clarify behavior for low-confidence extraction
 3. deterministic field normalization
 
@@ -976,7 +976,7 @@ Deliver:
 
 1. OCR-assisted read/query path
 2. bounded document-to-ERP interpretation
-3. no silent fact invention from OCR text
+3. no silent fact invention from OCR tex
 
 ### Mini-phase 7.4: OCR Phase Closure
 
@@ -995,7 +995,7 @@ Goal: add enterprise write capability last, under strict preview and confirmatio
 Deliver:
 
 1. `ActionProposalContract`
-2. preview card contract
+2. preview card contrac
 3. propose -> preview -> confirm state model
 
 ### Mini-phase 8.2: Controlled CRUD Paths
@@ -1028,7 +1028,7 @@ Start with:
 
 1. Phase 1
 2. Mini-phase 1.1
-3. Delivery / Fulfillment
+3. Delivery / Fulfillmen
 
 Why:
 

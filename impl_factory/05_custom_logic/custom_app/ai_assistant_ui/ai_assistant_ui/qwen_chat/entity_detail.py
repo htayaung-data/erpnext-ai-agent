@@ -17,6 +17,7 @@ from ai_assistant_ui.qwen_chat.customer_kpi_runtime_support import (
 	resolve_company_name,
 )
 from ai_assistant_ui.qwen_chat.customer_lifecycle_support import get_customer_lifecycle_snapshot
+from ai_assistant_ui.qwen_chat.supplier_kpi_runtime_support import get_supplier_payable_snapshot
 from ai_assistant_ui.qwen_chat.entity_reference_resolution import (
 	normalize_master_data_lookup_slots,
 	resolve_entity_reference_from_message,
@@ -27,15 +28,34 @@ from ai_assistant_ui.qwen_chat.family_adapters import (
 	_report_tool,
 )
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
-from ai_assistant_ui.qwen_chat.metadata import (
-	list_entity_reference_policy_specs,
-	load_semantic_resolution_registry,
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	entity_detail_runtime_policy,
+	list_active_entity_detail_scope_activations,
 )
-from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
+from ai_assistant_ui.qwen_chat.entity_dimension_support import entity_type_from_dimension
+from ai_assistant_ui.qwen_chat.artifact_reference_support import (
+	master_data_entity_key_label,
+	ranked_entity_key_label,
+	transaction_party_label,
+)
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_alias_phrases_for_value
 
 
 def _clean_text(value: Any) -> str:
 	return str(value or "").strip()
+
+
+def _repair_unbalanced_markdown_emphasis(value: Any) -> str:
+	text = _clean_text(value)
+	if text.count("**") % 2 == 0:
+		return text
+	return text.replace("**", "")
+
+
+def _raise_validation_error(message: str) -> None:
+	error_type = getattr(frappe, "ValidationError", Exception)
+	raise error_type(message)
 
 
 def _normalize_text(value: Any) -> str:
@@ -184,10 +204,8 @@ def _explicit_detail_request(message: str) -> bool:
 
 def _active_profile_target_entity_policies() -> List[Dict[str, Any]]:
 	out: List[Dict[str, Any]] = []
-	for item in list_entity_reference_policy_specs():
+	for item in list_active_entity_detail_scope_activations(request_mode="profile_target"):
 		if not isinstance(item, dict):
-			continue
-		if _clean_text(item.get("activation_state")) != "active":
 			continue
 		allowed_lookup_modes = {
 			_clean_text(value)
@@ -377,20 +395,12 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 		clean_entity_type = _clean_text(entity_type)
 		if not clean_entity_type:
 			return []
-		registry = load_semantic_resolution_registry()
-		alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
-		entity_grain_entries = alias_maps.get("entity_grain") if isinstance(alias_maps.get("entity_grain"), list) else []
-		entity_aliases: List[str] = [clean_entity_type]
-		for entry in entity_grain_entries:
-			if not isinstance(entry, dict):
+		entity_aliases: List[str] = []
+		for alias in semantic_slot_alias_phrases_for_value("entity_grain", clean_entity_type):
+			clean_alias = _normalize_text(alias)
+			if not clean_alias or clean_alias.endswith(" name") or clean_alias.endswith(" names"):
 				continue
-			if _clean_text(entry.get("canonical_value")) != clean_entity_type:
-				continue
-			for alias in entry.get("aliases") or []:
-				clean_alias = _normalize_text(alias)
-				if not clean_alias or clean_alias.endswith(" name") or clean_alias.endswith(" names"):
-					continue
-				entity_aliases.append(clean_alias)
+			entity_aliases.append(clean_alias)
 		out_aliases: List[str] = []
 		for alias in _clean_text_list(entity_aliases):
 			out_aliases.extend([f"that {alias}", f"this {alias}"])
@@ -420,24 +430,13 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 		if payload not in out:
 			out.append(payload)
 
-	def _entity_type_from_dimension(value: str) -> str:
-		dimension_keys = detect_canonical_keys(value, dimension_or_metric="dimension")
-		for key in dimension_keys:
-			if key == "supplier":
-				return "supplier"
-			if key == "customer":
-				return "customer"
-			if key in {"item_code", "item_name"}:
-				return "item"
-		return ""
-
 	if family_id == "transaction_listing":
 		document_entity_type = _clean_text(dimensions.get("document_entity_type") or dimensions.get("transaction_type")) or "sales_invoice"
 		for row in sections.get("transaction_rows") or []:
 			if not isinstance(row, dict):
 				continue
 			_append(document_entity_type, row.get("document_name"))
-			_append("customer", row.get("customer") or row.get("party_name"))
+			_append("customer", transaction_party_label(row))
 	elif family_id == "aging":
 		entity_type = "supplier" if _clean_text(dimensions.get("aging_type")) == "accounts_payable" else "customer"
 		for row in sections.get("parties") or []:
@@ -446,28 +445,28 @@ def _artifact_entity_candidates(artifact_payload: Dict[str, Any] | None) -> List
 			_append(entity_type, row.get("party"))
 			_append("purchase_invoice" if entity_type == "supplier" else "sales_invoice", row.get("voucher_no"))
 	elif family_id == "ranking_analytics":
-		entity_type = _entity_type_from_dimension(_clean_text(dimensions.get("entity_dimension")))
+		entity_type = entity_type_from_dimension(_clean_text(dimensions.get("entity_dimension")))
 		for row in sections.get("ranked_rows") or []:
 			if not isinstance(row, dict):
 				continue
-			label = row.get("entity_name") or row.get("entity")
-			key = row.get("entity_code") or row.get("entity") or row.get("entity_name")
+			key, label = ranked_entity_key_label(row)
 			_append(entity_type, key, label)
 	elif family_id == "product_profitability":
 		for row in sections.get("product_rows") or []:
 			if not isinstance(row, dict):
 				continue
 			_append("item", row.get("item_code") or row.get("item_name"), row.get("item_name") or row.get("item_code"))
-	elif family_id in {"customer_master_list", "master_data_directory"}:
+	elif is_master_data_listing_family(family_id):
 		entity_type = _clean_text(dimensions.get("entity_type")) or "customer"
 		entity_aliases = _entity_deictic_aliases(entity_type)
 		for row in sections.get("directory_rows") or sections.get("customer_rows") or []:
 			if not isinstance(row, dict):
 				continue
+			entity_key, entity_label = master_data_entity_key_label(row)
 			_append(
 				entity_type,
-				row.get("entity_code") or row.get("customer_code") or row.get("entity") or row.get("entity_name") or row.get("customer_name") or row.get("customer"),
-				row.get("entity_name") or row.get("entity") or row.get("customer_name") or row.get("customer"),
+				entity_key,
+				entity_label,
 				aliases=entity_aliases,
 			)
 		resolution_payload = (
@@ -607,6 +606,149 @@ def _bullet_block(title: str, items: List[str]) -> Dict[str, Any]:
 		"title": title,
 		"items": [_clean_text(item) for item in items if _clean_text(item)],
 	}
+
+
+def _entity_detail_response(
+	*,
+	detail_company: str,
+	entity_type: str,
+	entity_key: str,
+	entity_label: str,
+	title: str,
+	source_reports: List[str],
+	blocks: List[Dict[str, Any]],
+	metrics: Dict[str, Any],
+	sections: Dict[str, Any],
+	primary_metric_key: str,
+	primary_metric_label: str,
+	source_grain: str,
+	filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+	clean_source_reports = [item for item in _clean_text_list(source_reports) if item]
+	rendered = {
+		"type": "qwen_entity_detail_rendered_response",
+		"request_id": "",
+		"family_id": "entity_detail",
+		"title": _clean_text(title),
+		"source_reports": clean_source_reports,
+		"blocks": [block for block in blocks if isinstance(block, dict)],
+	}
+	artifact = {
+		"type": "qwen_entity_detail_artifact",
+		"artifact_type": "entity_detail_artifact",
+		"family_id": "entity_detail",
+		"source_reports": clean_source_reports,
+		"filters": dict(filters or {"company": detail_company, "entity_key": entity_key}),
+		"dimensions": {
+			"entity_type": _clean_text(entity_type),
+			"entity_key": _clean_text(entity_key),
+			"entity_label": _clean_text(entity_label),
+			"primary_metric_key": _clean_text(primary_metric_key),
+			"primary_metric_label": _clean_text(primary_metric_label),
+			"source_grain": _clean_text(source_grain),
+		},
+		"metrics": dict(metrics or {}),
+		"sections": dict(sections or {}),
+	}
+	return {
+		"artifact": artifact,
+		"rendered": rendered,
+		"company": _clean_text(detail_company),
+		"entity_label": _clean_text(entity_label),
+	}
+
+
+def _document_detail_response(
+	*,
+	detail_company: str,
+	entity_type: str,
+	entity_key: str,
+	entity_label: str,
+	title: str,
+	source_report: str,
+	summary_title: str,
+	summary: List[Tuple[str, Any]],
+	bullets: List[str],
+	item_columns: List[str],
+	item_rows: List[List[Any]],
+	document_row: Dict[str, Any],
+	item_section_rows: List[Dict[str, Any]],
+	metrics: Dict[str, Any],
+	primary_metric_key: str = "grand_total",
+	primary_metric_label: str = "Grand Total",
+	extra_sections: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+	sections = {
+		"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+		"document_rows": [dict(document_row or {})] if isinstance(document_row, dict) else [],
+		"item_rows": [dict(row) for row in (item_section_rows or []) if isinstance(row, dict)],
+	}
+	if isinstance(extra_sections, dict):
+		for key, value in extra_sections.items():
+			sections[_clean_text(key)] = value
+	blocks = [
+		_summary_block(summary_title, summary),
+		_bullet_block("Key Facts", bullets),
+		_data_block("Items", item_columns, item_rows),
+	]
+	return _entity_detail_response(
+		detail_company=detail_company,
+		entity_type=entity_type,
+		entity_key=entity_key,
+		entity_label=entity_label,
+		title=title,
+		source_reports=[source_report],
+		blocks=blocks,
+		metrics=metrics,
+		sections=sections,
+		primary_metric_key=primary_metric_key,
+		primary_metric_label=primary_metric_label,
+		source_grain="document_detail",
+	)
+
+
+def _profile_entity_detail_response(
+	*,
+	detail_company: str,
+	entity_type: str,
+	entity_key: str,
+	entity_label: str,
+	profile_title: str,
+	summary: List[Tuple[str, Any]],
+	bullets: List[str],
+	source_reports: List[str],
+	metrics: Dict[str, Any],
+	primary_metric_key: str,
+	primary_metric_label: str,
+	source_grain: str,
+	extra_blocks: Optional[List[Dict[str, Any]]] = None,
+	extra_sections: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+	blocks = [_summary_block(profile_title, summary)]
+	if extra_blocks:
+		blocks.extend([block for block in extra_blocks if isinstance(block, dict)])
+	if bullets:
+		blocks.append(_bullet_block("Highlights", bullets))
+	sections = {
+		"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+	}
+	if isinstance(extra_sections, dict):
+		for key, value in extra_sections.items():
+			sections[_clean_text(key)] = value
+	return _entity_detail_response(
+		detail_company=detail_company,
+		entity_type=entity_type,
+		entity_key=entity_key,
+		entity_label=entity_label,
+		title=f"{entity_label} Details",
+		source_reports=source_reports,
+		blocks=blocks,
+		metrics=metrics,
+		sections=sections,
+		primary_metric_key=primary_metric_key,
+		primary_metric_label=primary_metric_label,
+		source_grain=source_grain,
+	)
 
 
 def _current_date_iso() -> str:
@@ -776,68 +918,48 @@ def _sales_invoice_detail(entity_key: str) -> Dict[str, Any]:
 				+ ", ".join(submitted_delivery_notes[:3])
 				+ ("." if len(submitted_delivery_notes) <= 3 else ", ...")
 			)
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"Sales Invoice {doc.name}",
-		"source_reports": ["Sales Invoice"],
-		"blocks": [
-			_summary_block("Invoice Summary", summary),
-			_bullet_block("Key Facts", bullets),
-			_data_block("Items", ["Item Code", "Item Name", "Qty", "Amount (MMK)"], item_rows),
-		],
-	}
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": ["Sales Invoice"],
-		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
-		"dimensions": {
-			"entity_type": "sales_invoice",
-			"entity_key": doc.name,
-			"entity_label": doc.name,
-			"primary_metric_key": "grand_total",
-			"primary_metric_label": "Grand Total",
-			"source_grain": "document_detail",
+	return _document_detail_response(
+		detail_company=_clean_text(doc.company),
+		entity_type="sales_invoice",
+		entity_key=doc.name,
+		entity_label=doc.name,
+		title=f"Sales Invoice {doc.name}",
+		source_report="Sales Invoice",
+		summary_title="Invoice Summary",
+		summary=summary,
+		bullets=bullets,
+		item_columns=["Item Code", "Item Name", "Qty", "Amount (MMK)"],
+		item_rows=item_rows,
+		document_row={
+			"document_name": doc.name,
+			"posting_date": _iso_date(doc.posting_date),
+			"customer": _clean_text(doc.customer),
+			"grand_total": _numeric(doc.grand_total),
+			"outstanding_amount": _numeric(doc.outstanding_amount),
+			"status": _clean_text(doc.status),
+			"is_return": int(getattr(doc, "is_return", 0) or 0),
+			"update_stock": int(getattr(doc, "update_stock", 0) or 0),
 		},
-		"metrics": {
+		item_section_rows=[
+			{
+				"item_code": _clean_text(row.item_code),
+				"item_name": _clean_text(row.item_name),
+				"qty": _numeric(row.qty),
+				"amount": _numeric(row.net_amount or row.amount or 0),
+				"delivery_note": _clean_text(getattr(row, "delivery_note", "")),
+				"dn_detail": _clean_text(getattr(row, "dn_detail", "")),
+				"sales_order": _clean_text(getattr(row, "sales_order", "")),
+			}
+			for row in (doc.get("items") or [])[:25]
+		],
+		metrics={
 			"grand_total": _numeric(doc.grand_total),
 			"outstanding_amount": _numeric(doc.outstanding_amount),
 			"item_count": len(item_rows),
 			"linked_delivery_note_count": int(delivery_proof.get("linked_delivery_note_count") or 0),
 		},
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
-			"document_rows": [
-				{
-					"document_name": doc.name,
-					"posting_date": _iso_date(doc.posting_date),
-					"customer": _clean_text(doc.customer),
-					"grand_total": _numeric(doc.grand_total),
-					"outstanding_amount": _numeric(doc.outstanding_amount),
-					"status": _clean_text(doc.status),
-					"is_return": int(getattr(doc, "is_return", 0) or 0),
-					"update_stock": int(getattr(doc, "update_stock", 0) or 0),
-				}
-			],
-			"item_rows": [
-				{
-					"item_code": _clean_text(row.item_code),
-					"item_name": _clean_text(row.item_name),
-					"qty": _numeric(row.qty),
-					"amount": _numeric(row.net_amount or row.amount or 0),
-					"delivery_note": _clean_text(getattr(row, "delivery_note", "")),
-					"dn_detail": _clean_text(getattr(row, "dn_detail", "")),
-					"sales_order": _clean_text(getattr(row, "sales_order", "")),
-				}
-				for row in (doc.get("items") or [])[:25]
-			],
-			"delivery_proof": [delivery_proof],
-		},
-	}
-	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
+		extra_sections={"delivery_proof": [delivery_proof]},
+	)
 
 
 def _purchase_invoice_detail(entity_key: str) -> Dict[str, Any]:
@@ -866,61 +988,41 @@ def _purchase_invoice_detail(entity_key: str) -> Dict[str, Any]:
 		bullets.append(f"Outstanding supplier balance remains {_money(doc.outstanding_amount)} MMK.")
 	if _clean_text(doc.status):
 		bullets.append(f"Current purchase invoice status is {_clean_text(doc.status)}.")
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"Purchase Invoice {doc.name}",
-		"source_reports": ["Purchase Invoice"],
-		"blocks": [
-			_summary_block("Invoice Summary", summary),
-			_bullet_block("Key Facts", bullets),
-			_data_block("Items", ["Item Code", "Item Name", "Qty", "Amount (MMK)"], item_rows),
-		],
-	}
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": ["Purchase Invoice"],
-		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
-		"dimensions": {
-			"entity_type": "purchase_invoice",
-			"entity_key": doc.name,
-			"entity_label": doc.name,
-			"primary_metric_key": "grand_total",
-			"primary_metric_label": "Grand Total",
-			"source_grain": "document_detail",
+	return _document_detail_response(
+		detail_company=_clean_text(doc.company),
+		entity_type="purchase_invoice",
+		entity_key=doc.name,
+		entity_label=doc.name,
+		title=f"Purchase Invoice {doc.name}",
+		source_report="Purchase Invoice",
+		summary_title="Invoice Summary",
+		summary=summary,
+		bullets=bullets,
+		item_columns=["Item Code", "Item Name", "Qty", "Amount (MMK)"],
+		item_rows=item_rows,
+		document_row={
+			"document_name": doc.name,
+			"posting_date": _iso_date(doc.posting_date),
+			"supplier": _clean_text(doc.supplier),
+			"grand_total": _numeric(doc.grand_total),
+			"outstanding_amount": _numeric(doc.outstanding_amount),
+			"status": _clean_text(doc.status),
 		},
-		"metrics": {
+		item_section_rows=[
+			{
+				"item_code": _clean_text(row.item_code),
+				"item_name": _clean_text(row.item_name),
+				"qty": _numeric(row.qty),
+				"amount": _numeric(row.amount or row.base_amount or 0),
+			}
+			for row in (doc.get("items") or [])[:25]
+		],
+		metrics={
 			"grand_total": _numeric(doc.grand_total),
 			"outstanding_amount": _numeric(doc.outstanding_amount),
 			"item_count": len(item_rows),
 		},
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
-			"document_rows": [
-				{
-					"document_name": doc.name,
-					"posting_date": _iso_date(doc.posting_date),
-					"supplier": _clean_text(doc.supplier),
-					"grand_total": _numeric(doc.grand_total),
-					"outstanding_amount": _numeric(doc.outstanding_amount),
-					"status": _clean_text(doc.status),
-				}
-			],
-			"item_rows": [
-				{
-					"item_code": _clean_text(row.item_code),
-					"item_name": _clean_text(row.item_name),
-					"qty": _numeric(row.qty),
-					"amount": _numeric(row.amount or row.base_amount or 0),
-				}
-				for row in (doc.get("items") or [])[:25]
-			],
-		},
-	}
-	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
+	)
 
 
 def _delivery_note_detail(entity_key: str) -> Dict[str, Any]:
@@ -965,64 +1067,44 @@ def _delivery_note_detail(entity_key: str) -> Dict[str, Any]:
 		bullets.append(f"Billing completion is {_money(getattr(doc, 'per_billed', 0))}%.")
 	if linked_sales_orders:
 		bullets.append(f"Linked sales order reference starts from {linked_sales_orders[0]}.")
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"Delivery Note {doc.name}",
-		"source_reports": ["Delivery Note"],
-		"blocks": [
-			_summary_block("Delivery Summary", summary),
-			_bullet_block("Key Facts", bullets),
-			_data_block("Items", ["Item Code", "Item Name", "Qty", "Amount (MMK)"], item_rows),
-		],
-	}
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": ["Delivery Note"],
-		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
-		"dimensions": {
-			"entity_type": "delivery_note",
-			"entity_key": doc.name,
-			"entity_label": doc.name,
-			"primary_metric_key": "grand_total",
-			"primary_metric_label": "Grand Total",
-			"source_grain": "document_detail",
+	return _document_detail_response(
+		detail_company=_clean_text(doc.company),
+		entity_type="delivery_note",
+		entity_key=doc.name,
+		entity_label=doc.name,
+		title=f"Delivery Note {doc.name}",
+		source_report="Delivery Note",
+		summary_title="Delivery Summary",
+		summary=summary,
+		bullets=bullets,
+		item_columns=["Item Code", "Item Name", "Qty", "Amount (MMK)"],
+		item_rows=item_rows,
+		document_row={
+			"document_name": doc.name,
+			"posting_date": _iso_date(doc.posting_date),
+			"customer": _clean_text(doc.customer),
+			"grand_total": _numeric(doc.grand_total),
+			"quantity": _numeric(getattr(doc, "total_qty", 0)),
+			"status": _clean_text(doc.status),
+			"is_return": int(getattr(doc, "is_return", 0) or 0),
+			"return_against": _clean_text(getattr(doc, "return_against", "")),
 		},
-		"metrics": {
+		item_section_rows=[
+			{
+				"item_code": _clean_text(row.item_code),
+				"item_name": _clean_text(row.item_name),
+				"qty": _numeric(row.qty),
+				"amount": _numeric(row.net_amount or row.amount or 0),
+				"against_sales_order": _clean_text(row.against_sales_order),
+			}
+			for row in (doc.get("items") or [])[:25]
+		],
+		metrics={
 			"grand_total": _numeric(doc.grand_total),
 			"quantity": _numeric(getattr(doc, "total_qty", 0)),
 			"item_count": len(item_rows),
 		},
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
-			"document_rows": [
-				{
-					"document_name": doc.name,
-					"posting_date": _iso_date(doc.posting_date),
-					"customer": _clean_text(doc.customer),
-					"grand_total": _numeric(doc.grand_total),
-					"quantity": _numeric(getattr(doc, "total_qty", 0)),
-					"status": _clean_text(doc.status),
-					"is_return": int(getattr(doc, "is_return", 0) or 0),
-					"return_against": _clean_text(getattr(doc, "return_against", "")),
-				}
-			],
-			"item_rows": [
-				{
-					"item_code": _clean_text(row.item_code),
-					"item_name": _clean_text(row.item_name),
-					"qty": _numeric(row.qty),
-					"amount": _numeric(row.net_amount or row.amount or 0),
-					"against_sales_order": _clean_text(row.against_sales_order),
-				}
-				for row in (doc.get("items") or [])[:25]
-			],
-		},
-	}
-	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
+	)
 
 
 def _sales_order_detail(entity_key: str) -> Dict[str, Any]:
@@ -1061,75 +1143,51 @@ def _sales_order_detail(entity_key: str) -> Dict[str, Any]:
 		bullets.append(f"Billing progress is {_money(getattr(doc, 'per_billed', 0))}% ({_clean_text(getattr(doc, 'billing_status', ''))}).")
 	if _clean_text(getattr(doc, "delivery_date", "")):
 		bullets.append(f"Planned delivery date is {_iso_date(getattr(doc, 'delivery_date', ''))}.")
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"Sales Order {doc.name}",
-		"source_reports": ["Sales Order"],
-		"blocks": [
-			_summary_block("Order Summary", summary),
-			_bullet_block("Key Facts", bullets),
-			_data_block(
-				"Items",
-				["Item Code", "Item Name", "Qty", "Delivered Qty", "Billed Amount (MMK)", "Amount (MMK)"],
-				item_rows,
-			),
-		],
-	}
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": ["Sales Order"],
-		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
-		"dimensions": {
-			"entity_type": "sales_order",
-			"entity_key": doc.name,
-			"entity_label": doc.name,
-			"primary_metric_key": "grand_total",
-			"primary_metric_label": "Grand Total",
-			"source_grain": "document_detail",
+	return _document_detail_response(
+		detail_company=_clean_text(doc.company),
+		entity_type="sales_order",
+		entity_key=doc.name,
+		entity_label=doc.name,
+		title=f"Sales Order {doc.name}",
+		source_report="Sales Order",
+		summary_title="Order Summary",
+		summary=summary,
+		bullets=bullets,
+		item_columns=["Item Code", "Item Name", "Qty", "Delivered Qty", "Billed Amount (MMK)", "Amount (MMK)"],
+		item_rows=item_rows,
+		document_row={
+			"document_name": doc.name,
+			"transaction_date": _iso_date(getattr(doc, "transaction_date", "")),
+			"customer": _clean_text(doc.customer),
+			"status": _clean_text(doc.status),
+			"delivery_status": _clean_text(getattr(doc, "delivery_status", "")),
+			"billing_status": _clean_text(getattr(doc, "billing_status", "")),
+			"delivery_date": _iso_date(getattr(doc, "delivery_date", "")),
+			"grand_total": _numeric(doc.grand_total),
+			"quantity": _numeric(getattr(doc, "total_qty", 0)),
+			"per_delivered": _numeric(getattr(doc, "per_delivered", 0)),
+			"per_billed": _numeric(getattr(doc, "per_billed", 0)),
 		},
-		"metrics": {
+		item_section_rows=[
+			{
+				"item_code": _clean_text(row.item_code),
+				"item_name": _clean_text(row.item_name),
+				"qty": _numeric(row.qty),
+				"delivered_qty": _numeric(getattr(row, "delivered_qty", 0)),
+				"billed_amount": _numeric(getattr(row, "billed_amt", 0)),
+				"amount": _numeric(row.net_amount or row.amount or 0),
+				"delivery_date": _iso_date(getattr(row, "delivery_date", "")),
+			}
+			for row in (doc.get("items") or [])[:25]
+		],
+		metrics={
 			"grand_total": _numeric(doc.grand_total),
 			"quantity": _numeric(getattr(doc, "total_qty", 0)),
 			"per_delivered": _numeric(getattr(doc, "per_delivered", 0)),
 			"per_billed": _numeric(getattr(doc, "per_billed", 0)),
 			"item_count": len(item_rows),
 		},
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
-			"document_rows": [
-				{
-					"document_name": doc.name,
-					"transaction_date": _iso_date(getattr(doc, "transaction_date", "")),
-					"customer": _clean_text(doc.customer),
-					"status": _clean_text(doc.status),
-					"delivery_status": _clean_text(getattr(doc, "delivery_status", "")),
-					"billing_status": _clean_text(getattr(doc, "billing_status", "")),
-					"delivery_date": _iso_date(getattr(doc, "delivery_date", "")),
-					"grand_total": _numeric(doc.grand_total),
-					"quantity": _numeric(getattr(doc, "total_qty", 0)),
-					"per_delivered": _numeric(getattr(doc, "per_delivered", 0)),
-					"per_billed": _numeric(getattr(doc, "per_billed", 0)),
-				}
-			],
-			"item_rows": [
-				{
-					"item_code": _clean_text(row.item_code),
-					"item_name": _clean_text(row.item_name),
-					"qty": _numeric(row.qty),
-					"delivered_qty": _numeric(getattr(row, "delivered_qty", 0)),
-					"billed_amount": _numeric(getattr(row, "billed_amt", 0)),
-					"amount": _numeric(row.net_amount or row.amount or 0),
-					"delivery_date": _iso_date(getattr(row, "delivery_date", "")),
-				}
-				for row in (doc.get("items") or [])[:25]
-			],
-		},
-	}
-	return {"artifact": artifact, "rendered": rendered, "company": _clean_text(doc.company), "entity_label": doc.name}
+	)
 
 
 def _purchase_order_receipt_status(percent_received: Any) -> str:
@@ -1188,73 +1246,35 @@ def _purchase_order_detail(entity_key: str) -> Dict[str, Any]:
 	bullets.append(f"Billing progress is {_money(per_billed)}% ({billing_status}).")
 	if _clean_text(getattr(doc, "schedule_date", "")):
 		bullets.append(f"Planned receipt date is {_iso_date(getattr(doc, 'schedule_date', ''))}.")
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"Purchase Order {doc.name}",
-		"source_reports": ["Purchase Order"],
-		"blocks": [
-			_summary_block("Order Summary", summary),
-			_bullet_block("Key Facts", bullets),
-			_data_block(
-				"Items",
-				["Item Code", "Item Name", "Qty", "Received Qty", "Billed Amount (MMK)", "Amount (MMK)"],
-				item_rows,
-			),
+	artifact_sections = {
+		"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+		"document_rows": [
+			{
+				"document_name": doc.name,
+				"transaction_date": _iso_date(getattr(doc, "transaction_date", "")),
+				"supplier": _clean_text(doc.supplier),
+				"status": _clean_text(doc.status),
+				"receipt_status": receipt_status,
+				"billing_status": billing_status,
+				"schedule_date": _iso_date(getattr(doc, "schedule_date", "")),
+				"grand_total": _numeric(doc.grand_total),
+				"quantity": _numeric(getattr(doc, "total_qty", 0)),
+				"per_received": per_received,
+				"per_billed": per_billed,
+			}
 		],
-	}
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": ["Purchase Order"],
-		"filters": {"company": _clean_text(doc.company), "entity_key": doc.name},
-		"dimensions": {
-			"entity_type": "purchase_order",
-			"entity_key": doc.name,
-			"entity_label": doc.name,
-			"primary_metric_key": "grand_total",
-			"primary_metric_label": "Grand Total",
-			"source_grain": "document_detail",
-		},
-		"metrics": {
-			"grand_total": _numeric(doc.grand_total),
-			"quantity": _numeric(getattr(doc, "total_qty", 0)),
-			"per_received": per_received,
-			"per_billed": per_billed,
-			"item_count": len(item_rows),
-		},
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
-			"document_rows": [
-				{
-					"document_name": doc.name,
-					"transaction_date": _iso_date(getattr(doc, "transaction_date", "")),
-					"supplier": _clean_text(doc.supplier),
-					"status": _clean_text(doc.status),
-					"receipt_status": receipt_status,
-					"billing_status": billing_status,
-					"schedule_date": _iso_date(getattr(doc, "schedule_date", "")),
-					"grand_total": _numeric(doc.grand_total),
-					"quantity": _numeric(getattr(doc, "total_qty", 0)),
-					"per_received": per_received,
-					"per_billed": per_billed,
-				}
-			],
-			"item_rows": [
-				{
-					"item_code": _clean_text(row.item_code),
-					"item_name": _clean_text(row.item_name),
-					"qty": _numeric(row.qty),
-					"received_qty": _numeric(getattr(row, "received_qty", 0)),
-					"billed_amount": _numeric(getattr(row, "billed_amt", 0)),
-					"amount": _numeric(row.net_amount or row.amount or 0),
-					"schedule_date": _iso_date(getattr(row, "schedule_date", "")),
-				}
-				for row in (doc.get("items") or [])[:25]
-			],
-		},
+		"item_rows": [
+			{
+				"item_code": _clean_text(row.item_code),
+				"item_name": _clean_text(row.item_name),
+				"qty": _numeric(row.qty),
+				"received_qty": _numeric(getattr(row, "received_qty", 0)),
+				"billed_amount": _numeric(getattr(row, "billed_amt", 0)),
+				"amount": _numeric(row.net_amount or row.amount or 0),
+				"schedule_date": _iso_date(getattr(row, "schedule_date", "")),
+			}
+			for row in (doc.get("items") or [])[:25]
+		],
 	}
 	intro = (
 		f"{doc.name} is a purchase order from {_clean_text(doc.supplier)} dated "
@@ -1272,15 +1292,36 @@ def _purchase_order_detail(entity_key: str) -> Dict[str, Any]:
 		+ "\n\n"
 		+ status_sentence
 		+ "\n\n"
-		+ _render_blocks_markdown(rendered, include_title=False)
 	).strip()
-	return {
-		"artifact": artifact,
-		"rendered": rendered,
-		"company": _clean_text(doc.company),
-		"entity_label": doc.name,
-		"preferred_answer_text": preferred_answer_text,
-	}
+	response = _document_detail_response(
+		detail_company=_clean_text(doc.company),
+		entity_type="purchase_order",
+		entity_key=doc.name,
+		entity_label=doc.name,
+		title=f"Purchase Order {doc.name}",
+		source_report="Purchase Order",
+		summary_title="Order Summary",
+		summary=summary,
+		bullets=bullets,
+		item_columns=["Item Code", "Item Name", "Qty", "Received Qty", "Billed Amount (MMK)", "Amount (MMK)"],
+		item_rows=item_rows,
+		document_row=(artifact_sections.get("document_rows") or [{}])[0],
+		item_section_rows=artifact_sections.get("item_rows") or [],
+		metrics={
+			"grand_total": _numeric(doc.grand_total),
+			"quantity": _numeric(getattr(doc, "total_qty", 0)),
+			"per_received": per_received,
+			"per_billed": per_billed,
+			"item_count": len(item_rows),
+		},
+	)
+	preferred_answer_text = (
+		preferred_answer_text
+		+ "\n\n"
+		+ _render_blocks_markdown(dict(response.get("rendered") or {}), include_title=False)
+	).strip()
+	response["preferred_answer_text"] = preferred_answer_text
+	return response
 
 
 def _aggregate_invoice_stats(doctype: str, party_field: str, party_value: str, company: str) -> Dict[str, Any]:
@@ -1368,6 +1409,7 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 	credit_snapshot = {}
 	policy_snapshot = {}
 	lifecycle_snapshot = {}
+	payable_snapshot = {}
 	if entity_type == "customer":
 		credit_snapshot = _customer_receivable_snapshot(entity_name, entity_label, detail_company)
 		outstanding_for_policy = _numeric(
@@ -1377,6 +1419,12 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 		)
 		policy_snapshot = _customer_credit_policy_snapshot(entity_name, detail_company, outstanding_for_policy)
 		lifecycle_snapshot = get_customer_lifecycle_snapshot(entity_name, company=detail_company)
+	else:
+		payable_snapshot = get_supplier_payable_snapshot(
+			entity_name,
+			supplier_label=entity_label,
+			company=detail_company,
+		)
 	summary = [
 		("Name", entity_label),
 		("Code", entity_name),
@@ -1399,6 +1447,10 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 			bullets.append(f"Current outstanding balance is {_money(stats.get('outstanding_amount'))} MMK.")
 		if _clean_text(stats.get("latest_date")):
 			bullets.append(f"Most recent governed transaction was on {_iso_date(stats.get('latest_date'))}.")
+		if _numeric((payable_snapshot.get("metrics") or {}).get("overdue_total")) > 0:
+			bullets.append(
+				f"Current overdue payable balance is {_money((payable_snapshot.get('metrics') or {}).get('overdue_total'))} MMK."
+			)
 	recent_rows = [
 		[
 			_clean_text(row.get("name")),
@@ -1409,13 +1461,13 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 		]
 		for row in recent
 	]
-	credit_blocks: List[Dict[str, Any]] = []
+	status_blocks: List[Dict[str, Any]] = []
 	if credit_snapshot:
 		credit_title = "Credit Status"
 		report_date = _clean_text(credit_snapshot.get("report_date"))
 		if report_date:
 			credit_title = f"{credit_title} (As of {report_date})"
-		credit_blocks = [
+		status_blocks = [
 			_summary_block(credit_title, credit_snapshot.get("summary") or []),
 			_data_block(
 				"Aging Buckets",
@@ -1423,6 +1475,23 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 				[
 					[_clean_text(bucket), _money(amount)]
 					for bucket, amount in (credit_snapshot.get("bucket_rows") or [])
+					if _clean_text(bucket)
+				],
+			),
+		]
+	elif payable_snapshot:
+		payable_title = "Payable Status"
+		report_date = _clean_text(payable_snapshot.get("report_date"))
+		if report_date:
+			payable_title = f"{payable_title} (As of {report_date})"
+		status_blocks = [
+			_summary_block(payable_title, payable_snapshot.get("summary") or []),
+			_data_block(
+				"Aging Buckets",
+				["Bucket", "Amount (MMK)"],
+				[
+					[_clean_text(bucket), _money(amount)]
+					for bucket, amount in (payable_snapshot.get("bucket_rows") or [])
 					if _clean_text(bucket)
 				],
 			),
@@ -1483,31 +1552,26 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 				policy_rows.append(("Sales Order Credit Check", "Bypassed"))
 		elif bool(policy_snapshot.get("has_row")) or detail_company:
 			policy_rows.append(("Credit Limit", "Not Configured"))
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"{entity_label} Details",
-		"source_reports": [doctype, invoice_doctype]
-		+ (["Sales Order"] if entity_type == "customer" and _clean_text(lifecycle_snapshot.get("first_sales_order_date")) else [])
-		+ (["Accounts Receivable Summary"] if credit_snapshot else [])
-		+ (["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []),
-		"blocks": [
-			_summary_block("Profile", summary),
-			*([_summary_block("Lifecycle", lifecycle_rows)] if lifecycle_rows else []),
-			*credit_blocks,
-			*([_summary_block("Commercial Policy", policy_rows)] if policy_rows else []),
-			*([_bullet_block("Highlights", bullets)] if bullets else []),
-			_data_block(f"Recent {invoice_doctype}s", ["Invoice", "Posting Date", "Amount (MMK)", "Outstanding (MMK)", "Status"], recent_rows),
-		],
-	}
+	else:
+		if detail_company:
+			policy_rows.append(("Company", detail_company))
+		if _clean_text(master.get("payment_terms")):
+			policy_rows.append(("Payment Terms", _clean_text(master.get("payment_terms"))))
+	source_reports = [doctype, invoice_doctype]
+	source_reports += ["Sales Order"] if entity_type == "customer" and _clean_text(lifecycle_snapshot.get("first_sales_order_date")) else []
+	source_reports += ["Accounts Receivable Summary"] if credit_snapshot else []
+	source_reports += ["Accounts Payable Summary"] if payable_snapshot else []
+	source_reports += ["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []
 	artifact_metrics = {
 		"invoice_count": int(stats.get("invoice_count") or 0),
 		"total_amount": _numeric(stats.get("total_amount")),
 		"outstanding_amount": _numeric(stats.get("outstanding_amount")),
+		"latest_invoice_date": _iso_date(stats.get("latest_date")),
 	}
 	if credit_snapshot:
 		artifact_metrics.update(credit_snapshot.get("metrics") or {})
+	if payable_snapshot:
+		artifact_metrics.update(payable_snapshot.get("metrics") or {})
 	if policy_snapshot:
 		artifact_metrics.update(
 			{
@@ -1528,26 +1592,30 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 				"first_sales_invoice_tenure_days": int(_numeric(lifecycle_snapshot.get("first_sales_invoice_tenure_days"))),
 			}
 		)
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": [doctype, invoice_doctype]
-		+ (["Sales Order"] if entity_type == "customer" and _clean_text(lifecycle_snapshot.get("first_sales_order_date")) else [])
-		+ (["Accounts Receivable Summary"] if credit_snapshot else [])
-		+ (["Customer Credit Limit"] if entity_type == "customer" and bool(policy_snapshot.get("has_row")) else []),
-		"filters": {"company": detail_company, "entity_key": entity_name},
-		"dimensions": {
-			"entity_type": entity_type,
-			"entity_key": entity_name,
-			"entity_label": entity_label,
-			"primary_metric_key": "total_amount",
-			"primary_metric_label": "Total Amount",
-			"source_grain": "party_detail",
-		},
-		"metrics": artifact_metrics,
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+	return _profile_entity_detail_response(
+		detail_company=detail_company,
+		entity_type=entity_type,
+		entity_key=entity_name,
+		entity_label=entity_label,
+		profile_title="Profile",
+		summary=summary,
+		bullets=bullets,
+		source_reports=source_reports,
+		metrics=artifact_metrics,
+		primary_metric_key="total_amount",
+		primary_metric_label="Total Amount",
+		source_grain="party_detail",
+		extra_blocks=[
+			*([_summary_block("Lifecycle", lifecycle_rows)] if lifecycle_rows else []),
+			*status_blocks,
+			*([_summary_block("Commercial Policy", policy_rows)] if policy_rows else []),
+			_data_block(
+				f"Recent {invoice_doctype}s",
+				["Invoice", "Posting Date", "Amount (MMK)", "Outstanding (MMK)", "Status"],
+				recent_rows,
+			),
+		],
+		extra_sections={
 			"credit_status": [
 				{"label": _clean_text(label), "value": _clean_text(value)}
 				for label, value in (credit_snapshot.get("summary") or [])
@@ -1556,6 +1624,16 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 			"credit_buckets": [
 				{"bucket": _clean_text(bucket), "amount": _numeric(amount)}
 				for bucket, amount in (credit_snapshot.get("bucket_rows") or [])
+				if _clean_text(bucket)
+			],
+			"payable_status": [
+				{"label": _clean_text(label), "value": _clean_text(value)}
+				for label, value in (payable_snapshot.get("summary") or [])
+				if _clean_text(label) and _clean_text(value)
+			],
+			"aging_buckets": [
+				{"bucket": _clean_text(bucket), "amount": _numeric(amount)}
+				for bucket, amount in (payable_snapshot.get("bucket_rows") or [])
 				if _clean_text(bucket)
 			],
 			"credit_policy": [
@@ -1579,8 +1657,7 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 				for row in recent
 			],
 		},
-	}
-	return {"artifact": artifact, "rendered": rendered, "company": detail_company, "entity_label": entity_label}
+	)
 
 
 def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
@@ -1709,12 +1786,9 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 		]
 		for row in (stock_snapshot.get("rows") or [])
 	]
-	blocks = [
-		_summary_block("Item Profile", summary),
-		_bullet_block("Highlights", bullets),
-	]
+	extra_blocks: List[Dict[str, Any]] = []
 	if stock_rows:
-		blocks.append(
+		extra_blocks.append(
 			_data_block(
 				"Stock by Warehouse",
 				["Warehouse", "Qty", "Stock Value (MMK)"],
@@ -1722,32 +1796,19 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 			)
 		)
 	if recent_rows:
-		blocks.append(
+		extra_blocks.append(
 			_data_block("Recent Sales", ["Invoice", "Posting Date", "Qty", "Amount (MMK)"], recent_rows)
 		)
-	rendered = {
-		"type": "qwen_entity_detail_rendered_response",
-		"request_id": "",
-		"family_id": "entity_detail",
-		"title": f"{entity_label} Details",
-		"source_reports": ["Item", "Bin", "Sales Invoice Item"],
-		"blocks": blocks,
-	}
-	artifact = {
-		"type": "qwen_entity_detail_artifact",
-		"artifact_type": "entity_detail_artifact",
-		"family_id": "entity_detail",
-		"source_reports": ["Item", "Bin", "Sales Invoice Item"],
-		"filters": {"company": company, "entity_key": item_code},
-		"dimensions": {
-			"entity_type": "item",
-			"entity_key": item_code,
-			"entity_label": entity_label,
-			"primary_metric_key": "total_amount",
-			"primary_metric_label": "Total Sales Amount",
-			"source_grain": "item_detail",
-		},
-		"metrics": {
+	return _profile_entity_detail_response(
+		detail_company=company,
+		entity_type="item",
+		entity_key=item_code,
+		entity_label=entity_label,
+		profile_title="Item Profile",
+		summary=summary,
+		bullets=bullets,
+		source_reports=["Item", "Bin", "Sales Invoice Item"],
+		metrics={
 			"invoice_count": int(stats.get("invoice_count") or 0),
 			"total_qty": _numeric(stats.get("total_qty")),
 			"total_amount": _numeric(stats.get("total_amount")),
@@ -1755,8 +1816,11 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 			"balance_value": _numeric(stock_snapshot.get("balance_value")),
 			"warehouse_count": int(stock_snapshot.get("warehouse_count") or 0),
 		},
-		"sections": {
-			"summary": [{"label": label, "value": value} for label, value in summary if _clean_text(value)],
+		primary_metric_key="total_amount",
+		primary_metric_label="Total Sales Amount",
+		source_grain="item_detail",
+		extra_blocks=extra_blocks,
+		extra_sections={
 			"stock_rows": [
 				{
 					"warehouse": _clean_text(row.get("warehouse")),
@@ -1775,8 +1839,7 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 				for row in recent
 			],
 		},
-	}
-	return {"artifact": artifact, "rendered": rendered, "company": company, "entity_label": entity_label}
+	)
 
 
 def _entity_grounded_turn_payload(
@@ -1826,75 +1889,81 @@ def _entity_grounded_turn_payload(
 	}
 
 
-def execute_entity_drilldown(
+def _sales_invoice_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _sales_invoice_detail(entity_key)
+
+
+def _purchase_invoice_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _purchase_invoice_detail(entity_key)
+
+
+def _sales_order_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _sales_order_detail(entity_key)
+
+
+def _purchase_order_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _purchase_order_detail(entity_key)
+
+
+def _delivery_note_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _delivery_note_detail(entity_key)
+
+
+def _customer_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _customer_or_supplier_detail("customer", entity_key, company=company)
+
+
+def _supplier_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _customer_or_supplier_detail("supplier", entity_key, company=company)
+
+
+def _item_detail_executor(entity_key: str, *, company: str = "") -> Dict[str, Any]:
+	return _item_detail(entity_key, company=company)
+
+
+_ENTITY_DETAIL_EXECUTOR_BY_TYPE = {
+	"sales_invoice": _sales_invoice_detail_executor,
+	"purchase_invoice": _purchase_invoice_detail_executor,
+	"sales_order": _sales_order_detail_executor,
+	"purchase_order": _purchase_order_detail_executor,
+	"delivery_note": _delivery_note_detail_executor,
+	"customer": _customer_detail_executor,
+	"supplier": _supplier_detail_executor,
+	"item": _item_detail_executor,
+}
+
+
+def _resolve_entity_detail_executor(entity_type: str):
+	return _ENTITY_DETAIL_EXECUTOR_BY_TYPE.get(_clean_text(entity_type))
+
+
+def _prefix_entity_detail_answer(entity_label: str, answer_text: str) -> str:
+	clean_label = _clean_text(entity_label)
+	clean_answer = _repair_unbalanced_markdown_emphasis(answer_text)
+	if not clean_label:
+		return clean_answer
+	if clean_answer and _normalize_text(clean_label) in _normalize_text(clean_answer):
+		return clean_answer
+	prefix = f"Here are the details for {clean_label}."
+	return f"{prefix}\n\n{clean_answer}".strip() if clean_answer else prefix
+
+
+def _resolve_entity_detail_answer(
 	*,
 	request_id: str,
 	session_id: str,
 	user_id: str,
 	site_name: str,
 	message: str,
-	entity_reference: Dict[str, Any],
+	entity_type: str,
+	preferred_answer_text: str,
+	artifact_payload: Dict[str, Any],
+	rendered_payload: Dict[str, Any],
 	response_policy: Dict[str, Any],
-	grounded_turn: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
-	entity_type = _clean_text(entity_reference.get("entity_type"))
-	entity_key = _clean_text(entity_reference.get("entity_key") or entity_reference.get("entity_label"))
-	company = _clean_text((grounded_turn or {}).get("company")) if isinstance(grounded_turn, dict) else ""
-
-	if entity_type == "sales_invoice":
-		detail = _sales_invoice_detail(entity_key)
-	elif entity_type == "purchase_invoice":
-		detail = _purchase_invoice_detail(entity_key)
-	elif entity_type == "sales_order":
-		detail = _sales_order_detail(entity_key)
-	elif entity_type == "purchase_order":
-		detail = _purchase_order_detail(entity_key)
-	elif entity_type == "delivery_note":
-		detail = _delivery_note_detail(entity_key)
-	elif entity_type == "customer":
-		detail = _customer_or_supplier_detail("customer", entity_key, company=company)
-	elif entity_type == "supplier":
-		detail = _customer_or_supplier_detail("supplier", entity_key, company=company)
-	elif entity_type == "item":
-		detail = _item_detail(entity_key, company=company)
-	else:
-		raise frappe.ValidationError(f"Unsupported governed entity detail type `{entity_type}`.")
-
-	artifact_payload = dict(detail.get("artifact") or {})
-	rendered_payload = dict(detail.get("rendered") or {})
-	artifact_payload["request_id"] = request_id
-	rendered_payload["request_id"] = request_id
-	entity_label = _clean_text(detail.get("entity_label")) or entity_key
-	company = _clean_text(detail.get("company")) or company
-	preferred_answer_text = _clean_text(detail.get("preferred_answer_text"))
-	if preferred_answer_text:
-		answer_text = preferred_answer_text
-		narrative_payload = {}
-		narrative_contract_payload = {}
-		if entity_label and _normalize_text(entity_label) not in _normalize_text(answer_text):
-			prefix = f"Here are the details for {entity_label}."
-			answer_text = f"{prefix}\n\n{answer_text}".strip() if answer_text else prefix
-		return {
-			"ok": bool(answer_text),
-			"answer_text": answer_text,
-			"artifact_payload": artifact_payload,
-			"rendered_response_payload": rendered_payload,
-			"narrative_payload": narrative_payload,
-			"narrative_contract_payload": narrative_contract_payload,
-			"entity_reference": {
-				"entity_type": entity_type,
-				"entity_key": entity_key,
-				"entity_label": entity_label,
-			},
-			"grounded_turn_payload": _entity_grounded_turn_payload(
-				request_id=request_id,
-				entity_type=entity_type,
-				entity_key=entity_key,
-				entity_label=entity_label,
-				company=company,
-				artifact_payload=artifact_payload,
-			),
-		}
+) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
+	preferred_text = _clean_text(preferred_answer_text)
+	if preferred_text:
+		return preferred_text, {}, {}
 	artifact_context = build_artifact_narrative_context(
 		request_id=request_id,
 		artifact_payload=artifact_payload,
@@ -1924,11 +1993,25 @@ def execute_entity_drilldown(
 		narrative_contract_payload = {}
 	if not answer_text:
 		answer_text = _render_blocks_markdown(rendered_payload)
-	if entity_label and _normalize_text(entity_label) not in _normalize_text(answer_text):
-		prefix = f"Here are the details for {entity_label}."
-		answer_text = f"{prefix}\n\n{answer_text}".strip() if answer_text else prefix
+	return answer_text, narrative_payload, narrative_contract_payload
+
+
+def _entity_detail_result_payload(
+	*,
+	ok: bool,
+	answer_text: str,
+	artifact_payload: Dict[str, Any],
+	rendered_payload: Dict[str, Any],
+	narrative_payload: Dict[str, Any],
+	narrative_contract_payload: Dict[str, Any],
+	entity_type: str,
+	entity_key: str,
+	entity_label: str,
+	request_id: str,
+	company: str,
+) -> Dict[str, Any]:
 	return {
-		"ok": bool(answer_text),
+		"ok": ok,
 		"answer_text": answer_text,
 		"artifact_payload": artifact_payload,
 		"rendered_response_payload": rendered_payload,
@@ -1948,3 +2031,59 @@ def execute_entity_drilldown(
 			artifact_payload=artifact_payload,
 		),
 	}
+
+
+def execute_entity_drilldown(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	entity_reference: Dict[str, Any],
+	response_policy: Dict[str, Any],
+	grounded_turn: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	entity_type = _clean_text(entity_reference.get("entity_type"))
+	entity_key = _clean_text(entity_reference.get("entity_key") or entity_reference.get("entity_label"))
+	company = _clean_text((grounded_turn or {}).get("company")) if isinstance(grounded_turn, dict) else ""
+	runtime_policy = entity_detail_runtime_policy(entity_type)
+	if not runtime_policy or not runtime_policy.get("can_execute"):
+		_raise_validation_error(f"Unsupported governed entity detail type `{entity_type}`.")
+	executor = _resolve_entity_detail_executor(entity_type)
+	if executor is None:
+		_raise_validation_error(f"Unsupported governed entity detail type `{entity_type}`.")
+	detail = executor(entity_key, company=company)
+
+	artifact_payload = dict(detail.get("artifact") or {})
+	rendered_payload = dict(detail.get("rendered") or {})
+	artifact_payload["request_id"] = request_id
+	rendered_payload["request_id"] = request_id
+	entity_label = _clean_text(detail.get("entity_label")) or entity_key
+	company = _clean_text(detail.get("company")) or company
+	answer_text, narrative_payload, narrative_contract_payload = _resolve_entity_detail_answer(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		message=message,
+		entity_type=entity_type,
+		preferred_answer_text=_clean_text(detail.get("preferred_answer_text")),
+		artifact_payload=artifact_payload,
+		rendered_payload=rendered_payload,
+		response_policy=response_policy,
+	)
+	answer_text = _prefix_entity_detail_answer(entity_label, answer_text)
+	return _entity_detail_result_payload(
+		ok=bool(answer_text),
+		answer_text=answer_text,
+		artifact_payload=artifact_payload,
+		rendered_payload=rendered_payload,
+		narrative_payload=narrative_payload,
+		narrative_contract_payload=narrative_contract_payload,
+		entity_type=entity_type,
+		entity_key=entity_key,
+		entity_label=entity_label,
+		request_id=request_id,
+		company=company,
+	)

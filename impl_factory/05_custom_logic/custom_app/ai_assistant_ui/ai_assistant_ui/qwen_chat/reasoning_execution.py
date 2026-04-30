@@ -4,6 +4,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+from ai_assistant_ui.qwen_chat.business_reasoning_policy import (
+	render_business_reasoning_policy_boundary_answer,
+)
+from ai_assistant_ui.qwen_chat.business_language_guards import (
+	looks_like_predictive_guarantee_claim,
+	looks_like_unsupported_operational_inference_claim,
+)
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_erp_business_reasoning_contract,
 )
@@ -150,12 +157,32 @@ def build_reasoning_boundary_answer(
 	reasoning_type = str(intent.get("reasoning_type") or "").strip()
 	source_name = str(activation_contract.get("grounded_source_name") or "").strip()
 	source_label = source_name or "the current ERP result"
+	grounding_gaps = {
+		str(item or "").strip()
+		for item in ((execution_result.reasoning_contract or {}).get("grounding_gaps") or [])
+		if str(item or "").strip()
+	}
+	if execution_result.status == "insufficient_grounding" and "predictive_guarantee_requires_governed_policy" in grounding_gaps:
+		return (
+			f"I can't answer it safely as a guarantee or prediction from {source_label}. "
+			"The current governed evidence can support grounded facts and explanations, but it does not include an approved prediction policy, "
+			"payment-commitment evidence, or collection/default model needed to say who will pay or default. "
+			"Please ask for the current evidence, aging breakdown, or an approved governed prediction/collection policy first."
+		)
+	if execution_result.status == "insufficient_grounding" and "unsupported_operational_inference_requires_governed_evidence" in grounding_gaps:
+		return (
+			f"I can't answer that safely as a causal or subjective operational inference from {source_label}. "
+			"The current governed evidence can show recorded ERP facts, but it does not include customer sentiment, complaint, dispute, "
+			"or delay-reason evidence needed to infer dissatisfaction or intent. Please ask for the recorded fields, or use a governed "
+			"complaint/dispute/delay-reason artifact first."
+		)
+	grounding_summary = activation_contract.get("grounding_summary") if isinstance(activation_contract.get("grounding_summary"), dict) else {}
+	policy_boundary_answer = render_business_reasoning_policy_boundary_answer(
+		dict(grounding_summary.get("business_reasoning_authority_policy") or {})
+	)
+	if policy_boundary_answer:
+		return policy_boundary_answer
 	if execution_result.status == "insufficient_grounding":
-		grounding_gaps = {
-			str(item or "").strip()
-			for item in ((execution_result.reasoning_contract or {}).get("grounding_gaps") or [])
-			if str(item or "").strip()
-		}
 		if (
 			reasoning_type in {"recommendation", "continuation_detail"}
 			and not bool(activation_contract.get("recommendation_allowed"))
@@ -266,6 +293,10 @@ def _grounding_sufficient(
 		gaps.append("reasoning_type_not_allowed")
 	if reasoning_type == "recommendation" and not bool(activation_contract.get("recommendation_allowed")):
 		gaps.append("recommendation_policy_not_allowed")
+	grounding_summary = activation_contract.get("grounding_summary") if isinstance(activation_contract.get("grounding_summary"), dict) else {}
+	authority_policy = grounding_summary.get("business_reasoning_authority_policy")
+	if isinstance(authority_policy, dict) and str(authority_policy.get("policy_state") or "").strip() == "blocked":
+		gaps.append("business_reasoning_policy_blocked_variation")
 	if not bool(latest_grounded_turn.get("grounded")):
 		gaps.append("missing_grounded_turn")
 	if reasoning_type == "continuation_detail":
@@ -277,6 +308,42 @@ def _grounding_sufficient(
 		if not compatible:
 			gaps.extend(continuation_gaps)
 	return (not gaps, gaps)
+
+
+def _insufficient_grounding_result(
+	*,
+	request_id: str,
+	session_id: str,
+	reasoning_type: str,
+	activation_contract: Dict[str, Any],
+	grounding_gaps: List[str],
+	reason: str,
+) -> ERPBusinessReasoningExecutionResult:
+	contract = build_erp_business_reasoning_contract(
+		request_id=request_id,
+		session_id=session_id,
+		reasoning_type=reasoning_type,
+		grounding_source_request_id=str(activation_contract.get("grounded_source_request_id") or "").strip(),
+		grounding_source_kind=str(activation_contract.get("grounded_source_kind") or "").strip(),
+		grounding_family_id=str(activation_contract.get("grounded_family_id") or "").strip(),
+		grounding_artifact_type=str(activation_contract.get("grounded_artifact_type") or "").strip(),
+		grounding_source_reports=list(activation_contract.get("grounded_source_reports") or []),
+		grounding_sufficient=False,
+		grounding_gaps=grounding_gaps,
+		bounded_domain="erp_business_reasoning",
+		reasoning_scope="grounded_only",
+		supported_claims=[],
+		recommendations=[],
+		speculation_flags=[],
+		allowed_to_answer=False,
+		reason=reason,
+		confidence=0.0,
+	)
+	return ERPBusinessReasoningExecutionResult(
+		status="insufficient_grounding",
+		reasoning_contract=contract.to_payload(),
+		validation_error=reason,
+	)
 
 
 def _validate_runtime_payload(
@@ -393,30 +460,31 @@ def execute_erp_business_reasoning(
 	intent = dict(semantic_activation_result.get("intent") or {})
 	reasoning_type = str(intent.get("reasoning_type") or "").strip()
 	if not grounding_sufficient:
-		contract = build_erp_business_reasoning_contract(
+		return _insufficient_grounding_result(
 			request_id=request_id,
 			session_id=session_id,
 			reasoning_type=reasoning_type,
-			grounding_source_request_id=str(activation_contract.get("grounded_source_request_id") or "").strip(),
-			grounding_source_kind=str(activation_contract.get("grounded_source_kind") or "").strip(),
-			grounding_family_id=str(activation_contract.get("grounded_family_id") or "").strip(),
-			grounding_artifact_type=str(activation_contract.get("grounded_artifact_type") or "").strip(),
-			grounding_source_reports=list(activation_contract.get("grounded_source_reports") or []),
-			grounding_sufficient=False,
+			activation_contract=activation_contract,
 			grounding_gaps=grounding_gaps,
-			bounded_domain="erp_business_reasoning",
-			reasoning_scope="grounded_only",
-			supported_claims=[],
-			recommendations=[],
-			speculation_flags=[],
-			allowed_to_answer=False,
 			reason="Grounding is insufficient for ERP business reasoning execution.",
-			confidence=0.0,
 		)
-		return ERPBusinessReasoningExecutionResult(
-			status="insufficient_grounding",
-			reasoning_contract=contract.to_payload(),
-			validation_error="Grounding is insufficient for ERP business reasoning execution.",
+	if looks_like_predictive_guarantee_claim(message):
+		return _insufficient_grounding_result(
+			request_id=request_id,
+			session_id=session_id,
+			reasoning_type=reasoning_type,
+			activation_contract=activation_contract,
+			grounding_gaps=["predictive_guarantee_requires_governed_policy"],
+			reason="Predictive guarantees require an approved governed prediction or collection policy.",
+		)
+	if looks_like_unsupported_operational_inference_claim(message):
+		return _insufficient_grounding_result(
+			request_id=request_id,
+			session_id=session_id,
+			reasoning_type=reasoning_type,
+			activation_contract=activation_contract,
+			grounding_gaps=["unsupported_operational_inference_requires_governed_evidence"],
+			reason="Causal or subjective operational inference requires governed complaint, dispute, sentiment, or delay-reason evidence.",
 		)
 
 	context = _build_reasoning_context(

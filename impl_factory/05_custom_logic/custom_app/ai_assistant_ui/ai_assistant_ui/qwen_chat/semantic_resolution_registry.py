@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Tuple
 
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_capability_spec,
@@ -53,6 +54,120 @@ def _as_str_list(value: Any) -> List[str]:
 		if text:
 			items.append(text)
 	return items
+
+
+def normalize_semantic_alias_phrase(value: Any) -> str:
+	return " ".join(str(value or "").strip().lower().split())
+
+
+def semantic_alias_phrase_matches(value: str, phrase: str) -> bool:
+	text = normalize_semantic_alias_phrase(value)
+	target = normalize_semantic_alias_phrase(phrase)
+	if not text or not target:
+		return False
+	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
+	return bool(re.search(pattern, text))
+
+
+def semantic_slot_alias_entries(slot_name: str) -> List[Dict[str, Any]]:
+	alias_maps = load_semantic_resolution_registry().get("alias_maps")
+	if not isinstance(alias_maps, dict):
+		return []
+	values = alias_maps.get(str(slot_name or "").strip())
+	if not isinstance(values, list):
+		return []
+	return [dict(item) for item in values if isinstance(item, dict)]
+
+
+def semantic_slot_alias_phrases(entry: Dict[str, Any]) -> List[str]:
+	if not isinstance(entry, dict):
+		return []
+	phrases: List[str] = []
+	display_label = str(entry.get("display_label") or "").strip()
+	if display_label:
+		phrases.append(display_label)
+	phrases.extend(_as_str_list(entry.get("aliases")))
+	return list(dict.fromkeys(phrase for phrase in phrases if normalize_semantic_alias_phrase(phrase)))
+
+
+def semantic_slot_alias_phrases_for_value(
+	slot_name: str,
+	canonical_value: str,
+	*,
+	include_canonical: bool = True,
+) -> List[str]:
+	target_value = str(canonical_value or "").strip()
+	if not target_value:
+		return []
+	phrases: List[str] = []
+	if include_canonical:
+		phrases.append(target_value.replace("_", " "))
+	for entry in semantic_slot_alias_entries(slot_name):
+		if str(entry.get("canonical_value") or "").strip() != target_value:
+			continue
+		phrases.extend(semantic_slot_alias_phrases(entry))
+		break
+	out: List[str] = []
+	seen: Set[str] = set()
+	for phrase in phrases:
+		normalized = normalize_semantic_alias_phrase(phrase)
+		if not normalized or normalized in seen:
+			continue
+		seen.add(normalized)
+		out.append(phrase)
+	return out
+
+
+def semantic_slot_alias_match_details(slot_name: str, message: str) -> List[Tuple[str, str]]:
+	matches: List[Tuple[str, str]] = []
+	for entry in semantic_slot_alias_entries(slot_name):
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		for alias in semantic_slot_alias_phrases(entry):
+			if semantic_alias_phrase_matches(message, alias):
+				matches.append((canonical_value, alias))
+				break
+	return matches
+
+
+def semantic_slot_alias_matches(slot_name: str, message: str) -> List[str]:
+	return list(
+		dict.fromkeys(
+			canonical_value
+			for canonical_value, _alias in semantic_slot_alias_match_details(slot_name, message)
+			if canonical_value
+		)
+	)
+
+
+def best_semantic_slot_alias(slot_name: str, message: str) -> str:
+	best_value = ""
+	best_length = -1
+	for canonical_value, alias in semantic_slot_alias_match_details(slot_name, message):
+		alias_length = len(normalize_semantic_alias_phrase(alias))
+		if alias_length > best_length:
+			best_value = canonical_value
+			best_length = alias_length
+	return best_value
+
+
+def semantic_slot_value_from_values(slot_name: str, values: List[str]) -> str:
+	normalized_values = {
+		normalize_semantic_alias_phrase(value)
+		for value in _as_str_list(values)
+		if normalize_semantic_alias_phrase(value)
+	}
+	if not normalized_values:
+		return ""
+	for entry in semantic_slot_alias_entries(slot_name):
+		canonical_value = str(entry.get("canonical_value") or "").strip()
+		if not canonical_value:
+			continue
+		candidate_phrases = [canonical_value, *semantic_slot_alias_phrases(entry)]
+		if any(normalize_semantic_alias_phrase(phrase) in normalized_values for phrase in candidate_phrases):
+			return canonical_value
+	return ""
 
 
 def _duplicate_values(values: List[str]) -> List[str]:

@@ -170,13 +170,15 @@
       "blocked_reason": ""
     },
     {
-      "composite_id": "customer_credit_overdue_composite",
-      "family_id": "customer_credit_overdue_composite",
-      "label": "Customer Credit And Overdue Composite",
+      "composite_id": "customer_risk_as_of_default_composite",
+      "family_id": "customer_risk_as_of",
+      "label": "Customer Risk As-Of Default Composite",
       "composite_kind": "risk_table",
       "entity_grain": "customer",
       "time_scope_type": "as_of_date_required",
-      "variation_requirements": {},
+      "variation_requirements": {
+        "primary_sort_metric": "overdue_amount"
+      },
       "primary_metric_id": "overdue_amount",
       "secondary_metric_ids": [
         "overdue_ratio",
@@ -185,16 +187,23 @@
       ],
       "required_execution_ids": [
         "customer_overdue_amount_as_of_ranking_execution",
-        "customer_overdue_ratio_as_of_scalar_execution",
-        "credit_utilization_customer_as_of_date_ranking_execution"
+        "customer_overdue_ratio_as_of_ranking_execution",
+        "credit_utilization_customer_as_of_ranking_execution"
       ],
+      "derived_metric_specs": {
+        "outstanding_amount": {
+          "source_metric_id": "overdue_amount",
+          "value_key": "outstanding_total",
+          "display_format": "money_mmk"
+        }
+      },
       "assembly_id": "customer_as_of_risk_ranking_assembly",
       "compatibility_rule_ids": [
-        "customer_as_of_same_scope_credit_metrics"
+        "customer_risk_as_of_same_scope_metrics"
       ],
       "render_style": "business_table",
-      "activation_state": "draft_unapproved",
-      "blocked_reason": "Phase 3.4 must first activate reusable customer risk composite rows with governed overdue amount support."
+      "activation_state": "active",
+      "blocked_reason": ""
     }
   ]
 }

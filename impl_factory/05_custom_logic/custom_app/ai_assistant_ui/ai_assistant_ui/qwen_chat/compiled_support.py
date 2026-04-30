@@ -12,6 +12,7 @@ from ai_assistant_ui.qwen_chat.compound_request_support import (
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_clarification_reason_contract_from_sources,
 )
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 
 
 def compiled_clarification_reason_contract(*, request_id: str, result: Dict[str, Any]):
@@ -144,11 +145,8 @@ def compiled_rollout_fallback_eligible(result: Dict[str, Any]) -> bool:
 
 
 def _prefer_rendered_family_answer(family_id: str) -> bool:
-	return str(family_id or "").strip() in {
-		"transaction_listing",
-		"master_data_directory",
-		"customer_master_list",
-	}
+	clean_family_id = str(family_id or "").strip()
+	return clean_family_id == "transaction_listing" or is_master_data_listing_family(clean_family_id)
 
 
 def compiled_decision_message(

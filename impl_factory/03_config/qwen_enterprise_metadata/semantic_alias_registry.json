@@ -37,7 +37,7 @@
         "volume",
         "count"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "stock_read", "product_performance_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "purchase_receipt_read", "stock_read", "product_performance_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
         "Sales Analytics": ["Quantity"],
@@ -45,6 +45,7 @@
         "Stock Balance": ["Balance Qty"],
         "Gross Profit": ["Qty"],
         "Delivery Note List": ["Total Qty"],
+        "Purchase Receipt List": ["total_qty"],
         "Delivery Note Trends": ["Delivered Quantity"]
       }
     },
@@ -155,19 +156,26 @@
     },
     {
       "canonical_key": "overdue_only",
-      "label": "Overdue Customers",
+      "label": "Overdue Status",
       "aliases": [
         "overdue customers",
         "overdue customer",
         "customer overdue",
+        "overdue suppliers",
+        "overdue supplier",
+        "supplier overdue",
         "overdue accounts",
         "past due customers",
         "past due customer",
+        "past due suppliers",
+        "past due supplier",
         "past due accounts",
         "overdue receivables",
+        "overdue payables",
+        "payable overdue",
         "overdue balances"
       ],
-      "capability_scope": ["accounts_receivable_read"],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {}
     },
@@ -177,10 +185,13 @@
       "aliases": [
         "overdue ratio",
         "customer overdue ratio",
+        "supplier overdue ratio",
         "receivable overdue ratio",
-        "ar overdue ratio"
+        "payable overdue ratio",
+        "ar overdue ratio",
+        "ap overdue ratio"
       ],
-      "capability_scope": ["accounts_receivable_read"],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {}
     },
@@ -193,9 +204,12 @@
         "how much overdue",
         "past due amount",
         "overdue total",
-        "overdue balance"
+        "overdue balance",
+        "supplier overdue amount",
+        "overdue payable amount",
+        "payable overdue amount"
       ],
-      "capability_scope": ["accounts_receivable_read"],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {}
     },
@@ -421,10 +435,13 @@
         "creditors",
         "party"
       ],
-      "capability_scope": ["accounts_payable_read"],
+      "capability_scope": ["accounts_payable_read", "purchase_invoice_read", "purchase_order_read", "purchase_receipt_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
-        "Accounts Payable Summary": ["Party"]
+        "Accounts Payable Summary": ["Party"],
+        "Purchase Invoice List": ["supplier"],
+        "Purchase Order List": ["supplier"],
+        "Purchase Receipt List": ["supplier", "supplier_name"]
       }
     },
     {
@@ -511,14 +528,17 @@
         "document no",
         "document number"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "purchase_order_read", "purchase_invoice_read", "purchase_receipt_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Order List": ["name"],
         "Sales Register": ["Voucher No"],
         "Accounts Receivable Summary": ["Voucher No"],
         "Accounts Payable Summary": ["Voucher No"],
-        "Delivery Note List": ["name"]
+        "Delivery Note List": ["name"],
+        "Purchase Invoice List": ["name"],
+        "Purchase Order List": ["name"],
+        "Purchase Receipt List": ["name"]
       }
     },
     {
@@ -556,7 +576,7 @@
         "what day it was received",
         "what day was it received"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "purchase_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "purchase_order_read", "purchase_receipt_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Order List": ["transaction_date"],
@@ -564,7 +584,8 @@
         "Sales Register": ["Posting Date"],
         "Accounts Receivable Summary": ["Posting Date"],
         "Accounts Payable Summary": ["Posting Date"],
-        "Delivery Note List": ["posting_date"]
+        "Delivery Note List": ["posting_date"],
+        "Purchase Receipt List": ["posting_date"]
       }
     },
     {
@@ -666,7 +687,7 @@
         "dominant aging bucket",
         "which aging bucket"
       ],
-      "capability_scope": ["accounts_receivable_read"],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {}
     },
@@ -679,7 +700,7 @@
         "default payment terms",
         "payment terms template"
       ],
-      "capability_scope": ["accounts_receivable_read"],
+      "capability_scope": ["accounts_receivable_read", "accounts_payable_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {}
     },
@@ -787,11 +808,12 @@
         "how much is billed",
         "is it billed"
       ],
-      "capability_scope": ["sales_order_read", "purchase_order_read"],
+      "capability_scope": ["sales_order_read", "purchase_order_read", "purchase_receipt_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
         "Sales Order List": ["per_billed"],
-        "Purchase Order List": ["per_billed"]
+        "Purchase Order List": ["per_billed"],
+        "Purchase Receipt List": ["per_billed"]
       }
     },
     {
@@ -802,12 +824,15 @@
         "document status",
         "payment status"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "purchase_order_read", "purchase_invoice_read", "purchase_receipt_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "dimension",
       "erp_field_mappings": {
         "Sales Order List": ["status"],
         "Sales Register": ["Status"],
-        "Delivery Note List": ["status"]
+        "Delivery Note List": ["status"],
+        "Purchase Invoice List": ["status"],
+        "Purchase Order List": ["status"],
+        "Purchase Receipt List": ["status"]
       }
     },
     {
@@ -819,12 +844,15 @@
         "total amount",
         "invoice amount"
       ],
-      "capability_scope": ["sales_read", "sales_order_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
+      "capability_scope": ["sales_read", "sales_order_read", "purchase_order_read", "purchase_invoice_read", "purchase_receipt_read", "accounts_receivable_read", "accounts_payable_read", "fulfillment_read"],
       "dimension_or_metric": "metric",
       "erp_field_mappings": {
         "Sales Order List": ["grand_total"],
         "Sales Register": ["Grand Total"],
-        "Delivery Note List": ["grand_total"]
+        "Delivery Note List": ["grand_total"],
+        "Purchase Invoice List": ["grand_total"],
+        "Purchase Order List": ["grand_total"],
+        "Purchase Receipt List": ["grand_total"]
       }
     },
     {

@@ -1,7 +1,7 @@
 # Qwen ERP Master-Data Front-Door Typed Activation Slice Design
 
-Status: proposed next implementation slice  
-Date: 2026-04-14  
+Status: proposed next implementation slice
+Date: 2026-04-14
 Scope: exact design for the next enterprise slice after Phase A baseline establishment, focused on replacing interim master-data lexical recovery with typed front-door activation
 
 ## 1. Purpose
@@ -25,7 +25,7 @@ This slice is the correct next move because it:
 2. strengthens the architecture before item/product expansion
 3. preserves the existing contract ecosystem instead of creating a parallel path
 
-## 2. Roadmap Placement
+## 2. Roadmap Placemen
 
 This slice should be treated as:
 
@@ -67,7 +67,7 @@ inside:
 Specifically, the current flow can still:
 
 1. infer `entity_grain` from the raw user message after initial interpretation
-2. infer `lookup_mode` and `lookup_search_text` after that
+2. infer `lookup_mode` and `lookup_search_text` after tha
 3. resolve entity references from that inferred state
 
 This is acceptable as a temporary bridge because it:
@@ -86,8 +86,8 @@ But it is still not the final seam because:
 
 The goal is:
 
-1. make master-data request shape available as typed front-door output
-2. let fresh-query interpretation consume that typed output first
+1. make master-data request shape available as typed front-door outpu
+2. let fresh-query interpretation consume that typed output firs
 3. keep lexical alias recovery only as bounded fallback
 4. move master-data ambiguity to a shared typed front-door clarification seam
 
@@ -95,9 +95,9 @@ In simple terms:
 
 1. the system should know earlier whether the user means customer, supplier, or another master-data grain
 2. the system should know earlier whether the user wants:
-   - directory list
+   - directory lis
    - similar-name match
-   - detail/profile target
+   - detail/profile targe
 3. if it does not know safely, it should clarify there, not rely on downstream inference
 
 ## 5. What We Keep
@@ -181,7 +181,7 @@ Examples of user-facing clarification shape:
 
 This should be typed clarification, not a raw phrase repair.
 
-### 6.3 Fresh-query interpreter must consume typed front-door assessment first
+### 6.3 Fresh-query interpreter must consume typed front-door assessment firs
 
 When a valid master-data front-door assessment exists:
 
@@ -191,7 +191,7 @@ When a valid master-data front-door assessment exists:
    - `lookup_projection`
    - `lookup_search_text`
 2. semantic resolution should continue from that typed state
-3. `_augment_master_data_lookup_interpretation_from_message(...)` should only run as fallback if no typed front-door master-data assessment is present
+3. `_augment_master_data_lookup_interpretation_from_message(...)` should only run as fallback if no typed front-door master-data assessment is presen
 
 ### 6.4 Alias inference becomes bounded fallback only
 
@@ -213,9 +213,9 @@ Extend the front-door layer to support a new typed master-data assessment step b
 
 Recommended seam:
 
-1. add a small helper module for master-data front-door assessment
+1. add a small helper module for master-data front-door assessmen
 2. invoke it inside the front-door evaluation path
-3. if the assessment says `clarification_required`, front door handles it
+3. if the assessment says `clarification_required`, front door handles i
 4. if the assessment says `resolved`, front door attaches the typed assessment payload and routes onward
 5. if the assessment says `not_applicable`, normal flow continues unchanged
 
@@ -226,7 +226,7 @@ Only add new front-door intent entries if necessary for conversational ownership
 Recommended minimal rule:
 
 1. use a front-door clarification intent only when ambiguity must be surfaced to the user
-2. do not create a new front-door intent for every resolved master-data request
+2. do not create a new front-door intent for every resolved master-data reques
 3. resolved master-data requests should still route onward through the main governed family path
 
 ### 7.3 Contracts layer
@@ -258,7 +258,7 @@ Use existing entity-grain display metadata where possible.
 
 Refactor `fresh_query_interpreter.py` so that:
 
-1. typed master-data front-door payload is checked first
+1. typed master-data front-door payload is checked firs
 2. semantic interpretation is augmented from typed payload
 3. current message-based inference is fallback only
 
@@ -284,7 +284,7 @@ That block should remain only as bridge logic after this slice, not as the prima
 2. item/product ownership decision
 3. broad multi-step execution
 4. removal of all lexical helpers across the whole codebase
-5. broad rewording of all clarification text
+5. broad rewording of all clarification tex
 6. broad response naturalness cleanup
 
 ## 9. Acceptance Criteria
@@ -310,9 +310,9 @@ Add narrow tests for:
 2. front-door master-data assessment returns `clarification_required` for:
    - `give me some names`
    - `do u have name similar to Nay Lin Mobile`
-   if grain is not explicit
+   if grain is not explici
 3. fresh-query interpretation consumes typed front-door assessment before fallback inference
-4. fallback inference still works only when typed assessment is absent
+4. fallback inference still works only when typed assessment is absen
 
 ### 10.2 Behavior verification
 

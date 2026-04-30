@@ -8,11 +8,14 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	RenderedFamilyResponseContract,
 	build_rendered_family_response_contract,
 )
-from ai_assistant_ui.qwen_chat.governed_scope_registry import scope_id_for_entity_grain
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	governed_scope_runtime_policy,
+	scope_id_for_entity_grain,
+)
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 from ai_assistant_ui.qwen_chat.metadata import (
 	composite_read_renderer_id,
 	financial_statement_report_name,
-	get_scope_projection_spec,
 	report_family_renderer_id,
 )
 
@@ -337,7 +340,11 @@ def _blocks_to_text(title: str, blocks: List[Dict[str, Any]]) -> str:
 		if block_title:
 			lines.append("")
 			lines.append(block_title)
-		if block_type == "summary_table":
+		if block_type == "paragraph":
+			text = _clean_text(block.get("text"))
+			if text:
+				lines.append(text)
+		elif block_type == "summary_table":
 			columns = [_clean_text(item) for item in block.get("columns") or [] if _clean_text(item)]
 			rows = [
 				[_clean_text(cell) for cell in row]
@@ -408,7 +415,7 @@ def _default_master_data_columns(
 	if lookup_projection != "standard_directory":
 		return ["entity"]
 	resolved_scope_id = _clean_text(scope_id) or scope_id_for_entity_grain(entity_type)
-	projection_spec = get_scope_projection_spec(resolved_scope_id, "master_data_lookup")
+	projection_spec = governed_scope_runtime_policy(resolved_scope_id, "master_data_lookup")
 	allowed_dimensions = _clean_list(projection_spec.get("allowed_dimensions"))
 	selected_columns: List[str] = []
 	for dimension_label in allowed_dimensions:
@@ -454,7 +461,7 @@ def _default_transaction_columns(
 	column_map: Dict[str, str],
 	document_rows: List[Dict[str, Any]],
 ) -> List[str]:
-	projection_spec = get_scope_projection_spec(_clean_text(scope_id), "transaction_listing")
+	projection_spec = governed_scope_runtime_policy(_clean_text(scope_id), "transaction_listing")
 	allowed_dimensions = _clean_list(projection_spec.get("allowed_dimensions"))
 	allowed_metrics = _clean_list(projection_spec.get("allowed_metrics"))
 	selected_columns: List[str] = []
@@ -1324,6 +1331,12 @@ def _master_data_directory_blocks(artifact: NormalizedFamilyArtifactContract) ->
 				"items": [f"No {entity_plural_label.lower()} matched these filters."],
 			}
 		]
+	to_date = _clean_text(artifact.period.get("to_date") if isinstance(artifact.period, dict) else "")
+	title = (
+		f"{len(limited_rows)} {entity_plural_label} Found as of {to_date}"
+		if to_date
+		else f"{len(limited_rows)} {entity_plural_label} Found"
+	)
 	if selected_columns == ["entity"]:
 		return title, [
 			{
@@ -1433,7 +1446,7 @@ def render_normalized_family_response(
 		title, blocks = _product_blocks(artifact_contract, response_overrides=response_overrides)
 	elif family_id == "transaction_listing":
 		title, blocks = _transaction_listing_blocks(artifact_contract)
-	elif family_id in {"customer_master_list", "master_data_directory"}:
+	elif is_master_data_listing_family(family_id):
 		title, blocks = _master_data_directory_blocks(artifact_contract)
 	else:
 		return FamilyRenderOutcome(

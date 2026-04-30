@@ -53,8 +53,12 @@ def _normalize_key(value: Any) -> str:
 def _requested_time_scope(primary_scope: str, strategy: str) -> str:
 	scope = str(primary_scope or "").strip()
 	mode = str(strategy or "").strip()
+	if mode in {"as_of_today", "current_date_utc", "force_as_of_today"}:
+		return "as_of_today"
 	if mode == "inherit_or_as_of_today":
-		return scope or "as_of_today"
+		# Composite aging steps are as-of reads. Do not leak broader period scopes
+		# from the parent analysis into a component validator that expects report_date.
+		return scope if scope in {"as_of_today", "current_date_utc"} else "as_of_today"
 	return scope
 
 
@@ -741,8 +745,12 @@ def execute_composite_read_plan(
 
 	runtime_ok = str(validation_payload.get("status") or "").strip() == "pass"
 	overall_grounded_status = "pass" if grounded_statuses and all(item == "pass" for item in grounded_statuses) else "fail"
+	# Composite reads stay deterministic until an approved narrative policy can
+	# guarantee no recommendation/prediction drift beyond the governed artifact.
+	allow_narrative_runtime = False
 	if (
-		composite_artifact
+		allow_narrative_runtime
+		and composite_artifact
 		and rendered_response_payload
 		and str(validation_payload.get("status") or "").strip() == "pass"
 		and str(semantic_payload.get("status") or "").strip() == "pass"

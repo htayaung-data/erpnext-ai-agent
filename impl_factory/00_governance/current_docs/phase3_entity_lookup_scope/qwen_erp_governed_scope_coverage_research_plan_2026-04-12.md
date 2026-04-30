@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Research Plan
 
-Status: active research plan  
-Date: 2026-04-12  
+Status: active research plan
+Date: 2026-04-12
 Scope: phase-by-phase enterprise research plan to map actual governed AI Assistant coverage before further scope expansion or seam generalization
 
 ## 1. Purpose
@@ -20,7 +20,7 @@ The plan is meant to answer, with evidence:
 2. what is already active end to end
 3. what is only partially wired
 4. what is available in one contract family but missing in another
-5. what should be prioritized next
+5. what should be prioritized nex
 
 This plan is research first, design second, implementation third.
 
@@ -29,8 +29,8 @@ This plan is research first, design second, implementation third.
 The research itself must follow the same enterprise rules as implementation.
 
 1. no guessing
-2. no estimate-as-fact
-3. repo evidence first
+2. no estimate-as-fac
+3. repo evidence firs
 4. runtime truth second
 5. browser/UAT only after code-level mapping
 6. distinguish declared from active
@@ -123,7 +123,7 @@ Recommended scope groups:
 1. entity navigation
    - customer
    - supplier
-   - item or product
+   - item or produc
    - warehouse
    - sales person
    - territory
@@ -144,7 +144,7 @@ Recommended scope groups:
 4. evidence and detail scopes
    - profile
    - lifecycle
-   - credit
+   - credi
    - overdue
    - first activity
 5. continuation scopes
@@ -152,11 +152,11 @@ Recommended scope groups:
    - projection change
    - time correction
    - subject switch
-   - fresh breakout
+   - fresh breakou
 
 ## 6. Phase-By-Phase Research Plan
 
-## 6.1 Phase 0: Baseline And Rules Alignment
+## 6.1 Phase 0: Baseline And Rules Alignmen
 
 Goal:
 
@@ -222,7 +222,7 @@ Questions to answer:
 Required output:
 
 1. front-door inventory note
-2. initial coverage matrix draft
+2. initial coverage matrix draf
 
 Exit criteria:
 
@@ -246,7 +246,7 @@ What to inspect:
 4. family rendering
 5. entity detail
 6. follow-up interpreter
-7. continuation support
+7. continuation suppor
 8. artifact boundary lane
 9. entity drilldown lane
 10. recovery and clarification seams
@@ -303,7 +303,7 @@ Exit criteria:
 
 1. each scope is classified as one of:
    - active and verified
-   - active but inconsistent
+   - active but inconsisten
    - partial
    - declared only
    - missing
@@ -327,7 +327,7 @@ Priority factors:
 1. business value
 2. reuse potential
 3. architecture safety
-4. amount of existing infrastructure already present
+4. amount of existing infrastructure already presen
 5. risk of regression
 
 Required output:
@@ -384,9 +384,9 @@ Suggested columns:
 3. entity or domain
 4. front-door intent coverage
 5. metadata coverage
-6. fresh-query support
-7. detail or profile support
-8. ranking or KPI support
+6. fresh-query suppor
+7. detail or profile suppor
+8. ranking or KPI suppor
 9. continuation safety
 10. renderer quality
 11. verification status
@@ -410,7 +410,7 @@ Recommended practical order:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 4. document entities
 5. analytical families
 6. continuation and handoff cross-check
@@ -444,7 +444,7 @@ for these scopes only:
 
 1. customer
 2. supplier
-3. item or product
+3. item or produc
 
 Why this is the right first tranche:
 

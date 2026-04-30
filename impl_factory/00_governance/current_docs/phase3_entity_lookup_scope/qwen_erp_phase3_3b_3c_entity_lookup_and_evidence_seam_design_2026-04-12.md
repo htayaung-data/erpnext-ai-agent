@@ -1,7 +1,7 @@
 # Qwen ERP Phase 3.3B / 3.3C Entity Lookup And Evidence Seam Design
 
-Status: active bounded design note  
-Date: 2026-04-12  
+Status: active bounded design note
+Date: 2026-04-12
 Scope: bounded implementation design for Phase `3.3B` and `3.3C` to remove lexical authority drift from entity-oriented lookup and evidence behavior without introducing a parallel architecture
 
 ## 1. Purpose
@@ -65,7 +65,7 @@ So the current problem is not outside the roadmap.
 
 It is an active Phase `3.3` seam.
 
-## 4. Problem Statement
+## 4. Problem Statemen
 
 The assistant already performs well for:
 
@@ -150,7 +150,7 @@ Required typed additions:
 
 Reason:
 
-1. this keeps the front-door / fresh-query seam consistent
+1. this keeps the front-door / fresh-query seam consisten
 2. it avoids inventing a second top-level interpretation channel
 3. it lets the compiler/runtime remain the contract consumer
 
@@ -188,9 +188,9 @@ Add the following fields:
 Reason:
 
 1. the renderer should consume typed resolved meaning
-2. the renderer should not rediscover target entity or question shape from raw English text
+2. the renderer should not rediscover target entity or question shape from raw English tex
 
-### 6.3 Add One Small Shared Resolution Contract
+### 6.3 Add One Small Shared Resolution Contrac
 
 Add a small dedicated typed contract for shared entity resolution:
 
@@ -232,11 +232,11 @@ Use it to define only the typed distinctions that matter.
 
 Required additions:
 
-1. `lookup_mode` slot
+1. `lookup_mode` slo
    - `directory_list`
    - `candidate_resolution`
    - `profile_target`
-2. `lookup_projection` slot
+2. `lookup_projection` slo
    - `names_only`
    - `standard_directory`
    - `selected_columns`
@@ -244,7 +244,7 @@ Required additions:
 
 Initial approved rule shape:
 
-1. customer directory / resolution / profile target
+1. customer directory / resolution / profile targe
 2. supplier directory / resolution / profile target only if approved report or direct-query authority is already confirmed
 3. item directory / resolution / profile target only if approved report or direct-query authority is already confirmed
 
@@ -428,7 +428,7 @@ Output text checks should be secondary and narrow.
 
 The verification must prove seam behavior, not just one prompt.
 
-### 10.1 Contract Tests First
+### 10.1 Contract Tests Firs
 
 Add or update deterministic tests for:
 
@@ -497,7 +497,7 @@ This bounded slice is complete when:
 
 The right posture for this slice is:
 
-1. contract first
+1. contract firs
 2. metadata second
 3. narrow runtime consumer changes third
 4. deterministic verification before browser checks

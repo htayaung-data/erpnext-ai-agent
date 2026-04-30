@@ -8,9 +8,11 @@ from ai_assistant_ui.qwen_chat.conversation_control_support import (
 	select_recent_focus_continuation_eligibility as _select_recent_focus_continuation_eligibility_helper,
 )
 from ai_assistant_ui.qwen_chat.contracts import build_recent_focus_affordance_contract
+from ai_assistant_ui.qwen_chat.customer_lifecycle_basis import customer_lifecycle_supported_focus_grains
+from ai_assistant_ui.qwen_chat.document_event_basis import document_event_supported_focus_grains
 from ai_assistant_ui.qwen_chat.governed_scope_registry import (
 	entity_grain_for_report_name,
-	governed_scope_family_policy,
+	governed_scope_runtime_policy,
 	governed_scope_spec,
 	listing_view_for_report_name,
 	scope_id_for_report_name,
@@ -27,6 +29,11 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_direct_query_fields,
 	report_grouping_document_key_field,
 	report_supported_dimensions,
+)
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
+from ai_assistant_ui.qwen_chat.item_product_support import (
+	is_item_product_grain,
+	normalize_item_product_grain,
 )
 
 
@@ -63,6 +70,11 @@ def _append_unique(items: List[str], value: Any) -> None:
 		items.append(text)
 
 
+def _extend_unique(items: List[str], values: List[Any]) -> None:
+	for value in values or []:
+		_append_unique(items, value)
+
+
 def _normalize_text(value: Any) -> str:
 	return " ".join(_clean_text(value).lower().split())
 
@@ -92,7 +104,7 @@ def detail_capable_document_focus_grains() -> List[str]:
 		scope_id = _clean_text(scope.get("scope_id"))
 		if not scope_id:
 			continue
-		policy = governed_scope_family_policy(scope_id, "entity_detail")
+		policy = governed_scope_runtime_policy(scope_id, "entity_detail")
 		if not isinstance(policy, dict) or not policy:
 			continue
 		if _clean_text(policy.get("compatibility_level")) != "full_consumption":
@@ -169,9 +181,7 @@ def _master_data_dimension_label(source_report: str) -> str:
 
 
 def master_data_recent_focus_row_label_columns(*, focus_grain: str, source_report: str = "") -> List[str]:
-	grain = _clean_text(focus_grain)
-	if grain == "product":
-		grain = "item"
+	grain = normalize_item_product_grain(_clean_text(focus_grain))
 	scope_id = scope_id_for_entity_grain(grain) or grain
 	scope_spec = governed_scope_spec(scope_id)
 	if _clean_text(scope_spec.get("status")) != "active":
@@ -197,9 +207,7 @@ def master_data_recent_focus_row_label_columns(*, focus_grain: str, source_repor
 
 
 def master_data_recent_focus_row_key_columns(*, focus_grain: str, source_report: str = "") -> List[str]:
-	grain = _clean_text(focus_grain)
-	if grain == "product":
-		grain = "item"
+	grain = normalize_item_product_grain(_clean_text(focus_grain))
 	scope_id = scope_id_for_entity_grain(grain) or grain
 	scope_spec = governed_scope_spec(scope_id)
 	if _clean_text(scope_spec.get("status")) != "active":
@@ -241,6 +249,70 @@ def statement_recent_focus_descriptor_for_report_name(report_name: str) -> Dict[
 		"focus_label": clean_report_name,
 		"focus_key": clean_report_name,
 	}
+
+
+def _governed_runtime_policy_from_dimensions(dimensions: Dict[str, Any] | None = None) -> Dict[str, Any]:
+	dimension_payload = dimensions if isinstance(dimensions, dict) else {}
+	policy = dimension_payload.get("governed_scope_runtime_policy")
+	if not isinstance(policy, dict):
+		return {}
+	return dict(policy)
+
+
+def _governed_report_surface_descriptor_from_runtime_policy(
+	*,
+	source_report: str,
+	source_kind: str = "",
+	source_family: str = "",
+	dimensions: Dict[str, Any] | None = None,
+) -> Dict[str, str]:
+	dimension_payload = dimensions if isinstance(dimensions, dict) else {}
+	policy = _governed_runtime_policy_from_dimensions(dimension_payload)
+	policy_family = _clean_text(policy.get("family_id") or source_family)
+	scope_id = _clean_text(policy.get("scope_id") or dimension_payload.get("scope_id"))
+	scope_class = _clean_text(policy.get("scope_class") or dimension_payload.get("scope_class"))
+	clean_report_name = _clean_text(source_report)
+	if not policy_family and not scope_class:
+		return {}
+	if policy_family == "financial_statement" or scope_class == "financial_summary":
+		return {
+			"surface_class": "statement",
+			"focus_kind": "statement",
+			"focus_grain": scope_id or _clean_text(dimension_payload.get("statement_type")) or clean_report_name.lower().replace(" ", "_"),
+			"focus_label": clean_report_name,
+			"focus_key": clean_report_name,
+			"source_family_default": "financial_statement",
+			"derivation_basis": "statement_grounded_turn",
+			"scope_id": scope_id,
+			"scope_class": scope_class or "financial_summary",
+		}
+	if _clean_text(source_kind) != "report":
+		return {}
+	if policy_family in {
+		"aging",
+		"ranking_analytics",
+		"inventory_snapshot",
+		"product_profitability",
+		"trend_analytics",
+	} or scope_class in {
+		"aging_analysis",
+		"ranked_entities",
+		"inventory_summary",
+		"product_performance",
+		"trend_analysis",
+	}:
+		return {
+			"surface_class": "report",
+			"focus_kind": "report",
+			"focus_grain": policy_family or clean_report_name.lower().replace(" ", "_"),
+			"focus_label": clean_report_name,
+			"focus_key": clean_report_name,
+			"source_family_default": policy_family or "report",
+			"derivation_basis": "report_grounded_turn",
+			"scope_id": scope_id,
+			"scope_class": scope_class,
+		}
+	return {}
 
 
 def report_recent_focus_descriptor_for_report_name(
@@ -297,6 +369,14 @@ def grounded_recent_focus_surface_descriptor(
 			"surface_class": "entity_detail",
 			"focus_label_fallback": clean_report_name[:-7] if clean_report_name.endswith(" Detail") else "",
 		}
+	governed_policy_surface = _governed_report_surface_descriptor_from_runtime_policy(
+		source_report=clean_report_name,
+		source_kind=clean_source_kind,
+		source_family=clean_source_family,
+		dimensions=dimension_payload,
+	)
+	if governed_policy_surface:
+		return governed_policy_surface
 	statement_focus = statement_recent_focus_descriptor_for_report_name(clean_report_name)
 	if statement_focus:
 		return {
@@ -314,8 +394,8 @@ def grounded_recent_focus_surface_descriptor(
 		or listing_view
 	)
 	is_master_data_surface = bool(
-		clean_source_family in {"master_data_directory", "customer_master_list"}
-		or "master_data_directory" in supported_families
+		is_master_data_listing_family(clean_source_family)
+		or any(is_master_data_listing_family(family_id) for family_id in supported_families)
 		or entity_grain
 	)
 	if is_master_data_surface and not is_transaction_listing_surface:
@@ -368,6 +448,8 @@ def build_grounded_recent_focus_state_from_surface_descriptor(
 	focus_key = _clean_text(descriptor.get("focus_key"))
 	default_source_family = _clean_text(descriptor.get("source_family_default"))
 	derivation_basis = _clean_text(descriptor.get("derivation_basis"))
+	scope_id = _clean_text(descriptor.get("scope_id"))
+	scope_class = _clean_text(descriptor.get("scope_class"))
 	confidence = {
 		"entity_detail": 0.9,
 		"statement": 0.8,
@@ -426,6 +508,8 @@ def build_grounded_recent_focus_state_from_surface_descriptor(
 		"source_family": _clean_text(source_family) or default_source_family,
 		"source_capability": _clean_text(source_capability),
 		"source_report": _clean_text(source_report),
+		"scope_id": scope_id,
+		"scope_class": scope_class,
 		"deictic_allowed": deictic_allowed,
 		"explicit_named_allowed": explicit_named_allowed,
 		"derivation_basis": derivation_basis,
@@ -685,6 +769,9 @@ def _normalize_policy_followup_mode(mode: str) -> str:
 
 
 def _recent_focus_scope_id(recent_focus_state: Dict[str, Any]) -> str:
+	explicit_scope_id = _clean_text((recent_focus_state or {}).get("scope_id"))
+	if explicit_scope_id:
+		return explicit_scope_id
 	source_report = _clean_text((recent_focus_state or {}).get("source_report"))
 	if source_report:
 		report_scope_id = scope_id_for_report_name(source_report)
@@ -707,7 +794,7 @@ def _recent_focus_scope_id(recent_focus_state: Dict[str, Any]) -> str:
 def _scope_followup_boundary_modes(scope_id: str) -> List[str]:
 	if not _clean_text(scope_id):
 		return []
-	policy = governed_scope_family_policy(scope_id, "followup_boundary")
+	policy = governed_scope_runtime_policy(scope_id, "followup_boundary")
 	if not isinstance(policy, dict):
 		return []
 	compatibility_level = _clean_text(policy.get("compatibility_level"))
@@ -726,6 +813,61 @@ def _scope_followup_boundary_modes(scope_id: str) -> List[str]:
 	]
 
 
+def _runtime_policy_supports_full_consumption(scope_id: str, family_id: str) -> bool:
+	policy = governed_scope_runtime_policy(scope_id, family_id)
+	if not isinstance(policy, dict):
+		return False
+	return _clean_text(policy.get("compatibility_level")) == "full_consumption"
+
+
+def recent_focus_listing_detail_parity_state(recent_focus_state: Dict[str, Any]) -> Dict[str, Any]:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return {
+			"listing_supported": False,
+			"detail_supported": False,
+			"listing_detail_support_status": "neither",
+		}
+	focus_kind = _clean_text(recent_focus_state.get("focus_kind"))
+	source_family = _clean_text(recent_focus_state.get("source_family"))
+	scope_id = _recent_focus_scope_id(recent_focus_state)
+	listing_supported = False
+	detail_supported = False
+	if focus_kind == "listing":
+		listing_supported = True
+		if scope_id:
+			detail_supported = _runtime_policy_supports_full_consumption(scope_id, "entity_detail")
+	elif focus_kind == "entity":
+		detail_supported = True
+		if scope_id:
+			listing_supported = _runtime_policy_supports_full_consumption(scope_id, "master_data_lookup")
+	elif focus_kind == "document":
+		detail_supported = True
+		if scope_id:
+			listing_supported = _runtime_policy_supports_full_consumption(scope_id, "transaction_listing")
+	elif is_master_data_listing_family(source_family):
+		listing_supported = True
+		if scope_id:
+			detail_supported = _runtime_policy_supports_full_consumption(scope_id, "entity_detail")
+	elif source_family == "transaction_listing":
+		listing_supported = True
+		if scope_id:
+			detail_supported = _runtime_policy_supports_full_consumption(scope_id, "entity_detail")
+	status = (
+		"both"
+		if listing_supported and detail_supported
+		else "listing_only"
+		if listing_supported
+		else "detail_only"
+		if detail_supported
+		else "neither"
+	)
+	return {
+		"listing_supported": listing_supported,
+		"detail_supported": detail_supported,
+		"listing_detail_support_status": status,
+	}
+
+
 def _report_followup_modes(source_report: str) -> List[str]:
 	return [
 		normalized
@@ -738,16 +880,19 @@ def _report_followup_modes(source_report: str) -> List[str]:
 
 
 def _listing_selection_action_class(recent_focus_state: Dict[str, Any]) -> str:
+	parity_state = recent_focus_listing_detail_parity_state(recent_focus_state)
+	if not bool(parity_state.get("detail_supported")):
+		return ""
 	scope_id = _recent_focus_scope_id(recent_focus_state)
 	if scope_id:
-		detail_policy = governed_scope_family_policy(scope_id, "entity_detail")
+		detail_policy = governed_scope_runtime_policy(scope_id, "entity_detail")
 		allowed_modes = set(_clean_list((detail_policy or {}).get("allowed_modes")))
 		if "profile_target" in allowed_modes:
 			return "entity_selection_followup"
 		if allowed_modes.intersection({"document_detail", "profile_section_evidence"}):
 			return "document_selection_followup"
 	focus_grain = _clean_text((recent_focus_state or {}).get("focus_grain"))
-	if focus_grain in {"customer", "supplier", "item", "product"}:
+	if focus_grain in {"customer", "supplier"} or is_item_product_grain(focus_grain):
 		return "entity_selection_followup"
 	return "document_selection_followup"
 
@@ -767,10 +912,12 @@ def recent_focus_allowed_action_classes(recent_focus_state: Dict[str, Any]) -> L
 				"sibling_view_switch",
 			]
 		)
-		if focus_grain in {"item", "product"}:
+		if is_item_product_grain(focus_grain):
 			action_classes.append("inventory_position_followup")
 		if focus_grain in {"customer", "supplier"}:
 			action_classes.append("commercial_status_followup")
+		if focus_grain in set(customer_lifecycle_supported_focus_grains()):
+			action_classes.append("lifecycle_basis_followup")
 	elif focus_kind == "document":
 		action_classes.extend(
 			[
@@ -781,6 +928,8 @@ def recent_focus_allowed_action_classes(recent_focus_state: Dict[str, Any]) -> L
 				"document_status_followup",
 			]
 		)
+		if focus_grain in set(document_event_supported_focus_grains()):
+			action_classes.append("document_event_followup")
 	elif focus_kind == "statement":
 		action_classes.extend(
 			[
@@ -798,7 +947,9 @@ def recent_focus_allowed_action_classes(recent_focus_state: Dict[str, Any]) -> L
 				"time_refinement",
 			]
 		)
-		action_classes.append(_listing_selection_action_class(recent_focus_state))
+		selection_action = _listing_selection_action_class(recent_focus_state)
+		if selection_action:
+			action_classes.append(selection_action)
 	elif focus_kind == "report":
 		action_classes.extend(
 			[
@@ -849,20 +1000,120 @@ def recent_focus_affordance_reason(recent_focus_state: Dict[str, Any]) -> str:
 	return "The recent focus exposes a bounded follow-up surface."
 
 
-def conversation_control_focus_target_from_recent_focus_state(recent_focus_state: Dict[str, Any]) -> Dict[str, Any]:
+def recent_focus_reference_terms(recent_focus_state: Dict[str, Any]) -> Dict[str, List[str]]:
 	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
 		return {}
+	focus_kind = _clean_text(recent_focus_state.get("focus_kind"))
+	focus_grain = normalize_item_product_grain(_clean_text(recent_focus_state.get("focus_grain")))
+	focus_label = _clean_text(recent_focus_state.get("focus_label"))
+	focus_key = _clean_text(recent_focus_state.get("focus_key"))
+	source_report = _clean_text(recent_focus_state.get("source_report"))
+	entity_terms: List[str] = []
+	collection_terms: List[str] = []
+	explicit_terms: List[str] = []
+	if focus_grain == "customer":
+		entity_terms = ["that customer", "this customer", "the customer"]
+		collection_terms = ["that customer list", "the customer list", "customer directory", "customers"]
+	elif focus_grain == "supplier":
+		entity_terms = ["that supplier", "this supplier", "the supplier"]
+		collection_terms = ["that supplier list", "the supplier list", "supplier directory", "suppliers"]
+	elif focus_grain == "item":
+		entity_terms = ["that item", "this item", "the item", "that product", "this product", "the product"]
+		collection_terms = ["that item list", "the item list", "that product list", "the product list", "items", "products"]
+	if focus_kind == "document":
+		entity_terms = ["that document", "this document", "that entry", "this entry", "that invoice", "this invoice", "that order", "this order"]
+	if focus_kind == "statement":
+		entity_terms = ["that statement", "this statement", "the statement"]
+		collection_terms = ["financial statements", "statement list"]
+	if focus_kind == "report":
+		entity_terms = ["that report", "this report", "that view", "this view"]
+	if focus_kind == "listing" and not collection_terms:
+		collection_terms = ["that list", "this list", "the list", "that directory", "this directory"]
+	if focus_kind in {"entity", "document", "statement", "report"}:
+		_extend_unique(explicit_terms, [focus_label, focus_key, source_report])
+	else:
+		_extend_unique(explicit_terms, [source_report, focus_label, focus_key])
+	deictic_terms: List[str] = []
+	if bool(recent_focus_state.get("deictic_allowed")):
+		if focus_kind == "listing":
+			_extend_unique(deictic_terms, collection_terms or ["that list", "this list", "the list"])
+		else:
+			_extend_unique(deictic_terms, entity_terms or ["that one", "this one"])
+	if focus_kind == "listing":
+		_extend_unique(deictic_terms, ["that one", "this one"])
+	elif focus_kind in {"entity", "document"}:
+		_extend_unique(deictic_terms, ["that one", "this one"])
+	reference_terms = {
+		"deictic_terms": deictic_terms,
+		"entity_reference_terms": entity_terms,
+		"collection_reference_terms": collection_terms,
+		"explicit_reference_terms": explicit_terms if bool(recent_focus_state.get("explicit_named_allowed")) else [],
+	}
 	return {
-		"focus_kind": _clean_text(recent_focus_state.get("focus_kind")),
-		"focus_grain": _clean_text(recent_focus_state.get("focus_grain")),
-		"focus_label": _clean_text(recent_focus_state.get("focus_label")),
-		"focus_key": _clean_text(recent_focus_state.get("focus_key")),
-		"source_request_id": _clean_text(recent_focus_state.get("source_request_id")),
-		"source_family": _clean_text(recent_focus_state.get("source_family")),
-		"source_capability": _clean_text(recent_focus_state.get("source_capability")),
-		"source_report": _clean_text(recent_focus_state.get("source_report")),
-		"deictic_allowed": bool(recent_focus_state.get("deictic_allowed")),
-		"explicit_named_allowed": bool(recent_focus_state.get("explicit_named_allowed")),
+		key: list(dict.fromkeys(value for value in values if _clean_text(value)))
+		for key, values in reference_terms.items()
+		if values
+	}
+
+
+def enrich_recent_focus_state_with_affordance(
+	recent_focus_state: Dict[str, Any],
+	recent_focus_affordance_payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return {}
+	enriched_state = dict(recent_focus_state or {})
+	affordance_payload = (
+		recent_focus_affordance_payload
+		if isinstance(recent_focus_affordance_payload, dict)
+		else {}
+	)
+	if "deictic_reference_allowed" in affordance_payload:
+		enriched_state["deictic_allowed"] = bool(affordance_payload.get("deictic_reference_allowed"))
+	if "explicit_named_reference_allowed" in affordance_payload:
+		enriched_state["explicit_named_allowed"] = bool(
+			affordance_payload.get("explicit_named_reference_allowed")
+		)
+	if "listing_supported" in affordance_payload:
+		enriched_state["listing_supported"] = bool(affordance_payload.get("listing_supported"))
+	if "detail_supported" in affordance_payload:
+		enriched_state["detail_supported"] = bool(affordance_payload.get("detail_supported"))
+	if "listing_detail_support_status" in affordance_payload:
+		enriched_state["listing_detail_support_status"] = _clean_text(
+			affordance_payload.get("listing_detail_support_status")
+		)
+	if isinstance(affordance_payload.get("reference_terms"), dict):
+		enriched_state["reference_terms"] = dict(affordance_payload.get("reference_terms") or {})
+	return enriched_state
+
+
+def conversation_control_focus_target_from_recent_focus_state(
+	recent_focus_state: Dict[str, Any],
+	recent_focus_affordance_payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
+		return {}
+	enriched_state = enrich_recent_focus_state_with_affordance(
+		recent_focus_state,
+		recent_focus_affordance_payload=recent_focus_affordance_payload,
+	)
+	return {
+		"focus_kind": _clean_text(enriched_state.get("focus_kind")),
+		"focus_grain": _clean_text(enriched_state.get("focus_grain")),
+		"focus_label": _clean_text(enriched_state.get("focus_label")),
+		"focus_key": _clean_text(enriched_state.get("focus_key")),
+		"scope_id": _clean_text(enriched_state.get("scope_id")),
+		"scope_class": _clean_text(enriched_state.get("scope_class")),
+		"source_request_id": _clean_text(enriched_state.get("source_request_id")),
+		"source_family": _clean_text(enriched_state.get("source_family")),
+		"source_capability": _clean_text(enriched_state.get("source_capability")),
+		"source_report": _clean_text(enriched_state.get("source_report")),
+		"deictic_allowed": bool(enriched_state.get("deictic_allowed")),
+		"explicit_named_allowed": bool(enriched_state.get("explicit_named_allowed")),
+		"listing_supported": bool(enriched_state.get("listing_supported")),
+		"detail_supported": bool(enriched_state.get("detail_supported")),
+		"listing_detail_support_status": _clean_text(enriched_state.get("listing_detail_support_status")),
+		"reference_terms": dict(enriched_state.get("reference_terms") or recent_focus_reference_terms(enriched_state)),
 	}
 
 
@@ -904,6 +1155,7 @@ def recent_focus_runtime_routing_permissions(
 	allowed_local_followup_modes: List[str],
 	allowed_requery_followup_modes: List[str],
 	supports_cross_family_followup: bool,
+	detail_supported: bool = False,
 ) -> Dict[str, bool]:
 	requested_mode_set = {
 		_clean_text(value)
@@ -930,6 +1182,13 @@ def recent_focus_runtime_routing_permissions(
 			(recent_focus_state or {}).get("deictic_allowed")
 			or (recent_focus_state or {}).get("explicit_named_allowed")
 		)
+	):
+		local_transform_allowed = True
+	if (
+		not local_transform_allowed
+		and focus_kind == "listing"
+		and bool(detail_supported)
+		and bool((recent_focus_state or {}).get("deictic_allowed"))
 	):
 		local_transform_allowed = True
 	if not requery_allowed and "new_query" in requested_mode_set:
@@ -981,6 +1240,9 @@ def recent_focus_runtime_route_selection(
 		supports_cross_family_followup=bool(
 			getattr(recent_focus_affordance_contract, "supports_cross_family_followup", False)
 		),
+		detail_supported=bool(
+			getattr(recent_focus_affordance_contract, "detail_supported", False)
+		),
 	)
 	return {
 		"eligible": True,
@@ -1003,7 +1265,10 @@ def build_recent_focus_continuation_decision_spec(
 	confidence = float(max(0.0, min(1.0, (recent_focus_state or {}).get("confidence", 0.0) or 0.0)))
 	return {
 		"reason": recent_focus_continuation_reason_from_selection(selection),
-		"resolved_focus_target": conversation_control_focus_target_from_recent_focus_state(recent_focus_state),
+		"resolved_focus_target": conversation_control_focus_target_from_recent_focus_state(
+			recent_focus_state,
+			recent_focus_affordance_payload=recent_focus_affordance_payload,
+		),
 		"confidence": confidence,
 		"internal_details": {
 			"source_contract_type": "qwen_conversation_state_snapshot",
@@ -1037,12 +1302,19 @@ def build_prior_branch_restore_recent_focus_projection(
 	recent_focus_affordance_payload = (
 		recent_focus_affordance_contract.to_payload() if recent_focus_affordance_contract is not None else {}
 	)
+	enriched_recent_focus_state = enrich_recent_focus_state_with_affordance(
+		recent_focus_state,
+		recent_focus_affordance_payload=recent_focus_affordance_payload,
+	)
 	return {
-		"restored_recent_focus_state": dict(recent_focus_state or {}),
+		"restored_recent_focus_state": dict(enriched_recent_focus_state or {}),
 		"runtime_override_message": _recent_focus_restore_runtime_message_helper(
-			recent_focus_state=recent_focus_state
+			recent_focus_state=enriched_recent_focus_state
 		),
-		"resolved_focus_target": conversation_control_focus_target_from_recent_focus_state(recent_focus_state),
+		"resolved_focus_target": conversation_control_focus_target_from_recent_focus_state(
+			enriched_recent_focus_state,
+			recent_focus_affordance_payload=recent_focus_affordance_payload,
+		),
 		"recent_focus_affordance_payload": recent_focus_affordance_payload,
 	}
 
@@ -1055,6 +1327,7 @@ def build_recent_focus_affordance_contract_from_snapshot(
 	if not isinstance(recent_focus_state, dict) or not bool(recent_focus_state.get("available")):
 		return None
 	local_modes, requery_modes = recent_focus_followup_mode_partition(recent_focus_state)
+	parity_state = recent_focus_listing_detail_parity_state(recent_focus_state)
 	return build_recent_focus_affordance_contract(
 		request_id=request_id,
 		focus_kind=_clean_text(recent_focus_state.get("focus_kind")),
@@ -1069,5 +1342,9 @@ def build_recent_focus_affordance_contract_from_snapshot(
 		deictic_reference_allowed=bool(recent_focus_state.get("deictic_allowed")),
 		explicit_named_reference_allowed=bool(recent_focus_state.get("explicit_named_allowed")),
 		supports_cross_family_followup=bool(requery_modes),
+		listing_supported=bool(parity_state.get("listing_supported")),
+		detail_supported=bool(parity_state.get("detail_supported")),
+		listing_detail_support_status=_clean_text(parity_state.get("listing_detail_support_status")),
+		reference_terms=recent_focus_reference_terms(recent_focus_state),
 		reason=recent_focus_affordance_reason(recent_focus_state),
 	)

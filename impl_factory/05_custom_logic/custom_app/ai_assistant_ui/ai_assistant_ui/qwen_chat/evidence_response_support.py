@@ -126,17 +126,17 @@ def preserve_current_artifact_direct_evidence_followup_resolution(
 		if isinstance(evidence_request_contract, dict)
 		else {}
 	)
-	if not evidence_contract or bool(evidence_contract.get("clarification_required")):
-		return followup_resolution
-	if not str(direct_evidence_answer or evidence_boundary_answer or "").strip():
+	clarification_required = bool(evidence_contract.get("clarification_required"))
+	if not clarification_required and not str(direct_evidence_answer or evidence_boundary_answer or "").strip():
 		return followup_resolution
 	requested_modes = [
 		str(value or "").strip()
 		for value in (getattr(followup_resolution, "requested_modes", []) or [])
 		if str(value or "").strip()
 	]
-	if "direct_evidence_followup" not in requested_modes:
-		requested_modes.append("direct_evidence_followup")
+	preserved_mode = "entity_detail_evidence" if clarification_required else "direct_evidence_followup"
+	if preserved_mode not in requested_modes:
+		requested_modes.append(preserved_mode)
 	return build_followup_resolution_contract(
 		request_id=request_id,
 		mode="grounded_follow_up",
@@ -158,6 +158,31 @@ def preserve_current_artifact_direct_evidence_followup_resolution(
 			"to a fresh governed query."
 		),
 	)
+
+
+def _direct_evidence_response_should_use_deterministic_rendering(
+	*,
+	artifact_payload: Dict[str, Any],
+	evidence_request_contract: Dict[str, Any],
+	requested_dimensions: set[str],
+) -> bool:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	entity_type = str(dimensions.get("entity_type") or "").strip().lower()
+	entity_question_type = str(
+		evidence_request_contract.get("entity_question_type")
+		or evidence_request_contract.get("question_type")
+		or ""
+	).strip()
+	if entity_type == "item" and entity_question_type == "item_stock_position":
+		return True
+	if entity_type == "purchase_order":
+		return True
+	if "posting_date" in requested_dimensions:
+		return True
+	if entity_type == "sales_order" and "planned_delivery_date" in requested_dimensions:
+		return True
+	return False
 
 
 def grounded_artifact_direct_evidence_response(
@@ -216,8 +241,18 @@ def grounded_artifact_direct_evidence_response(
 			clarification_signal_payload=clarification_signal_payload,
 			evidence_request_contract_payload=evidence_request_contract,
 		)
-	if entity_type == "purchase_order" or "posting_date" in requested_dimensions or (
-		entity_type == "sales_order" and "planned_delivery_date" in requested_dimensions
+	if str(rendered_response_payload.get("rendering_policy") or "").strip() == "deterministic":
+		rendered_response_payload["answer_text"] = fallback_text
+		return _direct_evidence_response_payload(
+			answer_text=fallback_text,
+			rendered_response_payload=rendered_response_payload,
+			clarification_signal_payload=clarification_signal_payload,
+			evidence_request_contract_payload=evidence_request_contract,
+		)
+	if _direct_evidence_response_should_use_deterministic_rendering(
+		artifact_payload=artifact_payload,
+		evidence_request_contract=evidence_request_contract,
+		requested_dimensions=requested_dimensions,
 	):
 		rendered_response_payload["answer_text"] = fallback_text
 		return _direct_evidence_response_payload(

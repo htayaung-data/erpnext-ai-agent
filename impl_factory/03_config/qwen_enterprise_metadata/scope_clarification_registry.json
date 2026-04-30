@@ -201,6 +201,26 @@
       }
     },
     {
+      "template_group": "shared_clarification",
+      "reason_type": "customer_tenure_basis_missing",
+      "question_templates": {
+        "default": "I can calculate customer tenure for {entity_label}, but I need the date basis first."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      }
+    },
+    {
+      "template_group": "shared_clarification",
+      "reason_type": "customer_operational_document_missing",
+      "question_templates": {
+        "default": "I can help with that for {entity_label}, but I need the exact sales document or date basis first."
+      },
+      "list_heading_templates": {
+        "default": "Choose one:"
+      }
+    },
+    {
       "template_group": "unsupported_scope_clarification",
       "reason_type": "master_data_scope_unsupported",
       "question_templates": {
@@ -692,6 +712,46 @@
       "required_event_slots": [],
       "clarification_template_group": "unsupported_scope_clarification",
       "clarification_notes": "Shared clarification support for payment-entry requests that still fall outside the approved route."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "transaction_listing",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Clarify period, projection, or target when a purchase-receipt listing request is incomplete."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "followup_boundary",
+      "supported_ambiguity_classes": [
+        "followup_scope",
+        "projection_request",
+        "time_scope"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "followup_boundary_clarification",
+      "clarification_notes": "Clarify whether the follow-up changes projection only or restates time scope for purchase receipts."
+    },
+    {
+      "scope_id": "purchase_receipt",
+      "family_id": "clarification",
+      "supported_ambiguity_classes": [
+        "time_scope",
+        "projection_request",
+        "document_reference",
+        "unsupported_route"
+      ],
+      "required_basis_slots": [],
+      "required_event_slots": [],
+      "clarification_template_group": "transaction_listing_clarification",
+      "clarification_notes": "Shared clarification support for purchase-receipt listing while document-detail support remains inactive."
     }
   ]
 }

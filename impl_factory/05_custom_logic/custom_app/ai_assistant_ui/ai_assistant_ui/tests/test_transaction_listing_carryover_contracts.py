@@ -3,8 +3,16 @@ import types
 import unittest
 
 
+def _fake_get_all(doctype, *args, **kwargs):
+	if doctype == "Company":
+		if kwargs.get("pluck") == "name":
+			return ["Enterprise Co"]
+		return [{"name": "Enterprise Co"}]
+	return []
+
+
 fake_frappe = types.ModuleType("frappe")
-fake_frappe.get_all = lambda *args, **kwargs: []
+fake_frappe.get_all = _fake_get_all
 fake_frappe.conf = {}
 fake_frappe.local = types.SimpleNamespace(site="")
 fake_frappe.db = types.SimpleNamespace(
@@ -23,6 +31,7 @@ from ai_assistant_ui.qwen_chat.family_followup import (
 	render_local_family_followup,
 	supports_local_family_followup,
 )
+from ai_assistant_ui.qwen_chat.governed_scope_registry import governed_scope_runtime_policy
 
 
 def _payment_entry_artifact():
@@ -151,6 +160,28 @@ class TestTransactionListingCarryoverContracts(unittest.TestCase):
 		dimensions = dict(refined.get("dimensions") or {})
 		self.assertEqual(dimensions.get("primary_metric_key"), "total_allocated_amount")
 		self.assertEqual(dimensions.get("primary_metric_label"), "Total Allocated Amount")
+
+	def test_e3_4_payment_entry_followup_preserves_shared_finance_operation_scope(self):
+		policy = governed_scope_runtime_policy("payment_entry", "followup_boundary")
+		refined = refine_local_family_artifact(
+			request_id="payment-entry-e3-4-followup",
+			artifact_payload=_payment_entry_artifact(),
+			target_metric="total_allocated_amount",
+			requested_columns=["document_name", "posting_date", "party_name", "total_allocated_amount"],
+			requested_modes=["metric_refinement", "column_refinement"],
+		)
+		dimensions = dict(refined.get("dimensions") or {})
+
+		self.assertEqual(policy.get("compatibility_level"), "followup_only")
+		self.assertEqual(policy.get("followup_compatibility"), "preserve_scope")
+		self.assertFalse(bool(policy.get("can_execute")))
+		self.assertTrue(bool(policy.get("can_followup")))
+		self.assertEqual(refined.get("family_id"), "transaction_listing")
+		self.assertEqual(list(refined.get("source_reports") or []), ["Payment Entry List"])
+		self.assertEqual(dimensions.get("scope_id"), "payment_entry")
+		self.assertEqual(dimensions.get("transaction_type"), "payment_entry")
+		self.assertEqual(dimensions.get("document_entity_type"), "payment_entry")
+		self.assertEqual(dimensions.get("primary_metric_key"), "total_allocated_amount")
 
 	def test_transaction_listing_local_followup_renders_refined_metric_column(self):
 		rendered = render_local_family_followup(

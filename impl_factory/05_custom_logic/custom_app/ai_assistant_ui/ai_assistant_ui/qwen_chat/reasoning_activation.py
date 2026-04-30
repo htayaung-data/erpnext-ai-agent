@@ -6,6 +6,9 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	ERPBusinessReasoningActivationContract,
 	build_erp_business_reasoning_activation_contract,
 )
+from ai_assistant_ui.qwen_chat.business_reasoning_policy import (
+	build_business_reasoning_authority_policy_payload,
+)
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_semantic_tags,
 	report_family_semantic_tags,
@@ -123,6 +126,23 @@ def build_reasoning_activation_contract(
 		grounded_context_available=grounded_context_available,
 		grounded_semantic_tags=grounded_semantic_tags,
 	)
+	authority_policy = build_business_reasoning_authority_policy_payload(
+		raw_message=message,
+		artifact_payload=artifact,
+		grounded_turn=grounded_turn,
+	)
+	if (
+		str(authority_policy.get("policy_state") or "").strip() == "blocked"
+		and str(authority_policy.get("requested_authority") or "").strip()
+		in {"recommendation", "prediction", "classification", "score"}
+	):
+		recommendation_allowed = False
+		recommendation_policy_basis = list(
+			dict.fromkeys(
+				list(recommendation_policy_basis or [])
+				+ [str(authority_policy.get("blocked_variation") or "").strip()]
+			)
+		)
 	allowed_reasoning_types = _reasoning_types_for_grounding(
 		grounded_context_available=grounded_context_available,
 	)
@@ -141,6 +161,8 @@ def build_reasoning_activation_contract(
 		"response_policy_mode": str(response_policy.get("policy_mode") or "").strip(),
 		"raw_message_present": bool(str(message or "").strip()),
 	}
+	if authority_policy:
+		grounding_summary["business_reasoning_authority_policy"] = authority_policy
 	return build_erp_business_reasoning_activation_contract(
 		request_id=request_id,
 		session_id=session_id,

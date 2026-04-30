@@ -11,7 +11,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_fresh_query_interpretation_contract,
 )
 from ai_assistant_ui.qwen_chat.governed_scope_registry import (
-	governed_scope_family_policy,
+	governed_scope_runtime_policy,
 	master_data_lookup_mode_allowed,
 	scope_id_for_entity_grain,
 	scope_id_for_listing_view,
@@ -30,6 +30,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	report_supported_metrics,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_canonical_key
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_value_from_values
 
 
 @dataclass(frozen=True)
@@ -81,8 +82,8 @@ def _master_data_lookup_rules() -> List[Dict[str, Any]]:
 def _family_execution_allowed(scope_id: str, family_id: str) -> bool:
 	if not str(scope_id or "").strip() or not str(family_id or "").strip():
 		return False
-	policy = governed_scope_family_policy(scope_id, family_id)
-	return str(policy.get("compatibility_level") or "").strip() in {"full_consumption", "projection_only"}
+	policy = governed_scope_runtime_policy(scope_id, family_id)
+	return bool(policy.get("can_execute"))
 
 
 def _unsupported_transaction_listing_view_outcome(
@@ -1218,28 +1219,7 @@ def _registry_alias_maps() -> Dict[str, List[Dict[str, Any]]]:
 
 
 def _resolve_slot_value_from_registry(slot_name: str, values: List[str]) -> str:
-	alias_entries = _registry_alias_maps().get(slot_name)
-	if not isinstance(alias_entries, list):
-		return ""
-	normalized_values = {
-		_normalize_slot_alias(value)
-		for value in _clean_list(values)
-		if _normalize_slot_alias(value)
-	}
-	if not normalized_values:
-		return ""
-	for entry in alias_entries:
-		if not isinstance(entry, dict):
-			continue
-		canonical_value = str(entry.get("canonical_value") or "").strip()
-		aliases = {
-			_normalize_slot_alias(alias)
-			for alias in _clean_list(entry.get("aliases"))
-			if _normalize_slot_alias(alias)
-		}
-		if canonical_value and aliases & normalized_values:
-			return canonical_value
-	return ""
+	return semantic_slot_value_from_values(slot_name, values)
 
 
 def _resolve_ranking_metric(values: List[str]) -> str:

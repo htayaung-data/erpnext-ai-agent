@@ -1,7 +1,7 @@
 # Qwen ERP Post-Contract Expansion Backlog (2026-03-25)
 
-Status: active post-contract expansion backlog  
-Scope: record bounded governed coverage expansion after the core contract architecture is stable  
+Status: active post-contract expansion backlog
+Scope: record bounded governed coverage expansion after the core contract architecture is stable
 Decision: complete Mini-phase 8 and post-contract hardening first; then expand business coverage in controlled waves instead of jumping directly to complex decomposition
 
 Primary hardening artifact:
@@ -67,7 +67,7 @@ Rationale:
 
 Recommended first governed expansion wave:
 
-1. Delivery / Fulfillment
+1. Delivery / Fulfillmen
 2. Sales Order Status
 3. Purchase Order Tracking
 4. Customer Credit Status
@@ -88,12 +88,12 @@ Wave 1 rules:
 1. do not reopen Mini-phase 6 or 7 to add them
 2. implement as post-contract governed coverage work
 3. add each domain with:
-   - metadata/discovery support
+   - metadata/discovery suppor
    - governed artifact surface
    - clarification handling where needed
    - reasoning eligibility where appropriate
    - regression coverage
-4. ship one domain at a time, not all four in one uncontrolled burst
+4. ship one domain at a time, not all four in one uncontrolled burs
 
 ## 5. Deferred Wave 2 Candidates
 
@@ -123,11 +123,11 @@ Why this wave fits here:
    - customers in Yangon with revenue, AOV, and tenure
    - top customers by revenue with quantity and overdue balance
    - top products by revenue with quantity and average selling price
-3. complex request decomposition becomes much more useful once these richer governed artifacts already exist
+3. complex request decomposition becomes much more useful once these richer governed artifacts already exis
 
 Wave 1.5 rules:
 
-1. primary ranking metric must be explicit
+1. primary ranking metric must be explici
 2. supplemental metrics must share a governed scope signature:
    - company
    - date range
@@ -135,7 +135,7 @@ Wave 1.5 rules:
    - filter basis
    - aggregation semantics
 3. if join compatibility is not proven, composition must be blocked safely
-4. start with same-grain, low-ambiguity composites first
+4. start with same-grain, low-ambiguity composites firs
 
 Recommended first candidates:
 
@@ -160,7 +160,7 @@ Recommended governed semantic layer after Wave 1.5:
 Why this wave fits here:
 
 1. composite artifacts and later decomposition both depend on stable business meanings
-2. enterprise teams often have company-specific definitions that the AI should not invent
+2. enterprise teams often have company-specific definitions that the AI should not inven
 3. this reduces drift on derived metrics before they are used widely in reasoning and multi-metric artifacts
 
 Representative examples:
@@ -203,7 +203,7 @@ These are enterprise-worthy, but should come after the core read architecture an
 1. long prompt / complex request decomposition
 2. Burmese language understanding
 3. governed charts / graphs / dashboard views
-4. CSV / Excel export
+4. CSV / Excel expor
 5. OCR understanding
 6. CRUD / write actions with approvals
 
@@ -211,9 +211,9 @@ Recommended relative order:
 
 1. complex request decomposition
 2. Burmese understanding
-3. chart / graph / dashboard + export
+3. chart / graph / dashboard + expor
 4. OCR ingestion
-5. CRUD last
+5. CRUD las
 
 ## 8. Deferred Expansion Candidates
 
@@ -223,7 +223,7 @@ These are valid candidates for later governed expansion once contracts are stabl
 
 Potential asks observed or expected:
 
-1. cash flow insight
+1. cash flow insigh
 2. liquidity pressure
 3. working capital outlook
 4. collections strategy
@@ -237,20 +237,20 @@ Current rule:
    - covered finance
    - finance-adjacent but unclear
    - valid ERP domain but not yet covered
-   - unsupported request
+   - unsupported reques
 
 ### 3.2 Advisory follow-ups over governed finance artifacts
 
 Potential asks:
 
-1. what should we do next
+1. what should we do nex
 2. give me business recommendations
 3. how should we collect AR
 4. how should we negotiate AP
 
 Current rule:
 
-1. preserve governed grounding first
+1. preserve governed grounding firs
 2. do not add ad hoc recommendation logic during contract migration
 3. revisit only after clarification and scope-decision contracts are stable
 

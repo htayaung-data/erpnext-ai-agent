@@ -1,7 +1,7 @@
 # Qwen ERP Conversation Control Mini-Phase And Slice Status Update
 
-Status: active technical update  
-Date: 2026-04-20  
+Status: active technical update
+Date: 2026-04-20
 Scope: current implementation truth snapshot for conversation-control work inside main Phase C, covering mini-phase status, slice status, completed work, current position, and next required work
 
 ## 1. Purpose
@@ -46,14 +46,14 @@ What is already strong now:
 1. recent focus is no longer only an entity-detail idea; it now covers master-data listings, transaction listings, statements, and generic grounded report views
 2. recent-focus continuation is now routed through a shared affordance contract instead of scattered family-local assumptions
 3. prior-branch restore behavior is much broader and more honest than before
-4. live H3 proof now exists for many natural business turns that previously drifted, stalled, or leaked stale context
+4. live H3 proof now exists for many natural business turns that previously drifted, stalled, or leaked stale contex
 5. softer discard language and pronoun discard language are now proven through the shared continuation/restore seam instead of narrow phrase-local fixes
 6. targeted prior-branch restore matching logic is no longer owned only by the `service.py` facade; the shared `restore_support.py` seam now owns the matching behavior, with focused pure-unit coverage
 7. clarification-lane ownership is now cleaner as well: the older top-level `qwen_chat/clarification_lane.py` module is reduced to a compatibility facade over `qwen_chat/lanes/clarification_lane.py`, preventing a second clarification-lane behavior copy from drifting separately
 
 What is still not fully closed:
 
-1. `IC4` is now complete for the current delivery chapter: recent-focus inventory and affordance policy are broadly shared, matrix-covered, and no genuinely uncovered standard focus seam was found in the closure audit
+1. `IC4` is now complete for the current delivery chapter: recent-focus inventory and affordance policy are broadly shared, matrix-covered, and no genuinely uncovered standard focus seam was found in the closure audi
 2. `IC5-C` is now complete for the current delivery chapter; the remaining restore-related surface is mostly facade orchestration and should defer to the later dedicated `service.py` refactor chapter unless a genuinely new shared policy gap appears
 3. `IC6` is now complete for the current delivery chapter: bounded entry slices delivered the governed multi-step assessment, plan, execution-state, and step-result integration layer with clarification-pause stability and focused server-side proof
 4. the next useful work is no longer more conversation-control widening; it is to return to the broader Phase B1 + C1 backbone roadmap while keeping this control spine as shared infrastructure
@@ -64,7 +64,7 @@ Most important current open gap:
 2. the current conversation-control checkpoint is now strong enough that we should stop widening `IC6` by default and hand control back to the broader enterprise roadmap
 3. remaining payment-entry detail-lane limitations still belong to governed family/scope rollout work, not to more local conversation-control patching
 
-## 4. Mini-Phase Status Snapshot
+## 4. Mini-Phase Status Snapsho
 
 ## 4.1 Completed Design Mini-Phases
 
@@ -95,13 +95,13 @@ What is done:
 2. snapshot includes:
    - pending clarification
    - latest grounded turn
-   - latest normalized artifact
-   - latest recovery contract
-   - latest repair intent
+   - latest normalized artifac
+   - latest recovery contrac
+   - latest repair inten
    - active sequence
    - recent focus
-   - resumable prior request
-3. integrity tests already exist
+   - resumable prior reques
+3. integrity tests already exis
 
 ### `IC2` Shared Precedence Evaluator
 
@@ -128,8 +128,8 @@ What is done:
 2. typed evidence contract exists
 3. shared evidence now covers:
    - discard prefix
-   - fresh redirect
-   - option-list request
+   - fresh redirec
+   - option-list reques
    - sequence continuation
    - targeted restore
    - question restore
@@ -176,7 +176,7 @@ Done:
    - purchase order
    - sales order
    - delivery note
-   - purchase receipt
+   - purchase receip
    - purchase invoice
 5. integrity coverage now also characterizes broader recent-focus listing inventory across representative governed list families:
    - `Item Master List`
@@ -192,7 +192,7 @@ Closure basis:
 
 1. the governed matrix now explicitly covers the supported statement, listing, document-detail, entity-detail, and generic-report focus classes
 2. the remaining inline recent-focus code in `service.py` is limited to orchestration, single-row promotion, targeted-restore matching, and historical carryover glue rather than a second hidden inventory-policy surface
-3. no genuinely uncovered standard document/report inventory edge was found during the close-out audit
+3. no genuinely uncovered standard document/report inventory edge was found during the close-out audi
 
 #### `IC4-B` RecentFocusAffordanceContract Builder
 
@@ -219,10 +219,10 @@ Done:
 9. governed listing affordance policy now composes two governed sources instead of treating one as the whole truth:
    - scope-family compatibility policy for cross-family-safe follow-up boundary behavior
    - report-approved follow-up modes for listing-local refinement behavior
-10. listing affordance scope resolution now prefers governed report-backed scope identity before falling back to grain heuristics, which prevents master-data listings from being misread as entity-only scope when the real governed source is a listing report
+10. listing affordance scope resolution now prefers governed report-backed scope identity before falling back to grain heuristics, which prevents master-data listings from being misread as entity-only scope when the real governed source is a listing repor
 11. live backend verification now proves that:
    - transaction listings such as `Payment Entry List` expose the governed requery-safe and local-safe follow-up surface together
-   - master-data listings such as `Supplier Master List` expose bounded local column/sort refinement without losing the shared follow-up boundary contract
+   - master-data listings such as `Supplier Master List` expose bounded local column/sort refinement without losing the shared follow-up boundary contrac
 12. the live full `test_post_contract_state_integrity` suite is green at `201` tests after this slice
 13. listing-scope resolution is now slightly more future-proof because `scope_id_for_listing_view` can fall back to an active approved governed scope with the same id when the explicit listing-view map has not yet been expanded, and live coverage now proves representative governed affordance composition for:
    - `Item Master List`
@@ -284,7 +284,7 @@ Done:
 
 Status: in progress
 
-#### `IC5-A` Prior Branch Snapshot
+#### `IC5-A` Prior Branch Snapsho
 
 Status: complete
 
@@ -294,7 +294,7 @@ Done:
 2. restore eligibility state exists
 3. branch kind typing exists
 
-#### `IC5-B` PriorBranchRestoreContract
+#### `IC5-B` PriorBranchRestoreContrac
 
 Status: complete
 
@@ -325,12 +325,12 @@ Done:
 9. targeted restore over resumable prior branches is now less brittle for accepted recovery origins because non-semantic branch kinds such as `accepted_recovery_origin` no longer block a valid targeted restore when the preserved branch still matches by governed family or grain
 10. branch-owned recency for recent focus is now normalized from the latest relevant contributor, not only the first grounded-turn position:
    - grounded turn
-   - compatible artifact
-   - matching recovery contract
+   - compatible artifac
+   - matching recovery contrac
 11. question and branch restore arbitration can now keep a grounded branch ahead of an older pending clarification when the branch's later compatible artifact or recovery payload is the true latest contributor
 12. accepted-recovery resumable prior branches now also normalize their source index from the latest branch-owned contributor, not only the repair-acceptance event:
-   - prior recovery contract
-   - accepted repair intent
+   - prior recovery contrac
+   - accepted repair inten
    - newer grounded turn proving the branch became resumable
 13. snapshot arbitration between accepted-recovery-origin branches and historical prior-focus branches is now less brittle because the accepted-recovery branch can carry the truthful later contributor index instead of appearing artificially older than it really is
 14. non-clarification restore ownership is now less brittle when pending clarification survives only through message fallback with no usable source index:
@@ -386,7 +386,7 @@ Done:
 
 Closure basis:
 
-1. the shared restore matrix is now broad enough to treat `IC5-D` as complete for the current safe families and restore classes we actively support
+1. the shared restore matrix is now broad enough to treat `IC5-D` as complete for the current safe families and restore classes we actively suppor
 2. remaining work belongs to `IC5-C` routing cleanup and future-family expansion, not to missing branch-restore test coverage for the current supported seam
 
 ### `IC6` Multi-Step Execution Generalization
@@ -402,14 +402,14 @@ Done:
 
 Still open:
 
-1. broader future multi-step breadth still belongs to a later governed execution chapter if and when new approved execution patterns require it
+1. broader future multi-step breadth still belongs to a later governed execution chapter if and when new approved execution patterns require i
 2. the dedicated `service.py` refactor remains separate work and should not be smuggled back into `IC6`
 
-## 5. Slice Status Snapshot
+## 5. Slice Status Snapsho
 
 This section records the practical slice sequence we recently completed or attempted.
 
-## 5.1 Slices Finished And Kept
+## 5.1 Slices Finished And Kep
 
 ### Slice: Shared Recent-Focus Expansion
 
@@ -434,8 +434,8 @@ What we did:
 
 1. added a conservative fallback policy for recent-focus affordance when the current focus is:
    - listing
-   - statement
-   - report
+   - statemen
+   - repor
    and the display report name is not explicitly registry-backed
 2. the fallback allows only shared requery continuation (`new_query`), not broad local transform permissions
 3. corrected the report-focus characterization coverage so it aligns with real governed ranking/report family metadata instead of an invented report/capability pair
@@ -478,7 +478,7 @@ What we did:
 2. the inventory characterization now explicitly proves recent-focus document promotion for:
    - sales order
    - delivery note
-   - purchase receipt
+   - purchase receip
    - purchase invoice
 3. together with the earlier coverage, the shared transaction-document focus inventory is now much less implicit in code
 
@@ -510,7 +510,7 @@ Status: complete
 What we proved live:
 
 1. clarification to Profit and Loss
-2. Profit and Loss to Balance Sheet
+2. Profit and Loss to Balance Shee
 3. Balance Sheet to Cash Flow
 
 Why it matters:
@@ -537,7 +537,7 @@ Status: complete
 
 What we proved live:
 
-1. ambiguous item request
+1. ambiguous item reques
 2. option list response
 3. named item detail
 4. stock by warehouse follow-up
@@ -698,7 +698,7 @@ What we did:
    - authoritative pending-clarification reopen
    - direct fallback restore
 3. switched `_build_prior_branch_restore_contract_from_snapshot` to dispatch from that selector instead of deciding route order inline
-4. added direct tests for route selection itself, not only for the final built contract
+4. added direct tests for route selection itself, not only for the final built contrac
 5. re-verified the focused restore matrix and the live full state-integrity suite after the change
 
 Why it matters:
@@ -715,8 +715,8 @@ What we did:
 
 1. introduced one shared selector for prior-branch restore projection
 2. unified runtime override message selection
-3. unified recent-focus decision target enrichment
-4. unified recent-focus affordance attachment
+3. unified recent-focus decision target enrichmen
+4. unified recent-focus affordance attachmen
 5. switched both `_prior_branch_restore_runtime_override_message` and `_conversation_control_decision_from_prior_branch_restore_contract` onto that selector
 6. added focused tests for sequence-label projection
 7. added focused tests for recent-focus projection
@@ -726,7 +726,7 @@ What we did:
 Why it matters:
 
 1. restore-mode-specific shaping is now shared instead of duplicated across runtime override and decision mapping
-2. prior-branch restore behavior is more explicit without changing the business contract
+2. prior-branch restore behavior is more explicit without changing the business contrac
 3. this is still `IC5-C` routing cleanup, not a one-off restore tweak
 
 ## 5.2 Slices That Started As Risk Items But Are Now Closed
@@ -788,21 +788,21 @@ In simple English:
    - shared metadata-driven front-door breakout from stale pending clarification ownership across master-data, transaction-listing, and financial-statement entry requests
    - targeted restore matching hardening for accepted recovery-origin resumable prior branches
    - shared collection-alias targeted restore widening for directory-style collection wording over newer detail focus
-5. we should not pretend we are ready to leave this area yet
+5. we should not pretend we are ready to leave this area ye
 
-## 7. What We Still Need To Do Next
+## 7. What We Still Need To Do Nex
 
 Recommended next order:
 
 ### Next 1: Close `IC6` And Hand Back To The Main Roadmap
 
-Priority: highest
+Priority: highes
 
 Reason:
 
 1. `IC6-S5` is complete and the closure checkpoint now says `IC6` is complete for the current delivery chapter
 2. conversation control is no longer the right active build center for the project; it should become shared infrastructure again
-3. the immediate program move should be to resume the broader Phase B1 + C1 backbone plan with this stabilized control spine underneath it
+3. the immediate program move should be to resume the broader Phase B1 + C1 backbone plan with this stabilized control spine underneath i
 
 ### Next 2: Keep `IC5-C` Closed And Do Not Reopen It Lightly
 
@@ -827,7 +827,7 @@ To stay enterprise grade, we should not:
 
 1. solve `go back to the suppliers` as a supplier-only branch
 2. add hardcoded restore exceptions per entity type
-3. bypass shared restore precedence just to pass one transcript
+3. bypass shared restore precedence just to pass one transcrip
 4. mark a slice complete because one wording variant happened to work
 5. keep pretending the original collection/detail restore gap or restore-matrix coverage is still the main blocker after `IC5-D` is already complete for the current safe families
 
@@ -839,7 +839,7 @@ This is enterprise-grade progress, not random patching, because:
 
 1. we are building on shared state, shared evidence, shared affordance, and shared restore contracts
 2. we are verifying with live H3 proof, not only unit assumptions
-3. when a scenario is not truly solved, we are recording it as open instead of masking it
+3. when a scenario is not truly solved, we are recording it as open instead of masking i
 
 But we are not finished.
 
@@ -863,13 +863,13 @@ The current truthful position is:
 16. restore arbitration can now also let known active-sequence, recent-focus, and resumable-prior owners outrank a non-authoritative message-fallback pending clarification when that clarification has no usable source index
 17. sequence-completion suppression now also uses an explicit superseding-state selector with recorded owner/basis output, and still ignores a non-authoritative message-fallback pending clarification when that clarification has no usable source index and no truly newer owner has taken precedence
 18. direct restore fallback now also ignores a non-authoritative message-fallback pending clarification when no stronger owner exists, instead of reopening that fallback clarification as if it were authoritative
-19. recent-focus versus resumable-prior arbitration now also prefers the owner with a known source index over an otherwise-available but unindexed peer before falling back to the older hard default
+19. recent-focus versus resumable-prior arbitration now also prefers the owner with a known source index over an otherwise-available but unindexed peer before falling back to the older hard defaul
 20. latest-repair-intent snapshot state now also exposes normalized source-index evidence, and live characterization proves the accepted-repair snapshot keeps that recency metadata visible alongside resumable-prior derivation
 21. peer-owner arbitration now explicitly labels the indeterminate-default path, so shared restore no longer overstates why recent focus won when both peer branches lack comparable precedence evidence
 22. resumable-prior snapshot arbitration now explicitly records whether accepted repair or historical prior focus won by:
    - newer index
    - known over unindexed
-   - explicit indeterminate default
+   - explicit indeterminate defaul
    - sole availability
 23. non-clarification restore owner arbitration now also uses an explicit selector that returns both winner and basis, and live coverage proves the selector directly for known-over-unindexed and indeterminate-default cases
 24. sequence-completion suppression now explicitly records whether a newer authoritative pending clarification, recent focus, or resumable-prior owner superseded the completed sequence instead of hiding that decision behind an inline boolean check
@@ -906,7 +906,7 @@ If we want one short summary for daily tracking:
 6. latest completed `IC4-B` slice: conservative recent-focus affordance fallback hardening for generated/family-backed listing, statement, and report focus
 7. latest completed `IC4-B` slice: recent-focus affordance helper extraction out of `service.py` with the live full state-integrity suite green afterward
 8. latest completed `IC4-B` slice: governed listing-affordance composition across scope-family compatibility policy and report-approved follow-up policy, with live proof for `Payment Entry List` and `Supplier Master List`
-9. latest completed `IC4-A` / `IC4-B` slice: single-row listing promotion now respects governed detail-capable scope policy through shared metadata-backed document-focus helpers, so unsupported listing scopes such as `Payment Entry List` no longer auto-promote into document focus just because one row is present
+9. latest completed `IC4-A` / `IC4-B` slice: single-row listing promotion now respects governed detail-capable scope policy through shared metadata-backed document-focus helpers, so unsupported listing scopes such as `Payment Entry List` no longer auto-promote into document focus just because one row is presen
 10. latest completed `IC4-A` / `IC4-B` slice: master-data single-row entity promotion now also uses shared metadata-backed row label/key helpers derived from active approved report metadata, so `Customer Master List`, `Supplier Master List`, and `Item Master List` no longer depend on service-local column maps
 11. latest completed `IC5-C` slice: shared metadata-driven front-door breakout from stale pending clarification ownership across master-data listings, transaction listings, and financial-statement entry requests
 12. latest completed `IC5-C` slice: targeted restore matching hardening for accepted recovery-origin resumable prior branches
@@ -920,7 +920,7 @@ If we want one short summary for daily tracking:
 20. latest completed `IC5-C` slice: peer-owner arbitration now explicitly labels the indeterminate recent-focus default path instead of implying a stronger precedence reason than the evidence supports
 21. latest completed `IC5-C` slice: resumable-prior snapshot selection now uses an explicit selector with recorded arbitration basis across accepted-repair, historical-prior-focus, known-over-unindexed, and indeterminate-default cases
 22. latest completed `IC5-C` slice: non-clarification restore owner selection now uses an explicit selector with coupled winner/basis output across sole-availability, newer-index, known-over-unindexed, and indeterminate-default cases
-23. latest completed `IC5-C` slice: full non-clarification restore winner selection now also uses a shared selector across active-sequence precedence, pending-clarification precedence, recent-focus vs resumable-prior arbitration, and final winner/basis output
+23. latest completed `IC5-C` slice: full non-clarification restore winner selection now also uses a shared selector across active-sequence precedence, pending-clarification precedence, recent-focus vs resumable-prior arbitration, and final winner/basis outpu
 24. latest completed `IC5-C` slice: authoritative pending-clarification reopen now also uses a shared builder with explicit arbitration-basis output across both question-restore and generic branch-restore paths
 25. latest completed `IC5-C` slice: targeted branch-restore owner selection now also uses an explicit selector across recent-focus and resumable-prior matching instead of two separate inline owner branches
 26. latest completed `IC5-C` slice: direct restore fallback now also uses a shared helper across sequence-restore and resumable-prior fallback paths, with explicit arbitration-basis output for those last fallback owners
@@ -960,7 +960,7 @@ If we want one short summary for daily tracking:
 58. latest completed `IC5-C` slice: prior-branch restore request interpretation now also composes through the shared `conversation_control_support` helper, so phrase-type precedence and targeted-restore hint precedence no longer stay inline in the snapshot builder
 59. latest completed `IC5-C` slice: close-out review now shows the remaining prior-branch restore surface is mostly facade orchestration, so further extractions from this seam should defer to the later dedicated `service.py` refactor chapter unless a truly shared policy gap is discovered
 60. latest completed `IC5-C` slice: restore-derived recent-focus reconstruction and restore-derived recent-focus affordance reconstruction are now directly characterized in the live state-integrity suite, so the last thin shared reconstruction seams are explicitly covered before deferring the remaining restore surface to later facade refactor work
-61. latest completed `IC4-A` / `IC4-B` slice: financial-statement recent-focus classification now uses a shared metadata-backed statement descriptor instead of literal statement-name matching inline in `service.py`, so the snapshot spine stays aligned with governed report metadata rather than a hardcoded three-name set
+61. latest completed `IC4-A` / `IC4-B` slice: financial-statement recent-focus classification now uses a shared metadata-backed statement descriptor instead of literal statement-name matching inline in `service.py`, so the snapshot spine stays aligned with governed report metadata rather than a hardcoded three-name se
 62. latest completed `IC4-A` / `IC4-B` slice: registry-driven report-affordance matrix coverage now proves the active approved report surface normalizes into recent-focus affordance modes without leaking raw policy aliases such as `column_projection` or `metric_change`, including statement-backed reports through the shared metadata descriptor path
 63. latest completed `IC4-A` / `IC4-B` slice: registry-driven listing-scope matrix coverage now proves the active approved list-style governed scope surface resolves through the correct recent-focus selection class and normalized listing follow-up modes across:
    - master-data scopes
@@ -1005,7 +1005,7 @@ If we want one short summary for daily tracking:
 100. the live full `test_post_contract_state_integrity` suite is green at `348` tests after this shared artifact snapshot-state alignment pass
 101. latest completed `IC4-A` / `IC4-B` slice: active-sequence snapshot-state shaping now also composes through the shared `snapshot_defaults.py` layer instead of being assembled inline in `service.py`, while the facade still owns only the authoritative sequence payload lookup, sequence-active interpretation, and source-index detection
 102. the live full `test_post_contract_state_integrity` suite is green at `349` tests after this shared active-sequence snapshot-state alignment pass
-103. latest completed `IC4-A` / `IC4-B` slice: historical grounded-branch reconstruction for resumable-prior discovery now also composes through shared `snapshot_defaults.py` snapshot builders instead of maintaining a second inline copy of grounded-turn, artifact, and recovery snapshot payload shaping inside `service.py`, so historical focus carryover now reuses the same normalized snapshot currency as the main conversation-state snapshot
+103. latest completed `IC4-A` / `IC4-B` slice: historical grounded-branch reconstruction for resumable-prior discovery now also composes through shared `snapshot_defaults.py` snapshot builders instead of maintaining a second inline copy of grounded-turn, artifact, and recovery snapshot payload shaping inside `service.py`, so historical focus carryover now reuses the same normalized snapshot currency as the main conversation-state snapsho
 104. latest completed `IC4-A` / `IC4-B` slice: latest artifact snapshot shaping now also normalizes `artifact_type` from either `artifact_type` or payload `type`, so historical and primary artifact-state reconstruction no longer diverge on that field
 105. the live full `test_post_contract_state_integrity` suite is green at `351` tests after this shared historical-snapshot reconstruction alignment pass
 106. latest completed `IC4-A` / `IC4-B` slice: single-row recent-focus payload shaping for governed transaction-document promotion and governed master-data entity promotion now also composes through shared builders in `recent_focus_support.py` instead of being assembled inline in `service.py`, while the facade still owns only row inspection, governed detail-capable eligibility, and row label/key extraction

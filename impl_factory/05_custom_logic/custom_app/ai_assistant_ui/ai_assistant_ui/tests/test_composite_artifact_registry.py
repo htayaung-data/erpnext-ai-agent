@@ -12,6 +12,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	get_composite_assembly_spec,
 	get_composite_compatibility_spec,
 	get_composite_family_spec,
+	get_governed_kpi_execution_spec,
 	load_composite_artifact_registry,
 	load_composite_assembly_registry,
 	load_composite_compatibility_registry,
@@ -43,7 +44,7 @@ class TestCompositeArtifactRegistry(unittest.TestCase):
 		self.assertEqual(family_result.stats.get("family_count"), 3)
 		self.assertEqual(compatibility_result.stats.get("compatibility_rule_count"), 3)
 		self.assertEqual(assembly_result.stats.get("assembly_count"), 3)
-		self.assertEqual(artifact_result.stats.get("artifact_count"), 4)
+		self.assertEqual(artifact_result.stats.get("artifact_count"), 5)
 
 	def test_loader_accessors_are_copy_safe_and_return_current_specs(self):
 		family_payload = load_composite_family_registry()
@@ -69,17 +70,42 @@ class TestCompositeArtifactRegistry(unittest.TestCase):
 			"active",
 		)
 		self.assertEqual(
-			get_composite_artifact_spec("customer_credit_overdue_composite").get("composite_kind"),
+			get_composite_artifact_spec("customer_risk_as_of_default_composite").get("composite_kind"),
 			"risk_table",
 		)
 		self.assertEqual(
-			get_composite_compatibility_spec("customer_as_of_same_scope_credit_metrics").get("activation_state"),
+			get_composite_compatibility_spec("customer_risk_as_of_same_scope_metrics").get("activation_state"),
 			"active",
 		)
 		self.assertEqual(
 			get_composite_assembly_spec("customer_as_of_risk_ranking_assembly").get("row_missing_component_policy"),
 			"degrade_row_keep_primary",
 		)
+
+	def test_customer_risk_as_of_family_artifact_and_assembly_are_active_after_3_4c(self):
+		family = get_composite_family_spec("customer_risk_as_of")
+		artifact = get_composite_artifact_spec("customer_risk_as_of_default_composite")
+		assembly = get_composite_assembly_spec("customer_as_of_risk_ranking_assembly")
+
+		self.assertEqual(family.get("activation_state"), "active")
+		self.assertEqual(family.get("default_primary_metric"), "overdue_amount")
+		self.assertIn("collection_recommendation", family.get("blocked_variations") or [])
+		self.assertEqual(artifact.get("activation_state"), "active")
+		self.assertEqual(artifact.get("blocked_reason"), "")
+		self.assertEqual(assembly.get("activation_state"), "active")
+
+	def test_customer_risk_as_of_component_executions_expose_family_metric_ids(self):
+		expected = {
+			"customer_overdue_amount_as_of_ranking_execution": "overdue_amount",
+			"customer_overdue_ratio_as_of_ranking_execution": "overdue_ratio",
+			"credit_utilization_customer_as_of_ranking_execution": "credit_utilization",
+		}
+
+		for execution_id, family_metric_id in expected.items():
+			with self.subTest(execution_id=execution_id):
+				spec = get_governed_kpi_execution_spec(execution_id)
+				value_mapping = spec.get("value_metric_mapping") if isinstance(spec.get("value_metric_mapping"), dict) else {}
+				self.assertEqual(value_mapping.get("family_metric_id"), family_metric_id)
 
 	def test_family_validator_rejects_unsupported_variation_axis(self):
 		result = validate_composite_family_registry(

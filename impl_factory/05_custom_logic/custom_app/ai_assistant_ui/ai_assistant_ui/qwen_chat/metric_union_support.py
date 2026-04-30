@@ -24,6 +24,27 @@ def artifact_metric_columns_available(
 	def _normalize_column_key(value: Any) -> str:
 		return normalized_key_fallback(str(value or "").strip())
 
+	def _projection_alias_candidates(value: Any) -> set[str]:
+		key = _normalize_column_key(value)
+		aliases = {
+			"document": "document_name",
+			"name": "document_name",
+			"id": "document_name",
+			"date": "posting_date",
+			"transaction_date": "posting_date",
+			"customer": "party_name",
+			"supplier": "party_name",
+			"party": "party_name",
+			"amount": "grand_total",
+			"total": "grand_total",
+			"total_amount": "grand_total",
+			"outstanding": "outstanding_amount",
+			"qty": "quantity",
+			"document_status": "status",
+		}
+		alias = aliases.get(key, "")
+		return {alias, _normalize_column_key(alias)} if alias else set()
+
 	def _collect_row_keys(value: Any) -> set[str]:
 		keys: set[str] = set()
 		if isinstance(value, list):
@@ -90,6 +111,7 @@ def artifact_metric_columns_available(
 		if alias_target:
 			candidate_keys.add(alias_target)
 			candidate_keys.add(_normalize_column_key(alias_target))
+		candidate_keys.update(_projection_alias_candidates(column))
 		canonical_metric_key = get_canonical_key(column, dimension_or_metric="metric")
 		if canonical_metric_key:
 			candidate_keys.add(str(canonical_metric_key or "").strip())

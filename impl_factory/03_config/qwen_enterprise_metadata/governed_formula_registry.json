@@ -640,6 +640,41 @@
       "blocked_reason": ""
     },
     {
+      "formula_id": "customer_overdue_amount_as_of_date_formula",
+      "definition_id": "customer_overdue_amount_as_of_date",
+      "label": "Customer Overdue Amount as of Date Formula",
+      "formula_type": "sum",
+      "input_metrics": [
+        "overdue_amount"
+      ],
+      "input_requirements": [
+        {
+          "metric_key": "overdue_amount",
+          "requirement_type": "required"
+        }
+      ],
+      "source_capabilities": [
+        "accounts_receivable_read"
+      ],
+      "source_reports": [
+        "Accounts Receivable Summary"
+      ],
+      "aggregation_rule": "latest_value",
+      "grain_requirements": [
+        "customer"
+      ],
+      "time_scope_requirements": [
+        "as_of_date_required"
+      ],
+      "activation_state": "active",
+      "blocked_reason": "",
+      "lookup_terms": [
+        "overdue amount",
+        "customer overdue amount",
+        "past due amount"
+      ]
+    },
+    {
       "formula_id": "customer_overdue_ratio_as_of_date_formula",
       "definition_id": "customer_overdue_ratio_as_of_date",
       "label": "Customer Overdue Ratio as of Date Formula",

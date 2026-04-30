@@ -459,7 +459,7 @@ def run_phase3_3c_customer_master_lookup_smoke() -> Dict[str, Any]:
 			)
 			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
 			assistant_payload = service_module._latest_assistant_payload(session_doc) or {}
-			answer_text = str(assistant_payload.get("answer_text") or "").strip()
+			answer_text = str(assistant_payload.get("text") or assistant_payload.get("answer_text") or "").strip()
 			turns.append(
 				{
 					"prompt": prompt,

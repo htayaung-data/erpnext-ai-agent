@@ -26,6 +26,7 @@ fake_frappe.local = types.SimpleNamespace(site="")
 sys.modules.setdefault("frappe", fake_frappe)
 
 from ai_assistant_ui.qwen_chat.contracts import NormalizedFamilyArtifactContract
+from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import _family_narrative_prefers_rendered_response
 
@@ -247,6 +248,54 @@ class FinancialStatementRenderingContractsTest(unittest.TestCase):
 				},
 			)
 		)
+
+	def test_financial_statement_artifact_carries_governed_scope_runtime_policy(self):
+		outcome = build_normalized_family_artifact(
+			request_id="financial-statement-policy",
+			compiler_contract={
+				"request_id": "financial-statement-policy",
+				"selected_report": "Profit and Loss Statement",
+			},
+			runtime_payload={
+				"tool_trace": [
+					{
+						"tool": "erp_fac-generate_report",
+						"detail_obj": {
+							"report_name": "Profit and Loss Statement",
+							"filters": {
+								"company": "Mingalar Mobile Distribution Co., Ltd.",
+								"from_date": "2025-04-01",
+								"to_date": "2026-04-16",
+								"periodicity": "Yearly",
+							},
+						},
+						"output_obj": {
+							"result": {
+								"columns": [
+									{"fieldname": "account"},
+									{"fieldname": "total"},
+								],
+								"data": [
+									{"account": "Sales", "currency": "MMK", "total": 1458275000.04},
+									{"account": "Cost of Goods Sold", "currency": "MMK", "total": 980896626.46},
+								],
+							}
+						},
+					}
+				]
+			},
+			intent_class="financial_statement",
+			preferred_family_id="financial_statement",
+		)
+		self.assertEqual(outcome.status, "adapted")
+		dimensions = outcome.artifact_contract.dimensions
+		policy = dict(dimensions.get("governed_scope_runtime_policy") or {})
+		self.assertEqual(dimensions.get("scope_id"), "profit_and_loss")
+		self.assertEqual(dimensions.get("scope_class"), "financial_summary")
+		self.assertEqual(policy.get("family_id"), "financial_statement")
+		self.assertEqual(policy.get("scope_id"), "profit_and_loss")
+		self.assertEqual(policy.get("scope_class"), "financial_summary")
+		self.assertEqual(policy.get("compatibility_level"), "full_consumption")
 
 
 if __name__ == "__main__":

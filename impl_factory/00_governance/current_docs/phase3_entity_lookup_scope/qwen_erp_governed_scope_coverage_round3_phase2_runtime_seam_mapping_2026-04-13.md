@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 3 Phase 2 Runtime Seam Mapping
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 3 Phase 2 runtime seam mapping for the cross-layer alignment targets identified in Round 3 Phase 1
 
 ## 1. Purpose
@@ -48,13 +48,13 @@ This note is based on direct inspection of:
 
 This phase mapped five alignment targets:
 
-1. document entity-detail alignment
-2. purchase invoice metadata/runtime alignment
+1. document entity-detail alignmen
+2. purchase invoice metadata/runtime alignmen
 3. payment entry ownership and activation
 4. ambiguity and clarification activation breadth
 5. direct entity-reference breadth versus current activation
 
-## 4. Strong Runtime Seams Already Present
+## 4. Strong Runtime Seams Already Presen
 
 ## 4.1 Entity Drilldown Is A Real Lane
 
@@ -264,7 +264,7 @@ Based on the current seam map:
 
 1. ambiguity handling exists
 2. continuation handling exists
-3. typed clarification fields exist
+3. typed clarification fields exis
 4. boundary rendering exists
 
 So the architecture gap is not "we need an ambiguity system."
@@ -275,9 +275,9 @@ The real gap is:
 2. broader activation across entity/document families
 3. cleaner handoff between artifact evidence, entity detail, and clarification
 
-## 7. Ownership Map By Round 3 Target
+## 7. Ownership Map By Round 3 Targe
 
-## 7.1 Document Entity Detail Alignment
+## 7.1 Document Entity Detail Alignmen
 
 Current ownership:
 
@@ -289,7 +289,7 @@ Status:
 
 Partially aligned, still mixed authority.
 
-## 7.2 Purchase Invoice Alignment
+## 7.2 Purchase Invoice Alignmen
 
 Current ownership:
 
@@ -318,7 +318,7 @@ Partial and specialized.
 Current ownership:
 
 1. strong shared architecture exists
-2. typed clarification fields exist
+2. typed clarification fields exis
 3. active reason coverage still narrow
 
 Status:
@@ -329,7 +329,7 @@ Architecturally present, activation still narrow.
 
 Current ownership:
 
-1. typed lookup contract and resolver exist
+1. typed lookup contract and resolver exis
 2. alias maps already recognize `customer`, `supplier`, and `item`
 3. active policy registry still exposes only `customer`
 
@@ -349,9 +349,9 @@ It is dealing with a repeated alignment pattern:
 
 That means the right next move after this phase is still the same:
 
-1. preserve the shared typed seams already present
+1. preserve the shared typed seams already presen
 2. remove direct branch ownership only where a stronger shared seam is ready
-3. avoid widening activation faster than evidence, metadata, and clarification can support
+3. avoid widening activation faster than evidence, metadata, and clarification can suppor
 
 ## 9. What This Means For Round 3 Phase 3
 

@@ -1,7 +1,7 @@
 # Qwen ERP Phase 1.1 Delivery / Fulfillment Design
 
-Status: checkpoint-complete design note with `1.1C`, `1.1R`, and `1.1D` validated and closed  
-Date: 2026-04-04  
+Status: checkpoint-complete design note with `1.1C`, `1.1R`, and `1.1D` validated and closed
+Date: 2026-04-04
 Scope: concrete implementation design for Phase 1, Mini-phase 1.1
 
 ## 1. Executive Decision
@@ -11,7 +11,7 @@ Phase 1.1 should start with a governed `Delivery Note` read surface, not a broad
 The first slice should be:
 
 1. read-only
-2. metadata-first
+2. metadata-firs
 3. grounded on standard ERPNext delivery documents
 4. small enough to verify with the existing enterprise gate
 
@@ -19,7 +19,7 @@ This means the first implementation target is:
 
 1. `Delivery Note` listing and status visibility
 2. bounded summary over grounded delivery-document rows
-3. governed follow-up over the resulting artifact
+3. governed follow-up over the resulting artifac
 
 This phase should not start with:
 
@@ -29,7 +29,7 @@ This phase should not start with:
 4. chart/export work
 5. cross-document lifecycle decomposition
 
-## 1A. Current Checkpoint
+## 1A. Current Checkpoin
 
 The first strict Phase 1.1 checkpoint is now validated.
 
@@ -47,7 +47,7 @@ What is proven:
 What this means:
 
 1. the first Delivery Note listing slice is now a validated governed capability surface
-2. Phase 1.1 should continue with another bounded Delivery Note improvement
+2. Phase 1.1 should continue with another bounded Delivery Note improvemen
 3. the next step should stay inside Delivery Note behavior and not widen into trends or `Delivery Trip`
 
 Selected next bounded slice:
@@ -64,7 +64,7 @@ Why this is next:
    - the current remaining gap is the compiler path for direct-query listing reports, not a missing delivery-only capability
 4. that makes date-scope the better next mini-slice for generic runtime improvement without widening the semantic surface too early
 
-## 1B. Browser / UAT Checkpoint
+## 1B. Browser / UAT Checkpoin
 
 The `1.1B` browser checkpoint is now materially validated after backend runtime refresh.
 
@@ -75,7 +75,7 @@ What is proven in the browser:
 3. `show me delivery notes with status Completed` returns the correctly filtered governed delivery-note listing
 4. `Show me last 7 sale invoices` still works after the Delivery Note continuation path
 5. invoice detail follow-up still works after the Delivery Note steps
-6. delivery-confirmation questions from invoice detail still fail closed safely when governed delivery proof is not available from the current artifact
+6. delivery-confirmation questions from invoice detail still fail closed safely when governed delivery proof is not available from the current artifac
 
 What changed operationally:
 
@@ -99,20 +99,20 @@ Current conclusion:
 
 The current repo and ERP surface support a narrow first slice:
 
-1. current governed metadata has no fulfillment capability yet
+1. current governed metadata has no fulfillment capability ye
 2. the ERP instance has standard `Delivery Note` and `Delivery Trip` doctypes
 3. the ERP instance also exposes the standard report `Delivery Note Trends`
 4. live data exists for `Delivery Note`
-5. no live `Delivery Trip` records were found during preflight
+5. no live `Delivery Trip` records were found during prefligh
 
 The most important execution signal is:
 
 1. `Delivery Note` is real and active
-2. `Delivery Trip` exists structurally but is not yet live in this deployment
+2. `Delivery Trip` exists structurally but is not yet live in this deploymen
 
 That means the safest enterprise scope is:
 
-1. `Delivery Note` first
+1. `Delivery Note` firs
 2. `Delivery Trip` later inside the same phase only if live usage appears
 
 ## 3. Design Choice
@@ -127,7 +127,7 @@ Why rejected for the first slice:
 2. more Python changes than needed
 3. higher risk of inventing a family shape before proving the simpler read path
 
-Option B: reuse the existing `transaction_listing` pattern and generalize it from invoice-only to governed document-listing support
+Option B: reuse the existing `transaction_listing` pattern and generalize it from invoice-only to governed document-listing suppor
 
 Why selected:
 
@@ -167,14 +167,14 @@ The first runtime slice should support:
 4. delivery-note listing filtered by date or recent period
 5. delivery-note listing filtered by delivery status when available
 6. summary over the grounded list:
-   - document count
+   - document coun
    - total quantity
-   - total amount
+   - total amoun
 7. bounded follow-up:
    - presentation transform
    - column projection
-   - sort or limit
-   - filter refinement
+   - sort or limi
+   - filter refinemen
 
 ### 4.2 Out of scope
 
@@ -277,7 +277,7 @@ Do not create a separate family for the first slice.
 Instead:
 
 1. extend the existing canonical listing family so it can cover governed business-document lists
-2. allow `Delivery Note List` as an approved source report
+2. allow `Delivery Note List` as an approved source repor
 3. derive document label and document-type semantics from metadata
 
 This keeps the architecture generic and avoids delivery-only adapter logic.
@@ -298,7 +298,7 @@ Examples of forbidden changes:
 
 1. add delivery-only branches in `service.py`
 2. add hardcoded `if message contains delivery` routing
-3. create a special-case lane only for fulfillment
+3. create a special-case lane only for fulfillmen
 4. add one-off delivery rescue logic outside governed metadata
 
 ### 6.2 service.py rule
@@ -332,7 +332,7 @@ Add:
 2. compiler coverage for `fulfillment_read`
 3. report-registry coverage for `Delivery Note List`
 4. family-adapter coverage for generalized document-listing artifacts
-5. rendering coverage for delivery-note listing output
+5. rendering coverage for delivery-note listing outpu
 6. live smoke for recent delivery-note listing
 
 ### 7.2 Verification levels
@@ -362,7 +362,7 @@ Measure:
 If domain-specific Python branches appear in core routing:
 
 1. log that as architecture debt immediately
-2. do not hide it as a normal feature cost
+2. do not hide it as a normal feature cos
 
 ## 8. Proposed Mini-phase Structure Inside Phase 1.1
 
@@ -375,11 +375,11 @@ Deliver:
 3. `listing_view = delivery_note`
 4. generalized transaction-listing support for delivery notes
 5. strict live smoke for exact delivery-note listing scope
-6. full-gate validation after the first strict checkpoint
+6. full-gate validation after the first strict checkpoin
 
 This is the mandatory first checkpoint.
 
-### 8.2 Mini-phase 1.1B: Delivery Note Status Enrichment
+### 8.2 Mini-phase 1.1B: Delivery Note Status Enrichmen
 
 Only after 1.1A is green:
 
@@ -393,7 +393,7 @@ Only after 1.1A is green:
 Only if the deployment proves the need:
 
 1. evaluate `Delivery Note Trends`
-2. evaluate `Delivery Trip` only if live records exist
+2. evaluate `Delivery Trip` only if live records exis
 
 Do not force 1.1C into the first green checkpoint.
 
@@ -407,7 +407,7 @@ Current live findings:
    - `22`
 2. live `Delivery Trip` rows exist:
    - `0`
-3. the standard ERPNext report `Delivery Note Trends` exists as a script report
+3. the standard ERPNext report `Delivery Note Trends` exists as a script repor
 4. source inspection and live execution show `Delivery Note Trends` requires all of:
    - `company`
    - `fiscal_year`
@@ -434,7 +434,7 @@ Current live findings:
    - dimension columns such as `Customer`, `Customer Name`, `Territory`, `Currency`
    - dynamic period columns such as `Mar (Qty)` and `Mar (Amt)`
    - total columns `Total(Qty)` and `Total(Amt)`
-   - a bar chart over total delivered amount
+   - a bar chart over total delivered amoun
 9. the report still has a non-trivial governed-fit problem:
    - it is a script report with dynamic columns
    - it is fiscal-year anchored rather than simple date-range anchored
@@ -451,7 +451,7 @@ Deferred inside `1.1C`:
 Why:
 
 1. `Delivery Note Trends` is a real report in this deployment and is the smallest meaningful optional extension after listing/date/status
-2. `Delivery Trip` is present structurally but not active in this deployment
+2. `Delivery Trip` is present structurally but not active in this deploymen
 3. forcing `Delivery Trip` now would create architecture churn around a ghost surface
 
 Enterprise rule for `1.1C`:
@@ -462,7 +462,7 @@ Enterprise rule for `1.1C`:
 
 Current `1.1C` trust decision:
 
-1. do not wire `Delivery Note Trends` into runtime yet
+1. do not wire `Delivery Note Trends` into runtime ye
 2. first design the missing governed report contract for:
    - required filters
    - expected columns
@@ -496,12 +496,12 @@ Why this is the narrowest viable governed scope:
 
 1. the live dataset already returns meaningful customer-level monthly trend rows
 2. customer-level grouping aligns with the current business review style better than item-level trend tables
-3. monthly grain is the most understandable first trend grain and matches the existing sales-trends default
+3. monthly grain is the most understandable first trend grain and matches the existing sales-trends defaul
 
 Why this is still not ready for runtime:
 
 1. fiscal-year anchoring needs explicit compiler and follow-up semantics
-2. dynamic periodized columns need a governed trend artifact contract, not reuse of the current transaction-listing artifact
+2. dynamic periodized columns need a governed trend artifact contract, not reuse of the current transaction-listing artifac
 3. chart output exists, but chart trust and rendering ownership are part of a later dedicated chart phase
 
 Current enterprise decision:
@@ -510,7 +510,7 @@ Current enterprise decision:
 2. do not add `Delivery Note Trends` metadata/runtime wiring in this slice
 3. revisit it only after the governed trend-artifact contract is explicitly designed
 
-#### 8.3C Go / No-Go Checkpoint
+#### 8.3C Go / No-Go Checkpoin
 
 Decision:
 
@@ -531,7 +531,7 @@ Why it is only a conditional `go`:
 
 1. current metadata does not yet admit `Delivery Note Trends` into the governed trend family
 2. current `fulfillment_read` capability does not yet support `trend_analysis`
-3. current trend semantic-routing rules still point to sales/product surfaces, not fulfillment
+3. current trend semantic-routing rules still point to sales/product surfaces, not fulfillmen
 4. chart output exists in ERP, but chart ownership remains outside this slice
 
 Enterprise conclusion:
@@ -558,7 +558,7 @@ If `1.1C` implementation begins, the first trusted scope must stay narrow:
    - `period = Monthly`
    - `based_on = Customer`
 7. approved first trusted metrics:
-   - delivered amount
+   - delivered amoun
    - delivered quantity
 8. approved first output:
    - normalized period series
@@ -594,7 +594,7 @@ Phase `1.1` is not closure-ready yet.
 
 Why:
 
-1. browser/UAT revealed that Delivery onboarding did not fully inherit the older listing contract
+1. browser/UAT revealed that Delivery onboarding did not fully inherit the older listing contrac
 2. the trend surface is not the unreliable seam
 3. the unreliable seams are shared listing and continuation behavior
 
@@ -608,11 +608,11 @@ Confirmed drift findings:
    - direct compiler and live single-turn execution return the full March window
    - live result is `8` submitted delivery notes, which matches ERP truth
 3. the wrong `5-row` month result happens only after the prior bad `latest 5` turn
-   - the second turn is semantically understood as a time-scope refinement
+   - the second turn is semantically understood as a time-scope refinemen
    - but the continuation path preserves the earlier limit of `5`
-   - that means the second defect is continuation-contract drift, not fresh-query time-scope drift
+   - that means the second defect is continuation-contract drift, not fresh-query time-scope drif
 4. `Top 5 customers by revenue last month` is real but separate
-   - direct compiler selection is correct
+   - direct compiler selection is correc
    - live `handle_qwen_user_message` still clarifies
    - this should not be bundled into the Delivery fix
 
@@ -628,15 +628,15 @@ Approved correction design:
    - extend the structural limit vs time-scope reconciliation so synthetic `as_of_today` is cleared when the user asked for `latest N` documents rather than `today`
    - do not add Delivery-specific phrase routing
 2. fix transaction-listing continuation behavior only in the shared continuation layer
-   - transaction listings must not preserve ranking-style limit membership/order during time-scope restatement
+   - transaction listings must not preserve ranking-style limit membership/order during time-scope restatemen
    - time-scope refinement from a prior listing may preserve company and projection shape
    - it must not implicitly preserve the prior numeric limit unless the new request explicitly asks for one
 3. keep ranking clarification out of this slice
    - record it and investigate separately after Delivery contract inheritance is restored
-4. remove earlier drift rather than layering over it
+4. remove earlier drift rather than layering over i
    - do not add new metadata hacks for Delivery wording
    - do not patch one user phrase
-   - do not solve this in rendering text
+   - do not solve this in rendering tex
 
 Files that should own the correction:
 
@@ -675,7 +675,7 @@ Current correction-track closure:
 2. `give me delivery notes from last month` is now browser-valid again as the full March submitted set:
    - `8` documents
    - `41` quantity
-   - `2,446,000` amount
+   - `2,446,000` amoun
 3. governed `Delivery Note` detail drilldown now works from the listing surface:
    - `tell me more about MAT-DN-2026-00016`
 4. the new `Delivery Note` detail continuity smoke is now in the release-gate path
@@ -692,12 +692,12 @@ Why this stays in Phase 1:
 
 1. the question is a common operational ask:
    - `items from this invoice are already delivered?`
-2. it requires governed evidence from more than one artifact
+2. it requires governed evidence from more than one artifac
 3. but it is still a narrow operational proof ask, not a broad multi-artifact analysis engine
 
 What `1.1D` should do:
 
-1. start from an already grounded invoice-detail artifact
+1. start from an already grounded invoice-detail artifac
 2. follow only governed operational evidence:
    - linked `Delivery Note`
    - linked `Sales Order`
@@ -738,19 +738,19 @@ Current `1.1D-0` foundation findings:
    - `164` submitted invoices where `update_stock = 1`
    - `7` submitted invoices where all items are linked to `Delivery Note` / `dn_detail`
    - `8` submitted invoices with neither direct delivery-note links nor stock-updating invoice delivery proof
-   - `0` live invoices in a `sales_order only` fallback bucket
+   - `0` live invoices in a `sales_order only` fallback bucke
    - `0` live invoices with mixed direct-proof and no-proof item rows
 4. `Sales Invoice Item.delivered_qty` is not authoritative for this slice
    - live linked invoices still show `delivered_qty = 0`
    - proof should not be built from that field
-5. `Sales Order.per_delivered` and `Sales Order Item.delivered_qty` are useful supporting context but should not be the first proof source for this deployment
+5. `Sales Order.per_delivered` and `Sales Order Item.delivered_qty` are useful supporting context but should not be the first proof source for this deploymen
    - they describe order-level delivery progress
    - they do not provide a cleaner invoice-level proof surface than the direct invoice-item links already do
 6. return nuance is real in the live data
    - return invoices exist in both direct-proof buckets:
      - `delivery_note`-linked return invoices
      - `update_stock = 1` return invoices
-   - first implementation must not answer a return invoice as if it were a standard outbound delivery without saying it is a return / reversal context
+   - first implementation must not answer a return invoice as if it were a standard outbound delivery without saying it is a return / reversal contex
 
 `1.1D` first trusted scope should therefore be narrower than originally feared:
 
@@ -762,7 +762,7 @@ Deferred from the first `1.1D` implementation slice:
 
 1. sales-order-only fallback proof
 2. mixed invoice-item proof states inside one invoice
-3. broad reconciliation across invoice, delivery, stock, and payment
+3. broad reconciliation across invoice, delivery, stock, and paymen
 
 Current `1.1D-1` implementation note:
 
@@ -793,7 +793,7 @@ Current `1.1D-2` closure note:
 4. the direct proof answer remains bounded to explicit governed evidence:
    - submitted stock-updating invoice proof
    - or submitted linked `Delivery Note` proof
-5. unsupported invoices still fail closed when that evidence is insufficient
+5. unsupported invoices still fail closed when that evidence is insufficien
 6. both the standard invoice-delivery proof smoke and the fresh-chat parity smoke are now release-gated
 7. `1.1D` should now be treated as closed
 
@@ -813,7 +813,7 @@ Stop and checkpoint when all are true:
 2. runtime behavior remains contract-first and fail-closed
 3. no new delivery-specific keyword routing is introduced
 4. the listing artifact is generic enough to support more than invoices
-5. exact numeric scope is preserved for the bounded first checkpoint
+5. exact numeric scope is preserved for the bounded first checkpoin
 6. the full enterprise gate is green
 
 Do not keep expanding Phase 1.1 into trends, trips, or export work after the first green checkpoint.
@@ -824,7 +824,7 @@ Proceed with Phase 1.1 through `Delivery Note` first.
 
 This is the best enterprise-grade first slice because:
 
-1. it is real in this deployment
+1. it is real in this deploymen
 2. it reuses a proven governed direct-query path
 3. it expands operational coverage without introducing a new architecture pattern
 4. it gives a measurable test of whether the current metadata-first architecture scales to a new business domain

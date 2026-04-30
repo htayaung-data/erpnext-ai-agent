@@ -10,8 +10,17 @@ from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import patch
 
+
+def _fake_get_all(doctype, *args, **kwargs):
+	if doctype == "Company":
+		if kwargs.get("pluck") == "name":
+			return ["Enterprise Co"]
+		return [{"name": "Enterprise Co"}]
+	return []
+
+
 fake_frappe = types.ModuleType("frappe")
-fake_frappe.get_all = lambda *args, **kwargs: []
+fake_frappe.get_all = _fake_get_all
 fake_frappe.conf = {}
 fake_frappe.local = types.SimpleNamespace(site="")
 fake_frappe.db = types.SimpleNamespace(
@@ -25,6 +34,9 @@ fake_frappe.ValidationError = type("ValidationError", (Exception,), {})
 sys.modules.setdefault("frappe", fake_frappe)
 
 import ai_assistant_ui.qwen_chat.recent_focus_support as recent_focus_support_module
+from ai_assistant_ui.qwen_chat.business_language_guards import (
+	looks_like_unsupported_operational_inference_claim,
+)
 from ai_assistant_ui.qwen_chat.metadata import (
 	load_report_registry,
 	report_approved_followup_modes,
@@ -81,6 +93,7 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_conversational_repair_intent_contract,
 	build_followup_resolution,
 	build_followup_resolution_contract,
+	build_scope_decision_input,
 	build_prior_branch_restore_contract,
 )
 from ai_assistant_ui.qwen_chat.service import (
@@ -98,6 +111,7 @@ from ai_assistant_ui.qwen_chat.service import (
 	_select_targeted_restore_owner,
 	_select_resumable_prior_request_candidate,
 	_artifact_boundary_clarification_requires_runtime_reset,
+	_artifact_local_refinement_has_grounded_evidence,
 	_artifact_local_refinement_should_defer_runtime_frontdoor,
 	_conversation_control_decision_from_clarification_response,
 	_conversation_control_decision_from_compound_cancellation,
@@ -147,6 +161,9 @@ from ai_assistant_ui.qwen_chat.service import (
 	_select_active_sequence_completion_owner,
 	_preserve_current_artifact_direct_evidence_followup_resolution,
 	_preserve_artifact_boundary_clarification_followup_resolution,
+	_current_artifact_evidence_should_block_requery,
+	_current_artifact_evidence_should_preserve_context,
+	_frontdoor_should_yield_to_current_artifact_evidence,
 	_resolve_compound_execution_runtime_message,
 	_strip_leading_control_discard_preamble,
 	_latest_recovery_contract,
@@ -161,6 +178,9 @@ from ai_assistant_ui.qwen_chat.lanes.clarification_lane import (
 )
 from ai_assistant_ui.qwen_chat.lanes.artifact_boundary_lane import handle_artifact_boundary_turn
 from ai_assistant_ui.qwen_chat.lanes.entity_drilldown_lane import handle_entity_drilldown_turn
+from ai_assistant_ui.qwen_chat.governed_composite_runtime_execution import (
+	maybe_build_governed_composite_frontdoor_response,
+)
 
 
 def _clarification_signal(*, request_id: str, user_question: str) -> Dict[str, Any]:
@@ -830,6 +850,13 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 				prior_branch_state=prior_branch_state,
 			)
 		)
+		self.assertFalse(
+			pending_clarification_should_yield_to_current_control_decision(
+				clarification_decision="reask_pending_clarification",
+				current_decision_action="replay_as_fresh_governed_query",
+				prior_branch_state={},
+			)
+		)
 
 	def test_shared_control_support_clarification_response_decision_spec(self):
 		spec = clarification_response_decision_spec(
@@ -854,6 +881,24 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		)
 		self.assertEqual(str(other_spec.get("decision_action") or "").strip(), "answer_pending_clarification_meta_question")
 		self.assertFalse(bool(other_spec.get("clear_pending_clarification")))
+
+	def test_business_language_guard_detects_subjective_operational_inference(self):
+		self.assertTrue(
+			looks_like_unsupported_operational_inference_claim(
+				"based on this, which invoice was probably delayed because the customer was dissatisfied?"
+			)
+		)
+		self.assertTrue(
+			looks_like_unsupported_operational_inference_claim(
+				"which sales order was likely delayed due to a dispute?"
+			)
+		)
+		self.assertFalse(
+			looks_like_unsupported_operational_inference_claim("why is the first customer risky?")
+		)
+		self.assertFalse(
+			looks_like_unsupported_operational_inference_claim("show me the aging breakdown for the first customer")
+		)
 
 	def test_shared_control_support_frontdoor_clarification_reentry_and_reset_helpers(self):
 		contract = types.SimpleNamespace(
@@ -4523,6 +4568,7 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(payload.get("focus_grain") or "").strip(), "customer")
 		self.assertIn("detail_followup", list(payload.get("allowed_action_classes") or []))
 		self.assertIn("commercial_status_followup", list(payload.get("allowed_action_classes") or []))
+		self.assertIn("lifecycle_basis_followup", list(payload.get("allowed_action_classes") or []))
 		self.assertTrue(bool(payload.get("deictic_reference_allowed")))
 
 	def test_build_prior_branch_restore_recent_focus_projection_uses_shared_recent_focus_surface(self):
@@ -4561,6 +4607,12 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 			str(((projection.get("resolved_focus_target") or {}).get("focus_grain")) or "").strip(),
 			"customer",
 		)
+		self.assertTrue(bool((projection.get("resolved_focus_target") or {}).get("listing_supported")))
+		self.assertTrue(bool((projection.get("resolved_focus_target") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((projection.get("resolved_focus_target") or {}).get("listing_detail_support_status") or "").strip()),
+			"both",
+		)
 		self.assertEqual(
 			str((((projection.get("recent_focus_affordance_payload") or {}).get("type")) or "").strip()),
 			"qwen_recent_focus_affordance_contract",
@@ -4568,6 +4620,12 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(
 			str(((projection.get("restored_recent_focus_state") or {}).get("focus_label")) or "").strip(),
 			"Ko Nay Lin Mobile Center",
+		)
+		self.assertTrue(bool((projection.get("restored_recent_focus_state") or {}).get("listing_supported")))
+		self.assertTrue(bool((projection.get("restored_recent_focus_state") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((projection.get("restored_recent_focus_state") or {}).get("listing_detail_support_status") or "").strip()),
+			"both",
 		)
 
 	def test_build_latest_non_clarification_restore_owner_spec_for_recent_focus(self):
@@ -4841,6 +4899,53 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(
 			str((((selected.get("internal_details") or {}).get("recent_focus_affordance") or {}).get("type")) or "").strip(),
 			"qwen_recent_focus_affordance_contract",
+		)
+		self.assertTrue(bool((selected.get("resolved_focus_target") or {}).get("listing_supported")))
+		self.assertTrue(bool((selected.get("resolved_focus_target") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((selected.get("resolved_focus_target") or {}).get("listing_detail_support_status") or "").strip()),
+			"both",
+		)
+
+	def test_build_prior_branch_restore_recent_focus_projection_preserves_listing_only_parity(self):
+		restore_contract = build_prior_branch_restore_contract(
+			request_id="prior-restore-runtime-4bb",
+			target_branch_kind="focus",
+			target_branch_label="Payment Entry List",
+			target_request_id="grounded-payment-entry-restore-4bb",
+			target_family="transaction_listing",
+			target_scope={
+				"focus_kind": "listing",
+				"focus_grain": "payment_entry",
+				"focus_key": "payment_entry",
+				"focus_label": "Payment Entry List",
+				"source_report": "Payment Entry List",
+				"source_capability": "payment_entry_read",
+				"deictic_allowed": True,
+				"explicit_named_allowed": False,
+			},
+			restore_mode="restore_recent_focus",
+			resumable=True,
+			reason="The user asked to return to the recent payment entry listing.",
+			confidence=0.91,
+		)
+
+		projection = recent_focus_support_module.build_prior_branch_restore_recent_focus_projection(
+			request_id="prior-restore-runtime-4bb",
+			prior_branch_restore_contract=restore_contract,
+		)
+
+		self.assertTrue(bool((projection.get("restored_recent_focus_state") or {}).get("listing_supported")))
+		self.assertFalse(bool((projection.get("restored_recent_focus_state") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((projection.get("restored_recent_focus_state") or {}).get("listing_detail_support_status") or "").strip()),
+			"listing_only",
+		)
+		self.assertTrue(bool((projection.get("resolved_focus_target") or {}).get("listing_supported")))
+		self.assertFalse(bool((projection.get("resolved_focus_target") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((projection.get("resolved_focus_target") or {}).get("listing_detail_support_status") or "").strip()),
+			"listing_only",
 		)
 
 	def test_prior_branch_restore_runtime_override_message_is_empty_for_reopen_pending(self):
@@ -5637,6 +5742,26 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(descriptor.get("focus_grain") or "").strip(), "profit_and_loss")
 		self.assertEqual(str(descriptor.get("derivation_basis") or "").strip(), "statement_grounded_turn")
 
+	def test_grounded_recent_focus_surface_descriptor_prefers_governed_analytical_policy_for_statement(self):
+		descriptor = recent_focus_support_module.grounded_recent_focus_surface_descriptor(
+			source_report="Profit and Loss Statement",
+			source_kind="report",
+			source_family="",
+			dimensions={
+				"governed_scope_runtime_policy": {
+					"family_id": "financial_statement",
+					"scope_id": "profit_and_loss",
+					"scope_class": "financial_summary",
+				},
+			},
+		)
+
+		self.assertEqual(str(descriptor.get("surface_class") or "").strip(), "statement")
+		self.assertEqual(str(descriptor.get("focus_grain") or "").strip(), "profit_and_loss")
+		self.assertEqual(str(descriptor.get("source_family_default") or "").strip(), "financial_statement")
+		self.assertEqual(str(descriptor.get("scope_id") or "").strip(), "profit_and_loss")
+		self.assertEqual(str(descriptor.get("scope_class") or "").strip(), "financial_summary")
+
 	def test_grounded_recent_focus_surface_descriptor_uses_shared_generic_report_descriptor(self):
 		descriptor = recent_focus_support_module.grounded_recent_focus_surface_descriptor(
 			source_report="Warehouse Wise Stock Balance",
@@ -5649,6 +5774,26 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(descriptor.get("focus_kind") or "").strip(), "report")
 		self.assertEqual(str(descriptor.get("focus_grain") or "").strip(), "inventory_snapshot")
 		self.assertEqual(str(descriptor.get("derivation_basis") or "").strip(), "report_grounded_turn")
+
+	def test_grounded_recent_focus_surface_descriptor_prefers_governed_analytical_policy_for_report(self):
+		descriptor = recent_focus_support_module.grounded_recent_focus_surface_descriptor(
+			source_report="Warehouse Wise Stock Balance",
+			source_kind="report",
+			source_family="",
+			dimensions={
+				"governed_scope_runtime_policy": {
+					"family_id": "inventory_snapshot",
+					"scope_id": "warehouse_item_snapshot",
+					"scope_class": "inventory_summary",
+				},
+			},
+		)
+
+		self.assertEqual(str(descriptor.get("surface_class") or "").strip(), "report")
+		self.assertEqual(str(descriptor.get("focus_grain") or "").strip(), "inventory_snapshot")
+		self.assertEqual(str(descriptor.get("source_family_default") or "").strip(), "inventory_snapshot")
+		self.assertEqual(str(descriptor.get("scope_id") or "").strip(), "warehouse_item_snapshot")
+		self.assertEqual(str(descriptor.get("scope_class") or "").strip(), "inventory_summary")
 
 	def test_build_grounded_recent_focus_state_from_surface_descriptor_shapes_master_data_listing(self):
 		recent_focus = recent_focus_support_module.build_grounded_recent_focus_state_from_surface_descriptor(
@@ -5672,6 +5817,30 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(recent_focus.get("source_family") or "").strip(), "master_data_directory")
 		self.assertEqual(str(recent_focus.get("source_capability") or "").strip(), "item_master_read")
 		self.assertFalse(bool(recent_focus.get("explicit_named_allowed")))
+
+	def test_build_grounded_recent_focus_state_preserves_governed_scope_fields_for_report(self):
+		recent_focus = recent_focus_support_module.build_grounded_recent_focus_state_from_surface_descriptor(
+			surface_descriptor={
+				"surface_class": "report",
+				"focus_kind": "report",
+				"focus_grain": "inventory_snapshot",
+				"focus_label": "Warehouse Wise Stock Balance",
+				"focus_key": "Warehouse Wise Stock Balance",
+				"source_family_default": "inventory_snapshot",
+				"derivation_basis": "report_grounded_turn",
+				"scope_id": "warehouse_item_snapshot",
+				"scope_class": "inventory_summary",
+			},
+			source_request_id="rf-shape-analytical-1",
+			source_family="",
+			source_capability="",
+			source_report="Warehouse Wise Stock Balance",
+			source_tool_index=16,
+		)
+
+		self.assertEqual(str(recent_focus.get("source_family") or "").strip(), "inventory_snapshot")
+		self.assertEqual(str(recent_focus.get("scope_id") or "").strip(), "warehouse_item_snapshot")
+		self.assertEqual(str(recent_focus.get("scope_class") or "").strip(), "inventory_summary")
 
 	def test_build_grounded_recent_focus_state_from_surface_descriptor_shapes_generic_report(self):
 		recent_focus = recent_focus_support_module.build_grounded_recent_focus_state_from_surface_descriptor(
@@ -5927,6 +6096,12 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 			str(((spec.get("resolved_focus_target") or {}).get("focus_label") or "").strip()),
 			"Supplier Master List",
 		)
+		self.assertFalse(bool((spec.get("resolved_focus_target") or {}).get("listing_supported")))
+		self.assertFalse(bool((spec.get("resolved_focus_target") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((spec.get("resolved_focus_target") or {}).get("listing_detail_support_status") or "").strip()),
+			"",
+		)
 		self.assertEqual(
 			str((((spec.get("internal_details") or {}).get("recent_focus_affordance") or {}).get("type")) or "").strip(),
 			"qwen_recent_focus_affordance_contract",
@@ -5934,6 +6109,51 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(
 			str(((spec.get("internal_details") or {}).get("routing_basis") or "").strip()),
 			"shared_affordance",
+		)
+
+	def test_build_recent_focus_continuation_decision_spec_enriches_resolved_focus_target_with_parity(self):
+		recent_focus_state = {
+			"available": True,
+			"focus_kind": "listing",
+			"focus_grain": "supplier",
+			"focus_label": "Supplier Master List",
+			"focus_key": "supplier",
+			"source_request_id": "supplier-list-3",
+			"source_family": "master_data_directory",
+			"source_capability": "supplier_master_read",
+			"source_report": "Supplier Master List",
+			"deictic_allowed": True,
+			"explicit_named_allowed": False,
+			"confidence": 0.88,
+		}
+		followup_resolution = build_followup_resolution_contract(
+			request_id="recent-focus-decision-spec-2",
+			mode="new_query",
+			requested_modes=["new_query"],
+			depends_on_grounded_turn=True,
+			latest_grounded_turn_available=True,
+			reason="The follow-up depends on the latest grounded focus.",
+		)
+		spec = recent_focus_support_module.build_recent_focus_continuation_decision_spec(
+			recent_focus_state=recent_focus_state,
+			selection={"action": "allow", "basis": "shared_affordance_passthrough"},
+			followup_resolution=followup_resolution,
+			recent_focus_affordance_payload={
+				"type": "qwen_recent_focus_affordance_contract",
+				"listing_supported": True,
+				"detail_supported": True,
+				"listing_detail_support_status": "both",
+			},
+			control_action_id="show_pending_options",
+			raw_message="tell me more about that supplier",
+			routing_basis="local_transform",
+		)
+
+		self.assertTrue(bool((spec.get("resolved_focus_target") or {}).get("listing_supported")))
+		self.assertTrue(bool((spec.get("resolved_focus_target") or {}).get("detail_supported")))
+		self.assertEqual(
+			str(((spec.get("resolved_focus_target") or {}).get("listing_detail_support_status") or "").strip()),
+			"both",
 		)
 
 	def test_recent_focus_continuation_eligibility_allows_shared_affordance_passthrough(self):
@@ -6491,7 +6711,7 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(recent_focus.get("derivation_basis") or "").strip(), "transaction_single_row_grounded_turn")
 		self.assertTrue(bool(recent_focus.get("explicit_named_allowed")))
 
-	def test_single_row_purchase_receipt_listing_keeps_listing_focus_when_scope_is_not_governed(self):
+	def test_single_row_purchase_receipt_listing_keeps_listing_focus_when_detail_is_not_active(self):
 		recent_focus = _snapshot_recent_focus_state(
 			latest_grounded_turn={
 				"payload": {
@@ -7645,6 +7865,9 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(payload.get("focus_grain") or "").strip(), "item")
 		self.assertIn("detail_followup", list(payload.get("allowed_action_classes") or []))
 		self.assertIn("inventory_position_followup", list(payload.get("allowed_action_classes") or []))
+		self.assertTrue(bool(payload.get("listing_supported")))
+		self.assertTrue(bool(payload.get("detail_supported")))
+		self.assertEqual(str(payload.get("listing_detail_support_status") or "").strip(), "both")
 		self.assertTrue(bool(payload.get("deictic_reference_allowed")))
 
 	def test_recent_focus_affordance_builder_for_purchase_order_document_detail(self):
@@ -7671,7 +7894,57 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertIn("detail_followup", list(payload.get("allowed_action_classes") or []))
 		self.assertIn("linked_document_navigation", list(payload.get("allowed_action_classes") or []))
 		self.assertIn("document_status_followup", list(payload.get("allowed_action_classes") or []))
+		self.assertIn("document_event_followup", list(payload.get("allowed_action_classes") or []))
+		self.assertTrue(bool(payload.get("listing_supported")))
+		self.assertTrue(bool(payload.get("detail_supported")))
+		self.assertEqual(str(payload.get("listing_detail_support_status") or "").strip(), "both")
 		self.assertTrue(bool(payload.get("deictic_reference_allowed")))
+
+	def test_recent_focus_affordance_builder_marks_listing_only_when_detail_not_supported(self):
+		original_runtime_policy = recent_focus_support_module.governed_scope_runtime_policy
+
+		def _runtime_policy(scope_id, family_id):
+			if str(family_id or "").strip() == "entity_detail":
+				return {}
+			return original_runtime_policy(scope_id, family_id)
+
+		with patch.object(recent_focus_support_module, "governed_scope_runtime_policy", side_effect=_runtime_policy):
+			contract = recent_focus_support_module.build_recent_focus_affordance_contract_from_snapshot(
+				request_id="recent-focus-affordance-listing-only-1",
+				recent_focus_state={
+					"available": True,
+					"focus_kind": "listing",
+					"focus_grain": "payment_entry",
+					"focus_label": "Payment Entry List",
+					"focus_key": "payment_entry",
+					"source_request_id": "payment-entry-listing-1",
+					"source_family": "transaction_listing",
+					"source_capability": "payment_entry_list",
+					"source_report": "Payment Entry List",
+					"deictic_allowed": True,
+					"explicit_named_allowed": False,
+				},
+			)
+		payload = contract.to_payload()
+
+		self.assertTrue(bool(payload.get("listing_supported")))
+		self.assertFalse(bool(payload.get("detail_supported")))
+		self.assertEqual(str(payload.get("listing_detail_support_status") or "").strip(), "listing_only")
+		self.assertNotIn("document_selection_followup", list(payload.get("allowed_action_classes") or []))
+		self.assertNotIn("entity_selection_followup", list(payload.get("allowed_action_classes") or []))
+
+	def _assert_listing_focus_selection_contract(self, affordance_payload, expected_selection_action, msg=""):
+		allowed_action_classes = list(affordance_payload.get("allowed_action_classes") or [])
+		self.assertTrue(bool(affordance_payload.get("listing_supported")), msg=msg)
+		detail_supported = bool(affordance_payload.get("detail_supported"))
+		status = str(affordance_payload.get("listing_detail_support_status") or "").strip()
+		if detail_supported:
+			self.assertEqual(status, "both", msg=msg)
+			self.assertIn(expected_selection_action, allowed_action_classes, msg=msg)
+			return
+		self.assertEqual(status, "listing_only", msg=msg)
+		self.assertNotIn("document_selection_followup", allowed_action_classes, msg=msg)
+		self.assertNotIn("entity_selection_followup", allowed_action_classes, msg=msg)
 
 	def test_compile_recent_focus_runtime_message_uses_local_transform_for_entity_detail(self):
 		followup_resolution = build_followup_resolution_contract(
@@ -8066,6 +8339,16 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 			)
 		)
 
+	def test_grounded_turn_has_single_row_contextual_focus_for_customer_master_listing(self):
+		self.assertTrue(
+			_grounded_turn_has_single_row_contextual_focus(
+				{
+					"artifact_family_id": "customer_master_list",
+					"table_rows": [{"customer_name": "Ko Nay Lin Mobile Center"}],
+				}
+			)
+		)
+
 	def test_build_followup_resolution_keeps_contextual_transaction_document_detail_grounded(self):
 		followup_resolution = build_followup_resolution(
 			request_id="followup-resolution-transaction-document-1",
@@ -8169,6 +8452,114 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(runtime_message, "show supplier name and payment terms only")
 		self.assertEqual(routing_basis, "shared_affordance")
 		self.assertEqual(str(affordance_contract.focus_kind or "").strip(), "listing")
+
+	def test_compile_recent_focus_runtime_message_uses_local_transform_for_detail_capable_master_data_listing(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="recent-focus-runtime-listing-detail-1",
+			mode="new_query",
+			requested_modes=["new_query"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The follow-up depends on the latest grounded focus.",
+		)
+
+		runtime_message, routing_basis, affordance_contract = _compile_recent_focus_runtime_message(
+			request_id="recent-focus-runtime-listing-detail-1",
+			raw_message="tell me more about that supplier",
+			followup_resolution=followup_resolution,
+			recent_focus_state={
+				"available": True,
+				"focus_kind": "listing",
+				"focus_grain": "supplier",
+				"focus_label": "Supplier Master List",
+				"focus_key": "supplier",
+				"source_request_id": "supplier-list-2",
+				"source_family": "master_data_directory",
+				"source_capability": "supplier_master_read",
+				"source_report": "Supplier Master List",
+				"deictic_allowed": True,
+				"explicit_named_allowed": False,
+			},
+			grounded_turn={
+				"artifact_family_id": "master_data_directory",
+				"known_entities": [
+					{
+						"entity_type": "supplier",
+						"name": "Myanmar Tech Import Services",
+						"code": "Myanmar Tech Import Services",
+					}
+				],
+			},
+			artifact_payload={"family_id": "master_data_directory"},
+		)
+
+		self.assertEqual(runtime_message, "show me details for supplier Myanmar Tech Import Services")
+		self.assertEqual(routing_basis, "local_transform")
+		self.assertEqual(str(affordance_contract.focus_kind or "").strip(), "listing")
+		self.assertTrue(bool(getattr(affordance_contract, "detail_supported", False)))
+
+	def test_compile_recent_focus_runtime_message_keeps_listing_only_scope_on_shared_affordance(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="recent-focus-runtime-listing-only-1",
+			mode="new_query",
+			requested_modes=["new_query"],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The follow-up depends on the latest grounded focus.",
+		)
+
+		runtime_message, routing_basis, affordance_contract = _compile_recent_focus_runtime_message(
+			request_id="recent-focus-runtime-listing-only-1",
+			raw_message="tell me more about that payment entry",
+			followup_resolution=followup_resolution,
+			recent_focus_state={
+				"available": True,
+				"focus_kind": "listing",
+				"focus_grain": "payment_entry",
+				"focus_label": "Payment Entry List",
+				"focus_key": "payment_entry",
+				"source_request_id": "payment-entry-list-2",
+				"source_family": "transaction_listing",
+				"source_capability": "payment_entry_read",
+				"source_report": "Payment Entry List",
+				"deictic_allowed": True,
+				"explicit_named_allowed": False,
+			},
+			grounded_turn={
+				"artifact_family_id": "transaction_listing",
+				"known_entities": [
+					{
+						"entity_type": "payment_entry",
+						"name": "ACC-PAY-2026-00179",
+						"code": "ACC-PAY-2026-00179",
+					}
+				],
+			},
+			artifact_payload={"family_id": "transaction_listing"},
+		)
+
+		self.assertEqual(runtime_message, "tell me more about that payment entry")
+		self.assertEqual(routing_basis, "shared_affordance")
+		self.assertEqual(str(affordance_contract.focus_kind or "").strip(), "listing")
+		self.assertFalse(bool(getattr(affordance_contract, "detail_supported", False)))
 
 	def test_recent_focus_affordance_normalizes_registry_column_projection_for_listing(self):
 		affordance_contract = _build_recent_focus_affordance_contract_from_snapshot(
@@ -8652,7 +9043,10 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		)
 
 		self.assertEqual(str(affordance_contract.focus_kind or "").strip(), "listing")
-		self.assertIn("document_selection_followup", list(affordance_contract.allowed_action_classes or []))
+		self._assert_listing_focus_selection_contract(
+			affordance_contract.to_payload(),
+			"document_selection_followup",
+		)
 		self.assertIn("sort_or_limit", list(affordance_contract.allowed_local_followup_modes or []))
 		self.assertIn("presentation_transform", list(affordance_contract.allowed_local_followup_modes or []))
 		self.assertIn("filter_refinement", list(affordance_contract.allowed_requery_followup_modes or []))
@@ -8753,9 +9147,9 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 				msg=report_name,
 			)
 			self.assertEqual(str(affordance_contract.focus_kind or "").strip(), "listing", msg=report_name)
-			self.assertIn(
+			self._assert_listing_focus_selection_contract(
+				affordance_contract.to_payload(),
 				expected_selection_action,
-				list(affordance_contract.allowed_action_classes or []),
 				msg=report_name,
 			)
 			self.assertIn("column_refinement", list(affordance_contract.allowed_local_followup_modes or []), msg=report_name)
@@ -9171,7 +9565,11 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 			self.assertEqual(str(recent_focus.get("source_report") or "").strip(), report_name, msg=report_name)
 			self.assertEqual(str(recent_focus.get("derivation_basis") or "").strip(), expected_basis, msg=report_name)
 			self.assertEqual(str(affordance.get("focus_kind") or "").strip(), "listing", msg=report_name)
-			self.assertIn(expected_action_class, list(affordance.get("allowed_action_classes") or []), msg=report_name)
+			self._assert_listing_focus_selection_contract(
+				affordance,
+				expected_action_class,
+				msg=report_name,
+			)
 			self.assertIn("new_query", list(affordance.get("allowed_requery_followup_modes") or []), msg=report_name)
 			self.assertTrue(bool((snapshot.get("state_quality") or {}).get("has_recent_focus_affordance")), msg=report_name)
 
@@ -9369,7 +9767,14 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 			self.assertEqual(str(recent_focus.get("derivation_basis") or "").strip(), expected_basis, msg=report_name)
 			self.assertEqual(bool(recent_focus.get("explicit_named_allowed")), expected_explicit_named_allowed, msg=report_name)
 			self.assertEqual(str(affordance.get("focus_kind") or "").strip(), expected_focus_kind, msg=report_name)
-			self.assertIn(expected_action_class, list(affordance.get("allowed_action_classes") or []), msg=report_name)
+			if expected_focus_kind == "listing":
+				self._assert_listing_focus_selection_contract(
+					affordance,
+					expected_action_class,
+					msg=report_name,
+				)
+			else:
+				self.assertIn(expected_action_class, list(affordance.get("allowed_action_classes") or []), msg=report_name)
 			self.assertTrue(bool((snapshot.get("state_quality") or {}).get("has_recent_focus_affordance")), msg=report_name)
 
 	def test_conversation_state_snapshot_matrix_covers_active_approved_detail_capable_scope_surface(self):
@@ -10086,6 +10491,7 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(affordance.get("focus_kind") or "").strip(), "document")
 		self.assertIn("linked_document_navigation", list(affordance.get("allowed_action_classes") or []))
 		self.assertIn("document_status_followup", list(affordance.get("allowed_action_classes") or []))
+		self.assertIn("document_event_followup", list(affordance.get("allowed_action_classes") or []))
 
 	def test_conversation_state_snapshot_recent_focus_derives_from_report_view(self):
 		grounded_turn_payload = {
@@ -10705,7 +11111,10 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(str(recent_focus.get("focus_kind") or "").strip(), "listing")
 		self.assertEqual(str(recent_focus.get("focus_grain") or "").strip(), "payment_entry")
 		self.assertEqual(str(recent_focus.get("derivation_basis") or "").strip(), "transaction_listing_grounded_turn")
-		self.assertIn("document_selection_followup", list(affordance.get("allowed_action_classes") or []))
+		self._assert_listing_focus_selection_contract(
+			affordance,
+			"document_selection_followup",
+		)
 		self.assertIn("new_query", list(affordance.get("allowed_requery_followup_modes") or []))
 		self.assertTrue(bool(affordance.get("supports_cross_family_followup")))
 
@@ -11429,6 +11838,41 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertTrue(state.max_attempts_reached)
 		self.assertEqual(state.pending_signal.get("request_id"), "clarify-3")
 
+	def test_artifact_evidence_clarification_resolution_stays_grounded(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="artifact-evidence-clarification-1",
+			mode="new_query",
+			requested_modes=[],
+			target_dimension="",
+			target_metric="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=False,
+			self_contained=True,
+			latest_grounded_turn_available=True,
+			reason="The user asks a generic artifact question that needs a governed clarification.",
+		)
+
+		preserved = _preserve_current_artifact_direct_evidence_followup_resolution(
+			request_id="artifact-evidence-clarification-1",
+			followup_resolution=followup_resolution,
+			evidence_request_contract={
+				"entity_type": "customer",
+				"entity_question_type": "customer_tenure",
+				"clarification_required": True,
+				"clarification_reason_type": "customer_tenure_basis_missing",
+			},
+			direct_evidence_answer="I can calculate customer tenure using one of three date bases.",
+			evidence_boundary_answer="",
+			latest_grounded_turn_available=True,
+		)
+
+		self.assertEqual(preserved.mode, "grounded_follow_up")
+		self.assertEqual(preserved.target_capability_id, "")
+		self.assertIn("entity_detail_evidence", list(preserved.requested_modes))
+		self.assertTrue(preserved.depends_on_grounded_turn)
+		self.assertFalse(preserved.self_contained)
+
 	def test_clear_pending_clarification_signal_removes_stored_state(self):
 		session_doc = _FakeSessionDoc()
 		signal = _clarification_signal(request_id="clarify-4", user_question="Which business area do you want?")
@@ -11529,7 +11973,7 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 
 		self.assertEqual(str(contract.decision or "").strip(), "resolved_option")
 		self.assertEqual(str(contract.resolved_option or "").strip(), "Customer Tenure by First Sales Order")
-		self.assertEqual(str(contract.matched_by or "").strip(), "fuzzy_alias")
+		self.assertIn(str(contract.matched_by or "").strip(), {"exact_token_alias", "fuzzy_alias"})
 
 	def test_resolved_clarification_runtime_message_preserves_entity_detail_continuation(self):
 		signal = _clarification_signal(request_id="clarify-entity-runtime", user_question="Choose one tenure basis.")
@@ -11632,6 +12076,292 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 
 		self.assertTrue(defer_runtime_value_frontdoor)
 		self.assertIsNone(semantic_candidate)
+
+	def test_composite_row_evidence_preempts_frontdoor_without_entity_detail_contract(self):
+		artifact_payload = {
+			"type": "qwen_normalized_family_artifact_contract",
+			"family_id": "customer_entity_detail",
+			"source_reports": ["Customer Risk As-Of"],
+			"period": {"as_of_date": "2026-04-27"},
+			"filters": {"composite_family_id": "customer_risk_as_of", "as_of_date": "2026-04-27"},
+			"dimensions": {
+				"source_composite_family_id": "customer_risk_as_of",
+				"source_composite_family_label": "Customer Risk As-Of",
+				"source_composite_primary_metric_id": "overdue_amount",
+				"source_composite_secondary_metric_ids": [
+					"outstanding_amount",
+					"overdue_ratio",
+					"credit_utilization",
+				],
+			},
+			"sections": {
+				"ranked_rows": [
+					{
+						"rank": 1,
+						"entity": "35th Street Mobile Wholesale",
+						"customer": "35th Street Mobile Wholesale",
+						"overdue_amount": 60212000.0,
+						"outstanding_amount": 86837000.0,
+						"credit_utilization": 0.6203,
+						"aging_buckets": [
+							{"bucket": "0-30", "amount": 24315000.0},
+							{"bucket": "31-60", "amount": 60212000.0},
+						],
+					},
+					{
+						"rank": 2,
+						"entity": "Ko Nay Lin Mobile Center",
+						"customer": "Ko Nay Lin Mobile Center",
+						"overdue_amount": 37335000.0,
+						"outstanding_amount": 63125000.0,
+						"credit_utilization": 0.8417,
+					},
+				]
+			},
+		}
+		grounded_turn = {
+			"source_name": "Customer Risk As-Of",
+			"known_entities": [
+				{"entity_type": "customer", "name": "35th Street Mobile Wholesale", "rank": 1},
+				{"entity_type": "customer", "name": "Ko Nay Lin Mobile Center", "rank": 2},
+			],
+		}
+
+		self.assertTrue(
+			_artifact_local_refinement_has_grounded_evidence(
+				request_id="risk-row-evidence-preempt",
+				message="show me the aging breakdown for the first customer",
+				latest_grounded_turn=grounded_turn,
+				latest_family_artifact=artifact_payload,
+			)
+		)
+
+		defer_runtime_value_frontdoor, semantic_candidate = _artifact_local_refinement_should_defer_runtime_frontdoor(
+			request_id="risk-row-evidence-preempt",
+			session_id="risk-session",
+			user_id="Administrator",
+			site_name="erpai_prj1",
+			message="why is the first customer risky?",
+			recent_messages=[],
+			latest_grounded_turn=grounded_turn,
+			latest_family_artifact=artifact_payload,
+			latest_assistant_payload={},
+		)
+
+		self.assertTrue(defer_runtime_value_frontdoor)
+		self.assertIsNone(semantic_candidate)
+
+	def test_blocked_advisory_question_preempts_composite_frontdoor_with_policy_boundary(self):
+		artifact_payload = {
+			"type": "qwen_normalized_family_artifact_contract",
+			"family_id": "customer_entity_detail",
+			"source_reports": ["Customer Risk As-Of"],
+			"period": {"as_of_date": "2026-04-27"},
+			"filters": {"composite_family_id": "customer_risk_as_of", "as_of_date": "2026-04-27"},
+			"dimensions": {
+				"source_composite_family_id": "customer_risk_as_of",
+				"source_composite_family_label": "Customer Risk As-Of",
+				"source_composite_primary_metric_id": "overdue_amount",
+			},
+			"sections": {
+				"ranked_rows": [
+					{
+						"rank": 1,
+						"entity": "35th Street Mobile Wholesale",
+						"customer": "35th Street Mobile Wholesale",
+						"overdue_amount": 60212000.0,
+					}
+				]
+			},
+		}
+
+		self.assertTrue(
+			_artifact_local_refinement_has_grounded_evidence(
+				request_id="risk-row-evidence-no-advisory",
+				message="who should we collect from first?",
+				latest_grounded_turn={"source_name": "Customer Risk As-Of"},
+				latest_family_artifact=artifact_payload,
+			)
+		)
+
+	def test_current_artifact_direct_evidence_blocks_requery_upgrade(self):
+		self.assertTrue(
+			_current_artifact_evidence_should_block_requery(
+				direct_evidence_answer="Rank 1 has 60,212,000 MMK overdue.",
+				evidence_boundary_answer="",
+				latest_grounded_turn_available=True,
+			)
+		)
+
+		self.assertTrue(
+			_current_artifact_evidence_should_block_requery(
+				direct_evidence_answer="",
+				evidence_boundary_answer="The current artifact cannot prove the requested field.",
+				latest_grounded_turn_available=True,
+			)
+		)
+
+		self.assertFalse(
+			_current_artifact_evidence_should_block_requery(
+				direct_evidence_answer="",
+				evidence_boundary_answer="",
+				latest_grounded_turn_available=True,
+			)
+		)
+
+		self.assertFalse(
+			_current_artifact_evidence_should_block_requery(
+				direct_evidence_answer="Rank 1 has 60,212,000 MMK overdue.",
+				evidence_boundary_answer="",
+				latest_grounded_turn_available=False,
+			)
+		)
+
+	def test_current_artifact_direct_evidence_preserves_context_isolation(self):
+		artifact_payload = {
+			"type": "qwen_normalized_family_artifact_contract",
+			"family_id": "customer_entity_detail",
+			"period": {"as_of_date": "2026-04-28"},
+			"filters": {"composite_family_id": "customer_risk_as_of", "as_of_date": "2026-04-28"},
+			"dimensions": {
+				"source_composite_family_id": "customer_risk_as_of",
+				"source_composite_family_label": "Customer Risk As-Of",
+				"source_composite_primary_metric_id": "overdue_amount",
+				"source_composite_secondary_metric_ids": [
+					"outstanding_amount",
+					"overdue_ratio",
+					"credit_utilization",
+				],
+			},
+			"sections": {
+				"ranked_rows": [
+					{
+						"rank": 1,
+						"entity": "35th Street Mobile Wholesale",
+						"customer": "35th Street Mobile Wholesale",
+						"overdue_amount": 60212000.0,
+						"outstanding_amount": 86837000.0,
+						"aging_buckets": [
+							{"bucket": "0-30", "amount": 24315000.0},
+							{"bucket": "31-60", "amount": 14820000.0},
+						],
+					}
+				]
+			},
+		}
+		grounded_turn = {
+			"source_name": "Customer Risk As-Of",
+			"known_entities": [
+				{"entity_type": "customer", "name": "35th Street Mobile Wholesale", "rank": 1},
+			],
+		}
+		context_isolation = build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=False,
+			reason="The request is a self-contained entity-navigation query and should not inherit the current artifact.",
+			context_domains=["customer", "receivable"],
+		)
+
+		self.assertTrue(
+			_current_artifact_evidence_should_preserve_context(
+				request_id="risk-row-evidence-preserve-context",
+				message="show me the aging breakdown for the first customer",
+				context_isolation=context_isolation,
+				latest_grounded_turn_available=True,
+				latest_grounded_turn=grounded_turn,
+				latest_family_artifact=artifact_payload,
+			)
+		)
+
+	def test_frontdoor_yields_when_current_artifact_evidence_is_available(self):
+		self.assertTrue(
+			_frontdoor_should_yield_to_current_artifact_evidence(
+				entity_drilldown=None,
+				artifact_local_refinement_has_grounded_evidence=True,
+			)
+		)
+		self.assertFalse(
+			_frontdoor_should_yield_to_current_artifact_evidence(
+				entity_drilldown=None,
+				artifact_local_refinement_has_grounded_evidence=False,
+			)
+		)
+		self.assertFalse(
+			_frontdoor_should_yield_to_current_artifact_evidence(
+				entity_drilldown={"source": "explicit_identifier"},
+				artifact_local_refinement_has_grounded_evidence=True,
+			)
+		)
+
+	def test_current_artifact_evidence_does_not_preserve_out_of_scope_isolation(self):
+		context_isolation = build_scope_decision_input(
+			force_new_query=True,
+			out_of_scope=True,
+			reason="The request is outside governed ERP scope.",
+			context_domains=["customer", "receivable"],
+		)
+
+		self.assertFalse(
+			_current_artifact_evidence_should_preserve_context(
+				request_id="risk-row-evidence-out-of-scope",
+				message="show me the aging breakdown for the first customer",
+				context_isolation=context_isolation,
+				latest_grounded_turn_available=True,
+				latest_grounded_turn={"source_name": "Customer Risk As-Of"},
+				latest_family_artifact={
+					"family_id": "customer_entity_detail",
+					"period": {"as_of_date": "2026-04-28"},
+					"filters": {"composite_family_id": "customer_risk_as_of", "as_of_date": "2026-04-28"},
+					"dimensions": {
+						"source_composite_family_id": "customer_risk_as_of",
+						"source_composite_family_label": "Customer Risk As-Of",
+						"source_composite_primary_metric_id": "overdue_amount",
+					},
+					"sections": {
+						"ranked_rows": [
+							{
+								"rank": 1,
+								"entity": "35th Street Mobile Wholesale",
+								"aging_buckets": [{"bucket": "31-60", "amount": 14820000.0}],
+							}
+						]
+					},
+				},
+			)
+		)
+
+	def test_preserved_direct_evidence_followup_clears_requery_target(self):
+		followup_resolution = build_followup_resolution_contract(
+			request_id="preserve-direct-evidence",
+			mode="capability_requery",
+			requested_modes=["column_projection"],
+			target_dimension="customer",
+			target_limit=0,
+			sort_direction="",
+			target_metric="overdue_amount",
+			requested_columns=["aging_buckets"],
+			requested_time_scope="",
+			target_capability_id="accounts_receivable_aging",
+			target_report="Accounts Receivable Summary",
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The local artifact was missing a requested column.",
+		)
+
+		preserved = _preserve_current_artifact_direct_evidence_followup_resolution(
+			request_id="preserve-direct-evidence",
+			followup_resolution=followup_resolution,
+			evidence_request_contract={},
+			direct_evidence_answer="35th Street Mobile Wholesale aging breakdown is available.",
+			evidence_boundary_answer="",
+			latest_grounded_turn_available=True,
+		)
+
+		self.assertEqual(str(getattr(preserved, "mode", "") or "").strip(), "grounded_follow_up")
+		self.assertIn("direct_evidence_followup", list(getattr(preserved, "requested_modes", []) or []))
+		self.assertEqual(str(getattr(preserved, "target_capability_id", "") or "").strip(), "")
+		self.assertEqual(str(getattr(preserved, "target_report", "") or "").strip(), "")
 
 	def test_pending_clarification_allows_new_frontdoor_kpi_request_to_break_out(self):
 		signal = _clarification_signal(request_id="clarify-4d", user_question="Choose one period.")
@@ -12518,6 +13248,47 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		self.assertEqual(latest.get("type"), "qwen_composite_family_artifact")
 		self.assertEqual(latest.get("request_id"), "grounded-state-7-trace")
 		self.assertEqual(latest.get("family_id"), "customer_health_composite")
+
+	def test_governed_composite_followup_ready_family_artifact_carries_analytical_scope_policy(self):
+		assembled_rows = [
+			{
+				"rank": 1,
+				"customer": "Zegyo Mobile Supply House",
+				"customer_name": "Zegyo Mobile Supply House",
+				"metric_values": {
+					"revenue": {"value": 9340000.0, "display_value": "9,340,000 MMK"},
+					"quantity": {"value": 30.0, "display_value": "30 units"},
+				},
+				"primary_metric_id": "revenue",
+				"row_provenance": [],
+				"join_key": {"customer": "Zegyo Mobile Supply House"},
+			}
+		]
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._execute_component_ranking_artifacts",
+			return_value=({}, [{"execution_id": "customer_sales_order_revenue_period_ranking_execution"}], ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
+			return_value=("compatible", ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
+			return_value=(assembled_rows, ""),
+		):
+			response = maybe_build_governed_composite_frontdoor_response(
+				request_id="composite-scope-policy-1",
+				message="show top 5 customers by revenue for sales orders last month",
+				company_name="Mingalar Mobile Distribution Co., Ltd.",
+			)
+
+		dimensions = (((response.get("normalized_family_artifact") or {}).get("dimensions")) or {})
+		policy = dict(dimensions.get("governed_scope_runtime_policy") or {})
+		self.assertEqual(str((response.get("normalized_family_artifact") or {}).get("family_id") or "").strip(), "ranking_analytics")
+		self.assertEqual(str(dimensions.get("scope_id") or "").strip(), "sales_ranking")
+		self.assertEqual(str(dimensions.get("scope_class") or "").strip(), "ranked_entities")
+		self.assertEqual(str(policy.get("family_id") or "").strip(), "ranking_analytics")
+		self.assertEqual(str(policy.get("scope_id") or "").strip(), "sales_ranking")
+		self.assertEqual(str(policy.get("scope_class") or "").strip(), "ranked_entities")
+		self.assertEqual(str(policy.get("compatibility_level") or "").strip(), "full_consumption")
 
 	def test_latest_normalized_family_artifact_prefers_matching_entity_detail_artifact(self):
 		grounded_turn_payload = {

@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 1 Ambiguity Handling Evaluation
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: ambiguity and underspecified-question handling across the current ERP AI runtime, with emphasis on Phase `3.3` continuity and later multi-family expansion
 
 ## 1. Purpose
@@ -11,7 +11,7 @@ This note records a focused evaluation of how the current system handles:
 1. ambiguous questions
 2. underspecified questions
 3. missing basis or missing scope questions
-4. follow-up questions whose meaning depends on prior context
+4. follow-up questions whose meaning depends on prior contex
 
 The goal is not to design a single-case fix.
 
@@ -117,7 +117,7 @@ This is important because it means the continuation engine does not need to be r
 
 The system already has follow-up boundary logic that decides whether a follow-up should:
 
-1. stay on the current grounded context
+1. stay on the current grounded contex
 2. force a fresh query
 3. fail closed to reasoning
 
@@ -206,7 +206,7 @@ That future design should likely introduce a more reusable ambiguity taxonomy ac
 2. missing entity scope
 3. missing metric basis
 4. missing document basis
-5. missing event target
+5. missing event targe
 6. ambiguous reference
 7. ambiguous business area
 8. unsupported-in-current-family
@@ -221,7 +221,7 @@ The key design rule is:
 
 This keeps the architecture aligned with enterprise policy:
 
-1. contract first
+1. contract firs
 2. runtime second
 3. fail closed on weak evidence
 4. no raw-phrase rescue logic
@@ -232,9 +232,9 @@ This note explicitly recommends against:
 
 1. implementing one branch for `delivered`
 2. implementing one branch for `received`
-3. solving unseen ambiguity by extending a phrase list
+3. solving unseen ambiguity by extending a phrase lis
 4. widening customer-only clarification logic as the default expansion path
-5. introducing a second clarification engine beside the one already present
+5. introducing a second clarification engine beside the one already presen
 
 Those paths may produce short-term improvement, but they do not satisfy the project's enterprise constraints.
 
@@ -283,7 +283,7 @@ This ambiguity finding should become active implementation planning work after:
    4. family activation changes
    5. regression coverage
 
-## 12. Current Status Statement
+## 12. Current Status Statemen
 
 Current status:
 

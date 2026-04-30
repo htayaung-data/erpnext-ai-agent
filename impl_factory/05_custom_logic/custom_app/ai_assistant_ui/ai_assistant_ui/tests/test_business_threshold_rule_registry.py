@@ -19,8 +19,8 @@ class TestBusinessThresholdRuleRegistry(unittest.TestCase):
 	def test_current_business_rule_registry_validates(self):
 		result = validate_business_rule_registry()
 		self.assertEqual(result.status, "pass", f"Business rule registry should validate cleanly: {result.errors!r}")
-		self.assertEqual(result.stats.get("rule_count"), 5)
-		self.assertEqual(result.stats.get("activation_counts", {}).get("active"), 5)
+		self.assertEqual(result.stats.get("rule_count"), 6)
+		self.assertEqual(result.stats.get("activation_counts", {}).get("active"), 6)
 
 	def test_business_rule_registry_loader_is_copy_safe_and_accessor_returns_current_rule(self):
 		payload = load_business_rule_registry()

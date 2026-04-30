@@ -37,6 +37,16 @@ sys.modules.setdefault("frappe", fake_frappe)
 from ai_assistant_ui.qwen_chat import entity_detail as entity_detail_module
 from ai_assistant_ui.qwen_chat import boundary_support as boundary_support_module
 from ai_assistant_ui.qwen_chat import contracts as contracts_module
+from ai_assistant_ui.qwen_chat import evidence_response_support as evidence_response_support_module
+from ai_assistant_ui.qwen_chat import entity_dimension_support as entity_dimension_support_module
+from ai_assistant_ui.qwen_chat import entity_detail_request_support as entity_detail_request_support_module
+from ai_assistant_ui.qwen_chat import artifact_reference_support as artifact_reference_support_module
+from ai_assistant_ui.qwen_chat.customer_lifecycle_basis import customer_lifecycle_supported_focus_grains
+from ai_assistant_ui.qwen_chat.document_event_basis import (
+	document_event_basis_specs,
+	document_event_question_type_shape_map,
+	document_event_supported_focus_grains,
+)
 
 
 class _FakeDoc:
@@ -50,6 +60,259 @@ class _FakeDoc:
 
 
 class TestEntityDetailContracts(unittest.TestCase):
+	def test_resolve_entity_detail_executor_covers_supported_types(self):
+		self.assertIsNotNone(entity_detail_module._resolve_entity_detail_executor("customer"))
+		self.assertIsNotNone(entity_detail_module._resolve_entity_detail_executor("supplier"))
+		self.assertIsNotNone(entity_detail_module._resolve_entity_detail_executor("item"))
+		self.assertIsNotNone(entity_detail_module._resolve_entity_detail_executor("sales_invoice"))
+		self.assertIsNotNone(entity_detail_module._resolve_entity_detail_executor("purchase_order"))
+		self.assertIsNone(entity_detail_module._resolve_entity_detail_executor("unsupported_entity"))
+
+	def test_entity_detail_response_builder_preserves_shared_contract_shape(self):
+		outcome = entity_detail_module._entity_detail_response(
+			detail_company="Enterprise Co",
+			entity_type="item",
+			entity_key="ITEM-001",
+			entity_label="Demo Item",
+			title="Demo Item Details",
+			source_reports=["Item", "Bin", "Item"],
+			blocks=[entity_detail_module._summary_block("Profile", [("Item Code", "ITEM-001")])],
+			metrics={"total_amount": 1200},
+			sections={"summary": [{"label": "Item Code", "value": "ITEM-001"}]},
+			primary_metric_key="total_amount",
+			primary_metric_label="Total Amount",
+			source_grain="item_detail",
+		)
+		rendered = outcome.get("rendered") or {}
+		artifact = outcome.get("artifact") or {}
+		self.assertEqual(rendered.get("title"), "Demo Item Details")
+		self.assertEqual(rendered.get("source_reports"), ["Item", "Bin"])
+		self.assertEqual((artifact.get("dimensions") or {}).get("entity_type"), "item")
+		self.assertEqual((artifact.get("dimensions") or {}).get("entity_key"), "ITEM-001")
+		self.assertEqual((artifact.get("dimensions") or {}).get("source_grain"), "item_detail")
+		self.assertEqual((artifact.get("filters") or {}).get("company"), "Enterprise Co")
+		self.assertEqual((artifact.get("metrics") or {}).get("total_amount"), 1200)
+
+	def test_document_detail_response_builder_preserves_document_sections(self):
+		outcome = entity_detail_module._document_detail_response(
+			detail_company="Enterprise Co",
+			entity_type="sales_invoice",
+			entity_key="SINV-001",
+			entity_label="SINV-001",
+			title="Sales Invoice SINV-001",
+			source_report="Sales Invoice",
+			summary_title="Invoice Summary",
+			summary=[("Invoice", "SINV-001"), ("Customer", "Demo Customer")],
+			bullets=["Current invoice status is Unpaid."],
+			item_columns=["Item Code", "Qty"],
+			item_rows=[["ITEM-001", "2"]],
+			document_row={"document_name": "SINV-001", "status": "Unpaid"},
+			item_section_rows=[{"item_code": "ITEM-001", "qty": 2}],
+			metrics={"grand_total": 2500, "item_count": 1},
+		)
+		rendered = outcome.get("rendered") or {}
+		artifact = outcome.get("artifact") or {}
+		self.assertEqual(rendered.get("source_reports"), ["Sales Invoice"])
+		self.assertEqual((artifact.get("sections") or {}).get("document_rows"), [{"document_name": "SINV-001", "status": "Unpaid"}])
+		self.assertEqual((artifact.get("sections") or {}).get("item_rows"), [{"item_code": "ITEM-001", "qty": 2}])
+		self.assertEqual((artifact.get("dimensions") or {}).get("entity_type"), "sales_invoice")
+		self.assertEqual((artifact.get("metrics") or {}).get("grand_total"), 2500)
+
+	def test_profile_entity_detail_response_builder_preserves_profile_sections(self):
+		outcome = entity_detail_module._profile_entity_detail_response(
+			detail_company="Enterprise Co",
+			entity_type="item",
+			entity_key="ITEM-001",
+			entity_label="Demo Item",
+			profile_title="Item Profile",
+			summary=[("Item Code", "ITEM-001"), ("Brand", "Baseus")],
+			bullets=["Current on-hand stock is 25 units."],
+			source_reports=["Item", "Bin"],
+			metrics={"total_amount": 1500, "warehouse_count": 2},
+			primary_metric_key="total_amount",
+			primary_metric_label="Total Sales Amount",
+			source_grain="item_detail",
+			extra_blocks=[entity_detail_module._data_block("Stock by Warehouse", ["Warehouse", "Qty"], [["Main", "20"]])],
+			extra_sections={"stock_rows": [{"warehouse": "Main", "balance_qty": 20}]},
+		)
+		rendered = outcome.get("rendered") or {}
+		artifact = outcome.get("artifact") or {}
+		self.assertEqual(rendered.get("title"), "Demo Item Details")
+		self.assertEqual((artifact.get("sections") or {}).get("summary"), [{"label": "Item Code", "value": "ITEM-001"}, {"label": "Brand", "value": "Baseus"}])
+		self.assertEqual((artifact.get("sections") or {}).get("stock_rows"), [{"warehouse": "Main", "balance_qty": 20}])
+		self.assertEqual((artifact.get("dimensions") or {}).get("source_grain"), "item_detail")
+		self.assertEqual((artifact.get("metrics") or {}).get("warehouse_count"), 2)
+
+	def test_prefix_entity_detail_answer_adds_entity_label_when_missing(self):
+		answer = entity_detail_module._prefix_entity_detail_answer(
+			"Demo Item",
+			"Current on-hand stock is 25 units.",
+		)
+		self.assertIn("Here are the details for Demo Item.", answer)
+		self.assertIn("Current on-hand stock is 25 units.", answer)
+
+	def test_prefix_entity_detail_answer_repairs_unbalanced_markdown_emphasis(self):
+		answer = entity_detail_module._prefix_entity_detail_answer(
+			"Type-C Cable 2m Fast Charge",
+			"Sold for a total of 170,000 MMK, with most recent sale on 2025-08-18**.",
+		)
+		self.assertNotIn("**", answer)
+		self.assertIn("2025-08-18.", answer)
+
+	def test_resolve_entity_detail_answer_falls_back_to_rendered_for_unsafe_narrative(self):
+		with patch.object(
+			entity_detail_module,
+			"narrate_governed_artifact",
+			return_value={"ok": True, "answer_text": "unsafe purchase receipt statement"},
+		), patch.object(
+			entity_detail_module,
+			"build_artifact_narrative_contract",
+			return_value=types.SimpleNamespace(
+				to_payload=lambda: {
+					"answer_text": "Planned vs. actual receipt date matched and physical receipt completed."
+				}
+			),
+		):
+			answer_text, narrative_payload, narrative_contract_payload = entity_detail_module._resolve_entity_detail_answer(
+				request_id="purchase-order-answer",
+				session_id="session-1",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="when was it received?",
+				entity_type="purchase_order",
+				preferred_answer_text="",
+				artifact_payload={"sections": {}, "dimensions": {"entity_type": "purchase_order"}},
+				rendered_payload={
+					"title": "Purchase Order PUR-ORD-0001",
+					"blocks": [
+						entity_detail_module._summary_block("Order Summary", [("Purchase Order", "PUR-ORD-0001")])
+					],
+				},
+				response_policy={},
+			)
+		self.assertIn("### Order Summary", answer_text)
+		self.assertEqual(narrative_payload, {})
+		self.assertEqual(narrative_contract_payload, {})
+
+	def test_execute_entity_drilldown_rejects_unapproved_runtime_policy(self):
+		with patch.object(entity_detail_module, "entity_detail_runtime_policy", return_value={}):
+			with self.assertRaises(Exception):
+				entity_detail_module.execute_entity_drilldown(
+					request_id="unsupported-detail",
+					session_id="session-1",
+					user_id="user-1",
+					site_name="site-1",
+					message="tell me more",
+					entity_reference={"entity_type": "customer", "entity_key": "CUST-0001"},
+					response_policy={},
+					grounded_turn={},
+				)
+
+	def test_entity_detail_request_support_clarifies_customer_tenure_basis_when_missing(self):
+		payload = entity_detail_request_support_module.resolve_entity_detail_request_interpretation(
+			entity_type="customer",
+			requested_metrics=["tenure"],
+			requested_dimensions=[],
+			requested_concepts=[],
+			artifact_payload={},
+		)
+		self.assertEqual(payload.get("entity_question_type"), "customer_tenure")
+		self.assertTrue(payload.get("clarification_required"))
+		self.assertEqual(payload.get("clarification_reason_type"), "customer_tenure_basis_missing")
+		self.assertEqual(len(payload.get("clarification_options") or []), 3)
+
+	def test_entity_detail_request_support_identifies_item_stock_position(self):
+		payload = entity_detail_request_support_module.resolve_entity_detail_request_interpretation(
+			entity_type="item",
+			requested_metrics=["quantity"],
+			requested_dimensions=["warehouse"],
+			requested_concepts=["inventory"],
+			artifact_payload={"sections": {"stock_rows": [{"warehouse": "Main", "balance_qty": 20}]}},
+		)
+		self.assertEqual(payload.get("entity_question_type"), "item_stock_position")
+		self.assertEqual(payload.get("requested_metrics"), ["balance_qty"])
+		self.assertEqual(payload.get("question_shape"), "dimension_lookup")
+
+	def test_item_stock_direct_evidence_response_is_deterministic_and_skips_narrative_runtime(self):
+		artifact_payload = {
+			"request_id": "item-stock-direct-1",
+			"family_id": "entity_detail",
+			"source_reports": ["Item", "Bin"],
+			"dimensions": {
+				"entity_type": "item",
+				"entity_key": "ACC-CBL-UGR-TC2M",
+				"entity_label": "Type-C Cable 2m Fast Charge",
+			},
+			"metrics": {
+				"balance_qty": 88,
+				"balance_value": 704000,
+				"warehouse_count": 2,
+			},
+			"sections": {
+				"summary": [{"label": "UOM", "value": "Nos"}],
+				"stock_rows": [
+					{"warehouse": "Mandalay Warehouse - MMOB", "balance_qty": 53, "balance_value": 424000},
+					{"warehouse": "Yangon Showroom Counter - MMOB", "balance_qty": 35, "balance_value": 280000},
+				],
+			},
+		}
+		with patch.object(
+			evidence_response_support_module,
+			"narrate_governed_artifact",
+			side_effect=AssertionError("item stock direct evidence must not call narrative runtime"),
+		):
+			payload = evidence_response_support_module.grounded_artifact_direct_evidence_response(
+				request_id="item-stock-direct-1",
+				session_id="session-1",
+				interaction_contract=types.SimpleNamespace(user_id="Administrator", site_name="erpai_prj1"),
+				response_policy_contract=types.SimpleNamespace(to_runtime_payload=lambda: {}),
+				raw_message="how many stocks do we have for that product, and in which warehouse?",
+				artifact_payload=artifact_payload,
+				grounded_turn={},
+			)
+
+		self.assertIn("88", payload.get("answer_text") or "")
+		self.assertIn("warehouses", payload.get("answer_text") or "")
+		rendered = payload.get("rendered_response_payload") or {}
+		self.assertEqual(rendered.get("title"), "Stock Position for Type-C Cable 2m Fast Charge")
+		self.assertEqual(rendered.get("answer_text"), payload.get("answer_text"))
+		self.assertEqual((payload.get("narrative_payload") or {}), {})
+		self.assertEqual((payload.get("narrative_contract_payload") or {}), {})
+		blocks = rendered.get("blocks") or []
+		self.assertTrue(any(str(block.get("title") or "").strip() == "Stock by Warehouse" for block in blocks))
+
+	def test_entity_dimension_support_maps_master_data_dimensions(self):
+		self.assertEqual(entity_dimension_support_module.entity_type_from_dimension("customer"), "customer")
+		self.assertEqual(entity_dimension_support_module.entity_type_from_dimension("supplier"), "supplier")
+		self.assertEqual(entity_dimension_support_module.entity_type_from_dimension("item name"), "item")
+
+	def test_entity_dimension_support_optionally_maps_document_dimension(self):
+		self.assertEqual(entity_dimension_support_module.entity_type_from_dimension("document name"), "")
+		self.assertEqual(
+			entity_dimension_support_module.entity_type_from_dimension("document name", include_documents=True),
+			"sales_invoice",
+		)
+
+	def test_artifact_reference_support_extracts_master_data_and_transaction_party_fields(self):
+		self.assertEqual(
+			artifact_reference_support_module.transaction_party_label(
+				{"party_name": "Ko Nay Lin Mobile Center"}
+			),
+			"Ko Nay Lin Mobile Center",
+		)
+		self.assertEqual(
+			artifact_reference_support_module.ranked_entity_key_label(
+				{"entity_name": "Type-C Cable 1m Fast Charge", "entity_code": "ACC-CBL-BAS-TC1M"}
+			),
+			("ACC-CBL-BAS-TC1M", "Type-C Cable 1m Fast Charge"),
+		)
+		self.assertEqual(
+			artifact_reference_support_module.master_data_entity_key_label(
+				{"customer_code": "CUST-001", "customer_name": "Chan Aye Mobile Trading Hub"}
+			),
+			("CUST-001", "Chan Aye Mobile Trading Hub"),
+		)
+
 	def test_customer_detail_enriches_credit_status_from_receivable_summary(self):
 		master = {
 			"name": "CUST-0001",
@@ -265,7 +528,7 @@ class TestEntityDetailContracts(unittest.TestCase):
 	def test_detect_entity_drilldown_request_resolves_supplier_name_via_active_profile_policy(self):
 		with patch.object(
 			entity_detail_module,
-			"list_entity_reference_policy_specs",
+				"list_active_entity_detail_scope_activations",
 			return_value=[
 				{
 					"entity_grain": "customer",
@@ -319,7 +582,7 @@ class TestEntityDetailContracts(unittest.TestCase):
 	def test_detect_entity_drilldown_request_uses_shared_profile_target_slot_normalization(self):
 		with patch.object(
 			entity_detail_module,
-			"list_entity_reference_policy_specs",
+				"list_active_entity_detail_scope_activations",
 			return_value=[
 				{
 					"entity_grain": "customer",
@@ -378,7 +641,7 @@ class TestEntityDetailContracts(unittest.TestCase):
 	def test_detect_entity_drilldown_request_item_fallback_uses_shared_profile_target_slot_normalization(self):
 		with patch.object(
 			entity_detail_module,
-			"list_entity_reference_policy_specs",
+				"list_active_entity_detail_scope_activations",
 			return_value=[
 				{
 					"entity_grain": "customer",
@@ -430,7 +693,7 @@ class TestEntityDetailContracts(unittest.TestCase):
 	def test_detect_entity_drilldown_request_uses_policy_order_for_exact_profile_targets(self):
 		with patch.object(
 			entity_detail_module,
-			"list_entity_reference_policy_specs",
+				"list_active_entity_detail_scope_activations",
 			return_value=[
 				{
 					"entity_grain": "supplier",
@@ -470,7 +733,7 @@ class TestEntityDetailContracts(unittest.TestCase):
 	def test_detect_entity_drilldown_request_keeps_item_as_bounded_explicit_fallback(self):
 		with patch.object(
 			entity_detail_module,
-			"list_entity_reference_policy_specs",
+				"list_active_entity_detail_scope_activations",
 			return_value=[
 				{
 					"entity_grain": "customer",
@@ -1894,6 +2157,59 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertEqual(contract.question_shape, "boolean_status")
 		self.assertEqual(contract.value_mode, "current_value")
 
+	def test_e4_3_document_event_date_support_is_shared_typed_basis(self):
+		specs = document_event_basis_specs()
+		question_types = {
+			str(item.get("entity_question_type") or "").strip()
+			for item in specs
+		}
+		self.assertEqual(
+			question_types,
+			{
+				"sales_order_actual_delivery_event_date",
+				"sales_order_planned_delivery_date",
+				"sales_order_billing_progress",
+				"sales_order_delivery_progress",
+				"sales_order_document_status",
+				"purchase_order_actual_receipt_event_date",
+				"purchase_order_planned_receipt_date",
+				"purchase_order_billing_progress",
+				"purchase_order_receipt_progress",
+				"purchase_order_document_status",
+				"sales_invoice_delivery_event_date",
+				"sales_invoice_delivery_evidence",
+			},
+		)
+		self.assertEqual(
+			document_event_question_type_shape_map(),
+			{
+				"sales_order_actual_delivery_event_date": ("date_lookup", "actual_value"),
+				"sales_order_planned_delivery_date": ("date_lookup", "planned_value"),
+				"sales_order_billing_progress": ("scalar_ratio", "current_value"),
+				"sales_order_delivery_progress": ("boolean_status", "current_value"),
+				"sales_order_document_status": ("dimension_lookup", "current_value"),
+				"purchase_order_actual_receipt_event_date": ("date_lookup", "actual_value"),
+				"purchase_order_planned_receipt_date": ("date_lookup", "planned_value"),
+				"purchase_order_billing_progress": ("scalar_ratio", "current_value"),
+				"purchase_order_receipt_progress": ("boolean_status", "current_value"),
+				"purchase_order_document_status": ("dimension_lookup", "current_value"),
+				"sales_invoice_delivery_event_date": ("date_lookup", "actual_value"),
+				"sales_invoice_delivery_evidence": ("boolean_status", "current_value"),
+			},
+		)
+		by_question_type = {
+			str(item.get("entity_question_type") or "").strip(): item
+			for item in specs
+		}
+		self.assertEqual(
+			by_question_type["sales_invoice_delivery_event_date"].get("required_concepts_all"),
+			["fulfillment"],
+		)
+		self.assertEqual(
+			by_question_type["sales_invoice_delivery_evidence"].get("required_concepts_all"),
+			["fulfillment"],
+		)
+
 	def test_customer_operational_document_contract_requires_clarification(self):
 		contract = contracts_module.build_entity_detail_evidence_request_contract(
 			request_id="entity-detail-customer-operational-doc-missing",
@@ -2004,4 +2320,100 @@ class TestEntityDetailContracts(unittest.TestCase):
 		self.assertEqual(
 			(internal_details.get("resolved_message_by_option") or {}).get("Customer Tenure by First Sales Order"),
 			"what is this customer's tenure by first sales order date?",
+		)
+		self.assertIn("I can calculate customer tenure for Zegyo Mobile Supply House", signal_payload.get("user_question") or "")
+		self.assertIn("- Customer Tenure by First Sales Order", signal_payload.get("user_question") or "")
+
+	def test_customer_operational_document_clarification_question_renders_shared_choice_list(self):
+		signal = contracts_module.build_entity_detail_clarification_signal_contract(
+			request_id="entity-detail-customer-operational-question",
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Ko Nay Lin Mobile Center",
+				},
+			},
+		)
+		self.assertIsNotNone(signal)
+		user_question = (signal.to_payload() or {}).get("user_question") or ""
+		self.assertIn("I can help with that for Ko Nay Lin Mobile Center", user_question)
+		self.assertIn("Choose one:", user_question)
+		self.assertIn("- First Sales Order Date", user_question)
+
+	def test_phase_f_package4_lifecycle_event_ambiguity_is_artifact_boundary_and_typed(self):
+		tenure_signal = contracts_module.build_entity_detail_clarification_signal_contract(
+			request_id="phase-f-pkg4-tenure-clarification",
+			raw_message="what is this customer's tenure?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Zegyo Mobile Supply House",
+				},
+			},
+		)
+		operational_signal = contracts_module.build_entity_detail_clarification_signal_contract(
+			request_id="phase-f-pkg4-operational-doc-clarification",
+			raw_message="when was it delivered?",
+			artifact_payload={
+				"family_id": "entity_detail",
+				"dimensions": {
+					"entity_type": "customer",
+					"entity_label": "Ko Nay Lin Mobile Center",
+				},
+			},
+		)
+		self.assertIsNotNone(tenure_signal)
+		self.assertIsNotNone(operational_signal)
+
+		tenure_payload = tenure_signal.to_payload()
+		tenure_internal = tenure_payload.get("internal_details") or {}
+		self.assertEqual(tenure_payload.get("reason_type"), "customer_tenure_basis_missing")
+		self.assertEqual(tenure_payload.get("stage"), "artifact_boundary")
+		self.assertEqual(tenure_internal.get("continuation_lane"), "artifact_boundary")
+		self.assertEqual(
+			set(tenure_payload.get("suggested_options") or []),
+			{
+				"Customer Tenure by Customer Created Date",
+				"Customer Tenure by First Sales Order",
+				"Customer Tenure by First Sales Invoice",
+			},
+		)
+		self.assertEqual(
+			(tenure_internal.get("resolved_message_by_option") or {}).get("Customer Tenure by First Sales Invoice"),
+			"what is this customer's tenure by first sales invoice date?",
+		)
+		self.assertIn(
+			"first sales invoice",
+			(tenure_internal.get("option_aliases_by_option") or {}).get("Customer Tenure by First Sales Invoice", []),
+		)
+
+		operational_payload = operational_signal.to_payload()
+		operational_internal = operational_payload.get("internal_details") or {}
+		self.assertEqual(operational_payload.get("reason_type"), "customer_operational_document_missing")
+		self.assertEqual(operational_payload.get("stage"), "artifact_boundary")
+		self.assertEqual(operational_internal.get("continuation_lane"), "artifact_boundary")
+		self.assertEqual(
+			set(operational_payload.get("suggested_options") or []),
+			{
+				"First Sales Order Date",
+				"First Sales Invoice Date",
+				"Specific Sales Document Detail",
+			},
+		)
+		self.assertEqual(
+			(operational_internal.get("resolved_message_by_option") or {}).get("First Sales Order Date"),
+			"when was the first sales order for this customer?",
+		)
+		self.assertIn(
+			"specific sales document",
+			(operational_internal.get("option_aliases_by_option") or {}).get("Specific Sales Document Detail", []),
+		)
+
+		self.assertEqual(customer_lifecycle_supported_focus_grains(), ["customer"])
+		self.assertEqual(
+			document_event_supported_focus_grains(),
+			["sales_order", "purchase_order", "sales_invoice"],
 		)

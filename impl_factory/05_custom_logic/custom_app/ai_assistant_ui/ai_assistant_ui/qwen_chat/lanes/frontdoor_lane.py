@@ -64,6 +64,34 @@ def _frontdoor_response_engine(frontdoor_render_result: Any) -> str:
 	return "frontdoor_response_renderer" if bool(getattr(frontdoor_render_result, "ok", False)) else "semantic_frontdoor"
 
 
+def _looks_like_creative_non_business_request(message: str) -> bool:
+	text = f" {str(message or '').strip().lower()} "
+	if not text.strip():
+		return False
+	creative_actions = (
+		"write",
+		"compose",
+		"create",
+		"generate",
+		"make",
+		"draft",
+	)
+	creative_outputs = (
+		"poem",
+		"poetry",
+		"joke",
+		"story",
+		"song",
+		"rap",
+		"haiku",
+		"fiction",
+		"fairy tale",
+	)
+	return any(f" {action} " in text for action in creative_actions) and any(
+		f" {output} " in text for output in creative_outputs
+	)
+
+
 _FRONTDOOR_INTENTS_THAT_OVERRIDE_REASONING = {
 	"low_signal_non_business",
 	"greeting",
@@ -77,6 +105,32 @@ _FRONTDOOR_INTENTS_THAT_OVERRIDE_REASONING = {
 	"compound_request_clarification",
 	"master_data_grain_clarification",
 }
+
+
+_DATA_VALUE_FRONTDOOR_INTENTS = {"governed_composite_value", "governed_kpi_value"}
+
+
+def _frontdoor_data_value_payload_missing(frontdoor_contract: Any) -> bool:
+	intent_class = str(getattr(frontdoor_contract, "intent_class", "") or "").strip()
+	if intent_class not in _DATA_VALUE_FRONTDOOR_INTENTS:
+		return False
+	response_payload = getattr(frontdoor_contract, "response_payload", {})
+	if not isinstance(response_payload, dict):
+		return True
+	for key in (
+		"composite_artifact",
+		"normalized_family_artifact",
+		"rendered_family_response",
+		"grounded_turn_context",
+		"runtime_trace_payload",
+		"kpi_value_artifact",
+		"kpi_ranking_artifact",
+		"clarification_signal_payload",
+	):
+		payload = response_payload.get(key)
+		if isinstance(payload, dict) and payload:
+			return False
+	return True
 
 
 def _frontdoor_semantic_preserves_frontdoor_ownership(frontdoor_semantic_result: Any) -> bool:
@@ -99,6 +153,15 @@ def _frontdoor_payload_only_response(
 	if response_mode == "clarification_signal":
 		return True
 	return intent_class == "session_flow" and not latest_recovery_contract_available
+
+
+def _frontdoor_contract_can_handle_fresh_breakout(frontdoor_contract: Any) -> bool:
+	"""
+	Context isolation means "do not reuse the previous artifact"; it should not
+	block a self-contained governed answer that the front-door already resolved.
+	"""
+	intent_class = str(getattr(frontdoor_contract, "intent_class", "") or "").strip()
+	return intent_class in {"governed_composite_value", "governed_kpi_value", "governed_kpi_definition"}
 
 
 def evaluate_frontdoor_lane(
@@ -132,6 +195,25 @@ def evaluate_frontdoor_lane(
 			),
 			confidence_threshold=1.0,
 		)
+	elif _looks_like_creative_non_business_request(message):
+		frontdoor_semantic_result = SemanticFrontDoorResult(
+			status="accepted",
+			intent=SemanticFrontDoorIntent(
+				intent_class="low_signal_non_business",
+				confidence=1.0,
+				reason="The request asks for creative content generation rather than a governed ERP/business answer.",
+			),
+			confidence_threshold=1.0,
+		)
+		frontdoor_contract = build_front_door_intent_gate_contract(
+			request_id=request_id,
+			intent_class="low_signal_non_business",
+			confidence=1.0,
+			grounded_context_available=grounded_context_available,
+			reason="The request asks for creative content generation rather than a governed ERP/business answer.",
+		)
+		frontdoor_answer = _front_door_answer_text(frontdoor_contract)
+		return frontdoor_semantic_result, frontdoor_contract, frontdoor_render_result, frontdoor_answer
 	elif compound_request := assess_compound_request(
 		request_id=request_id,
 		session_id=session_id,
@@ -266,7 +348,10 @@ def evaluate_frontdoor_lane(
 			grounded_context_available=grounded_context_available,
 		)
 	master_data_frontdoor = None
-	if not _frontdoor_semantic_preserves_frontdoor_ownership(frontdoor_semantic_result):
+	if (
+		not defer_runtime_value_frontdoor
+		and not _frontdoor_semantic_preserves_frontdoor_ownership(frontdoor_semantic_result)
+	):
 		frontdoor_intent = getattr(frontdoor_semantic_result, "intent", None)
 		master_data_frontdoor = assess_master_data_frontdoor_request(
 			request_id=request_id,
@@ -377,6 +462,27 @@ def evaluate_frontdoor_lane(
 		grounded_context_available=grounded_context_available,
 		response_payload_override=response_payload_override,
 	)
+	if _frontdoor_data_value_payload_missing(frontdoor_contract):
+		intent_class = str(getattr(frontdoor_contract, "intent_class", "") or "").strip()
+		frontdoor_semantic_result = SemanticFrontDoorResult(
+			status="guardrailed_to_route_onward",
+			intent=SemanticFrontDoorIntent(
+				intent_class="route_onward",
+				confidence=max(0.9, float(getattr(getattr(frontdoor_semantic_result, "intent", None), "confidence", 0.0) or 0.0)),
+				reason=(
+					f"The semantic front door recognized {intent_class or 'a governed value request'}, "
+					"but no governed front-door artifact or clarification payload was produced, so the turn must route onward."
+				),
+			),
+			confidence_threshold=1.0,
+		)
+		frontdoor_contract = build_front_door_intent_gate_contract(
+			request_id=request_id,
+			intent_class="route_onward",
+			confidence=1.0,
+			grounded_context_available=grounded_context_available,
+			reason=str(getattr(frontdoor_semantic_result.intent, "reason", "") or "").strip(),
+		)
 	if post_clarification_stop_acknowledgement or _frontdoor_payload_only_response(
 		frontdoor_contract,
 		latest_recovery_contract_available=latest_recovery_contract_available,
@@ -424,7 +530,7 @@ def handle_frontdoor_turn(
 	if not (
 		bool(getattr(frontdoor_contract, "handle_in_front_door", False))
 		and frontdoor_answer
-		and not bool(context_force_new_query)
+		and (not bool(context_force_new_query) or _frontdoor_contract_can_handle_fresh_breakout(frontdoor_contract))
 	):
 		return False, None
 	frontdoor_followup_resolution = build_followup_resolution_contract(

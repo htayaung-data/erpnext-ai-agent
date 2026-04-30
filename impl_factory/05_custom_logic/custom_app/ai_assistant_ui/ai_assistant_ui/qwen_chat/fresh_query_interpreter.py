@@ -11,6 +11,7 @@ from ai_assistant_ui.qwen_chat.compiler import CompilerOutcome, compile_fresh_qu
 from ai_assistant_ui.qwen_chat.composite_reads import execute_composite_read_plan, plan_composite_read
 from ai_assistant_ui.qwen_chat.contracts import (
 	FreshQueryInterpretationContract,
+	_infer_followup_requested_time_scope,
 	build_compiled_execution_audit_contract,
 	build_fresh_query_interpretation_contract,
 	build_interaction_contract,
@@ -29,7 +30,10 @@ from ai_assistant_ui.qwen_chat.entity_reference_resolution import (
 from ai_assistant_ui.qwen_chat.family_adapters import build_normalized_family_artifact
 from ai_assistant_ui.qwen_chat.family_rendering import render_normalized_family_response
 from ai_assistant_ui.qwen_chat.family_validator import validate_normalized_family_artifact
-from ai_assistant_ui.qwen_chat.governed_scope_registry import master_data_lookup_mode_allowed
+from ai_assistant_ui.qwen_chat.governed_scope_registry import (
+	active_listing_view_aliases,
+	master_data_lookup_mode_allowed,
+)
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_report_names,
@@ -90,6 +94,7 @@ from ai_assistant_ui.qwen_chat.semantic_resolution import (
 	resolve_interpretation_semantically,
 )
 from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
+	semantic_slot_alias_match_details,
 	semantic_resolution_governs_intent,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_erp_field_mapping
@@ -851,20 +856,13 @@ def _allow_deterministic_family_surface_fallback(intent_class: str) -> bool:
 
 
 def _slot_alias_matches(slot_name: str, message: str) -> List[str]:
-	registry = load_semantic_resolution_registry()
-	alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
-	entries = alias_maps.get(slot_name) if isinstance(alias_maps.get(slot_name), list) else []
-	matches: List[tuple[str, str]] = []
-	for entry in entries:
-		if not isinstance(entry, dict):
-			continue
-		canonical_value = str(entry.get("canonical_value") or "").strip()
-		if not canonical_value:
-			continue
-		for alias in _clean_list(entry.get("aliases")):
-			if _message_contains_phrase(message, alias):
-				matches.append((canonical_value, alias))
-				break
+	matches: List[tuple[str, str]] = list(semantic_slot_alias_match_details(slot_name, message))
+	if str(slot_name or "").strip() == "listing_view":
+		for canonical_value, aliases in active_listing_view_aliases().items():
+			for alias in aliases:
+				if _message_contains_phrase(message, alias):
+					matches.append((canonical_value, alias))
+					break
 	if str(slot_name or "").strip() != "listing_view":
 		return list(dict.fromkeys(canonical_value for canonical_value, _alias in matches))
 	suppressed: set[str] = set()
@@ -963,6 +961,42 @@ def _slot_value_matches_message(
 	return target in message_concepts
 
 
+_GENERIC_DETERMINISTIC_SURFACE_SLOTS = {"entity_grain"}
+
+
+def _deterministic_surface_rule_specificity(rule: Dict[str, Any]) -> tuple[int, int, int]:
+	required_slots = rule.get("required_slots") if isinstance(rule.get("required_slots"), dict) else {}
+	non_generic_slots = [
+		str(slot_name or "").strip()
+		for slot_name in required_slots
+		if str(slot_name or "").strip()
+		and str(slot_name or "").strip() not in _GENERIC_DETERMINISTIC_SURFACE_SLOTS
+	]
+	candidate_reports = _clean_list(rule.get("candidate_reports"))
+	candidate_capability_ids = _clean_list(rule.get("candidate_capability_ids"))
+	return (
+		len(non_generic_slots),
+		len([slot_name for slot_name in required_slots if str(slot_name or "").strip()]),
+		len(candidate_reports) + len(candidate_capability_ids),
+	)
+
+
+def _select_deterministic_surface_rule(matched_rules: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+	if len(matched_rules) == 1:
+		return matched_rules[0]
+	if not matched_rules:
+		return None
+	scored_rules = [
+		(_deterministic_surface_rule_specificity(rule), rule)
+		for rule in matched_rules
+	]
+	best_score = max(score for score, _rule in scored_rules)
+	best_rules = [rule for score, rule in scored_rules if score == best_score]
+	if len(best_rules) != 1:
+		return None
+	return best_rules[0]
+
+
 def _reconcile_explicit_transaction_listing_view_from_message(
 	*,
 	message: str,
@@ -1033,6 +1067,47 @@ def _reconcile_explicit_time_scope_from_message(
 		requested_dimensions=list(interpretation.requested_dimensions),
 		requested_metrics=list(interpretation.requested_metrics),
 		requested_time_scope=explicit_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots) if isinstance(interpretation.extracted_slots, dict) else {},
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=str(interpretation.ambiguity_reason or "").strip(),
+		confidence=float(interpretation.confidence or 0.0),
+	)
+
+
+def _reconcile_financial_statement_default_time_scope_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "financial_statement":
+		return interpretation
+	current_time_scope = str(interpretation.requested_time_scope or "").strip()
+	if _slot_alias_matches("time_scope", message) or (
+		current_time_scope and _message_explicitly_requests_time_scope(message, current_time_scope)
+	) or _infer_followup_requested_time_scope(message=message, requested_time_scope=""):
+		return interpretation
+	defaults = capability_fresh_query_defaults(
+		"financial_statement_read",
+		intent_class="financial_statement",
+	)
+	default_time_scope = str(defaults.get("default_time_scope") or "").strip()
+	if not default_time_scope:
+		return interpretation
+	if current_time_scope == default_time_scope:
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=list(interpretation.requested_metrics),
+		requested_time_scope=default_time_scope,
 		target_limit=interpretation.target_limit,
 		requested_presentation=list(interpretation.requested_presentation),
 		extracted_slots=dict(interpretation.extracted_slots) if isinstance(interpretation.extracted_slots, dict) else {},
@@ -2113,9 +2188,9 @@ def _deterministic_family_surface_interpretation(
 		):
 			continue
 		matched_rules.append(rule)
-	if len(matched_rules) != 1:
+	selected_rule = _select_deterministic_surface_rule(matched_rules)
+	if selected_rule is None:
 		return None
-	selected_rule = matched_rules[0]
 	intent_class = str(selected_rule.get("intent_class") or "").strip()
 	candidate_capability_ids = _clean_list(selected_rule.get("candidate_capability_ids"))
 	candidate_reports = _clean_list(selected_rule.get("candidate_reports"))
@@ -2217,6 +2292,8 @@ def _augment_semantic_interpretation_with_detected_metrics(
 	interpretation = semantic_result.interpretation
 	if interpretation is None:
 		return semantic_result
+	if str(interpretation.intent_class or "").strip() == "trend_analysis":
+		return semantic_result
 	candidate_capability_ids = list(interpretation.candidate_capability_ids or [])
 	primary_capability_id = str(candidate_capability_ids[0] or "").strip() if candidate_capability_ids else ""
 	detected_metrics = detect_canonical_keys(
@@ -2252,6 +2329,56 @@ def _augment_semantic_interpretation_with_detected_metrics(
 		runtime_error=semantic_result.runtime_error,
 		validation_error=semantic_result.validation_error,
 		agent_meta=semantic_result.agent_meta,
+	)
+
+
+def _normalize_trend_requested_metrics_from_message(
+	*,
+	message: str,
+	interpretation: FreshQueryInterpretationContract | None,
+) -> FreshQueryInterpretationContract | None:
+	if interpretation is None:
+		return None
+	if str(interpretation.intent_class or "").strip() != "trend_analysis":
+		return interpretation
+	candidate_capability_ids = list(interpretation.candidate_capability_ids or [])
+	candidate_reports = list(interpretation.candidate_reports or [])
+	capability_id = str((candidate_capability_ids or [""])[0] or "").strip()
+	report_name = str((candidate_reports or [""])[0] or "").strip()
+	if not capability_id:
+		return interpretation
+	detected_metrics = detect_canonical_keys(
+		message,
+		capability_id=capability_id,
+		dimension_or_metric="metric",
+	)
+	if not detected_metrics:
+		return interpretation
+	normalized_metrics = _resolve_requested_labels(
+		message=message,
+		report_name=report_name,
+		capability_id=capability_id,
+		intent_class="trend_analysis",
+		existing_values=[],
+		dimension_or_metric="metric",
+	)
+	if not normalized_metrics or normalized_metrics == list(interpretation.requested_metrics):
+		return interpretation
+	return build_fresh_query_interpretation_contract(
+		request_id=interpretation.request_id,
+		session_id=interpretation.session_id,
+		intent_class=interpretation.intent_class,
+		candidate_capability_ids=list(interpretation.candidate_capability_ids),
+		candidate_reports=list(interpretation.candidate_reports),
+		requested_dimensions=list(interpretation.requested_dimensions),
+		requested_metrics=normalized_metrics,
+		requested_time_scope=interpretation.requested_time_scope,
+		target_limit=interpretation.target_limit,
+		requested_presentation=list(interpretation.requested_presentation),
+		extracted_slots=dict(interpretation.extracted_slots),
+		ambiguity_flags=list(interpretation.ambiguity_flags),
+		ambiguity_reason=interpretation.ambiguity_reason,
+		confidence=interpretation.confidence,
 	)
 
 
@@ -2292,9 +2419,12 @@ def _compile_pipeline_from_semantic_result(
 		)
 		semantic_result = SemanticFreshQueryResult(
 			status=semantic_result.status,
-			interpretation=_reconcile_generic_financial_statement_request_from_message(
+			interpretation=_reconcile_financial_statement_default_time_scope_from_message(
 				message=message,
-				interpretation=semantic_result.interpretation,
+				interpretation=_reconcile_generic_financial_statement_request_from_message(
+					message=message,
+					interpretation=semantic_result.interpretation,
+				),
 			),
 			confidence_threshold=semantic_result.confidence_threshold,
 			runtime_error=semantic_result.runtime_error,
@@ -2367,6 +2497,22 @@ def _compile_pipeline_from_semantic_result(
 			agent_meta={
 				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
 				"clarification_resolution_applied": True,
+			},
+		)
+	trend_normalized_interpretation = _normalize_trend_requested_metrics_from_message(
+		message=message,
+		interpretation=semantic_result.interpretation,
+	)
+	if trend_normalized_interpretation != semantic_result.interpretation:
+		semantic_result = SemanticFreshQueryResult(
+			status=semantic_result.status,
+			interpretation=trend_normalized_interpretation,
+			confidence_threshold=semantic_result.confidence_threshold,
+			runtime_error=semantic_result.runtime_error,
+			validation_error=semantic_result.validation_error,
+			agent_meta={
+				**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+				"trend_metric_reconciled_from_message": True,
 			},
 		)
 	semantic_resolution = resolve_interpretation_semantically(semantic_result.interpretation)
@@ -2531,6 +2677,7 @@ def _recover_pipeline_with_deterministic_surface_fallback(
 		site_name=site_name,
 		message=message,
 		clarification_resolution=clarification_resolution,
+		front_door_contract=None,
 		semantic_result=semantic_result,
 		proposal_generation_latency_ms=int(
 			max(0, (latency_breakdown.get("proposal_generation_latency_ms") or 0))

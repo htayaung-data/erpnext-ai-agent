@@ -9,6 +9,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	get_entity_reference_policy_spec,
 	get_family_scope_compatibility_spec,
 	get_governed_scope_spec,
+	get_scope_projection_spec,
 	get_report_spec,
 	list_entity_reference_policy_specs,
 	load_family_scope_compatibility_registry,
@@ -86,6 +87,75 @@ def canonical_scope_aliases(scope_id: str) -> List[str]:
 	if not scope_spec:
 		return []
 	return _scope_canonical_tokens(scope_spec)
+
+
+def _scope_alias_phrase_variants(value: Any) -> List[str]:
+	text = _clean_text(value)
+	if not text:
+		return []
+	base_phrases = [text]
+	space_phrase = text.replace("_", " ")
+	if space_phrase != text:
+		base_phrases.append(space_phrase)
+	out: List[str] = []
+	for phrase in base_phrases:
+		out.append(phrase)
+		parts = phrase.split()
+		if parts:
+			plural_parts = list(parts)
+			plural_parts[-1] = _pluralize_scope_label_word(plural_parts[-1])
+			out.append(" ".join(plural_parts))
+	return list(dict.fromkeys(out))
+
+
+def canonical_scope_alias_phrases(scope_id: str) -> List[str]:
+	phrases: List[str] = []
+	for alias in canonical_scope_aliases(scope_id):
+		phrases.extend(_scope_alias_phrase_variants(alias))
+	return list(dict.fromkeys(phrase for phrase in phrases if phrase))
+
+
+def _scope_listing_alias_tokens(scope_spec: Dict[str, Any]) -> List[str]:
+	return list(
+		dict.fromkeys(
+			[
+				token
+				for token in [
+					_clean_text(scope_spec.get("scope_id")),
+					_clean_text(scope_spec.get("scope_label")),
+					*_as_str_list(scope_spec.get("canonical_alias_groups")),
+				]
+				if token
+			]
+		)
+	)
+
+
+def canonical_listing_view_alias_phrases(listing_view: str) -> List[str]:
+	scope_id = scope_id_for_listing_view(listing_view)
+	if not scope_id:
+		return []
+	scope_spec = governed_scope_spec(scope_id)
+	phrases: List[str] = []
+	for alias in _scope_listing_alias_tokens(scope_spec):
+		phrases.extend(_scope_alias_phrase_variants(alias))
+	return list(dict.fromkeys(phrase for phrase in phrases if phrase))
+
+
+def active_listing_view_aliases() -> Dict[str, List[str]]:
+	aliases: Dict[str, List[str]] = {}
+	for item in _scope_items():
+		scope_id = _clean_text(item.get("scope_id"))
+		if not scope_id:
+			continue
+		if _clean_text(item.get("primary_owner_family")) != "transaction_listing":
+			continue
+		if _clean_text(item.get("scope_class")) not in {"document", "financial_operation"}:
+			continue
+		if not _scope_is_active_report_approved(item):
+			continue
+		aliases[scope_id] = canonical_listing_view_alias_phrases(scope_id)
+	return aliases
 
 
 def _scope_matches_alias(scope_spec: Dict[str, Any], alias: str) -> bool:
@@ -253,6 +323,57 @@ def governed_scope_family_policy(scope_id: str, family_id: str) -> Dict[str, Any
 	return get_family_scope_compatibility_spec(scope_id, family_id)
 
 
+def governed_scope_runtime_policy(scope_id: str, family_id: str) -> Dict[str, Any]:
+	clean_scope_id = _clean_text(scope_id)
+	clean_family_id = _clean_text(family_id)
+	if not clean_scope_id or not clean_family_id:
+		return {}
+	scope_spec = governed_scope_spec(clean_scope_id)
+	if not scope_spec:
+		return {}
+	family_policy = governed_scope_family_policy(clean_scope_id, clean_family_id)
+	if not family_policy:
+		return {}
+	projection_policy = get_scope_projection_spec(clean_scope_id, clean_family_id)
+	authority = _scope_authority(scope_spec)
+	compatibility_level = _clean_text(family_policy.get("compatibility_level"))
+	source_kind = _clean_text(authority.get("source_kind"))
+	authority_status = _clean_text(authority.get("authority_status"))
+	scope_status = _clean_text(scope_spec.get("status"))
+	return {
+		"scope_id": clean_scope_id,
+		"scope_label": _clean_text(scope_spec.get("scope_label")),
+		"scope_class": _clean_text(scope_spec.get("scope_class")),
+		"scope_status": scope_status,
+		"family_id": clean_family_id,
+		"primary_owner_family": _clean_text(scope_spec.get("primary_owner_family")),
+		"source_kind": source_kind,
+		"authority_status": authority_status,
+		"report_name": _clean_text(authority.get("report_name")),
+		"capability_id": _clean_text(authority.get("capability_id")),
+		"compatibility_level": compatibility_level,
+		"allowed_modes": _as_str_list(family_policy.get("allowed_modes")),
+		"followup_compatibility": _clean_text(family_policy.get("followup_compatibility")),
+		"blocked_reason": _clean_text(family_policy.get("blocked_reason")),
+		"projection_group_id": _clean_text(projection_policy.get("projection_group_id")),
+		"allowed_dimensions": _as_str_list(projection_policy.get("allowed_dimensions")),
+		"allowed_metrics": _as_str_list(projection_policy.get("allowed_metrics")),
+		"allowed_detail_sections": _as_str_list(projection_policy.get("allowed_detail_sections")),
+		"default_projection_shape": _clean_text(projection_policy.get("default_projection_shape")),
+		"can_execute": bool(
+			scope_status == "active"
+			and authority_status == "approved"
+			and source_kind == "report"
+			and compatibility_level in {"full_consumption", "projection_only"}
+		),
+		"can_followup": bool(
+			compatibility_level in {"full_consumption", "followup_only", "projection_only"}
+			and _clean_text(family_policy.get("followup_compatibility")) in {"preserve_scope", "requery_same_scope"}
+		),
+		"has_projection_policy": bool(projection_policy),
+	}
+
+
 def governed_scope_spec(scope_id: str) -> Dict[str, Any]:
 	if not str(scope_id or "").strip():
 		return {}
@@ -283,12 +404,12 @@ def master_data_scope_activation(entity_grain: str) -> Dict[str, Any]:
 	capability_id = str(authority.get("capability_id") or "").strip()
 	if not report_name or not capability_id:
 		return {}
-	family_policy = governed_scope_family_policy(scope_id, "master_data_lookup")
-	if str(family_policy.get("compatibility_level") or "").strip() != "full_consumption":
+	runtime_policy = governed_scope_runtime_policy(scope_id, "master_data_lookup")
+	if str(runtime_policy.get("compatibility_level") or "").strip() != "full_consumption":
 		return {}
 	allowed_lookup_modes = [
 		mode
-		for mode in _as_str_list(family_policy.get("allowed_modes"))
+		for mode in _as_str_list(runtime_policy.get("allowed_modes"))
 		if mode in set(_as_str_list(policy.get("allowed_lookup_modes")))
 	]
 	if not allowed_lookup_modes:
@@ -298,14 +419,117 @@ def master_data_scope_activation(entity_grain: str) -> Dict[str, Any]:
 		"scope_label": str(scope_spec.get("scope_label") or "").strip(),
 		"entity_grain": grain,
 		"capability_id": capability_id,
-		"report_name": report_name,
+			"report_name": report_name,
+			"allowed_lookup_modes": allowed_lookup_modes,
+			"default_projection": str(policy.get("default_projection") or "").strip(),
+			"default_limit": int(max(0, policy.get("default_limit") or 0)),
+			"followup_compatibility": str(runtime_policy.get("followup_compatibility") or "").strip(),
+			"runtime_policy": runtime_policy,
+			"entity_label": entity_grain_display_label(grain, plural=False) or grain,
+			"entity_plural_label": entity_grain_display_label(grain, plural=True) or f"{grain}s",
+		}
+
+
+def entity_detail_scope_activation(entity_grain: str) -> Dict[str, Any]:
+	grain = canonical_master_data_entity_grain(entity_grain)
+	if not grain:
+		return {}
+	policy = get_entity_reference_policy_spec(grain)
+	if not policy or str(policy.get("activation_state") or "").strip() != "active":
+		return {}
+	scope_id = str(policy.get("scope_id") or "").strip() or scope_id_for_entity_grain(grain)
+	scope_spec = governed_scope_spec(scope_id)
+	if str(scope_spec.get("status") or "").strip() != "active":
+		return {}
+	runtime_policy = governed_scope_runtime_policy(scope_id, "entity_detail")
+	if str(runtime_policy.get("compatibility_level") or "").strip() != "full_consumption":
+		return {}
+	allowed_lookup_modes = [
+		mode
+		for mode in _as_str_list(runtime_policy.get("allowed_modes"))
+		if mode in set(_as_str_list(policy.get("allowed_lookup_modes")))
+	]
+	if not allowed_lookup_modes:
+		return {}
+	doctype = str(policy.get("doctype") or "").strip()
+	identity_field = str(policy.get("identity_field") or "").strip()
+	if not doctype or not identity_field:
+		return {}
+	return {
+		"scope_id": scope_id,
+		"scope_label": str(scope_spec.get("scope_label") or "").strip(),
+		"entity_grain": grain,
+		"doctype": doctype,
+		"identity_field": identity_field,
+		"display_field": str(policy.get("display_field") or "").strip(),
 		"allowed_lookup_modes": allowed_lookup_modes,
 		"default_projection": str(policy.get("default_projection") or "").strip(),
 		"default_limit": int(max(0, policy.get("default_limit") or 0)),
-		"followup_compatibility": str(family_policy.get("followup_compatibility") or "").strip(),
+		"followup_compatibility": str(runtime_policy.get("followup_compatibility") or "").strip(),
+		"runtime_policy": runtime_policy,
 		"entity_label": entity_grain_display_label(grain, plural=False) or grain,
 		"entity_plural_label": entity_grain_display_label(grain, plural=True) or f"{grain}s",
 	}
+
+
+def list_active_entity_detail_scope_activations(*, request_mode: str = "") -> List[Dict[str, Any]]:
+	required_mode = str(request_mode or "").strip()
+	out: List[Dict[str, Any]] = []
+	for policy in list_entity_reference_policy_specs():
+		grain = str(policy.get("entity_grain") or "").strip()
+		if not grain:
+			continue
+		activation = entity_detail_scope_activation(grain)
+		if not activation:
+			continue
+		if required_mode and required_mode not in _as_str_list(activation.get("allowed_lookup_modes")):
+			continue
+		out.append(activation)
+	return out
+
+
+def entity_reference_resolution_activation(entity_grain: str, lookup_mode: str) -> Dict[str, Any]:
+	grain = canonical_master_data_entity_grain(entity_grain)
+	mode = str(lookup_mode or "").strip()
+	if not grain:
+		return {}
+	policy = get_entity_reference_policy_spec(grain)
+	if not policy or str(policy.get("activation_state") or "").strip() != "active":
+		return {}
+	if mode == "profile_target":
+		activation = entity_detail_scope_activation(grain)
+	else:
+		activation = master_data_scope_activation(grain)
+	if not activation:
+		return {}
+	if mode and mode not in _as_str_list(activation.get("allowed_lookup_modes")):
+		return {}
+	out = dict(activation)
+	out.update(
+		{
+			"doctype": str(policy.get("doctype") or "").strip(),
+			"identity_field": str(policy.get("identity_field") or "").strip(),
+			"display_field": str(policy.get("display_field") or "").strip(),
+			"search_fields": _as_str_list(policy.get("search_fields")),
+			"match_policy": str(policy.get("match_policy") or "").strip(),
+		}
+	)
+	return out
+
+
+def entity_detail_runtime_policy(entity_type: str) -> Dict[str, Any]:
+	clean_entity_type = str(entity_type or "").strip()
+	if not clean_entity_type:
+		return {}
+	grain = canonical_master_data_entity_grain(clean_entity_type)
+	if grain:
+		activation = entity_detail_scope_activation(grain)
+		if activation:
+			return dict(activation.get("runtime_policy") or {})
+	scope_id = scope_id_for_listing_view(clean_entity_type) or scope_id_for_listing_view(clean_entity_type.replace("_", " "))
+	if not scope_id:
+		return {}
+	return governed_scope_runtime_policy(scope_id, "entity_detail")
 
 
 def list_active_master_data_scope_activations(*, request_mode: str = "") -> List[Dict[str, Any]]:
@@ -848,6 +1072,17 @@ def validate_governed_scope_access_model() -> RegistryValidationResult:
             family_id = str(entry.get("family_id") or "").strip()
             compatibility_level = str(entry.get("compatibility_level") or "").strip()
             pair = (scope_id, family_id)
+            runtime_policy = governed_scope_runtime_policy(scope_id, family_id)
+            if not runtime_policy:
+                errors.append(f"Active scope '{scope_id}' missing runtime policy for family '{family_id}'.")
+                continue
+            if str(runtime_policy.get("compatibility_level") or "").strip() != compatibility_level:
+                errors.append(f"Runtime policy mismatch for '{scope_id}/{family_id}' compatibility_level.")
+            if compatibility_level == "followup_only" and runtime_policy.get("can_execute"):
+                errors.append(f"Runtime policy must not execute followup-only family '{scope_id}/{family_id}'.")
+            followup_compatibility = str(entry.get("followup_compatibility") or "").strip()
+            if followup_compatibility in {"preserve_scope", "requery_same_scope"} and not runtime_policy.get("can_followup"):
+                errors.append(f"Runtime policy must allow follow-up for '{scope_id}/{family_id}'.")
             if pair not in clarification_pairs:
                 errors.append(f"Active scope '{scope_id}' missing clarification coverage for family '{family_id}'.")
             if compatibility_level in {"full_consumption", "projection_only"}:
@@ -855,6 +1090,10 @@ def validate_governed_scope_access_model() -> RegistryValidationResult:
                     errors.append(f"Active scope '{scope_id}' missing projection policy for family '{family_id}'.")
                 else:
                     has_projection = True
+                    if not runtime_policy.get("can_execute"):
+                        errors.append(f"Runtime policy must allow execution for '{scope_id}/{family_id}'.")
+                    if not runtime_policy.get("has_projection_policy"):
+                        errors.append(f"Runtime policy missing projection payload for '{scope_id}/{family_id}'.")
 
         if not has_projection:
             errors.append(f"Active scope '{scope_id}' must have at least one projection policy entry.")

@@ -1,8 +1,8 @@
 # Qwen ERP Enterprise Tech Debt Register
 
-Status: active debt register  
-Date: 2026-04-04  
-Scope: active structural debt that should inform roadmap execution without replacing it
+Status: active debt register
+Date: 2026-04-04
+Scope: active structural debt that should inform roadmap execution without replacing i
 
 ## 1. Purpose
 
@@ -31,9 +31,9 @@ Each item should also have:
 
 1. why it matters
 2. when it should be revisited
-3. what would escalate it
+3. what would escalate i
 
-## 3. Current Active Debt
+## 3. Current Active Deb
 
 ### 3.1 External Qwen Runtime Governance
 
@@ -49,7 +49,7 @@ Scope:
 Why it matters:
 
 1. governed fresh-query and follow-up interpretation depend on this runtime path
-2. its production governance boundary must be explicit
+2. its production governance boundary must be explici
 3. degraded-mode behavior must be known if the external runtime is unavailable or unstable
 
 Needed before or during the next phase:
@@ -83,7 +83,7 @@ Needed before or during the next phase:
 1. classify which `Administrator` usages are:
    - test/support only
    - smoke-only
-   - real runtime/security debt
+   - real runtime/security deb
 2. document or fix production-path usage if discovered
 
 Escalation trigger:
@@ -119,7 +119,7 @@ How to handle it:
 
 Escalation trigger:
 
-1. if every new domain requires meaningful `service.py` changes and merge/test pain becomes persistent
+1. if every new domain requires meaningful `service.py` changes and merge/test pain becomes persisten
 
 ### 3.4 Lane Dependency Injection Shape
 
@@ -216,8 +216,8 @@ Why it is not urgent yet:
 
 How to handle it:
 
-1. plan as a future observability improvement
-2. escalate if incident diagnosis becomes a recurring pain point
+1. plan as a future observability improvemen
+2. escalate if incident diagnosis becomes a recurring pain poin
 
 ### 3.8 SLO / Degradation Policy Formalization
 
@@ -247,7 +247,7 @@ Before starting a new phase:
 
 During a phase:
 
-1. if a `monitor` item starts actively hurting delivery, reclassify it
+1. if a `monitor` item starts actively hurting delivery, reclassify i
 2. if a `near_blocker` repeatedly forces code churn, promote it to a blocker for the next phase
 
 After a phase:

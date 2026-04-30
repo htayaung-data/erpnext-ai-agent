@@ -1,7 +1,7 @@
 # Qwen ERP Phase 1.3 Purchase Order Tracking Design
 
-Status: active implementation design note  
-Date: 2026-04-08  
+Status: active implementation design note
+Date: 2026-04-08
 Scope: detailed implementation plan for Phase 1, Mini-phase 1.3
 
 ## 1. Executive Decision
@@ -11,7 +11,7 @@ Phase 1.3 should start with a governed `Purchase Order` tracking surface, not a 
 The first implementation must stay:
 
 1. read-only
-2. metadata-first
+2. metadata-firs
 3. procurement-status-authority driven
 4. bounded to real ERP purchase-order facts
 5. small enough to verify with the existing enterprise gate
@@ -41,7 +41,7 @@ What worked and should be reused:
 2. reuse the existing `transaction_listing` family before inventing a new family
 3. introduce a direct-query document-listing report before trends or analytics
 4. reuse `entity_detail` instead of inventing a new drilldown lane
-5. keep follow-up continuity grounded on typed artifacts, not raw message text
+5. keep follow-up continuity grounded on typed artifacts, not raw message tex
 6. add browser/UAT checkpoints before calling a slice complete
 7. promote smokes into the release-gate pack only after the authority seam is stable
 
@@ -56,17 +56,17 @@ What must not repeat:
 
 Phase `1.3` must obey the active enterprise guide:
 
-1. contract first
+1. contract firs
 2. metadata owns business policy
 3. compiler enforces deterministically
-4. fail closed when evidence is insufficient
+4. fail closed when evidence is insufficien
 5. no keyword routing
 6. no single-case prompt fixes
 7. two-layer verification is required:
    - fast deterministic contract tests
    - live/site verification where state matters
 8. expand only after the previous chapter is closed
-9. stop when the stop rule is met
+9. stop when the stop rule is me
 
 This means `Purchase Order Tracking` must be built as:
 
@@ -145,7 +145,7 @@ What does not yet exist:
 1. `Purchase Order List` report metadata
 2. `Purchase Order` semantic-resolution entries
 3. `Purchase Order` status normalization policy
-4. `Purchase Order` explicit entity-detail support
+4. `Purchase Order` explicit entity-detail suppor
 5. `Purchase Order` follow-up aliases for received / billed / planned receipt due date
 
 ## 5. Authority Model For Purchase Order Tracking
@@ -178,7 +178,7 @@ Deferred authority for later slices only:
 
 This means:
 
-1. Phase `1.3` should answer purchase-order tracking questions from purchase-order authority first
+1. Phase `1.3` should answer purchase-order tracking questions from purchase-order authority firs
 2. it should not become a hidden procurement composite engine
 3. if users ask beyond order authority, the system should fail closed or defer to a later bounded slice
 
@@ -200,7 +200,7 @@ This means:
 
 ### 6.2 Explicitly deferred
 
-1. `Purchase Order Trends` as a first-slice entry point
+1. `Purchase Order Trends` as a first-slice entry poin
 2. `Purchase Order Analysis` as the first artifact surface
 3. `Purchase Analytics`
 4. `Procurement Tracker`
@@ -258,7 +258,7 @@ Why:
 
 1. it mirrors the successful Delivery and Sales Order entry strategy
 2. it keeps the first authority surface simple
-3. it avoids mixing draft workflow policy into the first checkpoint
+3. it avoids mixing draft workflow policy into the first checkpoin
 
 Example asks covered:
 
@@ -294,7 +294,7 @@ Implementation checkpoint for `1.3A`:
    - self-contained governed re-asks now break out of prior date context before continuation backfill can leak the previous month
 9. `1.3A` is now closure-ready, and the next active implementation move is `1.3B`
 
-### 7.2 `1.3B` Status Normalization And Date-Scope Enrichment
+### 7.2 `1.3B` Status Normalization And Date-Scope Enrichmen
 
 Goal:
 
@@ -321,7 +321,7 @@ Acceptance for `1.3B`:
 
 1. status aliases resolve through metadata only
 2. date-scope and status can be combined without losing either
-3. the shared transaction-listing contract stays intact
+3. the shared transaction-listing contract stays intac
 
 Implementation checkpoint for `1.3B`:
 
@@ -366,7 +366,7 @@ Required detail authority:
 Important rule:
 
 1. detail must stay on purchase-order authority only
-2. do not inject purchase-receipt proof into the detail artifact
+2. do not inject purchase-receipt proof into the detail artifac
 
 Acceptance for `1.3C`:
 
@@ -397,7 +397,7 @@ Implementation checkpoint for `1.3C`:
 7. browser/UAT is now green for `1.3C`:
    - explicit `PUR-ORD-...` drilldowns stay on single-document purchase-order detail
    - detail remains bounded to purchase-order authority only
-   - unsupported receipt-event and payable-style narrative claims are no longer present
+   - unsupported receipt-event and payable-style narrative claims are no longer presen
 
 ### 7.4 `1.3D` Order-Status Follow-Up From Detail
 
@@ -432,7 +432,7 @@ Why:
 
 Acceptance for `1.3D`:
 
-1. the follow-up remains anchored to the current purchase-order detail artifact
+1. the follow-up remains anchored to the current purchase-order detail artifac
 2. no raw text heuristics become hidden authority
 3. actual receipt-event date still fails closed without downstream receipt evidence
 
@@ -464,14 +464,14 @@ Implementation checkpoint for `1.3D`:
    - `run_phase1_3_purchase_order_status_followup_smoke`
    - site `test_entity_detail_contracts`
 8. browser/UAT is now green for `1.3D`:
-   - receipt-progress follow-up stays anchored to the current purchase-order detail artifact
+   - receipt-progress follow-up stays anchored to the current purchase-order detail artifac
    - billed-progress and planned-receipt-date follow-ups answer from purchase-order authority only
    - actual receipt-event date still stops safely at the governed boundary
 9. `1.3C` and `1.3D` are now promoted into the site release-gate module:
    - [test_post_contract_release_gates.py](/home/deploy/erp-projects/erpai_project1/impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_post_contract_release_gates.py)
 10. the site-backed release-gate module is green after that promotion
 
-### 7.5 `1.3E` Optional Draft / Receipt Extension Checkpoint
+### 7.5 `1.3E` Optional Draft / Receipt Extension Checkpoin
 
 This slice should open only if real user need appears after `1.3A-D` are green.
 
@@ -484,7 +484,7 @@ Possible future scope:
 Why this is optional:
 
 1. it adds policy complexity
-2. it should not delay the first submitted-order checkpoint
+2. it should not delay the first submitted-order checkpoin
 
 ### 7.6 `1.3F` Closure And Stop Rule
 
@@ -526,7 +526,7 @@ Required checks:
 Proceed with `1.3` in this exact order:
 
 1. `1.3A` submitted purchase-order listing baseline
-2. `1.3B` status normalization and date-scope enrichment
+2. `1.3B` status normalization and date-scope enrichmen
 3. `1.3C` purchase-order detail parity
 4. `1.3D` order-status follow-up from detail
 5. `1.3E` draft / receipt extension only if justified
@@ -536,5 +536,5 @@ This is the right enterprise-grade plan because:
 
 1. it reuses what Phase `1.1` and Phase `1.2` already proved
 2. it obeys the active development guideline
-3. it stays contract-first and metadata-first
+3. it stays contract-first and metadata-firs
 4. it keeps the first procurement chapter narrow enough to close cleanly

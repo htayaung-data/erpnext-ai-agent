@@ -224,7 +224,8 @@
             "Invoice"
           ],
           "default_metrics": [
-            "Grand Total"
+            "Grand Total",
+            "Quantity"
           ],
           "default_time_scope": "",
           "report_overrides_by_concept": {
@@ -612,6 +613,71 @@
       "default_validation_profile": "report_grounded_read"
     },
     {
+      "capability_id": "purchase_receipt_read",
+      "label": "Purchase Receipt Read",
+      "default_report_name": "Purchase Receipt List",
+      "report_families": [
+        "purchase_receipt_list"
+      ],
+      "report_names": [
+        "Purchase Receipt List"
+      ],
+      "ontology_concepts": [
+        "purchase_receipt",
+        "supplier",
+        "receiving"
+      ],
+      "intent_classes": [
+        "transaction_listing"
+      ],
+      "semantic_tags": [
+        "purchase",
+        "receipt",
+        "receiving",
+        "document"
+      ],
+      "dimensions": [
+        "Purchase Receipt",
+        "Supplier",
+        "Posting Date",
+        "Status"
+      ],
+      "metrics": [
+        "Grand Total",
+        "Quantity"
+      ],
+      "fresh_query_defaults": {
+        "transaction_listing": {
+          "default_report_name": "Purchase Receipt List",
+          "default_dimensions": [
+            "Purchase Receipt",
+            "Supplier",
+            "Status"
+          ],
+          "default_metrics": [
+            "Grand Total",
+            "Quantity"
+          ],
+          "default_time_scope": "",
+          "metric_overrides_by_canonical_key": {
+            "grand_total": [
+              "Grand Total"
+            ],
+            "quantity": [
+              "Quantity"
+            ]
+          }
+        }
+      },
+      "default_validation_profile": "report_grounded_read",
+      "canonical_aliases": [
+        "purchase_receipt_read"
+      ],
+      "scope_capability_aliases": {
+        "purchase_receipt": "purchase_receipt_read"
+      }
+    },
+    {
       "capability_id": "stock_read",
       "label": "Stock Read",
       "clarification_business_area_label": "inventory",
@@ -777,7 +843,8 @@
             "Delivery Note"
           ],
           "default_metrics": [
-            "Grand Total"
+            "Grand Total",
+            "Quantity"
           ],
           "default_time_scope": "",
           "metric_overrides_by_canonical_key": {
@@ -795,7 +862,8 @@
             "Customer"
           ],
           "default_metrics": [
-            "Delivered Amount"
+            "Delivered Amount",
+            "Delivered Quantity"
           ],
           "default_time_scope": "current_fiscal_year_to_date",
           "metric_overrides_by_canonical_key": {

@@ -2,6 +2,11 @@ import unittest
 
 from ai_assistant_ui.qwen_chat.metadata import load_semantic_resolution_registry
 from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
+	best_semantic_slot_alias,
+	semantic_alias_phrase_matches,
+	semantic_slot_alias_phrases_for_value,
+	semantic_slot_alias_matches,
+	semantic_slot_value_from_values,
 	validate_semantic_resolution_registry,
 )
 
@@ -122,3 +127,19 @@ class TestSemanticResolutionRegistry(unittest.TestCase):
 		}
 		self.assertIn("lookup_mode", slot_names)
 		self.assertIn("lookup_projection", slot_names)
+
+	def test_shared_semantic_slot_alias_helpers_match_display_labels_and_aliases(self):
+		self.assertTrue(semantic_alias_phrase_matches("Show me P & L", "p & l"))
+		self.assertEqual(
+			semantic_slot_alias_matches("statement_variant", "show me Profit & Loss"),
+			["profit_and_loss"],
+		)
+		self.assertEqual(best_semantic_slot_alias("ranking_metric", "show me outstanding balance"), "outstanding_total")
+		self.assertEqual(
+			semantic_slot_value_from_values("ranking_subject", ["Products"]),
+			"product",
+		)
+		self.assertEqual(
+			semantic_slot_alias_phrases_for_value("listing_view", "payment_entry")[:2],
+			["payment entry", "payment entries"],
+		)

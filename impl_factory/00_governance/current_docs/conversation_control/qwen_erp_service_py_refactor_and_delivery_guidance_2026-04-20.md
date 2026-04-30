@@ -1,7 +1,7 @@
 # Qwen ERP `service.py` Refactor And Delivery Guidance
 
-Status: active technical implementation note  
-Date: 2026-04-20  
+Status: active technical implementation note
+Date: 2026-04-20
 Scope: delivery guidance for the current AI assistant implementation phase, plus the controlled refactor plan for `ai_assistant_ui/qwen_chat/service.py`
 
 ## 1. Purpose
@@ -46,12 +46,12 @@ is not just one service function.
 
 It is currently acting as all of the following:
 
-1. public assistant runtime entrypoint
+1. public assistant runtime entrypoin
 2. orchestration layer for governed turn handling
 3. compatibility facade over already-extracted helper modules
-4. conversation-state and control logic host
-5. evidence and boundary helper host
-6. smoke, probe, regression, and debug runner host
+4. conversation-state and control logic hos
+5. evidence and boundary helper hos
+6. smoke, probe, regression, and debug runner hos
 
 That is why it grows continuously.
 
@@ -116,14 +116,14 @@ The current `IC5-C` review has now reached an important boundary:
    - direct dispatch between already-normalized restore modes
    - replay-through-runtime orchestration
 3. that remaining surface should currently be treated as facade orchestration unless a new extraction candidate proves it is truly shared policy
-4. the team should not force another extraction there just to make `service.py` shorter if that extraction would only create wrapper noise or split one ordered flow across multiple files without adding a clearer contract
+4. the team should not force another extraction there just to make `service.py` shorter if that extraction would only create wrapper noise or split one ordered flow across multiple files without adding a clearer contrac
 5. this means `IC5-C` can move into close-out review while the later dedicated `service.py` refactor chapter remains the correct place for deeper orchestration slimming
 
 ## 6. Current Implementation Rules
 
 Every team member working on assistant features should follow these implementation rules immediately.
 
-### 6.1 New domain logic goes to a module first
+### 6.1 New domain logic goes to a module firs
 
 If the change introduces any of the following:
 
@@ -158,7 +158,7 @@ That means:
 
 1. use focused helper names
 2. avoid giant anonymous local blocks
-3. keep input and output shapes explicit
+3. keep input and output shapes explici
 4. avoid hidden mutation where possible
 5. keep domain vocabulary aligned with existing contracts and lanes
 
@@ -220,7 +220,7 @@ This is important because the project must not drift into:
 
 After the current feature chapter is complete, the target role of `service.py` should become:
 
-1. load session and request context
+1. load session and request contex
 2. normalize current-turn control overrides
 3. call named orchestration stages
 4. persist output artifacts through a controlled recorder/journal seam
@@ -296,7 +296,7 @@ Move out:
 
 Reason:
 
-1. boundary handling is already a first-class governed concept
+1. boundary handling is already a first-class governed concep
 2. it deserves its own stable implementation home
 
 ### 9.5 Runtime message compilation seam
@@ -354,7 +354,7 @@ When the dedicated refactor chapter begins, use this order:
 This order is recommended because it gives:
 
 1. quick size reduction early
-2. low-risk wins first
+2. low-risk wins firs
 3. better understanding before touching the orchestration core
 
 ### 11.1 Immediate execution inside the current delivery chapter
@@ -373,8 +373,8 @@ The future top-level function should read like a pipeline.
 
 Recommended high-level stages:
 
-1. load session and turn context
-2. build conversation snapshot
+1. load session and turn contex
+2. build conversation snapsho
 3. apply control override normalization
 4. resolve restore and pending clarification state
 5. evaluate front door
@@ -411,7 +411,7 @@ Any meaningful extraction or orchestration change should preserve characterizati
 1. pending clarification handling
 2. prior-branch restore handling
 3. compound-request continuation, completion, and cancellation
-4. context isolation and fresh-query reset
+4. context isolation and fresh-query rese
 5. evidence direct-answer versus evidence-boundary handling
 6. local transform versus runtime fallback handling
 7. out-of-scope guarded behavior
@@ -428,7 +428,7 @@ The team should pause feature expansion and prioritize the refactor earlier if a
 1. developers are afraid to touch `service.py`
 2. most new bugs come from flow-order interactions
 3. the same orchestration pattern is being copied repeatedly
-4. merge conflicts in `service.py` become frequent
+4. merge conflicts in `service.py` become frequen
 5. it becomes difficult to identify which stage owns a decision
 6. one feature requires edits across many unrelated service-level clusters
 
@@ -494,6 +494,6 @@ One concrete example from the current `IC5-C` close-out review:
 
 Why this example matters:
 
-1. it prevents the team from mistaking line movement for architecture improvement
+1. it prevents the team from mistaking line movement for architecture improvemen
 2. it reinforces the rule that extraction must create a real seam, not just a smaller-looking facade
 3. it keeps the current implementation chapter focused on governed behavior closure while preserving a cleaner refactor target for later

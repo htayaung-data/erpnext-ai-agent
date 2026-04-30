@@ -10,7 +10,6 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_dimensions_for_report,
 	get_report_family_spec,
 	get_report_spec,
-	list_composite_family_specs,
 	load_semantic_resolution_registry,
 	ontology_detect_concepts,
 	report_business_family_ids,
@@ -27,11 +26,21 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_followup_boundary_contract,
 )
 from ai_assistant_ui.qwen_chat.entity_reference_resolution import infer_lookup_mode_from_message
+from ai_assistant_ui.qwen_chat.followup_entity_domain_support import (
+	detected_message_entity_domains,
+	entity_detail_context_domains,
+	is_entity_detail_context_family,
+	normalize_entity_grain_alias,
+	ranking_subject_alias_map,
+	subject_alias_from_label,
+)
 from ai_assistant_ui.qwen_chat.governed_scope_registry import (
 	entity_grain_for_report_name,
 	listing_view_for_report_name,
 )
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_surface_family
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_slot_alias_phrases_for_value
 from ai_assistant_ui.qwen_chat.scope_decision_input import (
 	ScopeDecisionInputContract,
 	build_known_unsupported_scope_decision_input,
@@ -61,24 +70,6 @@ def _normalize_slot_phrase(text: str) -> str:
 		if _singularize_token(value)
 	]
 	return " ".join(parts)
-
-
-def _normalize_entity_grain_alias(value: str) -> str:
-	clean = _normalize_text(str(value or "").replace("_", " "))
-	if clean == "product":
-		return "item"
-	return clean
-
-
-def _pluralize_subject_alias(value: str) -> str:
-	clean = str(value or "").strip().lower()
-	if not clean:
-		return ""
-	if clean.endswith("y") and len(clean) > 1 and clean[-2] not in "aeiou":
-		return clean[:-1] + "ies"
-	if clean.endswith(("s", "x", "z", "ch", "sh")):
-		return clean + "es"
-	return clean + "s"
 
 
 _GOVERNED_DOMAIN_CONCEPTS = {
@@ -129,43 +120,6 @@ def _clean_governed_domain_concepts(values: List[str] | Set[str] | tuple[str, ..
 	}
 
 
-def _ranking_subject_alias_map() -> Dict[str, str]:
-	out: Dict[str, str] = {}
-	for family_spec in list_composite_family_specs():
-		subject_alias = str(family_spec.get("subject_alias_value") or "").strip().lower()
-		if not subject_alias:
-			continue
-		alias_values = {
-			_normalize_slot_phrase(subject_alias),
-			_normalize_slot_phrase(_pluralize_subject_alias(subject_alias)),
-		}
-		entity_grain = str(family_spec.get("entity_grain") or "").strip().lower()
-		if entity_grain == "item":
-			alias_values.update(
-				{
-					_normalize_slot_phrase("item"),
-					_normalize_slot_phrase("items"),
-				}
-			)
-		for alias_value in alias_values:
-			if alias_value:
-				out[alias_value] = subject_alias
-	return out
-
-
-def _subject_alias_from_label(label: str) -> str:
-	normalized_label = _normalize_slot_phrase(label)
-	if not normalized_label:
-		return ""
-	alias_map = _ranking_subject_alias_map()
-	resolved = alias_map.get(normalized_label)
-	if resolved:
-		return resolved
-	if normalized_label == "item":
-		return "product"
-	return ""
-
-
 def _artifact_ranking_subject_alias(
 	grounded_turn: Dict[str, object] | None,
 	artifact_signal: ArtifactContextSignal,
@@ -174,15 +128,15 @@ def _artifact_ranking_subject_alias(
 	for item in (turn.get("known_entities") or []):
 		if not isinstance(item, dict):
 			continue
-		entity_type = _subject_alias_from_label(str(item.get("entity_type") or "").strip())
+		entity_type = subject_alias_from_label(str(item.get("entity_type") or "").strip())
 		if entity_type:
 			return entity_type
 	for value in (turn.get("dimensions") or []):
-		resolved = _subject_alias_from_label(str(value or "").strip())
+		resolved = subject_alias_from_label(str(value or "").strip())
 		if resolved:
 			return resolved
 	for value in artifact_signal.available_dimensions.values():
-		resolved = _subject_alias_from_label(value)
+		resolved = subject_alias_from_label(value)
 		if resolved:
 			return resolved
 	return ""
@@ -190,11 +144,11 @@ def _artifact_ranking_subject_alias(
 
 def _requested_ranking_subject_alias(message: str, semantic_intent: Any | None) -> str:
 	target_dimension = str(getattr(semantic_intent, "target_dimension", "") or "").strip() if semantic_intent is not None else ""
-	resolved_target = _subject_alias_from_label(target_dimension)
+	resolved_target = subject_alias_from_label(target_dimension)
 	normalized_message = _normalize_slot_phrase(message)
 	message_resolved = ""
 	if normalized_message:
-		alias_map = _ranking_subject_alias_map()
+		alias_map = ranking_subject_alias_map()
 		matches: List[tuple[int, str]] = []
 		for alias_value, subject_alias in alias_map.items():
 			if not alias_value:
@@ -339,19 +293,19 @@ def _artifact_context_signal(grounded_turn: Dict[str, object] | None) -> Artifac
 	report_name = str(turn.get("source_name") or "").strip()
 	if not family_id and report_name:
 		family_id = str((report_business_family_ids(report_name) or [""])[0] or "").strip()
-	if family_id == "entity_detail" and report_name and not report_approved_followup_modes(report_name):
+	if is_entity_detail_context_family(family_id, turn) and report_name and not report_approved_followup_modes(report_name):
 		candidate_detail_names: List[str] = []
 		for item in (turn.get("known_entities") or []):
 			if not isinstance(item, dict):
 				continue
-			entity_type = _normalize_entity_grain_alias(str(item.get("entity_type") or "").strip())
+			entity_type = normalize_entity_grain_alias(str(item.get("entity_type") or "").strip())
 			if entity_type:
 				candidate_detail_names.append(entity_type.replace("_", " ").title() + " Detail")
-		filter_entity_type = _normalize_entity_grain_alias(str((turn.get("filters") or {}).get("entity_type") or "").strip())
+		filter_entity_type = normalize_entity_grain_alias(str((turn.get("filters") or {}).get("entity_type") or "").strip())
 		if filter_entity_type:
 			candidate_detail_names.append(filter_entity_type.replace("_", " ").title() + " Detail")
 		for value in (turn.get("dimensions") or []):
-			clean_value = _normalize_entity_grain_alias(str(value or "").strip())
+			clean_value = normalize_entity_grain_alias(str(value or "").strip())
 			if clean_value:
 				candidate_detail_names.append(clean_value.replace("_", " ").title() + " Detail")
 		for candidate_name in candidate_detail_names:
@@ -440,7 +394,11 @@ def _grounded_followup_supported_for_artifact(
 		clean_report = str(source_report or "").strip()
 		if clean_report and report_approved_followup_modes(clean_report):
 			return True
-	return str(artifact_signal.family_id or "").strip() in {"entity_detail", "financial_statement"}
+	family_id = str(artifact_signal.family_id or "").strip()
+	return bool(
+		family_id == "financial_statement"
+		or is_entity_detail_context_family(family_id, grounded_turn)
+	)
 
 
 def _semantic_resolution_alias_maps() -> Dict[str, List[Dict[str, Any]]]:
@@ -516,15 +474,14 @@ def _family_routing_phrase_markers(family_id: str) -> Set[str]:
 				if not clean_slot_name or not clean_canonical_value:
 					continue
 				out.add(_normalize_text(clean_canonical_value.replace("_", " ")))
-				for entry in alias_maps.get(clean_slot_name) or []:
-					if not isinstance(entry, dict):
-						continue
-					if str(entry.get("canonical_value") or "").strip() != clean_canonical_value:
-						continue
-					for alias in entry.get("aliases") or []:
-						normalized_alias = _normalize_text(alias)
-						if normalized_alias:
-							out.add(normalized_alias)
+				for alias in semantic_slot_alias_phrases_for_value(
+					clean_slot_name,
+					clean_canonical_value,
+					include_canonical=False,
+				):
+					normalized_alias = _normalize_text(alias)
+					if normalized_alias:
+						out.add(normalized_alias)
 	return {value for value in out if value}
 
 
@@ -581,36 +538,15 @@ def _message_slot_value(slot_name: str, message: str) -> str:
 	return ""
 
 
-def _entity_detail_context_domains(grounded_turn: Dict[str, object] | None) -> Set[str]:
-	turn = grounded_turn if isinstance(grounded_turn, dict) else {}
-	out: Set[str] = set()
-	for item in (turn.get("known_entities") or []):
-		if not isinstance(item, dict):
-			continue
-		entity_type = str(item.get("entity_type") or "").strip().lower()
-		if entity_type in _GOVERNED_DOMAIN_CONCEPTS:
-			out.add(entity_type)
-		elif entity_type == "item":
-			out.add("product")
-			out.add("inventory")
-	for value in (turn.get("dimensions") or []):
-		resolved = _subject_alias_from_label(str(value or "").strip())
-		if resolved:
-			out.add(resolved)
-		if str(value or "").strip().lower() == "customer":
-			out.add("customer")
-	return out
-
-
 def _item_stock_followup_signal(
 	message: str,
 	*,
 	artifact_signal: ArtifactContextSignal,
 	grounded_turn: Dict[str, object] | None,
 ) -> bool:
-	if str(artifact_signal.family_id or "").strip() != "entity_detail":
+	if not is_entity_detail_context_family(artifact_signal.family_id, grounded_turn):
 		return False
-	context_domains = _entity_detail_context_domains(grounded_turn)
+	context_domains = entity_detail_context_domains(grounded_turn)
 	if "product" not in context_domains and "inventory" not in context_domains:
 		return False
 	requested_dimensions = {
@@ -632,9 +568,9 @@ def _item_stock_followup_signal(
 		if str(value or "").strip()
 	}
 	requested_inventory_concepts = {
-		_normalize_entity_grain_alias(value)
+		normalize_entity_grain_alias(value)
 		for value in ontology_detect_concepts(message, include_extended=False)
-		if _normalize_entity_grain_alias(value) in {"inventory", "item", "product"}
+		if normalize_entity_grain_alias(value) in {"inventory", "item", "product"}
 	}
 	return bool(
 		"warehouse" in requested_dimensions
@@ -660,18 +596,14 @@ def _entity_navigation_breakout_signal(
 	lookup_mode = str(infer_lookup_mode_from_message(message) or "").strip()
 	if lookup_mode not in {"directory_list", "candidate_resolution", "profile_target"}:
 		return False
-	requested_entity_grain = _normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
-	message_domains = {
-		_normalize_entity_grain_alias(value)
-		for value in ontology_detect_concepts(message, include_extended=False)
-		if _normalize_entity_grain_alias(value) in {"customer", "supplier", "item", "inventory"}
-	}
+	requested_entity_grain = normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
+	message_domains = detected_message_entity_domains(message)
 	family_id = str(artifact_signal.family_id or "").strip()
-	source_entity_grain = _normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
-	if family_id not in {"entity_detail", "master_data_lookup", "master_data_directory"}:
+	source_entity_grain = normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
+	if not is_entity_detail_context_family(family_id, grounded_turn) and not is_master_data_surface_family(family_id):
 		return bool(requested_entity_grain or message_domains)
 	if (
-		family_id in {"master_data_lookup", "master_data_directory"}
+		is_master_data_surface_family(family_id)
 		and requested_entity_grain
 		and source_entity_grain
 		and requested_entity_grain == source_entity_grain
@@ -679,11 +611,11 @@ def _entity_navigation_breakout_signal(
 		return False
 	if requested_entity_grain:
 		return True
-	if family_id in {"master_data_lookup", "master_data_directory"} and source_entity_grain == "item" and "item" in message_domains:
+	if is_master_data_surface_family(family_id) and source_entity_grain == "item" and "item" in message_domains:
 		return False
 	if "item" in message_domains:
 		return True
-	context_domains = _entity_detail_context_domains(grounded_turn)
+	context_domains = entity_detail_context_domains(grounded_turn)
 	return bool(message_domains and message_domains != context_domains)
 
 
@@ -693,12 +625,12 @@ def _same_grain_master_data_followup_signal(
 	artifact_signal: ArtifactContextSignal,
 ) -> bool:
 	family_id = str(artifact_signal.family_id or "").strip()
-	if family_id not in {"master_data_lookup", "master_data_directory"}:
+	if not is_master_data_surface_family(family_id):
 		return False
-	source_entity_grain = _normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
+	source_entity_grain = normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
 	if not source_entity_grain:
 		return False
-	requested_entity_grain = _normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
+	requested_entity_grain = normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
 	return bool(requested_entity_grain and requested_entity_grain == source_entity_grain)
 
 
@@ -759,12 +691,12 @@ def build_followup_boundary_contract_from_context(
 	reasoning_semantic_result: Any | None = None,
 ) -> FollowUpBoundaryContract:
 	artifact_signal = _artifact_context_signal(grounded_turn)
-	if artifact_signal.family_id == "entity_detail":
+	if is_entity_detail_context_family(artifact_signal.family_id, grounded_turn):
 		artifact_signal = ArtifactContextSignal(
 			has_grounded_turn=artifact_signal.has_grounded_turn,
 			report_name=artifact_signal.report_name,
 			family_id=artifact_signal.family_id,
-			context_concepts=set(artifact_signal.context_concepts).union(_entity_detail_context_domains(grounded_turn)),
+			context_concepts=set(artifact_signal.context_concepts).union(entity_detail_context_domains(grounded_turn)),
 			available_dimensions=dict(artifact_signal.available_dimensions),
 			available_metrics=dict(artifact_signal.available_metrics),
 			available_metric_keys=set(artifact_signal.available_metric_keys),
@@ -831,14 +763,14 @@ def build_followup_boundary_contract_from_context(
 		)
 		or contradictory_presentation_hint
 	)
-	if not semantic_requested_domains:
-		known_uncovered_decision = build_known_unsupported_scope_decision_input(
-			raw_message=message,
-			context_domains=sorted(artifact_signal.context_concepts),
-		)
-		if known_uncovered_decision is not None:
-			requested_domain_source = "known_uncovered_scope"
-		elif semantic_payload_allows_degraded_domain_fallback:
+	known_uncovered_decision = build_known_unsupported_scope_decision_input(
+		raw_message=message,
+		context_domains=sorted(artifact_signal.context_concepts),
+	)
+	if known_uncovered_decision is not None:
+		requested_domain_source = "known_uncovered_scope"
+	if not semantic_requested_domains and known_uncovered_decision is None:
+		if semantic_payload_allows_degraded_domain_fallback:
 			signal = _message_signal(message, language=language)
 			candidate_message_concepts = _degraded_message_fallback_concepts(set(signal.concepts))
 			degraded_message_fallback_allowed = _allow_message_domain_fallback(
@@ -854,12 +786,16 @@ def build_followup_boundary_contract_from_context(
 				requested_domain_source = "message_fallback" if semantic_intent is None else "degraded_semantic_message_fallback"
 			elif candidate_message_concepts:
 				requested_domain_source = "message_fallback_denied"
+	known_uncovered_domains = [
+		str(value or "").strip()
+		for value in (getattr(known_uncovered_decision, "requested_domains", []) or [])
+		if str(value or "").strip()
+	]
 	requested_domains = set(
-		semantic_requested_domains
+		known_uncovered_domains
+		or semantic_requested_domains
 		or (
-			list(getattr(known_uncovered_decision, "requested_domains", []) or [])
-			if known_uncovered_decision is not None
-			else message_concepts
+			message_concepts
 		)
 	)
 	business_signals = bool(requested_domains)
@@ -956,11 +892,11 @@ def build_followup_boundary_contract_from_context(
 	source_listing_view = ""
 	requested_listing_view = ""
 	source_entity_grain = ""
-	requested_entity_grain = _normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
+	requested_entity_grain = normalize_entity_grain_alias(_message_slot_value("entity_grain", message))
 	if artifact_signal.family_id == "transaction_listing":
 		source_listing_view = listing_view_for_report_name(artifact_signal.report_name)
-	elif artifact_signal.family_id in {"master_data_lookup", "master_data_directory"}:
-		source_entity_grain = _normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
+	elif is_master_data_surface_family(artifact_signal.family_id):
+		source_entity_grain = normalize_entity_grain_alias(entity_grain_for_report_name(artifact_signal.report_name))
 	requested_listing_view = _message_slot_value("listing_view", message)
 	source_ranking_subject_alias = _artifact_ranking_subject_alias(grounded_turn, artifact_signal)
 	requested_ranking_subject_alias = _requested_ranking_subject_alias(message, semantic_intent)
@@ -1007,7 +943,7 @@ def build_followup_boundary_contract_from_context(
 		else:
 			reason = "The request switches to a different document list and should not inherit the prior artifact."
 	elif (
-		artifact_signal.family_id in {"master_data_lookup", "master_data_directory"}
+		is_master_data_surface_family(artifact_signal.family_id)
 		and source_entity_grain
 		and requested_entity_grain
 		and requested_entity_grain != source_entity_grain

@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 3 Phase 5 Bounded Design
 
-Status: active design note  
-Date: 2026-04-13  
+Status: active design note
+Date: 2026-04-13
 Scope: bounded design for the next safe Round 3 implementation chapter after completed Round 3 research
 
 ## 1. Purpose
@@ -35,7 +35,7 @@ At the same time, the project should explicitly defer from current `3.3`:
 This is the enterprise-safe move because:
 
 1. it fixes a proven wrong-family behavior
-2. it reuses existing contracts and runtime support
+2. it reuses existing contracts and runtime suppor
 3. it does not widen governed scope by stealth
 4. it keeps later expansion work cleanly separated
 
@@ -71,7 +71,7 @@ Round 3 proved this lane is real and valuable.
 
 The problem is mixed authority inside the lane, not that the lane should be replaced.
 
-### 3.3 Keep The Current Typed Entity-Reference Contract
+### 3.3 Keep The Current Typed Entity-Reference Contrac
 
 Keep:
 
@@ -153,7 +153,7 @@ It is a shared alignment guard that protects business meaning.
 Reason:
 
 1. Round 3 proved supplier vocabulary exists
-2. but typed policy activation is still absent
+2. but typed policy activation is still absen
 3. activating supplier now would widen governed scope, not just align existing behavior
 
 Required later chapter:
@@ -168,7 +168,7 @@ Required later chapter:
 Reason:
 
 1. Round 3 proved item/product vocabulary exists
-2. but policy activation is still absent
+2. but policy activation is still absen
 3. item/product also has ownership overlap with inventory and product-performance families
 
 Required later chapter:
@@ -181,13 +181,13 @@ Required later chapter:
 
 Reason:
 
-1. Round 3 proved Payment Entry is partial, not absent
-2. capability and specialized runtime support already exist
+1. Round 3 proved Payment Entry is partial, not absen
+2. capability and specialized runtime support already exis
 3. but generic family ownership is still unresolved
 
 Required later chapter:
 
-1. ownership decision first
+1. ownership decision firs
 2. activation second
 
 ## 5.4 Defer Broad Clarification Expansion
@@ -208,7 +208,7 @@ Required later chapter:
 Reason:
 
 1. mixed entity-detail branching is real
-2. but a large refactor is not required to fix the current highest-value alignment defect
+2. but a large refactor is not required to fix the current highest-value alignment defec
 3. doing both at once would raise risk and blur scope
 
 Recommended posture:
@@ -308,9 +308,9 @@ Do not:
 
 Round 3 now supports one clean implementation recommendation:
 
-1. treat purchase-invoice routing alignment as the next bounded current-Phase `3.3` implementation target
+1. treat purchase-invoice routing alignment as the next bounded current-Phase `3.3` implementation targe
 2. keep all broader navigation expansion explicitly deferred
-3. reuse the contracts and runtime seams already present
+3. reuse the contracts and runtime seams already presen
 4. add only the minimum metadata and routing changes needed to stop wrong-family behavior
 
 ## 10. What Comes After This

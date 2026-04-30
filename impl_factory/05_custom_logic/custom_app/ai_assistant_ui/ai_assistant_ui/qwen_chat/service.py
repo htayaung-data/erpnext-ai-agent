@@ -462,6 +462,8 @@ from ai_assistant_ui.qwen_chat.evaluation.scope_package_smokes import (
 	run_phase_e1_5_item_deictic_continuity_smoke as _run_phase_e1_5_item_deictic_continuity_smoke_helper,
 	run_phase_e1_6_item_inventory_followup_debug_smoke as _run_phase_e1_6_item_inventory_followup_debug_smoke_helper,
 	run_phase_e2_1b_purchase_invoice_listing_smoke as _run_phase_e2_1b_purchase_invoice_listing_smoke_helper,
+	run_phase_e2_4_purchase_receipt_listing_smoke as _run_phase_e2_4_purchase_receipt_listing_smoke_helper,
+	run_phase_e3_2_payment_entry_listing_smoke as _run_phase_e3_2_payment_entry_listing_smoke_helper,
 )
 from ai_assistant_ui.qwen_chat.evaluation.conversation_control_smokes import (
 	ConversationControlSmokeDependencies as _ConversationControlSmokeDependencies,
@@ -574,6 +576,7 @@ from ai_assistant_ui.qwen_chat.metric_union_support import (
 	resolve_metric_union_requery_target as _resolve_metric_union_requery_target_helper,
 )
 from ai_assistant_ui.qwen_chat.governed_composite_runtime_execution import (
+	governed_composite_frontdoor_candidate_available,
 	run_governed_customer_commercial_composite_probe as _run_governed_customer_commercial_composite_probe_helper,
 )
 from ai_assistant_ui.qwen_chat.governed_kpi_support import (
@@ -630,9 +633,13 @@ def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
 		return False
+	if re.search(r"\b(this|that|these|those|it|its|they|their|them)\b", text):
+		return True
 	return bool(
 		re.search(
-			r"\b(this|that|these|those|it|its|they|their|them)\b",
+			r"\b(rank|row|no\.?|number)\s*\d+\b"
+			r"|\b(the\s+)?(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last)\s+"
+			r"(customer|supplier|product|item|row|one|entry|document)\b",
 			text,
 		)
 	)
@@ -692,6 +699,56 @@ def _frontdoor_context_isolation_retry_needed(
 def _should_skip_artifact_boundary(*, scope_decision_contract) -> bool:
 	# Fresh-query breakouts must not be answered from the prior grounded artifact.
 	return governed_scope_decision_requires_fresh_query(scope_decision_contract)
+
+
+def _capability_requery_should_reenter_frontdoor(*, followup_resolution, continuation_contract) -> bool:
+	if str(getattr(followup_resolution, "mode", "") or "").strip() != "capability_requery":
+		return False
+	return bool(str(getattr(continuation_contract, "source_composite_family_id", "") or "").strip())
+
+
+def _current_artifact_evidence_should_block_requery(
+	*,
+	direct_evidence_answer: str,
+	evidence_boundary_answer: str,
+	latest_grounded_turn_available: bool,
+) -> bool:
+	if not bool(latest_grounded_turn_available):
+		return False
+	return bool(str(direct_evidence_answer or evidence_boundary_answer or "").strip())
+
+
+def _current_artifact_evidence_should_preserve_context(
+	*,
+	request_id: str,
+	message: str,
+	context_isolation,
+	latest_grounded_turn_available: bool,
+	latest_grounded_turn: Dict[str, Any],
+	latest_family_artifact: Dict[str, Any],
+) -> bool:
+	if not bool(latest_grounded_turn_available):
+		return False
+	if not bool(getattr(context_isolation, "force_new_query", False)):
+		return False
+	if bool(getattr(context_isolation, "out_of_scope", False)):
+		return False
+	return _artifact_local_refinement_has_grounded_evidence(
+		request_id=request_id,
+		message=message,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_family_artifact=latest_family_artifact,
+	)
+
+
+def _frontdoor_should_yield_to_current_artifact_evidence(
+	*,
+	entity_drilldown: Dict[str, Any] | None,
+	artifact_local_refinement_has_grounded_evidence: bool,
+) -> bool:
+	if entity_drilldown is not None:
+		return False
+	return bool(artifact_local_refinement_has_grounded_evidence)
 
 
 def _compiled_decision_message(*, request_id: str, raw_message: str, result: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
@@ -848,10 +905,12 @@ def _grounded_entity_reference(
 	*,
 	grounded_turn: Dict[str, Any],
 	artifact_payload: Dict[str, Any],
+	raw_message: str = "",
 ) -> Dict[str, str]:
 	return _grounded_entity_reference_helper(
 		grounded_turn=grounded_turn,
 		artifact_payload=artifact_payload,
+		raw_message=raw_message,
 	)
 
 
@@ -860,11 +919,13 @@ def _recent_focus_contextual_reference(
 	recent_focus_state: Dict[str, Any],
 	grounded_turn: Dict[str, Any],
 	artifact_payload: Dict[str, Any],
+	raw_message: str = "",
 ) -> Dict[str, str]:
 	return _recent_focus_contextual_reference_helper(
 		recent_focus_state=recent_focus_state,
 		grounded_turn=grounded_turn,
 		artifact_payload=artifact_payload,
+		raw_message=raw_message,
 	)
 
 
@@ -3016,26 +3077,25 @@ def _artifact_local_refinement_should_defer_runtime_frontdoor(
 		request_id=request_id,
 		raw_message=message,
 		artifact_payload=latest_family_artifact,
+	) or {}
+	if bool(evidence_request_contract.get("clarification_required")):
+		return True, None
+	evidence_answer = _grounded_artifact_direct_evidence_answer(
+		raw_message=message,
+		artifact_payload=latest_family_artifact,
+		grounded_turn=latest_grounded_turn,
+		evidence_request_contract=evidence_request_contract,
 	)
-	if evidence_request_contract:
-		if bool(evidence_request_contract.get("clarification_required")):
-			return True, None
-		evidence_answer = _grounded_artifact_direct_evidence_answer(
-			raw_message=message,
-			artifact_payload=latest_family_artifact,
-			grounded_turn=latest_grounded_turn,
-			evidence_request_contract=evidence_request_contract,
-		)
-		if evidence_answer:
-			return True, None
-		evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
-			raw_message=message,
-			artifact_payload=latest_family_artifact,
-			grounded_turn=latest_grounded_turn,
-			evidence_request_contract=evidence_request_contract,
-		)
-		if evidence_boundary_answer:
-			return True, None
+	if evidence_answer:
+		return True, None
+	evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+		raw_message=message,
+		artifact_payload=latest_family_artifact,
+		grounded_turn=latest_grounded_turn,
+		evidence_request_contract=evidence_request_contract,
+	)
+	if evidence_boundary_answer:
+		return True, None
 	semantic_result = interpret_followup_semantically(
 		request_id=request_id,
 		session_id=session_id,
@@ -3095,6 +3155,70 @@ def _artifact_local_refinement_should_defer_runtime_frontdoor(
 		if str(getattr(followup_resolution, "mode", "") or "").strip() == "local_grounded_transform":
 			return True, candidate
 	return False, semantic_result
+
+
+def _artifact_local_projection_followup_requested(
+	*,
+	message: str,
+	latest_grounded_turn: Dict[str, Any],
+	latest_family_artifact: Dict[str, Any],
+) -> bool:
+	if not latest_grounded_turn or not latest_family_artifact:
+		return False
+	deterministic_projection_result = interpret_artifact_local_projection_deterministically(
+		message=message,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_family_artifact=latest_family_artifact,
+	)
+	if str(getattr(deterministic_projection_result, "status", "") or "").strip() != "accepted":
+		return False
+	intent = getattr(deterministic_projection_result, "intent", None)
+	if intent is None:
+		return False
+	requested_modes = {
+		str(value or "").strip()
+		for value in (getattr(intent, "requested_modes", []) or [])
+		if str(value or "").strip()
+	}
+	requested_columns = [
+		str(value or "").strip()
+		for value in (getattr(intent, "requested_columns", []) or [])
+		if str(value or "").strip()
+	]
+	return bool(requested_columns or requested_modes.intersection({"column_projection", "table_presentation", "presentation_transform"}))
+
+
+def _artifact_local_refinement_has_grounded_evidence(
+	*,
+	request_id: str,
+	message: str,
+	latest_grounded_turn: Dict[str, Any],
+	latest_family_artifact: Dict[str, Any],
+) -> bool:
+	if not latest_grounded_turn or not latest_family_artifact:
+		return False
+	evidence_request_contract = _entity_detail_evidence_request_payload(
+		request_id=request_id,
+		raw_message=message,
+		artifact_payload=latest_family_artifact,
+	) or {}
+	if bool(evidence_request_contract.get("clarification_required")):
+		return True
+	evidence_answer = _grounded_artifact_direct_evidence_answer(
+		raw_message=message,
+		artifact_payload=latest_family_artifact,
+		grounded_turn=latest_grounded_turn,
+		evidence_request_contract=evidence_request_contract,
+	)
+	if evidence_answer:
+		return True
+	evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+		raw_message=message,
+		artifact_payload=latest_family_artifact,
+		grounded_turn=latest_grounded_turn,
+		evidence_request_contract=evidence_request_contract,
+	)
+	return bool(evidence_boundary_answer)
 
 
 def _tool_trace_message(
@@ -3166,6 +3290,13 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	)
 	latest_grounded_turn = dict((conversation_state_snapshot.get("latest_grounded_turn") or {}).get("payload") or {})
 	latest_family_artifact = dict((conversation_state_snapshot.get("latest_artifact") or {}).get("payload") or {})
+	if latest_grounded_turn:
+		focused_family_artifact = _latest_normalized_family_artifact(
+			session_doc,
+			grounded_turn=latest_grounded_turn,
+		)
+		if focused_family_artifact:
+			latest_family_artifact = focused_family_artifact
 	latest_assistant_payload = _latest_assistant_payload(session_doc)
 	latest_reasoning_contract = _source_compatible_reasoning_contract(
 		grounded_turn=latest_grounded_turn,
@@ -3307,6 +3438,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	pre_frontdoor_reasoning_activation_latency_ms = 0
 	pre_frontdoor_followup_semantic_result = None
 	defer_runtime_value_frontdoor = False
+	artifact_local_refinement_has_grounded_evidence = False
 	reasoning_recent_messages = _recent_messages_for_grounded_source(
 		session_doc,
 		grounded_turn=latest_grounded_turn,
@@ -3379,6 +3511,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	frontdoor_render_result = None
 	frontdoor_answer = ""
 	artifact_boundary_clarification_continuation_active = False
+	artifact_local_projection_followup_requested = False
 	if pending_clarification_signal:
 		clarification_response_contract, frontdoor_semantic_result, frontdoor_contract = build_pending_clarification_frontdoor_skip(
 			request_id=request_id,
@@ -3411,7 +3544,42 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				clarification_response_contract=clarification_response_contract,
 			)
 	else:
-		if latest_grounded_turn_available:
+		runtime_frontdoor_is_composite_candidate = bool(governed_composite_frontdoor_candidate_available(message=msg))
+		message_has_grounded_context_anchor = _message_has_grounded_context_anchor(msg)
+		self_contained_frontdoor_query = _message_looks_like_self_contained_governed_business_query(
+			message=msg,
+			language=interaction_contract.detected_language,
+		)
+		artifact_local_refinement_has_grounded_evidence = bool(
+			latest_grounded_turn_available
+			and _artifact_local_refinement_has_grounded_evidence(
+				request_id=request_id,
+				message=msg,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+			)
+		)
+		artifact_local_projection_followup_requested = bool(
+			latest_grounded_turn_available
+			and _artifact_local_projection_followup_requested(
+				message=msg,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+			)
+		)
+		if (
+			latest_grounded_turn_available
+			and (
+				message_has_grounded_context_anchor
+				or artifact_local_projection_followup_requested
+				or not self_contained_frontdoor_query
+			)
+			and (
+				artifact_local_refinement_has_grounded_evidence
+				or artifact_local_projection_followup_requested
+				or not runtime_frontdoor_is_composite_candidate
+			)
+		):
 			defer_runtime_value_frontdoor, pre_frontdoor_followup_semantic_result = _artifact_local_refinement_should_defer_runtime_frontdoor(
 				request_id=request_id,
 				session_id=session_name,
@@ -3689,8 +3857,43 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	)
 	if recommendation_reasoning_preferred and semantic_intent is not None and not semantic_intent_has_explicit_query_shape:
 		semantic_intent = None
+	artifact_local_request_payload = (
+		_entity_detail_evidence_request_payload(
+			request_id=request_id,
+			raw_message=msg,
+			artifact_payload=latest_family_artifact,
+		)
+		if latest_grounded_turn_available and _message_has_grounded_context_anchor(msg)
+		else {}
+	) or {}
+	artifact_local_context_preserve_requested = bool(
+		latest_grounded_turn_available
+		and (
+			_message_has_grounded_context_anchor(msg)
+			or artifact_local_projection_followup_requested
+		)
+		and (
+			artifact_local_projection_followup_requested
+			or bool(
+				artifact_local_request_payload.get("clarification_required")
+				or artifact_local_request_payload.get("entity_question_type")
+				or artifact_local_request_payload.get("requested_metrics")
+				or artifact_local_request_payload.get("requested_dimensions")
+			)
+			or _artifact_local_refinement_has_grounded_evidence(
+				request_id=request_id,
+				message=msg,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_family_artifact=latest_family_artifact,
+			)
+		)
+	)
 	context_isolation = build_scope_decision_input()
-	if latest_grounded_turn_available and not bool(getattr(frontdoor_contract, "handle_in_front_door", False)):
+	if (
+		latest_grounded_turn_available
+		and not artifact_local_context_preserve_requested
+		and not bool(getattr(frontdoor_contract, "handle_in_front_door", False))
+	):
 		context_isolation = normalize_scope_decision_input(
 			assess_context_isolation(
 				msg,
@@ -3710,6 +3913,33 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and _reasoning_scope_suppression_allowed(context_isolation)
 	):
 		context_isolation = build_scope_decision_input()
+	if _current_artifact_evidence_should_preserve_context(
+		request_id=request_id,
+		message=msg,
+		context_isolation=context_isolation,
+		latest_grounded_turn_available=latest_grounded_turn_available,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_family_artifact=latest_family_artifact,
+	) or (
+		bool(getattr(context_isolation, "force_new_query", False))
+		and latest_grounded_turn_available
+		and artifact_local_refinement_has_grounded_evidence
+		and (
+			_message_has_grounded_context_anchor(msg)
+			or not _message_looks_like_self_contained_governed_business_query(
+				message=msg,
+				language=interaction_contract.detected_language,
+			)
+		)
+	):
+		context_isolation = build_scope_decision_input(
+			force_new_query=False,
+			out_of_scope=False,
+			reason="The current grounded artifact already contains direct evidence for this follow-up, so context isolation must preserve the current artifact.",
+			requested_domains=list(getattr(context_isolation, "requested_domains", []) or []),
+			context_domains=list(getattr(context_isolation, "context_domains", []) or []),
+			primary_domain=str(getattr(context_isolation, "primary_domain", "") or "").strip(),
+		)
 	prior_branch_direct_handled, prior_branch_direct_payload = _handle_prior_branch_restore_direct_route(
 		session_doc=session_doc,
 		request_id=request_id,
@@ -3776,7 +4006,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			if repair_control_decision_contract is not None:
 				_save_session(session_doc, ignore_permissions=False)
 			return True, repair_payload
-	if entity_drilldown is None:
+	if entity_drilldown is None and not _frontdoor_should_yield_to_current_artifact_evidence(
+		entity_drilldown=entity_drilldown,
+		artifact_local_refinement_has_grounded_evidence=artifact_local_refinement_has_grounded_evidence,
+	):
 		frontdoor_handled, frontdoor_payload = handle_frontdoor_turn(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -3944,7 +4177,13 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		user=user,
 		site_name=site_name,
 	)
-	if bool(compiled_rollout.get("enabled")) and not latest_grounded_turn_available and entity_drilldown is None:
+	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
+	if (
+		bool(compiled_rollout.get("enabled"))
+		and not context_anchored_message
+		and not latest_grounded_turn_available
+		and entity_drilldown is None
+	):
 		return handle_compiled_query_turn(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -3985,7 +4224,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			request_id=request_id,
 			raw_message=msg,
 			artifact_payload=latest_family_artifact,
-		)
+		) or {}
 		precomputed_evidence_answer = _grounded_artifact_direct_evidence_answer(
 			raw_message=msg,
 			artifact_payload=latest_family_artifact,
@@ -4126,13 +4365,28 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			artifact_payload=family_artifact_for_requery,
 			grounded_turn=latest_grounded_turn,
 		)
-	requery_upgrade, enrichment_compatibility_contract = _requery_resolution_for_unsupported_local_columns(
+	followup_resolution = _preserve_current_artifact_direct_evidence_followup_resolution(
 		request_id=request_id,
 		followup_resolution=followup_resolution,
-		artifact_payload=family_artifact_for_requery,
-		grounded_turn=latest_grounded_turn if followup_context_available else {},
-		continuation_contract=provisional_continuation_contract,
+		evidence_request_contract=precomputed_evidence_request_contract,
+		direct_evidence_answer=precomputed_evidence_answer,
+		evidence_boundary_answer=precomputed_evidence_boundary_answer,
+		latest_grounded_turn_available=followup_context_available,
 	)
+	requery_upgrade = None
+	enrichment_compatibility_contract = None
+	if not _current_artifact_evidence_should_block_requery(
+		direct_evidence_answer=precomputed_evidence_answer,
+		evidence_boundary_answer=precomputed_evidence_boundary_answer,
+		latest_grounded_turn_available=followup_context_available,
+	):
+		requery_upgrade, enrichment_compatibility_contract = _requery_resolution_for_unsupported_local_columns(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			artifact_payload=family_artifact_for_requery,
+			grounded_turn=latest_grounded_turn if followup_context_available else {},
+			continuation_contract=provisional_continuation_contract,
+		)
 	if requery_upgrade is not None:
 		followup_resolution = requery_upgrade
 	followup_resolution = _preserve_artifact_boundary_clarification_followup_resolution(
@@ -4170,6 +4424,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			followup_resolution=followup_resolution,
 			clarification_continuation_active=artifact_boundary_clarification_continuation_active,
 			latest_grounded_turn_available=latest_grounded_turn_available,
+		)
+		followup_resolution = _preserve_current_artifact_direct_evidence_followup_resolution(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			evidence_request_contract=precomputed_evidence_request_contract,
+			direct_evidence_answer=precomputed_evidence_answer,
+			evidence_boundary_answer=precomputed_evidence_boundary_answer,
+			latest_grounded_turn_available=followup_context_available,
 		)
 	continuation_contract = None
 	if followup_context_available:
@@ -4219,6 +4481,65 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			continuation_contract=continuation_contract,
 		)
 		recent_messages = []
+		if _capability_requery_should_reenter_frontdoor(
+			followup_resolution=followup_resolution,
+			continuation_contract=continuation_contract,
+		):
+			requery_frontdoor_semantic_result, requery_frontdoor_contract, requery_frontdoor_render_result, requery_frontdoor_answer = evaluate_frontdoor_lane(
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				message=runtime_message,
+				recent_messages=[],
+				grounded_context_available=latest_grounded_turn_available,
+				latest_grounded_turn=latest_grounded_turn,
+				latest_recovery_contract_available=bool(latest_recovery_contract),
+				pre_frontdoor_reasoning_semantic_result=None,
+				defer_runtime_value_frontdoor=False,
+				post_clarification_stop_acknowledgement=False,
+			)
+			requery_frontdoor_handled, requery_frontdoor_payload = handle_frontdoor_turn(
+				session_doc=session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				message=runtime_message,
+				raw_message=raw_msg,
+				interaction_contract=interaction_contract,
+				frontdoor_semantic_result=requery_frontdoor_semantic_result,
+				frontdoor_contract=requery_frontdoor_contract,
+				frontdoor_render_result=requery_frontdoor_render_result,
+				frontdoor_answer=requery_frontdoor_answer,
+				context_force_new_query=False,
+				latest_grounded_turn_available=latest_grounded_turn_available,
+				latest_grounded_turn=latest_grounded_turn,
+				clarification_response_contract=clarification_response_contract,
+				additional_tool_payloads=[
+					(
+						conversation_control_evidence_contract.to_payload()
+						if conversation_control_evidence_contract is not None
+						else {}
+					),
+					(
+						conversation_control_decision_contract.to_payload()
+						if conversation_control_decision_contract is not None
+						else {}
+					),
+					response_policy_contract.to_payload(),
+					semantic_payload if isinstance(semantic_payload, dict) else {},
+					followup_resolution.to_payload(),
+					continuation_contract.to_payload() if continuation_contract is not None else {},
+					scope_decision_contract.to_payload(),
+				],
+				append_message=_append_message,
+				append_tool_payload=_append_tool_payload,
+				append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
+				assistant_text_payload=_assistant_text_payload,
+				store_pending_clarification_signal=store_pending_clarification_signal,
+				save_session=_save_session,
+			)
+			if requery_frontdoor_handled and requery_frontdoor_payload is not None:
+				return True, requery_frontdoor_payload
 	elif followup_context_available:
 		recent_focus_runtime_message, recent_focus_routing_basis, recent_focus_affordance_contract = _compile_recent_focus_runtime_message(
 			request_id=request_id,
@@ -4297,6 +4618,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			recent_focus_state=recent_focus_state,
 			grounded_turn=latest_grounded_turn,
 			artifact_payload=latest_family_artifact,
+			raw_message=raw_msg,
 		)
 		if recent_focus_entity_reference:
 			entity_detail_followup = _try_entity_detail_followup(
@@ -4357,6 +4679,48 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_save_session(session_doc, ignore_permissions=False)
 		return True, {"ok": True, "request_id": request_id, "mode": "out_of_scope_domain", "agent_meta": {"engine": "local_governed_scope_guard"}}
 
+	skip_artifact_boundary = _should_skip_artifact_boundary(
+		scope_decision_contract=scope_decision_contract,
+	)
+	artifact_boundary_evaluated = False
+	if entity_drilldown is None and not skip_artifact_boundary:
+		artifact_boundary_evaluated = True
+		artifact_boundary_handled, artifact_boundary_payload = handle_artifact_boundary_turn(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			message=msg,
+			followup_resolution=followup_resolution,
+			interaction_contract=interaction_contract,
+			response_policy_contract=response_policy_contract,
+			frontdoor_contract=frontdoor_contract,
+			scope_decision_contract=scope_decision_contract,
+			latest_family_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			enrichment_compatibility_contract=enrichment_compatibility_contract,
+			precomputed_evidence_response=precomputed_evidence_response,
+			precomputed_evidence_answer=precomputed_evidence_answer,
+			grounded_artifact_direct_evidence_response=_grounded_artifact_direct_evidence_response,
+			grounded_artifact_direct_evidence_answer=_grounded_artifact_direct_evidence_answer,
+			precomputed_evidence_boundary_answer=precomputed_evidence_boundary_answer,
+			grounded_artifact_evidence_boundary_answer=_grounded_artifact_evidence_boundary_answer,
+			artifact_enrichment_boundary_answer=_artifact_enrichment_boundary_answer,
+			append_grounded_evidence_recovery_contract=_append_grounded_evidence_recovery_contract,
+			append_enrichment_recovery_contract=_append_enrichment_recovery_contract,
+			session_tool_payloads=_session_tool_payloads,
+			latest_tool_payload_by_type=_latest_tool_payload_by_type,
+			append_artifact_boundary_observability=_append_artifact_boundary_observability,
+			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
+			append_tool_payload=_append_tool_payload,
+			append_message=_append_message,
+			assistant_text_payload=_assistant_text_payload,
+			store_pending_clarification_signal=store_pending_clarification_signal,
+			save_session=_save_session,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+		)
+		if artifact_boundary_handled:
+			return True, artifact_boundary_payload
+
 	local_transform = None
 	if followup_resolution.mode == "local_grounded_transform" and not precomputed_evidence_answer and not precomputed_evidence_boundary_answer:
 		local_transform = _try_local_followup_transform(
@@ -4368,16 +4732,60 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			response_policy_contract=response_policy_contract,
 			continuation_contract=continuation_contract,
 		)
+		if not local_transform:
+			local_boundary_started_at = time.perf_counter()
+			local_boundary_payload = _append_knowledge_boundary_contract(
+				session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				proposed_lane="artifact_lane",
+				front_door_contract=frontdoor_contract.to_payload(),
+				governed_scope_contract=scope_decision_contract.to_payload(),
+				grounded_turn=latest_grounded_turn,
+			)
+			if _knowledge_boundary_event_level(local_boundary_payload) != "warning":
+				local_boundary_payload = {}
+		if not local_transform and local_boundary_payload:
+			execution_path = ExecutionPath(
+				request_id=request_id,
+				path="known_unsupported_erp_domain",
+				reason=str(local_boundary_payload.get("reclassification_reason") or "").strip()
+				or "The request is inside ERP/business scope, but no governed lane can safely answer it.",
+				requires_runtime=False,
+				grounded_required=True,
+			)
+			answer_text = render_knowledge_boundary_answer(
+				boundary_contract=local_boundary_payload,
+				detail_answer="",
+			)
+			_append_knowledge_boundary_observability(
+				session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				boundary_payload=local_boundary_payload,
+				latency_ms=int(max(0, round((time.perf_counter() - local_boundary_started_at) * 1000))),
+			)
+			_append_tool_payload(session_doc, execution_path.to_payload())
+			_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
+			_append_tool_payload(
+				session_doc,
+				build_audit_envelope(
+					interaction_contract=interaction_contract,
+					followup_resolution=followup_resolution,
+					execution_path=execution_path,
+					runtime_trace_payload={},
+					grounded_turn_context=latest_grounded_turn,
+					answer_text=answer_text,
+				).to_payload(),
+			)
+			_save_session(session_doc, ignore_permissions=False)
+			return True, {
+				"ok": True,
+				"request_id": request_id,
+				"mode": "known_unsupported_erp_domain",
+				"agent_meta": {"engine": "local_governed_scope_guard"},
+			}
 	if local_transform:
-		_append_knowledge_boundary_contract(
-			session_doc,
-			request_id=request_id,
-			session_id=session_name,
-			proposed_lane="artifact_lane",
-			front_door_contract=frontdoor_contract.to_payload(),
-			governed_scope_contract=scope_decision_contract.to_payload(),
-			grounded_turn=latest_grounded_turn,
-		)
 		execution_path = build_execution_path(
 			request_id=request_id,
 			followup_resolution=followup_resolution,
@@ -4401,10 +4809,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		_save_session(session_doc, ignore_permissions=False)
 		return local_transform
 
-	skip_artifact_boundary = _should_skip_artifact_boundary(
-		scope_decision_contract=scope_decision_contract,
-	)
-	if entity_drilldown is None and not skip_artifact_boundary:
+	if entity_drilldown is None and not skip_artifact_boundary and not artifact_boundary_evaluated:
 		artifact_boundary_handled, artifact_boundary_payload = handle_artifact_boundary_turn(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -4491,7 +4896,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		frontdoor_contract=frontdoor_contract,
 		clarification_response_contract=clarification_response_contract,
 		scope_decision_contract=scope_decision_contract,
-		compiled_rollout=compiled_rollout,
+		compiled_rollout=(
+			{**compiled_rollout, "enabled": False}
+			if context_anchored_message and isinstance(compiled_rollout, dict)
+			else compiled_rollout
+		),
 		append_tool_payload=_append_tool_payload,
 		append_message=_append_message,
 		append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
@@ -4754,6 +5163,30 @@ def run_phase_d2c_transaction_listing_base_scope_reset_smoke() -> Dict[str, Any]
 	return _run_phase_d2c_transaction_listing_base_scope_reset_smoke_helper()
 
 
+def _run_smoke_fresh_query_turn_with_retry(
+	*,
+	session_name: str,
+	message: str,
+	user: str = "Administrator",
+	allowed_modes: set[str] | None = None,
+) -> Tuple[bool, Dict[str, Any]]:
+	allowed = {
+		str(value or "").strip()
+		for value in (allowed_modes or set())
+		if str(value or "").strip()
+	}
+	ok, payload = handle_qwen_user_message(
+		session_name=session_name,
+		message=message,
+		user=user,
+	)
+	if not allowed:
+		return bool(ok), dict(payload or {})
+	mode = str((payload or {}).get("mode") or "").strip()
+	engine = str((((payload or {}).get("agent_meta") or {}).get("engine") or "")).strip()
+	return bool(ok and (mode in allowed or engine in allowed)), dict(payload or {})
+
+
 def _scope_package_smoke_dependencies() -> _ScopePackageSmokeDependencies:
 	return _ScopePackageSmokeDependencies(
 		frappe_module=frappe,
@@ -4844,6 +5277,18 @@ def _conversation_control_smoke_dependencies() -> _ConversationControlSmokeDepen
 
 def run_phase_e2_1b_purchase_invoice_listing_smoke() -> Dict[str, Any]:
 	return _run_phase_e2_1b_purchase_invoice_listing_smoke_helper(
+		deps=_scope_package_smoke_dependencies(),
+	)
+
+
+def run_phase_e2_4_purchase_receipt_listing_smoke() -> Dict[str, Any]:
+	return _run_phase_e2_4_purchase_receipt_listing_smoke_helper(
+		deps=_scope_package_smoke_dependencies(),
+	)
+
+
+def run_phase_e3_2_payment_entry_listing_smoke() -> Dict[str, Any]:
+	return _run_phase_e3_2_payment_entry_listing_smoke_helper(
 		deps=_scope_package_smoke_dependencies(),
 	)
 
@@ -5126,7 +5571,7 @@ def _run_family_evaluation_case(*, case: Dict[str, Any], user: str = "Administra
 		latest_assistant_payload=_latest_assistant_payload,
 		parse_payload=_parse_payload,
 		latest_tool_payload_by_type=_latest_tool_payload_by_type,
-		case_latency_budget_assessment=_case_latency_budget_assessment,
+		case_latency_budget_assessment=_case_latency_budget_assessment_helper,
 	)
 
 
@@ -5139,7 +5584,7 @@ def run_phase4b_family_evaluation_suite(set_id: str = "core_governed_families") 
 		get_family_evaluation_case_set=get_family_evaluation_case_set,
 		run_family_evaluation_case=lambda **kwargs: _run_family_evaluation_case(**kwargs),
 		summarize_compiled_first_turn_audits=summarize_compiled_first_turn_audits,
-		family_latency_budget_summary=_family_latency_budget_summary,
+		family_latency_budget_summary=_family_latency_budget_summary_helper,
 		get_compiled_first_turn_rollout_status=get_compiled_first_turn_rollout_status,
 	)
 
@@ -5155,7 +5600,7 @@ def run_phase4b_full_family_evaluation_suite() -> Dict[str, Any]:
 	return _run_full_family_evaluation_suite_helper(
 		list_family_evaluation_case_sets=list_family_evaluation_case_sets,
 		run_family_evaluation_suite=run_phase4b_family_evaluation_suite,
-		family_latency_budget_summary=_family_latency_budget_summary,
+		family_latency_budget_summary=_family_latency_budget_summary_helper,
 	)
 
 

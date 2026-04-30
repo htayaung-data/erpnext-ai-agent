@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict
 
 from ai_assistant_ui.qwen_chat.smoke_fixtures import (
 	require_smoke_fixture,
-	smoke_fixture_reasoning_message,
+	smoke_fixture_replacement_message,
 )
 
 
@@ -109,10 +109,9 @@ def run_live_boundary_orchestration_smoke(
 		}
 
 	def _artifact_runner(doc) -> Dict[str, Any]:
-		fixture = require_smoke_fixture("fresh_query_override_to_ar")
 		ok, artifact_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("initial_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((artifact_payload or {}).get("mode") or "").strip() not in {
@@ -135,10 +134,9 @@ def run_live_boundary_orchestration_smoke(
 		}
 
 	def _reasoning_runner(doc) -> Dict[str, Any]:
-		fixture = require_smoke_fixture("fresh_query_override_to_ar")
 		ok, setup_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("replacement_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((setup_payload or {}).get("mode") or "").strip() not in {
@@ -150,7 +148,7 @@ def run_live_boundary_orchestration_smoke(
 
 		ok, reasoning_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=smoke_fixture_reasoning_message("fresh_query_override_to_ar"),
+			message="why is this risky?",
 			user="Administrator",
 		)
 		if not ok or str((reasoning_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
@@ -208,10 +206,9 @@ def run_boundary_response_live_smoke(
 ) -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
 		frappe_module.clear_cache()
-		fixture = require_smoke_fixture("fresh_query_override_to_ar")
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("initial_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -293,10 +290,9 @@ def run_observability_smoke(
 	session_tool_payloads,
 ) -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
-		fixture = require_smoke_fixture("fresh_query_override_to_ar")
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("initial_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {

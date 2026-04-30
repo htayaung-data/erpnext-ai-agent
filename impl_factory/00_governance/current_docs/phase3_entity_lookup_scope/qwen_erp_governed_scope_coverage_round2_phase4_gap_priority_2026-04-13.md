@@ -1,7 +1,7 @@
 # Qwen ERP Governed Scope Coverage Round 2 Phase 4 Gap Priority
 
-Status: active research note  
-Date: 2026-04-13  
+Status: active research note
+Date: 2026-04-13
 Scope: Round 2 Phase 4 gap classification and priority for document-navigation, finance-operation, and inventory-operation surfaces
 
 ## 1. Purpose
@@ -10,7 +10,7 @@ This note turns the Round 2 evidence into a practical priority map.
 
 It answers:
 
-1. what kinds of Round 2 gaps actually exist
+1. what kinds of Round 2 gaps actually exis
 2. which are real blockers for the next shared enterprise work
 3. which are partial-support cases that need careful expansion
 4. which should remain deferred
@@ -58,7 +58,7 @@ Possible shapes:
 1. metadata richer than runtime
 2. runtime richer than metadata
 
-### 3.4 Generic Family Path Versus Specialized Side Path Split
+### 3.4 Generic Family Path Versus Specialized Side Path Spli
 
 Some capabilities appear in specialized runtime support but not in the main shared family path.
 
@@ -112,7 +112,7 @@ Observed truth:
 Root cause class:
 
 1. partial metadata activation
-2. generic family path versus specialized side path split
+2. generic family path versus specialized side path spli
 
 Priority reading:
 
@@ -126,7 +126,7 @@ Observed truth:
 
 1. purchase invoice did not appear strongly in the front-door/family metadata path
 2. purchase invoice detail runtime exists
-3. purchase invoice shows up through aging-linked voucher context
+3. purchase invoice shows up through aging-linked voucher contex
 
 Root cause class:
 
@@ -187,7 +187,7 @@ Root cause class:
 Priority reading:
 
 1. defer as not-yet-activated
-2. do not widen current scope claims to include it
+2. do not widen current scope claims to include i
 
 ## 5. Strong Round 2 Assets To Preserve
 
@@ -202,7 +202,7 @@ It now shows:
 3. shared family rendering
 4. follow-up handling
 5. detail drilldown
-6. evidence-question support
+6. evidence-question suppor
 
 This is one of the best Round 2 examples of how a document surface should mature.
 
@@ -245,7 +245,7 @@ This matters, but it should follow the shared-seam design rather than happen as 
 
 ### 6.3 Deferred
 
-1. G5: purchase receipt
+1. G5: purchase receip
 2. G6: journal entry
 
 Reason:
@@ -257,20 +257,20 @@ Current evidence does not support treating these as near-term hidden wins.
 Round 2 now supports a clear practical recommendation:
 
 1. do not spend the next chapter trying to activate every missing Round 2 surface at once
-2. first align the mixed and asymmetric surfaces already partly present
+2. first align the mixed and asymmetric surfaces already partly presen
 3. use those aligned surfaces to define the safer shared expansion design in Round 3
 
 That means the next design attention should center on:
 
 1. document-detail seam generalization
 2. payment-entry activation policy
-3. purchase-invoice alignment
+3. purchase-invoice alignmen
 
 not on:
 
 1. turning on every absent document/entity type immediately
 
-## 8. Current Status Statement
+## 8. Current Status Statemen
 
 Round 2 Phase 4 now has enough evidence to support priority decisions.
 

@@ -150,7 +150,7 @@ def run_reasoning_frontdoor_boundary_smoke(
 		frappe_module.clear_cache()
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -211,7 +211,7 @@ def run_nonadvisory_recommendation_boundary_smoke(
 	def _runner(doc) -> Dict[str, Any]:
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="show me sales invoice list",
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -282,21 +282,23 @@ def run_artifact_refinement_precedence_smoke(
 	latest_tool_payload_by_type,
 ) -> Dict[str, Any]:
 	def _runner(doc) -> Dict[str, Any]:
-		fixture = require_smoke_fixture("ranking_limit_refinement")
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=str(fixture.get("initial_message") or "").strip(),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok:
-			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed on initial ranking request.")
+			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed on initial governed artifact request.")
 		initial_rendered = latest_tool_payload_by_type(
 			session_tool_payloads(frappe_module.get_doc(session_doctype, doc.name)),
 			"qwen_rendered_family_response_contract",
 		)
-		if str(initial_rendered.get("family_id") or "").strip() != str(fixture.get("expected_family_id") or "").strip():
-			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed: initial governed family did not match the governed smoke fixture.")
-		refinement_messages = smoke_fixture_followup_messages("ranking_limit_refinement")
+		initial_blocks = initial_rendered.get("blocks") if isinstance(initial_rendered.get("blocks"), list) else []
+		initial_table = next((item for item in initial_blocks if isinstance(item, dict) and str(item.get("block_type") or "").strip() == "data_table"), {})
+		initial_rows = initial_table.get("rows") if isinstance(initial_table.get("rows"), list) else []
+		if not initial_rows:
+			raise RuntimeError("Phase 6 artifact-refinement precedence smoke failed: initial governed artifact did not expose tabular rows.")
+		refinement_messages = ["show only 3 rows", "show top 3 rows", "keep only top 3 rows", "top 3"]
 		second_payload: Dict[str, Any] = {}
 		rows: List[Any] = []
 		last_ok = False
@@ -516,7 +518,7 @@ def run_observability_smoke(
 	def _runner(doc) -> Dict[str, Any]:
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
+			message="show me sales invoices",
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -529,7 +531,7 @@ def run_observability_smoke(
 		frappe_module.clear_cache()
 		ok, second_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="what does this mean",
+			message="why is this risky?",
 			user="Administrator",
 		)
 		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":

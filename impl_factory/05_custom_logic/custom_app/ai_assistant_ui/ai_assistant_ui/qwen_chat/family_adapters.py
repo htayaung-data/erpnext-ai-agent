@@ -10,7 +10,16 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	NormalizedFamilyArtifactContract,
 	build_normalized_family_artifact_contract,
 )
+from ai_assistant_ui.qwen_chat.analytical_scope_policy import (
+	apply_analytical_scope_runtime_policy,
+)
 from ai_assistant_ui.qwen_chat.governed_scope_registry import scope_id_for_entity_grain
+from ai_assistant_ui.qwen_chat.master_data_directory_support import (
+	master_directory_context,
+	master_directory_requested_column_alias_map,
+	requested_master_directory_columns,
+)
+from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_fresh_query_defaults,
 	entity_grain_display_label,
@@ -84,6 +93,19 @@ def _is_total_like_row(row: Dict[str, Any]) -> bool:
 		if text == "total":
 			return True
 	return False
+
+
+def _analytical_dimensions(
+	*,
+	family_id: str,
+	report_name: str,
+	dimensions: Dict[str, Any],
+) -> Dict[str, Any]:
+	return apply_analytical_scope_runtime_policy(
+		family_id=family_id,
+		report_name=report_name,
+		dimensions=dimensions,
+	)
 
 
 def _metric_label(metric_key: str, fallback: str = "Value") -> str:
@@ -1206,17 +1228,21 @@ def _build_sales_analytics_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_ranking_request_hints({
-			"entity_dimension": str(filters.get("tree_type") or "Entity").strip() or "Entity",
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"time_grain": _time_grain_from_filters(filters),
-			"source_grain": "entity_total",
-		},
-			compiler_contract=compiler_contract,
-			available_metric_keys=available_metric_keys,
-			default_metric_key=metric_key,
-			entity_dimension=str(filters.get("tree_type") or "Entity").strip() or "Entity",
+		dimensions=_analytical_dimensions(
+			family_id="ranking_analytics",
+			report_name=report_name,
+			dimensions=_apply_ranking_request_hints({
+				"entity_dimension": str(filters.get("tree_type") or "Entity").strip() or "Entity",
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"time_grain": _time_grain_from_filters(filters),
+				"source_grain": "entity_total",
+			},
+				compiler_contract=compiler_contract,
+				available_metric_keys=available_metric_keys,
+				default_metric_key=metric_key,
+				entity_dimension=str(filters.get("tree_type") or "Entity").strip() or "Entity",
+			),
 		),
 		metrics={
 			metric_key: total_value,
@@ -1297,17 +1323,21 @@ def _build_aging_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_ranking_request_hints({
-			"entity_dimension": entity_dimension,
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"source_grain": "aging_summary",
-			"aging_type": aging_type,
-		},
-			compiler_contract=compiler_contract,
-			available_metric_keys=available_metric_keys,
-			default_metric_key=metric_key,
-			entity_dimension=entity_dimension,
+		dimensions=_analytical_dimensions(
+			family_id="ranking_analytics",
+			report_name=report_name,
+			dimensions=_apply_ranking_request_hints({
+				"entity_dimension": entity_dimension,
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"source_grain": "aging_summary",
+				"aging_type": aging_type,
+			},
+				compiler_contract=compiler_contract,
+				available_metric_keys=available_metric_keys,
+				default_metric_key=metric_key,
+				entity_dimension=entity_dimension,
+			),
 		),
 		metrics={
 			metric_key: total_value,
@@ -1432,23 +1462,27 @@ def _build_gross_profit_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_ranking_request_hints({
-			"entity_dimension": report_family_entity_dimension_label(
-				"ranking_analytics",
-				entity_fields=("item_name", "item_code"),
-				default_label=str(filters.get("group_by") or "Item Code").strip() or "Item Code",
-			),
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"source_grain": "grouped_profitability",
-		},
-			compiler_contract=compiler_contract,
-			available_metric_keys=available_metric_keys,
-			default_metric_key=metric_key,
-			entity_dimension=report_family_entity_dimension_label(
-				"ranking_analytics",
-				entity_fields=("item_name", "item_code"),
-				default_label=str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+		dimensions=_analytical_dimensions(
+			family_id="ranking_analytics",
+			report_name=report_name,
+			dimensions=_apply_ranking_request_hints({
+				"entity_dimension": report_family_entity_dimension_label(
+					"ranking_analytics",
+					entity_fields=("item_name", "item_code"),
+					default_label=str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+				),
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"source_grain": "grouped_profitability",
+			},
+				compiler_contract=compiler_contract,
+				available_metric_keys=available_metric_keys,
+				default_metric_key=metric_key,
+				entity_dimension=report_family_entity_dimension_label(
+					"ranking_analytics",
+					entity_fields=("item_name", "item_code"),
+					default_label=str(filters.get("group_by") or "Item Code").strip() or "Item Code",
+				),
 			),
 		),
 		metrics={
@@ -1558,16 +1592,20 @@ def _build_item_history_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_ranking_request_hints({
-			"entity_dimension": entity_dimension,
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"source_grain": "aggregated_history",
-		},
-			compiler_contract=compiler_contract,
-			available_metric_keys=available_metric_keys,
-			default_metric_key=metric_key,
-			entity_dimension=entity_dimension,
+		dimensions=_analytical_dimensions(
+			family_id="ranking_analytics",
+			report_name=report_name,
+			dimensions=_apply_ranking_request_hints({
+				"entity_dimension": entity_dimension,
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"source_grain": "aggregated_sales_history",
+			},
+				compiler_contract=compiler_contract,
+				available_metric_keys=available_metric_keys,
+				default_metric_key=metric_key,
+				entity_dimension=entity_dimension,
+			),
 		),
 		metrics={
 			metric_key: total_value,
@@ -1661,16 +1699,20 @@ def _build_stock_ranking(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=_apply_ranking_request_hints({
-			"entity_dimension": entity_dimension,
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"source_grain": "inventory_snapshot",
-		},
-			compiler_contract=compiler_contract,
-			available_metric_keys=available_metric_keys,
-			default_metric_key=metric_key,
-			entity_dimension=entity_dimension,
+		dimensions=_analytical_dimensions(
+			family_id="ranking_analytics",
+			report_name=report_name,
+			dimensions=_apply_ranking_request_hints({
+				"entity_dimension": entity_dimension,
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"source_grain": "inventory_snapshot",
+			},
+				compiler_contract=compiler_contract,
+				available_metric_keys=available_metric_keys,
+				default_metric_key=metric_key,
+				entity_dimension=entity_dimension,
+			),
 		),
 		metrics={
 			metric_key: total_value,
@@ -1809,13 +1851,17 @@ def _build_sales_analytics_trend(
 		source_reports=[report_name],
 		period=_period_from_filters(filters),
 		filters=filters,
-		dimensions={
-			"time_grain": _time_grain_from_filters(filters),
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"series_dimension": str(filters.get("tree_type") or "").strip(),
-			"source_grain": "period_total",
-		},
+		dimensions=_analytical_dimensions(
+			family_id="trend_analytics",
+			report_name=report_name,
+			dimensions={
+				"time_grain": _time_grain_from_filters(filters),
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"series_dimension": str(filters.get("tree_type") or "").strip(),
+				"source_grain": "period_total",
+			},
+		),
 		metrics={
 			metric_key: total_value,
 			"period_count": len(period_series),
@@ -1892,12 +1938,16 @@ def _build_item_history_trend(
 		source_reports=[report_name],
 		period=_period_from_filters(filters),
 		filters=filters,
-		dimensions={
-			"time_grain": "monthly",
-			"primary_metric_key": metric_key,
-			"primary_metric_label": metric_label,
-			"source_grain": "aggregated_history",
-		},
+		dimensions=_analytical_dimensions(
+			family_id="trend_analytics",
+			report_name=report_name,
+			dimensions={
+				"time_grain": "monthly",
+				"primary_metric_key": metric_key,
+				"primary_metric_label": metric_label,
+				"source_grain": "aggregated_history",
+			},
+		),
 		metrics={
 			metric_key: total_value,
 			"period_count": len(period_series),
@@ -2028,10 +2078,14 @@ def _build_inventory_snapshot_artifact(
 			source_reports=[report_name],
 			period=period,
 			filters=filters,
-			dimensions={
-				"snapshot_dimension": "Warehouse",
-				"source_grain": "warehouse_tree_snapshot",
-			},
+			dimensions=_analytical_dimensions(
+				family_id="inventory_snapshot",
+				report_name=report_name,
+				dimensions={
+					"snapshot_dimension": "Warehouse",
+					"source_grain": "warehouse_tree_snapshot",
+				},
+			),
 			metrics={
 				"balance_qty": total_balance_qty,
 				"balance_value": total_balance_value,
@@ -2088,10 +2142,14 @@ def _build_inventory_snapshot_artifact(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions={
-			"snapshot_dimension": snapshot_dimension,
-			"source_grain": "warehouse_item_snapshot" if _normalize_key(report_name) == "warehouse_wise_stock_balance" else "item_snapshot",
-		},
+		dimensions=_analytical_dimensions(
+			family_id="inventory_snapshot",
+			report_name=report_name,
+			dimensions={
+				"snapshot_dimension": snapshot_dimension,
+				"source_grain": "warehouse_item_snapshot" if _normalize_key(report_name) == "warehouse_wise_stock_balance" else "item_snapshot",
+			},
+		),
 		metrics={
 			"balance_qty": total_balance_qty,
 			"balance_value": total_balance_value,
@@ -2291,7 +2349,11 @@ def _build_product_profitability_artifact(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions=dimensions,
+		dimensions=_analytical_dimensions(
+			family_id="product_profitability",
+			report_name=report_name,
+			dimensions=dimensions,
+		),
 		metrics=metrics,
 		sections={
 			"product_rows": product_rows,
@@ -2402,12 +2464,16 @@ def _build_financial_statement_artifact(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions={
-			"statement_type": statement_type,
-			"currency": currency,
-			"periodicity": str(filters.get("periodicity") or "").strip(),
-			"value_column": _value_fieldname(columns),
-		},
+		dimensions=_analytical_dimensions(
+			family_id="financial_statement",
+			report_name=report_name,
+			dimensions={
+				"statement_type": statement_type,
+				"currency": currency,
+				"periodicity": str(filters.get("periodicity") or "").strip(),
+				"value_column": _value_fieldname(columns),
+			},
+		),
 		metrics=_financial_statement_metrics(statement_type, rows),
 		sections=_financial_statement_sections(statement_type, rows),
 	)
@@ -2459,14 +2525,18 @@ def _build_aging_artifact(
 		source_reports=[report_name],
 		period=period,
 		filters=filters,
-		dimensions={
-			"aging_type": aging_type,
-			"currency": currency,
-			"party_dimension_label": _aging_party_dimension_label(aging_type),
-			"source_grain": "summary" if "summary" in _normalize_key(report_name) else "detail",
-			"bucket_labels": [label for _, label, _ in _aging_bucket_specs()],
-			"filter_mode": filter_mode,
-		},
+		dimensions=_analytical_dimensions(
+			family_id="aging",
+			report_name=report_name,
+			dimensions={
+				"aging_type": aging_type,
+				"currency": currency,
+				"party_dimension_label": _aging_party_dimension_label(aging_type),
+				"source_grain": "summary" if "summary" in _normalize_key(report_name) else "detail",
+				"bucket_labels": [label for _, label, _ in _aging_bucket_specs()],
+				"filter_mode": filter_mode,
+			},
+		),
 		metrics=_aging_metrics(rows, aging_type),
 		sections=_aging_sections(rows, aging_type, currency),
 	)
@@ -2630,111 +2700,19 @@ def _requested_master_directory_columns(
 			dimension_or_metric="dimension",
 		)
 	)
-	columns: List[str] = []
-	if entity_type in requested_dimensions or "party" in requested_dimensions:
-		columns.append("entity")
-	if entity_type == "customer":
-		if "territory" in requested_dimensions:
-			columns.append("region")
-		if "customer_group" in requested_dimensions:
-			columns.append("group")
-	else:
-		if "country" in requested_dimensions:
-			columns.append("region")
-		if "supplier_group" in requested_dimensions:
-			columns.append("group")
-	if "creation" in requested_dimensions:
-		columns.append("creation")
-	if "status" in requested_dimensions:
-		columns.append("status")
-	if "default_price_list" in requested_dimensions:
-		columns.append("default_price_list")
-	if "payment_terms" in requested_dimensions:
-		columns.append("payment_terms")
-	columns = list(dict.fromkeys([value for value in columns if value]))
-	if columns == ["entity"] and lookup_projection == "standard_directory":
-		return []
-	if not columns and lookup_projection in {"", "names_only"}:
-		return ["entity"]
-	return columns
+	return requested_master_directory_columns(
+		requested_dimensions=requested_dimensions,
+		lookup_projection=lookup_projection,
+		entity_type=entity_type,
+	)
 
 
 def _master_directory_requested_column_alias_map(entity_type: str) -> Dict[str, str]:
-	aliases: Dict[str, str] = {
-		"entity": "entity",
-		"name": "entity",
-		"customer": "entity",
-		"customer_name": "entity",
-		"supplier": "entity",
-		"supplier_name": "entity",
-		"item": "entity",
-		"item_name": "entity",
-		"product": "entity",
-		"product_name": "entity",
-		"region": "region",
-		"territory": "region",
-		"country": "region",
-		"brand": "region",
-		"group": "group",
-		"customer_group": "group",
-		"supplier_group": "group",
-		"item_group": "group",
-		"creation": "creation",
-		"created_date": "creation",
-		"status": "status",
-		"default_price_list": "default_price_list",
-		"payment_terms": "payment_terms",
-	}
-	entity_key = str(entity_type or "").strip().lower()
-	if entity_key == "customer":
-		aliases["that_customer"] = "entity"
-	elif entity_key == "supplier":
-		aliases["that_supplier"] = "entity"
-	elif entity_key == "item":
-		aliases["that_item"] = "entity"
-		aliases["that_product"] = "entity"
-	return aliases
+	return master_directory_requested_column_alias_map(entity_type)
 
 
 def _master_directory_context(report_name: str) -> Dict[str, str]:
-	report_spec = get_report_spec(report_name)
-	direct_query = report_spec.get("direct_query") if isinstance(report_spec.get("direct_query"), dict) else {}
-	doctype = str(direct_query.get("doctype") or "").strip()
-	if doctype == "Item":
-		return {
-			"entity_type": "item",
-			"entity_label": entity_grain_display_label("item", plural=False).title() or "Item",
-			"entity_plural_label": entity_grain_display_label("item", plural=True).title() or "Items",
-			"name_field": "item_name",
-			"group_field": "item_group",
-			"region_field": "brand",
-			"region_label": "Brand",
-			"group_label": "Item Group",
-			"source_grain": "item_master_list",
-		}
-	if doctype == "Supplier":
-		return {
-			"entity_type": "supplier",
-			"entity_label": entity_grain_display_label("supplier", plural=False).title() or "Supplier",
-			"entity_plural_label": entity_grain_display_label("supplier", plural=True).title() or "Suppliers",
-			"name_field": "supplier_name",
-			"group_field": "supplier_group",
-			"region_field": "country",
-			"region_label": "Country",
-			"group_label": "Supplier Group",
-			"source_grain": "supplier_master_list",
-		}
-	return {
-		"entity_type": "customer",
-		"entity_label": entity_grain_display_label("customer", plural=False).title() or "Customer",
-		"entity_plural_label": entity_grain_display_label("customer", plural=True).title() or "Customers",
-		"name_field": "customer_name",
-		"group_field": "customer_group",
-		"region_field": "territory",
-		"region_label": "Territory",
-		"group_label": "Customer Group",
-		"source_grain": "customer_master_list",
-	}
+	return master_directory_context(report_name)
 
 
 def _transaction_listing_context(report_name: str, rows: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -2758,6 +2736,44 @@ def _transaction_listing_context(report_name: str, rows: List[Dict[str, Any]]) -
 		"party_label": party_label,
 		"date_label": "Transaction Date" if date_field == "transaction_date" else "Posting Date",
 	}
+
+
+def _transaction_listing_requested_column_alias_map(context: Dict[str, str]) -> Dict[str, str]:
+	transaction_type = _normalize_key(context.get("transaction_type") or "")
+	document_label = _normalize_key(context.get("document_label") or "")
+	aliases: Dict[str, str] = {
+		"document": "document_name",
+		"document_name": "document_name",
+		"name": "document_name",
+		"id": "document_name",
+		"posting_date": "posting_date",
+		"transaction_date": "posting_date",
+		"date": "posting_date",
+		"delivery_date": "delivery_date",
+		"schedule_date": "schedule_date",
+		"customer": "party_name",
+		"supplier": "party_name",
+		"party": "party_name",
+		"party_name": "party_name",
+		"amount": "grand_total",
+		"grand_total": "grand_total",
+		"total": "grand_total",
+		"total_amount": "grand_total",
+		"outstanding": "outstanding_amount",
+		"outstanding_amount": "outstanding_amount",
+		"received_amount": "received_amount",
+		"total_allocated_amount": "total_allocated_amount",
+		"paid_amount": "paid_amount",
+		"quantity": "quantity",
+		"qty": "quantity",
+		"status": "status",
+		"document_status": "status",
+	}
+	if transaction_type:
+		aliases[transaction_type] = "document_name"
+	if document_label:
+		aliases[document_label] = "document_name"
+	return aliases
 
 
 def _build_transaction_listing_artifact(
@@ -2895,6 +2911,7 @@ def _build_transaction_listing_artifact(
 			},
 			"requested_top_n": requested_top_n or len(document_rows),
 			"requested_columns": requested_columns,
+			"requested_column_alias_map": _transaction_listing_requested_column_alias_map(context),
 			"has_explicit_projection_request": has_explicit_projection_request,
 			"source_grain": "document_list",
 		},
@@ -3094,7 +3111,7 @@ def build_normalized_family_artifact(
 			report_tool=report_tool,
 			compiler_contract=compiler_contract,
 		)
-	if target_family_id in {"customer_master_list", "master_data_directory"}:
+	if is_master_data_listing_family(target_family_id):
 		return _build_master_data_directory_artifact(
 			request_id=request_id,
 			report_name=report_name,

@@ -1,5 +1,18 @@
+import sys
+import types
 import unittest
 from unittest.mock import patch
+
+
+fake_frappe = sys.modules.get("frappe") or types.ModuleType("frappe")
+fake_frappe.conf = {}
+fake_frappe.local = types.SimpleNamespace(site="")
+fake_frappe.db = types.SimpleNamespace(
+	get_value=lambda *args, **kwargs: None,
+	sql=lambda *args, **kwargs: [],
+)
+fake_frappe.get_all = lambda *args, **kwargs: []
+sys.modules["frappe"] = fake_frappe
 
 from ai_assistant_ui.qwen_chat.collections_support import compute_collection_ratio_by_sales_invoice_period
 

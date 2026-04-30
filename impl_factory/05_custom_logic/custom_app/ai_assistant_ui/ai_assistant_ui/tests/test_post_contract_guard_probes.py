@@ -1,8 +1,30 @@
 import json
+import sys
+import types
 import unittest
 from dataclasses import dataclass
 from typing import Any, Dict
 from unittest import mock
+
+
+fake_frappe = sys.modules.get("frappe") or types.ModuleType("frappe")
+fake_frappe.conf = {}
+fake_frappe.local = types.SimpleNamespace(site="")
+fake_frappe.db = types.SimpleNamespace(
+	commit=lambda *args, **kwargs: None,
+	rollback=lambda *args, **kwargs: None,
+	exists=lambda *args, **kwargs: False,
+	get_value=lambda *args, **kwargs: None,
+	sql=lambda *args, **kwargs: [],
+)
+fake_frappe.get_all = lambda *args, **kwargs: []
+fake_frappe.get_doc = lambda *args, **kwargs: None
+fake_frappe.clear_cache = lambda *args, **kwargs: None
+fake_frappe.log_error = lambda *args, **kwargs: None
+fake_frappe.get_traceback = lambda *args, **kwargs: ""
+fake_frappe.DoesNotExistError = type("DoesNotExistError", (Exception,), {})
+fake_frappe.ValidationError = type("ValidationError", (Exception,), {})
+sys.modules["frappe"] = fake_frappe
 
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_artifact_enrichment_recovery_contract,

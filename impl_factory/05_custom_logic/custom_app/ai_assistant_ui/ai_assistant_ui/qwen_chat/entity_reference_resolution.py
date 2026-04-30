@@ -24,179 +24,46 @@ except Exception:  # pragma: no cover
 
 from ai_assistant_ui.qwen_chat.contracts import build_entity_reference_resolution_contract
 from ai_assistant_ui.qwen_chat.governed_scope_registry import (
-	canonical_scope_aliases_for_entity_grain,
+	entity_reference_resolution_activation,
 )
-from ai_assistant_ui.qwen_chat.metadata import (
-	entity_grain_display_label,
-	get_entity_reference_policy_spec,
-	load_semantic_resolution_registry,
+from ai_assistant_ui.qwen_chat.master_data_lookup_support import (
+	clean_lookup_text,
+	extract_lookup_search_text as _extract_lookup_search_text_helper,
+	infer_entity_grains_from_message as _infer_entity_grains_from_message_helper,
+	infer_lookup_mode_from_message as _infer_lookup_mode_from_message_helper,
+	infer_lookup_projection_from_message as _infer_lookup_projection_from_message_helper,
+	infer_master_data_lookup_slots as _infer_master_data_lookup_slots_helper,
+	message_contains_lookup_phrase,
+	normalize_lookup_text,
+	normalize_master_data_lookup_slots as _normalize_master_data_lookup_slots_helper,
 )
 
 
 def _clean_text(value: Any) -> str:
-	return str(value or "").strip()
+	return clean_lookup_text(value)
 
 
 def _normalize_text(value: Any) -> str:
-	return " ".join(_clean_text(value).lower().split())
+	return normalize_lookup_text(value)
 
 
 def _message_contains_phrase(value: str, phrase: str) -> bool:
-	text = _normalize_text(value)
-	target = _normalize_text(phrase)
-	if not text or not target:
-		return False
-	pattern = r"(^|[^a-z0-9])" + re.escape(target) + r"([^a-z0-9]|$)"
-	if bool(re.search(pattern, text)):
-		return True
-	target_tokens = [token for token in re.split(r"[^a-z0-9]+", target) if token]
-	if len(target_tokens) < 2:
-		return False
-	cursor = 0
-	for token in target_tokens:
-		match = re.search(r"(^|[^a-z0-9])" + re.escape(token) + r"([^a-z0-9]|$)", text[cursor:])
-		if not match:
-			return False
-		cursor += match.end()
-	return True
-
-
-def _slot_alias_entries(slot_name: str) -> List[Dict[str, Any]]:
-	registry = load_semantic_resolution_registry()
-	alias_maps = registry.get("alias_maps") if isinstance(registry.get("alias_maps"), dict) else {}
-	return alias_maps.get(slot_name) if isinstance(alias_maps.get(slot_name), list) else []
-
-
-def _slot_alias_matches(slot_name: str, message: str) -> List[str]:
-	entries = _slot_alias_entries(slot_name)
-	out: List[str] = []
-	for entry in entries:
-		if not isinstance(entry, dict):
-			continue
-		canonical_value = _clean_text(entry.get("canonical_value"))
-		if not canonical_value:
-			continue
-		aliases = [
-			_clean_text(alias)
-			for alias in (entry.get("aliases") or [])
-			if _clean_text(alias)
-		]
-		if any(_message_contains_phrase(message, alias) for alias in aliases):
-			out.append(canonical_value)
-	return list(dict.fromkeys(out))
-
-
-def _fallback_entity_grain_matches(message: str) -> List[str]:
-	out: List[str] = []
-	for entry in _slot_alias_entries("entity_grain"):
-		if not isinstance(entry, dict):
-			continue
-		canonical_value = _clean_text(entry.get("canonical_value"))
-		if not canonical_value:
-			continue
-		candidate_phrases = {
-			canonical_value.replace("_", " "),
-			_clean_text(entity_grain_display_label(canonical_value, plural=False)),
-			_clean_text(entity_grain_display_label(canonical_value, plural=True)),
-			*canonical_scope_aliases_for_entity_grain(canonical_value),
-		}
-		if any(_message_contains_phrase(message, phrase) for phrase in candidate_phrases if _clean_text(phrase)):
-			out.append(canonical_value)
-	return list(dict.fromkeys(out))
-
-
-def _first_non_empty(values: List[str]) -> str:
-	for value in values:
-		if _clean_text(value):
-			return _clean_text(value)
-	return ""
-
-
-def _slot_aliases_for_value(slot_name: str, canonical_value: str) -> List[str]:
-	for entry in _slot_alias_entries(slot_name):
-		if not isinstance(entry, dict):
-			continue
-		if _clean_text(entry.get("canonical_value")) != _clean_text(canonical_value):
-			continue
-		return [
-			_clean_text(alias)
-			for alias in (entry.get("aliases") or [])
-			if _clean_text(alias)
-		]
-	return []
-
-
-def _extract_suffix_after_alias(message: str, aliases: List[str]) -> str:
-	text = _clean_text(message)
-	if not text:
-		return ""
-	best_start = -1
-	best_length = -1
-	for alias in aliases:
-		pattern = re.compile(re.escape(alias), flags=re.IGNORECASE)
-		match = pattern.search(text)
-		if not match:
-			continue
-		if match.start() < best_start or best_start < 0:
-			best_start = match.start()
-			best_length = match.end() - match.start()
-		elif match.start() == best_start and (match.end() - match.start()) > best_length:
-			best_length = match.end() - match.start()
-	if best_start < 0 or best_length <= 0:
-		return ""
-	return text[best_start + best_length:].strip(" :.-\n\t\"'")
+	return message_contains_lookup_phrase(value, phrase)
 
 
 def infer_lookup_mode_from_message(message: str) -> str:
-	aliases = _slot_alias_matches("lookup_mode", message)
-	if aliases:
-		return _first_non_empty(aliases)
-	entity_grains = infer_entity_grains_from_message(message)
-	if entity_grains:
-		normalized_message = _normalize_text(message)
-		scope_directory_aliases = [
-			alias
-			for grain in entity_grains
-			for alias in canonical_scope_aliases_for_entity_grain(grain)
-			if _clean_text(alias) and any(token in _normalize_text(alias) for token in ("directory", "master"))
-		]
-		if any(_message_contains_phrase(normalized_message, alias) for alias in scope_directory_aliases):
-			return "directory_list"
-		similarity_cues = (
-			"similar to",
-			"similar",
-			"closest",
-			"match",
-			"matches",
-			"matching",
-		)
-		if any(_message_contains_phrase(normalized_message, cue) for cue in similarity_cues):
-			return ""
-		directory_list_cues = (
-			"show me",
-			"give me",
-			"list",
-			"names",
-			"name only",
-			"full list",
-		)
-		if any(_message_contains_phrase(normalized_message, cue) for cue in directory_list_cues):
-			return "directory_list"
-	return ""
+	return _infer_lookup_mode_from_message_helper(message)
 
 
 def infer_lookup_projection_from_message(message: str, *, default_projection: str = "") -> str:
-	aliases = _slot_alias_matches("lookup_projection", message)
-	if aliases:
-		return _first_non_empty(aliases)
-	return _clean_text(default_projection)
+	return _infer_lookup_projection_from_message_helper(
+		message,
+		default_projection=default_projection,
+	)
 
 
 def infer_entity_grains_from_message(message: str) -> List[str]:
-	alias_matches = _slot_alias_matches("entity_grain", message)
-	if alias_matches:
-		return alias_matches
-	return _fallback_entity_grain_matches(message)
+	return _infer_entity_grains_from_message_helper(message)
 
 
 def _extract_search_text_from_quotes(message: str) -> str:
@@ -207,16 +74,7 @@ def _extract_search_text_from_quotes(message: str) -> str:
 
 
 def extract_lookup_search_text(message: str, lookup_mode: str) -> str:
-	text = _clean_text(message)
-	if not text:
-		return ""
-	quoted = _extract_search_text_from_quotes(text)
-	if quoted:
-		return quoted
-	aliases = _slot_aliases_for_value("lookup_mode", lookup_mode)
-	if aliases:
-		return _extract_suffix_after_alias(text, aliases)
-	return ""
+	return _extract_lookup_search_text_helper(message, lookup_mode)
 
 
 def infer_master_data_lookup_slots(
@@ -224,25 +82,10 @@ def infer_master_data_lookup_slots(
 	message: str,
 	entity_grain: str,
 ) -> Dict[str, Any]:
-	policy = get_entity_reference_policy_spec(entity_grain)
-	default_projection = _clean_text(policy.get("default_projection"))
-	default_limit = int(max(0, policy.get("default_limit") or 0)) if policy else 0
-	lookup_mode = infer_lookup_mode_from_message(message)
-	lookup_projection = infer_lookup_projection_from_message(
-		message,
-		default_projection=default_projection,
+	return _infer_master_data_lookup_slots_helper(
+		message=message,
+		entity_grain=entity_grain,
 	)
-	search_text = extract_lookup_search_text(message, lookup_mode)
-	out: Dict[str, Any] = {}
-	if lookup_mode:
-		out["lookup_mode"] = lookup_mode
-	if lookup_projection:
-		out["lookup_projection"] = lookup_projection
-	if search_text:
-		out["lookup_search_text"] = search_text
-	if default_limit > 0:
-		out["lookup_limit"] = default_limit
-	return out
 
 
 def normalize_master_data_lookup_slots(
@@ -251,34 +94,11 @@ def normalize_master_data_lookup_slots(
 	entity_grain: str,
 	preferred_slots: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-	preferred = dict(preferred_slots or {}) if isinstance(preferred_slots, dict) else {}
-	inferred = infer_master_data_lookup_slots(
+	return _normalize_master_data_lookup_slots_helper(
 		message=message,
 		entity_grain=entity_grain,
+		preferred_slots=preferred_slots,
 	)
-	out: Dict[str, Any] = {}
-	for key in ("lookup_mode", "lookup_projection", "lookup_search_text"):
-		preferred_value = _clean_text(preferred.get(key))
-		inferred_value = _clean_text(inferred.get(key))
-		if preferred_value:
-			out[key] = preferred_value
-		elif inferred_value:
-			out[key] = inferred_value
-	preferred_limit = preferred.get("lookup_limit")
-	try:
-		preferred_limit_int = int(max(0, preferred_limit or 0))
-	except Exception:
-		preferred_limit_int = 0
-	inferred_limit = inferred.get("lookup_limit")
-	try:
-		inferred_limit_int = int(max(0, inferred_limit or 0))
-	except Exception:
-		inferred_limit_int = 0
-	if preferred_limit_int > 0:
-		out["lookup_limit"] = preferred_limit_int
-	elif inferred_limit_int > 0:
-		out["lookup_limit"] = inferred_limit_int
-	return out
 
 
 def _text_tokens(value: Any) -> List[str]:
@@ -395,34 +215,25 @@ def resolve_entity_reference_from_message(
 	)
 	resolved_lookup_mode = _clean_text(normalized_slots.get("lookup_mode"))
 	resolved_search_text = _clean_text(normalized_slots.get("lookup_search_text"))
-	policy = get_entity_reference_policy_spec(grain)
-	if not policy or _clean_text(policy.get("activation_state")) != "active":
+	activation = entity_reference_resolution_activation(grain, resolved_lookup_mode)
+	if not activation:
 		return build_entity_reference_resolution_contract(
 			request_id=request_id,
 			entity_grain=grain,
 			lookup_mode=resolved_lookup_mode,
 			search_text=resolved_search_text,
 			resolution_status="unsupported_grain",
-			reason="No active governed entity reference policy exists for this grain.",
+			reason="No active governed entity reference activation supports this grain and lookup mode.",
 		).to_payload()
-	doctype = _clean_text(policy.get("doctype"))
-	identity_field = _clean_text(policy.get("identity_field"))
-	display_field = _clean_text(policy.get("display_field"))
+	doctype = _clean_text(activation.get("doctype"))
+	identity_field = _clean_text(activation.get("identity_field"))
+	display_field = _clean_text(activation.get("display_field"))
 	search_fields = [
 		_clean_text(value)
-		for value in (policy.get("search_fields") or [])
+		for value in (activation.get("search_fields") or [])
 		if _clean_text(value)
 	]
-	match_policy = _clean_text(policy.get("match_policy"))
-	if resolved_lookup_mode and resolved_lookup_mode not in [str(v or "").strip() for v in (policy.get("allowed_lookup_modes") or [])]:
-		return build_entity_reference_resolution_contract(
-			request_id=request_id,
-			entity_grain=grain,
-			lookup_mode=resolved_lookup_mode,
-			search_text=resolved_search_text,
-			resolution_status="unsupported_mode",
-			reason="The requested lookup mode is not active for this governed entity grain.",
-		).to_payload()
+	match_policy = _clean_text(activation.get("match_policy"))
 	if not resolved_search_text:
 		return build_entity_reference_resolution_contract(
 			request_id=request_id,

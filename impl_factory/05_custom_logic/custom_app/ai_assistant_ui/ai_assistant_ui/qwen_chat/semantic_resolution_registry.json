@@ -10,6 +10,7 @@
         "delivery_note",
         "sales_order",
         "purchase_order",
+        "purchase_receipt",
         "payment_entry"
       ],
       "required_for_intent_classes": [
@@ -190,6 +191,17 @@
         ]
       },
       {
+        "canonical_value": "purchase_receipt",
+        "aliases": [
+          "purchase receipt",
+          "purchase receipts",
+          "goods receipt",
+          "goods receipts",
+          "supplier receipt",
+          "supplier receipts"
+        ]
+      },
+      {
         "canonical_value": "payment_entry",
         "aliases": [
           "payment entry",
@@ -260,7 +272,15 @@
           "customer receivable",
           "customer credit status",
           "customer credit exposure",
-          "credit exposure"
+          "credit exposure",
+          "customer collections",
+          "collection priority",
+          "collections priority",
+          "collect from",
+          "collect first",
+          "collect from first",
+          "who to collect from",
+          "who should we collect from"
         ]
       },
       {
@@ -605,6 +625,24 @@
       ],
       "candidate_reports": [
         "Purchase Order List"
+      ],
+      "governed_decision": "execute",
+      "ambiguity_policy": "none"
+    },
+    {
+      "rule_id": "transaction_listing_purchase_receipt",
+      "intent_class": "transaction_listing",
+      "required_slots": {
+        "listing_view": "purchase_receipt"
+      },
+      "candidate_family_ids": [
+        "transaction_listing"
+      ],
+      "candidate_capability_ids": [
+        "purchase_receipt_read"
+      ],
+      "candidate_reports": [
+        "Purchase Receipt List"
       ],
       "governed_decision": "execute",
       "ambiguity_policy": "none"
