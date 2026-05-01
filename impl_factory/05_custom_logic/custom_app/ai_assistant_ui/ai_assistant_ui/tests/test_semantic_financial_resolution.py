@@ -1937,6 +1937,17 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		)
 
+	def test_should_skip_artifact_boundary_for_self_contained_financial_statement_switch(self):
+		self.assertTrue(
+			_should_skip_artifact_boundary(
+				scope_decision_contract=types.SimpleNamespace(
+					governed_scope_status="grounded_followup",
+				),
+				message="Show me cash flow statement",
+				language="en",
+			)
+		)
+
 	def test_assess_context_isolation_treats_repeated_self_contained_business_request_as_new_query(self):
 		result = assess_context_isolation(
 			"give me AR / AP insight",

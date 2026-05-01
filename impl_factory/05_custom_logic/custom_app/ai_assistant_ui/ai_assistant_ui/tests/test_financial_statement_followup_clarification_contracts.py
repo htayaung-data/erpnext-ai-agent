@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import patch
 
 
 def _fake_get_all(doctype, *args, **kwargs):
@@ -11,21 +12,46 @@ def _fake_get_all(doctype, *args, **kwargs):
 	if doctype == "Fiscal Year":
 		return [
 			{
+				"name": "FY-2025",
+				"year_start_date": "2024-04-01",
+				"year_end_date": "2025-03-31",
+			},
+			{
 				"name": "FY-2026",
 				"year_start_date": "2025-04-01",
 				"year_end_date": "2026-03-31",
+			},
+			{
+				"name": "FY-2027",
+				"year_start_date": "2026-04-01",
+				"year_end_date": "2027-03-31",
+			},
+		]
+	if doctype == "Period Closing Voucher":
+		return [
+			{
+				"name": "PCV-2025-0001",
+				"company": "Mingalar Mobile Distribution Co., Ltd.",
+				"fiscal_year": "FY-2025",
+				"period_start_date": "2024-04-01",
+				"period_end_date": "2025-03-31",
+				"transaction_date": "2025-03-31",
+				"gle_processing_status": "Completed",
 			}
 		]
 	return []
 
 
-fake_frappe = types.ModuleType("frappe")
-fake_frappe.get_all = _fake_get_all
-fake_frappe.conf = {}
-fake_frappe.local = types.SimpleNamespace(site="")
-sys.modules.setdefault("frappe", fake_frappe)
+if "frappe" not in sys.modules:
+	fake_frappe = types.ModuleType("frappe")
+	fake_frappe.get_all = _fake_get_all
+	fake_frappe.conf = {}
+	fake_frappe.local = types.SimpleNamespace(site="")
+	fake_frappe.db = types.SimpleNamespace(exists=lambda *args, **kwargs: False)
+	sys.modules.setdefault("frappe", fake_frappe)
 
 from ai_assistant_ui.qwen_chat.contracts import build_fresh_query_interpretation_contract
+from ai_assistant_ui.qwen_chat.boundary_support import financial_statement_section_direct_evidence_answer
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
 	_apply_clarification_resolution_to_interpretation,
 	_deterministic_family_surface_interpretation,
@@ -135,6 +161,126 @@ class FinancialStatementFollowupClarificationContractsTest(unittest.TestCase):
 		self.assertEqual(list(reconciled.candidate_reports), ["Profit and Loss Statement"])
 		self.assertEqual(dict(reconciled.extracted_slots).get("statement_variant"), "profit_and_loss")
 		self.assertNotIn("ambiguous_report", list(reconciled.ambiguity_flags))
+
+	def test_frontdoor_session_flow_does_not_swallow_bare_statement_reask(self):
+		from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import interpret_front_door_semantically
+
+		with patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.call_qwen_runtime_frontdoor_interpretation",
+			return_value={
+				"interpretation": {
+					"intent_class": "session_flow",
+					"confidence": 0.96,
+					"reason": "The user appears to continue the current context.",
+				},
+				"agent_meta": {},
+			},
+		), patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.interpret_fresh_query_semantically",
+			return_value=types.SimpleNamespace(
+				status="accepted",
+				confidence_threshold=0.72,
+				interpretation=types.SimpleNamespace(
+					candidate_capability_ids=["financial_statement_read"],
+					candidate_reports=[],
+					confidence=0.93,
+				),
+			),
+		):
+			result = interpret_front_door_semantically(
+				request_id="frontdoor-statement-reask",
+				session_id="session-1",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me statement",
+				recent_messages=[],
+				grounded_context_available=True,
+			)
+		self.assertEqual(result.status, "guardrailed_to_route_onward")
+		self.assertIsNotNone(result.intent)
+		self.assertEqual(result.intent.intent_class, "route_onward")
+
+	def test_frontdoor_session_flow_uses_deterministic_fresh_query_guard_when_runtime_crosscheck_degrades(self):
+		from ai_assistant_ui.qwen_chat.frontdoor_intent_gate import interpret_front_door_semantically
+
+		with patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.call_qwen_runtime_frontdoor_interpretation",
+			return_value={
+				"interpretation": {
+					"intent_class": "session_flow",
+					"confidence": 0.96,
+					"reason": "The user appears to continue the current context.",
+				},
+				"agent_meta": {},
+			},
+		), patch(
+			"ai_assistant_ui.qwen_chat.frontdoor_intent_gate.interpret_fresh_query_semantically",
+			return_value=types.SimpleNamespace(
+				status="runtime_error",
+				confidence_threshold=0.72,
+				interpretation=None,
+				runtime_error="temporary runtime degradation",
+			),
+		):
+			result = interpret_front_door_semantically(
+				request_id="frontdoor-statement-reask-degraded",
+				session_id="session-1",
+				user_id="Administrator",
+				site_name="erpai_prj1",
+				message="show me statement",
+				recent_messages=[],
+				grounded_context_available=True,
+			)
+		self.assertEqual(result.status, "guardrailed_to_route_onward")
+		self.assertIsNotNone(result.intent)
+		self.assertEqual(result.intent.intent_class, "route_onward")
+
+	def test_balance_sheet_liability_section_followup_answers_from_current_artifact(self):
+		answer = financial_statement_section_direct_evidence_answer(
+			raw_message="Explain more about Liabilities",
+			artifact_payload={
+				"family_id": "financial_statement",
+				"dimensions": {
+					"statement_type": "balance_sheet",
+					"currency": "MMK",
+				},
+				"metrics": {
+					"total_liability": 1290195600,
+				},
+				"sections": {
+					"liabilities": [
+						{"label": "Creditors", "amount": 906366600},
+						{"label": "Bank Overdraft Account", "amount": 118000000},
+						{"label": "Unsecured Loans", "amount": 98900000},
+					]
+				},
+			},
+		)
+		self.assertIn("Liabilities in the current Balance Sheet total 1,290,195,600 MMK", answer)
+		self.assertIn("Creditors", answer)
+		self.assertIn("Bank Overdraft Account", answer)
+		self.assertIn("current governed financial statement artifact", answer)
+
+	def test_statement_section_followup_does_not_capture_statement_switch(self):
+		answer = financial_statement_section_direct_evidence_answer(
+			raw_message="Cash Flow",
+			artifact_payload={
+				"family_id": "financial_statement",
+				"dimensions": {
+					"statement_type": "balance_sheet",
+					"currency": "MMK",
+				},
+				"metrics": {
+					"total_asset": 1845564663.71,
+				},
+				"sections": {
+					"assets": [
+						{"label": "Cash", "amount": 68534000},
+					]
+				},
+			},
+		)
+		self.assertEqual(answer, "")
 
 
 if __name__ == "__main__":

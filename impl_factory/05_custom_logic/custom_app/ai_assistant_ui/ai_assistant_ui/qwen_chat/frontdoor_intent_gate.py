@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import build_front_door_intent_gate_contract
-from ai_assistant_ui.qwen_chat.fresh_query_interpreter import interpret_fresh_query_semantically
+from ai_assistant_ui.qwen_chat.fresh_query_interpreter import (
+	_deterministic_family_surface_interpretation,
+	interpret_fresh_query_semantically,
+)
 from ai_assistant_ui.qwen_chat.governed_scope_registry import list_active_master_data_scope_activations
 from ai_assistant_ui.qwen_chat.metadata import (
 	get_frontdoor_intent_spec,
@@ -212,7 +215,14 @@ def _fresh_query_semantic_override(
 	)
 	interpretation = getattr(result, "interpretation", None)
 	if str(getattr(result, "status", "") or "").strip() != "accepted" or interpretation is None:
-		return None
+		interpretation = _deterministic_family_surface_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			message=message,
+			confidence_threshold=float(getattr(result, "confidence_threshold", 0.72) or 0.72),
+		)
+		if interpretation is None:
+			return None
 	if not list(getattr(interpretation, "candidate_capability_ids", []) or []) and not list(
 		getattr(interpretation, "candidate_reports", []) or []
 	):
@@ -283,6 +293,21 @@ def interpret_front_door_semantically(
 			validation_error="Runtime front-door interpretation confidence is below threshold.",
 			agent_meta=agent_meta,
 		)
+	if intent.intent_class == "session_flow" and grounded_context_available:
+		fresh_query_override = _fresh_query_semantic_override(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			message=message,
+		)
+		if fresh_query_override is not None:
+			return SemanticFrontDoorResult(
+				status="guardrailed_to_route_onward",
+				intent=fresh_query_override,
+				confidence_threshold=threshold,
+				agent_meta=agent_meta,
+			)
 	if intent.intent_class != "route_onward" and not _frontdoor_intent_keeps_conversational_ownership(intent):
 		fresh_query_override = _fresh_query_semantic_override(
 			request_id=request_id,

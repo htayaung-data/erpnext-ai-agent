@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import build_entity_detail_evidence_request_contract
@@ -99,6 +100,169 @@ def _numeric(value: Any) -> float:
 
 def _money(value: Any) -> str:
 	return f"{_numeric(value):,.2f}".rstrip("0").rstrip(".")
+
+
+def _normalized_phrase(value: Any) -> str:
+	return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def _statement_section_alias_map(statement_type: str) -> Dict[str, List[str]]:
+	if statement_type == "balance_sheet":
+		return {
+			"assets": ["asset", "assets", "debtor", "debtors", "cash", "stock", "inventory", "fixed asset"],
+			"liabilities": ["liability", "liabilities", "payable", "payables", "creditor", "creditors", "loan", "debt", "overdraft"],
+			"equity": ["equity", "capital", "retained earning", "retained earnings", "dividend", "dividends"],
+		}
+	if statement_type == "profit_and_loss":
+		return {
+			"income": ["income", "revenue", "sales", "turnover"],
+			"expense": ["expense", "expenses", "cost", "costs", "cogs", "salary", "rent", "freight"],
+		}
+	if statement_type == "cash_flow":
+		return {
+			"operations": ["operation", "operations", "operating", "cash from operations"],
+			"investing": ["investing", "investment", "capex", "fixed asset"],
+			"financing": ["financing", "finance", "borrowings", "equity", "loan"],
+		}
+	return {}
+
+
+def _statement_section_from_message(raw_message: str, artifact: Dict[str, Any]) -> str:
+	if str(artifact.get("family_id") or "").strip() != "financial_statement":
+		return ""
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	statement_type = str(dimensions.get("statement_type") or "").strip()
+	message_text = f" {_normalized_phrase(raw_message)} "
+	if not statement_type or not message_text.strip():
+		return ""
+	if _message_requests_financial_statement_variant(message_text):
+		return ""
+	if not _message_requests_statement_section_detail(message_text):
+		return ""
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	for section_key, aliases in _statement_section_alias_map(statement_type).items():
+		if section_key not in sections:
+			continue
+		for alias in aliases:
+			normalized_alias = _normalized_phrase(alias)
+			if normalized_alias and f" {normalized_alias} " in message_text:
+				return section_key
+	return ""
+
+
+def _message_requests_financial_statement_variant(normalized_message: str) -> bool:
+	text = str(normalized_message or "")
+	return bool(
+		" cash flow " in text
+		or " balance sheet " in text
+		or " profit and loss " in text
+		or " p l " in text
+		or " p and l " in text
+		or " pl statement " in text
+	)
+
+
+def _message_requests_statement_section_detail(normalized_message: str) -> bool:
+	text = str(normalized_message or "")
+	return bool(
+		" explain " in text
+		or " more about " in text
+		or " breakdown " in text
+		or " detail " in text
+		or " details " in text
+		or " line " in text
+		or " lines " in text
+		or " show " in text
+		or " what is " in text
+		or " what are " in text
+		or " why " in text
+	)
+
+
+def _statement_section_label(section_key: str) -> str:
+	return {
+		"assets": "Assets",
+		"liabilities": "Liabilities",
+		"equity": "Equity",
+		"income": "Income",
+		"expense": "Expenses",
+		"operations": "Operating Cash Flow",
+		"investing": "Investing Cash Flow",
+		"financing": "Financing Cash Flow",
+	}.get(str(section_key or "").strip(), str(section_key or "").strip().replace("_", " ").title())
+
+
+def _statement_title_from_type(statement_type: str) -> str:
+	return {
+		"profit_and_loss": "Profit and Loss Statement",
+		"balance_sheet": "Balance Sheet",
+		"cash_flow": "Cash Flow statement",
+	}.get(str(statement_type or "").strip(), "financial statement")
+
+
+def _statement_section_total(section_key: str, artifact: Dict[str, Any]) -> Any:
+	metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
+	return {
+		"assets": metrics.get("total_asset"),
+		"liabilities": metrics.get("total_liability"),
+		"equity": metrics.get("total_equity"),
+		"income": metrics.get("total_income"),
+		"expense": metrics.get("total_expense"),
+		"operations": metrics.get("net_cash_from_operations"),
+		"investing": metrics.get("net_cash_from_investing"),
+		"financing": metrics.get("net_cash_from_financing"),
+	}.get(str(section_key or "").strip())
+
+
+def _statement_section_rows(section_key: str, artifact: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
+	rows = [dict(row) for row in (sections.get(section_key) or []) if isinstance(row, dict)]
+	clean_rows = [
+		row
+		for row in rows
+		if str(row.get("label") or row.get("account") or "").strip()
+		and abs(_numeric(row.get("amount"))) > 0.0001
+	]
+	clean_rows.sort(key=lambda row: abs(_numeric(row.get("amount"))), reverse=True)
+	return clean_rows[: max(1, int(limit or 6))]
+
+
+def financial_statement_section_direct_evidence_answer(
+	*,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+) -> str:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	section_key = _statement_section_from_message(raw_message, artifact)
+	if not section_key:
+		return ""
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	statement_type = str(dimensions.get("statement_type") or "").strip()
+	currency = str(dimensions.get("currency") or "MMK").strip() or "MMK"
+	section_label = _statement_section_label(section_key)
+	statement_title = _statement_title_from_type(statement_type)
+	total_value = _statement_section_total(section_key, artifact)
+	rows = _statement_section_rows(section_key, artifact)
+	lines: List[str] = []
+	if total_value not in (None, ""):
+		lines.append(
+			f"{section_label} in the current {statement_title} total {_money(total_value)} {currency}."
+		)
+	else:
+		lines.append(f"{section_label} in the current {statement_title}:")
+	if rows:
+		lines.append("")
+		lines.append(f"{section_label} Lines")
+		lines.append("| Account | Amount ({}) |".format(currency))
+		lines.append("| --- | --- |")
+		for row in rows:
+			label = str(row.get("label") or row.get("account") or "").strip()
+			if not label:
+				continue
+			lines.append(f"| {label} | {_money(row.get('amount'))} |")
+	lines.append("")
+	lines.append("This uses only the current governed financial statement artifact.")
+	return "\n".join(lines).strip()
 
 
 def _summary_block(title: str, rows: List[List[str]]) -> Dict[str, Any]:
@@ -544,6 +708,12 @@ def grounded_artifact_direct_evidence_answer(
 	)
 	if composite_boundary:
 		return composite_boundary
+	statement_section_answer = financial_statement_section_direct_evidence_answer(
+		raw_message=raw_message,
+		artifact_payload=artifact,
+	)
+	if statement_section_answer:
+		return statement_section_answer
 	family_id = str(artifact.get("family_id") or "").strip()
 	if family_id not in {"entity_detail", "inventory_snapshot"}:
 		return ""

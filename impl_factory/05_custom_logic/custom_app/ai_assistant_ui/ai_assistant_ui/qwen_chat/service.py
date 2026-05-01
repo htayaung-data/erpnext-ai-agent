@@ -232,6 +232,14 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import (
 from ai_assistant_ui.qwen_chat.knowledge_boundary import (
 	render_knowledge_boundary_answer,
 )
+from ai_assistant_ui.qwen_chat.natural_business_understanding_service_activation import (
+	build_nbu_always_on_shadow_trace as _build_nbu_always_on_shadow_trace,
+	try_activate_nbu_presentation_response as _try_activate_nbu_presentation_response,
+)
+from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
+	try_activate_visible_context_followup_response as _try_activate_visible_context_followup_response,
+	visible_context_followup_requested as _visible_context_followup_requested,
+)
 from ai_assistant_ui.qwen_chat.lanes.clarification_lane import (
 	build_pending_clarification_frontdoor_skip,
 	handle_pending_clarification_turn,
@@ -629,6 +637,21 @@ def _message_looks_like_self_contained_governed_business_query(
 	return False
 
 
+def _message_should_override_stale_context_as_fresh_query(
+	*,
+	message: str,
+	language: str = "en",
+) -> bool:
+	"""Return True when a self-contained ERP request should not inherit old context."""
+
+	if _message_has_grounded_context_anchor(message):
+		return False
+	return _message_looks_like_self_contained_governed_business_query(
+		message=message,
+		language=language,
+	)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -696,9 +719,19 @@ def _frontdoor_context_isolation_retry_needed(
 	}
 
 
-def _should_skip_artifact_boundary(*, scope_decision_contract) -> bool:
+def _should_skip_artifact_boundary(
+	*,
+	scope_decision_contract,
+	message: str = "",
+	language: str = "en",
+) -> bool:
 	# Fresh-query breakouts must not be answered from the prior grounded artifact.
-	return governed_scope_decision_requires_fresh_query(scope_decision_contract)
+	if governed_scope_decision_requires_fresh_query(scope_decision_contract):
+		return True
+	return _message_looks_like_self_contained_governed_business_query(
+		message=message,
+		language=language,
+	)
 
 
 def _capability_requery_should_reenter_frontdoor(*, followup_resolution, continuation_contract) -> bool:
@@ -3348,6 +3381,21 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	)
 	if prior_branch_restore_runtime_message:
 		msg = prior_branch_restore_runtime_message
+	nbu_shadow_trace_payload = _build_nbu_always_on_shadow_trace(
+		request_id=request_id,
+		session_id=session_name,
+		user_id=user,
+		site_name=site_name,
+		raw_message=raw_msg,
+		effective_message=msg,
+		recent_messages=recent_frontdoor_messages,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_assistant_payload=latest_assistant_payload,
+		current_artifact=latest_family_artifact,
+		recent_focus=recent_focus_state,
+		conversation_state=conversation_state_snapshot,
+	)
+	nbu_shadow_tool_payloads = [nbu_shadow_trace_payload] if isinstance(nbu_shadow_trace_payload, dict) and nbu_shadow_trace_payload else []
 	compound_completion_answer = _compound_request_completion_answer_from_snapshot(
 		conversation_state_snapshot=conversation_state_snapshot,
 		message=raw_msg,
@@ -3382,6 +3430,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			[
 				interaction_contract,
 				conversation_control_evidence_contract,
+				*nbu_shadow_tool_payloads,
 				latest_compound_request_assessment,
 				compound_completion_decision_contract,
 				execution_path,
@@ -3512,6 +3561,14 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	frontdoor_answer = ""
 	artifact_boundary_clarification_continuation_active = False
 	artifact_local_projection_followup_requested = False
+	fresh_governed_query_override_requested = _message_should_override_stale_context_as_fresh_query(
+		message=msg,
+		language=interaction_contract.detected_language,
+	)
+	if pending_clarification_signal and fresh_governed_query_override_requested:
+		clear_pending_clarification_signal(session_doc)
+		pending_clarification_signal = {}
+		clarification_state = get_clarification_state(session_doc)
 	if pending_clarification_signal:
 		clarification_response_contract, frontdoor_semantic_result, frontdoor_contract = build_pending_clarification_frontdoor_skip(
 			request_id=request_id,
@@ -3739,6 +3796,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				interaction_contract,
 				frontdoor_semantic_result,
 				frontdoor_contract,
+				*nbu_shadow_tool_payloads,
 				cancelled_compound_assessment,
 				compound_cancellation_decision_contract,
 				execution_path,
@@ -3956,11 +4014,74 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		prior_branch_restore_contract=prior_branch_restore_contract,
 		prior_branch_restore_control_decision_contract=prior_branch_restore_control_decision_contract,
 		pending_clarification_signal=pending_clarification_signal,
-		additional_tool_payloads=sequence_cleanup_tool_payloads,
+		additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
 	)
 	if prior_branch_direct_handled and prior_branch_direct_payload is not None:
 		return True, prior_branch_direct_payload
 	repair_recent_messages = _recent_messages(session_doc, limit=8)
+	if entity_drilldown is None:
+		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			current_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			user_message_already_appended=False,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+			additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
+		)
+		if visible_context_handled and visible_context_payload is not None:
+			return True, visible_context_payload
+	compiled_rollout = _compiled_first_turn_rollout_decision(
+		session_name=session_name,
+		user=user,
+		site_name=site_name,
+	)
+	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
+	compiled_fresh_query_breakout = bool(
+		bool(compiled_rollout.get("enabled"))
+		and not context_anchored_message
+		and entity_drilldown is None
+		and (
+			not latest_grounded_turn_available
+			or fresh_governed_query_override_requested
+			or bool(context_isolation.force_new_query)
+		)
+		and not (
+			_frontdoor_contract_handle_in_front_door(frontdoor_contract)
+			and _frontdoor_contract_intent_class(frontdoor_contract)
+			in {"governed_composite_value", "governed_kpi_value", "governed_kpi_definition"}
+		)
+	)
+	if compiled_fresh_query_breakout:
+		compiled_handled, compiled_payload = handle_compiled_query_turn(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			message=msg,
+			raw_message=raw_msg,
+			interaction_contract=interaction_contract,
+			frontdoor_semantic_result=frontdoor_semantic_result,
+			frontdoor_contract=frontdoor_contract,
+			clarification_response_contract=clarification_response_contract,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			handle_compiled_first_turn_result=_handle_compiled_first_turn_result,
+		)
+		_append_tool_payload_values(session_doc, nbu_shadow_tool_payloads)
+		if nbu_shadow_tool_payloads:
+			_save_session(session_doc, ignore_permissions=False)
+		return compiled_handled, compiled_payload
 	if latest_recovery_contract and not pending_clarification_signal and not bool(context_isolation.force_new_query):
 		repair_handled, repair_payload = handle_repair_turn(
 			session_doc=session_doc,
@@ -3999,6 +4120,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			_append_tool_payload_values(
 				session_doc,
 				[
+					*nbu_shadow_tool_payloads,
 					*sequence_cleanup_tool_payloads,
 					repair_control_decision_contract,
 				],
@@ -4006,6 +4128,34 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			if repair_control_decision_contract is not None:
 				_save_session(session_doc, ignore_permissions=False)
 			return True, repair_payload
+	if entity_drilldown is None and not pending_clarification_signal:
+		nbu_early_handled, nbu_early_payload = _try_activate_nbu_presentation_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			effective_message=msg,
+			recent_messages=recent_frontdoor_messages,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_assistant_payload=latest_assistant_payload,
+			current_artifact=latest_family_artifact,
+			recent_focus=recent_focus_state,
+			conversation_state=conversation_state_snapshot,
+			interaction_contract=interaction_contract,
+			user_message_already_appended=False,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			nbu_trace_payload=nbu_shadow_trace_payload,
+			nbu_trace_already_appended=False,
+			activation_level="current_artifact_answer",
+			require_visible_context_reference=True,
+		)
+		if nbu_early_handled and nbu_early_payload is not None:
+			return True, nbu_early_payload
 	if entity_drilldown is None and not _frontdoor_should_yield_to_current_artifact_evidence(
 		entity_drilldown=entity_drilldown,
 		artifact_local_refinement_has_grounded_evidence=artifact_local_refinement_has_grounded_evidence,
@@ -4030,7 +4180,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			store_pending_clarification_signal=store_pending_clarification_signal,
 			save_session=_save_session,
 			raw_message=raw_msg,
-			additional_tool_payloads=sequence_cleanup_tool_payloads,
+			additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
 		)
 		if frontdoor_handled and frontdoor_payload is not None:
 			return True, frontdoor_payload
@@ -4067,7 +4217,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			clarification_response_contract=clarification_response_contract,
 		)
 		if clarification_handled and clarification_payload is not None:
-			_append_tool_payload_values(session_doc, [conversation_control_decision_contract])
+			_append_tool_payload_values(session_doc, [*nbu_shadow_tool_payloads, conversation_control_decision_contract])
 			return True, clarification_payload
 		clarified_frontdoor_message = ""
 		clarification_lane = clarification_continuation_lane(pending_clarification_signal)
@@ -4159,6 +4309,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				save_session=_save_session,
 				raw_message=raw_msg,
 				clarification_response_contract=clarification_response_contract,
+				additional_tool_payloads=nbu_shadow_tool_payloads,
 			)
 			if frontdoor_handled and frontdoor_payload is not None:
 				return True, frontdoor_payload
@@ -4172,34 +4323,6 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				latest_family_artifact=latest_family_artifact,
 				latest_grounded_turn=latest_grounded_turn,
 			)
-	compiled_rollout = _compiled_first_turn_rollout_decision(
-		session_name=session_name,
-		user=user,
-		site_name=site_name,
-	)
-	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
-	if (
-		bool(compiled_rollout.get("enabled"))
-		and not context_anchored_message
-		and not latest_grounded_turn_available
-		and entity_drilldown is None
-	):
-		return handle_compiled_query_turn(
-			session_doc=session_doc,
-			request_id=request_id,
-			session_id=session_name,
-			user_id=user,
-			site_name=site_name,
-			message=msg,
-			raw_message=raw_msg,
-			interaction_contract=interaction_contract,
-			frontdoor_semantic_result=frontdoor_semantic_result,
-			frontdoor_contract=frontdoor_contract,
-			clarification_response_contract=clarification_response_contract,
-			append_message=_append_message,
-			append_tool_payload=_append_tool_payload,
-			handle_compiled_first_turn_result=_handle_compiled_first_turn_result,
-		)
 	followup_context_available = bool(latest_grounded_turn_available and not bool(context_isolation.force_new_query) and entity_drilldown is None)
 	pre_reasoning_followup_resolution = None
 	reasoning_preempted_by_artifact_refinement = False
@@ -4313,6 +4436,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			phase6_execution_event_level=_phase6_execution_event_level,
 		)
 		if reasoning_handled and reasoning_payload is not None:
+			_append_tool_payload_values(session_doc, nbu_shadow_tool_payloads)
+			if nbu_shadow_tool_payloads:
+				_save_session(session_doc, ignore_permissions=False)
 			return True, reasoning_payload
 	if entity_drilldown is not None:
 		entity_drilldown_requires_grounded_turn = bool(
@@ -4515,6 +4641,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				latest_grounded_turn=latest_grounded_turn,
 				clarification_response_contract=clarification_response_contract,
 				additional_tool_payloads=[
+					*nbu_shadow_tool_payloads,
 					(
 						conversation_control_evidence_contract.to_payload()
 						if conversation_control_evidence_contract is not None
@@ -4593,6 +4720,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			prior_branch_restore_control_decision_contract,
 			clarification_response_contract,
 			conversation_control_decision_contract,
+			*nbu_shadow_tool_payloads,
 			response_policy_contract,
 			semantic_payload if isinstance(semantic_payload, dict) else None,
 			context_isolation_payload,
@@ -4602,7 +4730,6 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			scope_decision_contract,
 		],
 	)
-
 	requested_followup_modes = {
 		str(value or "").strip()
 		for value in (getattr(followup_resolution, "requested_modes", []) or [])
@@ -4632,6 +4759,40 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			)
 			if entity_detail_followup is not None:
 				return entity_detail_followup
+
+	if (
+		entity_drilldown is None
+		and not pending_clarification_signal
+		and not precomputed_evidence_answer
+		and not precomputed_evidence_boundary_answer
+		and not _visible_context_followup_requested(raw_msg)
+	):
+		nbu_presentation_handled, nbu_presentation_payload = _try_activate_nbu_presentation_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			effective_message=msg,
+			recent_messages=repair_recent_messages,
+			latest_grounded_turn=latest_grounded_turn,
+			latest_assistant_payload=latest_assistant_payload,
+			current_artifact=latest_family_artifact,
+			recent_focus=recent_focus_state,
+			conversation_state=conversation_state_snapshot,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			user_message_already_appended=True,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			nbu_trace_payload=nbu_shadow_trace_payload,
+			nbu_trace_already_appended=bool(nbu_shadow_tool_payloads),
+		)
+		if nbu_presentation_handled and nbu_presentation_payload is not None:
+			return True, nbu_presentation_payload
 
 	if governed_scope_decision_is_out_of_scope(scope_decision_contract) and entity_drilldown is None:
 		boundary_started_at = time.perf_counter()
@@ -4681,6 +4842,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 
 	skip_artifact_boundary = _should_skip_artifact_boundary(
 		scope_decision_contract=scope_decision_contract,
+		message=msg,
+		language=interaction_contract.detected_language,
 	)
 	artifact_boundary_evaluated = False
 	if entity_drilldown is None and not skip_artifact_boundary:

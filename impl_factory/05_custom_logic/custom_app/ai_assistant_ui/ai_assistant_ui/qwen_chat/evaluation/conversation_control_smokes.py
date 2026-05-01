@@ -1429,9 +1429,28 @@ def run_h3_financial_statement_switch_followup_smoke(
             )
 
         deps.frappe_module.clear_cache()
+        ok, liability_payload = deps.handle_qwen_user_message(
+            session_name=doc.name,
+            message="Explain more about Liabilities",
+            user="Administrator",
+        )
+        liability_mode = str((liability_payload or {}).get("mode") or "").strip()
+        if not ok or liability_mode != "grounded_evidence_answer":
+            raise RuntimeError(
+                "H3 financial statement switch follow-up smoke failed: Balance Sheet liability section follow-up did not use governed direct evidence. "
+                f"liability_payload={liability_payload!r}"
+            )
+        session_doc = deps.frappe_module.get_doc(deps.session_doctype, doc.name)
+        liability_text = str(deps.latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+        if "liabilities" not in liability_text or "current balance sheet" not in liability_text:
+            raise RuntimeError(
+                "H3 financial statement switch follow-up smoke failed: Balance Sheet liability section follow-up did not render recognizable liability evidence."
+            )
+
+        deps.frappe_module.clear_cache()
         ok, fourth_payload = deps.handle_qwen_user_message(
             session_name=doc.name,
-            message="Cash Flow",
+            message="Show me cash flow statement",
             user="Administrator",
         )
         fourth_mode = str((fourth_payload or {}).get("mode") or "").strip()
@@ -1468,11 +1487,32 @@ def run_h3_financial_statement_switch_followup_smoke(
                 "H3 financial statement switch follow-up smoke failed: Cash Flow follow-up regressed back into the initial statement-choice clarification."
             )
 
+        deps.frappe_module.clear_cache()
+        ok, fifth_payload = deps.handle_qwen_user_message(
+            session_name=doc.name,
+            message="Show me statement",
+            user="Administrator",
+        )
+        fifth_mode = str((fifth_payload or {}).get("mode") or "").strip()
+        if not ok or fifth_mode != "compiled_first_turn":
+            raise RuntimeError(
+                "H3 financial statement switch follow-up smoke failed: generic statement re-ask after Cash Flow did not route through the governed statement clarification path. "
+                f"fifth_payload={fifth_payload!r}"
+            )
+        session_doc = deps.frappe_module.get_doc(deps.session_doctype, doc.name)
+        fifth_text = str(deps.latest_assistant_payload(session_doc).get("text") or "").strip().lower()
+        if not all(phrase in fifth_text for phrase in ("profit", "balance sheet", "cash flow")):
+            raise RuntimeError(
+                "H3 financial statement switch follow-up smoke failed: generic statement re-ask after Cash Flow did not produce the expected statement-choice clarification."
+            )
+
         return {
             "ok": True,
             "second_mode": second_mode,
             "third_mode": third_mode,
+            "liability_mode": liability_mode,
             "fourth_mode": fourth_mode,
+            "fifth_mode": fifth_mode,
             "answer_text": str(deps.latest_assistant_payload(session_doc).get("text") or "").strip(),
         }
 

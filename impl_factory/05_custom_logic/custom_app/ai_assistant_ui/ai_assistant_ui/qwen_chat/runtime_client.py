@@ -233,6 +233,40 @@ def call_qwen_runtime_frontdoor_interpretation(
 	)
 
 
+def call_qwen_runtime_business_understanding_interpretation(
+	*,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	message: str,
+	recent_messages: List[Dict[str, str]],
+	latest_grounded_turn: Dict[str, Any],
+	latest_assistant_payload: Dict[str, Any],
+	interpretation_context: Dict[str, Any],
+) -> Dict[str, Any]:
+	payload = {
+		"request_id": str(request_id or "").strip(),
+		"session_id": str(session_id or "").strip(),
+		"user_id": str(user_id or "").strip(),
+		"site_name": str(site_name or "").strip(),
+		"message": str(message or "").strip(),
+		"recent_messages": list(recent_messages or []),
+		"latest_grounded_turn": latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {},
+		"latest_assistant_payload": latest_assistant_payload if isinstance(latest_assistant_payload, dict) else {},
+		"interpretation_context": interpretation_context if isinstance(interpretation_context, dict) else {},
+	}
+	return _post_json(
+		path="/interpret-business-understanding",
+		payload=payload,
+		request_error_prefix="Qwen runtime business-understanding interpretation failed",
+		non_json_prefix="Qwen runtime business-understanding interpreter returned non-JSON response",
+		http_error_prefix="Qwen runtime business-understanding interpreter error",
+		invalid_payload_message="Qwen runtime business-understanding interpreter returned invalid payload.",
+		timeout_seconds=_timeout_seconds(),
+	)
+
+
 def call_qwen_runtime_reasoning_activation_interpretation(
 	*,
 	request_id: str,
