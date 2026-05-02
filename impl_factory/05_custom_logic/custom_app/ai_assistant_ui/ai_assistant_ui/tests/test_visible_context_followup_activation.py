@@ -247,6 +247,20 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertFalse(handled)
 		self.assertIsNone(payload)
 
+	def test_fresh_temporal_ranking_query_is_not_treated_as_last_visible_row(self):
+		self.assertFalse(visible_context_followup_requested("Top 10 Products by Revenue Last Month"))
+		handled, payload, messages, _payloads = self._activate(
+			session_doc={"messages": [_assistant_message(_ar_visible_text())]},
+			raw_message="Top 10 Products by Revenue Last Month",
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(any("Rank 2 is" in message[1] or "last visible row" in message[1] for message in messages))
+
+	def test_presentation_only_million_request_is_not_visible_row_followup(self):
+		self.assertFalse(visible_context_followup_requested("Show in Million"))
+		self.assertFalse(visible_context_followup_requested("Show as Million"))
+
 	def test_answers_second_row_from_visible_markdown_without_route_clarification(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
 		handled, payload, messages, payloads = self._activate(

@@ -43,6 +43,11 @@ _ARTIFACT_LOCAL_PROJECTION_CUE_PATTERN = re.compile(
 	re.IGNORECASE,
 )
 _TOP_N_PATTERN = re.compile(r"\btop\s+\d{1,3}\b", re.IGNORECASE)
+_MILLION_PRESENTATION_PATTERN = re.compile(
+	r"\b(?:show|display|format|present|convert)?\s*(?:this|that|it|amounts?|values?)?\s*(?:in|as)?\s*millions?\b"
+	r"|\bmillions?\s*(?:format|view|presentation)?\b",
+	re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -250,6 +255,25 @@ def interpret_artifact_local_projection_deterministically(
 	normalized_message = _normalize_message_text(message)
 	if not normalized_message:
 		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
+	if _MILLION_PRESENTATION_PATTERN.search(normalized_message):
+		return SemanticFollowUpResult(
+			status="accepted",
+			confidence_threshold=_confidence_threshold(),
+			intent=SemanticFollowUpIntent(
+				requested_modes=["presentation_transform"],
+				target_dimension="",
+				target_limit=0,
+				sort_direction="",
+				target_metric="",
+				requested_columns=[],
+				requested_time_scope="",
+				target_capability_id="",
+				self_contained=False,
+				confidence=0.86,
+				reason="Artifact-local deterministic follow-up recognized a presentation-only million-format request.",
+				source="artifact_local_presentation_fallback",
+			),
+		)
 	if _TOP_N_PATTERN.search(normalized_message):
 		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
 	if _slot_alias_present("time_scope", normalized_message) or _slot_alias_present("listing_view", normalized_message):

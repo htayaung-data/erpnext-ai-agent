@@ -15,7 +15,10 @@ from .natural_business_understanding_activation import build_nbu_activation_asse
 from .natural_business_understanding_arbitration import nbu_activation_level_supports_action
 from .natural_business_understanding_contracts import CONTRACT_VERSION
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
-from .natural_business_understanding_context_resolution import nbu_ordinal_reference_index
+from .natural_business_understanding_request_classification import (
+	visible_context_reference_requested,
+	visible_context_target_reference,
+)
 from .natural_business_understanding_response_renderer import render_nbu_professional_response
 from .natural_business_understanding_runtime import interpret_natural_business_understanding_shadow
 from .natural_business_understanding_schema_hardening import validate_nbu_trace_schema_hardening
@@ -101,19 +104,13 @@ def _message_tokens(value: Any) -> set[str]:
 
 
 def _message_has_visible_context_reference(message: str) -> bool:
-	if nbu_ordinal_reference_index(message) >= 0:
-		return True
-	return bool(_message_tokens(message).intersection(VISIBLE_CONTEXT_TERMS))
+	return visible_context_reference_requested(message)
 
 
 def _message_target_reference(message: str) -> str:
-	if nbu_ordinal_reference_index(message) >= 0:
-		return "rank_n"
-	if _message_tokens(message).intersection({"this", "that", "it", "same", "selected"}):
-		return "selected_entity"
-	if _message_tokens(message).intersection({"above", "current", "latest", "last", "table", "row"}):
-		return "current_artifact"
-	return "unclear"
+	if not visible_context_reference_requested(message):
+		return "unclear"
+	return visible_context_target_reference(message)
 
 
 def _safe_json_loads(value: Any) -> Dict[str, Any]:

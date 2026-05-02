@@ -81,6 +81,10 @@ def reasoning_preempted_by_followup_refinement(followup_resolution: Dict[str, An
 		return False
 	if not requested_modes:
 		return False
+	if mode == "local_grounded_transform" and requested_modes.issubset(
+		{"presentation_transform", "table_presentation", "bullet_presentation"}
+	):
+		return True
 	return bool(
 		{
 			"sort_or_limit",
@@ -91,6 +95,23 @@ def reasoning_preempted_by_followup_refinement(followup_resolution: Dict[str, An
 			"grouping_change",
 			"filter_refinement",
 		}.intersection(requested_modes)
+	)
+
+
+def local_presentation_refinement_should_preserve_semantic_intent(
+	*,
+	artifact_local_projection_followup_requested: bool,
+	semantic_intent: Any,
+) -> bool:
+	if not bool(artifact_local_projection_followup_requested) or semantic_intent is None:
+		return False
+	requested_modes = {
+		str(mode_value or "").strip()
+		for mode_value in (getattr(semantic_intent, "requested_modes", []) or [])
+		if str(mode_value or "").strip()
+	}
+	return bool(requested_modes) and requested_modes.issubset(
+		{"presentation_transform", "table_presentation", "bullet_presentation"}
 	)
 
 

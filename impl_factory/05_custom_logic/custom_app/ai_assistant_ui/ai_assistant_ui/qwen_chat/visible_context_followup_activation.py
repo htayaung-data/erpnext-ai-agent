@@ -8,10 +8,13 @@ from typing import Any, Callable, Dict, List, Tuple
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
 from .natural_business_understanding_context_resolution import (
 	nbu_artifact_rows,
-	nbu_ordinal_reference_index,
 	nbu_row_identity_label,
 )
 from .natural_business_understanding_contracts import CONTRACT_VERSION
+from .natural_business_understanding_request_classification import (
+	visible_context_reference_requested,
+	visible_context_target_reference,
+)
 from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
 
 
@@ -89,17 +92,11 @@ def _safe_json_loads(value: Any) -> Dict[str, Any]:
 
 
 def visible_context_followup_requested(message: str) -> bool:
-	if nbu_ordinal_reference_index(message) >= 0:
-		return True
-	return bool(_tokens(message).intersection(VISIBLE_CONTEXT_TERMS))
+	return visible_context_reference_requested(message)
 
 
 def _target_reference(message: str) -> str:
-	if nbu_ordinal_reference_index(message) >= 0:
-		return "rank_n"
-	if _tokens(message).intersection(DEICTIC_ENTITY_TERMS):
-		return "selected_entity"
-	return "current_artifact"
+	return visible_context_target_reference(message)
 
 
 def _session_messages(session_doc: Any) -> List[Any]:

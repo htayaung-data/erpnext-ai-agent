@@ -8,8 +8,12 @@ from typing import Any, Callable, Dict, List, Tuple
 from .governed_scope_registry import entity_detail_runtime_policy
 from .natural_business_understanding_arbitration import nbu_activation_level_supports_action
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
-from .natural_business_understanding_context_resolution import nbu_artifact_rows, nbu_ordinal_reference_index
+from .natural_business_understanding_context_resolution import nbu_artifact_rows
 from .natural_business_understanding_contracts import CONTRACT_VERSION
+from .natural_business_understanding_request_classification import (
+	visible_context_reference_requested,
+	visible_context_target_reference,
+)
 from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
 from .semantic_aliases import detect_canonical_keys
 
@@ -193,17 +197,11 @@ def _latest_selected_entity(session_doc: Any) -> Dict[str, Any]:
 
 
 def _message_has_visible_context_reference(message: str) -> bool:
-	if nbu_ordinal_reference_index(message) >= 0:
-		return True
-	return bool(_tokens(message).intersection(VISIBLE_CONTEXT_TERMS))
+	return visible_context_reference_requested(message)
 
 
 def _message_target_reference(message: str) -> str:
-	if nbu_ordinal_reference_index(message) >= 0:
-		return "rank_n"
-	if _tokens(message).intersection({"that", "this", "it", "same", "selected"}):
-		return "selected_entity"
-	return "current_artifact"
+	return visible_context_target_reference(message)
 
 
 def _artifact_identity(payload: Dict[str, Any]) -> str:

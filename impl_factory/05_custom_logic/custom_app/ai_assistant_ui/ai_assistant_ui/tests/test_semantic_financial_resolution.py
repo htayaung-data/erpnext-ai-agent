@@ -150,6 +150,7 @@ from ai_assistant_ui.qwen_chat.semantic_resolution import (
 )
 from ai_assistant_ui.qwen_chat.lanes.frontdoor_lane import evaluate_frontdoor_lane
 from ai_assistant_ui.qwen_chat.scope_support import (
+	local_presentation_refinement_should_preserve_semantic_intent,
 	reasoning_preempted_by_followup_refinement,
 	reasoning_scope_suppression_allowed,
 	reasoning_supersedes_contradictory_presentation_followup,
@@ -620,6 +621,23 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(list(result.intent.requested_modes), ["column_projection"])
 		self.assertEqual(list(result.intent.requested_columns), ["entity", "average_order_value"])
 		self.assertEqual(result.intent.target_metric, "average_order_value")
+
+	def test_artifact_local_projection_fallback_accepts_million_presentation_only_request(self):
+		result = interpret_artifact_local_projection_deterministically(
+			message="Show in Million",
+			latest_grounded_turn={
+				"source_name": "Top Customers by Revenue",
+				"artifact_family_id": "ranking_analytics",
+			},
+			latest_family_artifact={
+				"family_id": "ranking_analytics",
+				"dimensions": {"requested_column_alias_map": {"customer": "entity", "revenue": "revenue"}},
+			},
+		)
+		self.assertEqual(result.status, "accepted")
+		self.assertEqual(list(result.intent.requested_modes), ["presentation_transform"])
+		self.assertEqual(list(result.intent.requested_columns), [])
+		self.assertFalse(result.intent.self_contained)
 
 	def test_artifact_local_projection_fallback_rejects_time_scope_breakout(self):
 		result = interpret_artifact_local_projection_deterministically(
@@ -2068,6 +2086,50 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		)
 
+	def test_reasoning_preempted_by_local_presentation_transform(self):
+		self.assertTrue(
+			reasoning_preempted_by_followup_refinement(
+				types.SimpleNamespace(
+					mode="local_grounded_transform",
+					requested_modes=["presentation_transform"],
+				)
+			)
+		)
+		self.assertFalse(
+			reasoning_preempted_by_followup_refinement(
+				types.SimpleNamespace(
+					mode="capability_requery",
+					requested_modes=["presentation_transform"],
+				)
+			)
+		)
+
+	def test_local_presentation_refinement_preserves_semantic_intent_before_reasoning(self):
+		self.assertTrue(
+			local_presentation_refinement_should_preserve_semantic_intent(
+				artifact_local_projection_followup_requested=True,
+				semantic_intent=types.SimpleNamespace(
+					requested_modes=["presentation_transform"],
+				),
+			)
+		)
+		self.assertFalse(
+			local_presentation_refinement_should_preserve_semantic_intent(
+				artifact_local_projection_followup_requested=False,
+				semantic_intent=types.SimpleNamespace(
+					requested_modes=["presentation_transform"],
+				),
+			)
+		)
+		self.assertFalse(
+			local_presentation_refinement_should_preserve_semantic_intent(
+				artifact_local_projection_followup_requested=True,
+				semantic_intent=types.SimpleNamespace(
+					requested_modes=["filter_refinement", "table_presentation"],
+				),
+			)
+		)
+
 	def test_reasoning_preempted_by_followup_refinement_for_self_contained_new_query(self):
 		self.assertTrue(
 			reasoning_preempted_by_followup_refinement(
@@ -2820,15 +2882,15 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(family_resolution.requested_primary_metric, "revenue")
 		self.assertEqual(family_resolution.requested_secondary_metrics, ["quantity"])
 
-	def test_resolve_composite_candidate_clarifies_generic_single_metric_product_ranking_basis(self):
+	def test_resolve_composite_candidate_defaults_sales_invoice_basis_for_generic_single_metric_product_ranking(self):
 		family_spec, family_resolution = _resolve_composite_candidate(
 			message="show top 5 products by revenue last month",
 			company_name="Enterprise Co",
 		)
 		self.assertEqual(str(family_spec.get("family_id") or ""), "product_commercial_ranking")
 		self.assertIsNotNone(family_resolution)
-		self.assertEqual(family_resolution.status, "clarify_family_variation")
-		self.assertEqual(family_resolution.requested_basis, "")
+		self.assertEqual(family_resolution.status, "resolved_family")
+		self.assertEqual(family_resolution.requested_basis, "sales_invoice")
 		self.assertEqual(family_resolution.requested_primary_metric, "revenue")
 		self.assertEqual(family_resolution.requested_secondary_metrics, [])
 
@@ -5300,7 +5362,8 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			"delivery_note",
 		)
 
-	def test_compiler_applies_last_month_time_scope_to_direct_query_delivery_note_listing(self):
+	@patch("ai_assistant_ui.qwen_chat.compiler._today_date", return_value=__import__("datetime").date(2026, 4, 16))
+	def test_compiler_applies_last_month_time_scope_to_direct_query_delivery_note_listing(self, _mock_today_date):
 		interpretation = build_fresh_query_interpretation_contract(
 			request_id="semantic-listing-date-1",
 			session_id="semantic-listing-date",

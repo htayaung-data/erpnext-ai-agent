@@ -214,6 +214,12 @@ def _ordinal_reference_index(message: str) -> int:
 	normalized = _normalize_text(message)
 	if not normalized:
 		return -1
+	last_temporal_scope = bool(
+		re.search(
+			r"\blast\s+(?:month|months|week|weeks|year|years|quarter|quarters|day|days|period|fiscal|fy)\b",
+			normalized,
+		)
+	)
 	ordinal_words = {
 		"first": 1,
 		"second": 2,
@@ -228,6 +234,8 @@ def _ordinal_reference_index(message: str) -> int:
 		"last": -1,
 	}
 	for word, value in ordinal_words.items():
+		if word == "last" and last_temporal_scope:
+			continue
 		if re.search(rf"\b{re.escape(word)}\b", normalized):
 			return value - 1 if value > 0 else -2
 	for pattern in (

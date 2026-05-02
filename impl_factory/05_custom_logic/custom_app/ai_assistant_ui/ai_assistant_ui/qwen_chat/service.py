@@ -352,6 +352,7 @@ from ai_assistant_ui.qwen_chat.rollout import (
 )
 from ai_assistant_ui.qwen_chat.scope_support import (
 	context_isolation_payload as _context_isolation_payload_helper,
+	local_presentation_refinement_should_preserve_semantic_intent as _local_presentation_refinement_should_preserve_semantic_intent,
 	out_of_scope_answer as _out_of_scope_answer_helper,
 	reasoning_preempted_by_followup_refinement as _reasoning_preempted_by_followup_refinement,
 	reasoning_scope_suppression_allowed as _reasoning_scope_suppression_allowed,
@@ -3928,7 +3929,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			]
 		)
 	)
-	if recommendation_reasoning_preferred and semantic_intent is not None and not semantic_intent_has_explicit_query_shape:
+	preserve_local_presentation_intent = _local_presentation_refinement_should_preserve_semantic_intent(
+		artifact_local_projection_followup_requested=artifact_local_projection_followup_requested,
+		semantic_intent=semantic_intent,
+	)
+	if (
+		recommendation_reasoning_preferred
+		and semantic_intent is not None
+		and not semantic_intent_has_explicit_query_shape
+		and not preserve_local_presentation_intent
+	):
 		semantic_intent = None
 	artifact_local_request_payload = (
 		_entity_detail_evidence_request_payload(
@@ -4811,6 +4821,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not precomputed_evidence_answer
 		and not precomputed_evidence_boundary_answer
 		and not _visible_context_followup_requested(raw_msg)
+		and str(getattr(followup_resolution, "mode", "") or "").strip() != "local_grounded_transform"
 	):
 		nbu_presentation_handled, nbu_presentation_payload = _try_activate_nbu_presentation_response(
 			session_doc=session_doc,
