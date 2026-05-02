@@ -4,6 +4,40 @@ import unittest
 from unittest.mock import Mock, patch
 
 
+def _fake_fiscal_year_rows_for_financial_period_tests():
+	return [
+		{
+			"name": "FY-2025",
+			"year_start_date": "2024-04-01",
+			"year_end_date": "2025-03-31",
+		},
+		{
+			"name": "FY-2026",
+			"year_start_date": "2025-04-01",
+			"year_end_date": "2026-03-31",
+		},
+		{
+			"name": "FY-2027",
+			"year_start_date": "2026-04-01",
+			"year_end_date": "2027-03-31",
+		},
+	]
+
+
+def _fake_period_closing_rows_for_financial_period_tests():
+	return [
+		{
+			"name": "PCV-2025-0001",
+			"company": "Enterprise Co",
+			"fiscal_year": "FY-2025",
+			"period_start_date": "2024-04-01",
+			"period_end_date": "2025-03-31",
+			"transaction_date": "2025-03-31",
+			"gle_processing_status": "Completed",
+		}
+	]
+
+
 def _fake_get_all(doctype, *args, **kwargs):
 	if doctype == "Company":
 		if kwargs.get("pluck") == "name":
@@ -5575,12 +5609,16 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			ambiguity_reason="",
 			confidence=0.95,
 		)
-		outcome = compile_fresh_query(
-			request_id="semantic-financial-open-period-pnl",
-			session_id="semantic-financial",
-			interpretation=interpretation,
-			response_policy={},
-		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.defaults_repository.load_period_closing_voucher_rows",
+			return_value=_fake_period_closing_rows_for_financial_period_tests(),
+		):
+			outcome = compile_fresh_query(
+				request_id="semantic-financial-open-period-pnl",
+				session_id="semantic-financial",
+				interpretation=interpretation,
+				response_policy={},
+			)
 		self.assertEqual(outcome.compiler_contract.decision, "execute")
 		self.assertEqual(outcome.compiler_contract.completed_filters.get("period_start_date"), "2025-04-01")
 		self.assertEqual(outcome.compiler_contract.completed_filters.get("period_end_date"), "2026-04-16")
@@ -5603,12 +5641,19 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			ambiguity_reason="",
 			confidence=0.95,
 		)
-		outcome = compile_fresh_query(
-			request_id="semantic-financial-open-period-cash-flow",
-			session_id="semantic-financial",
-			interpretation=interpretation,
-			response_policy={},
-		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.defaults_repository.load_fiscal_year_rows",
+			return_value=_fake_fiscal_year_rows_for_financial_period_tests(),
+		), patch(
+			"ai_assistant_ui.qwen_chat.defaults_repository.load_period_closing_voucher_rows",
+			return_value=_fake_period_closing_rows_for_financial_period_tests(),
+		):
+			outcome = compile_fresh_query(
+				request_id="semantic-financial-open-period-cash-flow",
+				session_id="semantic-financial",
+				interpretation=interpretation,
+				response_policy={},
+			)
 		self.assertEqual(outcome.compiler_contract.decision, "execute")
 		self.assertEqual(outcome.compiler_contract.completed_filters.get("from_fiscal_year"), "FY-2026")
 		self.assertEqual(outcome.compiler_contract.completed_filters.get("to_fiscal_year"), "FY-2027")

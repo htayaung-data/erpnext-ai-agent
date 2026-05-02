@@ -817,11 +817,7 @@ Site-aware verification:
 
 1. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_natural_business_understanding_governed_requery_activation`: passed, 9 tests.
 2. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_visible_context_followup_activation`: passed, 19 tests.
-3. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_semantic_financial_resolution`: not green, with two existing financial-period expectation failures unrelated to this slice.
-
-Important note:
-
-The site-aware semantic module failures are tracked as release-gate debt. They are not caused by this NBU visible-artifact/projection slice, but Phase 4 must not start until this broader site-aware gate is understood and green or explicitly rebaselined.
+3. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_semantic_financial_resolution`: passed, 262 tests after deterministic financial-period fixture hardening recorded in Section 15.
 
 ### 14.5 Guardrail State
 
@@ -864,7 +860,61 @@ Do not open a new business capability yet.
 
 Recommended next stabilization work:
 
-1. Fix or rebaseline the two site-aware financial-period semantic failures.
-2. Continue guardrail cleanup in the protected NBU/runtime files.
-3. Expand visible-artifact projection tests across customer, supplier, product, and document-row families.
-4. Only after the fast gate is consistently green, continue to broader Phase 4 complex business-question capability.
+1. Continue guardrail cleanup in the protected NBU/runtime files.
+2. Expand visible-artifact projection tests across customer, supplier, product, and document-row families.
+3. Only after the fast gate is consistently green, continue to broader Phase 4 complex business-question capability.
+
+## 15. Financial-Period Site Gate Stabilization - 2026-05-02
+
+Status: implemented and site-verified.
+
+### 15.1 Problem Class
+
+The site-aware semantic financial module failed two tests that passed in plain unittest:
+
+1. Profit and Loss default open-period bounds.
+2. Cash Flow cross-fiscal-year open-period fiscal-year names.
+
+Root cause:
+
+The tests depended on fake unit-test period-closing and fiscal-year data, but the site-aware test runner executed against the real site fixtures. The live site uses different Period Closing Voucher state and fiscal-year naming, so the tests were checking environment-specific data rather than the compiler contract.
+
+### 15.2 Implementation
+
+File updated:
+
+1. `tests/test_semantic_financial_resolution.py`
+
+Behavior:
+
+1. The affected financial-period tests now patch their own period-closing rows.
+2. The cross-fiscal-year Cash Flow test also patches its own fiscal-year rows.
+3. Production compiler behavior was not changed.
+
+This is a release-gate harness fix, not a business-behavior change.
+
+### 15.3 Verification
+
+Server focused tests:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui python3 -m unittest \
+  ai_assistant_ui.tests.test_semantic_financial_resolution.TestSemanticFinancialResolution.test_compiler_uses_last_closed_period_for_profit_and_loss_defaults \
+  ai_assistant_ui.tests.test_semantic_financial_resolution.TestSemanticFinancialResolution.test_compiler_uses_cross_fiscal_year_bounds_for_cash_flow_open_period
+```
+
+Result: 2 tests passed.
+
+Site-aware semantic financial module:
+
+```bash
+scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_semantic_financial_resolution
+```
+
+Result: 262 tests passed.
+
+### 15.4 Remaining Release-Gate Debt
+
+The site-aware semantic financial module is now green.
+
+The enterprise guardrail audit remains red with the baseline findings recorded in Section 13. That is now the main stabilization blocker before Phase 4.
