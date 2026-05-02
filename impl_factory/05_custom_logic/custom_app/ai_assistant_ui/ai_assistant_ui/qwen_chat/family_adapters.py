@@ -1078,6 +1078,7 @@ def _aging_sections(rows: List[Dict[str, Any]], aging_type: str, currency: str) 
 		for row in rows
 		if isinstance(row, dict) and str(row.get("party") or "").strip()
 	]
+	parties.sort(key=lambda item: _numeric_value(item.get("outstanding")), reverse=True)
 	bucket_totals: List[Dict[str, Any]] = []
 	for metric_key, label, field_candidates in _aging_bucket_specs():
 		amount = 0.0

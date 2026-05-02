@@ -59,6 +59,58 @@ def _ar_artifact():
 	}
 
 
+def _raw_summary_table_payload():
+	return {
+		"data": [
+			["Outstanding Total", "790,855,000 MMK"],
+			["Total Amount Due", "724,170,000 MMK"],
+		],
+	}
+
+
+def _ar_unsorted_parties_artifact():
+	return {
+		"type": "qwen_normalized_family_artifact_contract",
+		"artifact_id": "ar-aging-parties-1",
+		"title": "Accounts Receivable Aging",
+		"family_id": "accounts_receivable_aging",
+		"sections": {
+			"parties": [
+				{"party": "Capital Telecom (NPT)", "party_type": "Customer", "outstanding": 97309500},
+				{"party": "Aung Aung Telecom", "party_type": "Customer", "outstanding": 24260000},
+				{"party": "35th Street Mobile Wholesale", "party_type": "Customer", "outstanding": 84837000},
+			]
+		},
+	}
+
+
+def _ap_artifact():
+	return {
+		"type": "qwen_normalized_family_artifact_contract",
+		"artifact_id": "ap-aging-1",
+		"title": "Accounts Payable Aging",
+		"family_id": "accounts_payable_aging",
+		"sections": {
+			"top_suppliers": [
+				{
+					"rank": 1,
+					"supplier": "Myanmar Tech Import Services",
+					"outstanding_amount": 268298000,
+					"total_due": 250568000,
+					"overdue_amount": 193478000,
+				},
+				{
+					"rank": 2,
+					"supplier": "Sunflower Accessories Co.",
+					"outstanding_amount": 222526500,
+					"total_due": 222526500,
+					"overdue_amount": 136661500,
+				},
+			]
+		},
+	}
+
+
 def _supplier_list_text():
 	return """7 Suppliers Found as of 2026-05-01
 
@@ -227,6 +279,32 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(cleared["value"])
 		self.assertTrue(any("35th Street Mobile Wholesale" in message[1] for message in messages))
 
+	def test_typed_artifact_wins_over_newer_raw_summary_rows_for_rank_reference(self):
+		session_doc = {"messages": [_tool_message(_ar_artifact()), _tool_message(_raw_summary_table_payload())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is in second position in the above table?",
+			current_artifact={},
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is 35th Street Mobile Wholesale", answer)
+		self.assertNotIn("Total Amount Due", answer)
+
+	def test_visible_ranked_table_wins_over_generic_unsorted_party_rows(self):
+		session_doc = {"messages": [_assistant_message(_ar_visible_text()), _tool_message(_ar_unsorted_parties_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is in second position in the above table?",
+			current_artifact={},
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is 35th Street Mobile Wholesale", answer)
+		self.assertNotIn("Aung Aung Telecom", answer)
+
 	def test_ambiguous_deictic_question_asks_business_row_clarification(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
 		handled, payload, messages, _payloads = self._activate(
@@ -327,6 +405,39 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Rank 2 is ACC-SINV-2026-00205", answer)
 		self.assertIn("Customer: Capital Telecom (NPT)", answer)
 		self.assertIn("Grand Total: 4,375,000 MMK", answer)
+
+	def test_latest_supplier_table_wins_over_stale_customer_focus_for_rank_reference(self):
+		stale_customer_selection = {
+			"type": "qwen_nbu_current_artifact_answer_activation_contract",
+			"resolved_rank": 2,
+			"resolved_entity": {
+				"entity_type": "customer",
+				"entity_key": "35th Street Mobile Wholesale",
+				"entity_label": "35th Street Mobile Wholesale",
+				"row": {
+					"rank": 2,
+					"customer": "35th Street Mobile Wholesale",
+					"outstanding_amount": 84837000,
+				},
+			},
+		}
+		session_doc = {
+			"messages": [
+				_tool_message(_ar_artifact()),
+				_tool_message(stale_customer_selection),
+				_tool_message(_ap_artifact()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is in rank 2 suppliers?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Sunflower Accessories Co.", answer)
+		self.assertNotIn("35th Street Mobile Wholesale", answer)
 
 	def test_financial_statement_account_rows_use_account_identity(self):
 		session_doc = {"messages": [_tool_message(_balance_sheet_lines_artifact())]}

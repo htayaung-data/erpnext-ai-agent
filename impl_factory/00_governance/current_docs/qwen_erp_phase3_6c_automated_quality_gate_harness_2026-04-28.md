@@ -1,7 +1,7 @@
 # Qwen ERP Phase 3.6C Automated Quality Gate Harness
 
-Status: implemented as executable QA registry and coverage guard
-Date: 2026-04-28
+Status: implemented as executable QA registry and coverage guard  
+Date: 2026-04-28  
 Scope: Phase 3.6 automated quality-control harness before manual browser UAT and Phase 4 Complex Business Question Decomposition.
 
 ## 1. Purpose
@@ -37,7 +37,7 @@ The registry defines every required Phase 3.6 `A` gate row from the minimum exit
 3. execution mode
 4. prompt sequence
 5. expected behavior
-6. fallback or boundary requiremen
+6. fallback or boundary requirement
 7. automation layer
 8. existing coverage references
 9. manual-browser requirement when applicable
@@ -102,7 +102,41 @@ This gives us a stable bridge between:
 
 1. the documented Phase 3.6B matrix
 2. the existing backend contract tests
-3. the upcoming Phase 3.6D manual browser checklis
+3. the upcoming Phase 3.6D manual browser checklist
+
+## 6.1 Update: Composite Clarification Continuation Guard
+
+Date: 2026-05-02
+
+Additional executable guard added:
+
+`ai_assistant_ui/qwen_chat/evaluation/composite_clarification_continuation_smoke.py`
+
+Purpose:
+
+1. prove that composite ranking clarification replies are resolved before generic runtime, visible-context, or transaction-listing lanes
+2. cover both customer commercial ranking and product commercial ranking
+3. prevent short replies such as `Sales Invoice` and `Last Month` from being misread as standalone listing requests or stale visible-table row references
+
+Covered flows:
+
+1. `Top 7 Customers by Revenue` -> `Sales Invoice` -> `Last Month`
+2. `Top 10 Products by Revenue` -> `Sales Invoice` -> `Last Month`
+
+Implementation seam:
+
+1. shared conversation-control helper: `pending_clarification_response_should_preempt_runtime`
+2. service orchestration gate: pending clarification resolution preempts NBU governed requery, visible-context follow-up, and compiled first-turn runtime lanes unless the clarification layer classifies the turn as a new request
+3. regression tests: `test_post_contract_state_integrity` and `test_clarification_resolution_contracts`
+
+Verification completed on 2026-05-02:
+
+1. container compile for changed modules
+2. 453 backend unit tests across post-contract state integrity and clarification resolution
+3. live bench smoke before restart for customer-ranking clarification continuation
+4. backend restart
+5. live bench smoke after restart
+6. widened live bench smoke for customer and product revenue ranking clarification continuation
 
 ## 7. Next Step
 

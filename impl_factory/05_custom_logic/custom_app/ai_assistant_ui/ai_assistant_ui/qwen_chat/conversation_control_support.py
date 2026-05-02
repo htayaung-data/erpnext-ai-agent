@@ -111,6 +111,15 @@ def clarification_decision_allows_immediate_control_override(*, clarification_de
 	}
 
 
+def pending_clarification_response_should_preempt_runtime(*, clarification_decision: str) -> bool:
+	decision = str(clarification_decision or "").strip()
+	if not decision:
+		return False
+	return not clarification_decision_allows_immediate_control_override(
+		clarification_decision=decision,
+	)
+
+
 def clarification_response_should_yield_initial_control_decision(
 	*,
 	clarification_decision: str,

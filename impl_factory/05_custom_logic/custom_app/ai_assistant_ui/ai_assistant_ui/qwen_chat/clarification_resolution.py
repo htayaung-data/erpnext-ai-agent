@@ -915,6 +915,85 @@ def _clarification_structured_options(
 	return list(dict.fromkeys(structured_options))
 
 
+def _prepared_clarification_options_and_aliases(
+	signal_payload: Dict[str, Any],
+) -> Tuple[List[str], Dict[str, Any], Dict[str, List[str]]]:
+	reason_type = str((signal_payload or {}).get("reason_type") or "").strip()
+	raw_options = [
+		str(value or "").strip()
+		for value in ((signal_payload or {}).get("suggested_options") or [])
+		if str(value or "").strip()
+	]
+	internal_details = (signal_payload or {}).get("internal_details")
+	if not isinstance(internal_details, dict):
+		internal_details = {}
+	option_aliases_by_option = (
+		internal_details.get("option_aliases_by_option")
+		if isinstance(internal_details.get("option_aliases_by_option"), dict)
+		else {}
+	)
+	options = _clarification_structured_options(raw_options, internal_details)
+	if reason_type != "report_ambiguity" or not options:
+		return options, internal_details, option_aliases_by_option
+	report_option_aliases = _report_option_aliases_by_option(options)
+	report_option_slot_values = _report_option_slot_values_by_option(options)
+	report_option_report_names = _report_option_report_names_by_option(options)
+	merged_option_aliases: Dict[str, List[str]] = {}
+	for option in options:
+		merged = list(option_aliases_by_option.get(option) or []) + list(report_option_aliases.get(option) or [])
+		merged_option_aliases[option] = list(
+			dict.fromkeys([str(value or "").strip() for value in merged if str(value or "").strip()])
+		)
+	merged_internal_details = dict(internal_details)
+	payload_slot_values = (
+		merged_internal_details.get("semantic_slot_value_by_option")
+		if isinstance(merged_internal_details.get("semantic_slot_value_by_option"), dict)
+		else {}
+	)
+	payload_report_names = (
+		merged_internal_details.get("selected_report_by_option")
+		if isinstance(merged_internal_details.get("selected_report_by_option"), dict)
+		else {}
+	)
+	merged_internal_details["option_aliases_by_option"] = merged_option_aliases
+	merged_internal_details["semantic_slot_name"] = (
+		"statement_variant"
+		if (report_option_slot_values or payload_slot_values)
+		else str(merged_internal_details.get("semantic_slot_name") or "")
+	)
+	merged_internal_details["semantic_slot_value_by_option"] = {
+		**report_option_slot_values,
+		**payload_slot_values,
+	}
+	merged_internal_details["selected_report_by_option"] = {
+		**report_option_report_names,
+		**payload_report_names,
+	}
+	return options, merged_internal_details, merged_option_aliases
+
+
+def pending_clarification_message_matches_option(
+	message: str,
+	signal_payload: Dict[str, Any],
+	*,
+	min_confidence: float = 0.6,
+) -> bool:
+	"""Return True when the user reply plausibly answers the active choices.
+
+	This guard lets the front controller keep legitimate short answers like
+	"Sales Invoice" or "Last Month" inside the pending clarification flow instead
+	of treating them as unrelated fresh ERP requests.
+	"""
+
+	options, _internal_details, option_aliases_by_option = _prepared_clarification_options_and_aliases(signal_payload)
+	matched_option, _matched_by, confidence = _match_pending_clarification_option(
+		message,
+		options,
+		option_aliases_by_option=option_aliases_by_option,
+	)
+	return bool(matched_option and float(confidence or 0.0) >= float(min_confidence))
+
+
 def clarification_continuation_lane(signal_payload: Dict[str, Any]) -> str:
 	internal_details = signal_payload.get("internal_details")
 	if not isinstance(internal_details, dict):
@@ -1331,56 +1410,12 @@ def resolve_pending_clarification_response(
 	stage = str(signal_payload.get("stage") or "").strip()
 	reason_type = str(signal_payload.get("reason_type") or "").strip()
 	user_question = str(signal_payload.get("user_question") or "").strip()
-	options = [
-		str(value or "").strip()
-		for value in (signal_payload.get("suggested_options") or [])
-		if str(value or "").strip()
-	]
-	internal_details = signal_payload.get("internal_details")
+	options, internal_details, option_aliases_by_option = _prepared_clarification_options_and_aliases(signal_payload)
 	continuation_lane = (
 		str(internal_details.get("continuation_lane") or "").strip()
 		if isinstance(internal_details, dict)
 		else ""
 	)
-	option_aliases_by_option = (
-		internal_details.get("option_aliases_by_option")
-		if isinstance(internal_details, dict) and isinstance(internal_details.get("option_aliases_by_option"), dict)
-		else {}
-	)
-	options = _clarification_structured_options(options, internal_details if isinstance(internal_details, dict) else {})
-	if reason_type == "report_ambiguity" and options:
-		report_option_aliases = _report_option_aliases_by_option(options)
-		report_option_slot_values = _report_option_slot_values_by_option(options)
-		report_option_report_names = _report_option_report_names_by_option(options)
-		merged_option_aliases: Dict[str, List[str]] = {}
-		for option in options:
-			merged = list(option_aliases_by_option.get(option) or []) + list(report_option_aliases.get(option) or [])
-			merged_option_aliases[option] = list(
-				dict.fromkeys([str(value or "").strip() for value in merged if str(value or "").strip()])
-			)
-		option_aliases_by_option = merged_option_aliases
-		merged_internal_details = dict(internal_details) if isinstance(internal_details, dict) else {}
-		payload_slot_values = (
-			merged_internal_details.get("semantic_slot_value_by_option")
-			if isinstance(merged_internal_details.get("semantic_slot_value_by_option"), dict)
-			else {}
-		)
-		payload_report_names = (
-			merged_internal_details.get("selected_report_by_option")
-			if isinstance(merged_internal_details.get("selected_report_by_option"), dict)
-			else {}
-		)
-		merged_internal_details["option_aliases_by_option"] = option_aliases_by_option
-		merged_internal_details["semantic_slot_name"] = "statement_variant" if (report_option_slot_values or payload_slot_values) else str(merged_internal_details.get("semantic_slot_name") or "")
-		merged_internal_details["semantic_slot_value_by_option"] = {
-			**report_option_slot_values,
-			**payload_slot_values,
-		}
-		merged_internal_details["selected_report_by_option"] = {
-			**report_option_report_names,
-			**payload_report_names,
-		}
-		internal_details = merged_internal_details
 	control_evidence = _control_evidence_payload(message, payload=control_evidence_payload)
 	matched_option, matched_by, confidence = _match_pending_clarification_option(
 		message,

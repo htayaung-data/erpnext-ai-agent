@@ -67,6 +67,39 @@ class NaturalBusinessUnderstandingContextResolutionTests(unittest.TestCase):
 		self.assertEqual(payload["resolved_entity"]["entity_label"], "Myanmar Tech Import Services")
 		self.assertEqual(payload["resolved_entity"]["entity_type"], "supplier")
 
+	def test_aging_party_rows_are_preferred_over_summary_rows_for_rank_reference(self):
+		payload = resolve_nbu_context_reference(
+			raw_message="who is in second position in the above table?",
+			candidate_payload={"target_reference": "rank_n"},
+			current_artifact={
+				"artifact_id": "ar-aging-1",
+				"family_id": "aging",
+				"sections": {
+					"summary": [
+						{"label": "Outstanding Total", "amount": 790855000},
+						{"label": "Total Amount Due", "amount": 724170000},
+					],
+					"parties": [
+						{
+							"party": "Capital Telecom (NPT)",
+							"party_type": "Customer",
+							"outstanding": 97309500,
+						},
+						{
+							"party": "35th Street Mobile Wholesale",
+							"party_type": "Customer",
+							"outstanding": 84837000,
+						},
+					],
+				},
+			},
+		).to_payload()
+
+		self.assertEqual(payload["status"], "resolved")
+		self.assertEqual(payload["resolved_row_index"], 1)
+		self.assertEqual(payload["resolved_entity"]["entity_label"], "35th Street Mobile Wholesale")
+		self.assertEqual(payload["resolved_entity"]["entity_type"], "customer")
+
 	def test_candidate_list_reference_requires_selection_when_ambiguous(self):
 		payload = resolve_nbu_context_reference(
 			raw_message="show me the list",

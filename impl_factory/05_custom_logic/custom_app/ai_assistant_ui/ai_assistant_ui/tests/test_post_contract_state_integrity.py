@@ -74,6 +74,7 @@ from ai_assistant_ui.qwen_chat.conversation_control_support import (
 	clarification_response_should_yield_initial_control_decision,
 	frontdoor_clarification_reentry_message,
 	frontdoor_clarification_requires_fresh_query_reset,
+	pending_clarification_response_should_preempt_runtime,
 	pending_clarification_should_yield_to_current_control_decision,
 	resolved_clarification_runtime_message,
 )
@@ -804,6 +805,20 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		)
 		self.assertFalse(
 			clarification_decision_allows_immediate_control_override(clarification_decision="resolved_option")
+		)
+
+	def test_shared_control_support_pending_clarification_preempts_runtime_for_resolution(self):
+		self.assertTrue(
+			pending_clarification_response_should_preempt_runtime(clarification_decision="resolved_option")
+		)
+		self.assertTrue(
+			pending_clarification_response_should_preempt_runtime(clarification_decision="reask_pending_clarification")
+		)
+		self.assertFalse(
+			pending_clarification_response_should_preempt_runtime(clarification_decision="new_request")
+		)
+		self.assertFalse(
+			pending_clarification_response_should_preempt_runtime(clarification_decision="")
 		)
 
 	def test_shared_control_support_initial_clarification_yield_gate(self):

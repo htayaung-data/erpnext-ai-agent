@@ -58,6 +58,7 @@ ARTIFACT_PAYLOAD_TYPES = {
 	"qwen_entity_detail_artifact",
 	"qwen_visible_rendered_artifact",
 }
+LOW_PRIORITY_ROW_SOURCES = {"sections.parties", "sections.party_rows"}
 
 
 def _clean_text(value: Any) -> str:
@@ -137,21 +138,40 @@ def _has_rows(payload: Dict[str, Any]) -> bool:
 	return bool(rows)
 
 
-def _session_tool_artifacts(session_doc: Any, *, limit: int = 8) -> List[Dict[str, Any]]:
-	artifacts: List[Dict[str, Any]] = []
+def _row_source(payload: Dict[str, Any]) -> str:
+	_rows, source = nbu_artifact_rows(_clean_dict(payload))
+	return _clean_text(source)
+
+
+def _session_tool_artifact_groups(session_doc: Any, *, limit: int = 8) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+	primary_typed_artifacts: List[Dict[str, Any]] = []
+	secondary_typed_artifacts: List[Dict[str, Any]] = []
+	fallback_artifacts: List[Dict[str, Any]] = []
+	scanned = 0
 	for message in reversed(_session_messages(session_doc)):
 		if _message_role(message) != "tool":
 			continue
+		scanned += 1
 		payload = _safe_json_loads(_message_content(message))
 		payload_type = _clean_text(payload.get("type")).lower()
-		if payload_type not in ARTIFACT_PAYLOAD_TYPES and not _has_rows(payload):
-			continue
 		if not _has_rows(payload):
 			continue
-		artifacts.append(payload)
-		if len(artifacts) >= limit:
+		if payload_type in ARTIFACT_PAYLOAD_TYPES:
+			if _row_source(payload) in LOW_PRIORITY_ROW_SOURCES:
+				secondary_typed_artifacts.append(payload)
+			else:
+				primary_typed_artifacts.append(payload)
+		else:
+			fallback_artifacts.append(payload)
+		if len(primary_typed_artifacts) >= limit:
 			break
-	return artifacts
+		if scanned >= limit * 4 and (primary_typed_artifacts or secondary_typed_artifacts):
+			break
+	return (
+		primary_typed_artifacts[:limit],
+		secondary_typed_artifacts[:limit],
+		fallback_artifacts[:limit],
+	)
 
 
 def _context_artifacts(
@@ -176,11 +196,16 @@ def _context_artifacts(
 			seen.add(identity)
 		artifacts.append(clean_payload)
 
-	append(_clean_dict(current_artifact))
+	primary_tool_artifacts, secondary_tool_artifacts, fallback_tool_artifacts = _session_tool_artifact_groups(session_doc, limit=limit)
+	for payload in primary_tool_artifacts:
+		append(payload)
 	for payload in session_visible_rendered_artifacts(session_doc, limit=limit):
 		append(payload)
-	for payload in _session_tool_artifacts(session_doc, limit=limit):
+	for payload in secondary_tool_artifacts:
 		append(payload)
+	for payload in fallback_tool_artifacts:
+		append(payload)
+	append(_clean_dict(current_artifact))
 	return artifacts
 
 

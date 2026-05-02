@@ -59,6 +59,7 @@ from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	latest_assistant_turn_was_clarification_fallback_stop,
 	latest_pending_clarification_signal,
 	looks_like_short_acknowledgement,
+	pending_clarification_message_matches_option,
 	pending_clarification_empty_ack_answer,
 	pending_clarification_fallback_stop_answer,
 	pending_clarification_meta_answer,
@@ -88,6 +89,7 @@ from ai_assistant_ui.qwen_chat.conversation_control_support import (
 	frontdoor_clarification_reentry_message as _frontdoor_clarification_reentry_message_helper,
 	frontdoor_clarification_requires_fresh_query_reset as _frontdoor_clarification_requires_fresh_query_reset_helper,
 	resolved_clarification_runtime_message as _resolved_clarification_runtime_message_helper,
+	pending_clarification_response_should_preempt_runtime as _pending_clarification_response_should_preempt_runtime_helper,
 	pending_clarification_should_yield_to_current_control_decision as _pending_clarification_should_yield_to_current_control_decision_helper,
 	prior_branch_restore_mode as _prior_branch_restore_mode_helper,
 	prior_branch_restore_runtime_message as _prior_branch_restore_runtime_message_helper,
@@ -235,6 +237,9 @@ from ai_assistant_ui.qwen_chat.knowledge_boundary import (
 from ai_assistant_ui.qwen_chat.natural_business_understanding_service_activation import (
 	build_nbu_always_on_shadow_trace as _build_nbu_always_on_shadow_trace,
 	try_activate_nbu_presentation_response as _try_activate_nbu_presentation_response,
+)
+from ai_assistant_ui.qwen_chat.natural_business_understanding_governed_requery_activation import (
+	try_activate_nbu_governed_requery_response as _try_activate_nbu_governed_requery_response,
 )
 from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
 	try_activate_visible_context_followup_response as _try_activate_visible_context_followup_response,
@@ -1299,6 +1304,12 @@ def _pending_clarification_should_yield_to_current_control_decision(
 		clarification_decision=str(getattr(clarification_response_contract, "decision", "") or "").strip(),
 		current_decision_action=_decision_action(conversation_control_decision_contract),
 		prior_branch_state=prior_branch_state,
+	)
+
+
+def _pending_clarification_response_should_preempt_runtime(clarification_response_contract) -> bool:
+	return _pending_clarification_response_should_preempt_runtime_helper(
+		clarification_decision=str(getattr(clarification_response_contract, "decision", "") or "").strip(),
 	)
 
 
@@ -3565,7 +3576,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		message=msg,
 		language=interaction_contract.detected_language,
 	)
-	if pending_clarification_signal and fresh_governed_query_override_requested:
+	if (
+		pending_clarification_signal
+		and fresh_governed_query_override_requested
+		and not pending_clarification_message_matches_option(raw_msg, pending_clarification_signal)
+	):
 		clear_pending_clarification_signal(session_doc)
 		pending_clarification_signal = {}
 		clarification_state = get_clarification_state(session_doc)
@@ -4019,7 +4034,36 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if prior_branch_direct_handled and prior_branch_direct_payload is not None:
 		return True, prior_branch_direct_payload
 	repair_recent_messages = _recent_messages(session_doc, limit=8)
-	if entity_drilldown is None:
+	pending_clarification_response_preempts_runtime = bool(
+		pending_clarification_signal
+		and _pending_clarification_response_should_preempt_runtime(clarification_response_contract)
+	)
+	if entity_drilldown is None and not pending_clarification_response_preempts_runtime:
+		nbu_requery_handled, nbu_requery_payload = _try_activate_nbu_governed_requery_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			nbu_trace_payload=nbu_shadow_trace_payload,
+			current_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			response_policy_contract=provisional_response_policy_contract,
+			user_message_already_appended=False,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			execute_entity_drilldown=execute_entity_drilldown,
+			direct_evidence_response=_grounded_artifact_direct_evidence_response,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+			additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
+			activation_level="governed_requery",
+		)
+		if nbu_requery_handled and nbu_requery_payload is not None:
+			return True, nbu_requery_payload
 		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -4049,6 +4093,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	compiled_fresh_query_breakout = bool(
 		bool(compiled_rollout.get("enabled"))
 		and not context_anchored_message
+		and not pending_clarification_response_preempts_runtime
 		and entity_drilldown is None
 		and (
 			not latest_grounded_turn_available

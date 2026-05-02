@@ -370,6 +370,45 @@ def _artifact_match_score(raw_message: str, artifact_node: Dict[str, Any]) -> in
 	return score
 
 
+def _plural_alias(value: str) -> str:
+	clean = _normalize(value)
+	if not clean:
+		return ""
+	if clean.endswith("y"):
+		return f"{clean[:-1]}ies"
+	if clean.endswith("s"):
+		return clean
+	return f"{clean}s"
+
+
+def _artifact_row_context_score(
+	*,
+	raw_message: str,
+	artifact_node: Dict[str, Any],
+	context_graph: Dict[str, Any],
+) -> int:
+	artifact_id = _clean_text(artifact_node.get("artifact_id"))
+	if not artifact_id:
+		return 0
+	message_parts = _message_alias_set(raw_message)
+	score = 0
+	for row_node in _clean_dict(context_graph).get("row_nodes", []):
+		row = _clean_dict(row_node)
+		if _clean_text(row.get("artifact_id")) != artifact_id:
+			continue
+		entity = _clean_dict(row.get("entity"))
+		entity_type = _normalize(entity.get("entity_type"))
+		source_key = _normalize(row.get("source_key"))
+		for value in (entity_type, _plural_alias(entity_type), source_key, _plural_alias(source_key)):
+			if value and value in message_parts:
+				score += 8
+		for alias in _clean_list(row.get("aliases")):
+			normalized_alias = _normalize(alias)
+			if len(normalized_alias) >= 3 and normalized_alias in message_parts:
+				score += 3
+	return score
+
+
 def select_nbu_context_graph_artifact(
 	*,
 	raw_message: str,
@@ -382,6 +421,11 @@ def select_nbu_context_graph_artifact(
 	scored: List[Tuple[int, int, Dict[str, Any]]] = []
 	for artifact in artifacts:
 		score = _artifact_match_score(raw_message, artifact)
+		score += _artifact_row_context_score(
+			raw_message=raw_message,
+			artifact_node=artifact,
+			context_graph=context_graph,
+		)
 		if prefer_previous and artifact.get("role") == "previous":
 			score += 3
 		if not prefer_previous and artifact.get("role") == "current":

@@ -20,6 +20,7 @@ sys.modules.setdefault("frappe", fake_frappe)
 
 from ai_assistant_ui.qwen_chat.clarification_resolution import (
 	clarification_resolved_continuation_message,
+	pending_clarification_message_matches_option,
 	pending_clarification_empty_ack_answer,
 	pending_clarification_fallback_stop_answer,
 	pending_clarification_meta_answer,
@@ -36,6 +37,7 @@ from ai_assistant_ui.qwen_chat.service import (
 	_compound_request_stop_control,
 	_frontdoor_clarification_reentry_message,
 	_frontdoor_clarification_requires_fresh_query_reset,
+	_message_should_override_stale_context_as_fresh_query,
 )
 from ai_assistant_ui.qwen_chat.contracts import build_compound_request_assessment_contract
 
@@ -386,6 +388,77 @@ class TestClarificationResolutionContracts(unittest.TestCase):
 		self.assertEqual(contract.resolved_option, "Sales Order")
 		self.assertEqual(contract.resolved_slot.get("requested_basis"), "sales_order")
 		self.assertEqual(contract.resolved_slot.get("requested_primary_metric"), "revenue")
+		self.assertEqual(contract.resolved_slot.get("selected_time_scope"), "last_month")
+
+	def test_pending_clarification_option_guard_protects_short_composite_answers(self):
+		basis_signal = {
+			"stage": "front_door",
+			"reason_type": "composite_family_variation",
+			"user_question": "I can rank customers by revenue, but I still need the approved basis.",
+			"suggested_options": ["Sales Order", "Sales Invoice"],
+			"internal_details": {
+				"continuation_lane": "front_door",
+				"clarification_axis": "basis",
+				"semantic_slot_name": "requested_basis",
+				"semantic_slot_value_by_option": {
+					"Sales Order": "sales_order",
+					"Sales Invoice": "sales_invoice",
+				},
+				"resolved_message_by_option": {
+					"Sales Invoice": "show top 7 customers by revenue for sales invoices",
+				},
+			},
+		}
+		period_signal = {
+			"stage": "front_door",
+			"reason_type": "composite_family_variation",
+			"user_question": "I can rank customers by revenue for sales invoices, but I still need the business period.",
+			"suggested_options": ["Last Month", "Current Fiscal Year to Date", "Last Year", "All time"],
+			"internal_details": {
+				"continuation_lane": "front_door",
+				"clarification_axis": "scope",
+				"semantic_slot_name": "selected_time_scope",
+				"semantic_slot_value_by_option": {
+					"Last Month": "last_month",
+					"Current Fiscal Year to Date": "current_fiscal_year_to_date",
+					"Last Year": "last_year",
+					"All time": "all_time",
+				},
+				"resolved_message_by_option": {
+					"Last Month": "show top 7 customers by revenue for sales invoices last month",
+				},
+			},
+		}
+		self.assertTrue(pending_clarification_message_matches_option("Sales Invoice", basis_signal))
+		self.assertTrue(pending_clarification_message_matches_option("Last Month", period_signal))
+		self.assertFalse(pending_clarification_message_matches_option("show me suppliers", basis_signal))
+		self.assertFalse(
+			_message_should_override_stale_context_as_fresh_query(
+				message="Last Month",
+				language="en",
+			)
+			and not pending_clarification_message_matches_option("Last Month", period_signal)
+		)
+		with patch(
+			"ai_assistant_ui.qwen_chat.clarification_resolution._semantic_new_request_detected",
+			return_value=True,
+		), patch(
+			"ai_assistant_ui.qwen_chat.clarification_resolution._frontdoor_new_request_detected",
+			return_value=True,
+		):
+			contract = resolve_pending_clarification_response(
+				request_id="clarify-composite-period",
+				session_id="session-a",
+				user_id="Administrator",
+				site_name="erp.test",
+				message="Last Month",
+				signal_payload=period_signal,
+				clarification_attempt_count=0,
+				max_attempts=3,
+				grounded_turn={},
+			)
+		self.assertEqual(contract.decision, "resolved_option")
+		self.assertEqual(contract.resolved_option, "Last Month")
 		self.assertEqual(contract.resolved_slot.get("selected_time_scope"), "last_month")
 
 	def test_clarification_continuation_message_supports_declared_placeholder(self):

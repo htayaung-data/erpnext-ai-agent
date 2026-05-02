@@ -1,7 +1,7 @@
 # Qwen ERP Phase 3.6D-0 Full Capability Inventory And UAT Coverage Map
 
-Status: implemented as pre-UAT coverage-control plan
-Date: 2026-04-29
+Status: implemented as pre-UAT coverage-control plan  
+Date: 2026-04-29  
 Scope: full-project capability inventory and browser-UAT coverage map before Phase 3.6D manual browser execution and Phase 4 Complex Business Question Decomposition.
 
 ## 1. Purpose
@@ -181,12 +181,12 @@ Every manual browser UAT question in Phase 3.6D must map to at least one coverag
 Allowed coverage sources:
 
 1. active governed scope
-2. registered repor
+2. registered report
 3. active report family
-4. active composite family or artifac
+4. active composite family or artifact
 5. governed KPI execution
-6. completed release-gate tes
-7. existing contract tes
+6. completed release-gate test
+7. existing contract test
 8. explicit exploratory/adversarial boundary case
 
 If a browser question cannot be mapped to one of these sources, it should be marked exploratory and must not become a release blocker unless it exposes a severe shared-seam regression.
@@ -206,7 +206,7 @@ Required surfaces:
 5. supplier detail
 6. item/product detail
 7. deictic follow-up such as `that customer`, `that supplier`, and `that product`
-8. candidate-list behavior when multiple plausible matches exis
+8. candidate-list behavior when multiple plausible matches exist
 
 Representative prompts:
 
@@ -270,7 +270,7 @@ Required surfaces:
 6. purchase order receipt progress
 7. purchase order billing progress
 8. purchase order planned receipt date
-9. unsupported actual event-date boundaries when evidence is insufficien
+9. unsupported actual event-date boundaries when evidence is insufficient
 
 Representative prompts:
 
@@ -291,7 +291,7 @@ Required surfaces:
 2. Profit and Loss aliases
 3. Balance Sheet aliases
 4. Cash Flow aliases
-5. configured open-fiscal-period defaul
+5. configured open-fiscal-period default
 6. explicit period override
 7. deterministic financial statement rendering
 
@@ -310,7 +310,7 @@ Required surfaces:
 
 1. accounts receivable aging
 2. accounts payable aging
-3. overdue amoun
+3. overdue amount
 4. overdue ratio
 5. customer credit status
 6. credit utilization
@@ -350,6 +350,14 @@ Representative prompts:
 4. `show top products by revenue`
 5. `show top customers by credit utilization`
 6. `show customers above credit limit`
+7. `Top 7 Customers by Revenue` -> `Sales Invoice` -> `Last Month`
+8. `Top 10 Products by Revenue` -> `Sales Invoice` -> `Last Month`
+
+Clarification-continuation rule:
+
+1. missing basis and missing period clarifications must resume the original ranking request
+2. short answers such as `Sales Invoice` and `Last Month` must not open transaction listings
+3. clarified ranking turns must not select stale rows from the previous visible table
 
 ### 5.8 Product Profitability And Margin
 
@@ -388,7 +396,7 @@ Representative prompts:
 
 Required surfaces:
 
-1. customer risk as-of lis
+1. customer risk as-of list
 2. selected-row explanation
 3. selected-row aging breakdown
 4. driver explanation within current artifact evidence
@@ -442,7 +450,7 @@ Required surfaces:
 7. unapproved prediction
 8. unapproved approval action
 9. unapproved hidden score
-10. non-ERP or out-of-scope reques
+10. non-ERP or out-of-scope request
 
 Representative prompts:
 
@@ -458,20 +466,20 @@ Representative prompts:
 Required checks:
 
 1. no internal error
-2. no duplicated title tex
+2. no duplicated title text
 3. no misleading `Top 10` title when fewer rows are displayed unless explained
 4. list count says whether result is complete or limited
 5. tables and lists are readable in browser
 6. amounts, signs, percentages, and dates are formatted correctly
 7. no broken markdown emphasis
-8. answer states period/as-of date where relevan
+8. answer states period/as-of date where relevant
 9. data reflects live ERP and current configured date behavior
 
 Representative prompts:
 
-1. any master-data list resul
+1. any master-data list result
 2. any transaction listing
-3. any financial statemen
+3. any financial statement
 4. any stock-by-warehouse answer
 5. any selected-row composite evidence answer
 

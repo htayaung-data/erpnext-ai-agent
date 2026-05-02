@@ -1,7 +1,7 @@
 # Qwen ERP Phase 3.6B Business Question Quality Matrix
 
-Status: implemented as QA matrix design
-Date: 2026-04-28
+Status: implemented as QA matrix design  
+Date: 2026-04-28  
 Scope: business-question coverage matrix for automated backend checks and manual browser UAT before Phase 4 Complex Business Question Decomposition.
 
 ## 1. Purpose
@@ -27,7 +27,7 @@ Each question group must prove one or more of these capabilities:
 
 1. correct governed scope activation
 2. correct evidence source
-3. correct continuation or context rese
+3. correct continuation or context reset
 4. correct clarification when intent is incomplete
 5. correct fail-closed boundary when the request is unsupported
 6. correct formatting and no internal error
@@ -51,14 +51,14 @@ If a question fails, classify the failure by shared seam:
 Use these gate labels:
 
 1. `A`: must pass before Phase 4
-2. `B`: should pass before Phase 4, but can be documented if blocked by known legacy deb
+2. `B`: should pass before Phase 4, but can be documented if blocked by known legacy debt
 3. `C`: exploratory coverage; failures become backlog unless they expose a severe regression
 
 ## 4. Execution Modes
 
 Use these modes:
 
-1. `automated`: should be covered by backend unit, contract, smoke, or replay tes
+1. `automated`: should be covered by backend unit, contract, smoke, or replay test
 2. `manual_browser`: must be checked by user or browser UAT because it depends on end-to-end UI/live behavior
 3. `both`: automated guard plus manual browser confirmation
 
@@ -117,6 +117,8 @@ Use these modes:
 | CK-08 | A | both | `who should we collect from first?` after CK-01 | Blocks collection recommendation and shows required policy/evidence/execution gate. | Must not give operational recommendation. |
 | CK-09 | B | both | `show me margin` | Returns governed profitability/margin view if supported. | Title row count must match actual rows; no misleading `Top 10` if fewer rows without explanation. |
 | CK-10 | B | manual_browser | `show top products by gross profit` | Uses governed profitability/product performance surface if active. | If not supported, fail closed with supported alternatives. |
+| CK-11 | A | both | `Top 7 Customers by Revenue` then `Sales Invoice` then `Last Month` | Clarifies approved basis, then period, then returns customer revenue ranking. | Short clarification answers must not open transaction listings or select stale visible rows. |
+| CK-12 | A | both | `Top 10 Products by Revenue` then `Sales Invoice` then `Last Month` | Clarifies approved basis, then period, then returns product revenue ranking. | Same clarification-continuation rule must apply across commercial ranking families. |
 
 ## 9. Follow-Up, Context Switch, And Cancellation Matrix
 
@@ -160,7 +162,7 @@ The minimum pack before Phase 4 should include all `A` gate rows:
 1. master data: `MD-01` to `MD-07`
 2. transaction listings: `TL-01` to `TL-08`
 3. financial statements: `FS-01` to `FS-07`
-4. composite/KPI evidence: `CK-01` to `CK-08`
+4. composite/KPI evidence: `CK-01` to `CK-08`, `CK-11`, `CK-12`
 5. follow-up/context: `FC-01`, `FC-02`, `FC-03`, `FC-05`, `FC-06`, `FC-07`
 6. wise fallback: `WF-01` to `WF-05`, `WF-07`
 7. presentation/live data: `PQ-01` to `PQ-06`
