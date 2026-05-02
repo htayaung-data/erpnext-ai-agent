@@ -5976,23 +5976,24 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   text-transform: uppercase;
   color: #64748b;
   font-weight: 760;
+  line-height: 1.35;
 }
 
 .erpw-list-fact-value,
 .erpw-list-metric-value {
-  margin-top: 0.28rem;
+  margin-top: 0.4rem;
   color: #0f172a;
-  font-size: 1.02rem;
+  font-size: 1.06rem;
   font-weight: 780;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .erpw-list-fact-meta,
 .erpw-list-metric-meta {
-  margin-top: 0.22rem;
+  margin-top: 0.36rem;
   color: #64748b;
   font-size: 0.74rem;
-  line-height: 1.45;
+  line-height: 1.62;
 }
 
 .erpw-list-controls-strip {
@@ -6101,7 +6102,10 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpw-list-metric {
-  padding: 0.82rem 0.9rem;
+  display: grid;
+  align-content: start;
+  min-height: 104px;
+  padding: 0.96rem 1rem;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: var(--erpw-shadow-card-quiet);
 }

@@ -57,8 +57,12 @@
 	      "sales invoices": { doctype: "Sales Invoice", queue_key: "sales_order_directory" },
 	      customer: { doctype: "Customer", queue_key: "customer_directory" },
 	      customers: { doctype: "Customer", queue_key: "customer_directory" },
+	      "customer detail": { doctype: "Customer", queue_key: "customer_directory" },
+	      "customer details": { doctype: "Customer", queue_key: "customer_directory" },
 	      item: { doctype: "Item", queue_key: "item_directory" },
 	      items: { doctype: "Item", queue_key: "item_directory" },
+	      "item detail": { doctype: "Item", queue_key: "item_directory" },
+	      "item details": { doctype: "Item", queue_key: "item_directory" },
 	    };
 	    return targets[normalized] || null;
 	  }
@@ -197,9 +201,9 @@
 	      sales_order_directory: "Sales Orders",
 	      customer_directory: "Customers",
 	      item_directory: "Items",
-	      customer_detail: "Customer Detail",
+	      customer_detail: "Customer Details",
 	      customer_editor: "Customer Editor",
-	      item_detail: "Item Detail",
+	      item_detail: "Item Details",
 	      open_orders: "Open Sales Orders",
 	      sales_orders_pending_fulfillment: "Orders Pending Fulfillment",
 	      partially_delivered_orders: "Partially Delivered Orders",
@@ -223,9 +227,9 @@
 	      lost_quotations: "Lost Quotations",
 	    };
 
+	    const queueKey = pageKey === "sales-console-worklist" ? normalizeRouteKey(segments[1] || "") : "";
 	    let leafLabel = settings.title || settings.leafLabel || "";
 	    if (!leafLabel && pageKey === "sales-console-worklist") {
-	      const queueKey = normalizeRouteKey(segments[1] || "");
 	      leafLabel = queueLabels[queueKey] || humanizeRouteKey(queueKey || "worklist");
 	    }
 	    if (!leafLabel && pageKey === "sales-console-report") {
@@ -236,20 +240,38 @@
 	      leafLabel = "Overview";
 	    }
 
+	    const detailParents = {
+	      customer_detail: {
+	        label: "Customer Details",
+	        route: "/desk/sales-console-worklist/customer-directory",
+	        queue_key: "customer_directory",
+	      },
+	      item_detail: {
+	        label: "Item Details",
+	        route: "/desk/sales-console-worklist/item-directory",
+	        queue_key: "item_directory",
+	      },
+	    };
+	    const crumbs = [
+	      {
+	        label: "Sales Console",
+	        route: "/desk/sales-console",
+	        kind: "home",
+	      },
+	    ];
+	    const detailParent = segments[2] ? detailParents[queueKey] : null;
+	    if (detailParent && leafLabel !== detailParent.label) {
+	      crumbs.push(detailParent);
+	    }
+	    crumbs.push({
+	      label: leafLabel,
+	      route: "",
+	      current: true,
+	    });
+
 	    return {
 	      documentTitle: settings.documentTitle || leafLabel,
-	      crumbs: [
-	        {
-	          label: "Sales Console",
-	          route: "/desk/sales-console",
-	          kind: "home",
-	        },
-	        {
-	          label: leafLabel,
-	          route: "",
-	          current: true,
-	        },
-	      ],
+	      crumbs,
 	    };
 	  }
 
@@ -327,6 +349,10 @@
 	          }
 	          if (crumb.kind === "home") {
 	            link.setAttribute("data-erpw-sales-owned-route-kind", "home");
+	          }
+	          if (crumb.queue_key) {
+	            link.setAttribute("data-erpw-sales-owned-route-kind", "directory");
+	            link.setAttribute("data-erpw-sales-owned-route", crumb.queue_key);
 	          }
 	          if (isCurrent) {
 	            link.classList.add("title-text");
