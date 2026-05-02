@@ -9,6 +9,8 @@ from frappe import _
 from frappe.desk.query_report import run as run_query_report
 from frappe.utils import add_months, flt, fmt_money, formatdate, getdate, nowdate
 from frappe.utils.data import get_timespan_date_range
+from erpnext.controllers.trends import get_columns as get_trend_columns
+from erpnext.controllers.trends import get_data as get_trend_data
 
 from . import service
 
@@ -32,8 +34,12 @@ def get_sales_console_report_context(
 		return _apply_report_operating_contract(_build_sales_analytics_report(context, scope, overrides))
 	if normalized_key == "sales_order_analysis":
 		return _apply_report_operating_contract(_build_sales_order_analysis_report(context, scope, overrides))
+	if normalized_key == "trend_analysis":
+		return _apply_report_operating_contract(_build_trend_analysis_report(context, scope, overrides))
 	if normalized_key == "quotation_trends":
-		return _apply_report_operating_contract(_build_quotation_trends_report(context, scope, overrides))
+		legacy_overrides = dict(overrides)
+		legacy_overrides.setdefault("document_type", "Quotation")
+		return _apply_report_operating_contract(_build_trend_analysis_report(context, scope, legacy_overrides))
 	if normalized_key == "collections_status":
 		return _apply_report_operating_contract(_build_collections_status_report(context, scope, overrides))
 	if normalized_key == "payment_terms_status_sales_order":
@@ -51,6 +57,7 @@ def _report_registry() -> dict[str, Callable[[dict[str, object], dict[str, objec
 	return {
 		"sales_analytics": _build_sales_analytics_report,
 		"sales_order_analysis": _build_sales_order_analysis_report,
+		"trend_analysis": _build_trend_analysis_report,
 		"quotation_trends": _build_quotation_trends_report,
 		"collections_status": _build_collections_status_report,
 		"payment_terms_status_sales_order": _build_collections_status_report,
@@ -109,7 +116,7 @@ def _build_sales_analytics_report(
 				"state": _ready_state() if report_rows else {
 					"kind": "empty",
 					"title": "No visible records",
-					"detail": f"The current billed-sales window does not return any visible {entity_labels['plural'].lower()} inside this ERP scope.",
+					"detail": f"The current billed-sales window does not return any visible {entity_labels['plural'].lower()} inside your current access scope.",
 				},
 			},
 			"action_targets": action_targets,
@@ -129,7 +136,7 @@ def _build_sales_analytics_report(
 					"kind": "error",
 					"title": "Report unavailable",
 					"detail": message,
-					"action": {"key": "open_native_report", "label": "Open Native Report"},
+					"action": {"key": "open_native_report", "label": "Open Standard Report"},
 				},
 			},
 			"action_targets": {
@@ -235,7 +242,7 @@ def _build_quotation_trends_report(
 				"state": _ready_state() if report_rows else {
 					"kind": "empty",
 					"title": "No visible records",
-					"detail": f"The selected fiscal window does not return any visible quotation movement for these {entity_labels['plural'].lower()} inside this ERP scope.",
+					"detail": f"The selected fiscal window does not return any visible quotation movement for these {entity_labels['plural'].lower()} inside your current access scope.",
 				},
 			},
 			"action_targets": action_targets,
@@ -413,7 +420,7 @@ def _build_lost_quotations_report(
 				"state": _ready_state() if report_rows else {
 					"kind": "empty",
 					"title": "No visible records",
-					"detail": "The selected review window does not return any visible lost quotations inside this ERP scope.",
+					"detail": "The selected review window does not return any visible lost quotations inside your current access scope.",
 				},
 			},
 			"action_targets": action_targets,
@@ -432,6 +439,67 @@ def _build_lost_quotations_report(
 				"state": {
 					"kind": "error",
 					"title": "Live report unavailable",
+					"detail": message,
+				},
+			},
+			"action_targets": {},
+		}
+
+
+def _build_trend_analysis_report(
+	context: dict[str, object],
+	scope: dict[str, object],
+	filter_overrides: dict[str, object] | None = None,
+) -> dict[str, object]:
+	filters = _trend_analysis_filters(filter_overrides)
+	source = _trend_analysis_source(filters.get("document_type"))
+	company_currency = _company_currency(filters.get("company"))
+	entity_labels = _sales_analytics_entity_labels(filters.get("based_on"))
+	if not service._can_read(source["doctype"]):
+		return _trend_analysis_permission_payload(filters, scope, source, entity_labels)
+	try:
+		columns, raw_rows = _run_trend_analysis_query(filters, source)
+		report_rows = _prepare_quotation_trends_rows(raw_rows)
+		columns = _trend_analysis_columns(columns, report_rows, filters, source)
+		chart = _trend_analysis_chart(report_rows, columns, filters, source, company_currency)
+		rows, action_targets = _build_rows(report_rows, columns, company_currency)
+		return {
+			"page": {"title": "Trend Analysis", "key": "trend_analysis"},
+			"summary": {
+				"title": "Trend Analysis",
+				"subtitle": f"{source['summary_value_label']} movement by {entity_labels['plural'].lower()} across the selected fiscal window.",
+			},
+			"controls": _trend_analysis_controls(filters, scope),
+			"metrics": _trend_analysis_metrics(report_rows, chart, filters, source, company_currency),
+			"secondary": _trend_analysis_secondary(chart, filters, source, company_currency),
+			"results": {
+				"title": f"{entity_labels['singular']} {source['detail_noun']} trend detail",
+				"subtitle": f"Visible {entity_labels['plural'].lower()} ranked by {source['value_meta_noun']} across the active fiscal window.",
+				"meta": _results_meta(len(report_rows)),
+				"columns": [{"key": col["key"], "label": col["label"], "align": col["align"]} for col in columns],
+				"rows": rows[:ROW_LIMIT],
+				"state": _ready_state() if report_rows else {
+					"kind": "empty",
+					"title": "No visible records",
+					"detail": f"The selected fiscal window does not return any visible {source['detail_noun']} movement for these {entity_labels['plural'].lower()} inside your current access scope.",
+				},
+			},
+			"action_targets": action_targets,
+		}
+	except Exception as exc:  # pragma: no cover - exercised against live ERP runtime
+		message = getattr(exc, "message", None) or str(exc) or "Unknown report error."
+		return {
+			"page": {"title": "Trend Analysis", "key": "trend_analysis"},
+			"summary": {
+				"title": "Trend Analysis",
+				"subtitle": f"{source['summary_value_label']} movement by {entity_labels['plural'].lower()} across the selected fiscal window.",
+			},
+			"controls": _trend_analysis_controls(filters, scope),
+			"results": {
+				"title": "Report state",
+				"state": {
+					"kind": "error",
+					"title": "Trend analysis unavailable",
 					"detail": message,
 				},
 			},
@@ -541,7 +609,7 @@ def _build_report_payload(
 				"state": _ready_state() if raw_rows else {
 					"kind": "empty",
 					"title": "No visible records",
-					"detail": "The current report window does not return any records inside this ERP permission scope.",
+					"detail": "The current report window does not return any records inside your current access scope.",
 				},
 			},
 			"action_targets": action_targets,
@@ -562,8 +630,8 @@ def _route_unavailable_payload(report_key: str, scope: dict[str, object]) -> dic
 	return {
 		"page": {"title": "Sales Console Report"},
 		"summary": {
-			"title": "Report route unavailable",
-			"subtitle": f"The report route '{report_key or 'unknown'}' is not configured for this productized report surface.",
+			"title": "Report unavailable",
+			"subtitle": "This Sales Console report is not available from the current link.",
 		},
 		"controls": {
 			"filterChips": _scope_filter_chip(scope),
@@ -572,8 +640,8 @@ def _route_unavailable_payload(report_key: str, scope: dict[str, object]) -> dic
 			"title": "Report state",
 			"state": {
 				"kind": "error",
-				"title": "Unsupported report route",
-				"detail": "Open the report from a Sales Console report card so the correct route key is passed through.",
+				"title": "Report link not supported",
+				"detail": "Open the report from a Sales Console report card.",
 			},
 		},
 			"action_targets": {},
@@ -582,8 +650,8 @@ def _route_unavailable_payload(report_key: str, scope: dict[str, object]) -> dic
 
 def _base_report_actions() -> list[dict[str, object]]:
 	return [
-		{"key": "back_to_console", "label": "Back to Sales Console"},
 		{"key": "refresh", "label": "Refresh"},
+		{"key": "back_to_console", "label": "Back to Sales Console", "category": "navigation"},
 	]
 
 
@@ -642,12 +710,37 @@ def _report_error_payload(
 				"kind": "error",
 				"title": "Report unavailable",
 				"detail": message,
-				"action": {"key": "open_native_report", "label": "Open Native Report"},
+				"action": {"key": "open_native_report", "label": "Open Standard Report"},
 			},
 		},
 		"action_targets": {
 			"open_native_report": {"kind": "report", "report_name": report_name, "filters": filters},
 		},
+	}
+
+
+def _trend_analysis_permission_payload(
+	filters: dict[str, object],
+	scope: dict[str, object],
+	source: dict[str, str],
+	entity_labels: dict[str, str],
+) -> dict[str, object]:
+	return {
+		"page": {"title": "Trend Analysis", "key": "trend_analysis"},
+		"summary": {
+			"title": "Trend Analysis",
+			"subtitle": f"{source['summary_value_label']} movement by {entity_labels['plural'].lower()} across the selected fiscal window.",
+		},
+		"controls": _trend_analysis_controls(filters, scope),
+		"results": {
+			"title": "Report state",
+			"state": {
+				"kind": "error",
+				"title": "Access restricted",
+				"detail": f"Your current role does not have read permission for {source['doctype']}, so this trend cannot be shown safely.",
+			},
+		},
+		"action_targets": {},
 	}
 
 
@@ -1082,12 +1175,12 @@ def _collections_status_columns() -> list[dict[str, object]]:
 def _collections_status_empty_detail(filters: dict[str, object]) -> str:
 	view = filters.get("collection_view") or "open_invoices"
 	if view == "overdue_only":
-		return "The selected window does not return any overdue customer invoices inside this ERP scope."
+		return "The selected window does not return any overdue customer invoices inside your current access scope."
 	if view == "settled_invoices":
-		return "The selected window does not return any fully settled customer invoices inside this ERP scope."
+		return "The selected window does not return any fully settled customer invoices inside your current access scope."
 	if view == "open_invoices":
-		return "The selected window does not return any open customer invoices inside this ERP scope."
-	return "The selected window does not return any visible customer invoices inside this ERP scope."
+		return "The selected window does not return any open customer invoices inside your current access scope."
+	return "The selected window does not return any visible customer invoices inside your current access scope."
 
 
 def _sales_order_analysis_is_open_execution(row: dict[str, object]) -> bool:
@@ -1124,10 +1217,10 @@ def _sales_order_analysis_columns() -> list[dict[str, object]]:
 def _sales_order_analysis_empty_detail(filters: dict[str, object]) -> str:
 	view = filters.get("execution_view") or "all_orders"
 	if view == "open_execution":
-		return "The current window does not return any visible open sales orders inside this ERP scope."
+		return "The current window does not return any visible open sales orders inside your current access scope."
 	if view == "completed_orders":
-		return "The current window does not return any visible completed or closed sales orders inside this ERP scope."
-	return "The current report window does not return any visible sales orders inside this ERP permission scope."
+		return "The current window does not return any visible completed or closed sales orders inside your current access scope."
+	return "The current report window does not return any visible sales orders inside your current access scope."
 
 
 def _prepare_quotation_trends_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -1278,6 +1371,101 @@ def _quotation_trends_controls(filters: dict[str, object], scope: dict[str, obje
 		"submitLabel": "Apply",
 		"resetLabel": "Reset",
 	}
+
+
+def _trend_analysis_filters(filter_overrides: dict[str, object] | None = None) -> dict[str, object]:
+	fiscal_window = _current_fiscal_year_window()
+	filters = {
+		"document_type": "Sales Invoice",
+		"period": "Monthly",
+		"based_on": "Customer",
+		"group_by": "",
+		"fiscal_year": fiscal_window["name"],
+		"company": _default_company(),
+		"include_closed_orders": 0,
+	}
+	overrides = filter_overrides or {}
+	allowed_document_types = {option["value"] for option in _trend_analysis_document_type_options()}
+	document_type = str(overrides.get("document_type") or overrides.get("doc_type") or filters["document_type"])
+	if document_type in allowed_document_types:
+		filters["document_type"] = document_type
+
+	allowed_periods = {option["value"] for option in _quotation_trends_period_options()}
+	period = str(overrides.get("period") or filters["period"])
+	if period in allowed_periods:
+		filters["period"] = period
+
+	allowed_based_on = {option["value"] for option in _trend_analysis_based_on_options(filters["document_type"])}
+	based_on = str(overrides.get("based_on") or overrides.get("tree_type") or filters["based_on"])
+	if based_on in allowed_based_on:
+		filters["based_on"] = based_on
+
+	allowed_fiscal_years = {option["value"] for option in _fiscal_year_options()}
+	fiscal_year = str(overrides.get("fiscal_year") or filters["fiscal_year"])
+	if fiscal_year in allowed_fiscal_years:
+		filters["fiscal_year"] = fiscal_year
+
+	if filters["document_type"] == "Sales Order":
+		filters["include_closed_orders"] = 1 if str(overrides.get("include_closed_orders") or "").lower() in {"1", "true", "yes"} else 0
+	filters["group_by"] = ""
+	return filters
+
+
+def _trend_analysis_controls(filters: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
+	return {
+		"appearance": "analytics_compact",
+		"meta": [
+			{"label": "Scope", "value": _scope_control_value(scope)},
+			{"label": "Company", "value": filters.get("company")},
+		],
+		"fields": [
+			{
+				"key": "document_type",
+				"label": "Document type",
+				"type": "select",
+				"value": filters.get("document_type") or "Sales Invoice",
+				"options": _trend_analysis_document_type_options(),
+			},
+			{
+				"key": "based_on",
+				"label": "View by",
+				"type": "select",
+				"value": filters.get("based_on") or "Customer",
+				"options": _trend_analysis_based_on_options(filters.get("document_type")),
+			},
+			{
+				"key": "period",
+				"label": "Periodicity",
+				"type": "select",
+				"value": filters.get("period") or "Monthly",
+				"options": _quotation_trends_period_options(),
+			},
+			{
+				"key": "fiscal_year",
+				"label": "Fiscal year",
+				"type": "select",
+				"value": filters.get("fiscal_year"),
+				"options": _fiscal_year_options(),
+			},
+		],
+		"submitLabel": "Apply",
+		"resetLabel": "Reset",
+	}
+
+
+def _trend_analysis_document_type_options() -> list[dict[str, str]]:
+	return [
+		{"label": "Sales Invoice", "value": "Sales Invoice"},
+		{"label": "Sales Order", "value": "Sales Order"},
+		{"label": "Quotation", "value": "Quotation"},
+	]
+
+
+def _trend_analysis_based_on_options(document_type: object) -> list[dict[str, str]]:
+	options = _quotation_trends_based_on_options()
+	if str(document_type or "") == "Quotation":
+		return [option for option in options if option["value"] != "Project"]
+	return options
 
 
 def _quotation_trends_period_options() -> list[dict[str, str]]:
@@ -1436,14 +1624,16 @@ def _item_wise_sales_history_controls(filters: dict[str, object], scope: dict[st
 			{
 				"key": "item_code",
 				"label": "Item code",
-				"type": "text",
+				"type": "link",
+				"doctype": "Item",
 				"value": filters.get("item_code") or "",
 				"row": 1,
 			},
 			{
 				"key": "customer",
 				"label": "Customer",
-				"type": "text",
+				"type": "link",
+				"doctype": "Customer",
 				"value": filters.get("customer") or "",
 				"row": 1,
 			},
@@ -1551,15 +1741,62 @@ def _lost_quotations_group_by_options() -> list[dict[str, str]]:
 	]
 
 
-def _sales_order_trends_filters() -> dict[str, object]:
+def _sales_order_trends_filters(filter_overrides: dict[str, object] | None = None) -> dict[str, object]:
 	fiscal_window = _current_fiscal_year_window()
-	return {
+	filters = {
 		"period": "Monthly",
 		"based_on": "Customer",
 		"group_by": "",
 		"fiscal_year": fiscal_window["name"],
 		"company": _default_company(),
 		"include_closed_orders": 0,
+	}
+	overrides = filter_overrides or {}
+	allowed_periods = {option["value"] for option in _quotation_trends_period_options()}
+	allowed_based_on = {option["value"] for option in _quotation_trends_based_on_options()}
+	allowed_fiscal_years = {option["value"] for option in _fiscal_year_options()}
+	period = str(overrides.get("period") or filters["period"])
+	based_on = str(overrides.get("based_on") or filters["based_on"])
+	fiscal_year = str(overrides.get("fiscal_year") or filters["fiscal_year"])
+	if period in allowed_periods:
+		filters["period"] = period
+	if based_on in allowed_based_on:
+		filters["based_on"] = based_on
+	if fiscal_year in allowed_fiscal_years:
+		filters["fiscal_year"] = fiscal_year
+	filters["group_by"] = ""
+	return filters
+
+
+def _sales_order_trends_controls(filters: dict[str, object], scope: dict[str, object]) -> dict[str, object]:
+	return {
+		"appearance": "analytics_compact",
+		"meta": [{"label": "Scope", "value": _scope_control_value(scope)}],
+		"fields": [
+			{
+				"key": "based_on",
+				"label": "View by",
+				"type": "select",
+				"value": filters.get("based_on") or "Customer",
+				"options": _quotation_trends_based_on_options(),
+			},
+			{
+				"key": "period",
+				"label": "Periodicity",
+				"type": "select",
+				"value": filters.get("period") or "Monthly",
+				"options": _quotation_trends_period_options(),
+			},
+			{
+				"key": "fiscal_year",
+				"label": "Fiscal year",
+				"type": "select",
+				"value": filters.get("fiscal_year"),
+				"options": _fiscal_year_options(),
+			},
+		],
+		"submitLabel": "Apply",
+		"resetLabel": "Reset",
 	}
 
 
@@ -1641,7 +1878,7 @@ def _item_wise_sales_history_empty_detail(filters: dict[str, object]) -> str:
 		return f"No visible sales history is returned for customer '{filters.get('customer')}' inside the selected window."
 	if filters.get("item_group"):
 		return f"No visible sales history is returned for item group '{filters.get('item_group')}' inside the selected window."
-	return "The selected operating window does not return any visible item sales rows inside this ERP scope."
+	return "The selected operating window does not return any visible item sales rows inside your current access scope."
 
 
 def _sales_order_trends_filter_chips(filters: dict[str, object], scope: dict[str, object]) -> list[dict[str, object]]:
@@ -1720,6 +1957,149 @@ def _normalize_rows(rows: list[object], columns: list[dict[str, object]]) -> lis
 		if isinstance(row, (list, tuple)):
 			normalized.append({field_order[index]: value for index, value in enumerate(row) if index < len(field_order)})
 	return normalized
+
+
+def _normalize_trend_columns(columns: list[object]) -> list[dict[str, object]]:
+	normalized: list[dict[str, object]] = []
+	for index, column in enumerate(columns):
+		if not isinstance(column, str):
+			normalized.extend(_normalize_columns([column]))
+			continue
+		parts = column.split(":")
+		label = parts[0].strip() or f"Column {index + 1}"
+		type_spec = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Data"
+		if "/" in type_spec:
+			fieldtype, options = type_spec.split("/", 1)
+			fieldtype = fieldtype.strip() or "Data"
+			options = options.strip() or None
+		else:
+			fieldtype = type_spec
+			options = None
+		fieldname = frappe.scrub(label)
+		normalized.append(
+			{
+				"key": fieldname,
+				"fieldname": fieldname,
+				"label": label,
+				"fieldtype": fieldtype,
+				"options": options,
+				"align": "right" if fieldtype in {"Currency", "Float", "Int", "Percent"} else "",
+			}
+		)
+	return normalized
+
+
+def _trend_analysis_source(document_type: object) -> dict[str, str]:
+	sources = {
+		"Sales Invoice": {
+			"doctype": "Sales Invoice",
+			"summary_value_label": "Billed value",
+			"value_label": "Billed value",
+			"value_meta_noun": "billed value",
+			"detail_noun": "invoice",
+			"empty_noun": "invoice",
+			"axis_label": "Billed Value",
+		},
+		"Sales Order": {
+			"doctype": "Sales Order",
+			"summary_value_label": "Submitted order value",
+			"value_label": "Order value",
+			"value_meta_noun": "order value",
+			"detail_noun": "order",
+			"empty_noun": "order",
+			"axis_label": "Order Value",
+		},
+		"Quotation": {
+			"doctype": "Quotation",
+			"summary_value_label": "Quoted value",
+			"value_label": "Quoted value",
+			"value_meta_noun": "quoted value",
+			"detail_noun": "quotation",
+			"empty_noun": "quotation",
+			"axis_label": "Quoted Value",
+		},
+	}
+	return sources.get(str(document_type or ""), sources["Sales Invoice"])
+
+
+def _run_trend_analysis_query(
+	filters: dict[str, object],
+	source: dict[str, str],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+	trend_filters = frappe._dict(
+		{
+			"period": filters.get("period"),
+			"based_on": filters.get("based_on"),
+			"group_by": filters.get("group_by") or "",
+			"fiscal_year": filters.get("fiscal_year"),
+			"company": filters.get("company"),
+			"include_closed_orders": filters.get("include_closed_orders") or 0,
+			"period_based_on": None,
+		}
+	)
+	conditions = get_trend_columns(trend_filters, source["doctype"])
+	columns = _normalize_trend_columns(conditions.get("columns") or [])
+	raw_rows = get_trend_data(trend_filters, conditions)
+	return columns, _normalize_rows(raw_rows or [], columns)
+
+
+def _trend_analysis_columns(
+	columns: list[dict[str, object]],
+	rows: list[dict[str, object]],
+	filters: dict[str, object],
+	source: dict[str, str],
+) -> list[dict[str, object]]:
+	entity_label = _sales_analytics_entity_labels(filters.get("based_on"))["singular"]
+	prepared: list[dict[str, object]] = []
+	for column in columns:
+		fieldname = str(column.get("fieldname") or column.get("key") or "")
+		if _quotation_trends_is_quantity_field(fieldname):
+			continue
+		if fieldname == "currency":
+			continue
+		if fieldname == "party_name" and _quotation_trends_field_values_match(rows, "party", "party_name"):
+			continue
+		if fieldname == "customer_name" and _quotation_trends_field_values_match(rows, "customer", "customer_name"):
+			continue
+		updated = dict(column)
+		if fieldname in {"party", "customer", "item_code", "item_group", "customer_group", "project"}:
+			updated["label"] = entity_label
+		elif fieldname == "territory":
+			updated["label"] = "Territory"
+			updated["fieldtype"] = "Data"
+			updated["options"] = None
+		elif fieldname == "total(amt)":
+			updated["label"] = source["value_label"]
+		elif _quotation_trends_is_period_amount_field(fieldname):
+			updated["label"] = _quotation_trends_period_label(updated.get("label") or fieldname)
+		prepared.append(updated)
+	return prepared
+
+
+def _trend_analysis_chart(
+	rows: list[dict[str, object]],
+	columns: list[dict[str, object]],
+	filters: dict[str, object],
+	source: dict[str, str],
+	company_currency: str | None,
+) -> dict[str, object]:
+	period_columns = [column for column in columns if _quotation_trends_is_period_amount_field(str(column.get("fieldname") or ""))]
+	labels = [_quotation_trends_period_label(column.get("label") or column.get("fieldname")) for column in period_columns]
+	values = [
+		sum(flt(row.get(column["fieldname"])) for row in rows if row.get(column["fieldname"]) not in (None, ""))
+		for column in period_columns
+	]
+	return {
+		"data": {
+			"labels": labels,
+			"datasets": [
+				{"name": f"{filters.get('period') or 'Monthly'} {source['axis_label']}", "values": values}
+			],
+		},
+		"type": "line",
+		"fieldtype": "Currency",
+		"currency": company_currency,
+	}
 
 
 def _build_rows(
@@ -1938,6 +2318,50 @@ def _quotation_trends_metrics(
 				"label": "Quoted value",
 				"value": _money(total_amt, company_currency),
 				"meta": f"{filters.get('fiscal_year')} visible quotation value",
+				"tone": "teal",
+			},
+			{
+				"label": f"Top {entity_labels['singular'].lower()}",
+				"value": top_entity,
+				"meta": top_entity_meta,
+				"tone": "indigo",
+			},
+			{
+				"label": "Peak period",
+				"value": peak_label or "--",
+				"meta": _money(peak_value, company_currency) if peak_label else "No active period yet",
+				"tone": "amber",
+			},
+		],
+	}
+
+
+def _trend_analysis_metrics(
+	rows: list[dict[str, object]],
+	chart: dict[str, object],
+	filters: dict[str, object],
+	source: dict[str, str],
+	company_currency: str | None,
+) -> dict[str, object]:
+	entity_labels = _sales_analytics_entity_labels(filters.get("based_on"))
+	total_amt = sum(flt(row.get("_total_amount")) for row in rows)
+	top_entity = "--"
+	top_entity_meta = f"No visible {source['value_meta_noun']} yet"
+	if rows:
+		top_row = rows[0]
+		top_entity = str(top_row.get("_entity") or "--")
+		top_entity_value = flt(top_row.get("_total_amount"))
+		share = (top_entity_value / total_amt * 100.0) if total_amt else 0.0
+		top_entity_meta = f"{_money(top_entity_value, company_currency)} / {round(share)}% of visible {source['value_meta_noun']}"
+	labels, values = _chart_series(chart)
+	peak_label, peak_value = _peak_point(labels, values)
+	return {
+		"appearance": "analytics_compact",
+		"items": [
+			{
+				"label": source["value_label"],
+				"value": _money(total_amt, company_currency),
+				"meta": f"{filters.get('fiscal_year')} visible {source['value_meta_noun']}",
 				"tone": "teal",
 			},
 			{
@@ -2237,6 +2661,19 @@ def _quotation_trends_secondary(
 		chart,
 		company_currency,
 		f"{filters.get('period') or 'Monthly'} visible quoted amount across the selected fiscal year.",
+	)
+
+
+def _trend_analysis_secondary(
+	chart: dict[str, object] | None,
+	filters: dict[str, object],
+	source: dict[str, str],
+	company_currency: str | None,
+) -> dict[str, object] | None:
+	return _period_bar_secondary(
+		chart,
+		company_currency,
+		f"{filters.get('period') or 'Monthly'} visible {source['value_meta_noun']} across the selected fiscal year.",
 	)
 
 

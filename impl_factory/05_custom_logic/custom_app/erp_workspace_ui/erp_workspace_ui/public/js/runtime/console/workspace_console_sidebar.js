@@ -158,7 +158,7 @@
         display: inline-grid;
         place-items: center;
         border-radius: 9px;
-        border: 1px solid rgba(228, 234, 242, 0.96);
+        border: 1px solid rgba(226, 232, 240, 0.68);
         background: #ffffff;
         color: #64748b;
       }
@@ -283,13 +283,13 @@
         display: inline-grid;
         place-items: center;
         border-radius: 9px;
-        border: 1px solid rgba(228, 234, 242, 0.96);
+        border: 1px solid rgba(226, 232, 240, 0.68);
         background: #ffffff;
         color: #64748b;
         box-shadow: none;
       }
       .erpw-sales-console-sidebar-link.is-active .erpw-sales-console-sidebar-icon {
-        border-color: rgba(228, 234, 242, 0.98);
+        border-color: rgba(203, 213, 225, 0.72);
         background: #ffffff;
         color: #334155;
       }
@@ -567,8 +567,14 @@
       ].includes(worklistKey)) {
         return "sales_order_directory";
       }
-      return worklistKey;
-    }
+	      if (["customer_detail", "customer_editor"].includes(worklistKey)) {
+	        return "customer_directory";
+	      }
+	      if (worklistKey === "item_detail") {
+	        return "item_directory";
+	      }
+	      return worklistKey;
+	    }
     if (pageKey === "sales-console-report") return "";
     return "";
   }
@@ -818,13 +824,23 @@
     return filters && typeof filters === "object" ? String(filters.customer || "").trim() : "";
   }
 
+  function itemRouteValue(filters) {
+    return filters && typeof filters === "object" ? String(filters.item || filters.item_code || "").trim() : "";
+  }
+
   function routeToWorklist(queueKey, filters) {
     const nextFilters = filters && Object.keys(filters).length ? filters : null;
     const normalizedQueueKey = String(queueKey || "").replace(/_/g, "-");
+    const normalizedTargetKey = String(queueKey || "").replace(/-/g, "_");
     const routeCustomer = customerRouteValue(nextFilters);
+    const routeItem = itemRouteValue(nextFilters);
     frappe.route_options = nextFilters;
-    if (["customer_detail", "customer_editor"].includes(String(queueKey || "").replace(/-/g, "_")) && routeCustomer) {
+    if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
       frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeCustomer));
+      return;
+    }
+    if (normalizedTargetKey === "item_detail" && routeItem) {
+      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeItem));
       return;
     }
     frappe.set_route("sales-console-worklist", normalizedQueueKey);
@@ -868,10 +884,14 @@
       const currentQueueKey = Array.isArray(route) && route[0] === "sales-console-worklist"
         ? String(route[1] || "").replace(/-/g, "_")
         : "";
-      const filters = target.filters && typeof target.filters === "object" ? target.filters : null;
-      if (["customer_detail", "customer_editor"].includes(String(target.queue_key || "").replace(/-/g, "_")) && customerRouteValue(filters)) {
-        return routeToWorklist(target.queue_key, filters);
-      }
+	      const filters = target.filters && typeof target.filters === "object" ? target.filters : null;
+	      const normalizedTargetKey = String(target.queue_key || "").replace(/-/g, "_");
+	      if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && customerRouteValue(filters)) {
+	        return routeToWorklist(target.queue_key, filters);
+	      }
+	      if (normalizedTargetKey === "item_detail" && itemRouteValue(filters)) {
+	        return routeToWorklist(target.queue_key, filters);
+	      }
       const worklistRuntime = root.erpWorkspaceSalesConsoleWorklist;
       if (
         filters &&
@@ -916,6 +936,7 @@
       elements.$status.text("").attr("hidden", true);
     }
     elements.$results.empty().attr("hidden", true);
+    elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
   }
 
   function setWorkspaceSearchActive(index) {
@@ -932,7 +953,10 @@
     const $active = $items.filter(`[data-erpw-sales-search-index="${boundedIndex}"]`);
     $active.addClass("is-active").attr("aria-selected", "true");
     const activeNode = $active.get(0);
-    if (activeNode) activeNode.scrollIntoView({ block: "nearest" });
+    if (activeNode) {
+      elements.$input.attr("aria-activedescendant", activeNode.id || "");
+      activeNode.scrollIntoView({ block: "nearest" });
+    }
   }
 
   function chooseWorkspaceSearchResult(index) {
@@ -953,10 +977,12 @@
     if (!searchResults.length) {
       elements.$status.text((payload && payload.message) || "No Sales Console records match this search yet.").removeAttr("hidden");
       elements.$results.empty().attr("hidden", true);
+      elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
       return;
     }
 
     elements.$status.text((payload && payload.message) || `${searchResults.length} result(s) found.`).removeAttr("hidden");
+    elements.$input.attr("aria-expanded", "true");
 
     const groups = [];
     searchResults.forEach((item, index) => {
@@ -977,6 +1003,8 @@
             type="button"
             class="erpw-sales-console-search-result${item._index === searchActiveIndex ? " is-active" : ""}"
             data-erpw-sales-search-index="${item._index}"
+            id="erpw-sales-console-search-option-${item._index}"
+            role="option"
             aria-selected="${item._index === searchActiveIndex ? "true" : "false"}"
           >
             <span class="erpw-sales-console-search-result-badge">${escapeHtml(item.doctype || "Record")}</span>
@@ -988,6 +1016,7 @@
         `).join("")}
       </div>
     `).join("")).removeAttr("hidden");
+    elements.$input.attr("aria-activedescendant", `erpw-sales-console-search-option-${searchActiveIndex}`);
 
     elements.$results.find("[data-erpw-sales-search-index]").on("mouseenter", function () {
       setWorkspaceSearchActive(Number(this.getAttribute("data-erpw-sales-search-index")));
@@ -1050,13 +1079,25 @@
             type="text"
             class="erpw-sales-console-search-input"
             data-erpw-sales-search-input
+            aria-label="Search Sales Console"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="erpw-sales-console-search-results"
             placeholder="Search customers, items, quotations, or sales orders"
             autocomplete="off"
           />
           <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
         </div>
         <div class="erpw-sales-console-search-status" data-erpw-sales-search-status hidden></div>
-        <div class="erpw-sales-console-search-results" data-erpw-sales-search-results hidden></div>
+        <div
+          class="erpw-sales-console-search-results"
+          data-erpw-sales-search-results
+          id="erpw-sales-console-search-results"
+          role="listbox"
+          aria-label="Sales Console search results"
+          hidden
+        ></div>
       </div>
     `);
 
@@ -1193,13 +1234,25 @@
 
     const utilitiesMarkup = `
       <div class="erpw-sales-console-sidebar-utilities">
-        <button type="button" class="erpw-sales-console-sidebar-utility" data-erpw-sales-notifications-open="1">
+        <button
+          type="button"
+          class="erpw-sales-console-sidebar-utility"
+          data-erpw-sales-notifications-open="1"
+          aria-label="Open notifications"
+          title="Notification"
+        >
           <span class="erpw-sales-console-sidebar-utility-icon" aria-hidden="true">${iconMarkup("notification")}</span>
           <span class="erpw-sales-console-sidebar-utility-copy">
             <span class="erpw-sales-console-sidebar-utility-title">Notification</span>
           </span>
         </button>
-        <button type="button" class="erpw-sales-console-sidebar-utility" data-erpw-sales-search-open="1">
+        <button
+          type="button"
+          class="erpw-sales-console-sidebar-utility"
+          data-erpw-sales-search-open="1"
+          aria-label="Open Sales Console search"
+          title="Search"
+        >
           <span class="erpw-sales-console-sidebar-utility-icon" aria-hidden="true">${iconMarkup("search")}</span>
           <span class="erpw-sales-console-sidebar-utility-copy">
             <span class="erpw-sales-console-sidebar-utility-title">Search</span>
@@ -1221,13 +1274,20 @@
         const indexKey = String(currentIndex);
         itemIndex.set(indexKey, item);
         const activeClass = item.key === activeKey ? " is-active" : "";
+        const itemLabel = item.label || "Sales Console";
         return `
           <div class="erpw-sales-console-sidebar-item">
             <div class="standard-sidebar-item">
-              <button type="button" class="item-anchor erpw-sales-console-sidebar-link${activeClass}" data-erpw-sidebar-index="${escapeHtml(indexKey)}">
+              <button
+                type="button"
+                class="item-anchor erpw-sales-console-sidebar-link${activeClass}"
+                data-erpw-sidebar-index="${escapeHtml(indexKey)}"
+                aria-label="${escapeHtml(itemLabel)}"
+                title="${escapeHtml(itemLabel)}"
+              >
                 <span class="erpw-sales-console-sidebar-icon" aria-hidden="true">${iconMarkup(item.icon || "square")}</span>
                 <span class="erpw-sales-console-sidebar-copy">
-                  <span class="erpw-sales-console-sidebar-text">${escapeHtml(item.label || "Sales Console")}</span>
+                  <span class="erpw-sales-console-sidebar-text">${escapeHtml(itemLabel)}</span>
                 </span>
               </button>
             </div>

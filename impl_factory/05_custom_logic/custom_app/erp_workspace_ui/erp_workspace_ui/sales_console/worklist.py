@@ -142,7 +142,7 @@ def _queue_registry(today, context: dict[str, object], scope: dict[str, object],
 		"open_orders": lambda: _build_sales_order_worklist(
 			queue_key="open_orders",
 			page_title="Open Sales Orders",
-			summary_subtitle="All active operational sales orders in the current console scope.",
+			summary_subtitle="All active operational sales orders in the current Sales Console scope.",
 			filters_label="Active operational orders",
 			filters_builder=lambda: service._sales_order_active_filters(scope),
 			native_target=service._open_sales_order_target(scope),
@@ -175,7 +175,7 @@ def _queue_registry(today, context: dict[str, object], scope: dict[str, object],
 			native_target=service._orders_due_soon_target(today, scope),
 			scope=scope,
 		),
-		"quotations_waiting_action": lambda: _build_quotation_worklist(
+			"quotations_waiting_action": lambda: _build_quotation_worklist(
 			queue_key="quotations_waiting_action",
 			page_title="Quotations Waiting for Action",
 			summary_subtitle="Draft and open quotations still requiring commercial movement.",
@@ -184,10 +184,11 @@ def _queue_registry(today, context: dict[str, object], scope: dict[str, object],
 			native_target=service._actionable_quotation_target(scope),
 			scope=scope,
 		),
-		"customer_directory": lambda: _build_customer_worklist(context, scope, applied_filters),
-		"customer_detail": lambda: _build_customer_detail_worklist(context, scope, applied_filters),
-		"item_directory": lambda: _build_item_worklist(scope, applied_filters),
-		"expiring_quotations": lambda: _build_quotation_worklist(
+			"customer_directory": lambda: _build_customer_worklist(context, scope, applied_filters),
+			"customer_detail": lambda: _build_customer_detail_worklist(context, scope, applied_filters),
+			"item_directory": lambda: _build_item_worklist(scope, applied_filters),
+			"item_detail": lambda: _build_item_detail_worklist(scope, applied_filters),
+			"expiring_quotations": lambda: _build_quotation_worklist(
 			queue_key="expiring_quotations",
 			page_title="Quotations Nearing Expiry",
 			summary_subtitle="Active quotations expiring within the next seven days.",
@@ -209,22 +210,22 @@ def _route_unavailable_payload(queue_key: str, scope: dict[str, object]) -> dict
 	return {
 		"page": {"title": "Sales Console Worklist"},
 		"summary": {
-			"kicker": "Sales Console worklist",
-			"title": "Operational queue unavailable",
-			"subtitle": f"The queue route '{queue_key or 'unknown'}' is not configured for this productized list surface.",
-			"facts": _summary_facts(0, scope, "Unsupported queue route."),
+				"kicker": "Sales Console worklist",
+				"title": "Operational queue unavailable",
+				"subtitle": "This Sales Console queue is not available from the current link.",
+				"facts": _summary_facts(0, scope, "Open this queue from Sales Console."),
 		},
 		"controls": {
 			"scopeChips": _scope_chips(scope),
 		},
-		"results": {
-			"title": "Queue state",
-			"state": {
-				"kind": "error",
-				"title": "Queue route unavailable",
-				"detail": "Open the Sales Console first, then launch the operational queue from the console card itself.",
+			"results": {
+				"title": "Queue state",
+				"state": {
+					"kind": "error",
+					"title": "Queue link not supported",
+					"detail": "Open the Sales Console first, then launch the queue from a Sales Console card.",
+				},
 			},
-		},
 		"action_targets": {},
 	}
 
@@ -348,8 +349,8 @@ def _build_quotation_directory_worklist(today, context: dict[str, object], scope
 	if not service._can_read("Quotation"):
 		return _restricted_payload(
 			"Quotations",
-			"All visible quotations in the current console scope, with operational views available above the table.",
-			scope_note="Quotation is outside current permission scope.",
+			"All visible quotations in the current Sales Console scope, with operational views available above the table.",
+			scope_note="Quotation is outside your current access scope.",
 			scope=scope,
 			native_target=service._quotation_native_target(scope),
 		)
@@ -396,15 +397,23 @@ def _build_quotation_directory_worklist(today, context: dict[str, object], scope
 		results_state = {
 			"kind": "empty",
 			"title": "No quotations visible",
-			"detail": "No quotation records match the current directory filters inside this console scope.",
+			"detail": "No quotations match the current directory filters inside this Sales Console scope.",
 		}
+
+	actions = [
+		{"key": "reset_filters", "label": "Reset"},
+		{"key": "apply_filters", "label": "Apply", "kind": "primary"},
+	]
+	if _can_create_doc("Quotation"):
+		actions.append({"key": "new_quotation", "label": "New Quotation", "kind": "create"})
+		action_targets["new_quotation"] = {"kind": "new_doc", "doctype": "Quotation"}
 
 	return {
 		"page": {"title": "Quotations"},
 		"summary": {
 			"kicker": "Sales Console worklist",
 			"title": "Quotations",
-			"subtitle": "All visible quotations in the current console scope, with operational slices available through the filter bar.",
+			"subtitle": "All visible quotations in the current Sales Console scope, with focused views available through the filter bar.",
 			"facts": _summary_facts(len(results_rows), scope, scope_note),
 		},
 		"controls": {
@@ -446,11 +455,8 @@ def _build_quotation_directory_worklist(today, context: dict[str, object], scope
 					"placeholder": "Search quotation, customer, or party name",
 				},
 			],
-			"actions": [
-				{"key": "reset_filters", "label": "Reset"},
-				{"key": "apply_filters", "label": "Apply", "kind": "primary"},
-			],
-		},
+				"actions": actions,
+			},
 		"metrics": [
 			{"label": "Visible Quotations", "value": str(len(results_rows)), "meta": f"Latest {ROW_LIMIT} visible quotations", "tone": "neutral"},
 			{"label": "Waiting Action", "value": str(waiting_action_count), "meta": "Draft/open quotations still requiring commercial movement", "tone": "attention"},
@@ -478,8 +484,8 @@ def _build_sales_order_directory_worklist(today, context: dict[str, object], sco
 	if not service._can_read("Sales Order"):
 		return _restricted_payload(
 			"Sales Orders",
-			"All visible sales orders in the current console scope, with operational views available above the table.",
-			scope_note="Sales Order is outside current permission scope.",
+			"All visible sales orders in the current Sales Console scope, with operational views available above the table.",
+			scope_note="Sales Order is outside your current access scope.",
 			scope=scope,
 			native_target=service._sales_order_native_target(scope),
 		)
@@ -527,15 +533,23 @@ def _build_sales_order_directory_worklist(today, context: dict[str, object], sco
 		results_state = {
 			"kind": "empty",
 			"title": "No sales orders visible",
-			"detail": "No sales orders match the current directory filters inside this console scope.",
+			"detail": "No sales orders match the current directory filters inside this Sales Console scope.",
 		}
+
+	actions = [
+		{"key": "reset_filters", "label": "Reset"},
+		{"key": "apply_filters", "label": "Apply", "kind": "primary"},
+	]
+	if _can_create_doc("Sales Order"):
+		actions.append({"key": "new_sales_order", "label": "New Sales Order", "kind": "create"})
+		action_targets["new_sales_order"] = {"kind": "new_doc", "doctype": "Sales Order"}
 
 	return {
 		"page": {"title": "Sales Orders"},
 		"summary": {
 			"kicker": "Sales Console worklist",
 			"title": "Sales Orders",
-			"subtitle": "All visible sales orders in the current console scope, with operational slices available through the filter bar.",
+			"subtitle": "All visible sales orders in the current Sales Console scope, with focused views available through the filter bar.",
 			"facts": _summary_facts(len(results_rows), scope, scope_note),
 		},
 		"controls": {
@@ -577,11 +591,8 @@ def _build_sales_order_directory_worklist(today, context: dict[str, object], sco
 					"placeholder": "Search order ID or customer",
 				},
 			],
-			"actions": [
-				{"key": "reset_filters", "label": "Reset"},
-				{"key": "apply_filters", "label": "Apply", "kind": "primary"},
-			],
-		},
+				"actions": actions,
+			},
 		"metrics": [
 			{"label": "Visible Orders", "value": str(len(results_rows)), "meta": f"Latest {ROW_LIMIT} visible orders", "tone": "neutral"},
 			{"label": "Open Orders", "value": str(open_orders_count), "meta": "Visible active orders in the current scope", "tone": "attention"},
@@ -607,8 +618,17 @@ def _build_sales_order_directory_worklist(today, context: dict[str, object], sco
 
 
 def _build_customer_worklist(context: dict[str, object], scope: dict[str, object], applied_filters: dict[str, str]) -> dict[str, object]:
+	if not service._can_read("Customer"):
+		return _restricted_payload(
+			"Customers",
+			"Sales-facing customer accounts with exposure and recent activity in the current scope.",
+			scope_note="Customer is outside your current access scope.",
+			scope=scope,
+			native_target=service._customer_native_target(context, scope),
+		)
+
 	base_filters = service._customer_scope_filters(context, scope)
-	scope_note = "Active customer records visible in the current ERP permission scope."
+	scope_note = "Active customer records visible in your current access scope."
 	if base_filters.get("owner"):
 		scope_note = "Active customer records reduced to the current owned sales scope."
 
@@ -659,7 +679,7 @@ def _build_customer_worklist(context: dict[str, object], scope: dict[str, object
 		{"key": "apply_filters", "label": "Apply", "kind": "primary"},
 	]
 	if _can_manage_customer_profile(context, "create"):
-		actions.append({"key": "create_customer", "label": "Create Customer"})
+		actions.append({"key": "create_customer", "label": "Create Customer", "kind": "create"})
 		action_targets["create_customer"] = {
 			"kind": "worklist",
 			"queue_key": "customer_editor",
@@ -727,6 +747,14 @@ def _build_customer_worklist(context: dict[str, object], scope: dict[str, object
 def _build_customer_detail_worklist(context: dict[str, object], scope: dict[str, object], applied_filters: dict[str, str]) -> dict[str, object]:
 	customer_name = cstr(applied_filters.get("customer") or applied_filters.get("keyword") or "").strip()
 	document_type = cstr(applied_filters.get("document_type") or "").strip()
+	if not service._can_read("Customer"):
+		return _restricted_payload(
+			"Customer Detail",
+			"Open a visible customer from the Sales Console Customers page.",
+			scope_note="Customer is outside your current access scope.",
+			scope=scope,
+			native_target=service._customer_native_target(context, scope),
+		)
 	if not customer_name:
 		return _customer_detail_state_payload(
 			title="Customer detail unavailable",
@@ -759,7 +787,7 @@ def _build_customer_detail_worklist(context: dict[str, object], scope: dict[str,
 			"title": customer_label,
 			"subtitle": header_meta,
 			"facts": [
-				{"label": "Customer ID", "value": customer.get("name") or "--", "meta": "Sales Console-owned customer context"},
+				{"label": "Customer ID", "value": customer.get("name") or "--", "meta": "ERP customer record"},
 				{"label": "Territory", "value": customer.get("territory") or "--", "meta": customer.get("customer_group") or "Customer group not set"},
 				{"label": "Scope", "value": cstr(scope.get("branch") or scope.get("team") or "Current permission"), "meta": "Visible account context"},
 			],
@@ -967,12 +995,18 @@ def _can_manage_customer_profile(context: dict[str, object], permission_type: st
 	)
 
 
+def _can_create_doc(doctype: str) -> bool:
+	return service._doctype_exists(doctype) and bool(
+		frappe.has_permission(doctype, "create", user=frappe.session.user)
+	)
+
+
 def _customer_profile_select_options(base_filters: dict[str, object]) -> tuple[list[str], list[str]]:
 	territory_options, group_options = _customer_filter_options(base_filters)
 	if service._doctype_exists("Territory") and service._can_read("Territory"):
 		territory_fields = service._fieldnames("Territory")
 		territory_filters = {"is_group": 0} if "is_group" in territory_fields else {}
-		territory_rows = frappe.get_all(
+		territory_rows = frappe.get_list(
 			"Territory",
 			filters=territory_filters,
 			fields=["name"],
@@ -983,7 +1017,7 @@ def _customer_profile_select_options(base_filters: dict[str, object]) -> tuple[l
 	if service._doctype_exists("Customer Group") and service._can_read("Customer Group"):
 		group_fields = service._fieldnames("Customer Group")
 		group_filters = {"is_group": 0} if "is_group" in group_fields else {}
-		group_rows = frappe.get_all(
+		group_rows = frappe.get_list(
 			"Customer Group",
 			filters=group_filters,
 			fields=["name"],
@@ -1029,6 +1063,8 @@ def _save_customer_contact_details(customer_doc, contact_values: dict[str, str])
 
 	_set_primary_contact_email(contact, email_id)
 	_set_primary_contact_mobile(contact, mobile_no)
+	# Sales Console permission and scope are enforced before this helper;
+	# this controlled elevation keeps the customer's primary Contact in sync.
 	contact.save(ignore_permissions=True)
 
 	customer_fields = service._fieldnames("Customer")
@@ -1061,6 +1097,7 @@ def _get_or_create_customer_primary_contact(customer_doc, *, create_if_missing: 
 			"link_title": customer_doc.get("customer_name") or customer_doc.name,
 		},
 	)
+	# See _save_customer_contact_details: only Sales Manager-approved fields reach here.
 	contact.insert(ignore_permissions=True)
 	return contact
 
@@ -1264,7 +1301,7 @@ def _customer_detail_state_payload(*, title: str, detail: str, scope: dict[str, 
 def _fetch_customer_detail_record(*, base_filters: dict[str, object], customer_name: str) -> dict[str, object] | None:
 	customer_filters = dict(base_filters or {})
 	customer_filters["name"] = customer_name
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"Customer",
 		filters=customer_filters,
 		fields=_available_fields("Customer", "name", "customer_name", "territory", "customer_group", "mobile_no", "email_id", "customer_primary_contact"),
@@ -1348,7 +1385,7 @@ def _customer_detail_recent_rows(customer_name: str | None, *, document_type: st
 			"per_billed",
 			"outstanding_amount",
 		)
-		rows = frappe.get_all(
+		rows = frappe.get_list(
 			doctype,
 			filters=filters,
 			fields=query_fields,
@@ -1430,8 +1467,8 @@ def _build_item_worklist(scope: dict[str, object], applied_filters: dict[str, st
 	if not service._can_read("Item"):
 		return _restricted_payload(
 			"Items",
-			"Sales items available for quotation and order entry in the current console scope.",
-			scope_note="Item is outside current permission scope.",
+			"Sales items available for quotation and order entry in the current Sales Console scope.",
+			scope_note="Item is outside your current access scope.",
 			scope=scope,
 			native_target=service._item_native_target(),
 		)
@@ -1456,9 +1493,9 @@ def _build_item_worklist(scope: dict[str, object], applied_filters: dict[str, st
 			}
 		)
 		action_targets[f"row:{row_key}:open_record"] = {
-			"kind": "form",
-			"doctype": "Item",
-			"name": record.get("name"),
+			"kind": "worklist",
+			"queue_key": "item_detail",
+			"filters": {"item": record.get("name") or record.get("item_code")},
 		}
 
 	results_state = None
@@ -1474,7 +1511,7 @@ def _build_item_worklist(scope: dict[str, object], applied_filters: dict[str, st
 		"summary": {
 			"kicker": "Sales Console worklist",
 			"title": "Items",
-			"subtitle": "Sales items with stock posture visible for quotation and order entry in the current console scope.",
+			"subtitle": "Sales items with stock posture visible for quotation and order entry in the current Sales Console scope.",
 			"facts": _summary_facts(len(results_rows), scope, "Stock signal is reduced from current item warehouses."),
 		},
 		"controls": {
@@ -1531,7 +1568,120 @@ def _build_item_worklist(scope: dict[str, object], applied_filters: dict[str, st
 			"rows": results_rows,
 			"rowActions": True,
 		},
-		"action_targets": action_targets,
+			"action_targets": action_targets,
+		}
+
+
+def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[str, str]) -> dict[str, object]:
+	item_name = cstr(applied_filters.get("item") or applied_filters.get("item_code") or applied_filters.get("keyword") or "").strip()
+	if not service._can_read("Item"):
+		return _restricted_payload(
+			"Item Detail",
+			"Open a visible item from the Sales Console Items page.",
+			scope_note="Item is outside your current access scope.",
+			scope=scope,
+			native_target=service._item_native_target(),
+		)
+	if not item_name:
+		return _item_detail_state_payload(
+			title="Item detail unavailable",
+			detail="Open an item from the Sales Console Items page so the item context is passed through.",
+			scope=scope,
+		)
+
+	item = _fetch_item_detail_record(item_name)
+	if not item:
+		return _item_detail_state_payload(
+			title="Item not visible",
+			detail="This item is outside the current Sales Console permission scope or is no longer available for sales.",
+			scope=scope,
+		)
+
+	stock_rows = _fetch_item_detail_stock_rows(item.get("item_code") or item.get("name"))
+	stock_uom = cstr(item.get("stock_uom") or "").strip()
+	available_total = sum(flt(row.get("actual_qty") or 0) for row in stock_rows)
+	reserved_total = sum(flt(row.get("reserved_qty") or 0) for row in stock_rows)
+	projected_total = sum(flt(row.get("projected_qty") or 0) for row in stock_rows)
+	positive_locations = sum(1 for row in stock_rows if flt(row.get("actual_qty") or 0) > 0)
+	results_rows = [_item_detail_stock_row(row, stock_uom=stock_uom) for row in stock_rows]
+	item_label = item.get("item_name") or item.get("item_code") or item.get("name") or item_name
+	header_meta = " · ".join(
+		[
+			cstr(item.get("item_group") or "").strip(),
+			cstr(item.get("stock_uom") or "").strip(),
+			cstr(item.get("item_code") or "").strip(),
+		]
+	)
+
+	return {
+		"page": {"title": item_label},
+		"summary": {
+			"kicker": "Item Detail",
+			"title": item_label,
+			"subtitle": header_meta or "Sales item stock posture",
+			"facts": [
+				{"label": "Item Code", "value": item.get("item_code") or item.get("name") or "--", "meta": "ERP item record"},
+				{"label": "Item Group", "value": item.get("item_group") or "--", "meta": stock_uom or "Stock UOM not set"},
+				{"label": "Scope", "value": cstr(scope.get("branch") or scope.get("team") or "Current permission"), "meta": "Visible stock context"},
+			],
+		},
+		"controls": {
+			"scopeChips": _scope_chips(scope),
+			"actions": [{"key": "back_to_items", "label": "Back to Items", "category": "navigation"}],
+		},
+		"metrics": [
+			{"label": "Available Stock", "value": _qty_with_uom(available_total, stock_uom), "meta": "Total positive and negative stock balance", "tone": "positive" if available_total > 0 else "warning"},
+			{"label": "Stock Locations", "value": str(positive_locations), "meta": "Warehouses carrying positive stock", "tone": "neutral"},
+			{"label": "Reserved Stock", "value": _qty_with_uom(reserved_total, stock_uom), "meta": "Quantity already reserved", "tone": "attention" if reserved_total > 0 else "neutral"},
+			{"label": "Projected Stock", "value": _qty_with_uom(projected_total, stock_uom), "meta": "Expected balance after reservations/orders", "tone": "positive" if projected_total > 0 else "neutral"},
+		],
+		"results": {
+			"title": "Stock by Warehouse",
+			"state": None if results_rows else {
+				"kind": "empty",
+				"title": "No warehouse stock found",
+				"detail": "This item has no visible warehouse stock balance yet.",
+			},
+			"meta": f"{len(results_rows)} visible stock locations",
+			"columns": [
+				{"key": "warehouse", "label": "Warehouse", "width": "34%"},
+				{"key": "available", "label": "Available", "width": "22%", "align": "right"},
+				{"key": "reserved", "label": "Reserved", "width": "22%", "align": "right"},
+				{"key": "projected", "label": "Projected", "width": "22%", "align": "right"},
+			],
+			"rows": results_rows,
+			"rowActions": False,
+		},
+		"action_targets": {
+			"back_to_items": {"kind": "worklist", "queue_key": "item_directory"},
+		},
+	}
+
+
+def _item_detail_state_payload(*, title: str, detail: str, scope: dict[str, object]) -> dict[str, object]:
+	return {
+		"page": {"title": "Item Detail"},
+		"summary": {
+			"kicker": "Item Detail",
+			"title": title,
+			"subtitle": detail,
+			"facts": _summary_facts(0, scope, "Item detail requires a visible sales item."),
+		},
+		"controls": {
+			"scopeChips": _scope_chips(scope),
+			"actions": [{"key": "back_to_items", "label": "Back to Items", "category": "navigation"}],
+		},
+		"results": {
+			"title": "Item state",
+			"state": {
+				"kind": "error",
+				"title": title,
+				"detail": detail,
+			},
+		},
+		"action_targets": {
+			"back_to_items": {"kind": "worklist", "queue_key": "item_directory"},
+		},
 	}
 
 
@@ -1555,7 +1705,7 @@ def _build_sales_order_approval_worklist(scope: dict[str, object]) -> dict[str, 
 		native_target=service._blocked_sales_order_target(scope),
 		row_builder=_sales_order_approval_row,
 		empty_title="No blocked sales orders",
-		empty_detail="No sales orders are currently waiting for approval inside this permission scope.",
+		empty_detail="No sales orders are currently waiting for approval inside your current access scope.",
 	)
 
 
@@ -1579,7 +1729,7 @@ def _build_quotation_approval_worklist(scope: dict[str, object]) -> dict[str, ob
 		native_target=service._quotation_approval_target(scope),
 		row_builder=_quotation_approval_row,
 		empty_title="No quotations awaiting approval",
-		empty_detail="No quotations are currently waiting for approval inside this permission scope.",
+		empty_detail="No quotations are currently waiting for approval inside your current access scope.",
 	)
 
 
@@ -1610,7 +1760,7 @@ def _build_follow_up_worklist(scope: dict[str, object], applied_filters: dict[st
 		native_target=native_target,
 		row_builder=_todo_row,
 		empty_title="No open customer follow-up tasks",
-		empty_detail="No sales-facing follow-up tasks are currently assigned inside this permission scope.",
+		empty_detail="No sales-facing follow-up tasks are currently assigned inside your current access scope.",
 	)
 
 
@@ -1726,7 +1876,7 @@ def _build_doctype_worklist(
 	empty_detail: str | None = None,
 ) -> dict[str, object]:
 	if not service._can_read(doctype):
-		return _restricted_payload(page_title, summary_subtitle, scope_note=f"{doctype} is outside current permission scope.", scope=scope, native_target=native_target)
+		return _restricted_payload(page_title, summary_subtitle, scope_note=f"{doctype} is outside your current access scope.", scope=scope, native_target=native_target)
 
 	filters, scope_note = filters_builder()
 	try:
@@ -1738,7 +1888,7 @@ def _build_doctype_worklist(
 			limit_page_length=ROW_LIMIT,
 		)
 	except (frappe.PermissionError, frappe.DataError):
-		return _restricted_payload(page_title, summary_subtitle, scope_note=f"{doctype} rows could not be read in the current permission scope.", scope=scope, native_target=native_target)
+		return _restricted_payload(page_title, summary_subtitle, scope_note=f"{doctype} records could not be read in your current access scope.", scope=scope, native_target=native_target)
 
 	results_rows = []
 	action_targets: dict[str, object] = {}
@@ -1766,7 +1916,7 @@ def _build_doctype_worklist(
 		results_state = {
 			"kind": "empty",
 			"title": empty_title or f"No {page_title.lower()} visible",
-			"detail": empty_detail or "No records are currently visible in this ERP permission scope.",
+			"detail": empty_detail or "No records are currently visible in your current access scope.",
 		}
 
 	return {
@@ -1806,7 +1956,7 @@ def _restricted_payload(
 	state_action = None
 	if native_target:
 		action_targets["open_native_list"] = native_target
-		state_action = {"key": "open_native_list", "label": "Open Native List"}
+		state_action = {"key": "open_native_list", "label": "Open Standard List"}
 
 	return {
 		"page": {"title": page_title},
@@ -2113,7 +2263,7 @@ def _directory_browse_scope_filters(
 	if owner_user_ids and doctype in {"Quotation", "Sales Order", "Opportunity", "Lead"}:
 		return scoped_filters, "Browse view uses current-user document ownership scope."
 
-	return scoped_filters, "Browse view uses current permission scope."
+	return scoped_filters, "Browse view uses your current access scope."
 
 
 def _quotation_keyword_filters(keyword: str) -> list[list[object]]:
@@ -2354,6 +2504,84 @@ def _todo_row(record: dict[str, object]) -> dict[str, object]:
 			"due": {"value": due_value, "meta": due_meta, "tone": due_tone},
 			"reference": {"value": reference_name or "--", "meta": reference_type or "ToDo"},
 		},
+		}
+
+
+def _fetch_item_detail_record(item_name: str) -> dict[str, object] | None:
+	if not item_name:
+		return None
+	fields = service._fieldnames("Item")
+	filters: dict[str, object] = {"name": item_name}
+	if "disabled" in fields:
+		filters["disabled"] = 0
+	if "is_sales_item" in fields:
+		filters["is_sales_item"] = 1
+	rows = frappe.get_list(
+		"Item",
+		filters=filters,
+		fields=_available_fields("Item", "name", "item_code", "item_name", "item_group", "stock_uom", "description"),
+		limit_page_length=1,
+	)
+	if rows:
+		return dict(rows[0])
+
+	alternate_filters: dict[str, object] = {}
+	if "item_code" in fields:
+		alternate_filters["item_code"] = item_name
+	if not alternate_filters:
+		return None
+	if "disabled" in fields:
+		alternate_filters["disabled"] = 0
+	if "is_sales_item" in fields:
+		alternate_filters["is_sales_item"] = 1
+	rows = frappe.get_list(
+		"Item",
+		filters=alternate_filters,
+		fields=_available_fields("Item", "name", "item_code", "item_name", "item_group", "stock_uom", "description"),
+		limit_page_length=1,
+	)
+	return dict(rows[0]) if rows else None
+
+
+def _fetch_item_detail_stock_rows(item_code: str | None) -> list[dict[str, object]]:
+	if not item_code or not service._doctype_exists("Bin"):
+		return []
+	rows = frappe.db.sql(
+		"""
+		select
+			warehouse,
+			actual_qty,
+			reserved_qty,
+			projected_qty,
+			ordered_qty
+		from tabBin
+		where item_code = %(item_code)s
+		  and (
+			ifnull(actual_qty, 0) != 0
+			or ifnull(reserved_qty, 0) != 0
+			or ifnull(projected_qty, 0) != 0
+			or ifnull(ordered_qty, 0) != 0
+		  )
+		order by actual_qty desc, projected_qty desc, warehouse asc
+		limit 30
+		""",
+		{"item_code": item_code},
+		as_dict=True,
+	)
+	return [dict(row) for row in rows]
+
+
+def _item_detail_stock_row(record: dict[str, object], *, stock_uom: str) -> dict[str, object]:
+	warehouse = cstr(record.get("warehouse") or "--").strip()
+	display_warehouse = re.sub(r"\s*-\s*[A-Z0-9]+$", "", warehouse).strip() or warehouse
+	return {
+		"key": warehouse,
+		"cells": {
+			"warehouse": {"value": display_warehouse, "meta": warehouse if warehouse != display_warehouse else ""},
+			"available": {"value": _qty_with_uom(record.get("actual_qty"), stock_uom)},
+			"reserved": {"value": _qty_with_uom(record.get("reserved_qty"), stock_uom)},
+			"projected": {"value": _qty_with_uom(record.get("projected_qty"), stock_uom)},
+		},
 	}
 
 
@@ -2373,50 +2601,62 @@ def _item_row(record: dict[str, object]) -> dict[str, object]:
 
 def _fetch_item_worklist_rows(*, scope: dict[str, object], item_group: str, keyword: str, availability: str) -> list[dict[str, object]]:
 	item_fields = service._fieldnames("Item")
-	conditions = ["ifnull(i.disabled, 0) = 0"]
-	params: dict[str, object] = {}
+	filters: dict[str, object] = {}
+	if "disabled" in item_fields:
+		filters["disabled"] = 0
 	if "is_sales_item" in item_fields:
-		conditions.append("ifnull(i.is_sales_item, 0) = 1")
+		filters["is_sales_item"] = 1
 	if item_group:
-		conditions.append("i.item_group = %(item_group)s")
-		params["item_group"] = item_group
-	if keyword:
-		params["keyword"] = f"%{keyword.strip()}%"
-		conditions.append("(i.item_code like %(keyword)s or i.item_name like %(keyword)s)")
-	if availability == "in_stock":
-		conditions.append("ifnull(stock.available_qty, 0) > 0")
-	elif availability == "out_of_stock":
-		conditions.append("ifnull(stock.available_qty, 0) <= 0")
+		filters["item_group"] = item_group
 
-	where_clause = " and ".join(conditions) if conditions else "1=1"
-	rows = frappe.db.sql(
-		f"""
-		select
-			i.name,
-			i.item_code,
-			i.item_name,
-			i.item_group,
-			i.stock_uom,
-			ifnull(stock.available_qty, 0) as available_qty
-		from tabItem i
-		left join (
-			select
-				b.item_code,
-				sum(ifnull(b.actual_qty, 0)) as available_qty
-			from tabBin b
-			group by b.item_code
-		) stock on stock.item_code = i.item_code
-		where {where_clause}
-		order by i.item_group asc, i.item_name asc, i.item_code asc
-		limit {ROW_LIMIT}
-		""",
-		params,
-		as_dict=True,
+	keyword_filter = keyword.strip()
+	rows = frappe.get_list(
+		"Item",
+		filters=filters,
+		or_filters=(
+			[
+				["item_code", "like", f"%{keyword_filter}%"],
+				["item_name", "like", f"%{keyword_filter}%"],
+			]
+			if keyword_filter
+			else None
+		),
+		fields=_available_fields("Item", "name", "item_code", "item_name", "item_group", "stock_uom"),
+		order_by=_preferred_order_by("Item", ["item_group asc", "item_name asc", "item_code asc"]),
+		limit_page_length=max(ROW_LIMIT * 5, 250),
 	)
 	if not rows:
 		return []
 
 	item_codes = [row.get("item_code") for row in rows if row.get("item_code")]
+	stock_map: dict[str, float] = {}
+	if item_codes:
+		stock_rows = frappe.db.sql(
+			"""
+			select
+				item_code,
+				sum(ifnull(actual_qty, 0)) as available_qty
+			from tabBin
+			where item_code in %(item_codes)s
+			group by item_code
+			""",
+			{"item_codes": tuple(item_codes)},
+			as_dict=True,
+		)
+		stock_map = {row.get("item_code"): flt(row.get("available_qty") or 0) for row in stock_rows if row.get("item_code")}
+
+	for row in rows:
+		row["available_qty"] = stock_map.get(row.get("item_code") or "", 0)
+
+	if availability == "in_stock":
+		rows = [row for row in rows if flt(row.get("available_qty") or 0) > 0]
+	elif availability == "out_of_stock":
+		rows = [row for row in rows if flt(row.get("available_qty") or 0) <= 0]
+
+	rows = rows[:ROW_LIMIT]
+	item_codes = [row.get("item_code") for row in rows if row.get("item_code")]
+	if not item_codes:
+		return rows
 	warehouse_rows = frappe.db.sql(
 		"""
 		select
@@ -2455,14 +2695,19 @@ def _fetch_item_worklist_rows(*, scope: dict[str, object], item_group: str, keyw
 
 
 def _item_group_options() -> list[str]:
+	fields = service._fieldnames("Item")
+	conditions = ["ifnull(item_group, '') != ''"]
+	if "disabled" in fields:
+		conditions.append("disabled = 0")
+	if "is_sales_item" in fields:
+		conditions.append("is_sales_item = 1")
 	rows = frappe.db.sql(
-		"""
+		f"""
 		select distinct item_group
-		from tabItem
-		where ifnull(disabled, 0) = 0
-		  and ifnull(is_sales_item, 0) = 1
-		  and ifnull(item_group, '') != ''
+		from `tabItem`
+		where {" and ".join(conditions)}
 		order by item_group asc
+		limit 500
 		""",
 		as_dict=True,
 	)
@@ -2470,7 +2715,7 @@ def _item_group_options() -> list[str]:
 
 
 def _customer_filter_options(base_filters: dict[str, object]) -> tuple[list[str], list[str]]:
-	rows = frappe.get_all(
+	rows = frappe.get_list(
 		"Customer",
 		filters=base_filters,
 		fields=["territory", "customer_group"],
@@ -2507,7 +2752,7 @@ def _fetch_customer_worklist_rows(
 	if customer_group:
 		customer_filters["customer_group"] = customer_group
 
-	customer_rows = frappe.get_all(
+	customer_rows = frappe.get_list(
 		"Customer",
 		filters=customer_filters,
 		fields=_available_fields("Customer", "name", "customer_name", "territory", "customer_group", "mobile_no", "email_id"),
@@ -2572,13 +2817,15 @@ def _customer_outstanding_map(customer_names: list[str]) -> dict[str, float]:
 	fields = service._fieldnames("Sales Invoice")
 	if "customer" not in fields or "outstanding_amount" not in fields:
 		return {}
+	if not service._can_read("Sales Invoice"):
+		return {}
 	rows = frappe.db.sql(
 		"""
 		select customer, sum(outstanding_amount) as outstanding_amount
 		from `tabSales Invoice`
 		where docstatus = 1
-		  and customer in %(customers)s
-		  and ifnull(outstanding_amount, 0) > 0
+			and customer in %(customers)s
+			and outstanding_amount > 0
 		group by customer
 		""",
 		{"customers": tuple(customer_names)},
@@ -2614,10 +2861,10 @@ def _customer_recent_activity_map(customer_names: list[str]) -> dict[str, dict[s
 	activity_by_customer: dict[str, dict[str, object]] = {}
 	candidates: list[dict[str, object]] = []
 
-	if customer_names and service._doctype_exists("Sales Order"):
+	if customer_names and service._can_read("Sales Order"):
 		fields = service._fieldnames("Sales Order")
 		if "customer" in fields and "transaction_date" in fields:
-			rows = frappe.get_all(
+			rows = frappe.get_list(
 				"Sales Order",
 				filters={"customer": ["in", customer_names], "docstatus": 1},
 				fields=_available_fields("Sales Order", "customer", "name", "transaction_date"),
@@ -2634,10 +2881,10 @@ def _customer_recent_activity_map(customer_names: list[str]) -> dict[str, dict[s
 					}
 				)
 
-	if customer_names and service._doctype_exists("Sales Invoice"):
+	if customer_names and service._can_read("Sales Invoice"):
 		fields = service._fieldnames("Sales Invoice")
 		if "customer" in fields and "posting_date" in fields:
-			rows = frappe.get_all(
+			rows = frappe.get_list(
 				"Sales Invoice",
 				filters={"customer": ["in", customer_names], "docstatus": 1},
 				fields=_available_fields("Sales Invoice", "customer", "name", "posting_date"),
@@ -2831,3 +3078,9 @@ def _qty(value) -> str:
 	if abs(number - int(number)) < 0.000001:
 		return str(int(number))
 	return f"{number:,.2f}".rstrip("0").rstrip(".")
+
+
+def _qty_with_uom(value, stock_uom: str | None = "") -> str:
+	quantity = _qty(value)
+	uom = cstr(stock_uom or "").strip()
+	return f"{quantity} {uom}" if uom else quantity

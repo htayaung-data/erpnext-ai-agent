@@ -337,7 +337,7 @@ def _build_scope(context: dict[str, object]) -> dict[str, object]:
 		return {
 			"branch_name": branch_name,
 			"scope_mode": "executive_review_scope",
-			"scope_label": "Executive review scope across company-wide sales approvals and exception context.",
+			"scope_label": "Executive review across company-wide sales approvals and exceptions.",
 			"apply_branch_filter": False,
 			"owner_user_ids": [],
 			"todo_user_ids": [frappe.session.user],
@@ -347,7 +347,7 @@ def _build_scope(context: dict[str, object]) -> dict[str, object]:
 		return {
 			"branch_name": branch_name,
 			"scope_mode": "branch_and_owner_filtered",
-			"scope_label": f"Branch and current-user scope applied where supported: {branch_name}.",
+			"scope_label": f"Showing current-user and branch records where supported: {branch_name}.",
 			"apply_branch_filter": True,
 			"owner_user_ids": [frappe.session.user],
 			"todo_user_ids": [frappe.session.user],
@@ -356,7 +356,7 @@ def _build_scope(context: dict[str, object]) -> dict[str, object]:
 	return {
 		"branch_name": None,
 		"scope_mode": "permission_scope",
-		"scope_label": "Permission scope fallback; no mapped branch detected.",
+		"scope_label": "Showing records available to your current access. No branch is mapped yet.",
 		"apply_branch_filter": False,
 		"owner_user_ids": [frappe.session.user],
 		"todo_user_ids": [frappe.session.user],
@@ -371,7 +371,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 			"brief_points": [
 				"Start with approval queues and blocked commercial exceptions.",
 				"Review customer-facing downstream issues before commitments slip.",
-				"Use reports as management review surfaces after active exceptions are under control.",
+				"Use reports for management review after active exceptions are under control.",
 			],
 			"action_order": [
 				"new_quotation",
@@ -403,7 +403,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 			"brief_points": [
 				"Start with active quotations, promised follow-up, and pending fulfillment.",
 				"Use lifecycle cards to answer customer delivery or invoice status without menu hunting.",
-				"Treat approvals as escalation signals, not the main work surface.",
+					"Treat approvals as escalation signals, not the main work area.",
 			],
 			"action_order": [
 				"new_quotation",
@@ -458,7 +458,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"work": "Account continuity and follow-through",
 				"lifecycle": "Customer-facing execution visibility across the account chain",
 				"approvals": "Approval and blocker visibility for strategic commercial exceptions",
-				"reports": "Customer and account review surfaces",
+				"reports": "Customer and account review",
 			},
 		},
 		"showroom_sales": {
@@ -498,7 +498,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 			"brief_points": [
 				"Use this console only for sales-related review and escalation visibility.",
 				"Prioritize approvals, blocked orders, and exception context over transaction creation.",
-				"Use the Executive Console as the primary oversight surface when available.",
+				"Use the Executive Console as the primary oversight workspace when available.",
 			],
 			"action_order": [
 				"open_customer",
@@ -521,7 +521,7 @@ def _build_ui_profile(role_variant: str) -> dict[str, object]:
 				"work": "Review sales-side operational context after escalations are understood",
 				"lifecycle": "Downstream context available when needed for approval decisions",
 				"approvals": "Executive escalation and commercial exception review",
-				"reports": "Management review surfaces",
+				"reports": "Management review",
 			},
 		},
 	}
@@ -1104,7 +1104,16 @@ def _report_target(
 	report_name: str,
 	filters: dict[str, object] | None = None,
 ) -> dict[str, object]:
-	productized_report_keys = {"sales_analytics", "sales_order_analysis", "quotation_trends", "collections_status", "item_wise_sales_history", "lost_quotations"}
+	productized_report_keys = {
+		"sales_analytics",
+		"sales_order_analysis",
+		"trend_analysis",
+		"quotation_trends",
+		"collections_status",
+		"payment_terms_status_sales_order",
+		"item_wise_sales_history",
+		"lost_quotations",
+	}
 	if report_key in productized_report_keys:
 		target = {
 			"kind": "report_page",
@@ -1121,26 +1130,26 @@ def _report_target(
 def _build_reports_catalog(role_variant: str | None) -> list[dict[str, object]]:
 	role_map = {
 		"sales_executive": [
-			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation movement and expiring commercial momentum", "quotation"),
+			("trend_analysis", "Trend Analysis", "Trend Analysis", "Review invoice, order, and quotation movement from one controlled trend view", "chart"),
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review order execution quality and operational follow-through", "order"),
 			("collections_status", "Collections Status", "Collections Status", "Review actual receivable exposure and invoice settlement without leaving sales context", "chart"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check product-level sales history when speaking with customers", "item"),
 		],
 		"key_account_sales": [
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review account order execution and commercial follow-through", "order"),
-			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation behavior and account conversion direction", "quotation"),
+			("trend_analysis", "Trend Analysis", "Trend Analysis", "Review invoice, order, and quotation movement for assigned accounts", "chart"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check customer-facing item history for account follow-up", "item"),
 			("collections_status", "Collections Status", "Collections Status", "Review actual receivable exposure for assigned accounts", "chart"),
 		],
 		"showroom_sales": [
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Keep order review simple and operationally clear", "order"),
-			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation movement without a heavy management surface", "quotation"),
+			("trend_analysis", "Trend Analysis", "Trend Analysis", "Review invoice, order, and quotation movement without a heavy management surface", "chart"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check sales history during item and customer discussion", "item"),
 		],
 		"sales_manager": [
 			("sales_analytics", "Sales Analytics", "Sales Analytics", "Management and team performance review", "chart"),
 			("sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review operational order execution and exception patterns", "order"),
-			("quotation_trends", "Quotation Trends", "Quotation Trends", "Review quotation flow, conversion direction, and aging", "quotation"),
+			("trend_analysis", "Trend Analysis", "Trend Analysis", "Compare billed, ordered, and quoted commercial movement in one trend view", "chart"),
 			("lost_quotations", "Lost Quotations", "Lost Quotations", "Review commercial loss patterns and follow-up quality", "quotation"),
 			("collections_status", "Collections Status", "Collections Status", "Review actual collections exposure and overdue invoice reality", "chart"),
 			("item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Item-level commercial history for deeper review", "item"),
@@ -1154,7 +1163,7 @@ def _build_reports_catalog(role_variant: str | None) -> list[dict[str, object]]:
 
 	selected = role_map.get(role_variant or "", role_map["sales_executive"])
 	catalog = []
-	always_on_productized_pages = {"collections_status"}
+	always_on_productized_pages = {"collections_status", "trend_analysis"}
 	for key, report_name, title, meta, icon in selected:
 		if key not in always_on_productized_pages and not _report_exists(report_name):
 			continue
@@ -1391,7 +1400,7 @@ def _sales_chain_scope_cache(scope: dict[str, object]) -> dict[str, object]:
 
 
 def _build_sales_chain_scope(scope: dict[str, object]) -> dict[str, object]:
-	scope_note = "Using permission scope because sales-chain ownership rules are not active for this role."
+	scope_note = "Showing records available to your current access because sales-chain ownership rules are not active for this role."
 	if not _should_scope_sales_documents_through_chain(scope):
 		return {
 			"sales_order_names": None,
@@ -1415,7 +1424,7 @@ def _build_sales_chain_scope(scope: dict[str, object]) -> dict[str, object]:
 			"sales_order_names": [],
 			"delivery_names": [],
 			"invoice_names": [],
-			"scope_note": "Commercial chain scope applied through owned or team-linked sales orders. No linked sales orders are currently visible.",
+			"scope_note": "Showing documents linked to owned or team sales orders. No linked sales orders are currently visible.",
 		}
 
 	delivery_parent_rows = frappe.get_all(
@@ -1475,7 +1484,7 @@ def _build_sales_chain_scope(scope: dict[str, object]) -> dict[str, object]:
 		"sales_order_names": sales_order_names,
 		"delivery_names": delivery_names,
 		"invoice_names": invoice_names,
-		"scope_note": "Commercial chain scope applied through owned or team-linked sales orders and their downstream documents.",
+		"scope_note": "Showing documents linked to owned or team sales orders and their downstream records.",
 	}
 
 
@@ -1618,8 +1627,8 @@ def _apply_scope_filters(
 	if approval_visibility and scope_mode in {"team_review_scope", "executive_review_scope"}:
 		if branch_name and scope.get("apply_branch_filter") and "branch" in fields:
 			scoped_filters.append(["branch", "=", branch_name])
-			return scoped_filters, f"Approval visibility uses manager or executive scope with branch context: {branch_name}."
-		return scoped_filters, "Approval visibility uses manager or executive scope without ownership restriction."
+			return scoped_filters, f"Approval visibility includes manager or executive review for branch: {branch_name}."
+		return scoped_filters, "Approval visibility includes manager or executive review without ownership restriction."
 
 	if owner_user_ids and "owner" in fields and doctype in {"Quotation", "Sales Order", "Opportunity", "Lead"}:
 		scoped_filters.append(["owner", "in", owner_user_ids])
@@ -1627,16 +1636,16 @@ def _apply_scope_filters(
 	if branch_name and scope.get("apply_branch_filter") and "branch" in fields:
 		scoped_filters.append(["branch", "=", branch_name])
 		if owner_user_ids:
-			return scoped_filters, f"Owner and branch scope applied: {branch_name}."
-		return scoped_filters, f"Branch scope applied: {branch_name}."
+			return scoped_filters, f"Showing owned records for branch: {branch_name}."
+		return scoped_filters, f"Showing branch records for: {branch_name}."
 
 	if owner_user_ids and doctype in {"Quotation", "Sales Order", "Opportunity", "Lead"}:
-		return scoped_filters, "Current role scope applied through document ownership."
+		return scoped_filters, "Showing records owned by the current sales role."
 
 	if branch_name:
 		return scoped_filters, f"Branch context detected ({branch_name}), but {doctype} is not branch-filterable here."
 
-	return scoped_filters, "Using permission scope because no mapped branch is available."
+	return scoped_filters, "Showing records available to your current access because no branch is mapped yet."
 
 
 def _count_records(doctype: str, filters: list[list[object]]) -> int:
@@ -2351,9 +2360,15 @@ def _load_anchor_document(doctype: str, name: str) -> dict[str, object] | None:
 		"mobile_no",
 		"phone",
 	] if field in fields]
-	document = frappe.db.get_value(doctype, name, field_list, as_dict=True)
-	if not document:
+	rows = frappe.get_list(
+		doctype,
+		fields=field_list,
+		filters={"name": name},
+		page_length=1,
+	)
+	if not rows:
 		return None
+	document = rows[0]
 	document["doctype"] = doctype
 	if doctype == "Customer":
 		document.setdefault("customer", document.get("name"))
@@ -2373,7 +2388,13 @@ def _load_customer_summary(customer_name: str) -> dict[str, object] | None:
 		"phone",
 		"customer_group",
 	] if field in fields]
-	return frappe.db.get_value("Customer", customer_name, field_list, as_dict=True) or None
+	rows = frappe.get_list(
+		"Customer",
+		fields=field_list,
+		filters={"name": customer_name},
+		page_length=1,
+	)
+	return rows[0] if rows else None
 
 
 def _resolve_commercial_chain(
@@ -3207,12 +3228,12 @@ def _build_customer_inquiry_assist_fallback(result: dict[str, object]) -> dict[s
 		"source": "fallback",
 		"engine": "structured_inquiry_brief",
 		"assist": {
-			"summary": summary,
-			"blocker_explanation": blocker,
-			"next_action": next_action,
-			"customer_reply": customer_reply,
-			"confidence_note": "Built from linked ERP documents visible in the current permission scope.",
-		},
+				"summary": summary,
+				"blocker_explanation": blocker,
+				"next_action": next_action,
+				"customer_reply": customer_reply,
+				"confidence_note": "Built from linked documents visible to your current access.",
+			},
 	}
 
 

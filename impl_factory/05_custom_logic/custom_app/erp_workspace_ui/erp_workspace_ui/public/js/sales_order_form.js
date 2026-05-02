@@ -2436,7 +2436,7 @@
             title: "No payment schedule was recorded on this order",
             note: "This approved order has no editable payment structure.",
           } : {
-            title: "Payment schedule is not configured yet",
+            title: "Payment schedule is not set up yet",
             note: "Add a payment terms template or define at least one payment milestone.",
             actionLabel: "Select payment terms",
             focusField: "payment_terms_template",
@@ -3130,7 +3130,7 @@
       return {
         groups: [],
         empty: {
-          title: "No Sales Console-owned connections yet",
+          title: "No related records yet",
           note: "Delivery, invoice, return, quotation, and customer links will appear here when available.",
         },
       };

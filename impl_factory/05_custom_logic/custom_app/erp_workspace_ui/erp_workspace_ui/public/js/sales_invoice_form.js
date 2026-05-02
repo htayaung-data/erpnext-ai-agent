@@ -1814,7 +1814,7 @@
               : "",
         metrics: paymentMetrics,
         state: !paymentSummary.milestoneCount && !hasTemplate ? {
-          title: "Payment structure is not configured yet",
+          title: "Payment schedule is not set up yet",
           note: "Link a payment terms template or define the schedule only when the invoice needs explicit settlement milestones.",
           actionLabel: "Select payment terms",
           focusField: "payment_terms_template",
@@ -2636,7 +2636,7 @@
         },
         getSalesInvoiceSnapshotStatusMetric(frm),
       ],
-      note: "Read the settlement posture here, then work the native invoice grid below.",
+      note: "Read the settlement posture here, then work the invoice item grid below.",
       removeSelector: ".erpw-child-detail-snapshot",
       snapshotClass: "erpw-child-detail-snapshot",
       statusText,

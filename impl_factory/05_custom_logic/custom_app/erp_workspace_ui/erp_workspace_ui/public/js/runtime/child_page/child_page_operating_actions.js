@@ -120,7 +120,7 @@
     }
 
     if (canPrintForStatus(frm, status)) {
-      return { disabledReason: "", enabled: true, note: "Open the native print view.", show: true };
+      return { disabledReason: "", enabled: true, note: "Open the printable document view.", show: true };
     }
     if (status === 0 && isSubmittable(frm) && canPrintForStatus(frm, 1)) {
       return { disabledReason: "Submit to unlock print", enabled: false, note: "", show: true };
@@ -136,7 +136,7 @@
     if (isLocalDoc(frm)) {
       return { disabledReason: "Save draft first", enabled: false, note: "", show: true };
     }
-    return { disabledReason: "", enabled: true, note: "Open the native document email composer.", show: true };
+    return { disabledReason: "", enabled: true, note: "Prepare an email for this document.", show: true };
   }
 
   function getAssignActionState(frm) {
@@ -159,7 +159,7 @@
       return { disabledReason: "Save draft first", enabled: false, note: "", show: true };
     }
 
-    return { disabledReason: "", enabled: true, note: "Assign follow-up ownership through the native assignment flow.", show: true };
+    return { disabledReason: "", enabled: true, note: "Assign follow-up ownership for this document.", show: true };
   }
 
   function getCommentActionState(frm) {
@@ -167,7 +167,7 @@
     if (isLocalDoc(frm)) {
       return { disabledReason: "Save draft first", enabled: false, note: "", show: true };
     }
-    return { disabledReason: "", enabled: true, note: "Jump to activity and focus the native comment composer.", show: true };
+    return { disabledReason: "", enabled: true, note: "Add an internal note in the activity area.", show: true };
   }
 
   function getShareActionState(frm) {
@@ -183,7 +183,7 @@
       return { disabledReason: "Save draft first", enabled: false, note: "", show: true };
     }
 
-    return { disabledReason: "", enabled: true, note: "Open the native sharing dialog.", show: true };
+    return { disabledReason: "", enabled: true, note: "Share this document with permitted teammates.", show: true };
   }
 
   function openAssignDialog(frm) {
@@ -359,7 +359,7 @@
         icon: "review",
         key: "submit",
         handler: () => frm.save("Submit"),
-        note: `Commit this ${docLabel} into the live ERP workflow.`,
+        note: `Submit this ${docLabel} for live processing.`,
         title: settings.submitLabel,
         tier: "primary",
         variant: "primary",

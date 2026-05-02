@@ -14,6 +14,12 @@
     throw new Error(`Sales Console runtime is missing method: ${name}`);
   }
 
+  function syncNativeChrome(page, title) {
+    const chrome = window.erpWorkspaceUiSalesConsoleChrome;
+    if (!chrome || typeof chrome.sync !== "function") return;
+    chrome.sync({ page, title });
+  }
+
   function ensureStyle() {
     if (document.getElementById("sales-console-shell-style")) return;
 
@@ -1679,9 +1685,60 @@
         pageState,
         "reports",
         card.key,
-        () => routeToReport(card.report_name)
+        () => routeToReportCardFallback(card)
       ),
     });
+  }
+
+  function productizedReportKeys() {
+    return new Set([
+      "sales_analytics",
+      "sales_order_analysis",
+      "trend_analysis",
+      "quotation_trends",
+      "collections_status",
+      "payment_terms_status_sales_order",
+      "item_wise_sales_history",
+      "lost_quotations",
+    ]);
+  }
+
+  function routeToReportCardFallback(card) {
+    const key = String((card && (card.report_key || card.key)) || "");
+    if (productizedReportKeys().has(key)) {
+      routeToReportPage(key);
+      return;
+    }
+    routeToReport(card && card.report_name);
+  }
+
+  function defaultReportCardsForCurrentRole() {
+    const roles = Array.isArray(frappe.user_roles) ? frappe.user_roles : [];
+    const isManager = roles.includes("Sales Manager") || roles.includes("System Manager");
+    const cards = isManager
+      ? [
+          ["sales_analytics", "Sales Analytics", "Sales Analytics", "Management and team performance review", "chart"],
+          ["sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review operational order execution and exception patterns", "order"],
+          ["trend_analysis", "Trend Analysis", "Trend Analysis", "Compare billed, ordered, and quoted commercial movement in one trend view", "chart"],
+          ["lost_quotations", "Lost Quotations", "Lost Quotations", "Review commercial loss patterns and follow-up quality", "quotation"],
+          ["collections_status", "Collections Status", "Collections Status", "Review actual collections exposure and overdue invoice reality", "chart"],
+          ["item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Item-level commercial history for deeper review", "item"],
+        ]
+      : [
+          ["trend_analysis", "Trend Analysis", "Trend Analysis", "Review invoice, order, and quotation movement from one controlled trend view", "chart"],
+          ["sales_order_analysis", "Sales Order Analysis", "Sales Order Analysis", "Review order execution quality and operational follow-through", "order"],
+          ["collections_status", "Collections Status", "Collections Status", "Review actual receivable exposure and invoice settlement without leaving sales context", "chart"],
+          ["item_wise_sales_history", "Item-wise Sales History", "Item-wise Sales History", "Check product-level sales history when speaking with customers", "item"],
+        ];
+
+    return cards.map(([key, report_name, title, meta, icon]) => ({
+      key,
+      report_key: key,
+      report_name,
+      title,
+      meta,
+      icon,
+    }));
   }
 
   function fallbackReportCards(payload) {
@@ -1689,20 +1746,22 @@
     const titleMap = {
       sales_analytics: { title: "Sales Analytics", meta: "Management and team performance review", icon: "chart" },
       sales_order_analysis: { title: "Sales Order Analysis", meta: "Review operational order execution and exception patterns", icon: "order" },
+      trend_analysis: { title: "Trend Analysis", meta: "Compare billed, ordered, and quoted commercial movement in one trend view", icon: "chart" },
       sales_order_trends: { title: "Sales Order Trends", meta: "Review directional order movement over time", icon: "order" },
-      quotation_trends: { title: "Quotation Trends", meta: "Review quotation flow, conversion direction, and aging", icon: "quotation" },
+      quotation_trends: { title: "Trend Analysis", meta: "Review quotation movement through the unified trend view", icon: "chart" },
       lost_quotations: { title: "Lost Quotations", meta: "Review commercial loss patterns and follow-up quality", icon: "quotation" },
       payment_terms_status_sales_order: { title: "Payment Terms Status", meta: "Check sales-order payment schedule exposure", icon: "chart" },
       item_wise_sales_history: { title: "Item-wise Sales History", meta: "Item-level commercial history for deeper review", icon: "item" },
     };
 
-    return Object.entries(targets).map(([key, target]) => ({
+    const cards = Object.entries(targets).map(([key, target]) => ({
       key,
       report_name: target.report_name,
       title: (titleMap[key] && titleMap[key].title) || target.report_name || key,
       meta: (titleMap[key] && titleMap[key].meta) || "Review target from live ERP",
       icon: (titleMap[key] && titleMap[key].icon) || "chart",
     })).filter(card => card.report_name);
+    return cards.length ? cards : defaultReportCardsForCurrentRole();
   }
 
   function renderInquiryPlaceholder($target, message) {
@@ -2545,6 +2604,7 @@
       title: "Sales Console",
       single_column: true,
     });
+    syncNativeChrome(page, "Overview");
 
     const pageState = { payload: {} };
     const openGuide = () => showGuideDialog(pageState.payload);
@@ -2937,6 +2997,7 @@
 
     $body.append($inquirySection, $workSection, $lifecycleSection, $approvalsSection, $reportsSection);
     $root.append($header, $actionsSection, $body);
+    renderReportsSection($root, pageState, defaultReportCardsForCurrentRole());
     $(page.body).empty().append($root);
     bindConsoleNavigationDelegates($root, pageState);
 
@@ -2959,6 +3020,9 @@
   frappe.pages[PAGE_KEY].on_page_show = function (wrapper) {
     if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
       window.erpWorkspaceConsoleSidebar.refresh();
+    }
+    if (wrapper && wrapper.page) {
+      syncNativeChrome(wrapper.page, "Overview");
     }
     const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
     if ($(host || []).find(".sales-console-shell").length) return;

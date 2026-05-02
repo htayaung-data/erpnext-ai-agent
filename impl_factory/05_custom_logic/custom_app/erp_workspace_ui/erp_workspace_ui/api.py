@@ -628,7 +628,7 @@ def _linked_return_invoice_names(sales_invoice: str) -> list[str]:
 
 
 def _linked_payment_entries_for_invoice(sales_invoice: str) -> list[dict[str, object]]:
-	if not sales_invoice or not frappe.db.exists("DocType", "Payment Entry Reference"):
+	if not sales_invoice or not _can_read_doctype("Payment Entry") or not frappe.db.exists("DocType", "Payment Entry Reference"):
 		return []
 	references = frappe.get_all(
 		"Payment Entry Reference",
@@ -662,7 +662,7 @@ def _linked_payment_entries_for_invoice(sales_invoice: str) -> list[dict[str, ob
 
 
 def _linked_payment_entry_reference_count(sales_invoice: str) -> int:
-	if not sales_invoice or not frappe.db.exists("DocType", "Payment Entry Reference"):
+	if not sales_invoice or not _can_read_doctype("Payment Entry") or not frappe.db.exists("DocType", "Payment Entry Reference"):
 		return 0
 	return len(frappe.get_all(
 		"Payment Entry Reference",

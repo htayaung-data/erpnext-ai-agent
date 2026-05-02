@@ -1,4 +1,4 @@
-# ERP Workspace UI Smoke Suite
+﻿# ERP Workspace UI Smoke Suite
 
 This folder contains the first Playwright smoke suite for the PrimeAxis child-page runtime.
 
@@ -93,6 +93,86 @@ npm test
 3. session-cookie mode is the safest option for local validation when the site already has a valid authenticated session
 4. the Docker image tag should match the pinned Playwright package version in `package.json`
 5. this suite is the minimum smoke foundation, not the full enterprise UI regression layer
+
+## Sales Console Role Permission Smoke
+
+The role smoke script checks the live Sales Console with both Sales Manager and Sales User sessions.
+
+It verifies:
+
+1. `Overview`, `Quotations`, `Sales Orders`, `Customers`, and `Items` sidebar order
+2. core worklist route load for Quotation, Sales Order, Customer, and Item directories
+3. Customer create/edit visibility for Sales Manager versus Sales User
+4. report toolbar order: `Refresh`, then `Back to Sales Console`
+5. server-side API contracts for sidebar, worklist, report, and restricted Customer save
+
+The script does not save, submit, delete, or update ERP business records. The Sales User save probe submits an intentionally incomplete payload and expects the Sales Manager permission gate to reject before validation.
+
+Required environment variables:
+
+1. `ERPW_BASE_URL`
+2. `ERPW_MANAGER_USERNAME`
+3. `ERPW_MANAGER_PASSWORD`
+4. `ERPW_USER_USERNAME`
+5. `ERPW_USER_PASSWORD`
+
+Optional:
+
+1. `ERPW_ROLE_SMOKE_OUT`
+   - output folder for JSON report and screenshots
+2. `ERPW_HEADLESS`
+   - set to `0` for headed mode
+
+Run:
+
+```bash
+cd impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke
+ERPW_BASE_URL="https://meet.example.com" \
+ERPW_MANAGER_USERNAME="sales.manager@example.com" \
+ERPW_MANAGER_PASSWORD="..." \
+ERPW_USER_USERNAME="sales.user@example.com" \
+ERPW_USER_PASSWORD="..." \
+npm run test:roles
+```
+
+## Sales Order Analysis Report Smoke
+
+The Sales Order Analysis smoke checks the compact report command panel for both Sales Manager and Sales User sessions.
+
+It verifies:
+
+1. the `Sales Order Analysis` report route loads
+2. the compact command panel, date fields, `Apply`, `Reset`, `Refresh`, and `Back to Sales Console` controls are visible
+3. `Apply` posts `filter_overrides` for the selected date range instead of performing a native URL reload
+4. the selected dates remain in the controls after applying
+5. `Reset` reloads the default report window without posting stale overrides
+6. no relevant browser console or page errors are raised
+
+Required environment variables are the same as `npm run test:roles`.
+
+Optional:
+
+1. `ERPW_REPORT_SHELL_VERSION`
+   - assert the exact loaded shared report shell version
+2. `ERPW_SALES_ORDER_ANALYSIS_FROM`
+   - default `2026-04-01`
+3. `ERPW_SALES_ORDER_ANALYSIS_TO`
+   - default `2026-04-30`
+4. `ERPW_SALES_ORDER_ANALYSIS_OUT`
+   - output folder for JSON report and failure screenshots
+
+Run:
+
+```bash
+cd impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke
+ERPW_BASE_URL="https://meet.example.com" \
+ERPW_MANAGER_USERNAME="sales.manager@example.com" \
+ERPW_MANAGER_PASSWORD="..." \
+ERPW_USER_USERNAME="sales.user@example.com" \
+ERPW_USER_PASSWORD="..." \
+ERPW_REPORT_SHELL_VERSION="2026-05-02-report-link-suggest-v1" \
+npm run test:sales-order-analysis
+```
 
 ## Reference Screenshot Capture
 

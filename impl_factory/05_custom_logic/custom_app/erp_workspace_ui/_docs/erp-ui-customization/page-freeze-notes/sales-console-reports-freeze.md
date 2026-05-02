@@ -11,7 +11,7 @@ Scope:
 - Sales Console report family
 - `Sales Analytics`
 - `Sales Order Analysis`
-- `Quotation Trends`
+- `Trend Analysis`
 - `Lost Quotations`
 - `Collections Status`
 - `Item-wise Sales History`
@@ -48,10 +48,11 @@ They are approved because they now behave like focused commercial review surface
 - open execution, overdue delivery, pending bill, and visible order value are the right commercial control signals
 - quantity-to-deliver is accepted because it supports execution review directly
 
-### 4. Quotation Trends and Lost Quotations are accepted as commercial review pages
+### 4. Trend Analysis and Lost Quotations are accepted as commercial review pages
 
-- quotation movement is now separated from order execution and collections
-- `Quotation Trends` is accepted as the quotation-flow review page
+- `Trend Analysis` replaces the visible `Quotation Trends` card so invoice, order, and quotation movement can be reviewed from one controlled page
+- the default trend source is Sales Invoice because billed value is the final commercial truth
+- Quotation remains available inside the Document Type filter and through the legacy `quotation_trends` route for backward compatibility
 - `Lost Quotations` is accepted as the loss-pattern page, including grouped commercial review by reason or competitor where data supports it
 - navigation was intentionally limited where ERP destinations are not trustworthy or business-useful
 

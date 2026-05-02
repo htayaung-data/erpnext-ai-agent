@@ -28,11 +28,15 @@ Use this split:
 
 The left sidebar should show these destinations:
 
-1. `Sales Console`
+1. `Overview`
 2. `Quotations`
 3. `Sales Orders`
 4. `Customers`
 5. `Items`
+
+Confirmed 2026-05-01: the first sidebar destination label is `Overview`, and it routes to `/desk/sales-console`. `Sales Console` remains the workspace/page identity and sidebar header context, not the left-sidebar item label.
+
+Confirmed 2026-05-02: the standalone `Dashboard` page was removed before freeze because it overlapped with Sales Analytics and did not yet carry enough distinct enterprise dashboard value.
 
 No top-level sidebar item is added for reports in V1.
 
@@ -142,3 +146,4 @@ These are intentionally deferred from V1:
 1. dedicated Sales Console reports home page
 2. additional sidebar expansion for every queue type
 3. workspace-specific sidebar variants beyond the slim stable-destination model
+4. standalone Sales Dashboard page until a full dashboard scope is justified

@@ -67,7 +67,7 @@ It is approved because it now does the correct job for an enterprise sales user:
 
 - Sales Console home, worklists, reports, and Quotation/Sales Order forms now share a governed sidebar navigation foundation
 - New Quotation and New Sales Order now expose a productized operating action band for save, submit, print, email, assign, comment, share, and back-to-console behavior
-- worklists and reports now share `Back to Sales Console` and `Refresh` as standard top-level actions
+- report pages expose `Refresh` before `Back to Sales Console` as standard top-level actions; worklists follow the same governed action taxonomy where the surface includes both actions
 - restricted worklists can expose `Open Native List` as an explicit governed fallback instead of leaving the user at a dead end
 - automated validation for the operating foundation passed on 2026-04-23; a short live browser smoke remains the final human checkpoint before Golden SOP promotion
 

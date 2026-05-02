@@ -100,24 +100,42 @@
         line-height: 1.45;
         color: #64748b;
       }
-      .erpw-list-controls-strip {
-        display: grid;
-        width: fit-content;
-        max-width: 100%;
-        gap: 10px;
-        margin: 2px 0 18px;
-        padding: 12px;
-        border: 1px solid rgba(226, 232, 240, 0.82);
-        border-radius: 20px;
-        background:
-          linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 0.96));
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.96),
-          0 10px 24px rgba(15, 23, 42, 0.035);
+      .erpw-list-shell.is-data-refreshing .erpw-list-metrics,
+      .erpw-list-shell.is-data-refreshing .erpw-list-results {
+        opacity: 0.58;
+        pointer-events: none;
+        transition: opacity 120ms ease;
       }
-      .erpw-list-controls-strip.is-form-panel {
-        width: min(920px, 100%);
-        padding: 14px;
+	      .erpw-list-controls-strip {
+	        --erpw-list-control-height: 40px;
+	        --erpw-list-control-label-offset: 23px;
+	        --erpw-list-action-rail-height: calc(var(--erpw-list-control-height) + var(--erpw-list-control-label-offset));
+	        display: grid;
+	        width: min(1120px, 100%);
+	        max-width: 100%;
+	        gap: 10px;
+	        margin: 2px 0 18px;
+	        padding: 14px;
+	        border: 1px solid rgba(226, 232, 240, 0.82);
+	        border-radius: 20px;
+	        background: #ffffff;
+	        box-shadow:
+	          inset 0 1px 0 rgba(255, 255, 255, 0.96),
+	          0 10px 24px rgba(15, 23, 42, 0.035);
+	      }
+	      .erpw-list-controls-strip.is-utility-only {
+	        display: flex;
+	        justify-content: flex-end;
+	        width: 100%;
+	        padding: 0;
+	        border: 0;
+	        border-radius: 0;
+	        background: transparent;
+	        box-shadow: none;
+	      }
+	      .erpw-list-controls-strip.is-form-panel {
+	        width: min(920px, 100%);
+	        padding: 14px;
         border-radius: 22px;
         background: #ffffff;
         justify-self: center;
@@ -132,14 +150,62 @@
       }
       .erpw-list-summary-card:has(+ .erpw-list-controls-strip.is-form-panel) .erpw-list-title {
         line-height: 1.25;
-      }
-      .erpw-list-filter-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: end;
-        justify-content: flex-start;
-      }
+	      }
+	      .erpw-list-filter-row {
+	        display: grid;
+	        gap: 10px;
+	      }
+	      .erpw-list-command-panel {
+	        display: block;
+	        max-width: 100%;
+	        width: 100%;
+	      }
+	      .erpw-list-command-grid {
+	        display: grid;
+	        gap: 10px;
+	        align-items: stretch;
+	        min-width: 0;
+	        max-width: 100%;
+	      }
+	      .erpw-list-command-grid.field-count-1 {
+	        grid-template-columns: minmax(220px, 280px) max-content;
+	      }
+	      .erpw-list-command-grid.field-count-2 {
+	        grid-template-columns: repeat(2, minmax(220px, 260px)) max-content;
+	      }
+	      .erpw-list-command-grid.field-count-3 {
+	        grid-template-columns: repeat(3, minmax(210px, 230px)) max-content;
+	      }
+	      .erpw-list-command-grid.field-count-4,
+	      .erpw-list-command-grid.field-count-5 {
+	        grid-template-columns: minmax(210px, 250px) minmax(210px, 250px) minmax(250px, max-content);
+	      }
+	      .erpw-list-command-grid.field-count-5.has-date-window {
+	        grid-template-columns:
+	          minmax(220px, 1.1fr)
+	          minmax(220px, 1.1fr)
+	          minmax(190px, 0.95fr)
+	          minmax(190px, 0.95fr);
+	      }
+	      .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"] {
+	        grid-column: 1 / span 2;
+	      }
+	      .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
+	        grid-column: 3 / span 2;
+	        justify-content: flex-end;
+	      }
+	      .erpw-list-command-action-cell {
+	        display: inline-flex;
+	        align-items: flex-start;
+	        justify-content: flex-end;
+	        align-self: stretch;
+	        min-height: var(--erpw-list-action-rail-height);
+	        padding-top: var(--erpw-list-control-label-offset);
+	        box-sizing: border-box;
+	      }
+	      .erpw-list-command-grid.field-count-4 .erpw-list-command-action-cell {
+	        grid-column: 3;
+	      }
       .erpw-list-unified-command {
         display: grid;
         gap: 8px;
@@ -167,17 +233,17 @@
         justify-content: flex-end;
         align-items: center;
       }
-      .erpw-list-control-form {
-        display: grid;
-        flex: 0 1 auto;
-        grid-template-columns: repeat(auto-fit, minmax(210px, 280px));
-        gap: 10px;
-        align-items: end;
-        width: fit-content;
-        max-width: 100%;
-      }
-      .erpw-list-control-form.is-single-field {
-        grid-template-columns: minmax(210px, 280px);
+	      .erpw-list-control-form {
+	        display: grid;
+	        flex: 0 1 auto;
+	        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	        gap: 10px;
+	        align-items: stretch;
+	        width: 100%;
+	        max-width: 100%;
+	      }
+	      .erpw-list-control-form.is-single-field {
+	        grid-template-columns: minmax(210px, 280px);
       }
       .erpw-list-control-form.is-two-fields {
         grid-template-columns: repeat(2, minmax(210px, 280px));
@@ -199,11 +265,22 @@
         flex-direction: column;
         gap: 7px;
       }
-      .erpw-list-control-field.is-date {
-        position: relative;
-      }
-      .erpw-list-control-label {
-        font-size: 11px;
+	      .erpw-list-control-field.is-date {
+	        position: relative;
+	      }
+	      .erpw-list-action-field {
+	        align-self: stretch;
+	        justify-content: flex-start;
+	        min-width: max-content;
+	        min-height: var(--erpw-list-action-rail-height);
+	        padding-top: var(--erpw-list-control-label-offset);
+	        box-sizing: border-box;
+	      }
+	      .erpw-list-action-spacer {
+	        display: none;
+	      }
+	      .erpw-list-control-label {
+	        font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.08em;
         color: #64748b;
@@ -235,26 +312,47 @@
         background-size: 16px 16px;
         cursor: pointer;
       }
-      .erpw-list-toolbar-actions {
-        display: inline-flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        justify-content: flex-start;
-        align-items: center;
-        flex: 0 0 auto;
+	      .erpw-list-toolbar-actions {
+	        display: inline-flex;
+	        flex-wrap: wrap;
+	        gap: 6px;
+	        justify-content: flex-start;
+	        align-items: center;
+	        flex: 0 0 auto;
+	        box-sizing: border-box;
+	        min-height: var(--erpw-list-control-height);
         margin-top: 0;
-        padding: 3px;
+        padding: 2px;
         border: 1px solid rgba(226, 232, 240, 0.76);
         border-radius: 15px;
-        background: rgba(255, 255, 255, 0.88);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
-      }
-      .erpw-list-toolbar-actions .erpw-list-action-button {
-        min-height: 34px;
-        padding-inline: 0.72rem;
-        border-color: transparent;
-        border-radius: 11px;
-      }
+	        background: rgba(255, 255, 255, 0.88);
+	        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+	      }
+	      .erpw-list-controls-strip.is-utility-only .erpw-list-toolbar-actions {
+	        border-color: transparent;
+	        background: transparent;
+	        box-shadow: none;
+	        padding: 0;
+	      }
+	      .erpw-list-controls-strip.is-utility-only .erpw-list-action-button {
+	        border-color: rgba(226, 232, 240, 0.72);
+	        background: #ffffff;
+	        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.035);
+	      }
+	      .erpw-list-toolbar-actions .erpw-list-action-button {
+	        min-height: 34px;
+	        padding-inline: 0.72rem;
+	        border-color: transparent;
+	        border-radius: 11px;
+	      }
+	      .erpw-list-toolbar-actions .erpw-list-action-button.is-refresh:not(.primary) {
+	        color: #334155;
+	        background: transparent;
+	      }
+	      .erpw-list-toolbar-actions .erpw-list-action-button.create:not(.primary) {
+	        color: #0f3f46;
+	        background: rgba(240, 253, 250, 0.56);
+	      }
       .erpw-list-form-action-row {
         display: flex;
         justify-content: flex-end;
@@ -264,24 +362,31 @@
       .erpw-list-form-action-row .erpw-list-toolbar-actions {
         margin-left: auto;
       }
-      .erpw-list-action-button.navigation {
-        min-height: 32px;
-        gap: 7px;
-        padding: 0.28rem 0.42rem;
-        border-color: transparent;
-        border-radius: 999px;
-        background: transparent;
-        color: #475569;
-        font-size: 0.75rem;
-        box-shadow: none;
-      }
-      .erpw-list-action-button.navigation:hover,
-      .erpw-list-action-button.navigation:focus-visible {
-        border-color: transparent;
-        background: rgba(248, 250, 252, 0.88);
-        color: #0f172a;
-        box-shadow: none;
-      }
+	      .erpw-list-action-button.navigation {
+	        display: inline-flex;
+	        align-items: center;
+	        justify-content: center;
+	        min-height: 34px;
+	        gap: 7px;
+	        padding: 0.34rem 0.68rem;
+	        border-color: rgba(226, 232, 240, 0.62);
+	        border-radius: 999px;
+	        background: #ffffff;
+	        color: #475569;
+	        font-size: 0.76rem;
+	        box-shadow:
+	          0 1px 1px rgba(15, 23, 42, 0.02),
+	          0 8px 18px rgba(15, 23, 42, 0.035);
+	      }
+	      .erpw-list-action-button.navigation:hover,
+	      .erpw-list-action-button.navigation:focus-visible {
+	        border-color: rgba(203, 213, 225, 0.7);
+	        background: #ffffff;
+	        color: #0f172a;
+	        box-shadow:
+	          0 1px 1px rgba(15, 23, 42, 0.025),
+	          0 10px 22px rgba(15, 23, 42, 0.045);
+	      }
       .erpw-list-summary-card .erpw-list-navigation-actions {
         margin-left: auto;
       }
@@ -317,11 +422,53 @@
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
-      @media (max-width: 760px) {
-        .erpw-list-unified-command-row {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr);
+      @media (max-width: 980px) {
+        .erpw-list-command-panel {
+          width: 100%;
         }
+        .erpw-list-command-grid.field-count-5.has-date-window {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"],
+        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
+          grid-column: 1 / -1;
+        }
+      }
+	      @media (max-width: 760px) {
+	        .erpw-list-controls-strip {
+	          width: 100%;
+	        }
+	        .erpw-list-unified-command-row {
+	          display: grid;
+	          grid-template-columns: minmax(0, 1fr);
+	        }
+	        .erpw-list-command-panel {
+	          width: 100%;
+	        }
+	        .erpw-list-command-grid,
+	        .erpw-list-command-grid.field-count-1,
+	        .erpw-list-command-grid.field-count-2,
+	        .erpw-list-command-grid.field-count-3,
+	        .erpw-list-command-grid.field-count-4,
+	        .erpw-list-command-grid.field-count-5 {
+	          grid-template-columns: minmax(0, 1fr);
+	        }
+	        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"],
+	        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
+	          grid-column: auto;
+	        }
+	        .erpw-list-command-grid.field-count-4 .erpw-list-command-action-cell {
+	          grid-column: auto;
+	        }
+	        .erpw-list-command-action-cell,
+	        .erpw-list-command-action-cell .erpw-list-toolbar-actions {
+	          width: 100%;
+	        }
+	        .erpw-list-command-action-cell,
+	        .erpw-list-action-field {
+	          min-height: var(--erpw-list-control-height);
+	          padding-top: 0;
+	        }
         .erpw-list-unified-command-control {
           width: 100%;
         }
@@ -391,16 +538,29 @@
     ].join('');
   }
 
-  function renderToolbarAction(action, extraClass) {
-    if (!action || !action.key || !action.label) return "";
-    const isNavigation = String(extraClass || '').split(/\s+/).includes('navigation');
+	  function renderToolbarAction(action, extraClass) {
+	    if (!action || !action.key || !action.label) return "";
+	    const isNavigation = String(extraClass || '').split(/\s+/).includes('navigation');
+	    const isBackNavigation = isNavigation && (
+	      /^back_/.test(String(action.key || ''))
+	      || /^cancel_/.test(String(action.key || ''))
+	      || /^back to\b/i.test(String(action.label || ''))
+	    );
+	    const kindClass = action.kind === 'primary'
+      ? 'primary'
+      : action.kind === 'create'
+        ? 'create'
+        : '';
+    const behaviorClass = action.key === 'refresh' ? 'is-refresh' : '';
     const buttonClass = joinClassNames(
-      action.kind === 'primary' ? 'erpw-list-action-button primary' : 'erpw-list-action-button',
+      'erpw-list-action-button',
+      kindClass,
+      behaviorClass,
       extraClass || ''
     );
-    const iconMarkup = isNavigation && /^back_/.test(String(action.key || ''))
-      ? '<span class="erpw-list-action-button-navigation-icon" aria-hidden="true">&larr;</span>'
-      : '';
+	    const iconMarkup = isBackNavigation
+	      ? '<span class="erpw-list-action-button-navigation-icon" aria-hidden="true">&larr;</span>'
+	      : '';
     return '<button type="button" class="' + buttonClass + '" data-erpw-list-action-key="' + escapeHtml(action.key) + '" data-erpw-list-action-scope="toolbar">' + iconMarkup + '<span>' + escapeHtml(action.label) + '</span></button>';
   }
 
@@ -410,6 +570,9 @@
       apply_filters: 10,
       reset_filters: 20,
       refresh: 30,
+      create_customer: 40,
+      new_quotation: 40,
+      new_sales_order: 40,
     };
     return normalizeItems(actions).slice().sort((left, right) => {
       const leftRank = Object.prototype.hasOwnProperty.call(order, left.key) ? order[left.key] : 100;
@@ -442,7 +605,7 @@
     }
 
     return [
-      '<label class="erpw-list-control-field' + (field.type === 'date' ? ' is-date' : '') + '">',
+      '<label class="erpw-list-control-field' + (field.type === 'date' ? ' is-date' : '') + '" data-erpw-list-field-shell-key="' + escapeHtml(field.key) + '">',
         '<span class="erpw-list-control-label">' + escapeHtml(field.label) + '</span>',
         renderControlInput(field, baseAttrs),
       '</label>'
@@ -469,33 +632,79 @@
     ].join('');
   }
 
-  function renderControls(controls) {
-    if (!controls) return "";
+	  function renderControlActionField(operatingActions) {
+	    if (!operatingActions.length) return "";
+	    return [
+	      '<div class="erpw-list-control-field erpw-list-action-field">',
+        '<span class="erpw-list-control-label erpw-list-action-spacer" aria-hidden="true">Actions</span>',
+        '<div class="erpw-list-toolbar-actions">',
+          operatingActions.map((action) => renderToolbarAction(action)).join(''),
+        '</div>',
+	      '</div>',
+	    ].join('');
+	  }
 
-    const actions = normalizeItems(controls.actions).filter((action) => action.key !== 'open_native');
-    const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
-    const operatingActions = sortOperatingActions(actions.filter((action) => !navigationActions.includes(action)));
-    const fields = normalizeItems(controls.fields);
-    const isFormPanel = controls.layout === 'form_panel';
-    const visibleFields = fields.filter((field) => field && field.type !== 'hidden');
-    const hiddenFields = fields.filter((field) => field && field.type === 'hidden');
-    const visibleFieldCount = visibleFields.length;
-    const hasContent = actions.length || controls.searchHint || fields.length;
-    if (!hasContent) return "";
+	  function renderCommandPanel(visibleFields, hiddenFieldsMarkup, operatingActions) {
+	    const normalizedFields = normalizeItems(visibleFields);
+	    const fieldCountClass = 'field-count-' + Math.min(normalizedFields.length, 5);
+	    const fieldKeys = normalizedFields.map((field) => String(field && field.key || ''));
+	    const hasDateWindow = fieldKeys.includes('date_start') && fieldKeys.includes('date_end');
+	    return [
+	      '<div class="erpw-list-command-panel">',
+	        hiddenFieldsMarkup,
+	        '<div class="' + joinClassNames('erpw-list-command-grid', fieldCountClass, hasDateWindow ? 'has-date-window' : '') + '">',
+	          normalizedFields.map((field) => renderControlField(field)).join(''),
+	          operatingActions.length ? [
+	            '<div class="erpw-list-command-action-cell">',
+	            '<div class="erpw-list-toolbar-actions">',
+	              operatingActions.map((action) => renderToolbarAction(action)).join(''),
+	            '</div>',
+	            '</div>',
+	          ].join('') : '',
+	        '</div>',
+	      '</div>',
+	    ].join('');
+	  }
+
+	  function renderControls(controls) {
+	    if (!controls) return "";
+
+	    const actions = normalizeItems(controls.actions).filter((action) => action.key !== 'open_native');
+	    const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
+	    const operatingActions = sortOperatingActions(actions.filter((action) => !navigationActions.includes(action)));
+	    const fields = normalizeItems(controls.fields);
+	    const isFormPanel = controls.layout === 'form_panel';
+	    const visibleFields = fields.filter((field) => field && field.type !== 'hidden');
+	    const hiddenFields = fields.filter((field) => field && field.type === 'hidden');
+	    const visibleFieldCount = visibleFields.length;
+	    const hasContent = operatingActions.length || controls.searchHint || fields.length;
+	    if (!hasContent) return "";
 
     const hiddenFieldsMarkup = hiddenFields.map((field) => renderControlField(field)).join('');
-    const unifiedCommandMarkup = visibleFieldCount === 1 && operatingActions.length
-      ? renderUnifiedCommandField(visibleFields[0], hiddenFieldsMarkup, operatingActions)
-      : '';
+	    const unifiedCommandMarkup = visibleFieldCount === 1 && operatingActions.length
+	      ? renderUnifiedCommandField(visibleFields[0], hiddenFieldsMarkup, operatingActions)
+	      : '';
+	    const commandPanelMarkup = !isFormPanel && visibleFieldCount > 1 && operatingActions.length
+	      ? renderCommandPanel(visibleFields, hiddenFieldsMarkup, operatingActions)
+	      : '';
 
-    const fieldsMarkup = fields.length
-      ? '<div class="' + joinClassNames(
-          'erpw-list-control-form',
-          isFormPanel ? 'is-form-panel' : '',
-          visibleFieldCount === 1 ? 'is-single-field' : '',
-          visibleFieldCount === 2 ? 'is-two-fields' : ''
-        ) + '">' + fields.map((field) => renderControlField(field)).join('') + '</div>'
-      : '';
+	    const renderedVisibleFields = visibleFields.map((field) => renderControlField(field)).join('');
+	    const fieldsMarkup = !commandPanelMarkup && (visibleFieldCount || (isFormPanel && hiddenFields.length))
+	      ? '<div class="' + joinClassNames(
+	          'erpw-list-control-form',
+	          isFormPanel ? 'is-form-panel' : '',
+	          visibleFieldCount === 1 ? 'is-single-field' : '',
+	          visibleFieldCount === 2 ? 'is-two-fields' : ''
+	        ) + '">'
+	          + hiddenFieldsMarkup
+	          + renderedVisibleFields
+	          + (!isFormPanel && visibleFieldCount > 1 && operatingActions.length ? renderControlActionField(operatingActions) : '')
+	        + '</div>'
+	      : '';
+	    const utilityActionsMarkup = !unifiedCommandMarkup && !commandPanelMarkup && !fieldsMarkup && operatingActions.length
+	      ? hiddenFieldsMarkup + '<div class="erpw-list-toolbar-actions is-standalone">' + operatingActions.map((action) => renderToolbarAction(action)).join('') + '</div>'
+	      : '';
+	    const utilityOnly = !visibleFieldCount && operatingActions.length;
 
     if (isFormPanel) {
       return [
@@ -508,17 +717,17 @@
       ].join('');
     }
 
-    return [
-      '<section class="erpw-list-controls-strip">',
-        controls.searchHint ? '<div class="erpw-list-controls-inline"><div class="erpw-list-search-hint">' + escapeHtml(controls.searchHint) + '</div></div>' : '',
-        unifiedCommandMarkup || fieldsMarkup || operatingActions.length
-          ? '<div class="erpw-list-filter-row">'
-              + (unifiedCommandMarkup || fieldsMarkup)
-              + (!unifiedCommandMarkup && operatingActions.length ? '<div class="erpw-list-toolbar-actions">' + operatingActions.map((action) => renderToolbarAction(action)).join('') + '</div>' : '')
-            + '</div>'
-          : '',
-      '</section>'
-    ].join('');
+	    return [
+	      '<section class="' + joinClassNames('erpw-list-controls-strip', utilityOnly ? 'is-utility-only' : '') + '">',
+	        controls.searchHint ? '<div class="erpw-list-controls-inline"><div class="erpw-list-search-hint">' + escapeHtml(controls.searchHint) + '</div></div>' : '',
+	        unifiedCommandMarkup || commandPanelMarkup || fieldsMarkup || utilityActionsMarkup
+	          ? '<div class="erpw-list-filter-row">'
+	              + (unifiedCommandMarkup || commandPanelMarkup || fieldsMarkup)
+	              + utilityActionsMarkup
+	            + '</div>'
+	          : '',
+	      '</section>'
+	    ].join('');
   }
 
   function renderMetrics(metrics) {
@@ -667,8 +876,8 @@
               ].join('')
             : renderResultsState({
                 kind: 'empty',
-                title: 'No list structure defined',
-                detail: 'Columns were not configured for this list surface.',
+                title: 'List is not ready yet',
+                detail: 'This Sales Console view is missing its table setup. Refresh the page or return to the console.',
               }),
       '</section>'
     ].join('');
@@ -692,6 +901,7 @@
   function ensureShell(target) {
     const $target = resolveTarget(target);
     if (!$target.length) return $();
+    if ($target.hasClass('erpw-list-shell')) return $target;
 
     let $shell = $target.children('.erpw-list-shell').first();
     if (!$shell.length) {
@@ -699,6 +909,55 @@
       $target.empty().append($shell);
     }
 
+    return $shell;
+  }
+
+  function setDataRefreshing(target, enabled) {
+    const $shell = ensureShell(target);
+    if (!$shell.length) return $shell;
+    $shell.toggleClass('is-data-refreshing', Boolean(enabled));
+    $shell.attr('aria-busy', enabled ? 'true' : 'false');
+    return $shell;
+  }
+
+  function replaceShellSection($shell, selector, markup, beforeSelector) {
+    const $existing = $shell.children(selector).first();
+    if (!markup) {
+      $existing.remove();
+      return;
+    }
+
+    const $next = $(markup);
+    if ($existing.length) {
+      $existing.replaceWith($next);
+      return;
+    }
+
+    const $before = beforeSelector ? $shell.children(beforeSelector).first() : $();
+    if ($before.length) {
+      $next.insertBefore($before);
+      return;
+    }
+
+    $shell.append($next);
+  }
+
+  function refreshWorklistData(target, config, options) {
+    ensureStyles();
+    const $shell = ensureShell(target);
+    if (!$shell.length) return $();
+
+    const page = config || {};
+    const settings = options && typeof options === 'object' ? options : {};
+    if (settings.refreshControls) {
+      replaceShellSection($shell, '.erpw-list-controls-strip', renderControls(page.controls), '.erpw-list-metrics, .erpw-list-results');
+    }
+    replaceShellSection($shell, '.erpw-list-metrics', renderMetrics(page.metrics), '.erpw-list-results');
+    replaceShellSection($shell, '.erpw-list-results', renderResults(page.results, page.controls));
+    $shell.attr('data-erpw-list-signature', renderWorklist(page));
+    setDataRefreshing($shell, false);
+    bindDateFields($shell);
+    bindActions($shell, config || {});
     return $shell;
   }
 
@@ -785,6 +1044,8 @@
   listPageRuntime.shell = Object.assign({}, listPageRuntime.shell || {}, {
     ensureShell,
     mountWorklist,
+    refreshWorklistData,
     renderWorklist,
+    setDataRefreshing,
   });
 })();

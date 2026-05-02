@@ -5,6 +5,9 @@ This folder records freeze decisions, deferred UI work, and implementation notes
 Current implementation focus:
 
 - Sales Console
+- Enterprise shared UI component standard
+- Enterprise shared UI implementation contract
+- Sales Console enterprise readiness audit
 - Sales Console operating foundation mini-phase
 - Sales Console operational worklists
 - Sales Console Customers page
@@ -42,10 +45,22 @@ Current routing truth:
 - `/desk/sales-console-worklist/<queue-key>` is the shared worklist shell.
 - `/desk/sales-console-worklist/customer-directory` is the productized Customers page.
 - `/desk/sales-console-worklist/item-directory` is the productized Items page.
+- `/desk/sales-console-worklist/customer-detail/<customer>` is the productized Customer Detail page.
+- `/desk/sales-console-worklist/item-detail/<item>` is the productized Item Detail page.
 - bare `/desk/sales-console-worklist` intentionally shows a guard state because no queue key was supplied.
 
 Documents in this folder:
 
+- `enterprise-shared-ui-component-standard-v1.md`
+- `enterprise-shared-ui-component-implementation-contract-v1.md`
+- `sales-console-enterprise-readiness-audit-mini-phase-plan.md`
+- `sales-console-enterprise-readiness-standards-hardening-addendum.md`
+- `sales-console-enterprise-readiness-sera-0-baseline.md`
+- `sales-console-enterprise-readiness-sera-1-route-ownership.md`
+- `sales-console-enterprise-readiness-sera-2-security-permissions.md`
+- `sales-console-enterprise-readiness-sera-3-visual-stability.md`
+- `sales-console-enterprise-readiness-sera-4-page-archetypes.md`
+- `sales-console-enterprise-readiness-sera-5-cross-page-fix-pass.md`
 - `page-freeze-notes/README.md`
 - `page-freeze-notes/sales-console-freeze.md`
 - `page-freeze-notes/sales-order-freeze.md`

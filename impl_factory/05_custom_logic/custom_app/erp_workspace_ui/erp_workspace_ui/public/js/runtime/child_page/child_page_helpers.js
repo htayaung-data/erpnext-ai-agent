@@ -378,7 +378,7 @@
 
   function showDeferredRouteNotice(doctype) {
     frappe.show_alert({
-      message: __(`${doctype} is visible as Sales Console context, but its designed workspace page is not available yet.`),
+      message: __(`${doctype} is visible here, but its Sales Console page is not available yet.`),
       indicator: "orange",
     });
     return true;
@@ -392,14 +392,25 @@
     return filters && typeof filters === "object" ? String(filters.customer || "").trim() : "";
   }
 
+  function itemRouteValue(filters) {
+    return filters && typeof filters === "object" ? String(filters.item || filters.item_code || "").trim() : "";
+  }
+
   function routeToWorklist(queueKey, filters) {
     if (!queueKey) return false;
     const normalizedQueueKey = String(queueKey || "").replace(/_/g, "-");
     const nextFilters = filters && typeof filters === "object" && Object.keys(filters).length ? filters : null;
+    const normalizedTargetKey = String(queueKey || "").replace(/-/g, "_");
     const routeCustomer = customerRouteValue(nextFilters);
-    if (["customer_detail", "customer_editor"].includes(String(queueKey || "").replace(/-/g, "_")) && routeCustomer) {
+    const routeItem = itemRouteValue(nextFilters);
+    if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
       frappe.route_options = nextFilters;
       frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeCustomer));
+      return true;
+    }
+    if (normalizedTargetKey === "item_detail" && routeItem) {
+      frappe.route_options = nextFilters;
+      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeItem));
       return true;
     }
 
@@ -443,6 +454,11 @@
       if (doctype === "Customer") {
         return routeToWorklist("customer_detail", Object.assign({}, target.filters || {}, {
           customer: target.name,
+        }));
+      }
+      if (doctype === "Item") {
+        return routeToWorklist("item_detail", Object.assign({}, target.filters || {}, {
+          item: target.name,
         }));
       }
       if (SALES_CONSOLE_ENHANCED_FORM_DOCTYPES.has(doctype)) {
@@ -1082,14 +1098,15 @@
     const wasPending = !!(frm && frm.__erpwDraftBodyPending);
 
     if (pending) {
+      const session = ensureDraftPerformanceSession(frm);
+      const alreadyRevealed = !!(session && session.events && (session.events.draft_body_pending_end || session.events.draft_body_stable));
+      if (alreadyRevealed && !wasPending) {
+        recordDraftPerformanceEvent(frm, "draft_body_regressed_blocked", {
+          supportHidden: keepDraftSupportHidden,
+        });
+        return false;
+      }
       if (!wasPending) {
-        const session = ensureDraftPerformanceSession(frm);
-        const alreadyRevealed = !!(session && session.events && (session.events.draft_body_pending_end || session.events.draft_body_stable));
-        if (alreadyRevealed) {
-          recordDraftPerformanceEvent(frm, "draft_body_regressed", {
-            supportHidden: keepDraftSupportHidden,
-          });
-        }
         recordDraftPerformanceEvent(frm, "draft_body_pending_start", {
           supportHidden: keepDraftSupportHidden,
         });

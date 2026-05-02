@@ -26,14 +26,14 @@ The current Sales Console report family is centered on these productized report-
 
 1. `Sales Analytics`
 2. `Sales Order Analysis`
-3. `Quotation Trends`
+3. `Trend Analysis`
 4. `Lost Quotations`
 5. `Collections Status`
 6. `Item-wise Sales History`
 
 `Collections Status` replaces the earlier payment-terms direction because invoice settlement and receivable exposure are the stronger sales truth.
 
-`Sales Order Trends` is not part of the current role-based report-card catalog.
+`Trend Analysis` replaces the earlier visible `Quotation Trends` direction. It uses one controlled Sales Console page with a Document Type filter for `Sales Invoice`, `Sales Order`, and `Quotation`.
 
 So the remaining Sales Console scope is not “more worklists”.
 
@@ -111,7 +111,7 @@ Purpose:
 
 Reports:
 
-1. `Quotation Trends`
+1. `Trend Analysis`
 2. `Lost Quotations`
 
 Primary user:
@@ -152,7 +152,7 @@ Primary decision:
 | --- | --- | --- | --- | --- | --- |
 | Sales Analytics | Performance summary | Manager / executive | Are sales results moving correctly? | summary + KPI + table | 1 |
 | Sales Order Analysis | Execution review | Manager / sales | Which orders need deeper execution review? | KPI + dense table | 1 |
-| Quotation Trends | Trend and conversion | Manager / sales | Is quotation momentum healthy? | KPI + trend summary + table | 1 |
+| Trend Analysis | Trend and conversion | Manager / sales | Are billed, ordered, or quoted values moving correctly? | Document Type filter + KPI + trend summary + table | 1 |
 | Lost Quotations | Trend and conversion / exception | Manager / executive | Why are we losing business? | exception summary + table | 2 |
 | Collections Status | Settlement / receivables review | Manager / sales | Which customers or invoices carry real receivable exposure? | exposure summary + table | 2 |
 | Item-wise Sales History | Product history | Sales / manager | What item history should guide this discussion? | filter-first history table | 2 |
@@ -169,7 +169,7 @@ Build these first:
 
 1. `Sales Analytics`
 2. `Sales Order Analysis`
-3. `Quotation Trends`
+3. `Trend Analysis`
 
 Reason:
 

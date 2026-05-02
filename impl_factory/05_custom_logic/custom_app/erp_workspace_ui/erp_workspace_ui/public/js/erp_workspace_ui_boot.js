@@ -17,7 +17,7 @@
 
   function matchesChildExecutionPath(slug) {
     const path = window.location.pathname || "";
-    return new RegExp(`^/desk/${slug}/[^/]+(?:/|$)`).test(path);
+    return new RegExp(`^/(?:desk|app)/${slug}/[^/]+(?:/|$)`).test(path);
   }
 
   function isSalesOrderRoute() {
@@ -40,10 +40,341 @@
     return isSalesOrderRoute() || isQuotationRoute() || isDeliveryNoteRoute() || isSalesInvoiceRoute();
   }
 
-  function isChildExecutionDocType(doctype) {
-    return doctype === "Sales Order" || doctype === "Quotation" || doctype === "Delivery Note" || doctype === "Sales Invoice";
-  }
+	  function isChildExecutionDocType(doctype) {
+	    return doctype === "Sales Order" || doctype === "Quotation" || doctype === "Delivery Note" || doctype === "Sales Invoice";
+	  }
 
+	  function managedSalesConsoleDirectoryTarget(label) {
+	    const normalized = String(label || "").replace(/\s+/g, " ").trim().toLowerCase();
+	    const targets = {
+	      quotation: { doctype: "Quotation", queue_key: "quotation_directory" },
+	      quotations: { doctype: "Quotation", queue_key: "quotation_directory" },
+	      "sales order": { doctype: "Sales Order", queue_key: "sales_order_directory" },
+	      "sales orders": { doctype: "Sales Order", queue_key: "sales_order_directory" },
+	      "delivery note": { doctype: "Delivery Note", queue_key: "sales_order_directory" },
+	      "delivery notes": { doctype: "Delivery Note", queue_key: "sales_order_directory" },
+	      "sales invoice": { doctype: "Sales Invoice", queue_key: "sales_order_directory" },
+	      "sales invoices": { doctype: "Sales Invoice", queue_key: "sales_order_directory" },
+	      customer: { doctype: "Customer", queue_key: "customer_directory" },
+	      customers: { doctype: "Customer", queue_key: "customer_directory" },
+	      item: { doctype: "Item", queue_key: "item_directory" },
+	      items: { doctype: "Item", queue_key: "item_directory" },
+	    };
+	    return targets[normalized] || null;
+	  }
+
+	  function managedSalesConsoleHomeTarget(label, href) {
+	    const normalized = String(label || "").replace(/\s+/g, " ").trim().toLowerCase();
+	    const homeLabels = new Set([
+	      "accounts",
+	      "erpnext",
+	      "sales console",
+	      "sales console report",
+	      "sales console worklist",
+	      "selling",
+	      "stock",
+	    ]);
+	    if (homeLabels.has(normalized)) {
+	      return { kind: "home" };
+	    }
+
+	    const rawHref = String(href || "").trim();
+	    if (!rawHref || rawHref === "#") return null;
+
+	    let path = rawHref;
+	    try {
+	      path = new URL(rawHref, window.location.origin).pathname || rawHref;
+	    } catch (error) {
+	      path = rawHref.split(/[?#]/)[0] || rawHref;
+	    }
+	    const normalizedPath = String(path || "").replace(/\/+$/, "").toLowerCase();
+	    if (/^\/(?:desk|app)\/(?:accounts|sales-console-report|sales-console-worklist|selling|stock)$/.test(normalizedPath)) {
+	      return { kind: "home" };
+	    }
+	    return null;
+	  }
+
+	  function isManagedSalesConsoleRoute() {
+	    const path = window.location.pathname || "";
+	    return isChildExecutionRoute()
+	      || /^\/(?:desk|app)\/sales-console(?:\/|$)/.test(path)
+	      || /^\/(?:desk|app)\/sales-console-worklist(?:\/|$)/.test(path)
+	      || /^\/(?:desk|app)\/sales-console-report(?:\/|$)/.test(path);
+	  }
+
+	  function routeToManagedDirectory(target) {
+	    if (!target || !target.queue_key) return false;
+	    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
+	    if (
+	      helpers
+	      && typeof helpers.routeToSalesConsoleTarget === "function"
+	      && helpers.routeToSalesConsoleTarget({ kind: "worklist", queue_key: target.queue_key })
+	    ) {
+	      return true;
+	    }
+	    frappe.set_route("sales-console-worklist", String(target.queue_key).replace(/_/g, "-"));
+	    return true;
+	  }
+
+	  function routeToManagedBreadcrumbTarget(target) {
+	    if (!target) return false;
+	    if (target.kind === "home") {
+	      frappe.set_route("sales-console");
+	      return true;
+	    }
+	    return routeToManagedDirectory(target);
+	  }
+
+	  function managedDirectoryTargetFromQueue(queueKey) {
+	    const targets = {
+	      quotation_directory: { doctype: "Quotation", queue_key: "quotation_directory" },
+	      sales_order_directory: { doctype: "Sales Order", queue_key: "sales_order_directory" },
+	      customer_directory: { doctype: "Customer", queue_key: "customer_directory" },
+	      item_directory: { doctype: "Item", queue_key: "item_directory" },
+	    };
+	    return targets[String(queueKey || "")] || null;
+	  }
+
+	  function normalizeBreadcrumbLabel(link) {
+	    if (!(link instanceof HTMLElement)) return "";
+	    return String(link.textContent || "")
+	      .replace(/\s+/g, " ")
+	      .replace(/^\/+/, "")
+	      .trim();
+	  }
+
+	  function breadcrumbTargetFromLink(link) {
+	    if (!(link instanceof HTMLElement)) return null;
+	    const label = normalizeBreadcrumbLabel(link);
+	    return managedSalesConsoleDirectoryTarget(label)
+	      || managedSalesConsoleHomeTarget(label, link.getAttribute("href") || "");
+	  }
+
+	  function breadcrumbTargetFromDataset(link) {
+	    if (!(link instanceof HTMLElement)) return null;
+	    const kind = String(link.getAttribute("data-erpw-sales-owned-route-kind") || "").trim();
+	    if (kind === "home") return { kind: "home" };
+	    return managedDirectoryTargetFromQueue(link.getAttribute("data-erpw-sales-owned-route"));
+	  }
+
+	  function isSalesConsoleCustomChromeRoute() {
+	    if (isChildExecutionRoute()) return false;
+	    const path = window.location.pathname || "";
+	    return /^\/(?:desk|app)\/sales-console(?:\/|$)/.test(path)
+	      || /^\/(?:desk|app)\/sales-console-worklist(?:\/|$)/.test(path)
+	      || /^\/(?:desk|app)\/sales-console-report(?:\/|$)/.test(path);
+	  }
+
+	  function routeSegmentsFromPath() {
+	    const path = String(window.location.pathname || "").replace(/^\/(?:desk|app)\//, "");
+	    return path.split("/").map((part) => {
+	      try {
+	        return decodeURIComponent(part || "");
+	      } catch (error) {
+	        return part || "";
+	      }
+	    }).filter(Boolean);
+	  }
+
+	  function normalizeRouteKey(value) {
+	    return String(value || "").trim().replace(/-/g, "_");
+	  }
+
+	  function humanizeRouteKey(value) {
+	    return String(value || "")
+	      .replace(/[-_]+/g, " ")
+	      .replace(/\s+/g, " ")
+	      .trim()
+	      .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Workspace";
+	  }
+
+	  function currentSalesConsoleChromeContext(options) {
+	    const settings = options && typeof options === "object" ? options : {};
+	    const segments = routeSegmentsFromPath();
+	    const pageKey = segments[0] || "";
+	    const queueLabels = {
+	      quotation_directory: "Quotations",
+	      sales_order_directory: "Sales Orders",
+	      customer_directory: "Customers",
+	      item_directory: "Items",
+	      customer_detail: "Customer Detail",
+	      customer_editor: "Customer Editor",
+	      item_detail: "Item Detail",
+	      open_orders: "Open Sales Orders",
+	      sales_orders_pending_fulfillment: "Orders Pending Fulfillment",
+	      partially_delivered_orders: "Partially Delivered Orders",
+	      orders_due_soon: "Orders Due Soon",
+	      quotations_waiting_action: "Quotations Waiting for Action",
+	      expiring_quotations: "Quotations Nearing Expiry",
+	      orders_blocked_by_approval: "Orders Blocked by Approval",
+	      quotations_awaiting_approval: "Quotations Awaiting Approval",
+	      customer_follow_up_tasks: "Customer Follow-Up Tasks",
+	      invoices_outstanding: "Invoices Outstanding",
+	      sales_returns_in_progress: "Sales Returns in Progress",
+	    };
+	    const reportLabels = {
+	      sales_analytics: "Sales Analytics",
+	      sales_order_analysis: "Sales Order Analysis",
+	      trend_analysis: "Trend Analysis",
+	      quotation_trends: "Trend Analysis",
+	      collections_status: "Collections Status",
+	      payment_terms_status_sales_order: "Collections Status",
+	      item_wise_sales_history: "Item-wise Sales History",
+	      lost_quotations: "Lost Quotations",
+	    };
+
+	    let leafLabel = settings.title || settings.leafLabel || "";
+	    if (!leafLabel && pageKey === "sales-console-worklist") {
+	      const queueKey = normalizeRouteKey(segments[1] || "");
+	      leafLabel = queueLabels[queueKey] || humanizeRouteKey(queueKey || "worklist");
+	    }
+	    if (!leafLabel && pageKey === "sales-console-report") {
+	      const reportKey = normalizeRouteKey(segments[1] || "");
+	      leafLabel = reportLabels[reportKey] || humanizeRouteKey(reportKey || "report");
+	    }
+	    if (!leafLabel) {
+	      leafLabel = "Overview";
+	    }
+
+	    return {
+	      documentTitle: settings.documentTitle || leafLabel,
+	      crumbs: [
+	        {
+	          label: "Sales Console",
+	          route: "/desk/sales-console",
+	          kind: "home",
+	        },
+	        {
+	          label: leafLabel,
+	          route: "",
+	          current: true,
+	        },
+	      ],
+	    };
+	  }
+
+	  function resolveSalesConsoleChromeRoots(page) {
+	    const roots = [];
+	    const pageWrapper = page && page.wrapper
+	      ? (page.wrapper.jquery ? page.wrapper.get(0) : page.wrapper)
+	      : null;
+	    if (pageWrapper instanceof HTMLElement) {
+	      roots.push(pageWrapper);
+	    }
+
+	    const routeStr = window.frappe && frappe.get_route_str ? frappe.get_route_str() : "";
+	    const routePage = routeStr && window.frappe && frappe.ui && frappe.ui.pages
+	      ? frappe.ui.pages[routeStr]
+	      : null;
+	    const routeWrapper = routePage && routePage.wrapper
+	      ? (routePage.wrapper.jquery ? routePage.wrapper.get(0) : routePage.wrapper)
+	      : null;
+	    if (routeWrapper instanceof HTMLElement && !roots.includes(routeWrapper)) {
+	      roots.push(routeWrapper);
+	    }
+
+	    if (!roots.length) {
+	      Array.from(document.querySelectorAll(".page-head")).forEach((head) => {
+	        if (!(head instanceof HTMLElement)) return;
+	        const rect = head.getBoundingClientRect();
+	        const style = window.getComputedStyle(head);
+	        if (rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden") {
+	          roots.push(head);
+	        }
+	      });
+	    }
+	    return roots;
+	  }
+
+	  function syncSalesConsoleNativeChrome(options) {
+	    if (!isSalesConsoleCustomChromeRoute()) return false;
+	    const settings = options && typeof options === "object" ? options : {};
+	    const context = currentSalesConsoleChromeContext(settings);
+	    const roots = resolveSalesConsoleChromeRoots(settings.page);
+	    let synced = false;
+
+	    roots.forEach((rootNode) => {
+	      const breadcrumbLists = rootNode instanceof HTMLElement && rootNode.matches(".page-head")
+	        ? Array.from(rootNode.querySelectorAll(".navbar-breadcrumbs"))
+	        : Array.from(rootNode.querySelectorAll(".page-head .navbar-breadcrumbs"));
+	      breadcrumbLists.forEach((list) => {
+	        if (!(list instanceof HTMLElement)) return;
+	        list.textContent = "";
+	        list.setAttribute("data-erpw-sales-console-breadcrumbs", "1");
+	        context.crumbs.forEach((crumb, index) => {
+	          const item = document.createElement("li");
+	          const link = document.createElement("a");
+	          const isCurrent = Boolean(crumb.current || index === context.crumbs.length - 1);
+	          link.textContent = crumb.label;
+	          if (crumb.route && !isCurrent) {
+	            link.setAttribute("href", crumb.route);
+	          } else {
+	            link.setAttribute("href", "");
+	            link.setAttribute("aria-current", "page");
+	          }
+	          if (crumb.kind === "home") {
+	            link.setAttribute("data-erpw-sales-owned-route-kind", "home");
+	          }
+	          if (isCurrent) {
+	            link.classList.add("title-text");
+	            link.setAttribute("data-erpw-sales-current-crumb", "1");
+	          }
+	          item.appendChild(link);
+	          list.appendChild(item);
+	        });
+	        synced = true;
+	      });
+	    });
+
+	    if (synced) {
+	      if (document.body) {
+	        document.body.classList.remove("no-breadcrumbs");
+	      }
+	      if (window.frappe && frappe.utils && typeof frappe.utils.set_title === "function") {
+	        frappe.utils.set_title(context.documentTitle || "Sales Console");
+	      }
+	    }
+	    return synced;
+	  }
+
+	  function syncSalesConsoleBreadcrumbLinks() {
+	    if (!isManagedSalesConsoleRoute()) return;
+	    document.querySelectorAll(".breadcrumb a, .breadcrumbs a, .page-title a").forEach((link) => {
+	      if (!(link instanceof HTMLElement)) return;
+	      const target = breadcrumbTargetFromLink(link);
+	      if (!target) return;
+	      if (target.kind === "home") {
+	        link.setAttribute("data-erpw-sales-owned-route-kind", "home");
+	        link.removeAttribute("data-erpw-sales-owned-route");
+	        link.setAttribute("href", "/desk/sales-console");
+	        return;
+	      }
+	      link.setAttribute("data-erpw-sales-owned-route-kind", "directory");
+	      link.setAttribute("data-erpw-sales-owned-route", target.queue_key);
+	      link.setAttribute("href", `/desk/sales-console-worklist/${String(target.queue_key).replace(/_/g, "-")}`);
+	    });
+	  }
+
+	  function bindSalesConsoleBreadcrumbOwnership() {
+	    if (document.__erpwSalesBreadcrumbOwnershipBound) return;
+	    document.__erpwSalesBreadcrumbOwnershipBound = true;
+	    document.addEventListener("click", (event) => {
+	      if (!isManagedSalesConsoleRoute()) return;
+	      const link = event.target && event.target.closest
+	        ? event.target.closest(".breadcrumb a, .breadcrumbs a, .page-title a")
+	        : null;
+	      if (!(link instanceof HTMLElement)) return;
+	      const target = breadcrumbTargetFromDataset(link) || breadcrumbTargetFromLink(link);
+	      if (!target) return;
+	      event.preventDefault();
+	      event.stopPropagation();
+	      routeToManagedBreadcrumbTarget(target);
+	    }, true);
+	  }
+
+	  window.erpWorkspaceUiSalesConsoleChrome = Object.assign(window.erpWorkspaceUiSalesConsoleChrome || {}, {
+	    sync: syncSalesConsoleNativeChrome,
+	  });
   function applySalesOrderRouteChrome() {
     const isSalesOrder = isChildExecutionRoute();
     if (!isSalesOrder) {
@@ -229,12 +560,15 @@
     if (routeChromeBound) return;
     routeChromeBound = true;
 
-    const syncSoon = () => {
-      window.requestAnimationFrame(() => {
-        applySalesOrderRouteChrome();
-        collapseEmptyChildTopChrome();
-        ensureChildGridActionLabels();
-        bindDraftLookupSurface();
+	    const syncSoon = () => {
+	      window.requestAnimationFrame(() => {
+	        applySalesOrderRouteChrome();
+	        collapseEmptyChildTopChrome();
+	        bindSalesConsoleBreadcrumbOwnership();
+	        syncSalesConsoleNativeChrome();
+	        syncSalesConsoleBreadcrumbLinks();
+	        ensureChildGridActionLabels();
+	        bindDraftLookupSurface();
         prewarmDraftLookupDefaults();
         scheduleDraftLookupPositioning();
         ensureActiveChildPageBootstrap({ maxAttempts: 20 });

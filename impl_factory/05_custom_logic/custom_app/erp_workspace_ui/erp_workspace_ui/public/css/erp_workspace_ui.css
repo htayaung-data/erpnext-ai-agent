@@ -6379,3 +6379,88 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   padding: 4px 0 24px;
   box-sizing: border-box;
 }
+
+.sales-console-shell,
+.erpw-report-shell,
+.erpw-sales-console-worklist-page,
+.erpw-sales-console-sidebar-shell {
+  cursor: default;
+  user-select: none;
+}
+
+.sales-console-shell input,
+.sales-console-shell textarea,
+.sales-console-shell [contenteditable="true"],
+.erpw-report-shell input,
+.erpw-report-shell textarea,
+.erpw-report-shell select,
+.erpw-sales-console-worklist-page input,
+.erpw-sales-console-worklist-page textarea,
+.erpw-sales-console-worklist-page select {
+  cursor: text;
+  user-select: text;
+}
+
+.erpw-report-shell select,
+.erpw-sales-console-worklist-page select {
+  cursor: default;
+}
+
+.erpw-report-table tbody td,
+.erpw-list-table tbody td,
+.erpw-report-cell-link-label,
+.erpw-list-inline-open-label {
+  user-select: text;
+}
+
+.sales-console-shell button,
+.sales-console-shell a,
+.erpw-report-shell button,
+.erpw-report-shell a,
+.erpw-sales-console-worklist-page button,
+.erpw-sales-console-worklist-page a,
+.erpw-sales-console-sidebar-shell button,
+.erpw-sales-console-sidebar-shell a {
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .erpw-child-guidance-action,
+  .erpw-child-action,
+  .erpws-order-shell .erpw-child-action,
+  .erpw-list-action-button,
+  .erpw-list-row-action,
+  .erpw-list-inline-open-icon,
+  .erpw-report-table tbody td,
+  .erpw-report-cell-link,
+  .erpw-report-cell-link::after,
+  .erpw-so-connection-action,
+  .erpw-sales-console-sidebar-link,
+  .erpw-sales-console-sidebar-utility,
+  .erpw-sales-console-search-result {
+    transition: none !important;
+  }
+
+  .erpw-child-guidance-action:hover,
+  .erpw-child-action:hover,
+  .erpws-order-shell .erpw-child-action:hover,
+  .erpw-list-action-button:hover,
+  .erpw-list-row-action:hover,
+  .erpw-list-inline-open:hover .erpw-list-inline-open-icon,
+  .erpw-list-inline-open:focus-visible .erpw-list-inline-open-icon,
+  .erpw-report-cell-link:hover::after,
+  .erpw-so-connection-action-primary:hover,
+  .erpw-so-connection-action-secondary:hover,
+  .erpw-so-connection-action-tertiary:hover {
+    transform: none !important;
+  }
+
+  .erpw-so-shell-skeleton-kicker::after,
+  .erpw-so-shell-skeleton-title::after,
+  .erpw-so-shell-skeleton-subtitle::after,
+  .erpw-so-shell-skeleton-fact::after,
+  .erpw-so-shell-skeleton-action::after,
+  .erpw-so-shell-skeleton-guidance-card::after {
+    animation: none !important;
+  }
+}

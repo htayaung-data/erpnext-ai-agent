@@ -3,10 +3,19 @@
 (function () {
   const PAGE_KEY = "sales-console-report";
   const CONTEXT_METHOD = "erp_workspace_ui.sales_console.report.get_sales_console_report_context";
-  const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-04-21-report-table-fit";
-  const REPORT_SHELL_VERSION = "2026-04-21-report-table-fit";
+  const REPORT_CHROME_TITLE = "Sales Console Report";
+  const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-05-02-report-link-suggest-v1";
+  const REPORT_SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
+  const DIRECTORY_QUEUE_BY_DOCTYPE = {
+    Quotation: "quotation_directory",
+    "Sales Order": "sales_order_directory",
+    Customer: "customer_directory",
+    Item: "item_directory",
+  };
 
   function routeToList(doctype, filters) {
+    const queueKey = DIRECTORY_QUEUE_BY_DOCTYPE[doctype];
+    if (queueKey) return routeToWorklist(queueKey, filters || null);
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("List", doctype);
   }
@@ -16,7 +25,8 @@
     frappe.set_route("query-report", reportName);
   }
 
-  function routeToWorklist(queueKey) {
+  function routeToWorklist(queueKey, filters) {
+    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route("sales-console-worklist", String(queueKey || "").replace(/_/g, "-"));
   }
 
@@ -44,16 +54,17 @@
     const labelMap = {
       sales_analytics: "Sales Analytics",
       sales_order_analysis: "Sales Order Analysis",
-      quotation_trends: "Quotation Trends",
+      trend_analysis: "Trend Analysis",
+      quotation_trends: "Trend Analysis",
       collections_status: "Collections Status",
       payment_terms_status_sales_order: "Collections Status",
       item_wise_sales_history: "Item-wise Sales History",
       lost_quotations: "Lost Quotations",
     };
-    const label = labelMap[reportKey] || "Sales Console Report";
+    const label = labelMap[reportKey] || REPORT_CHROME_TITLE;
     return {
       reportKey,
-      page: { title: label },
+      page: { title: REPORT_CHROME_TITLE },
       summary: {
         kicker: "Sales Console report",
         title: label,
@@ -74,7 +85,7 @@
   function errorConfig(message) {
     return {
       reportKey: "",
-      page: { title: "Sales Console Report" },
+      page: { title: REPORT_CHROME_TITLE },
       summary: {
         kicker: "Sales Console report",
         title: "Report unavailable",
@@ -108,6 +119,24 @@
     return $host;
   }
 
+  function syncReportChromeTitle(viewState, payload) {
+    if (!viewState || !viewState.page) return;
+    const payloadTitle = payload && payload.page && payload.page.title ? payload.page.title : "";
+    const chromeTitle = payloadTitle || REPORT_CHROME_TITLE;
+    if (typeof viewState.page.set_title === "function") {
+      viewState.page.set_title(chromeTitle);
+    }
+    let chromeSynced = false;
+    const chrome = window.erpWorkspaceUiSalesConsoleChrome;
+    if (chrome && typeof chrome.sync === "function") {
+      chromeSynced = chrome.sync({ page: viewState.page, title: payloadTitle || "" }) === true;
+    }
+    if (!chromeSynced) {
+      const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
+      $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(chromeTitle);
+    }
+  }
+
   function ensureReportRuntime() {
     const runtime = window.erpWorkspaceUiReportPage && window.erpWorkspaceUiReportPage.shell;
     if (runtime && typeof runtime.mountReport === "function" && runtime.version === REPORT_SHELL_VERSION) {
@@ -125,13 +154,56 @@
     });
   }
 
-  function mountPayload(viewState, payload) {
+  function setDataRefreshing(viewState, enabled) {
+    const runtime = window.erpWorkspaceUiReportPage && window.erpWorkspaceUiReportPage.shell;
+    if (!runtime || typeof runtime.setDataRefreshing !== "function") return;
+    runtime.setDataRefreshing(viewState && viewState.$host, enabled);
+  }
+
+  function setControlFieldValue(field, value) {
+    if (!field) return;
+    const nextValue = value == null ? "" : String(value);
+    if (String(field.tagName || "").toLowerCase() === "select") {
+      const hasExactOption = Array.from(field.options || []).some((option) => String(option.value) === nextValue);
+      if (hasExactOption) {
+        field.value = nextValue;
+      } else {
+        field.selectedIndex = 0;
+      }
+      return;
+    }
+    field.value = nextValue;
+  }
+
+  function resetControlFields(viewState) {
+    const host = viewState && viewState.$host && viewState.$host.get ? viewState.$host.get(0) : null;
+    if (!host) return;
+    host.querySelectorAll("[data-erpw-control-key]").forEach((field) => {
+      setControlFieldValue(field, "");
+    });
+  }
+
+  function syncControlFieldValues(viewState, controls) {
+    const host = viewState && viewState.$host && viewState.$host.get ? viewState.$host.get(0) : null;
+    if (!host || !controls || typeof controls !== "object") return;
+    const fields = Array.isArray(controls.fields) ? controls.fields : [];
+    fields.forEach((field) => {
+      if (!field || !field.key) return;
+      const node = Array.from(host.querySelectorAll("[data-erpw-control-key]")).find((input) => {
+        return String(input.getAttribute("data-erpw-control-key") || "") === String(field.key);
+      });
+      setControlFieldValue(node, field.value);
+    });
+  }
+
+  function mountPayload(viewState, payload, options) {
+    syncReportChromeTitle(viewState, payload);
     return ensureReportRuntime().then((runtime) => {
-      runtime.mountReport(viewState.$host, Object.assign({}, payload || {}, {
+      const config = Object.assign({}, payload || {}, {
         reportKey: viewState.reportKey || "",
         onAction(details) {
           if (!details) return;
-          if (details.key === "refresh") return loadRoute(viewState);
+          if (details.key === "refresh") return loadRoute(viewState, { partialDataRefresh: true });
           if (details.key === "back_to_console") return frappe.set_route("sales-console");
           executeTarget(((payload && payload.action_targets) || {})[details.key] || null);
         },
@@ -139,21 +211,37 @@
           if (!details) return;
           if (details.mode === "reset") {
             viewState.filterOverrides = null;
+            resetControlFields(viewState);
+            loadRoute(viewState, { partialDataRefresh: true, refreshControls: true });
+            return;
           } else {
             viewState.filterOverrides = details.values && Object.keys(details.values).length ? details.values : null;
           }
-          loadRoute(viewState);
+          loadRoute(viewState, { partialDataRefresh: true });
         },
-      }));
+      });
+
+      if (options && options.partialDataRefresh && typeof runtime.refreshReportData === "function") {
+        runtime.refreshReportData(viewState.$host, config, { refreshControls: Boolean(options.refreshControls) });
+        if (options.refreshControls) {
+          syncControlFieldValues(viewState, payload && payload.controls);
+        }
+      } else {
+        runtime.mountReport(viewState.$host, config);
+      }
     }).catch(() => {
       viewState.$host.html('<section class="erpw-report-shell"><section class="erpw-report-card erpw-report-results"><div class="erpw-report-state error"><div class="erpw-report-state-title">Report runtime unavailable</div><div class="erpw-report-state-detail">Shared Sales Console report runtime is not loaded on this page.</div></div></section></section>');
     });
   }
 
-  function loadRoute(viewState) {
+  function loadRoute(viewState, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    syncReportChromeTitle(viewState);
     const route = frappe.get_route ? frappe.get_route() : [];
     const reportKey = Array.isArray(route) && route.length > 1 ? String(route[1] || "").replace(/-/g, "_") : "";
     const routeSignature = Array.isArray(route) ? route.join("|") : "";
+    const requestToken = (viewState.requestToken || 0) + 1;
+    viewState.requestToken = requestToken;
 
     if (viewState.reportKey && viewState.reportKey !== reportKey) {
       viewState.filterOverrides = null;
@@ -166,7 +254,12 @@
       return;
     }
 
-    mountPayload(viewState, loadingConfig(reportKey));
+    const partialDataRefresh = Boolean(settings.partialDataRefresh && viewState.$host && viewState.$host.find(".erpw-report-shell").length);
+    if (partialDataRefresh) {
+      setDataRefreshing(viewState, true);
+    } else {
+      mountPayload(viewState, loadingConfig(reportKey));
+    }
 
     const args = { report_key: reportKey };
     if (viewState.filterOverrides && Object.keys(viewState.filterOverrides).length) {
@@ -174,14 +267,13 @@
     }
 
     frappe.call({ method: CONTEXT_METHOD, args }).then((response) => {
-      if (viewState.routeSignature !== routeSignature) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
       const payload = response && response.message ? response.message : {};
-      if (viewState.page && typeof viewState.page.set_title === "function" && payload.page && payload.page.title) {
-        viewState.page.set_title(payload.page.title);
-      }
-      mountPayload(viewState, payload);
+      syncReportChromeTitle(viewState, payload);
+      mountPayload(viewState, payload, { partialDataRefresh, refreshControls: Boolean(settings.refreshControls) });
     }).catch((error) => {
-      if (viewState.routeSignature !== routeSignature) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
+      setDataRefreshing(viewState, false);
       mountPayload(viewState, errorConfig(error && error.message ? error.message : "The report could not be loaded."));
     });
   }
@@ -189,9 +281,10 @@
   function render(wrapper) {
     const page = frappe.ui.make_app_page({
       parent: wrapper,
-      title: "Sales Console Report",
+      title: REPORT_CHROME_TITLE,
       single_column: true,
     });
+    syncReportChromeTitle({ page });
     const viewState = {
       page,
       $host: ensureHost(page, wrapper),

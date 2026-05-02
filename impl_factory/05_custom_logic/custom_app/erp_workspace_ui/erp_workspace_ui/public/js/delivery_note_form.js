@@ -1402,7 +1402,7 @@
         assistNote: !hasOutputSignal ? "" : "Keep output changes secondary to the delivery record.",
         state: !hasOutputSignal ? {
           title: "Standard delivery print settings are in use",
-          note: "Language, heading, amounts, and grouping are following the normal ERP delivery output.",
+          note: "Language, heading, amounts, and grouping are following the standard delivery output.",
           actionLabel: isSubmitted ? "" : "Adjust output",
           focusField: isSubmitted ? "" : "letter_head",
           revealFields: !isSubmitted,
@@ -1908,10 +1908,10 @@
     });
 
     base.support = Object.assign({}, base.support, {
-      approval_note: "Live context is still loading. Native ERP sections remain usable below.",
-      fulfillment_note: "Use the native execution sections while the workspace refreshes linked order and billing context.",
+      approval_note: "Live context is still loading. Delivery sections remain usable below.",
+      fulfillment_note: "Use the delivery sections while the workspace refreshes linked order and billing context.",
       next_action: Number(frm.doc.docstatus || 0) === 1
-        ? "Use the native execution sections while the workspace refreshes this delivery context."
+        ? "Use the delivery sections while the workspace refreshes this delivery context."
         : base.support.next_action,
     });
 
@@ -2500,7 +2500,7 @@
       chips,
       insertMode: "append-section",
       metrics,
-      note: "Read invoice follow-through, warehouse context, and source order linkage without leaving the native stock grid.",
+      note: "Read invoice follow-through, warehouse context, and source order linkage while keeping the stock grid in place.",
       removeSelector: ".erpw-child-inline-summary-soft",
       summaryClass: "erpw-so-inline-summary erpw-child-inline-summary-soft",
       title: "Execution Focus",
@@ -2712,7 +2712,7 @@
     childPageDetails.renderDetailSnapshot($itemsSection, {
       kicker: "Dispatch Snapshot",
       metrics,
-      note: "Read the posted delivery context here, then work the native execution grid below.",
+      note: "Read the posted delivery context here, then work the delivery item grid below.",
       removeSelector: ".erpw-child-detail-snapshot",
       snapshotClass: "erpw-child-detail-snapshot",
       statusText: statusLabel,

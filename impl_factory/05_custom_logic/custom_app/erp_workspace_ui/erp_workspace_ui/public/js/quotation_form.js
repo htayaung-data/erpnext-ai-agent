@@ -1849,7 +1849,7 @@
         assistNote: workflowPending ? "Keep payment structure aligned with the current approval and validity posture." : "",
         metrics: paymentMetrics,
         state: !paymentSummary.milestoneCount && !hasTemplate ? {
-          title: "Payment structure is not configured yet",
+          title: "Payment schedule is not set up yet",
           note: "Link a payment terms template or define the schedule only when the quotation needs explicit commercial milestones.",
           actionLabel: "Select payment terms",
           focusField: "payment_terms_template",
@@ -2746,7 +2746,7 @@
         },
         getQuotationSnapshotReviewMetric(frm),
       ],
-      note: "Read review posture, validity, and customer context here, then work the native quotation lines below.",
+      note: "Read review posture, validity, and customer context here, then work the quotation item lines below.",
       removeSelector: ".erpw-child-detail-snapshot",
       snapshotClass: "erpw-child-detail-snapshot",
       statusText,

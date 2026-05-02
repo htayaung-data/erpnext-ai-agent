@@ -526,8 +526,8 @@ Implemented pieces:
    - `Refresh`
    - `Reset` and `Apply` when filter fields exist
 2. report payload normalization now injects standard top-level actions:
-   - `Back to Sales Console`
    - `Refresh`
+   - `Back to Sales Console`
 3. report shell controls now render top-level toolbar actions alongside the existing report filter form
 4. worklist controller fallback resolution now accepts shared non-row action targets, which supports native fallback actions cleanly
 5. restricted worklists now expose `Open Native List` as a governed fallback when the user cannot operate the productized queue
@@ -573,7 +573,7 @@ Required browser smoke before final freeze sign-off:
 1. `/desk/sales-console`
    - confirm the shared Sales Console sidebar renders and the main destinations navigate correctly
 2. `/desk/sales-console-worklist/customer-directory`
-   - confirm `Back to Sales Console` and `Refresh` render
+   - confirm `Refresh` and `Back to Sales Console` render where the current surface includes both standard actions
    - confirm filter actions still behave correctly
 3. `/desk/sales-console-worklist/item-directory`
    - confirm the same worklist contract as Customers

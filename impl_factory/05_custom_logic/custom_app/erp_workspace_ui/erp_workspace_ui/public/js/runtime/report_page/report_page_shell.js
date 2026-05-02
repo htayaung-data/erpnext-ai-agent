@@ -1,7 +1,7 @@
 /* global frappe, $ */
 
 (function () {
-  const SHELL_VERSION = "2026-04-21-report-table-fit";
+  const SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
   const root = window;
   const reportPageRuntime = root.erpWorkspaceUiReportPage = root.erpWorkspaceUiReportPage || {};
 
@@ -50,6 +50,8 @@
     style.id = "erpw-report-shell-style";
     style.textContent = `
       .erpw-report-shell {
+        --erpw-report-control-height: 40px;
+        --erpw-report-control-label-offset: 22px;
         display: grid;
         gap: 16px;
         width: min(1120px, calc(100% - 24px));
@@ -64,6 +66,13 @@
           0 1px 0 rgba(255, 255, 255, 0.98) inset,
           0 10px 24px rgba(15, 23, 42, 0.028),
           0 2px 5px rgba(15, 23, 42, 0.018);
+      }
+      .erpw-report-shell.is-data-refreshing .erpw-report-metrics,
+      .erpw-report-shell.is-data-refreshing .erpw-report-secondary,
+      .erpw-report-shell.is-data-refreshing .erpw-report-results {
+        opacity: 0.58;
+        pointer-events: none;
+        transition: opacity 120ms ease;
       }
       .erpw-report-summary {
         padding: 18px 20px;
@@ -124,10 +133,12 @@
         display: grid;
         gap: 14px;
       }
-      .erpw-report-controls.analytics-compact {
-        padding: 12px 14px 14px;
-        gap: 10px;
-      }
+	      .erpw-report-controls.analytics-compact {
+	        width: 100%;
+	        max-width: 100%;
+	        padding: 14px;
+	        gap: 10px;
+	      }
       .erpw-report-controls-head {
         display: flex;
         align-items: center;
@@ -189,13 +200,74 @@
         display: grid;
         gap: 14px;
       }
-      .erpw-report-control-form.analytics-compact {
-        gap: 10px;
-      }
-      .erpw-report-control-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 12px;
+	      .erpw-report-control-form.analytics-compact {
+	        gap: 10px;
+	      }
+	      .erpw-report-command-panel {
+	        display: grid;
+	        gap: 10px;
+	      }
+	      .erpw-report-command-meta {
+	        display: flex;
+	        flex-wrap: wrap;
+	        gap: 8px;
+	        align-items: center;
+	        color: #64748b;
+	        font-size: 12px;
+	      }
+	      .erpw-report-command-meta strong {
+	        color: #132033;
+	        font-size: 12px;
+	        font-weight: 650;
+	      }
+	      .erpw-report-command-row {
+	        display: grid;
+	        grid-template-columns: minmax(0, 1fr) auto;
+	        align-items: stretch;
+	        gap: 10px;
+	      }
+	      .erpw-report-command-row.without-actions {
+	        grid-template-columns: minmax(0, 1fr);
+	      }
+	      .erpw-report-command-fields {
+	        display: grid;
+	        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	        gap: 10px;
+	        align-items: end;
+	        min-width: 0;
+	      }
+	      .erpw-report-command-fields.field-count-1 {
+	        grid-template-columns: minmax(220px, 280px);
+	      }
+	      .erpw-report-command-fields.field-count-2 {
+	        grid-template-columns: repeat(2, minmax(190px, 240px));
+	      }
+	      .erpw-report-command-fields.field-count-3 {
+	        grid-template-columns: repeat(3, minmax(180px, 240px));
+	      }
+	      .erpw-report-command-fields.field-count-4 {
+	        grid-template-columns: repeat(4, minmax(150px, 1fr));
+	      }
+	      .erpw-report-command-actions {
+	        display: inline-flex;
+	        flex-wrap: wrap;
+	        align-items: center;
+	        justify-content: center;
+	        gap: 6px;
+	        align-self: start;
+	        box-sizing: border-box;
+	        min-height: var(--erpw-report-control-height);
+	        margin-top: var(--erpw-report-control-label-offset);
+	        padding: 2px;
+	        border: 1px solid rgba(226, 232, 240, 0.76);
+	        border-radius: 15px;
+	        background: rgba(255, 255, 255, 0.9);
+	        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+	      }
+	      .erpw-report-control-grid {
+	        display: grid;
+	        grid-template-columns: repeat(4, minmax(0, 1fr));
+	        gap: 12px;
       }
       .erpw-report-control-grid-stack {
         display: grid;
@@ -208,6 +280,7 @@
         gap: 10px;
       }
       .erpw-report-control-field {
+        position: relative;
         display: grid;
         gap: 6px;
       }
@@ -266,16 +339,67 @@
         outline: none;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
       }
-      .erpw-report-controls.analytics-compact .erpw-report-control-input {
-        min-height: 34px;
-        padding: 0 10px;
-        border-radius: 10px;
-        background: #f8fbff;
-        font-size: 12.5px;
-      }
+	      .erpw-report-controls.analytics-compact .erpw-report-control-input {
+	        min-height: 40px;
+	        padding: 0 13px;
+	        border-radius: 13px;
+	        background: #ffffff;
+	        font-size: 14px;
+	        font-weight: 500;
+	      }
       .erpw-report-control-input:focus {
         border-color: #9eb7d4;
         background: #ffffff;
+      }
+      .erpw-report-link-suggestions {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 6px);
+        z-index: 60;
+        display: grid;
+        gap: 3px;
+        max-height: 230px;
+        overflow-y: auto;
+        padding: 7px;
+        border: 1px solid rgba(190, 205, 225, 0.92);
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow: 0 18px 44px rgba(23, 42, 69, 0.16), 0 2px 8px rgba(23, 42, 69, 0.08);
+      }
+      .erpw-report-link-suggestions[hidden] {
+        display: none;
+      }
+      .erpw-report-link-suggestion {
+        display: grid;
+        gap: 2px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        color: #17233a;
+        cursor: pointer;
+      }
+      .erpw-report-link-suggestion:hover,
+      .erpw-report-link-suggestion.is-active {
+        background: linear-gradient(180deg, #f4f8fd 0%, #edf4fb 100%);
+      }
+      .erpw-report-link-suggestion-value {
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.25;
+      }
+      .erpw-report-link-suggestion-label {
+        color: #60728c;
+        font-size: 12px;
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .erpw-report-link-suggestion-note {
+        padding: 10px;
+        color: #71839d;
+        font-size: 12.5px;
+        font-weight: 600;
       }
       .erpw-report-control-actions {
         display: flex;
@@ -291,7 +415,7 @@
       .erpw-report-controls.analytics-compact .erpw-report-control-actions {
         justify-content: flex-end;
       }
-      .erpw-report-control-button {
+	      .erpw-report-control-button {
         min-height: 32px;
         padding: 0 14px;
         border-radius: 999px;
@@ -302,16 +426,45 @@
         font-weight: 600;
         cursor: pointer;
       }
-      .erpw-report-controls.analytics-compact .erpw-report-control-button {
-        min-height: 30px;
-        padding: 0 12px;
-        font-size: 12px;
-      }
-      .erpw-report-control-button.primary {
-        border-color: #2f475f;
-        background: #22324b;
-        color: #ffffff;
-      }
+	      .erpw-report-controls.analytics-compact .erpw-report-control-button {
+	        min-height: 34px;
+	        padding: 0 13px;
+	        font-size: 12px;
+	      }
+	      .erpw-report-command-actions .erpw-report-control-button {
+	        border-color: transparent;
+	        border-radius: 11px;
+	      }
+	      .erpw-report-control-button.primary {
+	        border-color: #2f475f;
+	        background: #22324b;
+	        color: #ffffff;
+	      }
+	      .erpw-report-control-button.is-refresh:not(.primary) {
+	        background: transparent;
+	        color: #334155;
+	      }
+	      .erpw-report-control-button.navigation {
+	        display: inline-flex;
+	        align-items: center;
+	        justify-content: center;
+	        gap: 7px;
+	        padding: 0.34rem 0.68rem;
+	        border-color: rgba(226, 232, 240, 0.62);
+	        border-radius: 999px;
+	        background: #ffffff;
+	        color: #475569;
+	        font-size: 0.76rem;
+	        box-shadow:
+	          0 1px 1px rgba(15, 23, 42, 0.02),
+	          0 8px 18px rgba(15, 23, 42, 0.035);
+	      }
+	      .erpw-report-control-button-navigation-icon {
+	        color: #64748b;
+	        font-size: 0.82rem;
+	        line-height: 1;
+	        transform: translateY(-0.5px);
+	      }
       .erpw-report-metrics {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -693,13 +846,34 @@
         .erpw-report-results-meta {
           white-space: normal;
         }
-        .erpw-report-control-actions {
-          justify-content: stretch;
-        }
-        .erpw-report-control-field[data-erpw-control-span],
-        .erpw-report-control-tile[data-erpw-control-span] {
-          grid-column: auto;
-        }
+	        .erpw-report-control-actions {
+	          justify-content: stretch;
+	        }
+	        .erpw-report-controls.analytics-compact {
+	          width: 100%;
+	        }
+	        .erpw-report-command-row,
+	        .erpw-report-command-actions {
+	          width: 100%;
+	        }
+	        .erpw-report-command-row {
+	          grid-template-columns: minmax(0, 1fr);
+	        }
+	        .erpw-report-command-actions {
+	          margin-top: 0;
+	        }
+	        .erpw-report-command-fields,
+	        .erpw-report-command-fields.field-count-1,
+	        .erpw-report-command-fields.field-count-2,
+	        .erpw-report-command-fields.field-count-3,
+	        .erpw-report-command-fields.field-count-4 {
+	          width: 100%;
+	          grid-template-columns: minmax(0, 1fr);
+	        }
+	        .erpw-report-control-field[data-erpw-control-span],
+	        .erpw-report-control-tile[data-erpw-control-span] {
+	          grid-column: auto;
+	        }
       }
     `;
     document.head.appendChild(style);
@@ -717,9 +891,11 @@
   }
 
   function renderControlInput(field) {
-    const key = escapeHtml(field.key || "");
+    const rawKey = String(field.key || "");
+    const key = escapeHtml(rawKey);
     const value = escapeHtml(field.value == null ? "" : field.value);
     const type = field.type || "text";
+    const linkDoctype = field.linkDoctype || field.doctype || field.optionsDoctype || "";
     if (type === "select") {
       const options = normalizeItems(field.options).map((option) => {
         const optionValue = option && option.value != null ? String(option.value) : "";
@@ -730,6 +906,13 @@
         '<select class="erpw-report-control-input" data-erpw-control-key="' + key + '">',
           options,
         '</select>'
+      ].join("");
+    }
+    if (type === "link" && linkDoctype) {
+      const popupId = 'erpw-report-link-options-' + rawKey.replace(/[^a-zA-Z0-9_-]/g, '-');
+      return [
+        '<input class="erpw-report-control-input" type="text" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + escapeHtml(popupId) + '" data-erpw-control-key="' + key + '" data-erpw-link-doctype="' + escapeHtml(linkDoctype) + '" value="' + value + '">',
+        '<div class="erpw-report-link-suggestions" id="' + escapeHtml(popupId) + '" role="listbox" hidden></div>',
       ].join("");
     }
     return '<input class="erpw-report-control-input" type="' + escapeHtml(type) + '" data-erpw-control-key="' + key + '" value="' + value + '">';
@@ -747,25 +930,49 @@
     ].join("");
   }
 
-  function renderAnalyticsControlField(field) {
-    const label = escapeHtml(field.label || "");
-    const span = normalizeControlSpan(field);
-    const spanAttr = span > 1 ? ' data-erpw-control-span="' + span + '"' : "";
-    return [
-      '<label class="erpw-report-control-tile"' + spanAttr + '>',
-        '<span class="erpw-report-control-label">' + label + '</span>',
-        renderControlInput(field),
-      '</label>'
-    ].join("");
-  }
+	  function renderAnalyticsControlField(field) {
+	    const label = escapeHtml(field.label || "");
+	    return [
+	      '<label class="erpw-report-control-field">',
+	        '<span class="erpw-report-control-label">' + label + '</span>',
+	        renderControlInput(field),
+	      '</label>'
+	    ].join("");
+	  }
 
-  function renderToolbarAction(action) {
-    if (!action || !action.key || !action.label) return "";
-    const buttonClass = action.kind === "primary"
-      ? "erpw-report-control-button primary"
-      : "erpw-report-control-button";
-    return '<button type="button" class="' + buttonClass + '" data-erpw-report-action-key="' + escapeHtml(action.key) + '">' + escapeHtml(action.label) + '</button>';
-  }
+	  function renderToolbarAction(action) {
+	    if (!action || !action.key || !action.label) return "";
+	    const key = String(action.key || "");
+	    const isNavigation = action.category === "navigation" || /^back_/.test(key);
+	    const isBackNavigation = isNavigation && (
+	      /^back_/.test(key)
+	      || /^cancel_/.test(key)
+	      || /^back to\b/i.test(String(action.label || ""))
+	    );
+	    const buttonClass = [
+	      "erpw-report-control-button",
+	      action.kind === "primary" ? "primary" : "",
+	      key === "refresh" ? "is-refresh" : "",
+	      isNavigation ? "navigation" : "",
+	    ].filter(Boolean).join(" ");
+	    const iconMarkup = isBackNavigation
+	      ? '<span class="erpw-report-control-button-navigation-icon" aria-hidden="true">&larr;</span>'
+	      : '';
+	    return '<button type="button" class="' + buttonClass + '" data-erpw-report-action-key="' + escapeHtml(action.key) + '">' + iconMarkup + '<span>' + escapeHtml(action.label) + '</span></button>';
+	  }
+
+	  function sortToolbarActions(actions) {
+	    const order = {
+	      refresh: 10,
+	      back_to_console: 20,
+	    };
+	    return normalizeItems(actions).slice().sort((left, right) => {
+	      const leftOrder = order[String(left && left.key || "")] || 100;
+	      const rightOrder = order[String(right && right.key || "")] || 100;
+	      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+	      return String(left && left.label || "").localeCompare(String(right && right.label || ""));
+	    });
+	  }
 
   function renderControls(controls) {
     const fields = normalizeFields(controls && controls.fields);
@@ -785,17 +992,15 @@
         ].join('')).join(''),
       '</div>'
     ].join('');
-    if (fields.length) {
-      const meta = normalizeItems(controls && controls.meta);
-      const submitActionsMarkup = [
-        '<div class="erpw-report-control-actions">',
-          '<button type="button" class="erpw-report-control-button erpw-report-control-reset">' + escapeHtml((controls && controls.resetLabel) || 'Reset') + '</button>',
-          '<button type="submit" class="erpw-report-control-button primary">' + escapeHtml((controls && controls.submitLabel) || 'Apply') + '</button>',
-        '</div>',
-      ].join('');
-      const headRightMarkup = toolbarMarkup
-        ? '<div class="erpw-report-controls-right">' + toolbarMarkup + submitActionsMarkup + '</div>'
-        : submitActionsMarkup;
+	    if (fields.length) {
+	      const meta = normalizeItems(controls && controls.meta);
+	      const submitActionsMarkup = [
+	        '<button type="submit" class="erpw-report-control-button primary">' + escapeHtml((controls && controls.submitLabel) || 'Apply') + '</button>',
+	        '<button type="button" class="erpw-report-control-button erpw-report-control-reset">' + escapeHtml((controls && controls.resetLabel) || 'Reset') + '</button>',
+	      ].join('');
+	      const headRightMarkup = toolbarMarkup
+	        ? '<div class="erpw-report-controls-right">' + toolbarMarkup + submitActionsMarkup + '</div>'
+	        : submitActionsMarkup;
       const metaMarkup = meta.length ? [
         '<div class="erpw-report-controls-meta">',
           meta.map((item) => [
@@ -805,19 +1010,43 @@
             '</div>'
           ].join('')).join(''),
         '</div>'
-      ].join('') : '<div></div>';
-      if (isAnalyticsCompact) {
-        return [
-          '<section class="erpw-report-card erpw-report-controls analytics-compact">',
-            '<form class="erpw-report-control-form analytics-compact">',
-              '<div class="erpw-report-controls-head">',
-                metaMarkup,
-                headRightMarkup,
-              '</div>',
-              renderFieldRows(renderAnalyticsControlField, true),
-            '</form>',
-          '</section>'
-        ].join('');
+	      ].join('') : '<div></div>';
+	      if (isAnalyticsCompact) {
+	        const compactMetaMarkup = meta.length ? [
+	          '<div class="erpw-report-command-meta">',
+	            meta.map((item) => [
+	              item.label ? '<strong>' + escapeHtml(item.label || '') + '</strong>' : '',
+	              '<span>' + escapeHtml(item.value || '--') + '</span>',
+	            ].join('')).join(''),
+	          '</div>',
+	        ].join('') : '';
+	        const compactActionsMarkup = [
+	          '<div class="erpw-report-command-actions">',
+	            submitActionsMarkup,
+	            sortToolbarActions(actions).map((action) => renderToolbarAction(action)).join(''),
+	          '</div>',
+	        ].join('');
+	        const compactFieldRows = fieldRows.length ? fieldRows : [fields];
+	        const compactRowsMarkup = compactFieldRows.map((rowFields, rowIndex) => {
+	          const isLastRow = rowIndex === compactFieldRows.length - 1;
+	          const compactFieldsClass = 'erpw-report-command-fields field-count-' + Math.min(rowFields.length, 4);
+	          return [
+	            '<div class="erpw-report-command-row' + (isLastRow ? '' : ' without-actions') + '">',
+	              '<div class="' + compactFieldsClass + '">',
+	                rowFields.map(renderAnalyticsControlField).join(''),
+	              '</div>',
+	              isLastRow ? compactActionsMarkup : '',
+	            '</div>',
+	          ].join('');
+	        }).join('');
+	        return [
+	          '<section class="erpw-report-card erpw-report-controls analytics-compact">',
+	            '<form class="erpw-report-command-panel">',
+	              compactMetaMarkup,
+	              compactRowsMarkup,
+	            '</form>',
+	          '</section>'
+	        ].join('');
       }
 
       return [
@@ -957,6 +1186,7 @@
     }
 
     function renderResults(results) {
+      if (!results) return "";
       const config = results || {};
       const columns = normalizeItems(config.columns);
       const rows = normalizeItems(config.rows);
@@ -994,8 +1224,8 @@
               ].join("")
             : renderState({
                 kind: 'empty',
-                title: 'No report structure defined',
-                detail: 'Columns were not configured for this report surface.',
+                title: 'Report is not ready yet',
+                detail: 'This Sales Console report is missing its table setup. Refresh the page or return to the console.',
               }),
       '</section>'
     ].join("");
@@ -1009,6 +1239,7 @@
   function ensureShell(target) {
     const $target = resolveTarget(target);
     if (!$target.length) return $();
+    if ($target.hasClass('erpw-report-shell')) return $target;
 
     let $shell = $target.children('.erpw-report-shell').first();
     if (!$shell.length) {
@@ -1016,6 +1247,41 @@
       $target.empty().append($shell);
     }
     return $shell;
+  }
+
+  function setDataRefreshing(target, enabled) {
+    const $shell = ensureShell(target);
+    if (!$shell.length) return $shell;
+    $shell.toggleClass('is-data-refreshing', Boolean(enabled));
+    $shell.attr('aria-busy', enabled ? 'true' : 'false');
+    return $shell;
+  }
+
+  function replaceShellSection($shell, selector, markup, beforeSelector) {
+    const $existing = $shell.children(selector).first();
+    if (!markup) {
+      $existing.remove();
+      return;
+    }
+
+    const $next = $(markup);
+    if ($existing.length) {
+      $existing.replaceWith($next);
+      return;
+    }
+
+    const beforeSelectors = String(beforeSelector || '').split(',').map((item) => item.trim()).filter(Boolean);
+    let $before = $();
+    beforeSelectors.some((selector) => {
+      $before = $shell.children(selector).first();
+      return Boolean($before.length);
+    });
+    if ($before.length) {
+      $next.insertBefore($before);
+      return;
+    }
+
+    $shell.append($next);
   }
 
   function collectControlValues(form) {
@@ -1029,11 +1295,168 @@
     return values;
   }
 
+  function normalizeLinkSearchRows(rows) {
+    return normalizeItems(rows).map((row) => {
+      if (typeof row === "string") return { value: row, label: "" };
+      const value = row.value || row.name || row.label || "";
+      const description = row.description || row.label || "";
+      return {
+        value: String(value || ""),
+        label: description && description !== value ? String(description) : "",
+      };
+    }).filter((row) => row.value);
+  }
+
+  function getLinkSuggestionPanel(input) {
+    const field = input && input.closest ? input.closest(".erpw-report-control-field") : null;
+    return field ? field.querySelector(".erpw-report-link-suggestions") : null;
+  }
+
+  function closeLinkSuggestions(input) {
+    const panel = getLinkSuggestionPanel(input);
+    if (!panel) return;
+    panel.innerHTML = "";
+    panel.hidden = true;
+    input.__erpwReportLinkRows = [];
+    input.__erpwReportLinkActiveIndex = -1;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+  }
+
+  function setLinkSuggestionActive(input, index) {
+    const panel = getLinkSuggestionPanel(input);
+    const rows = input.__erpwReportLinkRows || [];
+    if (!panel || !rows.length) return;
+    const nextIndex = Math.max(0, Math.min(index, rows.length - 1));
+    input.__erpwReportLinkActiveIndex = nextIndex;
+    Array.prototype.forEach.call(panel.querySelectorAll("[data-erpw-report-link-option]"), (option, optionIndex) => {
+      const isActive = optionIndex === nextIndex;
+      option.classList.toggle("is-active", isActive);
+      option.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+    if (panel.id) {
+      input.setAttribute("aria-activedescendant", panel.id + "-option-" + nextIndex);
+    }
+  }
+
+  function renderLinkSuggestions(input, rows) {
+    const panel = getLinkSuggestionPanel(input);
+    if (!panel) return;
+    const normalizedRows = normalizeLinkSearchRows(rows).slice(0, 8);
+    input.__erpwReportLinkRows = normalizedRows;
+    input.__erpwReportLinkActiveIndex = normalizedRows.length ? 0 : -1;
+    input.setAttribute("aria-expanded", "true");
+    panel.hidden = false;
+    if (!normalizedRows.length) {
+      input.removeAttribute("aria-activedescendant");
+      panel.innerHTML = '<div class="erpw-report-link-suggestion-note">No matches found</div>';
+      return;
+    }
+    panel.innerHTML = normalizedRows.map((row, index) => {
+      const label = row.label && row.label !== row.value
+        ? '<span class="erpw-report-link-suggestion-label">' + escapeHtml(row.label) + '</span>'
+        : '';
+      const id = panel.id ? ' id="' + escapeHtml(panel.id + "-option-" + index) + '"' : '';
+      return [
+        '<div class="erpw-report-link-suggestion" role="option"', id, ' aria-selected="false" data-erpw-report-link-option="', index, '">',
+          '<span class="erpw-report-link-suggestion-value">', escapeHtml(row.value), '</span>',
+          label,
+        '</div>'
+      ].join("");
+    }).join("");
+    setLinkSuggestionActive(input, 0);
+  }
+
+  function selectLinkSuggestion(input, row) {
+    if (!row || !row.value) return;
+    input.value = row.value;
+    closeLinkSuggestions(input);
+    $(input).trigger("change");
+  }
+
+  function fetchLinkSuggestions(input) {
+    const doctype = input.getAttribute("data-erpw-link-doctype") || "";
+    const txt = String(input.value || "").trim();
+    if (!doctype || txt.length < 1 || typeof frappe === "undefined" || !frappe.call) {
+      closeLinkSuggestions(input);
+      return;
+    }
+    const requestToken = String(Date.now()) + "-" + Math.random();
+    input.__erpwReportLinkRequestToken = requestToken;
+    frappe.call({
+      method: "frappe.desk.search.search_link",
+      args: {
+        doctype,
+        txt,
+        page_length: 8,
+      },
+    }).then((response) => {
+      if (!document.body.contains(input)) return;
+      if (input.__erpwReportLinkRequestToken !== requestToken) return;
+      renderLinkSuggestions(input, response && response.message ? response.message : []);
+    }).catch(() => {
+      if (input.__erpwReportLinkRequestToken === requestToken) closeLinkSuggestions(input);
+    });
+  }
+
+  function bindLinkSuggestions($shell) {
+    const timers = new WeakMap();
+    $shell.on("input.erpwReportShell focus.erpwReportShell", "[data-erpw-link-doctype]", function () {
+      const input = this;
+      const existingTimer = timers.get(input);
+      if (existingTimer) clearTimeout(existingTimer);
+      const timer = setTimeout(() => fetchLinkSuggestions(input), 180);
+      timers.set(input, timer);
+    });
+    $shell.on("keydown.erpwReportShell", "[data-erpw-link-doctype]", function (event) {
+      const input = this;
+      const rows = input.__erpwReportLinkRows || [];
+      const panel = getLinkSuggestionPanel(input);
+      const isOpen = panel && !panel.hidden && rows.length;
+      if (event.key === "Escape") {
+        closeLinkSuggestions(input);
+        return;
+      }
+      if (!isOpen) return;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setLinkSuggestionActive(input, (input.__erpwReportLinkActiveIndex || 0) + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setLinkSuggestionActive(input, (input.__erpwReportLinkActiveIndex || 0) - 1);
+      } else if (event.key === "Enter") {
+        const activeIndex = input.__erpwReportLinkActiveIndex == null ? 0 : input.__erpwReportLinkActiveIndex;
+        if (rows[activeIndex]) {
+          event.preventDefault();
+          selectLinkSuggestion(input, rows[activeIndex]);
+        }
+      }
+    });
+    $shell.on("mousedown.erpwReportShell", "[data-erpw-report-link-option]", function (event) {
+      event.preventDefault();
+      const option = this;
+      const field = option.closest(".erpw-report-control-field");
+      const input = field ? field.querySelector("[data-erpw-link-doctype]") : null;
+      const rows = input && input.__erpwReportLinkRows ? input.__erpwReportLinkRows : [];
+      const index = parseInt(option.getAttribute("data-erpw-report-link-option") || "0", 10);
+      if (input && rows[index]) selectLinkSuggestion(input, rows[index]);
+    });
+    $shell.on("focusout.erpwReportShell", "[data-erpw-link-doctype]", function () {
+      const input = this;
+      setTimeout(() => {
+        const field = input.closest ? input.closest(".erpw-report-control-field") : null;
+        if (field && field.contains(document.activeElement)) return;
+        closeLinkSuggestions(input);
+      }, 120);
+    });
+  }
+
   function bindInteractions($shell, config) {
     const onAction = config && typeof config.onAction === 'function' ? config.onAction : null;
     const onControlSubmit = config && typeof config.onControlSubmit === 'function' ? config.onControlSubmit : null;
 
     $shell.off('.erpwReportShell');
+    bindLinkSuggestions($shell);
 
     if (onAction) {
       $shell.on('click.erpwReportShell', '[data-erpw-report-action-key]', function (event) {
@@ -1046,7 +1469,7 @@
     }
 
     if (onControlSubmit) {
-      $shell.on('submit.erpwReportShell', '.erpw-report-control-form', function (event) {
+      $shell.on('submit.erpwReportShell', '.erpw-report-control-form, .erpw-report-command-panel', function (event) {
         event.preventDefault();
         onControlSubmit({
           mode: 'apply',
@@ -1063,6 +1486,26 @@
         });
       });
     }
+  }
+
+  function refreshReportData(target, config, options) {
+    ensureStyle();
+    const $shell = ensureShell(target);
+    if (!$shell.length) return $shell;
+
+    const page = config || {};
+    const settings = options && typeof options === 'object' ? options : {};
+    $shell.attr('data-report-key', escapeHtml(page.reportKey || ''));
+
+    if (settings.refreshControls) {
+      replaceShellSection($shell, '.erpw-report-controls', renderControls(page.controls), '.erpw-report-metrics, .erpw-report-secondary, .erpw-report-results');
+    }
+    replaceShellSection($shell, '.erpw-report-metrics', renderMetrics(page.metrics), '.erpw-report-secondary, .erpw-report-results');
+    replaceShellSection($shell, '.erpw-report-secondary', renderSecondary(page.secondary), '.erpw-report-results');
+    replaceShellSection($shell, '.erpw-report-results', renderResults(page.results));
+    setDataRefreshing($shell, false);
+    bindInteractions($shell, config || {});
+    return $shell;
   }
 
   function mountReport(target, config) {
@@ -1086,5 +1529,7 @@
   reportPageRuntime.shell = Object.assign({}, reportPageRuntime.shell, {
     version: SHELL_VERSION,
     mountReport,
+    refreshReportData,
+    setDataRefreshing,
   });
 })();

@@ -42,6 +42,9 @@ fake_frappe.generate_hash = lambda length=10: "x" * length
 fake_frappe.conf = {}
 fake_frappe.local = types.SimpleNamespace(site="")
 fake_frappe._ = lambda message: message
+fake_frappe._dict = lambda value=None, **kwargs: types.SimpleNamespace(**dict(value or {}, **kwargs))
+fake_frappe.scrub = lambda value: str(value or "").strip().lower().replace(" ", "_")
+fake_frappe.format_value = lambda value, df=None, doc=None: str(value)
 
 fake_utils = types.ModuleType("frappe.utils")
 fake_utils.add_months = lambda value, months: value
@@ -62,12 +65,20 @@ fake_query_report = types.ModuleType("frappe.desk.query_report")
 fake_query_report.run = lambda *args, **kwargs: {}
 
 fake_desk = types.ModuleType("frappe.desk")
+fake_erpnext = types.ModuleType("erpnext")
+fake_erpnext_controllers = types.ModuleType("erpnext.controllers")
+fake_erpnext_trends = types.ModuleType("erpnext.controllers.trends")
+fake_erpnext_trends.get_columns = lambda filters, trans: {"columns": []}
+fake_erpnext_trends.get_data = lambda filters, conditions: []
 
 sys.modules.setdefault("frappe", fake_frappe)
 sys.modules.setdefault("frappe.utils", fake_utils)
 sys.modules.setdefault("frappe.utils.data", fake_utils_data)
 sys.modules.setdefault("frappe.desk", fake_desk)
 sys.modules.setdefault("frappe.desk.query_report", fake_query_report)
+sys.modules.setdefault("erpnext", fake_erpnext)
+sys.modules.setdefault("erpnext.controllers", fake_erpnext_controllers)
+sys.modules.setdefault("erpnext.controllers.trends", fake_erpnext_trends)
 
 from erp_workspace_ui.sales_console import report, worklist
 
@@ -136,7 +147,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
 
         self.assertEqual(
             [action["key"] for action in result["controls"]["actions"]],
-            ["back_to_console", "refresh", "open_native_report"],
+            ["refresh", "back_to_console", "open_native_report"],
         )
 
     def test_report_route_unavailable_payload_keeps_standard_top_actions(self):
@@ -149,8 +160,69 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
 
         self.assertEqual(
             [action["key"] for action in payload["controls"]["actions"]],
-            ["back_to_console", "refresh"],
+            ["refresh", "back_to_console"],
         )
+
+    def test_trend_analysis_uses_document_type_filter_and_sales_console_contract(self):
+        trend_columns = {
+            "columns": [
+                "Customer:Link/Customer:120",
+                "Customer Name:Data:120",
+                "Territory:Link/Territory:120",
+                "Currency:Link/Currency:120",
+                "Apr (Qty):Float:120",
+                "Apr (Amt):Currency/currency:120",
+                "Total(Qty):Float:120",
+                "Total(Amt):Currency/currency:120",
+            ]
+        }
+        trend_rows = [
+            ["CUST-1", "CUST-1", "Yangon", "MMK", 2, 1500, 2, 1500],
+            ["'Total'", None, None, "MMK", 2, 1500, 2, 1500],
+        ]
+
+        with patch.object(report.service, "_build_context", return_value={}), patch.object(
+            report.service,
+            "_build_scope",
+            return_value={"scope_mode": "permission_scope"},
+        ), patch.object(report.service, "_can_read", return_value=True), patch.object(
+            report, "_current_fiscal_year_window", return_value={"name": "2026-2027"}
+        ), patch.object(report, "_fiscal_year_options", return_value=[{"label": "2026-2027", "value": "2026-2027"}]), patch.object(
+            report, "_default_company", return_value="Demo Company"
+        ), patch.object(report, "_company_currency", return_value="MMK"), patch.object(
+            report, "get_trend_columns", return_value=trend_columns
+        ), patch.object(report, "get_trend_data", return_value=trend_rows), patch.object(
+            report, "_link_target_exists", return_value=False
+        ):
+            payload = report.get_sales_console_report_context("trend_analysis")
+
+        self.assertEqual(payload["page"]["title"], "Trend Analysis")
+        self.assertEqual(
+            [field["key"] for field in payload["controls"]["fields"]],
+            ["document_type", "based_on", "period", "fiscal_year"],
+        )
+        self.assertEqual(payload["controls"]["fields"][0]["value"], "Sales Invoice")
+        self.assertEqual(payload["metrics"]["items"][0]["label"], "Billed value")
+        self.assertEqual(payload["secondary"]["chart"]["points"][0]["label"], "Apr")
+        self.assertEqual(
+            [action["key"] for action in payload["controls"]["actions"]],
+            ["refresh", "back_to_console"],
+        )
+
+    def test_legacy_quotation_trends_route_opens_trend_analysis_with_quotation_selected(self):
+        with patch.object(report.service, "_build_context", return_value={}), patch.object(
+            report.service,
+            "_build_scope",
+            return_value={"scope_mode": "permission_scope"},
+        ), patch.object(report.service, "_can_read", return_value=False), patch.object(
+            report, "_current_fiscal_year_window", return_value={"name": "2026-2027"}
+        ), patch.object(report, "_fiscal_year_options", return_value=[{"label": "2026-2027", "value": "2026-2027"}]), patch.object(
+            report, "_default_company", return_value="Demo Company"
+        ):
+            payload = report.get_sales_console_report_context("quotation_trends")
+
+        self.assertEqual(payload["page"]["title"], "Trend Analysis")
+        self.assertEqual(payload["controls"]["fields"][0]["value"], "Quotation")
 
     def test_quotation_directory_route_uses_shared_worklist_contract(self):
         def fake_fieldnames(doctype):

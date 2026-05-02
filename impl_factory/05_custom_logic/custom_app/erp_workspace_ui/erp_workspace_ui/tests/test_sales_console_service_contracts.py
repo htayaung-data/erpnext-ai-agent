@@ -37,6 +37,9 @@ fake_frappe.get_all = lambda *args, **kwargs: []
 fake_frappe.conf = {}
 fake_frappe.local = types.SimpleNamespace(site="")
 fake_frappe._ = lambda message: message
+fake_frappe._dict = lambda value=None, **kwargs: types.SimpleNamespace(**dict(value or {}, **kwargs))
+fake_frappe.scrub = lambda value: str(value or "").strip().lower().replace(" ", "_")
+fake_frappe.format_value = lambda value, df=None, doc=None: str(value)
 
 fake_utils = types.ModuleType("frappe.utils")
 fake_utils.add_months = lambda value, months: value
@@ -242,14 +245,14 @@ class TestSalesConsoleServiceContracts(unittest.TestCase):
             "queues": {},
             "reports": {
                 "sales_order_analysis": {"kind": "report_page", "report_key": "sales_order_analysis"},
-                "quotation_trends": {"kind": "report_page", "report_key": "quotation_trends"},
+                "trend_analysis": {"kind": "report_page", "report_key": "trend_analysis"},
                 "collections_status": {"kind": "report_page", "report_key": "collections_status"},
                 "lost_quotations": {"kind": "report_page", "report_key": "lost_quotations"},
             },
         }
         reports_catalog = [
             {"key": "sales_order_analysis", "title": "Sales Order Analysis", "icon": "order"},
-            {"key": "quotation_trends", "title": "Quotation Trends", "icon": "quotation"},
+            {"key": "trend_analysis", "title": "Trend Analysis", "icon": "chart"},
             {"key": "collections_status", "title": "Collections Status", "icon": "chart"},
             {"key": "lost_quotations", "title": "Lost Quotations", "icon": "quotation"},
         ]
@@ -278,7 +281,7 @@ class TestSalesConsoleServiceContracts(unittest.TestCase):
         sections = {section["key"]: section for section in result["sidebar"]["sections"]}
         self.assertEqual(
             [item["label"] for item in sections["browse"]["items"]],
-            ["Sales Console", "Quotations", "Sales Orders", "Customers", "Items"],
+            ["Overview", "Quotations", "Sales Orders", "Customers", "Items"],
         )
         self.assertNotIn("workspace", sections)
         self.assertNotIn("create", sections)
