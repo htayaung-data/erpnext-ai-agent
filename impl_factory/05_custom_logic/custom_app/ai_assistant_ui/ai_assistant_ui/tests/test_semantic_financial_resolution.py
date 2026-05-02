@@ -2000,6 +2000,17 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		)
 
+	def test_should_skip_artifact_boundary_for_money_situation_finance_request(self):
+		self.assertTrue(
+			_should_skip_artifact_boundary(
+				scope_decision_contract=types.SimpleNamespace(
+					governed_scope_status="grounded_followup",
+				),
+				message="show me money situation",
+				language="en",
+			)
+		)
+
 	def test_assess_context_isolation_treats_repeated_self_contained_business_request_as_new_query(self):
 		result = assess_context_isolation(
 			"give me AR / AP insight",
@@ -6974,6 +6985,19 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertTrue(bool((semantic_payload.get("agent_meta") or {}).get("deterministic_surface_fallback")))
 		self.assertEqual(compiler_payload.get("decision"), "execute")
 		self.assertEqual(compiled_request.get("selected_report"), "Accounts Receivable Summary")
+
+	def test_deterministic_surface_fallback_routes_money_situation_to_cash_flow(self):
+		interpretation = _deterministic_family_surface_interpretation(
+			request_id="deterministic-money-situation",
+			session_id="deterministic-money-situation-session",
+			message="show me money situation",
+			confidence_threshold=0.72,
+		)
+
+		self.assertIsNotNone(interpretation)
+		self.assertEqual(interpretation.intent_class, "financial_statement")
+		self.assertEqual(list(interpretation.candidate_capability_ids), ["financial_statement_read"])
+		self.assertEqual(list(interpretation.candidate_reports), ["Cash Flow"])
 
 	def test_pipeline_recover_with_deterministic_surface_fallback_rebuilds_compiled_request(self):
 		pipeline = {

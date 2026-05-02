@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
+from .metadata import get_capability_spec
 from .natural_business_understanding_contracts import CONTRACT_VERSION
 
 
@@ -46,6 +48,44 @@ def _humanize(value: Any) -> str:
 	return " ".join(part for part in text.split() if part)
 
 
+def _strip_trailing_read_label(label: str) -> str:
+	clean = _clean_text(label)
+	if clean.lower().endswith(" read"):
+		return clean[:-5].strip()
+	return clean
+
+
+def _business_option_label(value: Any) -> str:
+	text = _clean_text(value)
+	if not text:
+		return ""
+	spec = get_capability_spec(text)
+	if spec:
+		for key in ("clarification_business_area_label", "label"):
+			label = _strip_trailing_read_label(_clean_text(spec.get(key)))
+			if label:
+				return label
+	if re.fullmatch(r"[a-z][a-z0-9_]*(?:_[a-z0-9]+)*", text):
+		label = _strip_trailing_read_label(_humanize(text))
+		return label or text
+	return text
+
+
+def _dedupe_business_options(values: List[str]) -> List[str]:
+	out: List[str] = []
+	seen: set[str] = set()
+	for value in values:
+		label = _business_option_label(value)
+		if not label:
+			continue
+		key = label.strip().casefold()
+		if key in seen:
+			continue
+		seen.add(key)
+		out.append(label)
+	return out
+
+
 def _selected_candidate(trace_payload: Dict[str, Any]) -> Dict[str, Any]:
 	trace = _clean_dict(trace_payload)
 	selected_id = _clean_text(trace.get("selected_candidate_id"))
@@ -76,8 +116,8 @@ def _alternative_label(alternative: Dict[str, Any]) -> str:
 	for key in ("report_name", "label", "family_id", "execution_id"):
 		value = _clean_text(alt.get(key))
 		if value:
-			return value
-	return _humanize(alt.get("target_type")) or "ERP option"
+			return _business_option_label(value)
+	return _business_option_label(alt.get("target_type")) or "ERP option"
 
 
 def _alternative_lines(alternatives: List[Dict[str, Any]], *, limit: int = 3) -> List[str]:
@@ -106,7 +146,7 @@ def _options_from_trace(trace_payload: Dict[str, Any]) -> List[str]:
 	options.extend(_clean_list(context.get("ambiguity_options")))
 	options.extend(_clean_list(decision.get("suggested_options")))
 	options.extend(_alternative_lines(_clean_dict_list(requery.get("suggested_alternatives"))))
-	return list(dict.fromkeys(options))
+	return _dedupe_business_options(options)
 
 
 def _clean_dict_list(values: Any) -> List[Dict[str, Any]]:

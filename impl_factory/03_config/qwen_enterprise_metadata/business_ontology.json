@@ -78,6 +78,7 @@
           "assets and liabilities",
           "liabilities and equity",
           "statement of financial position",
+          "financial position",
           "assets",
           "liabilities",
           "equity",
@@ -92,7 +93,17 @@
     {
       "concept_id": "cash_flow",
       "aliases": {
-        "en": ["cash flow", "cashflow", "cash flow statement", "operating cash flow", "net change in cash"],
+        "en": [
+          "cash flow",
+          "cashflow",
+          "cash flow statement",
+          "operating cash flow",
+          "net change in cash",
+          "cash position",
+          "cash situation",
+          "money position",
+          "money situation"
+        ],
         "my": []
       }
     },

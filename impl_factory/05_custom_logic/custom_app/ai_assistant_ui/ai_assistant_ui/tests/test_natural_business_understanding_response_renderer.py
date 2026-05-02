@@ -36,6 +36,28 @@ class NaturalBusinessUnderstandingResponseRendererTests(unittest.TestCase):
 		self.assertEqual(response["next_steps"], ["Type-C Cable 2m Fast Charge", "Type-C Cable 1m Fast Charge"])
 		self.assertNotIn("contract", response["answer_text"].lower())
 
+	def test_clarification_renderer_translates_internal_capability_ids_to_business_labels(self):
+		response = render_nbu_professional_response(
+			{
+				"shadow_mode": True,
+				"conversation_action_decision": {
+					"action": "ask_clarification",
+					"response_mode": "clarification",
+				},
+				"context_resolution": {
+					"status": "ambiguous",
+					"target_reference": "candidate_list",
+					"ambiguity_options": ["Cash Flow", "financial_statement_read"],
+				},
+				"governed_requery_plan": {"status": "needs_clarification"},
+			}
+		)
+
+		self.assertEqual(response["title"], "Clarification Needed")
+		self.assertUserShowableTextIsProfessional(response)
+		self.assertEqual(response["next_steps"], ["Cash Flow", "financial statements"])
+		self.assertNotIn("financial_statement_read", " ".join(response["next_steps"]))
+
 	def test_policy_boundary_renderer_hides_internal_gate_language(self):
 		response = render_nbu_professional_response(
 			{

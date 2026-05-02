@@ -1004,3 +1004,29 @@ Current automated state:
 Recommended next gate:
 
 Run the browser UAT set from Section 14.6 before opening Phase 4 capability work.
+
+## 17. Browser UAT Finding: Vague Finance Request Stabilization
+
+### 17.1 Finding
+
+Browser UAT showed that broad finance wording such as "show me money situation" could still fall into an old artifact-boundary path after a Balance Sheet follow-up. In another path, clarification options could expose an internal capability id such as `financial_statement_read`.
+
+This was classified as an NBU stabilization issue, not a single prompt issue.
+
+### 17.2 Enterprise Fix Shape
+
+The fix must stay shared and metadata-led:
+
+1. Finance concept aliases should classify cash-position wording as a fresh financial/cash-flow request.
+2. User-facing NBU clarification options should translate internal capability ids into business labels before display.
+3. Artifact-boundary fallback should not be used when the user is asking a self-contained governed finance request.
+4. Tests must prove both routing behavior and user-facing wording quality.
+
+### 17.3 Exit Gate For This Slice
+
+Before closing this slice:
+
+1. Enterprise guardrail audit must pass.
+2. NBU response-renderer regression must pass.
+3. Semantic financial regression must pass for the new finance wording.
+4. Browser UAT must confirm no technical option ids and no stale Balance Sheet artifact-boundary response for vague finance wording.
