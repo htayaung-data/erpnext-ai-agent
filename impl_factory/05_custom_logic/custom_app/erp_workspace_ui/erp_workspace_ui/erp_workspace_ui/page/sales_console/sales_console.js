@@ -647,11 +647,6 @@
         font-size: 13px;
         color: #172033;
       }
-      .sales-console-inquiry-assist-footnote {
-        font-size: 11.5px;
-        line-height: 1.45;
-        color: #64748b;
-      }
       .sales-console-inquiry-placeholder {
         padding: 14px 16px;
         border-radius: 14px;
@@ -2217,7 +2212,6 @@
   function renderInquiryAssist($section, payload) {
     const assist = (payload && payload.assist) || {};
     const source = String((payload && payload.source) || "fallback").trim();
-    const engine = String((payload && payload.engine) || (source === "ai" ? "qwen_runtime" : "structured_inquiry_brief")).trim();
     const $wrap = $section.find("[data-inquiry-ai]");
     const $status = $section.find("[data-inquiry-ai-status]");
     const $content = $section.find("[data-inquiry-ai-content]");
@@ -2237,9 +2231,6 @@
             <div class="sales-console-inquiry-assist-card-value">${escapeHtml(item.value)}</div>
           </div>
         `).join("")}
-      </div>
-      <div class="sales-console-inquiry-assist-footnote">
-        ${escapeHtml(assist.confidence_note || "Generated from the visible ERP inquiry chain.")} (${escapeHtml(source)} via ${escapeHtml(engine)})
       </div>
     `);
 
