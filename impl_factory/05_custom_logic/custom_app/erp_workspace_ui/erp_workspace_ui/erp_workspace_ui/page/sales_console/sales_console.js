@@ -615,6 +615,20 @@
         border: 1px solid #edf2f7;
         background: #f8fafc;
       }
+      .sales-console-inquiry-assist-card[data-assist-card="summary"],
+      .sales-console-inquiry-assist-card[data-assist-card="reply"] {
+        grid-column: 1 / -1;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+        border-color: #d9e8f7;
+      }
+      .sales-console-inquiry-assist-card[data-assist-card="risk"] {
+        border-color: #f1d5d5;
+        background: #fffafa;
+      }
+      .sales-console-inquiry-assist-card[data-assist-card="action"] {
+        border-color: #cbe9dc;
+        background: #f7fffb;
+      }
       .sales-console-inquiry-assist-card-title {
         font-size: 11px;
         font-weight: 700;
@@ -627,6 +641,11 @@
         line-height: 1.55;
         color: #334155;
         white-space: pre-wrap;
+      }
+      .sales-console-inquiry-assist-card[data-assist-card="summary"] .sales-console-inquiry-assist-card-value,
+      .sales-console-inquiry-assist-card[data-assist-card="reply"] .sales-console-inquiry-assist-card-value {
+        font-size: 13px;
+        color: #172033;
       }
       .sales-console-inquiry-assist-footnote {
         font-size: 11.5px;
@@ -2204,16 +2223,16 @@
     const $content = $section.find("[data-inquiry-ai-content]");
 
     const cards = [
-      { title: "Summary", value: assist.summary || "No summary is available." },
-      { title: "Blocker Explanation", value: assist.blocker_explanation || "No blocker explanation is available." },
-      { title: "Next Action", value: assist.next_action || "No next action is available." },
-      { title: "Customer Reply Draft", value: assist.customer_reply || "No customer reply draft is available." },
+      { key: "summary", title: "1. What is happening", value: assist.summary || "No summary is available." },
+      { key: "risk", title: "2. Main risk or blocker", value: assist.blocker_explanation || "No blocker explanation is available." },
+      { key: "action", title: "3. Staff next step", value: assist.next_action || "No next action is available." },
+      { key: "reply", title: "4. Customer reply draft", value: assist.customer_reply || "No customer reply draft is available." },
     ];
 
     $content.html(`
       <div class="sales-console-inquiry-assist-grid">
         ${cards.map((item) => `
-          <div class="sales-console-inquiry-assist-card">
+          <div class="sales-console-inquiry-assist-card" data-assist-card="${escapeHtml(item.key)}">
             <div class="sales-console-inquiry-assist-card-title">${escapeHtml(item.title)}</div>
             <div class="sales-console-inquiry-assist-card-value">${escapeHtml(item.value)}</div>
           </div>

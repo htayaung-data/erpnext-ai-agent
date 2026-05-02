@@ -74,7 +74,7 @@ async function login(page, user) {
   await userField.fill(user.username);
   await passwordField.fill(user.password);
   await Promise.all([
-    page.waitForURL(/\/(?:app|desk)(?:[/?#]|$)/, { timeout: TIMEOUT }),
+    page.waitForURL(/\/(?:app|desk)(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT }),
     loginButton.click(),
   ]);
 }
@@ -157,7 +157,9 @@ async function runRole(browser, user) {
   const consoleErrors = [];
   const pageErrors = [];
   page.on("console", (msg) => {
-    if (msg.type() === "error") consoleErrors.push(msg.text());
+    if (msg.type() === "error") {
+      consoleErrors.push({ text: msg.text(), location: msg.location() || {} });
+    }
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -210,7 +212,14 @@ async function runRole(browser, user) {
 
     assert(!/[?]$/.test(page.url()), `${user.label}: reset caused native query reload`, { url: page.url() });
     assert(pageErrors.length === 0, `${user.label}: page JS error`, { pageErrors });
-    const relevantConsoleErrors = consoleErrors.filter((text) => !/favicon|socket|manifest|Invalid origin/i.test(text));
+    const relevantConsoleErrors = consoleErrors.filter((entry) => {
+      const text = String(entry.text || "");
+      const url = String((entry.location || {}).url || "");
+      const combined = `${text} ${url}`;
+      if (/favicon|socket|manifest|Invalid origin/i.test(combined)) return false;
+      if (/Failed to load resource: the server responded with a status of 400/i.test(text) && /socket\.io/i.test(url)) return false;
+      return true;
+    });
     assert(relevantConsoleErrors.length === 0, `${user.label}: browser console error`, { consoleErrors: relevantConsoleErrors });
 
     return {

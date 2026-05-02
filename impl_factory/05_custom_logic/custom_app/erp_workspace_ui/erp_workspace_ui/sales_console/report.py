@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import frappe
@@ -30,6 +31,8 @@ def get_sales_console_report_context(
 	context = service._build_context()
 	scope = service._build_scope(context)
 	overrides = _coerce_filter_overrides(filter_overrides)
+	if _is_known_report_route(normalized_key) and not _is_report_route_allowed(normalized_key, context):
+		return _apply_report_operating_contract(_report_restricted_payload(normalized_key, scope))
 	if normalized_key == "sales_analytics":
 		return _apply_report_operating_contract(_build_sales_analytics_report(context, scope, overrides))
 	if normalized_key == "sales_order_analysis":
@@ -64,6 +67,26 @@ def _report_registry() -> dict[str, Callable[[dict[str, object], dict[str, objec
 		"item_wise_sales_history": _build_item_wise_sales_history_report,
 		"lost_quotations": _build_lost_quotations_report,
 	}
+
+
+def _is_known_report_route(report_key: str) -> bool:
+	return report_key in _report_registry()
+
+
+def _report_access_key(report_key: str) -> str:
+	return {
+		"quotation_trends": "trend_analysis",
+		"payment_terms_status_sales_order": "collections_status",
+	}.get(report_key, report_key)
+
+
+def _is_report_route_allowed(report_key: str, context: dict[str, object]) -> bool:
+	allowed_keys = {
+		str(item.get("key") or "").strip()
+		for item in service._build_reports_catalog(str((context or {}).get("role_variant") or ""))
+		if isinstance(item, dict)
+	}
+	return _report_access_key(report_key) in allowed_keys
 
 
 def _normalize_report_key(report_key: str | None) -> str:
@@ -648,6 +671,28 @@ def _route_unavailable_payload(report_key: str, scope: dict[str, object]) -> dic
 	}
 
 
+def _report_restricted_payload(report_key: str, scope: dict[str, object]) -> dict[str, object]:
+	return {
+		"page": {"title": "Sales Console Report", "key": report_key},
+		"summary": {
+			"title": "Report restricted",
+			"subtitle": "This report is not available for your current Sales Console role.",
+		},
+		"controls": {
+			"filterChips": _scope_filter_chip(scope),
+		},
+		"results": {
+			"title": "Report state",
+			"state": {
+				"kind": "error",
+				"title": "Report not available for this role",
+				"detail": "Open an allowed report from the Sales Console report cards.",
+			},
+		},
+		"action_targets": {},
+	}
+
+
 def _base_report_actions() -> list[dict[str, object]]:
 	return [
 		{"key": "refresh", "label": "Refresh"},
@@ -970,9 +1015,10 @@ def _sales_analytics_top_entity(rows: list[dict[str, object]]) -> tuple[str | No
 
 def _sales_order_analysis_filters(filter_overrides: dict[str, object] | None = None) -> dict[str, object]:
 	today = getdate(nowdate())
+	window_start = today - timedelta(days=30)
 	filters = {
 		"company": _default_company(),
-		"from_date": str(today.replace(day=1)),
+		"from_date": str(window_start),
 		"to_date": str(today),
 		"group_by_so": 1,
 		"execution_view": "all_orders",

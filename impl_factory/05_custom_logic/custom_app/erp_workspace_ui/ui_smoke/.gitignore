@@ -2,3 +2,5 @@ node_modules/
 test-results/
 playwright-report/
 artifacts/
+erpw-role-smoke/
+erpw-sales-order-analysis-smoke/

@@ -163,6 +163,45 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             ["refresh", "back_to_console"],
         )
 
+    def test_hidden_report_direct_route_is_blocked_by_role_catalog(self):
+        with patch.object(report.service, "_build_context", return_value={"role_variant": "sales_executive"}), patch.object(
+            report.service,
+            "_build_scope",
+            return_value={"scope_mode": "permission_scope"},
+        ), patch.object(
+            report.service,
+            "_build_reports_catalog",
+            return_value=[
+                {"key": "trend_analysis", "title": "Trend Analysis"},
+                {"key": "sales_order_analysis", "title": "Sales Order Analysis"},
+                {"key": "collections_status", "title": "Collections Status"},
+            ],
+        ):
+            payload = report.get_sales_console_report_context("lost_quotations")
+
+        self.assertEqual(payload["summary"]["title"], "Report restricted")
+        self.assertEqual(payload["results"]["state"]["title"], "Report not available for this role")
+        self.assertEqual(
+            [action["key"] for action in payload["controls"]["actions"]],
+            ["refresh", "back_to_console"],
+        )
+
+    def test_sales_order_analysis_defaults_to_rolling_operating_window(self):
+        def fake_getdate(value=None):
+            if isinstance(value, date):
+                return value
+            return date.fromisoformat(str(value))
+
+        with patch.object(report, "nowdate", return_value="2026-05-02"), patch.object(
+            report,
+            "getdate",
+            side_effect=fake_getdate,
+        ), patch.object(report, "_default_company", return_value="Demo Company"):
+            filters = report._sales_order_analysis_filters()
+
+        self.assertEqual(filters["from_date"], "2026-04-02")
+        self.assertEqual(filters["to_date"], "2026-05-02")
+
     def test_trend_analysis_uses_document_type_filter_and_sales_console_contract(self):
         trend_columns = {
             "columns": [

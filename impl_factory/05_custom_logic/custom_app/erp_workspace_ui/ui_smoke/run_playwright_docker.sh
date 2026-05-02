@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE="${ERPW_PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v1.59.1-noble}"
+NETWORK="${ERPW_PLAYWRIGHT_DOCKER_NETWORK:-host}"
+
+if ! command -v docker >/dev/null 2>&1; then
+	echo "Docker is required to run the isolated Playwright smoke runner." >&2
+	exit 1
+fi
+
+if [ "$#" -gt 0 ]; then
+	SMOKE_COMMAND="$*"
+else
+	SMOKE_COMMAND="npm run test:roles && npm run test:sales-order-analysis"
+fi
+
+mkdir -p "$SCRIPT_DIR/artifacts" "$SCRIPT_DIR/test-results"
+
+docker run --rm \
+	--network "$NETWORK" \
+	-v "$SCRIPT_DIR:/work" \
+	-w /work \
+	-e CI="${CI:-1}" \
+	-e ERPW_BASE_URL \
+	-e ERPW_MANAGER_USERNAME \
+	-e ERPW_MANAGER_PASSWORD \
+	-e ERPW_USER_USERNAME \
+	-e ERPW_USER_PASSWORD \
+	-e ERPW_USERNAME \
+	-e ERPW_PASSWORD \
+	-e ERPW_SESSION_SID \
+	-e ERPW_HEADLESS \
+	-e ERPW_REPORT_SHELL_VERSION \
+	-e ERPW_ROLE_SMOKE_OUT \
+	-e ERPW_SALES_ORDER_ANALYSIS_OUT \
+	-e ERPW_SALES_ORDER_ANALYSIS_FROM \
+	-e ERPW_SALES_ORDER_ANALYSIS_TO \
+	-e ERPW_SALES_ORDER_NAME \
+	-e ERPW_SALES_ORDER_ROUTE \
+	-e ERPW_QUOTATION_NAME \
+	-e ERPW_QUOTATION_ROUTE \
+	-e ERPW_DELIVERY_NOTE_NAME \
+	-e ERPW_DELIVERY_NOTE_ROUTE \
+	-e ERPW_SALES_INVOICE_NAME \
+	-e ERPW_SALES_INVOICE_ROUTE \
+	-e ERPW_CAPTURE_REFERENCE \
+	-e ERPW_CAPTURE_ROOT \
+	-e ERPW_SALES_CONSOLE_ROUTE \
+	"$IMAGE" \
+	bash -lc "npm ci && ${SMOKE_COMMAND}"

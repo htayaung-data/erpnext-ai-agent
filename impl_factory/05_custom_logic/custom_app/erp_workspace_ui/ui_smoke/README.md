@@ -49,14 +49,28 @@ npm install
 npx playwright install chromium
 ```
 
-Containerized fallback:
+Recommended server runner:
+
+Use the Docker runner when the server Node.js version is older than the Playwright requirement. This keeps production Node untouched and runs the pinned Playwright version in an isolated browser container.
 
 ```bash
-docker run --rm --network host \
-  -v "$PWD":/workspace \
-  -w /workspace/impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke \
-  mcr.microsoft.com/playwright:v1.59.1-jammy \
-  bash -lc 'npm test'
+cd impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke
+./run_playwright_docker.sh
+```
+
+Run one smoke script through the same container:
+
+```bash
+cd impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke
+./run_playwright_docker.sh npm run test:roles
+./run_playwright_docker.sh npm run test:sales-order-analysis
+```
+
+Equivalent npm shortcuts:
+
+```bash
+npm run test:docker
+npm run test:roles:docker
 ```
 
 ## Run
@@ -135,6 +149,18 @@ ERPW_USER_PASSWORD="..." \
 npm run test:roles
 ```
 
+Run through the isolated Docker browser runner:
+
+```bash
+cd impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke
+ERPW_BASE_URL="https://meet.example.com" \
+ERPW_MANAGER_USERNAME="sales.manager@example.com" \
+ERPW_MANAGER_PASSWORD="..." \
+ERPW_USER_USERNAME="sales.user@example.com" \
+ERPW_USER_PASSWORD="..." \
+./run_playwright_docker.sh npm run test:roles
+```
+
 ## Sales Order Analysis Report Smoke
 
 The Sales Order Analysis smoke checks the compact report command panel for both Sales Manager and Sales User sessions.
@@ -173,6 +199,33 @@ ERPW_USER_PASSWORD="..." \
 ERPW_REPORT_SHELL_VERSION="2026-05-02-report-link-suggest-v1" \
 npm run test:sales-order-analysis
 ```
+
+Run through the isolated Docker browser runner:
+
+```bash
+cd impl_factory/05_custom_logic/custom_app/erp_workspace_ui/ui_smoke
+ERPW_BASE_URL="https://meet.example.com" \
+ERPW_MANAGER_USERNAME="sales.manager@example.com" \
+ERPW_MANAGER_PASSWORD="..." \
+ERPW_USER_USERNAME="sales.user@example.com" \
+ERPW_USER_PASSWORD="..." \
+ERPW_REPORT_SHELL_VERSION="2026-05-02-report-link-suggest-v1" \
+./run_playwright_docker.sh npm run test:sales-order-analysis
+```
+
+## Docker Runner Technical Notes
+
+The runner script is `ui_smoke/run_playwright_docker.sh`.
+
+Enterprise rules for future development:
+
+1. Keep `ERPW_PLAYWRIGHT_IMAGE` aligned with the pinned `@playwright/test` version in `package.json`.
+2. Do not upgrade the production server's global Node.js just to run browser smoke tests.
+3. Use `--network host` on the ERP server so the container can reach the live site and any local bench port.
+4. Pass credentials and site URLs through environment variables only. Do not hardcode them in scripts or docs.
+5. Keep smoke artifacts inside `ui_smoke/artifacts` and `ui_smoke/test-results`; these folders should not be committed.
+6. For Sale Console freeze checks, run `./run_playwright_docker.sh` so role smoke and Sales Order Analysis smoke run in the same browser environment.
+7. Run the older document-page Playwright suite explicitly with `./run_playwright_docker.sh npm test` only after setting the required document route or document name environment variables.
 
 ## Reference Screenshot Capture
 

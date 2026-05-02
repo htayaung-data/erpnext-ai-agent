@@ -7,6 +7,8 @@
     "test": "playwright test",
     "test:roles": "node role_permission_smoke.js",
     "test:sales-order-analysis": "node sales_order_analysis_smoke.js",
+    "test:docker": "bash ./run_playwright_docker.sh",
+    "test:roles:docker": "bash ./run_playwright_docker.sh npm run test:roles",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
     "capture:references": "playwright test tests/reference_page_capture.spec.js",

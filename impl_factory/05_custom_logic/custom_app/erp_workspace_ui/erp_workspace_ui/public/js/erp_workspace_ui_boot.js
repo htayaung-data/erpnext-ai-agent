@@ -253,6 +253,19 @@
 	    };
 	  }
 
+	  function safeCurrentRouteString() {
+	    try {
+	      if (!window.frappe) return "";
+	      const route = frappe.get_route ? frappe.get_route() : null;
+	      if (Array.isArray(route) && route.length && frappe.get_route_str) {
+	        return frappe.get_route_str(route);
+	      }
+	      return "";
+	    } catch (error) {
+	      return "";
+	    }
+	  }
+
 	  function resolveSalesConsoleChromeRoots(page) {
 	    const roots = [];
 	    const pageWrapper = page && page.wrapper
@@ -262,7 +275,7 @@
 	      roots.push(pageWrapper);
 	    }
 
-	    const routeStr = window.frappe && frappe.get_route_str ? frappe.get_route_str() : "";
+	    const routeStr = safeCurrentRouteString();
 	    const routePage = routeStr && window.frappe && frappe.ui && frappe.ui.pages
 	      ? frappe.ui.pages[routeStr]
 	      : null;

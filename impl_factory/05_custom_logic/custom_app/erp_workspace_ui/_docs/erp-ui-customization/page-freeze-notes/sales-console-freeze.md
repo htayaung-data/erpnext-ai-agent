@@ -2,11 +2,16 @@
 
 Date: 2026-04-16
 
-Last implementation alignment: 2026-04-23
+Last implementation alignment: 2026-05-02
 
 Status:
 
-- Frozen for current phase
+- Frozen for current code phase; pending final owner browser acceptance
+
+Automated browser proof:
+
+- Docker Playwright runner passed for Sales Manager and Sales User on 2026-05-02
+- remaining checkpoint is owner visual/business acceptance in the real browser
 
 Scope:
 
@@ -35,6 +40,7 @@ It is approved because it now does the correct job for an enterprise sales user:
 
 - searching by commercial reference can surface the relevant sales chain quickly
 - inquiry output is no longer just decorative status; it is intended to support real customer response
+- inquiry assist answers now use a clearer four-step layout: what is happening, main risk or blocker, staff next step, and customer reply draft
 
 ### 2. Related-document truth was prioritized over visual novelty
 
@@ -77,6 +83,16 @@ It is approved because it now does the correct job for an enterprise sales user:
 - final copy polish for niche edge cases
 - another cross-page spacing pass after the broader Sales Console surface is complete
 - optional redirect from bare `/desk/sales-console-worklist` back to `/desk/sales-console` if the guard state proves confusing
+- Overview first-load movement is deferred as a Desk-level visual-stability item unless the owner manual review marks it as disruptive
+
+## Final Owner Checkpoint
+
+Before declaring the Sales Console fully frozen, the owner should manually confirm:
+
+- first landing on Overview does not feel unstable enough to block daily use
+- the inquiry answer layout is easier to scan in real customer/order examples
+- filters, date pickers, link suggestions, Apply, Reset, and Refresh behave naturally in the browser
+- the current visual quality is acceptable as the first stable enterprise version
 
 ## Reopen conditions
 

@@ -55,7 +55,7 @@ async function login(page, user) {
   await userField.fill(user.username);
   await passwordField.fill(user.password);
   await Promise.all([
-    page.waitForURL(/\/(?:app|desk)(?:[/?#]|$)/, { timeout: TIMEOUT }),
+    page.waitForURL(/\/(?:app|desk)(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT }),
     loginButton.click(),
   ]);
 }
@@ -268,6 +268,7 @@ async function checkApiContracts(page, user, report) {
   });
   assert(reportContext.ok, `${user.label}: report API failed`, reportContext);
   const reportActionKeys = ((reportContext.data.message.controls || {}).actions || []).map((action) => action.key);
+  const reportSummaryTitle = ((reportContext.data.message.summary || {}).title || "").trim();
   assert(
     reportActionKeys[0] === "refresh" && reportActionKeys[1] === "back_to_console",
     `${user.label}: report API action order mismatch`,
@@ -275,6 +276,8 @@ async function checkApiContracts(page, user, report) {
   );
 
   let restrictedSaveProbe = null;
+  let managerValidationProbe = null;
+  let hiddenReportProbe = null;
   if (user.expectedVariant !== "sales_manager") {
     restrictedSaveProbe = await callMethod(page, "erp_workspace_ui.sales_console.worklist.save_sales_console_customer_profile", {
       payload: { mode: "new" },
@@ -285,12 +288,43 @@ async function checkApiContracts(page, user, report) {
       `${user.label}: restricted save probe did not hit Sales Manager permission gate`,
       { status: restrictedSaveProbe.status, serverMessages }
     );
+
+    hiddenReportProbe = await callMethod(page, "erp_workspace_ui.sales_console.report.get_sales_console_report_context", {
+      report_key: "lost_quotations",
+    });
+    assert(hiddenReportProbe.ok, `${user.label}: hidden report guard API failed`, hiddenReportProbe);
+    const hiddenStateTitle = (((hiddenReportProbe.data.message.results || {}).state || {}).title || "").trim();
+    assert(
+      hiddenStateTitle === "Report not available for this role",
+      `${user.label}: hidden report direct route was not blocked by role catalog`,
+      { hiddenStateTitle }
+    );
+    assert(
+      reportSummaryTitle === "Report restricted",
+      `${user.label}: Sales Analytics direct route should be restricted for this role`,
+      { reportSummaryTitle }
+    );
   }
 
   if (user.expectedVariant === "sales_manager") {
     assert(customerActionKeys.includes("create_customer"), `${user.label}: create_customer missing from API`, { customerActionKeys });
     const editorActions = ((customerEditorMessage.controls || {}).actions || []).map((action) => action.key);
     assert(editorActions.includes("save_customer_profile"), `${user.label}: manager editor API missing save action`, { editorActions });
+    assert(reportSummaryTitle !== "Report restricted", `${user.label}: Sales Analytics should be available for manager`, { reportSummaryTitle });
+    managerValidationProbe = await callMethod(page, "erp_workspace_ui.sales_console.worklist.save_sales_console_customer_profile", {
+      payload: { mode: "new" },
+    });
+    const serverMessages = JSON.stringify(managerValidationProbe.data || {});
+    assert(
+      managerValidationProbe.status !== 403 && !serverMessages.includes("Only Sales Managers"),
+      `${user.label}: manager save probe hit the Sales Manager permission gate unexpectedly`,
+      { status: managerValidationProbe.status, serverMessages }
+    );
+    assert(
+      serverMessages.includes("Customer name is required"),
+      `${user.label}: manager save probe did not pass permission gate and reach validation`,
+      { status: managerValidationProbe.status, serverMessages }
+    );
   } else {
     assert(!customerActionKeys.includes("create_customer"), `${user.label}: create_customer leaked in API`, { customerActionKeys });
     const stateTitle = ((customerEditorMessage.results || {}).state || {}).title || "";
@@ -303,8 +337,15 @@ async function checkApiContracts(page, user, report) {
     customerActionKeys,
     customerEditorState: ((customerEditorMessage.results || {}).state || {}).title || "",
     reportActionKeys,
+    reportSummaryTitle,
+    managerValidationProbe: managerValidationProbe
+      ? { status: managerValidationProbe.status, message: JSON.stringify(managerValidationProbe.data || {}).slice(0, 300) }
+      : null,
     restrictedSaveProbe: restrictedSaveProbe
       ? { status: restrictedSaveProbe.status, message: JSON.stringify(restrictedSaveProbe.data || {}).slice(0, 300) }
+      : null,
+    hiddenReportProbe: hiddenReportProbe
+      ? { status: hiddenReportProbe.status, stateTitle: (((hiddenReportProbe.data.message.results || {}).state || {}).title || "").trim() }
       : null,
   };
 }

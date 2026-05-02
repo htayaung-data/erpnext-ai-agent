@@ -1,7 +1,7 @@
 # Sales Console Enterprise Readiness Audit: SERA-2 Security And Permissions
 
-Date: 2026-04-28
-Status: Pass for Sales Manager/Sales User gate with manual save-persistence check still optional
+Date: 2026-05-02
+Status: Pass for Sales Manager/Sales User gate with direct-route report guard; save-persistence remains intentionally optional
 Audit phase: `SERA-2` Security, Permission, And Data Mutation Safety
 Depends on:
 
@@ -44,12 +44,13 @@ Reason:
 6. Customer and item directories were hardened to use permission-aware document reads before enrichment.
 7. Payment Entry detail access is guarded before payment settlement references are resolved.
 8. No custom backend delete, submit, cancel, or workflow bypass was found in the Sales Console audit scope.
-9. A controlled Contact permission elevation remains intentionally present; the live Sales Manager/Sales User role gate is verified, while an actual contact-save mutation can remain a manual freeze check.
-10. Authenticated browser and role-matrix verification is complete for the Sales Manager and Sales User accounts used in the 2026-05-01 live smoke pass.
+9. A controlled Contact permission elevation remains intentionally present; the Sales Manager/Sales User role gate can be verified without creating business records by proving that Sales Manager reaches validation while Sales User is stopped at the permission gate.
+10. Direct Sales Console report routes are now guarded by the role-visible report catalog, so hidden cards cannot be opened only by typing the route.
+11. Authenticated browser and role-matrix verification passed through the isolated Docker Playwright runner on 2026-05-02.
 
 Important limitation:
 
-This is a static code audit plus targeted code hardening. It did not execute live authenticated role tests because the shell does not currently provide a reusable authenticated browser session.
+The preferred automated browser proof is `ui_smoke/run_playwright_docker.sh`; it avoids changing production Node.js. Final freeze still requires owner visual acceptance in a real browser.
 
 ## 3. Security Principle
 
@@ -107,6 +108,13 @@ Source:
 | --- | --- | --- |
 | `get_sales_console_report_context` | read/report | Accept for SERA-2. Report builders use Sales Console scope and native report execution where applicable. SERA-4 should review each report family in more detail. |
 
+Direct report-route guard:
+
+1. the visible report catalog is the access authority for Sales Console report pages
+2. `quotation_trends` maps through `trend_analysis` for backward compatibility
+3. `payment_terms_status_sales_order` maps through `collections_status` for backward compatibility
+4. hidden report keys return a restricted Sales Console state instead of falling through to native report behavior
+
 ### 4.4 Managed Form Context APIs
 
 Source:
@@ -162,11 +170,11 @@ Blocked by omission:
 
 Decision:
 
-`Conditional Pass`
+`Pass with optional persistence proof`
 
 Reason:
 
-The Customer mutation path is narrow and server-authorized. The Sales User and Sales Manager role gate was verified on 2026-05-01 without creating or updating business records.
+The Customer mutation path is narrow and server-authorized. The safe smoke pattern proves Sales User is blocked at the Sales Manager permission gate while Sales Manager reaches field validation without creating or updating business records.
 
 ### 5.2 Contact Synchronization
 
@@ -200,7 +208,7 @@ Decision:
 
 Required role test:
 
-Confirm that a Sales Manager can update intended customer contact fields and that a Sales User cannot call the save API directly.
+Confirm that Sales User cannot call the save API directly. Actual Sales Manager contact-save persistence is optional and should only be done with a disposable customer record when the business accepts that test data can be created and cleaned up.
 
 ### 5.3 Native ERPNext Lifecycle Actions
 

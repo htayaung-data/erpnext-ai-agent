@@ -2,9 +2,16 @@
 
 Date: 2026-04-21
 
+Last implementation alignment: 2026-05-02
+
 Status:
 
-- Frozen for current phase
+- Frozen for current code phase; pending final owner browser acceptance
+
+Automated browser proof:
+
+- Docker Playwright runner passed role smoke and Sales Order Analysis smoke for Sales Manager and Sales User on 2026-05-02
+- remaining checkpoint is owner visual/business acceptance in the real browser
 
 Scope:
 
@@ -47,6 +54,7 @@ They are approved because they now behave like focused commercial review surface
 - it correctly emphasizes operational posture instead of duplicating broad sales analytics
 - open execution, overdue delivery, pending bill, and visible order value are the right commercial control signals
 - quantity-to-deliver is accepted because it supports execution review directly
+- the default opening window is now a rolling 30-day operating window, not month-to-date, so the page should open with useful recent orders even early in a new month
 
 ### 4. Trend Analysis and Lost Quotations are accepted as commercial review pages
 
@@ -74,6 +82,14 @@ They are approved because they now behave like focused commercial review surface
 - future comparison features such as period-vs-period overlays only if they are added without bloating the core report shell
 - one final cross-report typography and spacing pass only if it is shared and low-risk
 - later data-quality cleanup where ERP master data limits what some reports can express, such as incomplete lost-reason or competitor inputs
+- final manual browser acceptance remains the owner checkpoint before declaring the report family fully frozen
+
+## Security and Route Notes
+
+- report cards are now the authority for role-visible Sales Console reports
+- direct URLs to hidden report keys return a restricted Sales Console state instead of relying only on native report permission or hidden navigation
+- legacy `quotation_trends` remains allowed only through the visible `Trend Analysis` access key and opens Trend Analysis with Quotation selected
+- legacy `payment_terms_status_sales_order` maps through the visible `Collections Status` access key
 
 ## Reopen conditions
 
