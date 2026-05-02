@@ -133,6 +133,69 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             ["refresh"],
         )
 
+    def test_item_directory_uses_concise_sales_subtitle(self):
+        with patch.object(worklist.service, "_can_read", return_value=True), patch.object(
+            worklist,
+            "_fetch_item_worklist_rows",
+            return_value=[],
+        ), patch.object(worklist, "_item_group_options", return_value=[]):
+            payload = worklist._build_item_worklist({"scope_mode": "permission_scope"}, {})
+
+        self.assertEqual(
+            payload["summary"]["subtitle"],
+            "Sales items available for quotation and order entry, with current stock posture.",
+        )
+
+    def test_item_detail_price_prefers_active_standard_selling_price(self):
+        fields = {
+            "name",
+            "item_code",
+            "price_list",
+            "price_list_rate",
+            "currency",
+            "uom",
+            "valid_from",
+            "valid_upto",
+            "selling",
+        }
+
+        with patch.object(worklist.service, "_doctype_exists", return_value=True), patch.object(
+            worklist.service,
+            "_can_read",
+            return_value=True,
+        ), patch.object(worklist.service, "_fieldnames", return_value=fields), patch.object(
+            worklist.frappe,
+            "get_list",
+            return_value=[
+                {
+                    "item_code": "ITEM-1",
+                    "price_list": "Retail Selling",
+                    "price_list_rate": 900,
+                    "currency": "MMK",
+                    "uom": "Nos",
+                    "valid_from": date(2026, 1, 1),
+                },
+                {
+                    "item_code": "ITEM-1",
+                    "price_list": "Standard Selling",
+                    "price_list_rate": 1200,
+                    "currency": "MMK",
+                    "uom": "Nos",
+                    "valid_from": date(2026, 2, 1),
+                },
+            ],
+        ), patch.object(worklist, "nowdate", return_value=date(2026, 5, 3)), patch.object(
+            worklist,
+            "getdate",
+            side_effect=lambda value=None: value if isinstance(value, date) else date.fromisoformat(str(value)),
+        ):
+            result = worklist._fetch_item_selling_price("ITEM-1", stock_uom="Nos")
+
+        self.assertEqual(result["label"], "Standard Selling Price")
+        self.assertEqual(result["value"], "1200")
+        self.assertEqual(result["meta"], "Standard Selling · Nos")
+        self.assertEqual(result["tone"], "positive")
+
     def test_report_operating_contract_adds_standard_actions_without_duplicates(self):
         payload = {
             "controls": {

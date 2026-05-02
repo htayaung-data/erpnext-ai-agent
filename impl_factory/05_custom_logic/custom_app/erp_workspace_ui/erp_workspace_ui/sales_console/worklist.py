@@ -1511,7 +1511,7 @@ def _build_item_worklist(scope: dict[str, object], applied_filters: dict[str, st
 		"summary": {
 			"kicker": "Sales Console worklist",
 			"title": "Items",
-			"subtitle": "Sales items with stock posture visible for quotation and order entry in the current Sales Console scope.",
+			"subtitle": "Sales items available for quotation and order entry, with current stock posture.",
 			"facts": _summary_facts(len(results_rows), scope, "Stock signal is reduced from current item warehouses."),
 		},
 		"controls": {
@@ -1605,6 +1605,7 @@ def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[
 	positive_locations = sum(1 for row in stock_rows if flt(row.get("actual_qty") or 0) > 0)
 	results_rows = [_item_detail_stock_row(row, stock_uom=stock_uom) for row in stock_rows]
 	item_label = item.get("item_name") or item.get("item_code") or item.get("name") or item_name
+	selling_price = _fetch_item_selling_price(item.get("item_code") or item.get("name"), stock_uom=stock_uom)
 	header_meta = " · ".join(
 		[
 			cstr(item.get("item_group") or "").strip(),
@@ -1630,6 +1631,12 @@ def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[
 			"actions": [{"key": "back_to_items", "label": "Back to Items", "category": "navigation"}],
 		},
 		"metrics": [
+			{
+				"label": selling_price["label"],
+				"value": selling_price["value"],
+				"meta": selling_price["meta"],
+				"tone": selling_price["tone"],
+			},
 			{"label": "Available Stock", "value": _qty_with_uom(available_total, stock_uom), "meta": "Total positive and negative stock balance", "tone": "positive" if available_total > 0 else "warning"},
 			{"label": "Stock Locations", "value": str(positive_locations), "meta": "Warehouses carrying positive stock", "tone": "neutral"},
 			{"label": "Reserved Stock", "value": _qty_with_uom(reserved_total, stock_uom), "meta": "Quantity already reserved", "tone": "attention" if reserved_total > 0 else "neutral"},
@@ -2569,6 +2576,89 @@ def _fetch_item_detail_stock_rows(item_code: str | None) -> list[dict[str, objec
 		as_dict=True,
 	)
 	return [dict(row) for row in rows]
+
+
+def _fetch_item_selling_price(item_code: str | None, *, stock_uom: str = "") -> dict[str, str]:
+	item_code = cstr(item_code or "").strip()
+	if not item_code or not service._doctype_exists("Item Price") or not service._can_read("Item Price"):
+		return _missing_item_price()
+
+	fields = service._fieldnames("Item Price")
+	query_fields = _available_fields(
+		"Item Price",
+		"name",
+		"item_code",
+		"price_list",
+		"price_list_rate",
+		"currency",
+		"uom",
+		"valid_from",
+		"valid_upto",
+		"selling",
+	)
+	filters: dict[str, object] = {"item_code": item_code}
+	if "selling" in fields:
+		filters["selling"] = 1
+
+	rows = frappe.get_list(
+		"Item Price",
+		filters=filters,
+		fields=query_fields,
+		order_by=_preferred_order_by("Item Price", ["price_list asc", "valid_from desc", "modified desc"]),
+		limit_page_length=50,
+	)
+	active_rows = [dict(row) for row in rows if _is_active_item_price(row)]
+	if not active_rows:
+		return _missing_item_price()
+
+	row = sorted(active_rows, key=lambda item: _item_price_sort_key(item, stock_uom))[0]
+	price_list = cstr(row.get("price_list") or "").strip()
+	uom = cstr(row.get("uom") or stock_uom or "").strip()
+	meta_parts = [part for part in [price_list, uom] if part]
+	return {
+		"label": "Standard Selling Price" if price_list == "Standard Selling" else "Selling Price",
+		"value": _money(row.get("price_list_rate"), row.get("currency")),
+		"meta": " · ".join(meta_parts) or "Active selling price",
+		"tone": "positive",
+	}
+
+
+def _missing_item_price() -> dict[str, str]:
+	return {
+		"label": "Selling Price",
+		"value": "Not configured",
+		"meta": "No active selling price visible",
+		"tone": "warning",
+	}
+
+
+def _is_active_item_price(row: dict[str, object]) -> bool:
+	today = getdate(nowdate())
+	for fieldname, comparator in (("valid_from", lambda value: value <= today), ("valid_upto", lambda value: value >= today)):
+		value = row.get(fieldname)
+		if not value:
+			continue
+		try:
+			if not comparator(getdate(value)):
+				return False
+		except Exception:
+			continue
+	return True
+
+
+def _item_price_sort_key(row: dict[str, object], stock_uom: str) -> tuple[int, int, object, str]:
+	price_list = cstr(row.get("price_list") or "").strip()
+	uom = cstr(row.get("uom") or "").strip()
+	try:
+		valid_from = getdate(row.get("valid_from")) if row.get("valid_from") else getdate("1900-01-01")
+	except Exception:
+		valid_from = getdate("1900-01-01")
+	return (
+		0 if price_list == "Standard Selling" else 1,
+		0 if not uom or not stock_uom or uom == stock_uom else 1,
+		-valid_from.toordinal() if hasattr(valid_from, "toordinal") else 0,
+		price_list,
+	)
 
 
 def _item_detail_stock_row(record: dict[str, object], *, stock_uom: str) -> dict[str, object]:
