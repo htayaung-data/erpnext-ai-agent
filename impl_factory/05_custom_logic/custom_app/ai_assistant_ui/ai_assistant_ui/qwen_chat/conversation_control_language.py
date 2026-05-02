@@ -127,6 +127,12 @@ _SEQUENCE_CONTINUATION_PATTERNS = (
 	r"^(?:please\s+)?(?:go\s+ahead|continue|proceed)(?:\s+with\s+(?:that|this|the\s+next\s+(?:one|step|part|question)|the\s+remaining\s+steps))?(?:\s+please)?$",
 )
 
+_WEAK_SEQUENCE_CONTINUATION_PHRASES = (
+	"yes",
+	"ok",
+	"okay",
+)
+
 _SEQUENCE_STOP_PHRASES = (
 	"stop",
 	"stop here",
@@ -421,7 +427,7 @@ def _classify_conversation_control_evidence(message: str, *, allow_discard_prefi
 		return {
 			"evidence_class": "sequence_continuation",
 			"action_id": "resume_active_sequence",
-			"evidence_strength": "strong" if normalized not in {"yes", "ok", "okay"} else "weak",
+			"evidence_strength": "strong" if normalized not in _WEAK_SEQUENCE_CONTINUATION_PHRASES else "weak",
 			"matched_surface_form": normalized,
 			"embedded_business_message": "",
 			"internal_details": {},

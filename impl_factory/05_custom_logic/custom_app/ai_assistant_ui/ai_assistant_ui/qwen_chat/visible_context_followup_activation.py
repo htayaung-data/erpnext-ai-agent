@@ -422,7 +422,7 @@ def _visible_followup_authority_intent(message: str) -> str:
 	causal_terms = {"cause", "caused", "causing", "increase", "increased", "decrease", "decreased", "changed", "change", "worse", "improved"}
 	if tokens.intersection(prediction_terms) and (tokens.intersection(future_terms) or "default" in tokens):
 		return "prediction_boundary"
-	if tokens.intersection(recommendation_terms) or "what should" in text:
+	if tokens.intersection(recommendation_terms) or {"what", "should"}.issubset(tokens):
 		return "recommendation_boundary"
 	if tokens.intersection(causal_terms):
 		return "causal_boundary"

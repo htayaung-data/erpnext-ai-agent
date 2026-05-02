@@ -7,6 +7,17 @@ from typing import Any, Dict, List
 
 VISIBLE_ARTIFACT_VERSION = "1.0"
 
+_NORMALIZED_METRIC_KEY_ALIASES = {
+	"overdue": "overdue_amount",
+	"overdue_amount": "overdue_amount",
+	"outstanding": "outstanding_amount",
+	"outstanding_amount": "outstanding_amount",
+	"total_due": "total_due",
+	"due": "total_due",
+	"credit_utilization": "credit_utilization",
+	"credit_used": "credit_utilization",
+}
+
 
 def _clean_text(value: Any) -> str:
 	return str(value or "").strip()
@@ -23,14 +34,9 @@ def _normalize_key(value: Any) -> str:
 		return "supplier"
 	if text in {"product", "item"}:
 		return "item"
-	if "overdue" in text:
-		return "overdue_amount"
-	if "outstanding" in text:
-		return "outstanding_amount"
-	if text in {"total_due", "due"} or "total_due" in text:
-		return "total_due"
-	if "credit_utilization" in text or "credit_used" in text:
-		return "credit_utilization"
+	metric_key = _NORMALIZED_METRIC_KEY_ALIASES.get(text)
+	if metric_key:
+		return metric_key
 	return text
 
 

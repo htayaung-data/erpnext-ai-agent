@@ -303,10 +303,12 @@ def _row_has_all_requested_fields(row: Dict[str, Any], metrics: List[str], dimen
 
 def _message_requests_entity_detail(raw_message: str) -> bool:
 	tokens = _tokens(raw_message)
-	text = f" {_clean_text(raw_message).lower()} "
-	if "tell me more" in text or "more information" in text or "more info" in text:
+	if "more" in tokens and (
+		tokens.intersection({"tell", "information", "info", "details", "detail"})
+		or tokens.intersection({"rank", "row", "that", "this", "supplier", "customer", "item", "product", "invoice"})
+	):
 		return True
-	if "more details" in text or "detail about" in text or "details about" in text:
+	if tokens.intersection({"details", "detail", "profile"}) and tokens.intersection({"about", "for"}):
 		return True
 	return bool(tokens.intersection({"profile", "details", "detail"}) and tokens.intersection({"rank", "row", "that", "this", "supplier", "customer", "item", "product", "invoice"}))
 

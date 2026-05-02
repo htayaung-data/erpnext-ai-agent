@@ -183,14 +183,17 @@ def _candidate_values(candidate: Dict[str, Any], trace_payload: Dict[str, Any]) 
 def _expected_alternatives(value: Any) -> List[str]:
 	if isinstance(value, list):
 		return _clean_list(value)
-	text = _clean_text(value)
-	if not text:
+	expected_text = _clean_text(value)
+	if not expected_text:
 		return []
-	if "_or_" in text:
-		return [part for part in text.split("_or_") if part]
-	if " or " in text.lower():
-		return [part for part in text.lower().split(" or ") if part]
-	return [text]
+	structured_separator = "_or_"
+	natural_separator = " or "
+	if structured_separator in expected_text:
+		return [part for part in expected_text.split(structured_separator) if part]
+	expected_text_lower = expected_text.lower()
+	if natural_separator in expected_text_lower:
+		return [part for part in expected_text_lower.split(natural_separator) if part]
+	return [expected_text]
 
 
 def _matches_any(actual_values: List[str], expected_values: List[str]) -> bool:

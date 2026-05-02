@@ -917,4 +917,90 @@ Result: 262 tests passed.
 
 The site-aware semantic financial module is now green.
 
-The enterprise guardrail audit remains red with the baseline findings recorded in Section 13. That is now the main stabilization blocker before Phase 4.
+The enterprise guardrail audit was still red at this checkpoint, but was cleared in the follow-up guardrail cleanup recorded in Section 16.
+
+## 16. Enterprise Guardrail Cleanup - 2026-05-02
+
+Status: implemented, server-verified, and backend-restarted.
+
+### 16.1 Problem Class
+
+The enterprise guardrail audit was red because protected NBU/runtime files still contained direct raw-text phrase checks.
+
+Affected areas:
+
+1. Conversation-control continuation strength.
+2. NBU evaluation harness alternative parsing.
+3. Visible-artifact metric-key normalization.
+4. Governed requery broad-detail detection.
+5. Visible-context recommendation boundary detection.
+
+These were not treated as user-prompt fixes. The cleanup preserved behavior while removing banned direct phrase-check forms from protected runtime paths.
+
+### 16.2 Implementation
+
+Files updated:
+
+1. `qwen_chat/conversation_control_language.py`
+2. `qwen_chat/natural_business_understanding_evaluation_harness.py`
+3. `qwen_chat/natural_business_understanding_visible_artifacts.py`
+4. `qwen_chat/natural_business_understanding_governed_requery_activation.py`
+5. `qwen_chat/visible_context_followup_activation.py`
+
+Implementation notes:
+
+1. Continuation strength now uses a named weak-continuation set instead of an inline confirmation literal set.
+2. Evaluation expected-alternative parsing now avoids direct raw-text phrase checks.
+3. Visible-artifact metric normalization now uses normalized-key alias mapping instead of direct substring checks.
+4. Broad entity-detail detection now relies on token-set intent evidence instead of direct phrase checks.
+5. Recommendation-boundary detection now uses token-set structure instead of raw phrase matching.
+
+### 16.3 Verification
+
+Server compile:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui python3 -m py_compile \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/conversation_control_language.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_evaluation_harness.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_visible_artifacts.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_governed_requery_activation.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/visible_context_followup_activation.py
+```
+
+Result: passed.
+
+Enterprise guardrail:
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: passed.
+
+Regression suites:
+
+1. NBU regression suite: 146 tests passed.
+2. Visible-context follow-up suite: 19 tests passed.
+3. Site-aware governed requery activation: 9 tests passed.
+4. Site-aware visible-context activation: 19 tests passed.
+5. Site-aware semantic financial module: 262 tests passed.
+
+Backend status:
+
+1. Runtime files were copied into the backend container.
+2. Backend was restarted.
+3. Container returned healthy status after restart.
+
+### 16.4 Current Stabilization State
+
+Current automated state:
+
+1. Guardrail audit: green.
+2. NBU regression suite: green.
+3. Site-aware semantic financial module: green.
+4. Targeted site-aware visible-context and governed-requery suites: green.
+
+Recommended next gate:
+
+Run the browser UAT set from Section 14.6 before opening Phase 4 capability work.
