@@ -729,3 +729,142 @@ The immediate target behavior:
 2. Supplier AP ranking plus `Give me more details about Rank 2 supplier` resolves the supplier row, not stale customer context.
 3. Fresh product/customer/supplier ranking questions do not get swallowed by previous visible-row context.
 4. No new phrase-routing logic is added to protected runtime paths.
+
+## 14. NBU-S1/S3/S2 Vertical Stabilization Slice - 2026-05-02
+
+Status: implemented and targeted-verified.
+
+This slice addressed the first live stabilization failure without treating it as a single prompt fix.
+
+### 14.1 Problem Class
+
+The live failures showed two shared NBU weaknesses:
+
+1. Ordinal/detail requests such as `Give me more information about Rank 2 supplier` could be misread as a fresh business query before the visible-artifact reference path had a chance to resolve the target row.
+2. Additive projection requests such as `Show together with Qty` could replace the primary ranking metric instead of adding the requested column to the existing ranking view.
+
+Both are shared contract problems:
+
+1. NBU must first identify whether the user is pointing to the current visible result.
+2. Projection must distinguish `add this field` from `replace the table with this field`.
+
+### 14.2 Implementation
+
+Files updated:
+
+1. `qwen_chat/natural_business_understanding_request_classification.py`
+2. `qwen_chat/semantic_interpreter.py`
+3. `tests/test_visible_context_followup_activation.py`
+4. `tests/test_semantic_financial_resolution.py`
+
+Behavior added:
+
+1. Ordinal visible-context references now take precedence over fresh-query detection.
+2. Additive projection cues now produce `column_refinement` and preserve the original ranking metric.
+3. Explicit column-only selection still produces a projection that can intentionally change the requested output shape.
+4. Tests cover the supplier rank-detail stale-context failure and the product revenue plus quantity projection failure.
+
+### 14.3 Verified Behavior
+
+Expected live behavior after restart:
+
+1. `Show me top 10 suppliers by AP` followed by `Give me more details about Rank 2 supplier` should resolve `Sunflower Accessories Co.`, not a stale customer row.
+2. `Top 10 Products by Revenue Last Month` followed by `Show together with Qty` should keep revenue and add quantity instead of showing quantity under the revenue column.
+3. `show customer risk` followed by `who is in second position in the above table?` should answer from the current AR table.
+4. Switching to a new list, such as suppliers or sales invoices, should update the visible-result target before answering another ordinal follow-up.
+
+### 14.4 Verification Run
+
+Server repo verification:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui python3 -m py_compile \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_request_classification.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/semantic_interpreter.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_visible_context_followup_activation.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_semantic_financial_resolution.py
+
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui python3 -m unittest discover \
+  -s impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests \
+  -p 'test_natural_business_understanding*.py'
+
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui python3 -m unittest \
+  ai_assistant_ui.tests.test_visible_context_followup_activation
+
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui python3 -m unittest \
+  ai_assistant_ui.tests.test_semantic_financial_resolution.TestSemanticFinancialResolution
+```
+
+Result:
+
+1. `py_compile`: passed.
+2. NBU regression suite: 146 tests passed.
+3. Visible-context follow-up suite: 19 tests passed.
+4. Full plain semantic test class: 262 tests passed.
+
+Container verification:
+
+```bash
+python -m unittest \
+  ai_assistant_ui.tests.test_semantic_financial_resolution.TestSemanticFinancialResolution.test_artifact_local_quantity_column_request_preserves_ranking_metric \
+  ai_assistant_ui.tests.test_semantic_financial_resolution.TestSemanticFinancialResolution.test_semantic_followup_column_projection_reason_restores_missing_qty_metric \
+  ai_assistant_ui.tests.test_semantic_financial_resolution.TestSemanticFinancialResolution.test_ranking_column_refinement_stays_local_when_quantity_exists
+```
+
+Result: 3 focused container tests passed.
+
+Site-aware verification:
+
+1. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_natural_business_understanding_governed_requery_activation`: passed, 9 tests.
+2. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_visible_context_followup_activation`: passed, 19 tests.
+3. `scripts/qwen_site_run_tests.sh ai_assistant_ui.tests.test_semantic_financial_resolution`: not green, with two existing financial-period expectation failures unrelated to this slice.
+
+Important note:
+
+The site-aware semantic module failures are tracked as release-gate debt. They are not caused by this NBU visible-artifact/projection slice, but Phase 4 must not start until this broader site-aware gate is understood and green or explicitly rebaselined.
+
+### 14.5 Guardrail State
+
+Enterprise guardrail status remains red with the same baseline findings recorded in Section 13.
+
+This slice did not add new guardrail findings. It also did not try to bypass the guardrail by adding more phrase-routing exceptions. The remaining guardrail cleanup is still required before the full release gate can be considered green.
+
+### 14.6 Manual Browser Retest Set
+
+Use a fresh browser conversation for each group unless explicitly testing carryover.
+
+Group A - Ranking projection:
+
+1. `Top 10 Products by Revenue Last Month`
+2. `Show together with Qty`
+
+Expected: the result should keep revenue and add quantity. Quantity must not appear under the revenue column.
+
+Group B - Supplier visible detail:
+
+1. `Show me top 10 suppliers by AP`
+2. `Give me more details about Rank 2 supplier`
+
+Expected: detail should be for `Sunflower Accessories Co.`.
+
+Group C - Visible-context switching:
+
+1. `show customer risk`
+2. `who is in second position in the above table?`
+3. `show me suppliers`
+4. `who is second in the above list?`
+5. `show me sale invoices`
+6. `who is in second position in the above table?`
+
+Expected: each ordinal answer should use the latest visible result, not a stale earlier table.
+
+### 14.7 Next Step
+
+Do not open a new business capability yet.
+
+Recommended next stabilization work:
+
+1. Fix or rebaseline the two site-aware financial-period semantic failures.
+2. Continue guardrail cleanup in the protected NBU/runtime files.
+3. Expand visible-artifact projection tests across customer, supplier, product, and document-row families.
+4. Only after the fast gate is consistently green, continue to broader Phase 4 complex business-question capability.

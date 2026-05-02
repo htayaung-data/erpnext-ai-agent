@@ -257,6 +257,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIsNone(payload)
 		self.assertFalse(any("Rank 2 is" in message[1] or "last visible row" in message[1] for message in messages))
 
+	def test_ranked_entity_detail_request_is_visible_context_not_fresh_query(self):
+		self.assertTrue(visible_context_followup_requested("give me more information about rank 2 suppliers"))
+
 	def test_presentation_only_million_request_is_not_visible_row_followup(self):
 		self.assertFalse(visible_context_followup_requested("Show in Million"))
 		self.assertFalse(visible_context_followup_requested("Show as Million"))

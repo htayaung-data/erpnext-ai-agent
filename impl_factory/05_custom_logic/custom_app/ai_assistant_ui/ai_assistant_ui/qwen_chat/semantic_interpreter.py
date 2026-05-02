@@ -39,7 +39,15 @@ _ARTIFACT_LOCAL_FOLLOWUP_FAMILIES = {
 	"inventory_snapshot",
 }
 _ARTIFACT_LOCAL_PROJECTION_CUE_PATTERN = re.compile(
-	r"\b(column|columns|only|just|show|give|display|keep)\b",
+	r"\b(column|columns|only|just|show|give|display|keep|include|add|with|together)\b",
+	re.IGNORECASE,
+)
+_ARTIFACT_LOCAL_ADDITIVE_COLUMN_CUE_PATTERN = re.compile(
+	r"\b(include|add|with|together)\b",
+	re.IGNORECASE,
+)
+_ARTIFACT_LOCAL_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN = re.compile(
+	r"\b(only|just|keep|without)\b",
 	re.IGNORECASE,
 )
 _TOP_N_PATTERN = re.compile(r"\btop\s+\d{1,3}\b", re.IGNORECASE)
@@ -287,26 +295,38 @@ def interpret_artifact_local_projection_deterministically(
 		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
 	if len(requested_columns) < 2 and not projection_cue_present:
 		return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
-	if "entity" not in requested_columns and "entity_code" not in requested_columns:
+	additive_column_request = bool(_ARTIFACT_LOCAL_ADDITIVE_COLUMN_CUE_PATTERN.search(normalized_message))
+	explicit_column_selection = bool(_ARTIFACT_LOCAL_EXPLICIT_COLUMN_SELECTION_CUE_PATTERN.search(normalized_message)) or (
+		len(requested_columns) >= 2 and not additive_column_request
+	)
+	if explicit_column_selection and "entity" not in requested_columns and "entity_code" not in requested_columns:
 		requested_columns.insert(0, "entity")
+	if not explicit_column_selection:
+		requested_columns = [
+			value
+			for value in requested_columns
+			if value not in {"entity", "entity_code"}
+		]
+		if not requested_columns:
+			return SemanticFollowUpResult(status="not_applicable", confidence_threshold=_confidence_threshold())
 	metric_targets = [value for value in requested_columns if value not in {"entity", "entity_code"}]
 	return SemanticFollowUpResult(
 		status="accepted",
 		confidence_threshold=_confidence_threshold(),
 		intent=SemanticFollowUpIntent(
-			requested_modes=["column_projection"],
+			requested_modes=["column_projection" if explicit_column_selection else "column_refinement"],
 			target_dimension="",
 			target_limit=0,
 			sort_direction="",
-			target_metric=str(metric_targets[0] if metric_targets else "").strip(),
+			target_metric=str(metric_targets[0] if explicit_column_selection and metric_targets else "").strip(),
 			requested_columns=requested_columns,
 			requested_time_scope="",
 			target_capability_id="",
 			self_contained=False,
 			confidence=0.81,
 			reason=(
-				"Artifact-local deterministic follow-up fallback matched requested projection columns from the "
-				"grounded family artifact alias map."
+				"Artifact-local deterministic follow-up fallback matched requested columns from the grounded "
+				"family artifact alias map while preserving the source ranking metric."
 			),
 			source="artifact_local_projection_fallback",
 		),

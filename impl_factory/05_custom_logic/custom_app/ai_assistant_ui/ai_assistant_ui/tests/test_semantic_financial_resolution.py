@@ -2882,6 +2882,35 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(family_resolution.requested_primary_metric, "revenue")
 		self.assertEqual(family_resolution.requested_secondary_metrics, ["quantity"])
 
+	def test_artifact_local_quantity_column_request_preserves_ranking_metric(self):
+		result = interpret_artifact_local_projection_deterministically(
+			message="Show together with Qty",
+			latest_grounded_turn={},
+			latest_family_artifact={
+				"family_id": "ranking_analytics",
+				"dimensions": {
+					"requested_metric_key": "revenue",
+					"primary_metric_key": "revenue",
+					"requested_column_alias_map": {
+						"qty": "quantity",
+						"quantity": "quantity",
+					},
+				},
+				"sections": {
+					"ranked_rows": [
+						{"rank": 1, "entity": "A", "revenue": 100, "quantity": 2},
+						{"rank": 2, "entity": "B", "revenue": 80, "quantity": 1},
+					]
+				},
+			},
+		)
+
+		self.assertEqual(result.status, "accepted")
+		self.assertIsNotNone(result.intent)
+		self.assertEqual(result.intent.requested_modes, ["column_refinement"])
+		self.assertEqual(result.intent.requested_columns, ["quantity"])
+		self.assertEqual(result.intent.target_metric, "")
+
 	def test_resolve_composite_candidate_defaults_sales_invoice_basis_for_generic_single_metric_product_ranking(self):
 		family_spec, family_resolution = _resolve_composite_candidate(
 			message="show top 5 products by revenue last month",

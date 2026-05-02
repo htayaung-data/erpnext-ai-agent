@@ -144,10 +144,10 @@ def _context_tokens(message: str) -> set[str]:
 def visible_context_reference_requested(message: str) -> bool:
 	if presentation_only_transform_requested(message):
 		return False
-	if fresh_business_query_requested(message):
-		return False
 	if nbu_ordinal_reference_index(message) >= 0:
 		return True
+	if fresh_business_query_requested(message):
+		return False
 	return bool(_context_tokens(message).intersection(VISIBLE_CONTEXT_TERMS))
 
 
