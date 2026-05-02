@@ -350,14 +350,15 @@ Representative prompts:
 4. `show top products by revenue`
 5. `show top customers by credit utilization`
 6. `show customers above credit limit`
-7. `Top 7 Customers by Revenue` -> `Sales Invoice` -> `Last Month`
-8. `Top 10 Products by Revenue` -> `Sales Invoice` -> `Last Month`
+7. `Top 7 Customers by Revenue` -> `Last Month`
+8. `Top 10 Products by Revenue` -> `Last Month`
 
 Clarification-continuation rule:
 
-1. missing basis and missing period clarifications must resume the original ranking request
-2. short answers such as `Sales Invoice` and `Last Month` must not open transaction listings
-3. clarified ranking turns must not select stale rows from the previous visible table
+1. revenue/sales amount rankings must use the approved Sales Invoice default basis unless the user explicitly requests Sales Order or another supported source
+2. missing period clarifications must resume the original ranking request
+3. short answers such as `Last Month` must not open transaction listings
+4. clarified ranking turns must not select stale rows from the previous visible table
 
 ### 5.8 Product Profitability And Margin
 

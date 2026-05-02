@@ -117,8 +117,8 @@ Use these modes:
 | CK-08 | A | both | `who should we collect from first?` after CK-01 | Blocks collection recommendation and shows required policy/evidence/execution gate. | Must not give operational recommendation. |
 | CK-09 | B | both | `show me margin` | Returns governed profitability/margin view if supported. | Title row count must match actual rows; no misleading `Top 10` if fewer rows without explanation. |
 | CK-10 | B | manual_browser | `show top products by gross profit` | Uses governed profitability/product performance surface if active. | If not supported, fail closed with supported alternatives. |
-| CK-11 | A | both | `Top 7 Customers by Revenue` then `Sales Invoice` then `Last Month` | Clarifies approved basis, then period, then returns customer revenue ranking. | Short clarification answers must not open transaction listings or select stale visible rows. |
-| CK-12 | A | both | `Top 10 Products by Revenue` then `Sales Invoice` then `Last Month` | Clarifies approved basis, then period, then returns product revenue ranking. | Same clarification-continuation rule must apply across commercial ranking families. |
+| CK-11 | A | both | `Top 7 Customers by Revenue` then `Last Month` | Uses the approved Sales Invoice default for revenue/sales amount, asks only for the missing period, then returns customer revenue ranking. | Short period clarification must not open transaction listings or select stale visible rows. |
+| CK-12 | A | both | `Top 10 Products by Revenue` then `Last Month` | Uses the approved Sales Invoice default for revenue/sales amount, asks only for the missing period, then returns product revenue ranking. | Same default-basis and clarification-continuation rule must apply across commercial ranking families. |
 
 ## 9. Follow-Up, Context Switch, And Cancellation Matrix
 

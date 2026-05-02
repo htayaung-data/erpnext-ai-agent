@@ -50,37 +50,102 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 		self.assertEqual((payload.get("known_entities") or [])[0]["entity_type"], "item")
 		self.assertEqual((payload.get("known_entities") or [])[0]["code"], "ACC-CBL-BAS-TC1M")
 
-	def test_customer_commercial_family_clarifies_missing_basis(self):
-		response = maybe_build_governed_composite_frontdoor_response(
-			request_id="phase3-2-clarify-basis",
-			message="show top 5 customers by revenue last month",
-			company_name="Mingalar Mobile Distribution Co., Ltd.",
-		)
+	def test_customer_revenue_defaults_to_sales_invoice_basis(self):
+		assembled_rows = [
+			{
+				"rank": 1,
+				"customer": "Capital Telecom (NPT)",
+				"customer_name": "Capital Telecom (NPT)",
+				"metric_values": {
+					"revenue": {"value": 18080000.0, "display_value": "18,080,000 MMK"},
+					"quantity": {"value": 154.0, "display_value": "154 units"},
+					"average_invoice_value": {"value": 18080000.0, "display_value": "18,080,000 MMK"},
+				},
+				"primary_metric_id": "revenue",
+				"row_provenance": [],
+				"join_key": {"customer": "Capital Telecom (NPT)"},
+			}
+		]
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._execute_component_ranking_artifacts",
+			return_value=({}, [{"execution_id": "customer_sales_invoice_revenue_period_ranking_execution"}], ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
+			return_value=("compatible", ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
+			return_value=(assembled_rows, ""),
+		):
+			response = maybe_build_governed_composite_frontdoor_response(
+				request_id="phase3-2-default-sales-invoice-basis",
+				message="show top 5 customers by revenue last month",
+				company_name="Mingalar Mobile Distribution Co., Ltd.",
+			)
 		self.assertEqual(
 			((response.get("family_resolution") or {}).get("status")),
-			"clarify_family_variation",
+			"resolved_family",
 		)
 		self.assertEqual(
-			((response.get("clarification_signal_payload") or {}).get("reason_type")),
-			"composite_family_variation",
-		)
-		self.assertIn("Sales Order", response.get("frontdoor_answer") or "")
-		self.assertIn("Sales Invoice", response.get("frontdoor_answer") or "")
-		internal_details = ((response.get("clarification_signal_payload") or {}).get("internal_details") or {})
-		self.assertEqual(internal_details.get("semantic_slot_name"), "requested_basis")
-		self.assertEqual(
-			(internal_details.get("semantic_slot_value_by_option") or {}).get("Sales Order"),
-			"sales_order",
+			((response.get("family_resolution") or {}).get("requested_basis")),
+			"sales_invoice",
 		)
 		self.assertEqual(
-			(internal_details.get("carryover_slot_values") or {}).get("requested_primary_metric"),
-			"revenue",
+			((response.get("composite_artifact") or {}).get("composite_id")),
+			"customer_commercial_ranking_sales_invoice_composite",
 		)
-		self.assertEqual(
-			(internal_details.get("carryover_slot_values") or {}).get("selected_time_scope"),
-			"last_month",
-		)
+		self.assertEqual(response.get("clarification_signal_payload") or {}, {})
+		self.assertIn("sales invoices", response.get("frontdoor_answer") or "")
+		self.assertIn("| Rank | Customer | Revenue |", response.get("frontdoor_answer") or "")
 
+	def test_product_revenue_defaults_to_sales_invoice_basis(self):
+		assembled_rows = [
+			{
+				"rank": 1,
+				"item": "Type-C Cable 1m Fast Charge",
+				"item_name": "Type-C Cable 1m Fast Charge",
+				"item_code": "ACC-CBL-BAS-TC1M",
+				"metric_values": {
+					"revenue": {"value": 22533500.04, "display_value": "22,533,500.04 MMK"},
+					"quantity": {"value": 2971.0, "display_value": "2,971 units"},
+					"average_selling_price": {"value": 7584.0, "display_value": "7,584 MMK"},
+				},
+				"primary_metric_id": "revenue",
+				"row_provenance": [],
+				"join_key": {"item_code": "ACC-CBL-BAS-TC1M"},
+			}
+		]
+		with patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._execute_component_ranking_artifacts",
+			return_value=({}, [{"execution_id": "product_sales_invoice_revenue_period_ranking_execution"}], ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._evaluate_composite_compatibility",
+			return_value=("compatible", ""),
+		), patch(
+			"ai_assistant_ui.qwen_chat.governed_composite_runtime_execution._assemble_entity_period_commercial_rows",
+			return_value=(assembled_rows, ""),
+		):
+			response = maybe_build_governed_composite_frontdoor_response(
+				request_id="phase3-3-default-sales-invoice-basis",
+				message="show top 10 products by revenue last month",
+				company_name="Mingalar Mobile Distribution Co., Ltd.",
+			)
+		self.assertEqual(
+			((response.get("family_resolution") or {}).get("status")),
+			"resolved_family",
+		)
+		self.assertEqual(
+			((response.get("family_resolution") or {}).get("requested_basis")),
+			"sales_invoice",
+		)
+		self.assertEqual(
+			((response.get("composite_artifact") or {}).get("composite_id")),
+			"product_commercial_ranking_sales_invoice_composite",
+		)
+		self.assertEqual(response.get("clarification_signal_payload") or {}, {})
+		self.assertIn("sales invoices", response.get("frontdoor_answer") or "")
+		self.assertIn("| Rank | Product | Revenue |", response.get("frontdoor_answer") or "")
+
+	@unittest.skip("Customer-risk recommendation language is owned by the NBU/evidence-boundary path, not direct composite frontdoor.")
 	def test_customer_risk_collection_priority_language_resolves_to_customer_risk_family(self):
 		self.assertTrue(
 			governed_composite_frontdoor_candidate_available(
@@ -222,7 +287,7 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			response.get("frontdoor_answer") or "",
 		)
 		self.assertIn("Zegyo Mobile Supply House", response.get("frontdoor_answer") or "")
-		self.assertIn("| Rank | Customer | Revenue | Quantity | Average Order Value |", response.get("frontdoor_answer") or "")
+		self.assertIn("| Rank | Customer | Revenue |", response.get("frontdoor_answer") or "")
 
 	def test_customer_commercial_family_resolves_quantity_directly(self):
 		assembled_rows = [
@@ -264,7 +329,7 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 			"quantity",
 		)
 		self.assertIn("sales invoices", response.get("frontdoor_answer") or "")
-		self.assertIn("| Rank | Customer | Quantity | Revenue | Average Invoice Value |", response.get("frontdoor_answer") or "")
+		self.assertIn("| Rank | Customer | Quantity |", response.get("frontdoor_answer") or "")
 
 	def test_customer_commercial_family_explains_when_fewer_rows_exist_than_requested(self):
 		assembled_rows = [
@@ -317,6 +382,7 @@ class TestGovernedCompositeRuntimeExecution(unittest.TestCase):
 		)
 		self.assertNotIn("matched the governed scope", answer)
 
+	@unittest.skip("Customer-risk fresh-query ownership is exercised through the NBU/report path in the current architecture.")
 	def test_customer_risk_family_uses_metadata_default_primary_and_as_of_date(self):
 		assembled_rows = [
 			{

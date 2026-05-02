@@ -510,6 +510,26 @@ def _default_basis_from_family_spec(family_spec: Dict[str, Any]) -> str:
 	return ""
 
 
+def _default_basis_applies_to_metric(
+	*,
+	family_spec: Dict[str, Any],
+	primary_metric: str,
+	secondary_metrics: List[str],
+) -> bool:
+	"""Use the approved family default when the business metric has a clear default source.
+
+	For commercial rankings, "revenue" / "sales amount" means recognized sales
+	value unless the user explicitly asks for another source such as Sales Order.
+	The actual default source remains metadata-driven through the family spec.
+	"""
+
+	if not _default_basis_from_family_spec(family_spec):
+		return False
+	if _implied_basis_from_metric_ids([primary_metric] + list(secondary_metrics)):
+		return False
+	return _clean_text(primary_metric) == "revenue"
+
+
 def _primary_metric_phrase(metric_id: str) -> str:
 	value = _clean_text(metric_id)
 	if value == "average_order_value":
@@ -1647,6 +1667,12 @@ def _resolve_composite_candidate(
 		default_basis = ""
 		if generic_metric_mix and secondary_metrics:
 			default_basis = _default_basis_from_family_spec(family_spec)
+		if not default_basis and not explicit_basis and _default_basis_applies_to_metric(
+			family_spec=family_spec,
+			primary_metric=primary_metric,
+			secondary_metrics=secondary_metrics,
+		):
+			default_basis = _default_basis_from_family_spec(family_spec)
 		requested_basis = (
 			explicit_basis
 			or _implied_basis_from_metric_ids([primary_metric] + list(secondary_metrics))
@@ -1959,8 +1985,8 @@ def run_governed_customer_commercial_composite_probe() -> Dict[str, Any]:
 		message="show top 5 customers by revenue for sales orders last month",
 		company_name=company_name,
 	)
-	legacy_surface = maybe_build_governed_composite_frontdoor_response(
-		request_id="phase3-2-customer-commercial-legacy-surface",
+	default_basis_surface = maybe_build_governed_composite_frontdoor_response(
+		request_id="phase3-2-customer-commercial-default-basis-surface",
 		message="show top 5 customers by revenue last month",
 		company_name=company_name,
 	)
@@ -1979,7 +2005,8 @@ def run_governed_customer_commercial_composite_probe() -> Dict[str, Any]:
 		== "customer_commercial_ranking_sales_order_composite"
 		and isinstance((active.get("composite_artifact") or {}).get("rows"), list)
 		and len((active.get("composite_artifact") or {}).get("rows") or []) > 0
-		and not legacy_surface
+		and _clean_text((((default_basis_surface.get("composite_artifact") or {}).get("composite_id")) if isinstance(default_basis_surface, dict) else ""))
+		== "customer_commercial_ranking_sales_invoice_composite"
 		and _clean_text((((implied_basis.get("composite_artifact") or {}).get("composite_id")) if isinstance(implied_basis, dict) else ""))
 		== "customer_commercial_ranking_sales_order_composite"
 		and _clean_text((((clarify_primary.get("clarification_signal_payload") or {}).get("reason_type")) if isinstance(clarify_primary, dict) else ""))
@@ -1988,7 +2015,7 @@ def run_governed_customer_commercial_composite_probe() -> Dict[str, Any]:
 	return {
 		"ok": ok,
 		"active": _summary(active),
-		"legacy_surface": _summary(legacy_surface),
+		"default_basis_surface": _summary(default_basis_surface),
 		"implied_basis": _summary(implied_basis),
 		"clarify_primary": _summary(clarify_primary),
 	}
@@ -2033,8 +2060,8 @@ def run_governed_product_commercial_composite_probe() -> Dict[str, Any]:
 		message="show top 5 products by revenue for sales orders last month",
 		company_name=company_name,
 	)
-	legacy_surface = maybe_build_governed_composite_frontdoor_response(
-		request_id="phase3-3-product-commercial-legacy-surface",
+	default_basis_surface = maybe_build_governed_composite_frontdoor_response(
+		request_id="phase3-3-product-commercial-default-basis-surface",
 		message="show top 5 products by revenue last month",
 		company_name=company_name,
 	)
@@ -2053,7 +2080,8 @@ def run_governed_product_commercial_composite_probe() -> Dict[str, Any]:
 		== "product_commercial_ranking_sales_order_composite"
 		and isinstance((active.get("composite_artifact") or {}).get("rows"), list)
 		and len((active.get("composite_artifact") or {}).get("rows") or []) > 0
-		and not legacy_surface
+		and _clean_text((((default_basis_surface.get("composite_artifact") or {}).get("composite_id")) if isinstance(default_basis_surface, dict) else ""))
+		== "product_commercial_ranking_sales_invoice_composite"
 		and _clean_text((((clarify_basis.get("clarification_signal_payload") or {}).get("reason_type")) if isinstance(clarify_basis, dict) else ""))
 		== "composite_family_variation"
 		and _clean_text((((clarify_primary.get("clarification_signal_payload") or {}).get("reason_type")) if isinstance(clarify_primary, dict) else ""))
@@ -2062,7 +2090,7 @@ def run_governed_product_commercial_composite_probe() -> Dict[str, Any]:
 	return {
 		"ok": ok,
 		"active": _summary(active),
-		"legacy_surface": _summary(legacy_surface),
+		"default_basis_surface": _summary(default_basis_surface),
 		"clarify_basis": _summary(clarify_basis),
 		"clarify_primary": _summary(clarify_primary),
 	}

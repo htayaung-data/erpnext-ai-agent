@@ -114,14 +114,14 @@ Additional executable guard added:
 
 Purpose:
 
-1. prove that composite ranking clarification replies are resolved before generic runtime, visible-context, or transaction-listing lanes
+1. prove that revenue/sales amount rankings use the approved Sales Invoice default basis before asking for any remaining clarification
 2. cover both customer commercial ranking and product commercial ranking
-3. prevent short replies such as `Sales Invoice` and `Last Month` from being misread as standalone listing requests or stale visible-table row references
+3. prevent short period replies such as `Last Month` from being misread as standalone listing requests or stale visible-table row references
 
 Covered flows:
 
-1. `Top 7 Customers by Revenue` -> `Sales Invoice` -> `Last Month`
-2. `Top 10 Products by Revenue` -> `Sales Invoice` -> `Last Month`
+1. `Top 7 Customers by Revenue` -> `Last Month`
+2. `Top 10 Products by Revenue` -> `Last Month`
 
 Implementation seam:
 
@@ -136,7 +136,7 @@ Verification completed on 2026-05-02:
 3. live bench smoke before restart for customer-ranking clarification continuation
 4. backend restart
 5. live bench smoke after restart
-6. widened live bench smoke for customer and product revenue ranking clarification continuation
+6. widened live bench smoke for customer and product revenue ranking default-basis continuation
 
 ## 7. Next Step
 
