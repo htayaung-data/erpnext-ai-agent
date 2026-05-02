@@ -2190,7 +2190,7 @@
     const $input = $section.find("[data-inquiry-input]");
     $input.val("");
     resetInquirySuggestions(pageState, $section);
-    $section.find("[data-inquiry-status]").text("Waiting for inquiry input.");
+    $section.find("[data-inquiry-status]").text("Type at least 2 characters to search.");
     $section.find("[data-inquiry-result]").empty().attr("hidden", true);
     resetInquiryAssist($section, "Generate a concise AI brief after resolving the inquiry.");
     $input.trigger("focus");
@@ -2294,7 +2294,7 @@
 
     if (!query) {
       renderInquiryPlaceholder($result, "Enter a customer, quotation, sales order, invoice, or delivery reference.");
-      $status.text("Waiting for inquiry input.");
+      $status.text("Type at least 2 characters to search.");
       resetInquirySuggestions(pageState, $section);
       resetInquiryAssist($section, "Generate a concise AI brief after resolving the inquiry.");
       return;
@@ -2742,8 +2742,8 @@
         <div class="sales-console-inquiry">
           <div class="sales-console-inquiry-shell">
             <div class="sales-console-inquiry-intro">
-              <div class="sales-console-inquiry-title">Single-point commercial lookup</div>
-              <p class="sales-console-inquiry-meta">Search by customer or commercial document. Suggestions appear while you type so the nearest visible chain can be opened without exact ID recall.</p>
+              <div class="sales-console-inquiry-title">Find a customer or document</div>
+              <p class="sales-console-inquiry-meta">Type a customer name or document number. Choose a suggestion to review the related sales chain.</p>
             </div>
             <div class="sales-console-inquiry-form">
               <div class="sales-console-inquiry-input-shell">
@@ -2755,7 +2755,7 @@
                 <button class="sales-console-inquiry-clear" type="button" data-inquiry-clear>Clear</button>
               </div>
             </div>
-            <div class="sales-console-inquiry-status" data-inquiry-status>Waiting for inquiry input.</div>
+            <div class="sales-console-inquiry-status" data-inquiry-status>Type at least 2 characters to search.</div>
           </div>
           <div class="sales-console-inquiry-result" data-inquiry-result hidden></div>
           <div class="sales-console-inquiry-assist" data-inquiry-ai hidden>
