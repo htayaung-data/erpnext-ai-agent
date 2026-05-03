@@ -4,18 +4,29 @@
   const root = window;
   const consoleRuntime = root.erpWorkspaceConsoleRuntime || {};
   const sidebarRuntime = root.erpWorkspaceConsoleSidebar = root.erpWorkspaceConsoleSidebar || {};
+  const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};
+  const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
+  const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
+  const salesMethods = salesWorkspace && salesWorkspace.methods ? salesWorkspace.methods : {};
+  const salesSidebar = salesWorkspace && salesWorkspace.sidebar ? salesWorkspace.sidebar : {};
   const STYLE_ID = "erpw-sales-console-sidebar-style";
-  const SIDEBAR_METHOD = "erp_workspace_ui.sales_console.service.get_sales_console_sidebar_context";
-  const SEARCH_METHOD = "erp_workspace_ui.sales_console.service.search_sales_console_workspace";
+  const SIDEBAR_METHOD = salesMethods.sidebarContext || "erp_workspace_ui.sales_console.service.get_sales_console_sidebar_context";
+  const SEARCH_METHOD = salesMethods.workspaceSearch || "erp_workspace_ui.sales_console.service.search_sales_console_workspace";
+  const HOME_ROUTE = salesRoutes.home || "sales-console";
+  const WORKLIST_ROUTE = salesRoutes.worklist || "sales-console-worklist";
+  const REPORT_ROUTE = salesRoutes.report || "sales-console-report";
+  const HOME_PATH = salesRoutes.homePath || `/desk/${HOME_ROUTE}`;
+  const WORKSPACE_TITLE = (salesWorkspace && salesWorkspace.title) || "Sales Console";
+  const WORKSPACE_MODE_LABEL = (salesWorkspace && salesWorkspace.modeLabel) || "Sales Workspace";
   const MANAGED_BODY_CLASS = "erpw-sales-console-sidebar-managed";
-  const MANAGED_FORM_ACTIVE_KEYS = {
+  const MANAGED_FORM_ACTIVE_KEYS = Object.assign({
     "Quotation": "quotation_directory",
     "Sales Order": "sales_order_directory",
     "Customer": "customer_directory",
     "Item": "item_directory",
     "Delivery Note": "sales_order_directory",
     "Sales Invoice": "sales_order_directory",
-  };
+  }, (salesWorkspace && salesWorkspace.managedDoctypes) || {});
   const SLUG_FORM_DOCTYPES = {
     quotation: "Quotation",
     "sales-order": "Sales Order",
@@ -93,8 +104,8 @@
       .${MANAGED_BODY_CLASS} .body-sidebar .body-sidebar-top .edit-mode {
         display: none !important;
       }
-      .${MANAGED_BODY_CLASS} .body-sidebar .sidebar-item-container:has(> .standard-sidebar-item > .item-anchor[href="/desk/sales-console"]),
-      .${MANAGED_BODY_CLASS} .body-sidebar .sidebar-item-container:has(> .standard-sidebar-item > .item-anchor[href$="/desk/sales-console"]) {
+      .${MANAGED_BODY_CLASS} .body-sidebar .sidebar-item-container:has(> .standard-sidebar-item > .item-anchor[href="${HOME_PATH}"]),
+      .${MANAGED_BODY_CLASS} .body-sidebar .sidebar-item-container:has(> .standard-sidebar-item > .item-anchor[href$="${HOME_PATH}"]) {
         display: none !important;
       }
       .${MANAGED_BODY_CLASS} .body-sidebar .sidebar-item-container > .standard-sidebar-item.active-sidebar {
@@ -519,7 +530,7 @@
 
   function isSalesConsoleHomeRoute(route) {
     const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
-    return pageKey === "sales-console" || pageKey === "sales-console-home";
+    return pageKey === HOME_ROUTE || pageKey === (salesRoutes.launcher || "sales-console-home");
   }
 
   function getManagedFormDoctype(route) {
@@ -538,8 +549,8 @@
   function isManagedRoute(route) {
     if (!Array.isArray(route) || !route.length) return false;
     const pageKey = String(route[0] || "");
-    if (pageKey === "sales-console" || pageKey === "sales-console-home") return true;
-    if (pageKey === "sales-console-worklist" || pageKey === "sales-console-report") return true;
+    if (pageKey === HOME_ROUTE || pageKey === (salesRoutes.launcher || "sales-console-home")) return true;
+    if (pageKey === WORKLIST_ROUTE || pageKey === REPORT_ROUTE) return true;
     if (getManagedFormDoctype(route)) return true;
     return false;
   }
@@ -549,8 +560,8 @@
     const pageKey = String(route[0] || "");
     const managedDoctype = getManagedFormDoctype(route);
     if (managedDoctype) return MANAGED_FORM_ACTIVE_KEYS[managedDoctype] || "";
-    if (pageKey === "sales-console" || pageKey === "sales-console-home") return "sales_console_home";
-    if (pageKey === "sales-console-worklist") {
+    if (pageKey === HOME_ROUTE || pageKey === (salesRoutes.launcher || "sales-console-home")) return salesSidebar.homeKey || "sales_console_home";
+    if (pageKey === WORKLIST_ROUTE) {
       const worklistKey = String(route[1] || "").replace(/-/g, "_");
       if (["quotation_directory", "quotations_waiting_action", "quotations_awaiting_approval", "expiring_quotations"].includes(worklistKey)) {
         return "quotation_directory";
@@ -575,7 +586,7 @@
 	      }
 	      return worklistKey;
 	    }
-    if (pageKey === "sales-console-report") return "";
+    if (pageKey === REPORT_ROUTE) return "";
     return "";
   }
 
@@ -665,7 +676,7 @@
     const header = document.createElement("a");
     header.className = "sidebar-header erpw-sales-console-sidebar-header";
     header.setAttribute("data-erpw-created-sales-console-header", "1");
-    header.setAttribute("href", "/desk/sales-console");
+    header.setAttribute("href", HOME_PATH);
     header.style.textDecoration = "none";
     header.style.width = "auto";
     header.style.cursor = "pointer";
@@ -677,7 +688,7 @@
       </div>
       <div class="title-container">
         <div class="sidebar-item-label header-title" data-name-style="">PrimeAxis</div>
-        <div class="sidebar-item-label header-subtitle">Sales Console</div>
+        <div class="sidebar-item-label header-subtitle">${escapeHtml(WORKSPACE_TITLE)}</div>
       </div>
       <button class="btn-reset drop-icon show-in-edit-mode">
         <svg class="icon icon-sm" style="display: block;margin:auto;" aria-hidden="true">
@@ -715,10 +726,10 @@
         header.dataset.erpwNativeHeaderSubtitle = subtitle ? subtitle.textContent : "";
       }
       header.classList.add("erpw-sales-console-sidebar-header");
-      header.setAttribute("href", "/desk/sales-console");
+      header.setAttribute("href", HOME_PATH);
       if (icon) icon.innerHTML = managedHeaderIconMarkup();
       if (title) title.textContent = "PrimeAxis";
-      if (subtitle) subtitle.textContent = "Sales Console";
+      if (subtitle) subtitle.textContent = WORKSPACE_TITLE;
       const dropIcon = header.querySelector(".drop-icon");
       if (dropIcon) {
         dropIcon.setAttribute("aria-hidden", "true");
@@ -774,22 +785,25 @@
   }
 
   function fallbackContext() {
+    const fallbackItems = salesWorkspace && Array.isArray(salesWorkspace.fallbackItems)
+      ? salesWorkspace.fallbackItems
+      : [
+        { key: "sales_console_home", label: "Overview", icon: "home", target: { kind: "page", route: HOME_ROUTE } },
+        { key: "quotation_directory", label: "Quotations", icon: "quotation", target: { kind: "worklist", queue_key: "quotation_directory" } },
+        { key: "sales_order_directory", label: "Sales Orders", icon: "order", target: { kind: "worklist", queue_key: "sales_order_directory" } },
+        { key: "customer_directory", label: "Customers", icon: "customer", target: { kind: "worklist", queue_key: "customer_directory" } },
+        { key: "item_directory", label: "Items", icon: "item", target: { kind: "worklist", queue_key: "item_directory" } },
+      ];
     return {
       sidebar: {
-        title: "Sales Console",
-        mode_label: "Sales Workspace",
+        title: WORKSPACE_TITLE,
+        mode_label: WORKSPACE_MODE_LABEL,
         scope_label: "",
         sections: [
           {
-            key: "browse",
-            label: "Browse",
-            items: [
-              { key: "sales_console_home", label: "Overview", icon: "home", target: { kind: "page", route: "sales-console" } },
-              { key: "quotation_directory", label: "Quotations", icon: "quotation", target: { kind: "worklist", queue_key: "quotation_directory" } },
-              { key: "sales_order_directory", label: "Sales Orders", icon: "order", target: { kind: "worklist", queue_key: "sales_order_directory" } },
-              { key: "customer_directory", label: "Customers", icon: "customer", target: { kind: "worklist", queue_key: "customer_directory" } },
-              { key: "item_directory", label: "Items", icon: "item", target: { kind: "worklist", queue_key: "item_directory" } },
-            ],
+            key: salesSidebar.sectionKey || "browse",
+            label: salesSidebar.sectionLabel || "Browse",
+            items: fallbackItems,
           },
         ],
       },
@@ -836,18 +850,18 @@
     const routeItem = itemRouteValue(nextFilters);
     frappe.route_options = nextFilters;
     if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
-      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeCustomer));
+      frappe.set_route(WORKLIST_ROUTE, normalizedQueueKey, encodeRoutePart(routeCustomer));
       return;
     }
     if (normalizedTargetKey === "item_detail" && routeItem) {
-      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeItem));
+      frappe.set_route(WORKLIST_ROUTE, normalizedQueueKey, encodeRoutePart(routeItem));
       return;
     }
-    frappe.set_route("sales-console-worklist", normalizedQueueKey);
+    frappe.set_route(WORKLIST_ROUTE, normalizedQueueKey);
   }
 
   function routeToReportPage(reportKey) {
-    frappe.set_route("sales-console-report", String(reportKey || "").replace(/_/g, "-"));
+    frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
   }
 
   function openNativeNotifications() {
@@ -881,7 +895,7 @@
     if (target.kind === "report_page" && target.report_key) return routeToReportPage(target.report_key);
     if (target.kind === "worklist" && target.queue_key) {
       const route = getRoute();
-      const currentQueueKey = Array.isArray(route) && route[0] === "sales-console-worklist"
+      const currentQueueKey = Array.isArray(route) && route[0] === WORKLIST_ROUTE
         ? String(route[1] || "").replace(/-/g, "_")
         : "";
 	      const filters = target.filters && typeof target.filters === "object" ? target.filters : null;

@@ -9,6 +9,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, get_fullname, getdate, now_datetime, nowdate
 
+from erp_workspace_ui.workspace_registry import get_sales_workspace_definition
+
 try:
 	from ai_assistant_ui.qwen_chat.artifact_narrative import (
 		build_artifact_narrative_context,
@@ -101,6 +103,7 @@ def get_sales_console_bootstrap() -> dict[str, object]:
 	navigation = _build_navigation(today, context, scope)
 
 	return {
+		"workspace": _sales_workspace_public_context(),
 		"context": context,
 		"scope": scope,
 		"ui_profile": ui_profile,
@@ -129,11 +132,27 @@ def get_sales_console_sidebar_context() -> dict[str, object]:
 	navigation = _build_navigation(today, context, scope)
 
 	return {
+		"workspace": _sales_workspace_public_context(),
 		"context": context,
 		"scope": scope,
 		"ui_profile": ui_profile,
 		"sidebar": _build_sales_console_sidebar(context, scope, ui_profile, navigation, reports_catalog),
 		"fetched_at": str(now_datetime()),
+	}
+
+
+def _sales_workspace_public_context() -> dict[str, object]:
+	workspace = get_sales_workspace_definition()
+	return {
+		"workspace_id": workspace.get("workspace_id"),
+		"status": workspace.get("status"),
+		"title": workspace.get("title"),
+		"mode_label": workspace.get("mode_label"),
+		"role_family": workspace.get("role_family"),
+		"freeze_tag": workspace.get("freeze_tag"),
+		"routes": workspace.get("routes"),
+		"methods": workspace.get("methods"),
+		"sidebar": workspace.get("sidebar"),
 	}
 
 
@@ -634,14 +653,17 @@ def _build_sales_console_sidebar(
 	navigation: dict[str, dict[str, object]],
 	reports_catalog: list[dict[str, object]],
 ) -> dict[str, object]:
+	workspace = get_sales_workspace_definition()
+	workspace_routes = workspace.get("routes") or {}
+	workspace_sidebar = workspace.get("sidebar") or {}
 	sections: list[dict[str, object]] = []
 
 	browse_items: list[dict[str, object]] = [
 		{
-			"key": "sales_console_home",
-			"label": "Overview",
+			"key": workspace_sidebar.get("home_key") or "sales_console_home",
+			"label": workspace_sidebar.get("home_label") or "Overview",
 			"icon": "home",
-			"target": {"kind": "page", "route": "sales-console"},
+			"target": {"kind": "page", "route": workspace_routes.get("home") or "sales-console"},
 		}
 	]
 	if (navigation.get("browse") or {}).get("quotation_directory"):
@@ -681,13 +703,19 @@ def _build_sales_console_sidebar(
 			}
 		)
 	if browse_items:
-		sections.append({"key": "browse", "label": "Browse", "items": browse_items})
+		sections.append(
+			{
+				"key": workspace_sidebar.get("section_key") or "browse",
+				"label": workspace_sidebar.get("section_label") or "Browse",
+				"items": browse_items,
+			}
+		)
 
 	return {
-		"title": "Sales Console",
-		"mode_label": ui_profile.get("mode_label") or "Sales Workspace",
+		"title": workspace.get("title") or "Sales Console",
+		"mode_label": ui_profile.get("mode_label") or workspace.get("mode_label") or "Sales Workspace",
 		"scope_label": scope.get("scope_label") or "",
-		"role_label": context.get("primary_role") or "Sales",
+		"role_label": context.get("primary_role") or workspace.get("role_family") or "Sales",
 		"sections": sections,
 	}
 

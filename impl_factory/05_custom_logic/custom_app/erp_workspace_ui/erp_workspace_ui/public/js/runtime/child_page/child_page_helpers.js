@@ -1,6 +1,10 @@
 (function () {
   const root = window;
   const childPageRuntime = root.erpWorkspaceUiChildPage = root.erpWorkspaceUiChildPage || {};
+  const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};
+  const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
+  const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
+  const SALES_WORKLIST_ROUTE = salesRoutes.worklist || "sales-console-worklist";
   let draftBodyGateStylesInjected = false;
   const draftPerformanceState = childPageRuntime.draftPerformanceState = childPageRuntime.draftPerformanceState || {
     sessions: Object.create(null),
@@ -405,17 +409,17 @@
     const routeItem = itemRouteValue(nextFilters);
     if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
       frappe.route_options = nextFilters;
-      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeCustomer));
+      frappe.set_route(SALES_WORKLIST_ROUTE, normalizedQueueKey, encodeRoutePart(routeCustomer));
       return true;
     }
     if (normalizedTargetKey === "item_detail" && routeItem) {
       frappe.route_options = nextFilters;
-      frappe.set_route("sales-console-worklist", normalizedQueueKey, encodeRoutePart(routeItem));
+      frappe.set_route(SALES_WORKLIST_ROUTE, normalizedQueueKey, encodeRoutePart(routeItem));
       return true;
     }
 
     const route = frappe.get_route ? frappe.get_route() : [];
-    const currentQueueKey = Array.isArray(route) && route[0] === "sales-console-worklist"
+    const currentQueueKey = Array.isArray(route) && route[0] === SALES_WORKLIST_ROUTE
       ? String(route[1] || "").replace(/-/g, "_")
       : "";
     const worklistRuntime = root.erpWorkspaceSalesConsoleWorklist || {};
@@ -430,7 +434,7 @@
     }
 
     frappe.route_options = nextFilters;
-    frappe.set_route("sales-console-worklist", normalizedQueueKey);
+    frappe.set_route(SALES_WORKLIST_ROUTE, normalizedQueueKey);
     return true;
   }
 

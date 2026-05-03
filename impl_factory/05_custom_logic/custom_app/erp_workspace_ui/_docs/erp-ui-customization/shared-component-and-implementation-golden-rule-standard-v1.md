@@ -206,21 +206,40 @@ Before changing shared runtime or shared CSS:
 4. test at least one current consumer
 5. document the reason and accepted risk
 
+### Rule 13: Workspace Registry Before New Workspace
+
+Every workspace must be declared in the workspace registry before its routes, sidebar, search, worklists, reports, or app boot behavior are exposed.
+
+Required registry decisions:
+
+1. matrix name
+2. recommended enterprise name when different
+3. route ownership
+4. backend method ownership
+5. role family
+6. managed doctypes
+7. sidebar active-key mapping
+8. freeze or planned status
+
+Sales Console route names are frozen. Do not rename Sales Console to make the first workspace look generic. Map future workspaces through the registry instead.
+
 ## 4. Current Shared Runtime Map
 
 The current reusable implementation lives in:
 
-1. `erp_workspace_ui/public/js/runtime/console/workspace_console_runtime.js`
-2. `erp_workspace_ui/public/js/runtime/console/workspace_console_sidebar.js`
-3. `erp_workspace_ui/public/js/runtime/list_page/list_page_shell.js`
-4. `erp_workspace_ui/public/js/runtime/report_page/report_page_shell.js`
-5. `erp_workspace_ui/public/js/runtime/child_page/child_page_shell.js`
-6. `erp_workspace_ui/public/js/runtime/child_page/child_page_shell_content.js`
-7. `erp_workspace_ui/public/js/runtime/child_page/child_page_connections.js`
-8. `erp_workspace_ui/public/js/runtime/child_page/child_page_details.js`
-9. `erp_workspace_ui/public/js/runtime/child_page/child_page_sections.js`
-10. `erp_workspace_ui/public/js/runtime/child_page/child_page_helpers.js`
-11. `erp_workspace_ui/public/css/erp_workspace_ui.css`
+1. `erp_workspace_ui/workspace_registry.py`
+2. `erp_workspace_ui/public/js/runtime/console/workspace_registry.js`
+3. `erp_workspace_ui/public/js/runtime/console/workspace_console_runtime.js`
+4. `erp_workspace_ui/public/js/runtime/console/workspace_console_sidebar.js`
+5. `erp_workspace_ui/public/js/runtime/list_page/list_page_shell.js`
+6. `erp_workspace_ui/public/js/runtime/report_page/report_page_shell.js`
+7. `erp_workspace_ui/public/js/runtime/child_page/child_page_shell.js`
+8. `erp_workspace_ui/public/js/runtime/child_page/child_page_shell_content.js`
+9. `erp_workspace_ui/public/js/runtime/child_page/child_page_connections.js`
+10. `erp_workspace_ui/public/js/runtime/child_page/child_page_details.js`
+11. `erp_workspace_ui/public/js/runtime/child_page/child_page_sections.js`
+12. `erp_workspace_ui/public/js/runtime/child_page/child_page_helpers.js`
+13. `erp_workspace_ui/public/css/erp_workspace_ui.css`
 
 The shared CSS prefix is `erpw-`.
 
@@ -235,15 +254,17 @@ Use this order for every new workspace or major page family:
 1. write the business scope
 2. list user roles
 3. list pages intentionally included and excluded
-4. map every page to an archetype
-5. choose the shared shell for every page
-6. define route ownership and active navigation mapping
-7. define backend payload contracts
-8. define role and permission boundaries
-9. implement shared behavior first
-10. implement page-specific business logic second
-11. run syntax, unit, browser, and permission checks
-12. update docs and tests before freeze
+4. confirm matrix name versus recommended enterprise name
+5. declare the workspace registry definition
+6. map every page to an archetype
+7. choose the shared shell for every page
+8. define route ownership and active navigation mapping
+9. define backend payload contracts
+10. define role and permission boundaries
+11. implement shared behavior first
+12. implement page-specific business logic second
+13. run syntax, unit, browser, and permission checks
+14. update docs and tests before freeze
 
 If any item is unknown, stop and resolve it before broad implementation.
 

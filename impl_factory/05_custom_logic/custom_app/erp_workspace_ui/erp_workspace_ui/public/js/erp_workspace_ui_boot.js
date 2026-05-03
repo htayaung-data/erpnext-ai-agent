@@ -15,6 +15,41 @@
   let draftLookupResultCache = Object.create(null);
   let draftLookupPendingCache = Object.create(null);
 
+  function salesWorkspaceDefinition() {
+    const registry = window.erpWorkspaceUiWorkspaceRegistry || {};
+    return typeof registry.sales === "function" ? registry.sales() : null;
+  }
+
+  function salesWorkspaceRoutes() {
+    const workspace = salesWorkspaceDefinition();
+    return workspace && workspace.routes ? workspace.routes : {};
+  }
+
+  function salesWorkspaceTitle() {
+    const workspace = salesWorkspaceDefinition();
+    return (workspace && workspace.title) || "Sales Console";
+  }
+
+  function escapeRegExp(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function salesWorkspaceRoute(routeKind, fallback) {
+    const routes = salesWorkspaceRoutes();
+    return routes[String(routeKind || "")] || fallback || "";
+  }
+
+  function salesWorkspaceDeskPath(routeKind, fallback) {
+    const route = salesWorkspaceRoute(routeKind, fallback);
+    return route ? `/desk/${route}` : "";
+  }
+
+  function isSalesWorkspacePath(path, routeKind, fallback) {
+    const route = salesWorkspaceRoute(routeKind, fallback);
+    if (!route) return false;
+    return new RegExp(`^/(?:desk|app)/${escapeRegExp(route)}(?:/|$)`).test(String(path || ""));
+  }
+
   function matchesChildExecutionPath(slug) {
     const path = window.location.pathname || "";
     return new RegExp(`^/(?:desk|app)/${slug}/[^/]+(?:/|$)`).test(path);
@@ -92,7 +127,16 @@
 	      path = rawHref.split(/[?#]/)[0] || rawHref;
 	    }
 	    const normalizedPath = String(path || "").replace(/\/+$/, "").toLowerCase();
-	    if (/^\/(?:desk|app)\/(?:accounts|sales-console-report|sales-console-worklist|selling|stock)$/.test(normalizedPath)) {
+	    const workspaceHomeRoutes = [
+	      "accounts",
+	      "selling",
+	      "stock",
+	      salesWorkspaceRoute("launcher", "sales-console-home"),
+	      salesWorkspaceRoute("home", "sales-console"),
+	      salesWorkspaceRoute("worklist", "sales-console-worklist"),
+	      salesWorkspaceRoute("report", "sales-console-report"),
+	    ].filter(Boolean);
+	    if (workspaceHomeRoutes.some((route) => new RegExp(`^/(?:desk|app)/${escapeRegExp(route)}$`).test(normalizedPath))) {
 	      return { kind: "home" };
 	    }
 	    return null;
@@ -101,13 +145,14 @@
 	  function isManagedSalesConsoleRoute() {
 	    const path = window.location.pathname || "";
 	    return isChildExecutionRoute()
-	      || /^\/(?:desk|app)\/sales-console(?:\/|$)/.test(path)
-	      || /^\/(?:desk|app)\/sales-console-worklist(?:\/|$)/.test(path)
-	      || /^\/(?:desk|app)\/sales-console-report(?:\/|$)/.test(path);
+	      || isSalesWorkspacePath(path, "home", "sales-console")
+	      || isSalesWorkspacePath(path, "worklist", "sales-console-worklist")
+	      || isSalesWorkspacePath(path, "report", "sales-console-report");
 	  }
 
 	  function routeToManagedDirectory(target) {
 	    if (!target || !target.queue_key) return false;
+	    const routes = salesWorkspaceRoutes();
 	    const helpers = window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers;
 	    if (
 	      helpers
@@ -116,14 +161,15 @@
 	    ) {
 	      return true;
 	    }
-	    frappe.set_route("sales-console-worklist", String(target.queue_key).replace(/_/g, "-"));
+	    frappe.set_route(routes.worklist || "sales-console-worklist", String(target.queue_key).replace(/_/g, "-"));
 	    return true;
 	  }
 
 	  function routeToManagedBreadcrumbTarget(target) {
 	    if (!target) return false;
+	    const routes = salesWorkspaceRoutes();
 	    if (target.kind === "home") {
-	      frappe.set_route("sales-console");
+	      frappe.set_route(routes.home || "sales-console");
 	      return true;
 	    }
 	    return routeToManagedDirectory(target);
@@ -164,9 +210,9 @@
 	  function isSalesConsoleCustomChromeRoute() {
 	    if (isChildExecutionRoute()) return false;
 	    const path = window.location.pathname || "";
-	    return /^\/(?:desk|app)\/sales-console(?:\/|$)/.test(path)
-	      || /^\/(?:desk|app)\/sales-console-worklist(?:\/|$)/.test(path)
-	      || /^\/(?:desk|app)\/sales-console-report(?:\/|$)/.test(path);
+	    return isSalesWorkspacePath(path, "home", "sales-console")
+	      || isSalesWorkspacePath(path, "worklist", "sales-console-worklist")
+	      || isSalesWorkspacePath(path, "report", "sales-console-report");
 	  }
 
 	  function routeSegmentsFromPath() {
@@ -193,6 +239,7 @@
 	  }
 
 	  function currentSalesConsoleChromeContext(options) {
+	    const routes = salesWorkspaceRoutes();
 	    const settings = options && typeof options === "object" ? options : {};
 	    const segments = routeSegmentsFromPath();
 	    const pageKey = segments[0] || "";
@@ -227,12 +274,12 @@
 	      lost_quotations: "Lost Quotations",
 	    };
 
-	    const queueKey = pageKey === "sales-console-worklist" ? normalizeRouteKey(segments[1] || "") : "";
+	    const queueKey = pageKey === (routes.worklist || "sales-console-worklist") ? normalizeRouteKey(segments[1] || "") : "";
 	    let leafLabel = settings.title || settings.leafLabel || "";
-	    if (!leafLabel && pageKey === "sales-console-worklist") {
+	    if (!leafLabel && pageKey === (routes.worklist || "sales-console-worklist")) {
 	      leafLabel = queueLabels[queueKey] || humanizeRouteKey(queueKey || "worklist");
 	    }
-	    if (!leafLabel && pageKey === "sales-console-report") {
+	    if (!leafLabel && pageKey === (routes.report || "sales-console-report")) {
 	      const reportKey = normalizeRouteKey(segments[1] || "");
 	      leafLabel = reportLabels[reportKey] || humanizeRouteKey(reportKey || "report");
 	    }
@@ -243,19 +290,19 @@
 	    const detailParents = {
 	      customer_detail: {
 	        label: "Customer Details",
-	        route: "/desk/sales-console-worklist/customer-directory",
+	        route: `${salesWorkspaceDeskPath("worklist", "sales-console-worklist")}/customer-directory`,
 	        queue_key: "customer_directory",
 	      },
 	      item_detail: {
 	        label: "Item Details",
-	        route: "/desk/sales-console-worklist/item-directory",
+	        route: `${salesWorkspaceDeskPath("worklist", "sales-console-worklist")}/item-directory`,
 	        queue_key: "item_directory",
 	      },
 	    };
 	    const crumbs = [
 	      {
-	        label: "Sales Console",
-	        route: "/desk/sales-console",
+	        label: salesWorkspaceTitle(),
+	        route: routes.homePath || salesWorkspaceDeskPath("home", "sales-console"),
 	        kind: "home",
 	      },
 	    ];
@@ -370,7 +417,7 @@
 	        document.body.classList.remove("no-breadcrumbs");
 	      }
 	      if (window.frappe && frappe.utils && typeof frappe.utils.set_title === "function") {
-	        frappe.utils.set_title(context.documentTitle || "Sales Console");
+	        frappe.utils.set_title(context.documentTitle || salesWorkspaceTitle());
 	      }
 	    }
 	    return synced;
@@ -385,12 +432,12 @@
 	      if (target.kind === "home") {
 	        link.setAttribute("data-erpw-sales-owned-route-kind", "home");
 	        link.removeAttribute("data-erpw-sales-owned-route");
-	        link.setAttribute("href", "/desk/sales-console");
+	        link.setAttribute("href", salesWorkspaceRoutes().homePath || salesWorkspaceDeskPath("home", "sales-console"));
 	        return;
 	      }
 	      link.setAttribute("data-erpw-sales-owned-route-kind", "directory");
 	      link.setAttribute("data-erpw-sales-owned-route", target.queue_key);
-	      link.setAttribute("href", `/desk/sales-console-worklist/${String(target.queue_key).replace(/_/g, "-")}`);
+	      link.setAttribute("href", `${salesWorkspaceDeskPath("worklist", "sales-console-worklist")}/${String(target.queue_key).replace(/_/g, "-")}`);
 	    });
 	  }
 

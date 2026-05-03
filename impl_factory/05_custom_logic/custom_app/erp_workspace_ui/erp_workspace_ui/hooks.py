@@ -4,7 +4,12 @@ app_publisher = "MEET"
 app_description = "Enterprise ERPNext workspace and console UX"
 app_email = "htayaung.data@gmail.com"
 app_license = "mit"
-app_home = "/desk/sales-console-home"
+
+from erp_workspace_ui.workspace_registry import get_sales_workspace_definition
+
+
+sales_workspace = get_sales_workspace_definition()
+app_home = sales_workspace["routes"]["launcher_path"]
 
 # This app owns UI workspace and page surfaces for the UI workstream.
 # AI runtime and governed assistant orchestration remain in the assistant app.
@@ -13,6 +18,7 @@ app_home = "/desk/sales-console-home"
 
 app_include_css = "/assets/erp_workspace_ui/css/erp_workspace_ui.css"
 app_include_js = [
+	"/assets/erp_workspace_ui/js/runtime/console/workspace_registry.js",
 	"/assets/erp_workspace_ui/js/erp_workspace_ui_boot.js",
 	"/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js",
 	"/assets/erp_workspace_ui/js/runtime/console/workspace_console_sidebar.js",
@@ -45,7 +51,7 @@ add_to_apps_screen = [
 	{
 		"name": app_name,
 		"logo": "/assets/erp_workspace_ui/images/sales-console-logo.svg",
-		"title": "Sales Console",
+		"title": sales_workspace["title"],
 		"route": app_home,
 		"has_permission": "erp_workspace_ui.boot.can_use_sales_console_app",
 	}

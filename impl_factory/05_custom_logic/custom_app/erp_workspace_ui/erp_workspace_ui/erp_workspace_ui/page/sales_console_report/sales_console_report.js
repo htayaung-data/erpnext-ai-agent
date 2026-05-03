@@ -1,17 +1,23 @@
 /* global frappe, $ */
 
 (function () {
-  const PAGE_KEY = "sales-console-report";
-  const CONTEXT_METHOD = "erp_workspace_ui.sales_console.report.get_sales_console_report_context";
+  const workspaceRegistry = window.erpWorkspaceUiWorkspaceRegistry || {};
+  const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
+  const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
+  const salesMethods = salesWorkspace && salesWorkspace.methods ? salesWorkspace.methods : {};
+  const PAGE_KEY = salesRoutes.report || "sales-console-report";
+  const WORKLIST_ROUTE = salesRoutes.worklist || "sales-console-worklist";
+  const HOME_ROUTE = salesRoutes.home || "sales-console";
+  const CONTEXT_METHOD = salesMethods.reportContext || "erp_workspace_ui.sales_console.report.get_sales_console_report_context";
   const REPORT_CHROME_TITLE = "Sales Console Report";
   const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-05-02-report-link-suggest-v1";
   const REPORT_SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
-  const DIRECTORY_QUEUE_BY_DOCTYPE = {
+  const DIRECTORY_QUEUE_BY_DOCTYPE = Object.assign({
     Quotation: "quotation_directory",
     "Sales Order": "sales_order_directory",
     Customer: "customer_directory",
     Item: "item_directory",
-  };
+  }, (salesWorkspace && salesWorkspace.directoryQueuesByDoctype) || {});
 
   function routeToList(doctype, filters) {
     const queueKey = DIRECTORY_QUEUE_BY_DOCTYPE[doctype];
@@ -27,7 +33,7 @@
 
   function routeToWorklist(queueKey, filters) {
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
-    frappe.set_route("sales-console-worklist", String(queueKey || "").replace(/_/g, "-"));
+    frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
   }
 
   function executeTarget(target) {
@@ -204,7 +210,7 @@
         onAction(details) {
           if (!details) return;
           if (details.key === "refresh") return loadRoute(viewState, { partialDataRefresh: true });
-          if (details.key === "back_to_console") return frappe.set_route("sales-console");
+          if (details.key === "back_to_console") return frappe.set_route(HOME_ROUTE);
           executeTarget(((payload && payload.action_targets) || {})[details.key] || null);
         },
         onControlSubmit(details) {

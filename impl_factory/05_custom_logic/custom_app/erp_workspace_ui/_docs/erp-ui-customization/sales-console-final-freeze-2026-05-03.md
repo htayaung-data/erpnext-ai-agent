@@ -60,7 +60,22 @@ Compatibility routes remain accepted only as controlled aliases:
 
 The standalone Sales Dashboard remains removed.
 
-## 4. Freeze Evidence
+## 4. Post-Freeze Multi-Workspace Foundation
+
+After freeze, Sales Console was mapped into the shared workspace registry so future workspaces can reuse the shared shells without copying Sales Console-specific route assumptions.
+
+This foundation does not rename or weaken the frozen Sales Console contract.
+
+Frozen route names remain:
+
+1. `sales-console-home`
+2. `sales-console`
+3. `sales-console-worklist`
+4. `sales-console-report`
+
+Future workspaces must receive their own registry definitions and must not rewrite these frozen Sales Console routes to appear generic.
+
+## 5. Freeze Evidence
 
 Accepted evidence before freeze:
 
@@ -75,7 +90,7 @@ Accepted evidence before freeze:
 9. Active docs were aligned with final code and pushed.
 10. Shared Component and Implementation Golden Rule Standard was created and pushed.
 
-## 5. Accepted Boundaries
+## 6. Accepted Boundaries
 
 These are accepted boundaries, not freeze blockers:
 
@@ -85,7 +100,7 @@ These are accepted boundaries, not freeze blockers:
 4. The current freeze does not prove every possible future role family.
 5. Additional customer save-persistence proof is not required for this freeze because no new mutation expansion is being introduced now; future mutation changes must run a controlled save regression with an approved or disposable record.
 
-## 6. Change Control After Freeze
+## 7. Change Control After Freeze
 
 After this freeze, any Sales Console change must include:
 
@@ -98,7 +113,7 @@ After this freeze, any Sales Console change must include:
 
 Do not silently change the frozen Sales Console baseline while starting another workspace.
 
-## 7. Next Workspace Rule
+## 8. Next Workspace Rule
 
 Future workspace work must begin from:
 

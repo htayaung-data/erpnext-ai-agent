@@ -1,6 +1,10 @@
 (function () {
   const root = window;
   const childPageRuntime = root.erpWorkspaceUiChildPage = root.erpWorkspaceUiChildPage || {};
+  const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};
+  const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
+  const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
+  const SALES_HOME_ROUTE = salesRoutes.home || "sales-console";
 
   function getDoctype(frm) {
     return String((frm && (frm.doctype || (frm.doc && frm.doc.doctype))) || "").trim();
@@ -49,10 +53,10 @@
   function routeToSalesConsole() {
     const sidebar = root.erpWorkspaceConsoleSidebar || {};
     if (typeof sidebar.executeTarget === "function") {
-      sidebar.executeTarget({ kind: "page", route: "sales-console" });
+      sidebar.executeTarget({ kind: "page", route: SALES_HOME_ROUTE });
       return true;
     }
-    frappe.set_route("sales-console");
+    frappe.set_route(SALES_HOME_ROUTE);
     return true;
   }
 

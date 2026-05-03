@@ -19,6 +19,7 @@ Enterprise ERPNext workspace and console experience for the UI workstream.
 - app foundation and module ownership
 - Sales Console implementation surface
 - future workspace/page assets for console families
+- multi-workspace registry and route ownership foundation
 
 ### Current Sales Console Source Of Truth
 
@@ -36,11 +37,19 @@ Freeze marker tag: `sales-console-freeze-v1`
 
 Workspace-wide governance starts from:
 
-1. `_docs/erp-ui-customization/shared-component-and-implementation-golden-rule-standard-v1.md`
-2. `_docs/erp-ui-customization/enterprise-shared-ui-component-standard-v1.md`
-3. `_docs/erp-ui-customization/enterprise-shared-ui-component-implementation-contract-v1.md`
+1. `_docs/erp-ui-customization/multi-workspace-foundation-contract-v1.md`
+2. `_docs/erp-ui-customization/shared-component-and-implementation-golden-rule-standard-v1.md`
+3. `_docs/erp-ui-customization/enterprise-shared-ui-component-standard-v1.md`
+4. `_docs/erp-ui-customization/enterprise-shared-ui-component-implementation-contract-v1.md`
 
 These documents define the Shared Component and Implementation Golden Rule Standard for all workspaces. Sales Console is the current reference implementation, not the naming scope of the shared component system.
+
+The active multi-workspace registry lives in:
+
+1. `erp_workspace_ui/workspace_registry.py`
+2. `erp_workspace_ui/public/js/runtime/console/workspace_registry.js`
+
+The registry currently keeps Sales Console frozen and records the matrix-based roadmap for Procurement Console, Warehouse Console, Finance Console, Executive Console, Customer Service Console, HR and Admin Console, and ERP Admin Console.
 
 The confirmed Sale Console surface is:
 

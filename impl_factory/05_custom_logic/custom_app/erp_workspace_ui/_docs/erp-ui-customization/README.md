@@ -5,6 +5,7 @@ This folder records freeze decisions, deferred UI work, and implementation notes
 Current implementation focus:
 
 - Sales Console
+- Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - workspace-wide shared UI component standard
 - workspace-wide shared UI implementation contract
@@ -40,6 +41,8 @@ Primary code paths:
 - `erp_workspace_ui/erp_workspace_ui/page/sales_console/sales_console.js`
 - `erp_workspace_ui/erp_workspace_ui/page/sales_console_worklist/sales_console_worklist.js`
 - `erp_workspace_ui/erp_workspace_ui/page/sales_console_report/sales_console_report.js`
+- `erp_workspace_ui/workspace_registry.py`
+- `erp_workspace_ui/public/js/runtime/console/workspace_registry.js`
 - `erp_workspace_ui/public/js/runtime/console/workspace_console_runtime.js`
 - `erp_workspace_ui/public/js/runtime/console/workspace_console_sidebar.js`
 - `erp_workspace_ui/public/js/runtime/list_page/list_page_shell.js`
@@ -53,6 +56,7 @@ Primary code paths:
 
 Current routing truth:
 
+- Sales Console route names remain frozen and are now mapped through the workspace registry for future multi-workspace safety.
 - `/desk/sales-console` is the Sales Console home.
 - `/desk/sales-console-worklist/<queue-key>` is the shared worklist shell.
 - `/desk/sales-console-worklist/customer-directory` is the productized Customers page.
@@ -79,6 +83,7 @@ Compatibility report keys:
 Current freeze facts:
 
 - the standalone Sales Dashboard page was removed before freeze
+- the multi-workspace foundation keeps Sales Console frozen while recording the matrix-based roadmap for Procurement Console, Warehouse Console, Finance Console, Executive Console, Customer Service Console, HR and Admin Console, and ERP Admin Console
 - Item Detail is accepted and includes the active selling price and stock-by-warehouse posture
 - Customer Detail and Item Detail breadcrumbs include their parent detail family before the record name
 - Docker Playwright role smoke and Sales Order Analysis smoke passed for Sales Manager and Sales User
@@ -87,6 +92,7 @@ Current freeze facts:
 
 Documents in this folder:
 
+- `multi-workspace-foundation-contract-v1.md`
 - `shared-component-and-implementation-golden-rule-standard-v1.md`
 - `sales-console-final-freeze-2026-05-03.md`
 - `enterprise-shared-ui-component-standard-v1.md`

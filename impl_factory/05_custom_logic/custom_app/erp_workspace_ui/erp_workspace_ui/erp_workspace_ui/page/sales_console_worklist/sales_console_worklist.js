@@ -1,14 +1,19 @@
 /* global frappe, $ */
 
 (function () {
-  const PAGE_KEY = 'sales-console-worklist';
-  const CONTEXT_METHOD = 'erp_workspace_ui.sales_console.worklist.get_sales_console_worklist_context';
-  const DIRECTORY_QUEUE_BY_DOCTYPE = {
+  const workspaceRegistry = window.erpWorkspaceUiWorkspaceRegistry || {};
+  const salesWorkspace = typeof workspaceRegistry.sales === 'function' ? workspaceRegistry.sales() : null;
+  const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
+  const salesMethods = salesWorkspace && salesWorkspace.methods ? salesWorkspace.methods : {};
+  const PAGE_KEY = salesRoutes.worklist || 'sales-console-worklist';
+  const HOME_ROUTE = salesRoutes.home || 'sales-console';
+  const CONTEXT_METHOD = salesMethods.worklistContext || 'erp_workspace_ui.sales_console.worklist.get_sales_console_worklist_context';
+  const DIRECTORY_QUEUE_BY_DOCTYPE = Object.assign({
     Quotation: 'quotation_directory',
     'Sales Order': 'sales_order_directory',
     Customer: 'customer_directory',
     Item: 'item_directory',
-  };
+  }, (salesWorkspace && salesWorkspace.directoryQueuesByDoctype) || {});
   let activeViewState = null;
 
   function routeToList(doctype, filters) {
@@ -366,7 +371,7 @@
       onAction(details) {
         if (!details) return;
         if (details.key === 'refresh') return loadRoute(viewState, viewState.activeFilters || {}, { partialDataRefresh: true });
-        if (details.key === 'back_to_console') return frappe.set_route('sales-console');
+        if (details.key === 'back_to_console') return frappe.set_route(HOME_ROUTE);
         if (details.key === 'apply_filters') return loadRoute(viewState, collectFilterValues(viewState.$host), { partialDataRefresh: true });
         if (details.key === 'reset_filters') {
           const resetFilters = collectHiddenFilterValues(viewState.$host);
