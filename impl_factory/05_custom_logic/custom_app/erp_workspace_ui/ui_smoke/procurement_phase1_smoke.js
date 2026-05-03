@@ -141,7 +141,7 @@ async function checkReadyProcurementUser(page, user, report) {
     );
     if (apiState === "ready" || apiState === "empty") {
       assert(
-        actionKeys.slice(0, 3).join(",") === "refresh,reset_filters,apply_filters",
+        actionKeys.slice(0, 3).join(",") === "apply_filters,reset_filters,refresh",
         `${user.label}: ${item.key} UI action order mismatch`,
         { actionKeys }
       );
