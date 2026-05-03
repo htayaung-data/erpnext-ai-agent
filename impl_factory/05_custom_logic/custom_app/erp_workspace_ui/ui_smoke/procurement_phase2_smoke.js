@@ -49,14 +49,38 @@ function stateKind(payload) {
   return payload && payload.results && payload.results.state ? payload.results.state.kind : payload && payload.state ? payload.state.kind : "missing";
 }
 
+function valuesFromContainer(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return Object.values(value);
+  return [];
+}
+
+function pushAction(actions, action) {
+  if (!action) return;
+  if (typeof action === "string") {
+    actions.push({ key: action, label: action });
+    return;
+  }
+  if (typeof action === "object") actions.push(action);
+}
+
+function collectCellActions(cell) {
+  const actions = [];
+  if (!cell || typeof cell !== "object") return actions;
+  if (cell.actionKey) pushAction(actions, { key: cell.actionKey, label: cell.actionKey });
+  pushAction(actions, cell.action);
+  pushAction(actions, cell.target);
+  return actions;
+}
+
 function collectActions(payload) {
   const actions = [];
   const controls = payload && payload.controls ? payload.controls : {};
-  (controls.actions || []).forEach((action) => actions.push(action));
+  valuesFromContainer(controls.actions).forEach((action) => pushAction(actions, action));
   ((payload && payload.results && payload.results.rows) || []).forEach((row) => {
-    (row.actions || []).forEach((action) => actions.push(action));
-    (row.cells || []).forEach((cell) => {
-      if (cell && cell.actionKey) actions.push({ key: cell.actionKey, label: cell.actionKey });
+    valuesFromContainer(row.actions).forEach((action) => pushAction(actions, action));
+    valuesFromContainer(row.cells).forEach((cell) => {
+      collectCellActions(cell).forEach((action) => pushAction(actions, action));
     });
   });
   return actions;
