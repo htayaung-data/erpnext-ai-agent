@@ -3,6 +3,7 @@ import unittest
 from erp_workspace_ui import hooks
 from erp_workspace_ui.workspace_registry import (
     get_active_workspace_definitions,
+    get_procurement_workspace_definition,
     get_sales_workspace_definition,
     get_workspace_by_route,
     get_workspace_definition,
@@ -45,14 +46,82 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "sales")
 
-        self.assertIsNone(get_workspace_by_route("procurement-console"))
+    def test_procurement_console_phase0_registry_definition(self):
+        workspace = get_procurement_workspace_definition()
+
+        self.assertEqual(workspace["workspace_id"], "procurement")
+        self.assertEqual(workspace["status"], "phase_0")
+        self.assertEqual(workspace["title"], "Procurement Console")
+        self.assertEqual(
+            workspace["routes"],
+            {
+                "launcher": "procurement-console-home",
+                "launcher_path": "/desk/procurement-console-home",
+                "home": "procurement-console",
+                "home_path": "/desk/procurement-console",
+                "worklist": "procurement-console-worklist",
+                "report": "procurement-console-report",
+            },
+        )
+        self.assertEqual(
+            workspace["methods"]["bootstrap"],
+            "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
+        )
+        self.assertEqual(
+            workspace["methods"]["worklist_context"],
+            "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["report_context"],
+            "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
+        )
+        self.assertEqual(
+            workspace["fallback_items"],
+            [
+                {
+                    "key": "procurement_console_home",
+                    "label": "Overview",
+                    "icon": "home",
+                    "target": {"kind": "page", "route": "procurement-console"},
+                }
+            ],
+        )
+
+    def test_procurement_console_routes_resolve_to_registry_definition(self):
+        for route_key in [
+            "procurement-console-home",
+            "procurement-console",
+            "procurement-console-worklist",
+            "procurement-console-report",
+        ]:
+            with self.subTest(route_key=route_key):
+                workspace = get_workspace_by_route(route_key)
+                self.assertIsNotNone(workspace)
+                self.assertEqual(workspace["workspace_id"], "procurement")
+
+    def test_workspace_route_and_method_values_are_unique(self):
+        workspaces = get_active_workspace_definitions()
+        route_values = []
+        method_values = []
+        for workspace in workspaces:
+            route_values.extend(
+                value for key, value in workspace["routes"].items() if not key.endswith("_path")
+            )
+            method_values.extend(workspace["methods"].values())
+
+        self.assertEqual(len(route_values), len(set(route_values)))
+        self.assertEqual(len(method_values), len(set(method_values)))
 
     def test_active_workspace_definitions_are_copy_safe(self):
         workspace = get_workspace_definition("sales")
         workspace["routes"]["home"] = "changed-locally"
 
+        procurement = get_workspace_definition("procurement")
+        procurement["routes"]["home"] = "changed-procurement-locally"
+
         self.assertEqual(get_sales_workspace_definition()["routes"]["home"], "sales-console")
-        self.assertEqual(len(get_active_workspace_definitions()), 1)
+        self.assertEqual(get_procurement_workspace_definition()["routes"]["home"], "procurement-console")
+        self.assertEqual(len(get_active_workspace_definitions()), 2)
 
     def test_roadmap_uses_matrix_names_and_explicit_name_reviews(self):
         roadmap = get_workspace_roadmap()
@@ -64,14 +133,17 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         )
         self.assertNotIn("Inventory Console", matrix_names)
 
+        procurement = next(item for item in roadmap if item["workspace_id"] == "procurement")
         finance = next(item for item in roadmap if item["workspace_id"] == "finance")
         executive = next(item for item in roadmap if item["workspace_id"] == "executive")
+        self.assertEqual(procurement["recommended_name"], "Procurement Console")
+        self.assertEqual(procurement["status"], "phase_0")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")
         self.assertEqual(executive["status"], "name_review")
 
-    def test_hooks_load_registry_before_shared_boot_runtime(self):
+    def test_hooks_still_keep_sales_as_default_home_and_app_screen(self):
         include_js = list(hooks.app_include_js)
 
         self.assertEqual(hooks.app_home, "/desk/sales-console-home")

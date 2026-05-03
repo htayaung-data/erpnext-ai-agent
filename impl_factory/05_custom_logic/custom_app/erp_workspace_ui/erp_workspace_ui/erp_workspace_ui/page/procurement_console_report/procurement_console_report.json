@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-report",
+  "page_name": "procurement-console-report",
+  "title": "Procurement Console Report",
+  "icon": "octicon octicon-graph",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

@@ -56,6 +56,68 @@ _SALES_WORKSPACE: dict[str, Any] = {
 }
 
 
+_PROCUREMENT_WORKSPACE: dict[str, Any] = {
+	"workspace_id": "procurement",
+	"status": "phase_0",
+	"title": "Procurement Console",
+	"mode_label": "Procurement Workspace",
+	"role_family": "Procurement",
+	"routes": {
+		"launcher": "procurement-console-home",
+		"launcher_path": "/desk/procurement-console-home",
+		"home": "procurement-console",
+		"home_path": "/desk/procurement-console",
+		"worklist": "procurement-console-worklist",
+		"report": "procurement-console-report",
+	},
+	"methods": {
+		"bootstrap": "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
+		"sidebar_context": "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context",
+		"workspace_search": "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace",
+		"worklist_context": "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
+		"report_context": "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
+	},
+	"managed_doctypes": {
+		"Supplier": "supplier_directory",
+		"Supplier Group": "supplier_directory",
+		"Item": "supplier_price_review",
+		"Item Price": "supplier_price_review",
+		"Item Supplier": "supplier_price_review",
+		"Material Request": "purchase_request_directory",
+		"Request for Quotation": "rfq_directory",
+		"Supplier Quotation": "supplier_quotation_directory",
+		"Purchase Order": "purchase_order_directory",
+		"Purchase Receipt": "pending_receipt_visibility",
+		"Purchase Invoice": "billing_status_visibility",
+	},
+	"directory_queues_by_doctype": {
+		"Supplier": "supplier_directory",
+		"Material Request": "purchase_request_directory",
+		"Request for Quotation": "rfq_directory",
+		"Supplier Quotation": "supplier_quotation_directory",
+		"Purchase Order": "purchase_order_directory",
+	},
+	"downstream_visibility_doctypes": {
+		"Purchase Receipt": "pending_receipt_visibility",
+		"Purchase Invoice": "billing_status_visibility",
+	},
+	"sidebar": {
+		"home_key": "procurement_console_home",
+		"home_label": "Overview",
+		"section_key": "workspace",
+		"section_label": "Workspace",
+	},
+	"fallback_items": [
+		{
+			"key": "procurement_console_home",
+			"label": "Overview",
+			"icon": "home",
+			"target": {"kind": "page", "route": "procurement-console"},
+		},
+	],
+}
+
+
 _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 	{
 		"workspace_id": "sales",
@@ -71,7 +133,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Procurement Console",
 		"wave": "first",
 		"priority": 2,
-		"status": "planned",
+		"status": "phase_0",
 	},
 	{
 		"workspace_id": "warehouse",
@@ -126,6 +188,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 
 _ACTIVE_WORKSPACES: dict[str, dict[str, Any]] = {
 	"sales": _SALES_WORKSPACE,
+	"procurement": _PROCUREMENT_WORKSPACE,
 }
 
 
@@ -158,3 +221,7 @@ def get_workspace_roadmap() -> list[dict[str, Any]]:
 
 def get_sales_workspace_definition() -> dict[str, Any]:
 	return get_workspace_definition("sales")
+
+
+def get_procurement_workspace_definition() -> dict[str, Any]:
+	return get_workspace_definition("procurement")

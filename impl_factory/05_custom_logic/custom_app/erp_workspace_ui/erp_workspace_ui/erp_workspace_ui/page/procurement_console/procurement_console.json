@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console",
+  "page_name": "procurement-console",
+  "title": "Procurement Console",
+  "icon": "octicon octicon-briefcase",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

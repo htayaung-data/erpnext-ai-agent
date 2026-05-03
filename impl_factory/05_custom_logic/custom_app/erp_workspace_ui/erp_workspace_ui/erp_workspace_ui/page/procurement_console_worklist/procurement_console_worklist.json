@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-worklist",
+  "page_name": "procurement-console-worklist",
+  "title": "Procurement Console Worklist",
+  "icon": "octicon octicon-list-unordered",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

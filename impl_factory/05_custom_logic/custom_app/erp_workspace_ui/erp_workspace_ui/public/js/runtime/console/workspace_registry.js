@@ -54,13 +54,70 @@
     ],
   };
 
+  const procurementWorkspace = {
+    workspaceId: "procurement",
+    status: "phase_0",
+    title: "Procurement Console",
+    modeLabel: "Procurement Workspace",
+    roleFamily: "Procurement",
+    routes: {
+      launcher: "procurement-console-home",
+      launcherPath: "/desk/procurement-console-home",
+      home: "procurement-console",
+      homePath: "/desk/procurement-console",
+      worklist: "procurement-console-worklist",
+      report: "procurement-console-report",
+    },
+    methods: {
+      bootstrap: "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
+      sidebarContext: "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context",
+      workspaceSearch: "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace",
+      worklistContext: "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
+      reportContext: "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
+    },
+    managedDoctypes: {
+      Supplier: "supplier_directory",
+      "Supplier Group": "supplier_directory",
+      Item: "supplier_price_review",
+      "Item Price": "supplier_price_review",
+      "Item Supplier": "supplier_price_review",
+      "Material Request": "purchase_request_directory",
+      "Request for Quotation": "rfq_directory",
+      "Supplier Quotation": "supplier_quotation_directory",
+      "Purchase Order": "purchase_order_directory",
+      "Purchase Receipt": "pending_receipt_visibility",
+      "Purchase Invoice": "billing_status_visibility",
+    },
+    directoryQueuesByDoctype: {
+      Supplier: "supplier_directory",
+      "Material Request": "purchase_request_directory",
+      "Request for Quotation": "rfq_directory",
+      "Supplier Quotation": "supplier_quotation_directory",
+      "Purchase Order": "purchase_order_directory",
+    },
+    downstreamVisibilityDoctypes: {
+      "Purchase Receipt": "pending_receipt_visibility",
+      "Purchase Invoice": "billing_status_visibility",
+    },
+    sidebar: {
+      homeKey: "procurement_console_home",
+      homeLabel: "Overview",
+      sectionKey: "workspace",
+      sectionLabel: "Workspace",
+    },
+    fallbackItems: [
+      { key: "procurement_console_home", label: "Overview", icon: "home", target: { kind: "page", route: "procurement-console" } },
+    ],
+  };
+
   const activeWorkspaces = {
     sales: salesWorkspace,
+    procurement: procurementWorkspace,
   };
 
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
-    { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "planned" },
+    { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_0" },
     { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "planned" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
@@ -100,11 +157,16 @@
     return get("sales");
   }
 
+  function procurement() {
+    return get("procurement");
+  }
+
   root.erpWorkspaceUiWorkspaceRegistry = {
     get,
     getByRoute,
     route,
     sales,
+    procurement,
     roadmap: () => clone(roadmap),
   };
 })();
