@@ -171,11 +171,13 @@ def _detail_payload(
 
 
 def _get_po(po_name: str) -> dict[str, object] | None:
-	try:
-		value = frappe.db.get_value("Purchase Order", po_name, PO_FIELDS, as_dict=True)
-		return dict(value) if value else None
-	except Exception:
-		return None
+	rows = common.get_list(
+		"Purchase Order",
+		fields=PO_FIELDS,
+		filters=[["Purchase Order", "name", "=", po_name]],
+		limit=1,
+	)
+	return dict(rows[0]) if rows else None
 
 
 def _item_rows(po_name: str) -> list[dict[str, object]]:

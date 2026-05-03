@@ -19,6 +19,7 @@ CAPTURED_GET_LIST_CALLS = []
 CAPTURED_GET_ALL_CALLS = []
 CAPTURED_REPORT_CALLS = []
 HAS_QUOTE_STATUS = True
+HIDDEN_PURCHASE_ORDER_LIST_NAMES = set()
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -75,6 +76,75 @@ def _filter_rows(doctype, rows, filters):
     return filtered
 
 
+def _purchase_order_rows():
+    return [
+        {
+            "name": "PUR-DUE-001",
+            "supplier": "SUP-001",
+            "supplier_name": "Alpha Supplier",
+            "company": "Demo Company",
+            "transaction_date": "2026-05-02",
+            "schedule_date": "2026-06-01",
+            "status": "To Receive and Bill",
+            "workflow_state": "Pending Purchase Approval",
+            "docstatus": 1,
+            "per_received": 0,
+            "per_billed": 0,
+            "grand_total": 1000,
+            "currency": "MMK",
+            "modified": "2026-05-03",
+        },
+        {
+            "name": "PUR-OVERDUE-001",
+            "supplier": "SUP-001",
+            "supplier_name": "Alpha Supplier",
+            "company": "Demo Company",
+            "transaction_date": "2026-04-20",
+            "schedule_date": "2026-04-30",
+            "status": "To Receive and Bill",
+            "workflow_state": "Approved",
+            "docstatus": 1,
+            "per_received": 0,
+            "per_billed": 0,
+            "grand_total": 2200,
+            "currency": "MMK",
+            "modified": "2026-05-03",
+        },
+        {
+            "name": "PUR-PARTIAL-001",
+            "supplier": "SUP-002",
+            "supplier_name": "Beta Supplier",
+            "company": "Demo Company",
+            "transaction_date": "2026-05-01",
+            "schedule_date": "2026-05-20",
+            "status": "To Receive and Bill",
+            "workflow_state": "Approved",
+            "docstatus": 1,
+            "per_received": 50,
+            "per_billed": 20,
+            "grand_total": 3000,
+            "currency": "MMK",
+            "modified": "2026-05-03",
+        },
+        {
+            "name": "PUR-BILLING-001",
+            "supplier": "SUP-003",
+            "supplier_name": "Gamma Supplier",
+            "company": "Demo Company",
+            "transaction_date": "2026-05-01",
+            "schedule_date": "2026-05-12",
+            "status": "To Bill",
+            "workflow_state": "Approved",
+            "docstatus": 1,
+            "per_received": 100,
+            "per_billed": 40,
+            "grand_total": 4000,
+            "currency": "MMK",
+            "modified": "2026-05-03",
+        },
+    ]
+
+
 def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     CAPTURED_GET_LIST_CALLS.append(
         {
@@ -111,72 +181,8 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
             }
         ], filters)
     if doctype == "Purchase Order":
-        return _filter_rows(doctype, [
-            {
-                "name": "PUR-DUE-001",
-                "supplier": "SUP-001",
-                "supplier_name": "Alpha Supplier",
-                "company": "Demo Company",
-                "transaction_date": "2026-05-02",
-                "schedule_date": "2026-06-01",
-                "status": "To Receive and Bill",
-                "workflow_state": "Pending Purchase Approval",
-                "docstatus": 1,
-                "per_received": 0,
-                "per_billed": 0,
-                "grand_total": 1000,
-                "currency": "MMK",
-                "modified": "2026-05-03",
-            },
-            {
-                "name": "PUR-OVERDUE-001",
-                "supplier": "SUP-001",
-                "supplier_name": "Alpha Supplier",
-                "company": "Demo Company",
-                "transaction_date": "2026-04-20",
-                "schedule_date": "2026-04-30",
-                "status": "To Receive and Bill",
-                "workflow_state": "Approved",
-                "docstatus": 1,
-                "per_received": 0,
-                "per_billed": 0,
-                "grand_total": 2200,
-                "currency": "MMK",
-                "modified": "2026-05-03",
-            },
-            {
-                "name": "PUR-PARTIAL-001",
-                "supplier": "SUP-002",
-                "supplier_name": "Beta Supplier",
-                "company": "Demo Company",
-                "transaction_date": "2026-05-01",
-                "schedule_date": "2026-05-20",
-                "status": "To Receive and Bill",
-                "workflow_state": "Approved",
-                "docstatus": 1,
-                "per_received": 50,
-                "per_billed": 20,
-                "grand_total": 3000,
-                "currency": "MMK",
-                "modified": "2026-05-03",
-            },
-            {
-                "name": "PUR-BILLING-001",
-                "supplier": "SUP-003",
-                "supplier_name": "Gamma Supplier",
-                "company": "Demo Company",
-                "transaction_date": "2026-05-01",
-                "schedule_date": "2026-05-12",
-                "status": "To Bill",
-                "workflow_state": "Approved",
-                "docstatus": 1,
-                "per_received": 100,
-                "per_billed": 40,
-                "grand_total": 4000,
-                "currency": "MMK",
-                "modified": "2026-05-03",
-            },
-        ], filters)
+        rows = _filter_rows(doctype, _purchase_order_rows(), filters)
+        return [row for row in rows if row["name"] not in HIDDEN_PURCHASE_ORDER_LIST_NAMES]
     if doctype == "Request for Quotation":
         return _filter_rows(doctype, [
             {
@@ -319,7 +325,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
 
 def _db_get_value(doctype, name=None, fieldname=None, as_dict=False, **kwargs):
     if doctype == "Purchase Order" and name:
-        rows = _get_list("Purchase Order", filters=[["Purchase Order", "name", "=", name]])
+        rows = _filter_rows("Purchase Order", _purchase_order_rows(), [["Purchase Order", "name", "=", name]])
         if not rows:
             return None
         row = rows[0]
@@ -527,6 +533,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         CAPTURED_GET_LIST_CALLS.clear()
         CAPTURED_GET_ALL_CALLS.clear()
         CAPTURED_REPORT_CALLS.clear()
+        HIDDEN_PURCHASE_ORDER_LIST_NAMES.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -694,6 +701,24 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["detail"]["items"]["rows"][0]["cells"]["remaining_qty"], "4")
         self.assertEqual(payload["action_targets"]["back_to_queue"]["kind"], "worklist")
         _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_po_follow_up_detail_requires_parent_visible_in_permission_aware_list(self):
+        HIDDEN_PURCHASE_ORDER_LIST_NAMES.add("PUR-PARTIAL-001")
+        CAPTURED_GET_LIST_CALLS.clear()
+        CAPTURED_GET_ALL_CALLS.clear()
+
+        payload = purchase_order_detail.get_purchase_order_follow_up_detail_context("PUR-PARTIAL-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["detail"]["state"]["title"], "Purchase Order not found")
+        self.assertTrue(
+            any(
+                call["doctype"] == "Purchase Order"
+                and _filter_contains(call["filters"], ["Purchase Order", "name", "=", "PUR-PARTIAL-001"])
+                for call in CAPTURED_GET_LIST_CALLS
+            )
+        )
+        self.assertFalse(any(call["doctype"] in {"Purchase Order Item", "Purchase Receipt Item", "Purchase Invoice Item"} for call in CAPTURED_GET_ALL_CALLS))
 
     def test_po_follow_up_detail_restricted_for_finance_executive_only(self):
         _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])
