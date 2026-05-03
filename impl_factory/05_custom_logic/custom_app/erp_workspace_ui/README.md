@@ -24,7 +24,17 @@ Enterprise ERPNext workspace and console experience for the UI workstream.
 
 Current confirmed branch: `feature/erpnext-ui-design`
 
-Current confirmed commit: `6dbd85c fix: forward socket origin through caddy`
+Current confirmed UI baseline commit: `6dbd85c fix: forward socket origin through caddy`
+
+Current confirmed documentation alignment commit: `50cd6fa docs: align sales console freeze documentation`
+
+Workspace-wide governance starts from:
+
+1. `_docs/erp-ui-customization/shared-component-and-implementation-golden-rule-standard-v1.md`
+2. `_docs/erp-ui-customization/enterprise-shared-ui-component-standard-v1.md`
+3. `_docs/erp-ui-customization/enterprise-shared-ui-component-implementation-contract-v1.md`
+
+These documents define the Shared Component and Implementation Golden Rule Standard for all workspaces. Sales Console is the current reference implementation, not the naming scope of the shared component system.
 
 The confirmed Sale Console surface is:
 

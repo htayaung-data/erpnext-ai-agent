@@ -144,4 +144,14 @@ Verification completed on 2026-05-03:
 
 The implementation and active docs are aligned for final owner review.
 
-Do not start the next workspace from old design notes. Start from the active shared component standard, the implementation contract, this alignment note, and the current code.
+Do not start the next workspace from old design notes or Sales Console screenshots.
+
+Start from:
+
+1. `shared-component-and-implementation-golden-rule-standard-v1.md`
+2. `enterprise-shared-ui-component-standard-v1.md`
+3. `enterprise-shared-ui-component-implementation-contract-v1.md`
+4. this alignment note
+5. the current code
+
+The Sales Console is the current reference implementation, not the name or scope of the shared component system.

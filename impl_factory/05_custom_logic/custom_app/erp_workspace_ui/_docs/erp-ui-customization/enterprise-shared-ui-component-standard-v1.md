@@ -1,14 +1,17 @@
-# Enterprise Shared UI Component Standard v1
+# Shared Component and Implementation Golden Rule Parent Standard v1
 
-Date: 2026-04-28
-Status: Active standard for future ERP workspace implementation
-Primary reference implementation: Sales Console
+Date: 2026-05-03
+Status: Mandatory workspace-wide parent standard for all ERP workspace implementation
+Canonical Golden Rule document: `shared-component-and-implementation-golden-rule-standard-v1.md`
+Primary reference implementation: Sales Console final freeze package
 Source of truth: current code in `feature/erpnext-ui-design`
 Mandatory companion: `enterprise-shared-ui-component-implementation-contract-v1.md`
 
 ## 1. Purpose
 
-This standard converts the Sales Console implementation into a reusable enterprise UI contract for the next ERP workspaces.
+This standard defines the reusable enterprise UI contract for all ERP workspaces.
+
+Sales Console is the current proof that the contract can work in production, but the standard is not a Sales Console-only component guide.
 
 The goal is not to copy the Sales Console page by page.
 
@@ -27,11 +30,30 @@ The goal is to copy the operating system underneath it:
 
 This document should be read before any new workspace implementation begins.
 
+The required starting point is `shared-component-and-implementation-golden-rule-standard-v1.md`.
+
 The companion implementation contract is mandatory for execution.
 
 Use this document to decide what the product should feel like.
 
 Use `enterprise-shared-ui-component-implementation-contract-v1.md` to decide whether a page is allowed to be called complete.
+
+### 1.1 Golden Rule Summary
+
+The short version for future workspaces:
+
+1. business purpose before UI
+2. shared shell before page layout
+3. page archetype before coding
+4. backend owns business truth
+5. productized route before raw ERP route
+6. one active navigation truth
+7. in-place interaction by default
+8. premium means stable and useful
+9. business copy must earn its space
+10. permission-safe mutation only
+11. evidence before freeze
+12. shared component changes are product changes
 
 ## 2. Mini-Phase Plan For This Standard
 
@@ -41,7 +63,7 @@ The standard itself should be implemented in controlled mini-phases.
 
 Goal:
 
-Extract reusable patterns from the actual Sales Console code and docs.
+Extract reusable patterns from the actual finalized Sales Console code and docs.
 
 Current completed inputs:
 
@@ -53,7 +75,7 @@ Current completed inputs:
 
 Output:
 
-This standard becomes the cross-workspace contract.
+This standard and the Golden Rule document become the cross-workspace contract.
 
 ### ESS-2 Component Taxonomy
 
@@ -167,9 +189,9 @@ Purpose:
 
 Decision:
 
-Future workspace work must use the parent standard and the implementation contract together.
+Future workspace work must use the Golden Rule document, this parent standard, and the implementation contract together.
 
-The parent standard alone is not sufficient for execution.
+No single document alone is sufficient for execution.
 
 ## 3. Enterprise Product Principles
 
@@ -1219,6 +1241,8 @@ Do not:
 
 Use this sequence for every next workspace.
 
+Start with `shared-component-and-implementation-golden-rule-standard-v1.md`, then use this detailed parent standard and the implementation contract.
+
 ### Step 1: Define Business Scope
 
 Before code, write:
@@ -1254,6 +1278,7 @@ Choose the shared runtime first:
 4. report shell for analytics
 5. child-page shell for document execution
 6. form-panel pattern for create/edit profile pages
+7. shared `erpw-` CSS classes and `--erpw-` tokens for repeated visual behavior
 
 Only create a new shared runtime when no current runtime fits.
 
@@ -1337,6 +1362,7 @@ These are not allowed in future workspace implementation without explicit approv
 13. adding AI features before the business workflow is stable
 14. adding a sidebar `Reports` item before a real report home exists
 15. copying Sales Console visual components without copying its route and permission discipline
+16. calling a page complete before the Golden Rule freeze evidence exists
 
 ## 14. Required Acceptance Checklist
 
@@ -1423,9 +1449,9 @@ Use this checklist before marking any page complete.
 7. token and business-data formatting discipline is checked
 8. the page is safe to use as a future reference pattern
 
-## 15. Sales Console As Current Reference
+## 15. Current Reference Implementation, Not Workspace Scope
 
-Sales Console is the current best reference for:
+Sales Console is the current best reference implementation for:
 
 1. stable workspace sidebar
 2. scoped workspace search
@@ -1437,6 +1463,9 @@ Sales Console is the current best reference for:
 8. productized customer detail route
 9. business copy reduction
 10. route guard states
+11. in-place Apply, Reset, and Refresh behavior
+12. productized item and customer drill-down pages
+13. role-visible report catalog and restricted direct-route safety
 
 Sales Console is not a reason to copy:
 
@@ -1444,6 +1473,8 @@ Sales Console is not a reason to copy:
 2. sales-only document relationships
 3. sales-only role assumptions
 4. unfinished deferred features
+5. the exact sidebar page list
+6. the exact metric cards or report cards
 
 Future workspaces should inherit the standard, not the accidents of the first implementation.
 
@@ -1451,11 +1482,13 @@ Future workspaces should inherit the standard, not the accidents of the first im
 
 This standard must be used with:
 
-1. `enterprise-shared-ui-component-implementation-contract-v1.md`
-2. `sales-console-enterprise-readiness-audit-mini-phase-plan.md`
-3. `sales-console-enterprise-readiness-sera-0-baseline.md`
-4. `sales-console-enterprise-readiness-sera-1-route-ownership.md`
-5. future SERA security, stability, and page-family audit notes
+1. `shared-component-and-implementation-golden-rule-standard-v1.md`
+2. `enterprise-shared-ui-component-implementation-contract-v1.md`
+3. `sales-console-final-documentation-alignment-2026-05-03.md`
+4. `sales-console-enterprise-readiness-audit-mini-phase-plan.md`
+5. `sales-console-enterprise-readiness-sera-0-baseline.md`
+6. `sales-console-enterprise-readiness-sera-1-route-ownership.md`
+7. future SERA security, stability, and page-family audit notes
 
 The implementation contract is the practical execution gate.
 
@@ -1463,15 +1496,17 @@ SERA audit notes prove whether the Sales Console reference implementation actual
 
 ## 17. Next Recommended Audit Work
 
-Continue the page-by-page readiness audit for Sales Console.
+For Sales Console, maintain the freeze notes and rerun the validation evidence before any major change.
 
-The audit should verify:
+For the next workspace, begin with the Golden Rule sequence:
 
-1. stability
-2. route ownership
-3. security and permissions
-4. UI alignment
-5. native fallback boundaries
-6. remaining deferred improvements
+1. scope and role definition
+2. page archetype mapping
+3. shared shell selection
+4. route ownership matrix
+5. permission and mutation matrix
+6. shared component reuse plan
+7. browser and role verification plan
+8. docs and test update plan
 
-Only after that audit should a new workspace implementation start.
+Do not start broad page implementation until this plan exists.

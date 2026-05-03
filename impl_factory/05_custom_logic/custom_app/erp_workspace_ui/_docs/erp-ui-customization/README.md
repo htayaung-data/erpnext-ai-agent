@@ -5,8 +5,9 @@ This folder records freeze decisions, deferred UI work, and implementation notes
 Current implementation focus:
 
 - Sales Console
-- Enterprise shared UI component standard
-- Enterprise shared UI implementation contract
+- Shared Component and Implementation Golden Rule Standard
+- workspace-wide shared UI component standard
+- workspace-wide shared UI implementation contract
 - Sales Console enterprise readiness audit
 - Sales Console operating foundation mini-phase
 - Sales Console operational worklists
@@ -24,7 +25,8 @@ Implementation source of truth currently lives in the ERP UI Design branch:
 
 - branch: `feature/erpnext-ui-design`
 - worktree: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design`
-- current confirmed commit: `6dbd85c fix: forward socket origin through caddy`
+- current confirmed UI baseline commit: `6dbd85c fix: forward socket origin through caddy`
+- current confirmed documentation alignment commit: `50cd6fa docs: align sales console freeze documentation`
 - previous UI polish commit: `d71592c style: polish item detail cards and breadcrumb`
 
 Primary code paths:
@@ -79,6 +81,7 @@ Current freeze facts:
 
 Documents in this folder:
 
+- `shared-component-and-implementation-golden-rule-standard-v1.md`
 - `enterprise-shared-ui-component-standard-v1.md`
 - `enterprise-shared-ui-component-implementation-contract-v1.md`
 - `sales-console-enterprise-readiness-audit-mini-phase-plan.md`
@@ -102,3 +105,7 @@ Documents in this folder:
 - `sales-console-mini-phase-6-operating-foundation.md`
 - `sales-console-business-copy-contract-v1.md`
 - `sales-console-navigation-contract-v1.md`
+
+Future workspace implementation must start from `shared-component-and-implementation-golden-rule-standard-v1.md`.
+
+The Sales Console is the current reference implementation, not the naming scope of the shared component standard.

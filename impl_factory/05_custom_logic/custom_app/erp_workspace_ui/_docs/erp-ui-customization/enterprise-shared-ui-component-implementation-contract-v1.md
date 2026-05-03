@@ -1,15 +1,18 @@
-# Enterprise Shared UI Component Implementation Contract v1
+# Shared Component and Implementation Golden Rule Execution Contract v1
 
-Date: 2026-04-28
-Status: Mandatory implementation contract for future ERP workspace pages
-Parent standard: `enterprise-shared-ui-component-standard-v1.md`
-Reference implementation: Sales Console on `feature/erpnext-ui-design`
+Date: 2026-05-03
+Status: Mandatory execution contract for all future ERP workspace pages
+Golden Rule standard: `shared-component-and-implementation-golden-rule-standard-v1.md`
+Detailed parent standard: `enterprise-shared-ui-component-standard-v1.md`
+Reference implementation: Sales Console final freeze package on `feature/erpnext-ui-design`
 
 ## 1. Purpose
 
-This document turns the Enterprise Shared UI Component Standard into an execution contract.
+This document turns the Shared Component and Implementation Golden Rule Standard into an execution contract.
 
-The parent standard explains the philosophy.
+The Golden Rule document defines the non-negotiable workspace-wide rules.
+
+The detailed parent standard explains the philosophy and component standards.
 
 This contract defines what future implementation agents must actually build, verify, and document before a workspace page is considered enterprise-grade.
 
@@ -29,16 +32,17 @@ It is the practical gate that protects the project from page-by-page drift.
 
 Future ERP UI work must follow this order:
 
-1. define the business role and job
-2. choose the page archetype
-3. choose the shared shell
-4. define the backend payload contract
-5. define route ownership
-6. define permission and mutation boundaries
-7. implement shared behavior first
-8. implement page-specific business logic second
-9. verify browser behavior
-10. update docs before calling the page complete
+1. read the Golden Rule standard
+2. define the business role and job
+3. choose the page archetype
+4. choose the shared shell
+5. define the backend payload contract
+6. define route ownership
+7. define permission and mutation boundaries
+8. implement shared behavior first
+9. implement page-specific business logic second
+10. verify browser behavior
+11. update tests and docs before calling the page complete
 
 If a proposed page cannot pass these steps, do not start coding it yet.
 
@@ -95,6 +99,22 @@ Waivers must not be used for:
 ## 3. Non-Negotiable Enterprise Gates
 
 Every page must satisfy these gates.
+
+### Gate 0: Golden Rule Intake
+
+Before implementation, the owner must confirm:
+
+1. the Golden Rule document was reviewed
+2. the page archetype is selected
+3. the shared shell choice is recorded
+4. any missing shared behavior is identified before page-local work begins
+5. tests and docs that must change are listed
+
+Fail examples:
+
+1. starting from a screenshot without route and permission planning
+2. copying Sales Console cards before deciding the new workspace's business purpose
+3. adding local CSS for a problem that belongs in the shared shell
 
 ### Gate 1: Business Purpose
 
@@ -309,6 +329,7 @@ Required:
 4. route ownership decision
 5. permission/mutation decision if data changes
 6. docs update or explicit no-docs-needed note
+7. shared component impact check when shared runtime or shared CSS changes
 
 ### Gate 13: Role Matrix Evidence
 
@@ -901,6 +922,26 @@ Rules:
 3. do not round business-critical values in a way that changes the decision
 4. use ERP/company currency and locale settings where available
 
+### 7.9 Shared Component Change Contract
+
+Any change to shared runtime or shared CSS is a product-level change.
+
+Required before changing shared components:
+
+1. identify which page families consume the component
+2. describe the business or stability reason for the change
+3. keep existing payload fields backward compatible where possible
+4. update the component contract if payload behavior changes
+5. test at least one existing consumer
+6. update docs if the standard behavior changed
+
+Blocked patterns:
+
+1. changing a shared token only to satisfy one screen
+2. adding a page-specific class when a shared class should exist
+3. duplicating filter, action, table, or card markup outside the shared shell
+4. breaking an existing consumer without a documented migration
+
 ## 8. Permission And Data Mutation Matrix Template
 
 Every mutation page must document this matrix.
@@ -953,6 +994,8 @@ Required checks:
 10. test empty or restricted state if available
 11. test save action if the page mutates data
 12. verify no native ERP menu/search leaks into normal workspace journey
+13. verify Socket.IO or realtime console warnings when the page depends on realtime signals
+14. verify no full page reload occurs for shell-supported Apply, Reset, or Refresh actions
 
 Record:
 
@@ -967,17 +1010,19 @@ Record:
 
 A page is done only when all are true:
 
-1. business purpose is documented
-2. archetype is declared
-3. shared shell is used
-4. backend payload contract is defined
-5. route ownership is documented
-6. permission boundaries are documented
-7. visual stability is checked
-8. accessibility basics are checked
-9. browser verification is recorded
-10. token and data-formatting discipline is checked
-11. docs match code
+1. Golden Rule intake is complete
+2. business purpose is documented
+3. archetype is declared
+4. shared shell is used
+5. backend payload contract is defined
+6. route ownership is documented
+7. permission boundaries are documented
+8. visual stability is checked
+9. accessibility basics are checked
+10. browser verification is recorded
+11. token and data-formatting discipline is checked
+12. docs match code
+13. tests are updated where behavior changed
 
 A workspace is done only when:
 
@@ -987,7 +1032,8 @@ A workspace is done only when:
 4. role matrix assumptions are documented
 5. shared component changes are documented
 6. deferred items are listed
-7. the branch is committed
+7. browser automation or manual browser evidence is recorded
+8. the branch is committed
 
 ### 11.1 Final Grade Labels
 
@@ -1073,24 +1119,26 @@ Future AI notes should answer:
 
 Any prompt given to a future AI agent must include:
 
-1. workspace business scope
-2. target roles
-3. page list with archetypes
-4. shared shells to reuse
-5. route ownership rules
-6. permission and mutation boundaries
-7. forbidden patterns
-8. acceptance checklist
-9. browser verification script
-10. instruction to update docs to match code
+1. the exact instruction to follow `shared-component-and-implementation-golden-rule-standard-v1.md`
+2. workspace business scope
+3. target roles
+4. page list with archetypes
+5. shared shells to reuse
+6. route ownership rules
+7. permission and mutation boundaries
+8. forbidden patterns
+9. acceptance checklist
+10. browser verification script
+11. instruction to update docs and tests to match code
 
 The prompt must explicitly say:
 
-1. do not create page-specific hacks for shared problems
-2. do not expose native ERP pages when productized routes exist
-3. do not add create/update/delete actions without server-side permission checks
-4. do not add helper text unless it has business intent
-5. do not start AI features until core workflow is stable
+1. follow the Shared Component and Implementation Golden Rule Standard
+2. do not create page-specific hacks for shared problems
+3. do not expose native ERP pages when productized routes exist
+4. do not add create/update/delete actions without server-side permission checks
+5. do not add helper text unless it has business intent
+6. do not start AI features until core workflow is stable
 
 ## 14. Relationship To Sales Console
 
@@ -1106,6 +1154,8 @@ Copy from Sales Console:
 6. restrained action-band policy
 7. business-copy reduction
 8. permission-safe customer profile pattern
+9. in-place Apply, Reset, and Refresh behavior
+10. role-visible report catalog with restricted direct-route safety
 
 Do not blindly copy:
 
@@ -1114,10 +1164,12 @@ Do not blindly copy:
 3. sales-only metrics
 4. Sales Console page order
 5. unfinished deferred behavior
+6. exact metric cards or report cards without business fit
 
 The future standard is the combination of:
 
-1. this implementation contract
-2. the parent shared UI standard
-3. SERA audit findings
-4. current code truth
+1. `shared-component-and-implementation-golden-rule-standard-v1.md`
+2. this execution contract
+3. the detailed parent shared UI standard
+4. SERA audit findings
+5. current code truth
