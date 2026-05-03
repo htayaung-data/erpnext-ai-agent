@@ -196,7 +196,7 @@ def search_procurement_console_workspace(query: str, limit: int = 12) -> dict[st
 
 
 def _build_phase1_overview() -> dict[str, object]:
-	from . import purchase_orders, requests, suppliers
+	from . import purchase_orders, requests, sourcing, suppliers
 
 	requests_to_source = requests.count_purchase_requests_to_source()
 	requests_total = requests.count_purchase_request_directory()
@@ -205,6 +205,11 @@ def _build_phase1_overview() -> dict[str, object]:
 	orders_pending_approval = purchase_orders.count_purchase_orders_pending_approval()
 	orders_late = purchase_orders.count_purchase_orders_late_or_unreceived()
 	suppliers_total = suppliers.count_visible_suppliers()
+	rfqs_total = sourcing.count_rfq_directory()
+	rfqs_awaiting_response = sourcing.count_rfqs_awaiting_supplier_response()
+	supplier_quotations_total = sourcing.count_supplier_quotation_directory()
+	supplier_quotations_to_compare = sourcing.count_supplier_quotations_to_compare()
+	supplier_quotations_expiring = sourcing.count_supplier_quotations_expiring()
 
 	return {
 		"work": {
@@ -232,6 +237,24 @@ def _build_phase1_overview() -> dict[str, object]:
 				"note": "Submitted Purchase Orders still active.",
 				"badgeClass": "review",
 			},
+			"rfqs_awaiting_supplier_response": {
+				"state": "live",
+				"value": rfqs_awaiting_response,
+				"note": "Submitted RFQs with pending supplier responses.",
+				"badgeClass": "attention" if rfqs_awaiting_response else "review",
+			},
+			"supplier_quotations_to_compare": {
+				"state": "live",
+				"value": supplier_quotations_to_compare,
+				"note": "Submitted Supplier Quotations available for comparison.",
+				"badgeClass": "attention" if supplier_quotations_to_compare else "review",
+			},
+			"supplier_quotations_expiring": {
+				"state": "live",
+				"value": supplier_quotations_expiring,
+				"note": "Supplier Quotations expiring within seven days.",
+				"badgeClass": "blocker" if supplier_quotations_expiring else "review",
+			},
 		},
 		"directories": {
 			"supplier_directory": {
@@ -252,12 +275,27 @@ def _build_phase1_overview() -> dict[str, object]:
 				"note": "Purchase Orders visible to this user.",
 				"badgeClass": "review",
 			},
+			"rfq_directory": {
+				"state": "live",
+				"value": rfqs_total,
+				"note": "RFQ records visible to this user.",
+				"badgeClass": "review",
+			},
+			"supplier_quotation_directory": {
+				"state": "live",
+				"value": supplier_quotations_total,
+				"note": "Supplier Quotation records visible to this user.",
+				"badgeClass": "review",
+			},
 		},
 		"queues": {
 			"requests_to_source": requests_to_source,
 			"purchase_orders_pending_approval": orders_pending_approval,
 			"purchase_orders_late_or_unreceived": orders_late,
 			"purchase_orders_open": orders_open,
+			"rfqs_awaiting_supplier_response": rfqs_awaiting_response,
+			"supplier_quotations_to_compare": supplier_quotations_to_compare,
+			"supplier_quotations_expiring": supplier_quotations_expiring,
 		},
 		"insights": {
 			"requests_to_source": {
@@ -275,5 +313,17 @@ def _build_phase1_overview() -> dict[str, object]:
 				"value": orders_late,
 				"note": "Need supplier follow-up.",
 			},
+			"supplier_quotations_expiring": {
+				"state": "live",
+				"value": supplier_quotations_expiring,
+				"note": "Need quote validity review.",
+			},
 		},
+		"reports_catalog": [
+			{
+				"key": "supplier_quotation_comparison",
+				"label": "Supplier Quotation Comparison",
+				"description": "Read-only comparison of quoted supplier prices and validity.",
+			}
+		],
 	}

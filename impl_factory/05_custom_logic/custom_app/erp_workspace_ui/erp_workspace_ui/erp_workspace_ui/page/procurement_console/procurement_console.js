@@ -7,6 +7,7 @@
   const procurementMethods = procurementWorkspace && procurementWorkspace.methods ? procurementWorkspace.methods : {};
   const PAGE_KEY = procurementRoutes.home || "procurement-console";
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
+  const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
   const consoleRuntime = window.erpWorkspaceConsoleRuntime || {};
 
@@ -23,6 +24,11 @@
   function routeToWorklist(queueKey, filters) {
     frappe.route_options = filters && Object.keys(filters).length ? filters : null;
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
+  }
+
+  function routeToReport(reportKey, filters) {
+    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
   }
 
   function makeInsightCard(config) {
@@ -169,7 +175,51 @@
       })
     );
 
-    $root.append($header, $priority, $directories);
+    const $sourcing = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="sourcing">
+        <div class="sales-console-section-head">
+          <h2 class="sales-console-section-title">Sourcing</h2>
+          <div class="sales-console-section-note">RFQ and quotation review</div>
+        </div>
+        <div class="sales-console-queue-grid" data-section-grid="sourcing"></div>
+      </section>
+    `);
+    $sourcing.find(".sales-console-queue-grid").append(
+      makeQueueItem({
+        key: "rfqs_awaiting_supplier_response",
+        title: "RFQs Awaiting Supplier Response",
+        meta: "Submitted RFQs with pending supplier responses.",
+        badgeClass: "attention",
+        sideLabel: "Pending",
+        onClick: () => routeToWorklist("rfqs_awaiting_supplier_response"),
+      }),
+      makeQueueItem({
+        key: "supplier_quotations_to_compare",
+        title: "Supplier Quotations To Compare",
+        meta: "Submitted quotations available for price and validity review.",
+        badgeClass: "attention",
+        sideLabel: "Compare",
+        onClick: () => routeToWorklist("supplier_quotations_to_compare"),
+      }),
+      makeQueueItem({
+        key: "supplier_quotations_expiring",
+        title: "Expiring Supplier Quotations",
+        meta: "Quotation validity ending within seven days.",
+        badgeClass: "blocker",
+        sideLabel: "Review",
+        onClick: () => routeToWorklist("supplier_quotations_expiring"),
+      }),
+      makeQueueItem({
+        key: "supplier_quotation_comparison",
+        title: "Supplier Quotation Comparison",
+        meta: "Read-only wrapper over the native ERPNext comparison report.",
+        badgeClass: "review",
+        sideLabel: "Report",
+        onClick: () => routeToReport("supplier_quotation_comparison"),
+      })
+    );
+
+    $root.append($header, $priority, $sourcing, $directories);
     $(page.body).empty().append($root);
 
     frappe.call({ method: BOOTSTRAP_METHOD }).then((response) => {

@@ -77,6 +77,17 @@ def date_days_ago(days: int) -> str:
 	return str(getdate(nowdate()) - timedelta(days=days))
 
 
+def date_days_from_now(days: int) -> str:
+	return str(getdate(nowdate()) + timedelta(days=days))
+
+
+def has_field(doctype: str, fieldname: str) -> bool:
+	try:
+		return bool(frappe.get_meta(doctype).has_field(fieldname))
+	except Exception:
+		return False
+
+
 def state(kind: str, title: str, detail: str, action: dict[str, str] | None = None) -> dict[str, object]:
 	payload: dict[str, object] = {
 		"kind": kind,

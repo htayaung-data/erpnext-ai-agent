@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 
-from . import common, purchase_orders, requests, service, suppliers
+from . import common, purchase_orders, requests, service, sourcing, suppliers
 
 
 def _normalize_queue_key(queue_key: str | None) -> str:
@@ -58,4 +58,10 @@ def _queue_registry():
 		"purchase_orders_pending_approval": purchase_orders.build_purchase_orders_pending_approval,
 		"purchase_orders_open": purchase_orders.build_purchase_orders_open,
 		"purchase_orders_late_or_unreceived": purchase_orders.build_purchase_orders_late_or_unreceived,
+		"rfq_directory": sourcing.build_rfq_directory,
+		"rfqs_awaiting_supplier_response": sourcing.build_rfqs_awaiting_supplier_response,
+		"rfqs_partially_quoted": sourcing.build_rfqs_partially_quoted,
+		"supplier_quotation_directory": sourcing.build_supplier_quotation_directory,
+		"supplier_quotations_to_compare": sourcing.build_supplier_quotations_to_compare,
+		"supplier_quotations_expiring": sourcing.build_supplier_quotations_expiring,
 	}
