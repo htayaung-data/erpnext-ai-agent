@@ -3,17 +3,18 @@
 Date: 2026-04-21
 
 Last implementation alignment: 2026-05-03
+Final freeze decision: 2026-05-03
 
 Status:
 
-- Ready to freeze after final owner visual/business acceptance
+- Frozen after owner visual/business acceptance
 
 Automated browser proof:
 
 - Docker Playwright runner passed role smoke and Sales Order Analysis smoke for Sales Manager and Sales User on 2026-05-02
 - full live report route probing passed on 2026-05-03 for role-visible report catalogs
 - hidden manager reports return restricted states for Sales User direct URLs
-- remaining checkpoint is owner visual/business acceptance in the real browser
+- owner visual/business acceptance is recorded on 2026-05-03
 
 Scope:
 
@@ -32,6 +33,8 @@ Not in scope:
 ## Freeze decision
 
 Sales Console reports are accepted as the current reporting layer for the sales workspace.
+
+Final freeze marker: `sales-console-freeze-v1`
 
 They are approved because they now behave like focused commercial review surfaces instead of raw ERP report dumps:
 

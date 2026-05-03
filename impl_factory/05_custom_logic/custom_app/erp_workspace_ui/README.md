@@ -28,6 +28,12 @@ Current confirmed UI baseline commit: `6dbd85c fix: forward socket origin throug
 
 Current confirmed documentation alignment commit: `50cd6fa docs: align sales console freeze documentation`
 
+Current confirmed Golden Rule commit: `3b071b0 docs: define workspace UI golden rule standard`
+
+Freeze status: `Frozen` on 2026-05-03
+
+Freeze marker tag: `sales-console-freeze-v1`
+
 Workspace-wide governance starts from:
 
 1. `_docs/erp-ui-customization/shared-component-and-implementation-golden-rule-standard-v1.md`

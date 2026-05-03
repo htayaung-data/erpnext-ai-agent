@@ -27,7 +27,13 @@ Implementation source of truth currently lives in the ERP UI Design branch:
 - worktree: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design`
 - current confirmed UI baseline commit: `6dbd85c fix: forward socket origin through caddy`
 - current confirmed documentation alignment commit: `50cd6fa docs: align sales console freeze documentation`
+- current confirmed Golden Rule commit: `3b071b0 docs: define workspace UI golden rule standard`
 - previous UI polish commit: `d71592c style: polish item detail cards and breadcrumb`
+
+Freeze status:
+
+- Sales Console is frozen on 2026-05-03.
+- Freeze marker tag: `sales-console-freeze-v1`
 
 Primary code paths:
 
@@ -82,6 +88,7 @@ Current freeze facts:
 Documents in this folder:
 
 - `shared-component-and-implementation-golden-rule-standard-v1.md`
+- `sales-console-final-freeze-2026-05-03.md`
 - `enterprise-shared-ui-component-standard-v1.md`
 - `enterprise-shared-ui-component-implementation-contract-v1.md`
 - `sales-console-enterprise-readiness-audit-mini-phase-plan.md`

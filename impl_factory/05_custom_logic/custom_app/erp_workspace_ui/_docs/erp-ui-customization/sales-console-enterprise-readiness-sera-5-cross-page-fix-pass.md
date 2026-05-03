@@ -2,7 +2,8 @@
 
 Date: 2026-04-28
 Final verification update: 2026-05-03
-Status: Final automated freeze checks passed with manual visual freeze review pending
+Final freeze update: 2026-05-03
+Status: Frozen after automated checks and owner visual acceptance
 Audit phase: `SERA-5` Cross-Page Fix Pass
 Depends on:
 
@@ -25,7 +26,7 @@ Its job is to fix only the shared issues that would damage the next workspace if
 
 SERA-5 decision:
 
-`Final automated freeze checks passed with manual visual freeze review pending`
+`Final automated freeze checks passed and owner visual acceptance recorded`
 
 Reason:
 
@@ -43,11 +44,11 @@ Reason:
 
 | Priority | Status | Decision |
 | --- | --- | --- |
-| Security and permission defects | Core role gate passed | Keep actual save-persistence proof manual unless a disposable customer record is approved. |
-| Route ownership defects | Browser route probe passed | Keep manual review open only for owner business acceptance and future non-productized destinations. |
-| Data persistence defects | No new code blocker found | Customer create/edit save remains fixed and must be role-tested live. |
-| Shared component instability | Browser route probe passed | Keep owner visual acceptance open. |
-| Major visual alignment defects | No blocking issue found | Continue owner visual review in browser only. |
+| Security and permission defects | Core role gate passed | Additional save-persistence proof is deferred unless a future mutation change introduces risk or a disposable customer record is approved. |
+| Route ownership defects | Browser route probe passed | Freeze accepted; future non-productized destinations require separate route review. |
+| Data persistence defects | No new code blocker found | Customer create/edit save remains fixed; future mutation changes require controlled save regression. |
+| Shared component instability | Browser route probe passed | Freeze accepted after owner visual acceptance. |
+| Major visual alignment defects | No blocking issue found | Freeze accepted; future visual changes must follow the Golden Rule standard. |
 | Confusing business copy | Fixed in this phase | Shared fallback, scope, route, and payment schedule copy hardened. |
 | Page-local polish | Deferred | Do not block SERA-6 unless browser review finds a copied-pattern defect. |
 
@@ -176,11 +177,11 @@ Residual risk:
 
 Live Sales User and Sales Manager role testing passed on 2026-05-01. Administrator-like users remain outside this smoke pass.
 
-## 7. Browser Smoke Required Before SERA-6
+## 7. Browser Smoke Evidence
 
-SERA-5 cannot become final without browser review.
+SERA-5 browser review was completed through automated smoke, full route probing, and owner freeze acceptance.
 
-Required browser checks:
+Regression browser checks:
 
 1. `/desk/sales-console` loads with one managed sidebar and one active menu item.
 2. Browser back and forward do not create duplicate menus or stale active states.
@@ -229,7 +230,7 @@ Full final validation should run again after this document is indexed.
 ## 10. SERA-5A Browser Refinement Pass
 
 Date: 2026-04-29
-Status: Implemented with browser smoke required
+Status: Implemented and later browser-smoke verified
 
 This addendum records the first browser-feedback refinement pass after SERA-5.
 
@@ -269,7 +270,7 @@ Confirmed page behavior is the source of truth for this alignment pass:
 3. Report top actions render in this order: `Refresh`, `Back to Sales Console`, then report-specific actions such as native report fallback.
 4. Tests and navigation notes should assert the confirmed UI contract instead of the older planned labels or action order.
 
-Browser and role-permission checks passed on 2026-05-01 for Sales Manager and Sales User. The smoke did not create or update business records; manual visual freeze review remains with the user.
+Browser and role-permission checks passed on 2026-05-01 for Sales Manager and Sales User. The smoke did not create or update business records; owner visual freeze acceptance is recorded on 2026-05-03.
 
 ## 12. SERA-5B Filter Action Rail Alignment
 
@@ -298,12 +299,13 @@ Live measurement on 2026-05-02:
 
 Current gate:
 
-`Go to manual visual freeze review before SERA-6. Do not start the next workspace until the owner accepts or explicitly waives visual review.`
+`Sales Console freeze accepted. Future workspace work may begin only from the Golden Rule standard and the frozen Sales Console reference.`
 
-SERA-6 may begin after:
+Future reuse may begin after:
 
 1. validation checks remain passing
-2. user manual visual freeze review is completed or explicitly accepted as pending
+2. owner manual visual freeze acceptance is recorded
 3. any owner-found high or medium shared defects are fixed or consciously deferred
+4. the final freeze marker is pushed
 
-Next workspace implementation should not start until SERA-6 declares the Sales Console standard ready for reuse.
+Next workspace implementation should not start from old notes or screenshots.

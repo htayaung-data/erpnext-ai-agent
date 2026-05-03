@@ -2,7 +2,8 @@
 
 Date: 2026-04-28
 Final verification update: 2026-05-03
-Status: Pass with owner visual acceptance still remaining
+Final freeze update: 2026-05-03
+Status: Pass and frozen after owner visual acceptance
 Audit phase: `SERA-3` Visual Stability And Shared Component Quality
 Depends on:
 
@@ -31,13 +32,13 @@ This phase checks:
 8. form panel layout
 9. empty, restricted, loading, and guard states
 10. accessibility and reduced-motion behavior
-11. final owner visual acceptance requirements
+11. final owner visual acceptance requirements, recorded for the 2026-05-03 freeze
 
 ## 2. SERA-3 Decision
 
 SERA-3 decision:
 
-`Pass with shared visual stability hardening; final owner visual acceptance remains outside automated proof`
+`Pass with shared visual stability hardening; owner visual acceptance recorded for final freeze`
 
 Final verification update:
 
@@ -58,11 +59,11 @@ Reason:
 7. Customer create/edit and detail routes use addressable URLs where required, avoiding context loss on refresh.
 8. Search, sidebar utilities, and sidebar menu items were hardened with explicit accessible labels and result roles.
 9. Reduced-motion rules were added for shared hover, row, action, report, sidebar, and skeleton motion.
-10. The remaining condition is live browser verification across page refresh, back navigation, collapsed sidebar, `Ctrl+K`, datepicker, and narrow viewport states.
+10. The remaining live-browser condition was satisfied by the final owner freeze decision on 2026-05-03.
 
 Important limitation:
 
-This is a static code audit plus targeted shared hardening. It does not replace live authenticated browser review. Visual stability must be confirmed in the browser because Frappe route transitions and native form loading can still affect timing.
+This was a static code audit plus targeted shared hardening. It was completed with browser evidence and final owner visual acceptance on 2026-05-03.
 
 ## 3. Visual Stability Principle
 
@@ -88,7 +89,7 @@ The enterprise rule is:
 | Managed Sales Console sidebar | `workspace_console_sidebar.js` | Pass. Active route, native duplicate suppression, and collapsed behavior are implemented and live route smoke passed. |
 | Sidebar utility actions | `workspace_console_sidebar.js` | Pass after hardening. Search and notification controls now have explicit accessible names. |
 | Sales Console search dialog | `workspace_console_sidebar.js`, `service.py` | Pass after hardening. `Ctrl+K` opens custom search on managed routes, search input has an accessible label, and results expose listbox/option semantics. |
-| Workspace home shell | `workspace_console_runtime.js` | Pass with owner-review note. Current hierarchy is accepted for freeze; first-load movement remains a Desk-level deferred visual item unless owner review marks it disruptive. |
+| Workspace home shell | `workspace_console_runtime.js` | Pass. Current hierarchy is accepted for freeze; first-load movement remains a Desk-level deferred visual item unless future platform changes make it disruptive. |
 | List shell | `list_page_shell.js`, `worklist.py` | Pass. Shared summaries, filters, metrics, tables, states, navigation actions, in-place Apply/Reset/Refresh, and detail routes were live-smoke verified. |
 | Report shell | `report_page_shell.js`, `report.py` | Pass. Shared report surface is stable enough for Sales Console and role-visible report routes were live-smoke verified. |
 | Filter command strip | `list_page_shell.js`, `erp_workspace_ui.css` | Pass. One-filter and multi-filter command layouts are now reusable and keep apply/reset/refresh close to the filter context. |
@@ -231,9 +232,9 @@ Not allowed:
 3. developer guardrail text
 4. empty list structure sections under forms
 
-## 7. Remaining Browser Verification
+## 7. Browser Verification Contract
 
-The following browser checks are required before SERA-3 can become `Final Grade`.
+The following browser checks are the regression contract for future Sales Console changes. They were covered by the final freeze evidence and owner acceptance on 2026-05-03.
 
 ### 7.1 Sidebar And Search
 
@@ -344,8 +345,8 @@ Document Email setup, print format setup, and native action permissions as defer
 
 SERA-3 recommendation:
 
-`SERA-3 is complete for Sales Console freeze. Keep owner manual visual acceptance as the final non-automated checkpoint.`
+`SERA-3 is complete and accepted for Sales Console freeze.`
 
 Reason:
 
-The shared visual foundation is good enough for Sales Console freeze. Browser verification has passed for the managed route set; the remaining proof is owner manual visual/business acceptance in the real browser.
+The shared visual foundation is accepted for Sales Console freeze. Browser verification passed for the managed route set and owner visual/business acceptance is recorded on 2026-05-03.

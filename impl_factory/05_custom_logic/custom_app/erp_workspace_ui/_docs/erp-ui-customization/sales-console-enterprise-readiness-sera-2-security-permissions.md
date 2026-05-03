@@ -522,4 +522,4 @@ The code-level blockers found in SERA-2 have been hardened, and the Sales Manage
 
 Condition:
 
-Sales Console must not be promoted as the final reusable golden reference until the user accepts the manual visual freeze review and any deliberately chosen save-persistence proof.
+Sales Console is promoted as the first reusable golden reference after owner visual freeze acceptance on 2026-05-03. Additional save-persistence proof is not required for this freeze because no new mutation expansion is being introduced now; future mutation changes must run a controlled save regression with an approved or disposable record.

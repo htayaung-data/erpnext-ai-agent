@@ -3,10 +3,11 @@
 Date: 2026-04-16
 
 Last implementation alignment: 2026-05-03
+Final freeze decision: 2026-05-03
 
 Status:
 
-- Ready to freeze after final owner visual/business acceptance
+- Frozen after owner visual/business acceptance
 
 Automated browser proof:
 
@@ -14,7 +15,7 @@ Automated browser proof:
 - full live route probe passed on 2026-05-03 for Sales Manager and Sales User
 - restricted Sales User routes fail safely without exposing manager-only actions
 - Socket.IO realtime connects cleanly after the Caddy origin-forwarding fix
-- remaining checkpoint is owner visual/business acceptance in the real browser
+- owner visual/business acceptance is recorded on 2026-05-03
 
 Scope:
 
@@ -30,6 +31,8 @@ Scope:
 ## Freeze decision
 
 Sales Console is accepted as the primary sales workspace.
+
+Final freeze marker: `sales-console-freeze-v1`
 
 It is approved because it now does the correct job for an enterprise sales user:
 

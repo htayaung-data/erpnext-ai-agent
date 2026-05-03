@@ -2,7 +2,8 @@
 
 Date: 2026-04-28
 Final verification update: 2026-05-03
-Status: Pass with owner visual acceptance still remaining
+Final freeze update: 2026-05-03
+Status: Pass and frozen after owner visual acceptance
 Audit phase: `SERA-4` Page Archetype Audit By Family
 Depends on:
 
@@ -34,7 +35,7 @@ It asks:
 
 SERA-4 decision:
 
-`Pass with business-copy hardening; final owner visual acceptance remains outside automated proof`
+`Pass with business-copy hardening; owner visual acceptance recorded for final freeze`
 
 Reason:
 
@@ -51,7 +52,7 @@ Reason:
 
 | Family | Pages | Archetype | Status | Primary decision |
 | --- | --- | --- | --- | --- |
-| A. Workspace Entry | Home, sidebar, scoped search | Workspace home, navigation, search | Pass | Ready as reference after live route smoke; owner visual review remains. |
+| A. Workspace Entry | Home, sidebar, scoped search | Workspace home, navigation, search | Pass | Ready as reference after live route smoke and owner freeze acceptance. |
 | B. Directories And Queues | Quotations, Sales Orders, Customers, Items, approval queues, blocker queues, follow-up queues | Directory and queue shell | Pass | Shared structure and live route behavior are verified. |
 | C. Customer Profile Surfaces | Customer Detail, Customer Create, Customer Edit | Drill-down detail and create/edit profile | Pass | Correct business scope for Sales Manager create/edit and Sales User read-only behavior. |
 | D. Item Profile Surface | Item Detail | Drill-down detail | Pass | Selling price, stock posture, stock locations, parent breadcrumb, and back-to-items behavior are accepted. |
@@ -454,7 +455,7 @@ Verified browser checks:
 10. Restricted direct report URLs for Sales User.
 11. Socket.IO connection after Caddy origin forwarding.
 
-Owner manual visual acceptance remains the final non-automated checkpoint.
+Owner visual acceptance is recorded on 2026-05-03.
 
 ## 13. Go Or No-Go
 
@@ -464,4 +465,4 @@ SERA-4 recommendation:
 
 Reason:
 
-Sales Console has a coherent enterprise page family model. The next step should not start a new workspace until the owner completes or explicitly waives final manual visual acceptance and SERA-6 confirms the reusable standard.
+Sales Console has a coherent enterprise page family model and is accepted for freeze. The next workspace should start from the Golden Rule standard and the frozen Sales Console reference, not from old draft notes.
