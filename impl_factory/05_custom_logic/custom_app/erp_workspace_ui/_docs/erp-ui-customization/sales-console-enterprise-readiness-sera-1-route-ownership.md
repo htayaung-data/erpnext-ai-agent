@@ -1,7 +1,8 @@
 # Sales Console Enterprise Readiness Audit: SERA-1 Route Ownership
 
 Date: 2026-04-28
-Status: Pass with shared route hardening and required browser verification
+Final verification update: 2026-05-03
+Status: Pass with shared route hardening and completed browser verification
 Audit phase: `SERA-1` Route Ownership And Navigation Safety
 Depends on: `sales-console-enterprise-readiness-sera-0-baseline.md`
 
@@ -17,7 +18,7 @@ This phase primarily audits the implementation. It does not change product behav
 
 SERA-1 decision:
 
-`Pass with shared route hardening and required browser verification`
+`Pass with shared route hardening and completed browser verification`
 
 Reason:
 
@@ -27,11 +28,15 @@ Reason:
 4. native fallback exists, but it is mostly controlled through shared route policy instead of random page-local links
 5. customer detail and customer editor deep links now carry the customer name in the route and should survive refresh
 6. shared route hardening was applied for customer detail/editor active state and the payment-terms report alias
-7. remaining browser behavior must still be verified before SERA-1 is frozen
+7. final browser route probing passed for Sales Manager and Sales User on 2026-05-03
 
-Important limitation:
+Historical limitation:
 
 Authenticated browser smoke was not executed in this phase because `ERP_UI_SMOKE_SID` is not set in the shell environment. This audit is a static code audit plus implementation contract review.
+
+Final update:
+
+Authenticated Docker Playwright smoke and full route probing were executed later using role credentials passed through environment variables. SERA-1 route ownership is no longer blocked by missing browser proof.
 
 ## 3. Route Ownership Principle
 
@@ -181,7 +186,8 @@ Productized report keys from `sales_console/report.py`:
 | --- | --- | --- |
 | `sales_analytics` | sales overview analytics | Productized report |
 | `sales_order_analysis` | order execution analysis | Productized report |
-| `quotation_trends` | quotation movement | Productized report |
+| `trend_analysis` | invoice, order, and quotation movement | Productized report |
+| `quotation_trends` | quotation movement legacy alias | Productized backend alias |
 | `collections_status` | receivable collection status | Productized report |
 | `payment_terms_status_sales_order` | collections alias | Productized backend alias |
 | `item_wise_sales_history` | item-level sales history | Productized report |
@@ -229,13 +235,13 @@ New Quotation and New Sales Order intentionally open native new-document forms b
 | Sales Order directory | Open row | Sales Order form | Managed native form | Accept |
 | Customer directory | Open row | `customer_detail` | Productized detail | Accept |
 | Customer detail | Activity row | matching document | Productized if directory/form exists, managed native if enhanced form exists | Accept |
-| Item directory | Open row | Item route context | Productized directory or managed native form depending helper outcome | Browser verify |
+| Item directory | Open row | `item_detail` route context | Productized detail | Accept |
 | Operational queues | Open row | matching Quotation or Sales Order form | Managed native form | Accept |
 | Restricted worklist state | Open Native List | ERP list fallback | Governed native fallback | Accept only as recovery |
 
 Required follow-up:
 
-Confirm Item row behavior in browser. If opening an Item form feels like raw ERP leakage, decide whether Item Detail should be productized before next workspace.
+Item row behavior was confirmed after productizing Item Detail. Item rows should open `/desk/sales-console-worklist/item-detail/<item>`, not a raw Item form, when the shared route owner has enough item context.
 
 ### 6.3 Customer Detail And Customer Editor
 
@@ -251,11 +257,11 @@ Deep-link finding:
 
 The implementation supports customer names in the address route for detail and editor pages. This is the correct enterprise pattern because reload should not lose the customer context.
 
-Browser verification required:
+Browser verification result:
 
-1. refresh `customer-detail/<customer>` and confirm detail stays loaded
-2. refresh `customer-editor/<customer>` and confirm edit form stays loaded
-3. confirm Customers remains the active sidebar item on both pages
+1. `customer-detail/<customer>` route probing passed
+2. Sales User direct access to `customer-editor/<customer>` stays restricted without save actions
+3. Customers remains the parent directory for customer detail/editor routes
 
 ### 6.4 Saved Document Actions
 
@@ -374,23 +380,23 @@ Implementation:
 
 Updated `_report_target` so the alias is productized if emitted.
 
-### Finding 3: Item Row Ownership Needs Browser Verification
+### Finding 3: Item Row Ownership Productized
 
 Severity:
 
-Low to medium
+Low after productization
 
 Evidence:
 
-`Item` is a productized directory key and also a managed form doctype in the sidebar map. The route owner can route list activity to the item directory, but item row open behavior should be confirmed in browser for user expectation.
+`Item` is a productized directory key and also a managed form doctype in the sidebar map. The final implementation routes item rows into the productized Item Detail page when item context exists.
 
 Risk:
 
-Users may feel they have left Sales Console if an Item opens as a raw form without enough Sales Console context.
+Users may feel they have left Sales Console if item stock and price posture require a raw ERP form.
 
-Recommended decision:
+Accepted final decision:
 
-If sales users mostly need stock and sales posture, keep Item Directory as the main productized page and defer Item Detail until there is a clear business case.
+Item Detail is now productized at `/desk/sales-console-worklist/item-detail/<item>`. It shows active selling price, stock posture, stock locations, stock-by-warehouse rows, and a parent breadcrumb of `Sales Console / Item Details / Product Name`.
 
 ### Finding 4: Reports Have No Sidebar Active Item By Design
 
@@ -428,9 +434,9 @@ Recommended action:
 
 Run an authenticated browser route test or ask the user to manually verify the critical URLs listed below.
 
-## 9. Required Browser Verification Script
+## 9. Browser Verification Script
 
-Use an authenticated Sales Manager session.
+Use an authenticated Sales Manager session. Final route probing was completed on 2026-05-03; keep this script as the regression checklist.
 
 Verify these routes:
 
@@ -461,19 +467,19 @@ For each route, confirm:
 | --- | --- | --- |
 | Static route inventory completed | Pass | Worklist, report, sidebar, child helper, and document action code reviewed |
 | Primary navigation productized | Pass | Sidebar/home/directory navigation uses Sales Console routes |
-| Customer deep links refresh-safe by design | Pass pending browser | Customer name is encoded in route for detail/editor |
+| Customer deep links refresh-safe by design | Pass | Customer name is encoded in route for detail/editor and live route probing passed |
 | Native fallback classified | Pass | Fallback is mostly governed through shared helper policy |
-| No known high-value productized action leaks to raw ERP list | Pass pending browser | Connections list behavior should be manually verified |
-| Sidebar active state correct across all managed routes | Pass pending browser | Customer detail/editor mapping hardened; reports intentionally have no active item in V1 |
-| Browser route verification completed | Pending | Requires authenticated browser session |
+| No known high-value productized action leaks to raw ERP list | Pass | Item and customer detail routes are productized; non-productized destinations remain guarded or governed fallbacks |
+| Sidebar active state correct across all managed routes | Pass | Customer and item detail mapping hardened; reports intentionally have no active item in V1 |
+| Browser route verification completed | Pass | Completed with Docker Playwright role sessions on 2026-05-03 |
 
 ## 11. SERA-1 Recommendation
 
-Do not start the next workspace from Sales Console until SERA-1 browser verification is completed.
+SERA-1 is complete for Sales Console freeze.
 
 Recommended immediate next step:
 
-1. verify the required browser route script
+1. keep this route script as the regression checklist before reusing the pattern in the next workspace
 2. confirm customer detail/editor active state in browser
 3. confirm Connections links do not open raw ERP lists where productized routes exist
 4. then proceed to `SERA-2` Security, Permission, And Data Mutation Safety

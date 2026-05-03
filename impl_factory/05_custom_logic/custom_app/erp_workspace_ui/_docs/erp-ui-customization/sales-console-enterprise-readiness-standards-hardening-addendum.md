@@ -95,16 +95,16 @@ No full rerun required.
 Why:
 
 1. SERA-1 already classified productized routes, managed native forms, governed fallbacks, deferred routes, and blocked routes
-2. SERA-1 already recorded browser verification as pending
+2. SERA-1 originally recorded browser verification as pending; final authenticated browser verification completed later during the 2026-05-03 freeze pass
 3. the new implementation contract reinforces SERA-1 conclusions
 4. no new route owner category was introduced
 5. no SERA-1 conclusion was reversed
 
 SERA-1 addendum decision:
 
-`Continue with pending browser verification`
+`Pass after completed browser verification`
 
-Browser verification remains required before Sales Console can become a final golden reference.
+Browser verification remains required for future workspaces before they can become golden references.
 
 ## 5. New Gates That Affect SERA-2 And Later
 
@@ -175,7 +175,7 @@ Conditions:
 1. use the updated parent standard
 2. use the implementation contract as the audit gate
 3. do not promote Sales Console as final golden reference until SERA-2 and SERA-3 are complete
-4. keep SERA-1 browser verification pending until an authenticated browser session is available
+4. repeat authenticated browser verification before promoting any future workspace as a golden reference
 
 Recommended next document:
 

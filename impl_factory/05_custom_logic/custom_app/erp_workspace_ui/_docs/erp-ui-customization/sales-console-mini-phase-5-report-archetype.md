@@ -2,7 +2,7 @@
 
 Status: active report-runtime foundation
 Date: 2026-04-18
-Last updated: 2026-04-23
+Last updated: 2026-05-03
 Source of truth: Mini-Phase 5 report classification, existing list runtime, frozen Sales Console visual system
 
 ## 1. Purpose
@@ -276,12 +276,13 @@ Emphasis:
 
 Use for:
 
-1. `Quotation Trends`
+1. `Trend Analysis`
 
 Emphasis:
 
 1. compact directional summary
 2. trend-supporting table
+3. selectable document type for `Sales Invoice`, `Sales Order`, and `Quotation`
 
 ### 6.4 Exception / history variant
 
@@ -317,11 +318,13 @@ After this archetype note, the correct next implementation order is:
 3. implement first report cluster:
    1. `Sales Analytics`
    2. `Sales Order Analysis`
-   3. `Quotation Trends`
+   3. `Trend Analysis`
 
 Current report-family correction:
 
 1. `Collections Status` is the accepted settlement/receivables report direction.
 2. `Payment Terms Status for Sales Order` is not the current Sales Console report target.
 3. `Sales Order Trends` is not part of the current role-based report-card catalog.
-4. validate latency, empty states, and route integrity before adding the second cluster
+4. `Trend Analysis` replaces visible `Quotation Trends`; the legacy route remains only as a compatibility alias.
+5. A standalone dashboard page is not part of the final report family.
+6. validate latency, empty states, and route integrity before adding any future report cluster

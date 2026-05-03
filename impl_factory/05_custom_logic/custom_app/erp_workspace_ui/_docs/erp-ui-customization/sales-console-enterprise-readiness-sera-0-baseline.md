@@ -1,6 +1,7 @@
 # Sales Console Enterprise Readiness Audit: SERA-0 Baseline
 
 Date: 2026-04-28
+Final alignment update: 2026-05-03
 Status: Pass with audit notes
 Audit phase: `SERA-0` Audit Setup And Baseline
 Depends on: `sales-console-enterprise-readiness-audit-mini-phase-plan.md`
@@ -37,6 +38,15 @@ Reason:
 6. untracked non-product files are known and isolated
 
 Notes:
+
+Final alignment update:
+
+1. Current confirmed branch remains `feature/erpnext-ui-design`.
+2. Current confirmed commit is `6dbd85c fix: forward socket origin through caddy`.
+3. The standalone Dashboard page is not part of the final Sales Console route inventory.
+4. `Trend Analysis` is the canonical visible trend report.
+5. `quotation_trends` remains a compatibility alias into Trend Analysis with Quotation selected.
+6. Full route probing and role smoke were completed after the original baseline note.
 
 1. new documentation files from the standardization work are intentionally uncommitted at this moment
 2. live deployment verification is based on selected file comparison through the running gunicorn process root
@@ -264,11 +274,12 @@ Backend report keys:
 
 1. `sales_analytics`
 2. `sales_order_analysis`
-3. `quotation_trends`
-4. `collections_status`
-5. `payment_terms_status_sales_order`
-6. `item_wise_sales_history`
-7. `lost_quotations`
+3. `trend_analysis`
+4. `quotation_trends`
+5. `collections_status`
+6. `payment_terms_status_sales_order`
+7. `item_wise_sales_history`
+8. `lost_quotations`
 
 Frontend route form:
 
@@ -281,10 +292,15 @@ The report route normalizes hyphens to underscores.
 Examples:
 
 1. `/desk/sales-console-report/sales-order-analysis`
-2. `/desk/sales-console-report/quotation-trends`
+2. `/desk/sales-console-report/trend-analysis`
 3. `/desk/sales-console-report/collections-status`
 4. `/desk/sales-console-report/item-wise-sales-history`
 5. `/desk/sales-console-report/lost-quotations`
+
+Compatibility examples:
+
+1. `/desk/sales-console-report/quotation-trends`
+2. `/desk/sales-console-report/payment-terms-status-sales-order`
 
 Audit note:
 
@@ -516,7 +532,7 @@ Surfaces:
 
 1. Sales Analytics
 2. Sales Order Analysis
-3. Quotation Trends
+3. Trend Analysis
 4. Collections Status
 5. Payment Terms Status for Sales Order as collections alias
 6. Item Wise Sales History

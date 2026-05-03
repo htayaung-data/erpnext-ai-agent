@@ -2,15 +2,18 @@
 
 Date: 2026-04-16
 
-Last implementation alignment: 2026-05-02
+Last implementation alignment: 2026-05-03
 
 Status:
 
-- Frozen for current code phase; pending final owner browser acceptance
+- Ready to freeze after final owner visual/business acceptance
 
 Automated browser proof:
 
 - Docker Playwright runner passed for Sales Manager and Sales User on 2026-05-02
+- full live route probe passed on 2026-05-03 for Sales Manager and Sales User
+- restricted Sales User routes fail safely without exposing manager-only actions
+- Socket.IO realtime connects cleanly after the Caddy origin-forwarding fix
 - remaining checkpoint is owner visual/business acceptance in the real browser
 
 Scope:
@@ -22,6 +25,7 @@ Scope:
 - trust and usefulness of related-document results shown from inquiry
 - productized navigation into Sales Console worklists
 - productized Customers and Items entry pages
+- productized Customer Detail and Item Detail pages
 
 ## Freeze decision
 
@@ -63,11 +67,13 @@ It is approved because it now does the correct job for an enterprise sales user:
 - secondary actions are Customers and Items
 - Opportunity is not part of the current Sales Console quick-action contract
 - Customers and Items are accepted as directory-style worklists, not as raw ERPNext list shortcuts
+- Item Detail is accepted as a productized detail route with active selling price, stock posture, and stock-by-warehouse detail
 
 ### 5. Visual quality is good enough
 
 - the page now reads as premium and operational, not as a dashboard toy
 - card sizing, counts, and section hierarchy are good enough to proceed
+- shared metric cards now use the confirmed spacing and line-height pattern from the final Item Detail pass
 
 ### 6. Operating foundation is aligned in code
 
@@ -76,6 +82,7 @@ It is approved because it now does the correct job for an enterprise sales user:
 - report pages expose `Refresh` before `Back to Sales Console` as standard top-level actions; worklists follow the same governed action taxonomy where the surface includes both actions
 - restricted worklists can expose `Open Native List` as an explicit governed fallback instead of leaving the user at a dead end
 - automated validation for the operating foundation passed on 2026-04-23; a short live browser smoke remains the final human checkpoint before Golden SOP promotion
+- final live route probing on 2026-05-03 found no Sales Console page error states
 
 ## Accepted deferred items
 

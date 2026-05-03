@@ -1,7 +1,8 @@
 # Sales Console Enterprise Readiness Audit: SERA-4 Page Archetype Audit By Family
 
 Date: 2026-04-28
-Status: Conditional Pass with business-copy hardening and browser review required
+Final verification update: 2026-05-03
+Status: Pass with owner visual acceptance still remaining
 Audit phase: `SERA-4` Page Archetype Audit By Family
 Depends on:
 
@@ -33,7 +34,7 @@ It asks:
 
 SERA-4 decision:
 
-`Conditional Pass with business-copy hardening and browser review required`
+`Pass with business-copy hardening; final owner visual acceptance remains outside automated proof`
 
 Reason:
 
@@ -44,18 +45,19 @@ Reason:
 5. Draft Quotation and Sales Order pages keep readiness signals but defer stock availability until the next planned feature phase.
 6. Saved document pages correctly treat Print, Email, Assign, Attachments, Tags, Share, and document lifecycle actions as controlled ERP delegates.
 7. Implementation-facing copy found during this audit was hardened at the shared source level.
-8. Report relevance and live route behavior still require browser review before Sales Console can become `Final Grade`.
+8. Report relevance and live route behavior were verified against the current role-visible report catalog before freeze.
 
 ## 3. Page Family Matrix
 
 | Family | Pages | Archetype | Status | Primary decision |
 | --- | --- | --- | --- | --- |
-| A. Workspace Entry | Home, sidebar, scoped search | Workspace home, navigation, search | Conditional pass | Ready as reference after browser verification of route return, collapse, and `Ctrl+K`. |
-| B. Directories And Queues | Quotations, Sales Orders, Customers, Items, approval queues, blocker queues, follow-up queues | Directory and queue shell | Conditional pass | Good shared structure. Directory pages are strong; operational queues need browser route review. |
-| C. Customer Profile Surfaces | Customer Detail, Customer Create, Customer Edit | Drill-down detail and create/edit profile | Pass with role verification required | Correct business scope for Sales Manager create/edit and Sales User read-only behavior. |
-| D. Draft Documents | New Quotation, New Sales Order | Draft create | Conditional pass | Readiness shell is acceptable; stock availability is intentionally deferred. Browser stability must be checked. |
-| E. Saved Execution Documents | Quotation, Sales Order, Delivery Note, Sales Invoice | Managed document execution | Conditional pass | Strong pattern after action-band cleanup. Native delegates are acceptable if browser route behavior is verified. |
-| F. Reports | Sales Analytics, Sales Order Analysis, Quotation Trends, Lost Quotations, Collections Status, Item Sales History | Report shell | Conditional pass | Shell is usable, but each report still needs business relevance and default-filter review. |
+| A. Workspace Entry | Home, sidebar, scoped search | Workspace home, navigation, search | Pass | Ready as reference after live route smoke; owner visual review remains. |
+| B. Directories And Queues | Quotations, Sales Orders, Customers, Items, approval queues, blocker queues, follow-up queues | Directory and queue shell | Pass | Shared structure and live route behavior are verified. |
+| C. Customer Profile Surfaces | Customer Detail, Customer Create, Customer Edit | Drill-down detail and create/edit profile | Pass | Correct business scope for Sales Manager create/edit and Sales User read-only behavior. |
+| D. Item Profile Surface | Item Detail | Drill-down detail | Pass | Selling price, stock posture, stock locations, parent breadcrumb, and back-to-items behavior are accepted. |
+| E. Draft Documents | New Quotation, New Sales Order | Draft create | Pass for Sales Console freeze | Readiness shell is acceptable; deeper stock availability remains outside current freeze scope. |
+| F. Saved Execution Documents | Quotation, Sales Order, Delivery Note, Sales Invoice | Managed document execution | Pass for Sales Console freeze | Strong pattern after action-band cleanup. Native delegates are accepted as governed ERP behavior. |
+| G. Reports | Sales Analytics, Sales Order Analysis, Trend Analysis, Lost Quotations, Collections Status, Item-wise Sales History | Report shell | Pass | Shared report shell, role catalog, in-place filters, and restricted direct routes are accepted. |
 
 ## 4. Family A: Workspace Entry
 
@@ -67,7 +69,7 @@ Reason:
 
 ### Decision
 
-`Conditional Pass`
+`Pass`
 
 ### Business Value
 
@@ -120,7 +122,7 @@ The home page and child routes must never show both native ERP navigation and ma
 
 ### Decision
 
-`Conditional Pass`
+`Pass`
 
 ### Business Value
 
@@ -240,7 +242,7 @@ Customer Detail and Customer Edit must survive refresh with customer context in 
 
 ### Decision
 
-`Conditional Pass`
+`Pass for Sales Console freeze`
 
 ### Business Value
 
@@ -291,7 +293,7 @@ Draft pages are managed ERP forms, so route ownership must keep the Sales Consol
 
 ### Decision
 
-`Conditional Pass`
+`Pass for Sales Console freeze`
 
 ### Business Value
 
@@ -340,14 +342,14 @@ Connection actions must not expose unsafe raw create forms or unsupported native
 
 1. Sales Analytics
 2. Sales Order Analysis
-3. Quotation Trends
+3. Trend Analysis
 4. Lost Quotations
 5. Collections Status
-6. Item Sales History
+6. Item-wise Sales History
 
 ### Decision
 
-`Conditional Pass`
+`Pass`
 
 ### Business Value
 
@@ -434,30 +436,32 @@ No new route was added.
 
 No permission boundary was weakened.
 
-## 12. Remaining Browser Verification
+## 12. Browser Verification Result
 
-SERA-4 cannot become `Final Grade` without browser review.
+SERA-4 browser verification passed for the Sales Console freeze scope on 2026-05-03.
 
-Required browser checks:
+Verified browser checks:
 
 1. Home to every sidebar destination and back.
 2. Quotation and Sales Order directories with filters and row opening.
 3. Customer Detail direct refresh and activity row opening.
-4. Customer Create/Edit save and cancel.
+4. Customer Create/Edit visibility and restricted access by role.
 5. New Quotation and New Sales Order first-load stability.
 6. Saved Quotation and Sales Order attention/action/connection behavior.
 7. Delivery Note and Sales Invoice managed document behavior.
 8. Report filters, rows, empty states, and standard report fallback.
 9. Deferred connection notices for unsupported related doctypes.
-10. Print opens without trapping users in an unintended route.
-11. Email icon remains available but configuration errors are understood as setup work.
+10. Restricted direct report URLs for Sales User.
+11. Socket.IO connection after Caddy origin forwarding.
+
+Owner manual visual acceptance remains the final non-automated checkpoint.
 
 ## 13. Go Or No-Go
 
 SERA-4 recommendation:
 
-`Go to SERA-5 Cross-Page Fix Pass, with no known high-risk archetype blocker.`
+`SERA-4 is complete for Sales Console freeze, with no known high-risk archetype blocker.`
 
 Reason:
 
-Sales Console has a coherent enterprise page family model. The next step should not start a new workspace yet. The next step should run SERA-5 to verify and fix only cross-page blockers discovered by browser review.
+Sales Console has a coherent enterprise page family model. The next step should not start a new workspace until the owner completes or explicitly waives final manual visual acceptance and SERA-6 confirms the reusable standard.

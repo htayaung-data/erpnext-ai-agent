@@ -2,15 +2,17 @@
 
 Date: 2026-04-21
 
-Last implementation alignment: 2026-05-02
+Last implementation alignment: 2026-05-03
 
 Status:
 
-- Frozen for current code phase; pending final owner browser acceptance
+- Ready to freeze after final owner visual/business acceptance
 
 Automated browser proof:
 
 - Docker Playwright runner passed role smoke and Sales Order Analysis smoke for Sales Manager and Sales User on 2026-05-02
+- full live report route probing passed on 2026-05-03 for role-visible report catalogs
+- hidden manager reports return restricted states for Sales User direct URLs
 - remaining checkpoint is owner visual/business acceptance in the real browser
 
 Scope:
@@ -22,6 +24,10 @@ Scope:
 - `Lost Quotations`
 - `Collections Status`
 - `Item-wise Sales History`
+
+Not in scope:
+
+- standalone `Sales Dashboard`; removed before freeze because it overlapped with Sales Analytics and did not yet provide enough distinct enterprise value
 
 ## Freeze decision
 

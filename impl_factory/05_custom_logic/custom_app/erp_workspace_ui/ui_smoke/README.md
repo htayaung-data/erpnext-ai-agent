@@ -107,6 +107,7 @@ npm test
 3. session-cookie mode is the safest option for local validation when the site already has a valid authenticated session
 4. the Docker image tag should match the pinned Playwright package version in `package.json`
 5. this suite is the minimum smoke foundation, not the full enterprise UI regression layer
+6. browser console Socket.IO `Invalid origin` is a deployment regression, not an acceptable test warning
 
 ## Sales Console Role Permission Smoke
 
@@ -119,6 +120,8 @@ It verifies:
 3. Customer create/edit visibility for Sales Manager versus Sales User
 4. report toolbar order: `Refresh`, then `Back to Sales Console`
 5. server-side API contracts for sidebar, worklist, report, and restricted Customer save
+6. no stale `Dashboard` sidebar item is present
+7. role-visible report catalogs use the productized Sales Console report page
 
 The script does not save, submit, delete, or update ERP business records. The Sales User save probe submits an intentionally incomplete payload and expects the Sales Manager permission gate to reject before validation.
 
@@ -226,6 +229,17 @@ Enterprise rules for future development:
 5. Keep smoke artifacts inside `ui_smoke/artifacts` and `ui_smoke/test-results`; these folders should not be committed.
 6. For Sale Console freeze checks, run `./run_playwright_docker.sh` so role smoke and Sales Order Analysis smoke run in the same browser environment.
 7. Run the older document-page Playwright suite explicitly with `./run_playwright_docker.sh npm test` only after setting the required document route or document name environment variables.
+8. Treat browser console Socket.IO `Invalid origin` as a deployment regression. The Caddy `/socket.io` reverse proxy must include `header_up Origin https://{host}`.
+9. A clean freeze run should show Frappe Socket.IO connected to namespace `/erpai_prj1` over websocket without `Invalid origin` or websocket-close warnings.
+
+Final Sales Console freeze proof from 2026-05-03:
+
+1. role smoke passed for Sales Manager and Sales User
+2. Sales Order Analysis smoke passed for Sales Manager and Sales User
+3. full live route probe passed for 24 Sales Manager routes and 21 Sales User routes
+4. restricted manager-only reports returned restricted states for Sales User direct URLs
+5. customer editor direct access stayed restricted for Sales User
+6. Socket.IO connected cleanly after the Caddy origin-forwarding fix
 
 ## Reference Screenshot Capture
 

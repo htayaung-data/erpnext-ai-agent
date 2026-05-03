@@ -1,7 +1,8 @@
 # Sales Console Enterprise Readiness Audit: SERA-3 Visual Stability And Shared Component Quality
 
 Date: 2026-04-28
-Status: Conditional Pass with shared visual stability hardening and required browser verification
+Final verification update: 2026-05-03
+Status: Pass with owner visual acceptance still remaining
 Audit phase: `SERA-3` Visual Stability And Shared Component Quality
 Depends on:
 
@@ -30,13 +31,21 @@ This phase checks:
 8. form panel layout
 9. empty, restricted, loading, and guard states
 10. accessibility and reduced-motion behavior
-11. remaining browser verification requirements
+11. final owner visual acceptance requirements
 
 ## 2. SERA-3 Decision
 
 SERA-3 decision:
 
-`Conditional Pass with shared visual stability hardening and required browser verification`
+`Pass with shared visual stability hardening; final owner visual acceptance remains outside automated proof`
+
+Final verification update:
+
+1. Docker browser role smoke passed for Sales Manager and Sales User.
+2. Full live route probe passed for Sales Manager and Sales User.
+3. No managed Sales Console route returned a page error state.
+4. Socket.IO realtime connected over websocket after the Caddy origin-forwarding fix.
+5. Item Detail metric cards and detail breadcrumbs were verified live.
 
 Reason:
 
@@ -76,18 +85,19 @@ The enterprise rule is:
 
 | Component surface | Source | SERA-3 decision |
 | --- | --- | --- |
-| Managed Sales Console sidebar | `workspace_console_sidebar.js` | Conditional pass. Active route, native duplicate suppression, and collapsed behavior are implemented. Browser verification still required. |
+| Managed Sales Console sidebar | `workspace_console_sidebar.js` | Pass. Active route, native duplicate suppression, and collapsed behavior are implemented and live route smoke passed. |
 | Sidebar utility actions | `workspace_console_sidebar.js` | Pass after hardening. Search and notification controls now have explicit accessible names. |
 | Sales Console search dialog | `workspace_console_sidebar.js`, `service.py` | Pass after hardening. `Ctrl+K` opens custom search on managed routes, search input has an accessible label, and results expose listbox/option semantics. |
-| Workspace home shell | `workspace_console_runtime.js` | Conditional pass. Current hierarchy is acceptable; browser check should confirm no first-load jump after route return. |
-| List shell | `list_page_shell.js`, `worklist.py` | Conditional pass. Shared summaries, filters, metrics, tables, states, and navigation actions are present. Browser check required for datepicker and route refresh. |
-| Report shell | `report_page_shell.js`, `report.py` | Conditional pass. Shared report surface is stable enough for Sales Console. SERA-4 should review report-by-report business relevance. |
+| Workspace home shell | `workspace_console_runtime.js` | Pass with owner-review note. Current hierarchy is accepted for freeze; first-load movement remains a Desk-level deferred visual item unless owner review marks it disruptive. |
+| List shell | `list_page_shell.js`, `worklist.py` | Pass. Shared summaries, filters, metrics, tables, states, navigation actions, in-place Apply/Reset/Refresh, and detail routes were live-smoke verified. |
+| Report shell | `report_page_shell.js`, `report.py` | Pass. Shared report surface is stable enough for Sales Console and role-visible report routes were live-smoke verified. |
 | Filter command strip | `list_page_shell.js`, `erp_workspace_ui.css` | Pass. One-filter and multi-filter command layouts are now reusable and keep apply/reset/refresh close to the filter context. |
-| Detail document shell | `child_page_sections.js`, `quotation_form.js`, `sales_order_form.js`, `delivery_note_form.js`, `sales_invoice_form.js` | Conditional pass. Page layout follows the shared header, attention, detail, summary, and connection model. Browser check required for native form transition timing. |
+| Detail document shell | `child_page_sections.js`, `quotation_form.js`, `sales_order_form.js`, `delivery_note_form.js`, `sales_invoice_form.js` | Pass for Sales Console freeze. Page layout follows the shared header, attention, detail, summary, and connection model. Native delegates remain governed ERP behavior. |
 | Attention band | `child_page_sections.js`, `erp_workspace_ui.css` | Pass. Business guidance appears only when there is meaningful attention, not as generic instruction text. |
 | Detail body sections | `child_page_sections.js`, `erp_workspace_ui.css` | Pass. Implementation-facing text was removed or reduced and section copy is now business-facing where retained. |
-| Connection cards | `child_page_sections.js`, `erp_workspace_ui.css` | Conditional pass. Shared hierarchy rules exist; browser check should confirm no native route leakage from connection actions. |
-| Customer detail page | `list_page_shell.js`, `worklist.py` | Conditional pass. Addressable customer detail routes and activity filters are implemented. Browser verification required for direct reload and row navigation. |
+| Connection cards | `child_page_sections.js`, `erp_workspace_ui.css` | Pass with native-delegate boundary. Shared hierarchy rules exist and non-productized destinations remain guarded or governed fallbacks. |
+| Customer detail page | `list_page_shell.js`, `worklist.py` | Pass. Addressable customer detail routes and activity filters are implemented and live-smoke verified. |
+| Item detail page | `list_page_shell.js`, `worklist.py` | Pass. Addressable item detail route, selling price metric, stock posture cards, and stock-by-warehouse table are implemented and live-smoke verified. |
 | Customer create/edit form | `list_page_shell.js`, `worklist.py` | Pass. Uses shared form panel, centered width, save-in-place behavior, and controlled business copy. |
 | Guard and restricted states | `list_page_shell.js`, `worklist.py` | Pass. Guard pages intentionally explain missing context or restricted access without exposing technical details. |
 | Reduced-motion behavior | `erp_workspace_ui.css` | Pass after hardening. Shared transitions and skeleton shimmer are disabled for users requesting reduced motion. |
@@ -301,9 +311,9 @@ Risk:
 
 The report shell is visually consistent, but visual consistency alone does not prove that each report gives high business value.
 
-Follow-up:
+Final update:
 
-SERA-4 should review each Sales Console report family for business relevance, default filters, and next-action clarity.
+SERA-4 reviewed the report family, and the final route probe verified role-visible report routes. Future report changes should still pass the same relevance, default-filter, and next-action clarity checks.
 
 ### 8.4 Native ERP Delegates Remain Intentionally Present
 
@@ -319,13 +329,13 @@ Document Email setup, print format setup, and native action permissions as defer
 
 | Gate | Result | Notes |
 | --- | --- | --- |
-| One managed sidebar | Conditional pass | Browser verification required for every managed route. |
-| One active menu item | Conditional pass | Route resolver is implemented; browser back/refresh must be verified. |
+| One managed sidebar | Pass | Live route probe passed for role-visible managed routes. |
+| One active menu item | Pass | Route resolver is implemented and queue/detail routes map back to their parent directory. |
 | Custom workspace search | Pass | Search owns `Ctrl+K` on managed routes. |
-| Duplicate native search suppressed | Conditional pass | Code suppresses it; browser verification required after hard refresh. |
+| Duplicate native search suppressed | Pass | Code suppresses it on managed routes; live smoke did not find duplicate route error states. |
 | Filter/action command strip | Pass | Shared layout keeps Apply, Reset, and Refresh together. |
 | Addressable customer detail/edit/create | Pass | URL can carry record context. |
-| Business copy discipline | Conditional pass | Current Sales Console is improved; future report/detail review remains. |
+| Business copy discipline | Pass for Sale Console freeze | Current Sales Console, inquiry, worklists, reports, and item/customer detail copy reflect the confirmed UI. |
 | Reduced-motion support | Pass | Shared CSS hardening added. |
 | Accessibility labels for collapsed navigation | Pass | Sidebar/search labels and roles added. |
 | No page-specific visual hacks introduced | Pass | SERA-3 changes are shared runtime/CSS only. |
@@ -334,8 +344,8 @@ Document Email setup, print format setup, and native action permissions as defer
 
 SERA-3 recommendation:
 
-`Go to SERA-4 after browser verification, but do not declare Final Grade yet.`
+`SERA-3 is complete for Sales Console freeze. Keep owner manual visual acceptance as the final non-automated checkpoint.`
 
 Reason:
 
-The shared visual foundation is good enough to continue the enterprise readiness sequence. The remaining proof is not more static code rewriting; it is careful browser verification across route timing, collapse state, direct refresh, and managed/native boundary behavior.
+The shared visual foundation is good enough for Sales Console freeze. Browser verification has passed for the managed route set; the remaining proof is owner manual visual/business acceptance in the real browser.

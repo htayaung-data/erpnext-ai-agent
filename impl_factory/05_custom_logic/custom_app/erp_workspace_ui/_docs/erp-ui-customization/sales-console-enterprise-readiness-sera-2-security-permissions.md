@@ -106,7 +106,7 @@ Source:
 
 | Method | Type | Security decision |
 | --- | --- | --- |
-| `get_sales_console_report_context` | read/report | Accept for SERA-2. Report builders use Sales Console scope and native report execution where applicable. SERA-4 should review each report family in more detail. |
+| `get_sales_console_report_context` | read/report | Pass for Sales Console freeze. Report builders use Sales Console scope and native report execution where applicable; SERA-4 and the final route probe verified role-visible report access. |
 
 Direct report-route guard:
 
@@ -405,11 +405,11 @@ Expected restricted states:
 
 Decision:
 
-`Accept pending browser verification`
+`Pass after completed role and browser verification`
 
 ## 11. Browser And Role Verification Script
 
-Before promoting Sales Console as a final golden reference, run this manual verification.
+This checklist remains the regression contract. For the 2026-05-03 freeze pass, authenticated browser and role verification completed successfully for Sales Manager and Sales User.
 
 ### 11.1 Sales User
 

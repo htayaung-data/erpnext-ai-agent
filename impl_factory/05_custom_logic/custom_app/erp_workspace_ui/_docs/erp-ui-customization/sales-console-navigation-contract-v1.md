@@ -38,6 +38,8 @@ Confirmed 2026-05-01: the first sidebar destination label is `Overview`, and it 
 
 Confirmed 2026-05-02: the standalone `Dashboard` page was removed before freeze because it overlapped with Sales Analytics and did not yet carry enough distinct enterprise dashboard value.
 
+Confirmed 2026-05-03: the final route probe passed with this five-item sidebar for both Sales Manager and Sales User. No report or dashboard item is added to the sidebar in V1.
+
 No top-level sidebar item is added for reports in V1.
 
 Reason:
@@ -116,6 +118,8 @@ Required filter posture:
 2. a `Status` filter
 3. a `Keyword` filter
 4. `Apply` and `Reset` actions above the table
+5. `Apply`, `Reset`, and `Refresh` must refresh data in-place without a full Desk page reload
+6. date-window filters should remain in the same row when desktop width allows
 
 ## Active-State Rule
 
@@ -134,10 +138,27 @@ This keeps the sidebar stable while still allowing focused operational pages.
 
 This contract requires:
 
-1. new `Quotations` directory page
-2. new `Sales Orders` directory page
-3. sidebar update to stable destinations only
-4. sidebar active-key mapping from queue routes to parent directory items
+1. `Quotations` directory page
+2. `Sales Orders` directory page
+3. `Customers` directory page
+4. `Items` directory page
+5. `Customer Detail` and `Item Detail` productized routes
+6. sidebar stable destinations only
+7. sidebar active-key mapping from queue and detail routes to parent directory items
+
+V1 report routes:
+
+1. `/desk/sales-console-report/sales-analytics`
+2. `/desk/sales-console-report/sales-order-analysis`
+3. `/desk/sales-console-report/trend-analysis`
+4. `/desk/sales-console-report/lost-quotations`
+5. `/desk/sales-console-report/collections-status`
+6. `/desk/sales-console-report/item-wise-sales-history`
+
+Compatibility report routes:
+
+1. `/desk/sales-console-report/quotation-trends`
+2. `/desk/sales-console-report/payment-terms-status-sales-order`
 
 ## Deferred
 

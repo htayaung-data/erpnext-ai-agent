@@ -414,12 +414,12 @@ Audit focus:
 
 Pages:
 
-1. Sales Order Analysis
-2. Sales Person Target Variance
-3. Quotation Trends
+1. Sales Analytics
+2. Sales Order Analysis
+3. Trend Analysis
 4. Lost Quotations
 5. Collections Status
-6. Item Sales History
+6. Item-wise Sales History
 
 Audit focus:
 

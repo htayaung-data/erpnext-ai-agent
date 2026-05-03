@@ -24,17 +24,21 @@ Implementation source of truth currently lives in the ERP UI Design branch:
 
 - branch: `feature/erpnext-ui-design`
 - worktree: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design`
-- committed Customers/Items sync: `5ad8bca feat(erp-ui): sync customer and item sales console worklists`
+- current confirmed commit: `6dbd85c fix: forward socket origin through caddy`
+- previous UI polish commit: `d71592c style: polish item detail cards and breadcrumb`
 
 Primary code paths:
 
 - `erp_workspace_ui/erp_workspace_ui/page/sales_console/sales_console.js`
 - `erp_workspace_ui/erp_workspace_ui/page/sales_console_worklist/sales_console_worklist.js`
+- `erp_workspace_ui/erp_workspace_ui/page/sales_console_report/sales_console_report.js`
 - `erp_workspace_ui/public/js/runtime/console/workspace_console_runtime.js`
 - `erp_workspace_ui/public/js/runtime/console/workspace_console_sidebar.js`
 - `erp_workspace_ui/public/js/runtime/list_page/list_page_shell.js`
+- `erp_workspace_ui/public/js/runtime/report_page/report_page_shell.js`
 - `erp_workspace_ui/sales_console/service.py`
 - `erp_workspace_ui/sales_console/worklist.py`
+- `erp_workspace_ui/sales_console/report.py`
 - `erp_workspace_ui/public/js/runtime/child_page/*`
 - `erp_workspace_ui/public/js/quotation_form.js`
 - `erp_workspace_ui/public/js/sales_order_form.js`
@@ -48,6 +52,30 @@ Current routing truth:
 - `/desk/sales-console-worklist/customer-detail/<customer>` is the productized Customer Detail page.
 - `/desk/sales-console-worklist/item-detail/<item>` is the productized Item Detail page.
 - bare `/desk/sales-console-worklist` intentionally shows a guard state because no queue key was supplied.
+- `/desk/sales-console-report/<report-key>` is the shared report shell.
+
+Current visible report keys:
+
+- `sales_analytics`
+- `sales_order_analysis`
+- `trend_analysis`
+- `lost_quotations`
+- `collections_status`
+- `item_wise_sales_history`
+
+Compatibility report keys:
+
+- `quotation_trends` maps into `Trend Analysis` with `Quotation` selected.
+- `payment_terms_status_sales_order` maps into `Collections Status`.
+
+Current freeze facts:
+
+- the standalone Sales Dashboard page was removed before freeze
+- Item Detail is accepted and includes the active selling price and stock-by-warehouse posture
+- Customer Detail and Item Detail breadcrumbs include their parent detail family before the record name
+- Docker Playwright role smoke and Sales Order Analysis smoke passed for Sales Manager and Sales User
+- full live route probing passed for 24 Sales Manager routes and 21 Sales User routes
+- Socket.IO realtime is fixed by forwarding `Origin` through the Caddy `/socket.io` proxy
 
 Documents in this folder:
 
@@ -61,6 +89,7 @@ Documents in this folder:
 - `sales-console-enterprise-readiness-sera-3-visual-stability.md`
 - `sales-console-enterprise-readiness-sera-4-page-archetypes.md`
 - `sales-console-enterprise-readiness-sera-5-cross-page-fix-pass.md`
+- `sales-console-final-documentation-alignment-2026-05-03.md`
 - `page-freeze-notes/README.md`
 - `page-freeze-notes/sales-console-freeze.md`
 - `page-freeze-notes/sales-order-freeze.md`

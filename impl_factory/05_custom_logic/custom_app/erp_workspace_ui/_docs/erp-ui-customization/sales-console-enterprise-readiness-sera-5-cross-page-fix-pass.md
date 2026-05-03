@@ -1,7 +1,8 @@
 # Sales Console Enterprise Readiness Audit: SERA-5 Cross-Page Fix Pass
 
 Date: 2026-04-28
-Status: Core browser and role smoke pass with manual visual freeze review pending
+Final verification update: 2026-05-03
+Status: Final automated freeze checks passed with manual visual freeze review pending
 Audit phase: `SERA-5` Cross-Page Fix Pass
 Depends on:
 
@@ -24,7 +25,7 @@ Its job is to fix only the shared issues that would damage the next workspace if
 
 SERA-5 decision:
 
-`Core browser and role smoke pass with manual visual freeze review pending`
+`Final automated freeze checks passed with manual visual freeze review pending`
 
 Reason:
 
@@ -34,17 +35,19 @@ Reason:
 4. Directory, queue, report, and customer profile shells use shared components rather than page-local hacks.
 5. The remaining implementation-facing user copy found in shared fallback states was corrected.
 6. User-facing scope and route wording was softened into business-safe language.
-7. Live Sales Manager/Sales User browser and permission smoke passed on 2026-05-01 for the core Sales Console route, directory, report, and customer-management gate.
+7. Live Sales Manager/Sales User browser and permission smoke passed for the core Sales Console route, directory, report, and customer-management gate.
+8. Full live route probing passed on 2026-05-03 for 24 Sales Manager routes and 21 Sales User routes.
+9. Socket.IO realtime connection passed after forwarding `Origin` through the Caddy `/socket.io` proxy.
 
 ## 3. Fix Priority Register
 
 | Priority | Status | Decision |
 | --- | --- | --- |
 | Security and permission defects | Core role gate passed | Keep actual save-persistence proof manual unless a disposable customer record is approved. |
-| Route ownership defects | No new static blocker found | Keep browser route smoke open, especially Connections and deferred related records. |
+| Route ownership defects | Browser route probe passed | Keep manual review open only for owner business acceptance and future non-productized destinations. |
 | Data persistence defects | No new code blocker found | Customer create/edit save remains fixed and must be role-tested live. |
-| Shared component instability | No new static blocker found | Keep browser timing, refresh, and collapsed-sidebar checks open. |
-| Major visual alignment defects | No static blocker found | Continue visual review in browser only. |
+| Shared component instability | Browser route probe passed | Keep owner visual acceptance open. |
+| Major visual alignment defects | No blocking issue found | Continue owner visual review in browser only. |
 | Confusing business copy | Fixed in this phase | Shared fallback, scope, route, and payment schedule copy hardened. |
 | Page-local polish | Deferred | Do not block SERA-6 unless browser review finds a copied-pattern defect. |
 
@@ -123,7 +126,11 @@ The copy now sounds like business workflow language rather than system setup lan
 
 Static result:
 
-`Pass pending browser smoke`
+`Pass after browser smoke`
+
+Final browser update:
+
+Full live route probing passed on 2026-05-03 for both Sales Manager and Sales User. Keep this section as a regression checklist, not as an open blocker.
 
 Reviewed route owner:
 
@@ -291,12 +298,12 @@ Live measurement on 2026-05-02:
 
 Current gate:
 
-`Go to manual visual freeze review before SERA-6. Do not start the next workspace yet.`
+`Go to manual visual freeze review before SERA-6. Do not start the next workspace until the owner accepts or explicitly waives visual review.`
 
 SERA-6 may begin after:
 
-1. validation checks pass
+1. validation checks remain passing
 2. user manual visual freeze review is completed or explicitly accepted as pending
-3. any browser-found high or medium shared defects are fixed or consciously deferred
+3. any owner-found high or medium shared defects are fixed or consciously deferred
 
 Next workspace implementation should not start until SERA-6 declares the Sales Console standard ready for reuse.
