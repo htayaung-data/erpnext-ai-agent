@@ -86,7 +86,7 @@ def unavailable_state() -> dict[str, str]:
 	return state(
 		"unavailable",
 		"Procurement Console is not available yet",
-		"The workspace foundation is ready, but buyer workbench pages are not enabled yet.",
+		"This Procurement Console surface is not available in the current phase.",
 	)
 
 
@@ -94,6 +94,11 @@ def build_sidebar(context: dict[str, object] | None = None) -> dict[str, object]
 	workspace = get_procurement_workspace_definition()
 	sidebar = workspace.get("sidebar") or {}
 	items = list(workspace.get("fallback_items") or [])
+	sidebar_state = state(
+		"ready",
+		"Procurement Console ready",
+		"Buyer workbench queues are available for procurement roles.",
+	) if not context or has_procurement_access(context) else restricted_state()
 	return {
 		"workspace_id": workspace.get("workspace_id"),
 		"active_key": sidebar.get("home_key") or "procurement_console_home",
@@ -106,7 +111,7 @@ def build_sidebar(context: dict[str, object] | None = None) -> dict[str, object]
 				"items": items,
 			}
 		],
-		"state": restricted_state() if context and not has_procurement_access(context) else unavailable_state(),
+		"state": sidebar_state,
 	}
 
 
@@ -123,7 +128,10 @@ def _base_payload(context: dict[str, object], payload_state: dict[str, str]) -> 
 			"items": list(get_procurement_workspace_definition().get("fallback_items") or []),
 		},
 		"sidebar": build_sidebar(context),
-		"queues": [],
+		"work": {},
+		"directories": {},
+		"queues": {},
+		"insights": {},
 		"reports_catalog": [],
 		"fetched_at": str(now_datetime()),
 	}
@@ -135,14 +143,24 @@ def get_procurement_console_bootstrap() -> dict[str, object]:
 	context = build_context()
 	if not has_procurement_access(context):
 		return _base_payload(context, restricted_state())
-	return _base_payload(context, unavailable_state())
+	payload = _base_payload(context, state(
+		"ready",
+		"Procurement Console ready",
+		"Buyer workbench queues are available for procurement roles.",
+	))
+	payload.update(_build_phase1_overview())
+	return payload
 
 
 @frappe.whitelist()
 def get_procurement_console_sidebar_context() -> dict[str, object]:
 	ensure_authenticated()
 	context = build_context()
-	payload_state = unavailable_state() if has_procurement_access(context) else restricted_state()
+	payload_state = state(
+		"ready",
+		"Procurement Console ready",
+		"Buyer workbench queues are available for procurement roles.",
+	) if has_procurement_access(context) else restricted_state()
 	return {
 		"workspace": procurement_workspace_public_context(),
 		"context": context,
@@ -174,4 +192,88 @@ def search_procurement_console_workspace(query: str, limit: int = 12) -> dict[st
 		"message": "Procurement Console search is not available yet.",
 		"results": [],
 		"limit": limit,
+	}
+
+
+def _build_phase1_overview() -> dict[str, object]:
+	from . import purchase_orders, requests, suppliers
+
+	requests_to_source = requests.count_purchase_requests_to_source()
+	requests_total = requests.count_purchase_request_directory()
+	orders_open = purchase_orders.count_purchase_orders_open()
+	orders_total = purchase_orders.count_purchase_order_directory()
+	orders_pending_approval = purchase_orders.count_purchase_orders_pending_approval()
+	orders_late = purchase_orders.count_purchase_orders_late_or_unreceived()
+	suppliers_total = suppliers.count_visible_suppliers()
+
+	return {
+		"work": {
+			"requests_to_source": {
+				"state": "live",
+				"value": requests_to_source,
+				"note": "Submitted purchase requests not fully ordered.",
+				"badgeClass": "attention" if requests_to_source else "review",
+			},
+			"purchase_orders_pending_approval": {
+				"state": "live",
+				"value": orders_pending_approval,
+				"note": "Purchase Orders waiting on purchase approval.",
+				"badgeClass": "blocker" if orders_pending_approval else "review",
+			},
+			"purchase_orders_late_or_unreceived": {
+				"state": "live",
+				"value": orders_late,
+				"note": "Open Purchase Orders past required date and not fully received.",
+				"badgeClass": "attention" if orders_late else "review",
+			},
+			"purchase_orders_open": {
+				"state": "live",
+				"value": orders_open,
+				"note": "Submitted Purchase Orders still active.",
+				"badgeClass": "review",
+			},
+		},
+		"directories": {
+			"supplier_directory": {
+				"state": "live",
+				"value": suppliers_total,
+				"note": "Read-only supplier records visible to this user.",
+				"badgeClass": "review",
+			},
+			"purchase_request_directory": {
+				"state": "live",
+				"value": requests_total,
+				"note": "Purchase Material Requests visible to this user.",
+				"badgeClass": "review",
+			},
+			"purchase_order_directory": {
+				"state": "live",
+				"value": orders_total,
+				"note": "Purchase Orders visible to this user.",
+				"badgeClass": "review",
+			},
+		},
+		"queues": {
+			"requests_to_source": requests_to_source,
+			"purchase_orders_pending_approval": orders_pending_approval,
+			"purchase_orders_late_or_unreceived": orders_late,
+			"purchase_orders_open": orders_open,
+		},
+		"insights": {
+			"requests_to_source": {
+				"state": "live",
+				"value": requests_to_source,
+				"note": "Need sourcing action.",
+			},
+			"purchase_orders_pending_approval": {
+				"state": "live",
+				"value": orders_pending_approval,
+				"note": "Need purchase approval review.",
+			},
+			"purchase_orders_late_or_unreceived": {
+				"state": "live",
+				"value": orders_late,
+				"note": "Need supplier follow-up.",
+			},
+		},
 	}

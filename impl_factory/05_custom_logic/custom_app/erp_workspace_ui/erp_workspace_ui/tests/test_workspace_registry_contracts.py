@@ -46,11 +46,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "sales")
 
-    def test_procurement_console_phase0_registry_definition(self):
+    def test_procurement_console_phase1_registry_definition(self):
         workspace = get_procurement_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "procurement")
-        self.assertEqual(workspace["status"], "phase_0")
+        self.assertEqual(workspace["status"], "phase_1")
         self.assertEqual(workspace["title"], "Procurement Console")
         self.assertEqual(
             workspace["routes"],
@@ -83,6 +83,24 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "label": "Overview",
                     "icon": "home",
                     "target": {"kind": "page", "route": "procurement-console"},
+                },
+                {
+                    "key": "supplier_directory",
+                    "label": "Suppliers",
+                    "icon": "customer",
+                    "target": {"kind": "worklist", "queue_key": "supplier_directory"},
+                },
+                {
+                    "key": "purchase_request_directory",
+                    "label": "Purchase Requests",
+                    "icon": "quotation",
+                    "target": {"kind": "worklist", "queue_key": "purchase_request_directory"},
+                },
+                {
+                    "key": "purchase_order_directory",
+                    "label": "Purchase Orders",
+                    "icon": "order",
+                    "target": {"kind": "worklist", "queue_key": "purchase_order_directory"},
                 }
             ],
         )
@@ -137,7 +155,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         finance = next(item for item in roadmap if item["workspace_id"] == "finance")
         executive = next(item for item in roadmap if item["workspace_id"] == "executive")
         self.assertEqual(procurement["recommended_name"], "Procurement Console")
-        self.assertEqual(procurement["status"], "phase_0")
+        self.assertEqual(procurement["status"], "phase_1")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")

@@ -58,7 +58,7 @@ _SALES_WORKSPACE: dict[str, Any] = {
 
 _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "procurement",
-	"status": "phase_0",
+	"status": "phase_1",
 	"title": "Procurement Console",
 	"mode_label": "Procurement Workspace",
 	"role_family": "Procurement",
@@ -114,6 +114,24 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 			"icon": "home",
 			"target": {"kind": "page", "route": "procurement-console"},
 		},
+		{
+			"key": "supplier_directory",
+			"label": "Suppliers",
+			"icon": "customer",
+			"target": {"kind": "worklist", "queue_key": "supplier_directory"},
+		},
+		{
+			"key": "purchase_request_directory",
+			"label": "Purchase Requests",
+			"icon": "quotation",
+			"target": {"kind": "worklist", "queue_key": "purchase_request_directory"},
+		},
+		{
+			"key": "purchase_order_directory",
+			"label": "Purchase Orders",
+			"icon": "order",
+			"target": {"kind": "worklist", "queue_key": "purchase_order_directory"},
+		},
 	],
 }
 
@@ -133,7 +151,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Procurement Console",
 		"wave": "first",
 		"priority": 2,
-		"status": "phase_0",
+		"status": "phase_1",
 	},
 	{
 		"workspace_id": "warehouse",

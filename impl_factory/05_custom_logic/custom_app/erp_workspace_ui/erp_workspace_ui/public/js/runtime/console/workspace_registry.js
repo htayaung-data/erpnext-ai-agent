@@ -56,7 +56,7 @@
 
   const procurementWorkspace = {
     workspaceId: "procurement",
-    status: "phase_0",
+    status: "phase_1",
     title: "Procurement Console",
     modeLabel: "Procurement Workspace",
     roleFamily: "Procurement",
@@ -107,6 +107,9 @@
     },
     fallbackItems: [
       { key: "procurement_console_home", label: "Overview", icon: "home", target: { kind: "page", route: "procurement-console" } },
+      { key: "supplier_directory", label: "Suppliers", icon: "customer", target: { kind: "worklist", queue_key: "supplier_directory" } },
+      { key: "purchase_request_directory", label: "Purchase Requests", icon: "quotation", target: { kind: "worklist", queue_key: "purchase_request_directory" } },
+      { key: "purchase_order_directory", label: "Purchase Orders", icon: "order", target: { kind: "worklist", queue_key: "purchase_order_directory" } },
     ],
   };
 
@@ -117,7 +120,7 @@
 
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
-    { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_0" },
+    { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_1" },
     { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "planned" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },

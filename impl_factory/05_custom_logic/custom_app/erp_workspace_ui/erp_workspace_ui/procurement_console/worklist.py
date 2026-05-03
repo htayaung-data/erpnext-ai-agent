@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
-
 import frappe
 
-from . import service
+from . import common, purchase_orders, requests, service, suppliers
 
 
 def _normalize_queue_key(queue_key: str | None) -> str:
@@ -34,18 +32,6 @@ def _state_payload(queue_key: str, state: dict[str, str]) -> dict[str, object]:
 	}
 
 
-def _coerce_filters(filters: str | dict[str, object] | None) -> dict[str, object]:
-	if isinstance(filters, dict):
-		return filters
-	if isinstance(filters, str) and filters.strip():
-		try:
-			parsed = json.loads(filters)
-		except Exception:
-			return {}
-		return parsed if isinstance(parsed, dict) else {}
-	return {}
-
-
 @frappe.whitelist()
 def get_procurement_console_worklist_context(
 	queue_key: str | None = None,
@@ -54,7 +40,22 @@ def get_procurement_console_worklist_context(
 	service.ensure_authenticated()
 	context = service.build_context()
 	normalized_key = _normalize_queue_key(queue_key)
-	_coerce_filters(filters)
+	applied_filters = common.normalize_filters(filters)
 	if not service.has_procurement_access(context):
 		return _state_payload(normalized_key, service.restricted_state())
-	return _state_payload(normalized_key, service.unavailable_state())
+	builder = _queue_registry().get(normalized_key)
+	if not builder:
+		return _state_payload(normalized_key, service.unavailable_state())
+	return builder(applied_filters)
+
+
+def _queue_registry():
+	return {
+		"supplier_directory": suppliers.build_supplier_directory,
+		"purchase_request_directory": requests.build_purchase_request_directory,
+		"requests_to_source": requests.build_requests_to_source,
+		"purchase_order_directory": purchase_orders.build_purchase_order_directory,
+		"purchase_orders_pending_approval": purchase_orders.build_purchase_orders_pending_approval,
+		"purchase_orders_open": purchase_orders.build_purchase_orders_open,
+		"purchase_orders_late_or_unreceived": purchase_orders.build_purchase_orders_late_or_unreceived,
+	}
