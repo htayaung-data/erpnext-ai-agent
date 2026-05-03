@@ -3,10 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .metadata import ontology_detect_concepts, ontology_detect_followup_modes
 from .natural_business_understanding_context_resolution import nbu_ordinal_reference_index
+from .semantic_aliases import detect_canonical_keys
 
 
-VISIBLE_CONTEXT_TERMS = {
+DISCOURSE_CONTEXT_MARKERS = {
 	"above",
 	"current",
 	"latest",
@@ -21,57 +23,36 @@ VISIBLE_CONTEXT_TERMS = {
 	"same",
 	"selected",
 }
-
-DEICTIC_ENTITY_TERMS = {"that", "this", "it", "same", "selected"}
 TEMPORAL_CONTEXT_TERMS = {"last", "current", "this"}
-FRESH_QUERY_VERBS = {"show", "list", "give", "get", "display", "find"}
-FRESH_RANKING_TERMS = {"top", "bottom", "ranking", "rankings", "ranked"}
-BUSINESS_OBJECT_TERMS = {
+ARTIFACT_CONTEXT_FOLLOWUP_MODES = {
+	"aging_bucket_view",
+	"bullet_presentation",
+	"column_projection",
+	"dimension_breakdown",
+	"metric_refinement",
+	"presentation_transform",
+	"sort_or_limit",
+	"table_presentation",
+	"time_scope_restatement",
+}
+PRESENTATION_ONLY_FOLLOWUP_MODES = {
+	"bullet_presentation",
+	"column_projection",
+	"presentation_transform",
+	"table_presentation",
+}
+ENTITY_REFERENCE_DIMENSIONS = {
+	"account",
 	"customer",
-	"customers",
-	"supplier",
-	"suppliers",
-	"product",
-	"products",
-	"item",
-	"items",
+	"document",
 	"invoice",
-	"invoices",
-	"receipt",
-	"receipts",
-	"payment",
-	"payments",
-	"statement",
-	"statements",
-	"stock",
-	"stocks",
+	"item",
+	"item_code",
+	"item_name",
+	"party",
+	"supplier",
 	"warehouse",
-	"warehouses",
-	"ar",
-	"ap",
-	"receivable",
-	"receivables",
-	"payable",
-	"payables",
 }
-BUSINESS_METRIC_TERMS = {
-	"revenue",
-	"sales",
-	"amount",
-	"quantity",
-	"qty",
-	"profit",
-	"margin",
-	"outstanding",
-	"overdue",
-	"risk",
-	"risky",
-	"stock",
-	"balance",
-	"value",
-}
-EXPLICIT_CONTEXT_ANCHORS = {"above", "table", "row", "position", "that", "this", "it", "same", "selected"}
-PRESENTATION_VERBS = {"show", "display", "format", "present", "convert", "as", "in"}
 
 
 def _clean_text(value: Any) -> str:
@@ -85,6 +66,44 @@ def normalize_message_text(value: Any) -> str:
 
 def message_tokens(value: Any) -> set[str]:
 	return {token for token in normalize_message_text(value).split() if token}
+
+
+def _contains_any_token(tokens: set[str], values: set[str]) -> bool:
+	return any(value in tokens for value in values)
+
+
+def _metadata_business_signal(message: str) -> bool:
+	try:
+		if ontology_detect_concepts(message, include_extended=False):
+			return True
+	except Exception:
+		pass
+	for dimension_or_metric in ("metric", "dimension"):
+		try:
+			if detect_canonical_keys(text=message, dimension_or_metric=dimension_or_metric):
+				return True
+		except Exception:
+			continue
+	return False
+
+
+def _entity_reference_signal(message: str) -> bool:
+	try:
+		dimensions = detect_canonical_keys(text=message, dimension_or_metric="dimension")
+	except Exception:
+		dimensions = []
+	return any(str(value or "").strip() in ENTITY_REFERENCE_DIMENSIONS for value in dimensions)
+
+
+def _followup_modes(message: str) -> set[str]:
+	try:
+		return {
+			str(value or "").strip()
+			for value in ontology_detect_followup_modes(message)
+			if str(value or "").strip()
+		}
+	except Exception:
+		return set()
 
 
 def temporal_scope_phrase_present(message: str) -> bool:
@@ -102,36 +121,16 @@ def temporal_scope_phrase_present(message: str) -> bool:
 
 
 def presentation_only_transform_requested(message: str) -> bool:
-	tokens = message_tokens(message)
-	if not tokens:
+	if nbu_ordinal_reference_index(message) >= 0:
 		return False
-	if tokens.intersection({"million", "millions"}) and tokens.intersection(PRESENTATION_VERBS):
-		return True
-	if (
-		tokens.intersection({"table", "markdown", "bullet", "bullets"})
-		and tokens.intersection(FRESH_QUERY_VERBS.union({"format", "present"}))
-		and not tokens.intersection(BUSINESS_OBJECT_TERMS)
-	):
-		return True
-	return False
+	modes = _followup_modes(message)
+	return any(mode in PRESENTATION_ONLY_FOLLOWUP_MODES for mode in modes)
 
 
 def fresh_business_query_requested(message: str) -> bool:
-	tokens = message_tokens(message)
-	if not tokens:
+	if not _metadata_business_signal(message):
 		return False
-	business_terms = BUSINESS_OBJECT_TERMS.union(BUSINESS_METRIC_TERMS)
-	if tokens.intersection({"top", "bottom"}) and tokens.intersection(business_terms):
-		return True
-	if tokens.intersection(FRESH_RANKING_TERMS) and tokens.intersection(BUSINESS_OBJECT_TERMS) and tokens.intersection(BUSINESS_METRIC_TERMS):
-		return True
-	if (
-		tokens.intersection(FRESH_QUERY_VERBS)
-		and tokens.intersection(BUSINESS_OBJECT_TERMS)
-		and not tokens.intersection(EXPLICIT_CONTEXT_ANCHORS)
-	):
-		return True
-	return False
+	return not _contains_any_token(message_tokens(message), DISCOURSE_CONTEXT_MARKERS)
 
 
 def _context_tokens(message: str) -> set[str]:
@@ -148,12 +147,29 @@ def visible_context_reference_requested(message: str) -> bool:
 		return True
 	if fresh_business_query_requested(message):
 		return False
-	return bool(_context_tokens(message).intersection(VISIBLE_CONTEXT_TERMS))
+	return _contains_any_token(_context_tokens(message), DISCOURSE_CONTEXT_MARKERS)
+
+
+def artifact_level_visible_context_requested(message: str) -> bool:
+	tokens = _context_tokens(message)
+	if not tokens:
+		return False
+	if nbu_ordinal_reference_index(message) >= 0:
+		return False
+	if _entity_reference_signal(message):
+		return False
+	modes = _followup_modes(message)
+	return any(mode in ARTIFACT_CONTEXT_FOLLOWUP_MODES for mode in modes) or _contains_any_token(
+		tokens,
+		DISCOURSE_CONTEXT_MARKERS,
+	)
 
 
 def visible_context_target_reference(message: str) -> str:
 	if nbu_ordinal_reference_index(message) >= 0:
 		return "rank_n"
-	if _context_tokens(message).intersection(DEICTIC_ENTITY_TERMS):
+	if artifact_level_visible_context_requested(message):
+		return "current_artifact"
+	if _contains_any_token(_context_tokens(message), DISCOURSE_CONTEXT_MARKERS):
 		return "selected_entity"
 	return "current_artifact"

@@ -5,6 +5,11 @@ import re
 import time
 from typing import Any, Callable, Dict, List, Tuple
 
+from .entity_detail_request_support import (
+	entity_detail_capability_id,
+	resolve_entity_detail_request_interpretation,
+)
+from .metadata import ontology_detect_concepts
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
 from .natural_business_understanding_context_resolution import (
 	nbu_artifact_rows,
@@ -12,10 +17,12 @@ from .natural_business_understanding_context_resolution import (
 )
 from .natural_business_understanding_contracts import CONTRACT_VERSION
 from .natural_business_understanding_request_classification import (
+	artifact_level_visible_context_requested,
 	visible_context_reference_requested,
 	visible_context_target_reference,
 )
 from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
+from .semantic_aliases import detect_canonical_keys
 
 
 AppendMessage = Callable[[Any, str, str], None]
@@ -74,6 +81,15 @@ def _clean_dict(value: Any) -> Dict[str, Any]:
 
 def _clean_list(value: Any) -> List[Any]:
 	return list(value) if isinstance(value, list) else []
+
+
+def _ordered_unique_texts(values: List[Any] | None) -> List[str]:
+	ordered: List[str] = []
+	for value in values or []:
+		clean = _clean_text(value)
+		if clean and clean not in ordered:
+			ordered.append(clean)
+	return ordered
 
 
 def _tokens(value: Any) -> set[str]:
@@ -287,6 +303,49 @@ def _resolve_visible_context(
 	return _clean_dict(resolution)
 
 
+def _current_entity_detail_evidence_followup_requested(raw_message: str, current_artifact: Dict[str, Any]) -> bool:
+	artifact = _clean_dict(current_artifact)
+	if _clean_text(artifact.get("family_id")).lower() != "entity_detail":
+		return False
+	dimensions = _clean_dict(artifact.get("dimensions"))
+	entity_type = _clean_text(dimensions.get("entity_type")).lower()
+	if not entity_type:
+		return False
+	capability_id = entity_detail_capability_id(entity_type)
+	requested_metrics = _ordered_unique_texts(
+		detect_canonical_keys(
+			text=raw_message,
+			capability_id=capability_id or None,
+			dimension_or_metric="metric",
+		)
+	)
+	requested_dimensions = _ordered_unique_texts(
+		detect_canonical_keys(
+			text=raw_message,
+			capability_id=capability_id or None,
+			dimension_or_metric="dimension",
+		)
+	)
+	requested_concepts = _ordered_unique_texts(
+		[
+			value
+			for value in ontology_detect_concepts(raw_message)
+			if _clean_text(value)
+		]
+	)
+	interpretation = resolve_entity_detail_request_interpretation(
+		entity_type=entity_type,
+		requested_metrics=requested_metrics,
+		requested_dimensions=requested_dimensions,
+		requested_concepts=requested_concepts,
+		artifact_payload=artifact,
+	)
+	if bool(interpretation.get("clarification_required")):
+		return False
+	entity_question_type = _clean_text(interpretation.get("entity_question_type"))
+	return bool(entity_question_type or requested_metrics or requested_dimensions)
+
+
 def _row_rank(row: Dict[str, Any], fallback_index: int) -> int:
 	for key in ("rank", "row_rank", "position", "idx", "index"):
 		try:
@@ -324,6 +383,75 @@ def _format_value(key: str, value: Any) -> str:
 	):
 		return f"{text} MMK"
 	return text
+
+
+def _number_value(value: Any) -> float | None:
+	if isinstance(value, bool):
+		return None
+	if isinstance(value, (int, float)):
+		return float(value)
+	text = _clean_text(value)
+	if not text:
+		return None
+	text = text.replace(",", "").replace("MMK", "").replace("%", "").strip()
+	try:
+		return float(text)
+	except (TypeError, ValueError):
+		return None
+
+
+def _first_numeric(row: Dict[str, Any], keys: Tuple[str, ...]) -> float | None:
+	for key in keys:
+		if key in row:
+			value = _number_value(row.get(key))
+			if value is not None:
+				return value
+	return None
+
+
+def _money_text(value: float) -> str:
+	return f"{value:,.0f} MMK"
+
+
+def _percent_text(value: float) -> str:
+	return f"{value:.1f}".rstrip("0").rstrip(".") + "%"
+
+
+def _risk_signal_lines(row: Dict[str, Any]) -> List[str]:
+	outstanding = _first_numeric(row, ("outstanding_amount", "outstanding", "outstanding_total"))
+	total_due = _first_numeric(row, ("total_due", "total_amount_due", "due_amount"))
+	overdue = _first_numeric(row, ("overdue_amount", "overdue_total", "overdue_31_plus", "overdue"))
+	credit_utilization = _first_numeric(row, ("credit_utilization", "credit_used_pct", "credit_used_percent"))
+	credit_limit = _first_numeric(row, ("credit_limit", "credit_limit_amount"))
+	lines: List[str] = []
+
+	if overdue is not None and overdue > 0:
+		if outstanding is not None and outstanding > 0:
+			lines.append(
+				f"- {_money_text(overdue)} is overdue, which is {_percent_text(overdue / outstanding * 100)} of the outstanding balance."
+			)
+		elif total_due is not None and total_due > 0:
+			lines.append(
+				f"- {_money_text(overdue)} is overdue, which is {_percent_text(overdue / total_due * 100)} of the total due amount."
+			)
+		else:
+			lines.append(f"- It has {_money_text(overdue)} overdue.")
+
+	if total_due is not None and outstanding is not None and outstanding > 0:
+		due_ratio = total_due / outstanding * 100
+		if due_ratio >= 80:
+			lines.append(
+				f"- Total due is {_money_text(total_due)}, close to the outstanding balance ({_percent_text(due_ratio)})."
+			)
+
+	if credit_utilization is not None:
+		lines.append(f"- Credit utilization is {_percent_text(credit_utilization)}, which adds credit-exposure context.")
+	elif credit_limit is not None and outstanding is not None and credit_limit > 0:
+		lines.append(
+			f"- Outstanding balance uses {_percent_text(outstanding / credit_limit * 100)} of the configured credit limit."
+		)
+
+	return lines[:4]
 
 
 def _row_metric_lines(row: Dict[str, Any], *, identity_label: str = "", limit: int = 8) -> List[str]:
@@ -392,65 +520,114 @@ def _entity_label(entity: Dict[str, Any]) -> str:
 	)
 
 
-def _is_risk_explanation(message: str) -> bool:
-	return bool(_tokens(message).intersection({"risk", "risky", "highlighted", "concern", "concerns"}))
+def _nbu_authority_class(nbu_trace_payload: Dict[str, Any] | None) -> str:
+	payload = _clean_dict(nbu_trace_payload)
+	authority_plan = _clean_dict(payload.get("authority_plan"))
+	return _clean_text(authority_plan.get("authority_class")).lower()
 
 
-def _visible_followup_authority_intent(message: str) -> str:
-	tokens = _tokens(message)
-	text = f" {_clean_text(message).lower()} "
-	prediction_terms = {"predict", "prediction", "forecast", "probability", "chance", "likely", "default"}
-	future_terms = {"will", "would", "next", "future", "soon", "month", "week", "quarter", "year"}
-	recommendation_terms = {
-		"should",
-		"recommend",
-		"recommendation",
-		"priority",
-		"prioritize",
-		"collect",
-		"collection",
-		"chase",
-		"call",
-		"approve",
-		"pay",
-		"buy",
-		"reorder",
-		"restock",
-		"action",
-		"decision",
-	}
-	causal_terms = {"cause", "caused", "causing", "increase", "increased", "decrease", "decreased", "changed", "change", "worse", "improved"}
-	if tokens.intersection(prediction_terms) and (tokens.intersection(future_terms) or "default" in tokens):
+def _nbu_selected_requested_action(nbu_trace_payload: Dict[str, Any] | None) -> str:
+	payload = _clean_dict(nbu_trace_payload)
+	selected_id = _clean_text(payload.get("selected_candidate_id"))
+	candidates = _clean_list(payload.get("candidate_interpretations"))
+	for candidate in candidates:
+		candidate_payload = _clean_dict(candidate)
+		if selected_id and _clean_text(candidate_payload.get("candidate_id")) != selected_id:
+			continue
+		return _clean_text(candidate_payload.get("requested_action")).lower()
+	return ""
+
+
+def _reasoning_type(reasoning_semantic_result: Any) -> str:
+	if reasoning_semantic_result is None:
+		return ""
+	if _clean_text(getattr(reasoning_semantic_result, "status", "")).lower() != "accepted":
+		return ""
+	intent = getattr(reasoning_semantic_result, "intent", None)
+	return _clean_text(getattr(intent, "reasoning_type", "")).lower()
+
+
+def _latest_nbu_trace_payload(payloads: List[Dict[str, Any]] | None) -> Dict[str, Any]:
+	for payload in reversed(payloads or []):
+		clean_payload = _clean_dict(payload)
+		if _clean_text(clean_payload.get("type")).lower() == "qwen_natural_business_understanding_trace_contract":
+			return clean_payload
+	return {}
+
+
+def _should_explain_row_signal(
+	row: Dict[str, Any],
+	*,
+	nbu_trace_payload: Dict[str, Any] | None,
+	reasoning_semantic_result: Any = None,
+) -> bool:
+	if not _risk_signal_lines(row):
+		return False
+	authority_class = _nbu_authority_class(nbu_trace_payload)
+	requested_action = _nbu_selected_requested_action(nbu_trace_payload)
+	reasoning_type = _reasoning_type(reasoning_semantic_result)
+	return (
+		authority_class == "safe_explanation"
+		or requested_action == "explain"
+		or reasoning_type in {"explanation", "interpretation"}
+	)
+
+
+def _visible_followup_authority_intent(
+	*,
+	nbu_trace_payload: Dict[str, Any] | None,
+	reasoning_semantic_result: Any = None,
+) -> str:
+	authority_class = _nbu_authority_class(nbu_trace_payload)
+	if authority_class == "prediction":
 		return "prediction_boundary"
-	if tokens.intersection(recommendation_terms) or {"what", "should"}.issubset(tokens):
+	if authority_class in {"recommendation", "approval_action", "policy_decision"}:
 		return "recommendation_boundary"
-	if tokens.intersection(causal_terms):
+	if authority_class == "causal_driver_analysis":
 		return "causal_boundary"
+	if _reasoning_type(reasoning_semantic_result) == "recommendation":
+		return "recommendation_boundary"
 	return "safe_visible_fact"
 
 
-def _resolved_answer_text(raw_message: str, resolution: Dict[str, Any]) -> str:
+def _resolved_answer_text(
+	raw_message: str,
+	resolution: Dict[str, Any],
+	*,
+	nbu_trace_payload: Dict[str, Any] | None = None,
+	reasoning_semantic_result: Any = None,
+) -> str:
 	entity = _clean_dict(resolution.get("resolved_entity"))
 	row = _clean_dict(entity.get("row"))
 	label = _entity_label(entity)
 	rank = int(resolution.get("resolved_rank") or _row_rank(row, 0) or 0)
 	rank_text = f"Rank {rank}" if rank > 0 else "The selected row"
-	if _is_risk_explanation(raw_message):
+	explain_row_signal = _should_explain_row_signal(
+		row,
+		nbu_trace_payload=nbu_trace_payload,
+		reasoning_semantic_result=reasoning_semantic_result,
+	)
+	if explain_row_signal:
 		lines = [
-			f"{label} is the {rank_text.lower()} entry in the current ERP result.",
+			f"{label} is the {rank_text.lower()} entry in the table above.",
 			"",
-			"Visible evidence from that row:",
+			"Why this stands out from the visible row:",
 		]
+		risk_lines = _risk_signal_lines(row)
+		if risk_lines:
+			lines.extend(risk_lines)
+			lines.append("")
+			lines.append("Facts from that row:")
 	else:
-		lines = [f"{rank_text} is {label} in the current ERP result."]
+		lines = [f"{rank_text} is {label} in the table above."]
 	metric_lines = _row_metric_lines(row, identity_label=label)
 	if metric_lines:
-		if not _is_risk_explanation(raw_message):
+		if not explain_row_signal:
 			lines.append("")
 			lines.append("Current row facts:")
 		lines.extend(metric_lines)
 	lines.append("")
-	lines.append("This uses only the ERP result already shown in this conversation.")
+	lines.append("This is based only on the table above.")
 	return "\n".join(line for line in lines if line is not None).strip()
 
 
@@ -465,31 +642,31 @@ def _boundary_answer_text(raw_message: str, resolution: Dict[str, Any], *, autho
 	rank_text = f"Rank {rank}" if rank > 0 else "the selected row"
 	if authority_intent == "prediction_boundary":
 		lines = [
-			f"I can show the current ERP evidence for {rank_text}, but I can't safely predict whether {label} will default from this table alone.",
+			f"I can show the facts for {rank_text}, but I can't safely predict whether {label} will default from this table alone.",
 			"",
-			f"Current visible evidence for {label}:",
+			f"Facts from the table above for {label}:",
 		]
 		next_step = "To answer that as a prediction, we would need an approved prediction model or policy plus payment-history and trend evidence."
 	elif authority_intent == "recommendation_boundary":
 		if _tokens(raw_message).intersection({"collect", "collection", "chase", "call"}):
 			lines = [
-				"I can show the current ERP evidence, but I can't choose who you should collect from first without an approved business rule for that decision.",
+				"I can show the facts from the table above, but I can't choose who you should collect from first without an approved business rule for that decision.",
 				"",
-				f"Current visible evidence for {rank_text} ({label}):",
+				f"Facts from the table above for {rank_text} ({label}):",
 			]
 			next_step = "If you approve a collection-priority policy, I can use it to turn this evidence into a recommendation."
 		else:
 			lines = [
-				"I can show the current ERP evidence, but I can't make an action recommendation without an approved business rule for that decision.",
+				"I can show the facts from the table above, but I can't make an action recommendation without an approved business rule for that decision.",
 				"",
-				f"Current visible evidence for {rank_text} ({label}):",
+				f"Facts from the table above for {rank_text} ({label}):",
 			]
 			next_step = "If you approve the relevant decision policy, I can use it to turn this evidence into a recommendation."
 	elif authority_intent == "causal_boundary":
 		lines = [
-			f"I can show the current ERP evidence for {rank_text}, but I can't prove what caused the change from this single displayed result.",
+			f"I can show the facts for {rank_text}, but I can't prove what caused the change from this single displayed result.",
 			"",
-			f"Current visible evidence for {label}:",
+			f"Facts from the table above for {label}:",
 		]
 		next_step = "To explain cause or change, we would need a trend, payment-behavior, or transaction-history view."
 	else:
@@ -586,6 +763,7 @@ def try_activate_visible_context_followup_response(
 	current_artifact: Dict[str, Any] | None = None,
 	latest_grounded_turn: Dict[str, Any] | None = None,
 	interaction_contract: Any = None,
+	reasoning_semantic_result: Any = None,
 	user_message_already_appended: bool = False,
 	append_message: AppendMessage,
 	append_tool_payload: AppendToolPayload,
@@ -596,6 +774,8 @@ def try_activate_visible_context_followup_response(
 ) -> Tuple[bool, Dict[str, Any] | None]:
 	if not visible_context_followup_requested(raw_message):
 		return False, None
+	if _current_entity_detail_evidence_followup_requested(raw_message, _clean_dict(current_artifact)):
+		return False, None
 
 	resolution = _resolve_visible_context(
 		session_doc=session_doc,
@@ -605,14 +785,33 @@ def try_activate_visible_context_followup_response(
 	status = _clean_text(resolution.get("status")).lower()
 	if status not in {"resolved", "ambiguous", "out_of_range"}:
 		return False, None
+	if (
+		status == "ambiguous"
+		and _clean_text(resolution.get("target_reference")).lower() == "current_artifact"
+		and artifact_level_visible_context_requested(raw_message)
+	):
+		return False, None
 
-	authority_intent = _visible_followup_authority_intent(raw_message)
+	nbu_trace_payload = _latest_nbu_trace_payload(additional_tool_payloads)
+	authority_intent = _visible_followup_authority_intent(
+		nbu_trace_payload=nbu_trace_payload,
+		reasoning_semantic_result=reasoning_semantic_result,
+	)
 	if status == "resolved" and authority_intent != "safe_visible_fact":
 		answer_mode = "visible_context_boundary"
 		answer_text = _boundary_answer_text(raw_message, resolution, authority_intent=authority_intent)
 	else:
 		answer_mode = "visible_context_answer" if status == "resolved" else "visible_context_clarification"
-		answer_text = _resolved_answer_text(raw_message, resolution) if status == "resolved" else _clarification_text(resolution)
+		answer_text = (
+			_resolved_answer_text(
+				raw_message,
+				resolution,
+				nbu_trace_payload=nbu_trace_payload,
+				reasoning_semantic_result=reasoning_semantic_result,
+			)
+			if status == "resolved"
+			else _clarification_text(resolution)
+		)
 	if not answer_text:
 		return False, None
 

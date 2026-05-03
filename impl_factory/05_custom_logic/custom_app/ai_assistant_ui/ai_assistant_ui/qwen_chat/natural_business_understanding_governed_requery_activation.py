@@ -6,6 +6,11 @@ import re
 from typing import Any, Callable, Dict, List, Tuple
 
 from .governed_scope_registry import entity_detail_runtime_policy
+from .entity_detail_request_support import (
+	entity_detail_capability_id,
+	resolve_entity_detail_request_interpretation,
+)
+from .metadata import ontology_detect_concepts
 from .natural_business_understanding_arbitration import nbu_activation_level_supports_action
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
 from .natural_business_understanding_context_resolution import nbu_artifact_rows
@@ -27,31 +32,6 @@ ClearPendingClarification = Callable[[Any], None]
 
 SUPPORTED_REQUERY_ACTIONS = {"execute_governed_requery"}
 SUPPORTED_PLANNER_MODES = {"entity_detail_requery"}
-DETAIL_REQUEST_TERMS = {
-	"detail",
-	"details",
-	"profile",
-	"information",
-	"info",
-	"about",
-	"more",
-	"full",
-}
-VISIBLE_CONTEXT_TERMS = {
-	"above",
-	"current",
-	"latest",
-	"last",
-	"rank",
-	"row",
-	"position",
-	"table",
-	"that",
-	"this",
-	"it",
-	"same",
-	"selected",
-}
 IDENTITY_DIMENSIONS = {
 	"customer",
 	"customer_name",
@@ -94,11 +74,6 @@ def _normalize_key(value: Any) -> str:
 	text = _clean_text(value).lower().replace("-", "_").replace(" ", "_")
 	text = re.sub(r"[^a-z0-9_]+", "_", text)
 	return re.sub(r"_+", "_", text).strip("_")
-
-
-def _tokens(value: Any) -> set[str]:
-	text = re.sub(r"[^a-z0-9]+", " ", _clean_text(value).lower())
-	return {token for token in text.split() if token}
 
 
 def _markdown_table(columns: List[str], rows: List[List[str]]) -> str:
@@ -293,6 +268,70 @@ def _requested_entity_detail_fields(raw_message: str) -> Tuple[List[str], List[s
 	return _clean_list(metrics), _clean_list(dimensions)
 
 
+def _ordered_unique_texts(values: List[Any] | None) -> List[str]:
+	ordered: List[str] = []
+	for value in values or []:
+		clean = _clean_text(value)
+		if clean and clean not in ordered:
+			ordered.append(clean)
+	return ordered
+
+
+def _current_entity_detail_boundary_should_preempt_requery(raw_message: str, current_artifact: Dict[str, Any]) -> bool:
+	artifact = _clean_dict(current_artifact)
+	if _clean_text(artifact.get("family_id")).lower() != "entity_detail":
+		return False
+	dimensions = _clean_dict(artifact.get("dimensions"))
+	entity_type = _clean_text(dimensions.get("entity_type")).lower()
+	if not entity_type:
+		return False
+	capability_id = entity_detail_capability_id(entity_type)
+	try:
+		requested_metrics = _ordered_unique_texts(
+			detect_canonical_keys(
+				text=raw_message,
+				capability_id=capability_id or None,
+				dimension_or_metric="metric",
+			)
+		)
+	except Exception:
+		requested_metrics = []
+	try:
+		requested_dimensions = _ordered_unique_texts(
+			detect_canonical_keys(
+				text=raw_message,
+				capability_id=capability_id or None,
+				dimension_or_metric="dimension",
+			)
+		)
+	except Exception:
+		requested_dimensions = []
+	try:
+		requested_concepts = _ordered_unique_texts(
+			[
+				value
+				for value in ontology_detect_concepts(raw_message)
+				if _clean_text(value)
+			]
+		)
+	except Exception:
+		requested_concepts = []
+	interpretation = resolve_entity_detail_request_interpretation(
+		entity_type=entity_type,
+		requested_metrics=requested_metrics,
+		requested_dimensions=requested_dimensions,
+		requested_concepts=requested_concepts,
+		artifact_payload=artifact,
+	)
+	if bool(interpretation.get("clarification_required")):
+		return False
+	entity_question_type = _clean_text(interpretation.get("entity_question_type"))
+	return entity_question_type in {
+		"purchase_order_actual_receipt_event_date",
+		"sales_order_actual_delivery_event_date",
+	}
+
+
 def _row_has_all_requested_fields(row: Dict[str, Any], metrics: List[str], dimensions: List[str]) -> bool:
 	requested = [_normalize_key(value) for value in [*metrics, *dimensions] if _normalize_key(value)]
 	if not requested:
@@ -301,16 +340,25 @@ def _row_has_all_requested_fields(row: Dict[str, Any], metrics: List[str], dimen
 	return bool(row_keys) and all(value in row_keys for value in requested)
 
 
-def _message_requests_entity_detail(raw_message: str) -> bool:
-	tokens = _tokens(raw_message)
-	if "more" in tokens and (
-		tokens.intersection({"tell", "information", "info", "details", "detail"})
-		or tokens.intersection({"rank", "row", "that", "this", "supplier", "customer", "item", "product", "invoice"})
-	):
+def _trace_requests_broad_entity_detail(
+	trace_payload: Dict[str, Any] | None,
+	assessment: Dict[str, Any],
+) -> bool:
+	trace = _clean_dict(trace_payload)
+	candidate = _selected_candidate(trace)
+	plan = _clean_dict(trace.get("governed_requery_plan"))
+	requested_action = _clean_text(candidate.get("requested_action")).lower()
+	if requested_action == "detail":
 		return True
-	if tokens.intersection({"details", "detail", "profile"}) and tokens.intersection({"about", "for"}):
-		return True
-	return bool(tokens.intersection({"profile", "details", "detail"}) and tokens.intersection({"rank", "row", "that", "this", "supplier", "customer", "item", "product", "invoice"}))
+	requested_metrics = _clean_list(plan.get("requested_metrics") or assessment.get("requested_metrics"))
+	missing_fields = _clean_list(plan.get("missing_fields") or assessment.get("missing_fields"))
+	target_entity = _clean_dict(plan.get("target_entity") or assessment.get("target_entity"))
+	return bool(
+		_clean_text(plan.get("planner_mode") or assessment.get("planner_mode")) == "entity_detail_requery"
+		and target_entity
+		and not requested_metrics
+		and not missing_fields
+	)
 
 
 def _assessment_requests_specific_fields(assessment: Dict[str, Any]) -> bool:
@@ -328,15 +376,20 @@ def _assessment_requests_specific_fields(assessment: Dict[str, Any]) -> bool:
 	return bool(metrics or dimensions or missing_fields)
 
 
-def _prefer_rich_entity_detail_answer(*, raw_message: str, assessment: Dict[str, Any]) -> bool:
-	"""Use full governed detail for broad "more/details/profile" requests.
+def _prefer_rich_entity_detail_answer(
+	*,
+	assessment: Dict[str, Any],
+	nbu_trace_payload: Dict[str, Any] | None = None,
+) -> bool:
+	"""Use full governed detail for broad entity-detail requests.
 
 	Direct evidence helpers are intentionally concise. They are excellent for
-	field asks like credit limit or outstanding amount, but too narrow for broad
-	"tell me more" requests across customers, suppliers, items, and documents.
+	field asks like credit limit or outstanding amount, but too narrow when the
+	NBU requery contract asks for a broad entity profile across customers,
+	suppliers, items, and documents.
 	"""
 
-	return _message_requests_entity_detail(raw_message) and not _assessment_requests_specific_fields(assessment)
+	return _trace_requests_broad_entity_detail(nbu_trace_payload, assessment) and not _assessment_requests_specific_fields(assessment)
 
 
 def _rich_entity_detail_answer_text(outcome: Dict[str, Any]) -> str:
@@ -349,8 +402,6 @@ def _requested_fields_need_entity_detail(
 	entity: Dict[str, Any],
 ) -> Tuple[bool, List[str], List[str]]:
 	metrics, dimensions = _requested_entity_detail_fields(raw_message)
-	if _message_requests_entity_detail(raw_message):
-		return True, metrics, dimensions
 	meaningful_dimensions = [
 		value
 		for value in dimensions
@@ -660,17 +711,13 @@ def try_activate_nbu_governed_requery_response(
 	additional_tool_payloads: List[Dict[str, Any]] | None = None,
 	activation_level: str = "governed_requery",
 ) -> Tuple[bool, Dict[str, Any] | None]:
+	if _current_entity_detail_boundary_should_preempt_requery(raw_message, _clean_dict(current_artifact)):
+		return False, None
+
 	assessment = build_nbu_governed_requery_activation(
 		nbu_trace_payload,
 		activation_level=activation_level,
 	)
-	if _clean_text(assessment.get("activation_state")) != "ready":
-		assessment = build_nbu_registry_visible_entity_requery_activation(
-			session_doc=session_doc,
-			raw_message=raw_message,
-			current_artifact=_clean_dict(current_artifact),
-			activation_level=activation_level,
-		)
 	if _clean_text(assessment.get("activation_state")) != "ready":
 		return False, None
 
@@ -704,8 +751,8 @@ def try_activate_nbu_governed_requery_response(
 	grounded_turn = _clean_dict(outcome.get("grounded_turn_payload")) or _clean_dict(latest_grounded_turn)
 	direct_response: Dict[str, Any] = {}
 	prefer_rich_detail_answer = _prefer_rich_entity_detail_answer(
-		raw_message=raw_message,
 		assessment=assessment,
+		nbu_trace_payload=nbu_trace_payload,
 	)
 	if (
 		not prefer_rich_detail_answer

@@ -71,6 +71,7 @@ def _detail_trace_payload(*, entity_type="supplier", entity_key="Sunflower Acces
 	payload["raw_message"] = f"give me more information about rank 2 {entity_type}s"
 	candidate = payload["candidate_interpretations"][0]
 	candidate["business_domain"] = f"{entity_type}_detail"
+	candidate["requested_action"] = "detail"
 	candidate["requested_metrics"] = []
 	candidate["requested_dimensions"] = [entity_type]
 	plan = payload["governed_requery_plan"]
@@ -209,6 +210,46 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 		self.assertIsNone(payload)
 		self.assertEqual(execute_calls, [])
 
+	def test_current_entity_detail_boundary_preempts_requery_execution(self):
+		session_doc = {"name": "session-1", "messages": []}
+		execute_calls = []
+
+		def execute_entity_drilldown(**kwargs):
+			execute_calls.append(kwargs)
+			return {"ok": True}
+
+		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
+			handled, payload = activation.try_activate_nbu_governed_requery_response(
+				session_doc=session_doc,
+				request_id="req-nbu-fc6",
+				session_id="session-1",
+				user_id="Administrator",
+				raw_message="when was it received?",
+				nbu_trace_payload=_trace_payload(entity_type="purchase_order"),
+				current_artifact={
+					"family_id": "entity_detail",
+					"dimensions": {
+						"entity_type": "purchase_order",
+						"entity_label": "PUR-ORD-2026-00004",
+						"entity_key": "PUR-ORD-2026-00004",
+					},
+				},
+				latest_grounded_turn={"grounded": True, "family_id": "entity_detail"},
+				interaction_contract=_InteractionContract(),
+				response_policy_contract=_ResponsePolicyContract(),
+				append_message=lambda session, role, content: session["messages"].append({"role": role, "content": content}),
+				append_tool_payload=lambda session, payload: session["messages"].append({"role": "tool", "content": json.dumps(payload)}),
+				assistant_text_payload=lambda text: text,
+				save_session=lambda session, **kwargs: session.update({"saved": True}),
+				execute_entity_drilldown=execute_entity_drilldown,
+				direct_evidence_response=lambda **kwargs: {"answer_text": "unused"},
+			)
+
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertEqual(execute_calls, [])
+		self.assertFalse(session_doc.get("messages"))
+
 	def test_registry_visible_entity_fallback_uses_semantic_aliases_not_phrase_case(self):
 		session_doc = {"name": "session-1", "messages": [_selected_row_tool_message()]}
 
@@ -253,7 +294,7 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 		self.assertEqual(result["activation_state"], "blocked")
 		self.assertIn("requested_field_not_proven_entity_detail_requery", result["blockers"])
 
-	def test_detail_request_routes_latest_matching_supplier_table_not_stale_customer_focus(self):
+	def test_registry_visible_entity_requery_does_not_activate_broad_detail_without_nbu_plan(self):
 		session_doc = {
 			"name": "session-1",
 			"messages": [
@@ -281,10 +322,8 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 				activation_level="governed_requery",
 			)
 
-		self.assertEqual(result["activation_state"], "ready")
-		self.assertEqual(result["target_entity"]["entity_type"], "supplier")
-		self.assertEqual(result["target_entity"]["entity_key"], "Sunflower Accessories Co.")
-		self.assertEqual(result["requested_metrics"], [])
+		self.assertEqual(result["activation_state"], "blocked")
+		self.assertIn("requested_field_not_proven_entity_detail_requery", result["blockers"])
 
 	def test_entity_detail_requery_executes_and_prefers_direct_evidence_answer(self):
 		session_doc = {"name": "session-1", "messages": []}
@@ -441,7 +480,7 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 		self.assertNotIn("Narrow AP aging row only", answer_texts[-1])
 		self.assertEqual(direct_calls, [])
 
-	def test_not_ready_nbu_trace_can_execute_registry_backed_visible_entity_requery(self):
+	def test_not_ready_nbu_trace_does_not_execute_registry_backed_visible_entity_requery(self):
 		session_doc = {"name": "session-1", "messages": [_selected_row_tool_message()]}
 
 		def detect_keys(message, capability_id=None, dimension_or_metric=None):
@@ -483,9 +522,9 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 				direct_evidence_response=lambda **kwargs: {"answer_text": "The configured credit limit is 75,000,000 MMK."},
 			)
 
-		self.assertTrue(handled)
-		self.assertEqual(payload["mode"], "nbu_governed_requery_entity_detail")
-		self.assertTrue(session_doc["saved"])
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(session_doc.get("saved"))
 
 
 if __name__ == "__main__":

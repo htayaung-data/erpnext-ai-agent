@@ -241,6 +241,9 @@ from ai_assistant_ui.qwen_chat.natural_business_understanding_service_activation
 from ai_assistant_ui.qwen_chat.natural_business_understanding_governed_requery_activation import (
 	try_activate_nbu_governed_requery_response as _try_activate_nbu_governed_requery_response,
 )
+from ai_assistant_ui.qwen_chat.natural_business_understanding_request_classification import (
+	artifact_level_visible_context_requested as _artifact_level_visible_context_requested,
+)
 from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
 	try_activate_visible_context_followup_response as _try_activate_visible_context_followup_response,
 	visible_context_followup_requested as _visible_context_followup_requested,
@@ -354,6 +357,7 @@ from ai_assistant_ui.qwen_chat.scope_support import (
 	context_isolation_payload as _context_isolation_payload_helper,
 	local_presentation_refinement_should_preserve_semantic_intent as _local_presentation_refinement_should_preserve_semantic_intent,
 	out_of_scope_answer as _out_of_scope_answer_helper,
+	reasoning_activation_supersedes_followup_refinement as _reasoning_activation_supersedes_followup_refinement,
 	reasoning_preempted_by_followup_refinement as _reasoning_preempted_by_followup_refinement,
 	reasoning_scope_suppression_allowed as _reasoning_scope_suppression_allowed,
 	reasoning_supersedes_contradictory_presentation_followup as _reasoning_supersedes_contradictory_presentation_followup,
@@ -412,6 +416,7 @@ from ai_assistant_ui.qwen_chat.family_evaluation_support import (
 	run_customer_credit_balance_smoke as _run_customer_credit_balance_smoke_helper,
 	run_customer_credit_detail_followup_smoke as _run_customer_credit_detail_followup_smoke_helper,
 	run_customer_detail_clarification_followup_smoke as _run_customer_detail_clarification_followup_smoke_helper,
+	run_customer_credit_policy_followup_probe as _run_customer_credit_policy_followup_probe_helper,
 	run_customer_credit_policy_followup_smoke as _run_customer_credit_policy_followup_smoke_helper,
 	run_governed_customer_commercial_composite_smoke as _run_governed_customer_commercial_composite_smoke_helper,
 	run_governed_kpi_frontdoor_smoke as _run_governed_kpi_frontdoor_smoke_helper,
@@ -545,6 +550,18 @@ from ai_assistant_ui.qwen_chat.evaluation.conversation_control_smokes import (
 	run_h3_question_restore_prefers_newer_focus_smoke as _run_h3_question_restore_prefers_newer_focus_smoke_helper,
 	run_h3_stale_recovery_invalidated_by_fresh_override_smoke as _run_h3_stale_recovery_invalidated_by_fresh_override_smoke_helper,
 )
+from ai_assistant_ui.qwen_chat.evaluation.bounded_release_gate import (
+	bounded_release_gate_inventory as _bounded_release_gate_inventory_helper,
+	run_bounded_release_gate as _run_bounded_release_gate_helper,
+)
+from ai_assistant_ui.qwen_chat.evaluation.nbu_governed_requery_smoke import (
+	run_nbu_governed_requery_smoke as _run_nbu_governed_requery_smoke_helper,
+)
+from ai_assistant_ui.qwen_chat.evaluation.nbu_s7_regression_matrix_smoke import (
+	run_nbu_s7_same_session_fresh_query_smoke as _run_nbu_s7_same_session_fresh_query_smoke_helper,
+	run_nbu_s7_safe_boundary_language_smoke as _run_nbu_s7_safe_boundary_language_smoke_helper,
+	run_nbu_s7_visible_context_latest_artifact_smoke as _run_nbu_s7_visible_context_latest_artifact_smoke_helper,
+)
 from ai_assistant_ui.qwen_chat.probes.service_diagnostics import (
 	run_first_turn_regression_suite as _run_first_turn_regression_suite_helper,
 	run_phase1_1_delivery_note_invoice_switch_debug as _run_phase1_1_delivery_note_invoice_switch_debug_helper,
@@ -571,6 +588,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_semantic_tags,
 	get_family_evaluation_case_set,
 	governed_self_contained_business_terms,
+	governed_standalone_business_terms,
 	list_family_evaluation_case_sets,
 	ontology_detect_concepts,
 	ontology_concept_aliases,
@@ -627,6 +645,10 @@ def _message_looks_like_self_contained_governed_business_query(
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
 		return False
+	for term in governed_standalone_business_terms(language):
+		clean = str(term or "").strip().lower()
+		if clean and text == clean:
+			return True
 	prefixes = [
 		str(value or "").strip().lower()
 		for value in ontology_self_contained_prefixes(language)
@@ -706,6 +728,36 @@ def _frontdoor_contract_intent_class(frontdoor_contract: Any) -> str:
 	return str(getattr(frontdoor_contract, "intent_class", "") or "").strip()
 
 
+def _frontdoor_contract_has_direct_handling_authority(frontdoor_contract: Any) -> bool:
+	"""True when the front-door contract already owns the turn response."""
+	return _frontdoor_contract_handle_in_front_door(frontdoor_contract)
+
+
+def _reasoning_activation_has_execution_authority(reasoning_semantic_result: Any) -> bool:
+	if reasoning_semantic_result is None:
+		return False
+	if str(getattr(reasoning_semantic_result, "status", "") or "").strip() != "accepted":
+		return False
+	intent = getattr(reasoning_semantic_result, "intent", None)
+	return bool(str(getattr(intent, "reasoning_type", "") or "").strip())
+
+
+def _frontdoor_should_yield_to_reasoning_activation(
+	*,
+	reasoning_semantic_result: Any,
+	latest_grounded_turn_available: bool,
+	context_force_new_query: bool,
+	entity_drilldown: Any = None,
+) -> bool:
+	if entity_drilldown is not None:
+		return False
+	if not latest_grounded_turn_available:
+		return False
+	if context_force_new_query:
+		return False
+	return _reasoning_activation_has_execution_authority(reasoning_semantic_result)
+
+
 def _frontdoor_context_isolation_retry_needed(
 	*,
 	message: str,
@@ -730,14 +782,26 @@ def _should_skip_artifact_boundary(
 	scope_decision_contract,
 	message: str = "",
 	language: str = "en",
+	request_id: str = "",
+	latest_grounded_turn: Dict[str, Any] | None = None,
+	latest_family_artifact: Dict[str, Any] | None = None,
 ) -> bool:
 	# Fresh-query breakouts must not be answered from the prior grounded artifact.
 	if governed_scope_decision_requires_fresh_query(scope_decision_contract):
 		return True
-	return _message_looks_like_self_contained_governed_business_query(
+	if not _message_looks_like_self_contained_governed_business_query(
 		message=message,
 		language=language,
-	)
+	):
+		return False
+	if _artifact_local_refinement_has_grounded_evidence(
+		request_id=request_id or "artifact-boundary-skip-check",
+		message=message,
+		latest_grounded_turn=latest_grounded_turn or {},
+		latest_family_artifact=latest_family_artifact or {},
+	):
+		return False
+	return True
 
 
 def _capability_requery_should_reenter_frontdoor(*, followup_resolution, continuation_contract) -> bool:
@@ -755,6 +819,19 @@ def _current_artifact_evidence_should_block_requery(
 	if not bool(latest_grounded_turn_available):
 		return False
 	return bool(str(direct_evidence_answer or evidence_boundary_answer or "").strip())
+
+
+def _current_artifact_evidence_should_preempt_reasoning(
+	*,
+	direct_evidence_answer: str,
+	evidence_boundary_answer: str,
+	latest_grounded_turn_available: bool,
+) -> bool:
+	return _current_artifact_evidence_should_block_requery(
+		direct_evidence_answer=direct_evidence_answer,
+		evidence_boundary_answer=evidence_boundary_answer,
+		latest_grounded_turn_available=latest_grounded_turn_available,
+	)
 
 
 def _current_artifact_evidence_should_preserve_context(
@@ -3233,6 +3310,19 @@ def _artifact_local_projection_followup_requested(
 	return bool(requested_columns or requested_modes.intersection({"column_projection", "table_presentation", "presentation_transform"}))
 
 
+def _artifact_local_followup_suppresses_fresh_query_override(
+	*,
+	artifact_local_projection_followup_requested: bool,
+	artifact_local_refinement_has_grounded_evidence: bool,
+) -> bool:
+	"""Artifact-local evidence has higher authority than stale-context breakout."""
+
+	return bool(
+		artifact_local_projection_followup_requested
+		or artifact_local_refinement_has_grounded_evidence
+	)
+
+
 def _artifact_local_refinement_has_grounded_evidence(
 	*,
 	request_id: str,
@@ -3640,6 +3730,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				latest_family_artifact=latest_family_artifact,
 			)
 		)
+		if _artifact_local_followup_suppresses_fresh_query_override(
+			artifact_local_projection_followup_requested=artifact_local_projection_followup_requested,
+			artifact_local_refinement_has_grounded_evidence=artifact_local_refinement_has_grounded_evidence,
+		):
+			fresh_governed_query_override_requested = False
 		if (
 			latest_grounded_turn_available
 			and (
@@ -3986,14 +4081,21 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
 			)
 		)
+	artifact_level_reasoning_context_requested = bool(
+		latest_grounded_turn_available
+		and _artifact_level_visible_context_requested(msg)
+	)
 	if (
 		bool(getattr(context_isolation, "force_new_query", False))
 		and not bool(getattr(context_isolation, "out_of_scope", False))
-		and semantic_intent is None
+		and (semantic_intent is None or artifact_level_reasoning_context_requested)
 		and str(getattr(pre_frontdoor_reasoning_semantic_result, "status", "") or "").strip() == "accepted"
 		and str(getattr(getattr(pre_frontdoor_reasoning_semantic_result, "intent", None), "reasoning_type", "") or "").strip()
-		in {"recommendation", "continuation_detail"}
-		and _reasoning_scope_suppression_allowed(context_isolation)
+		in {"interpretation", "explanation", "recommendation", "continuation_detail"}
+		and (
+			artifact_level_reasoning_context_requested
+			or _reasoning_scope_suppression_allowed(context_isolation)
+		)
 	):
 		context_isolation = build_scope_decision_input()
 	if _current_artifact_evidence_should_preserve_context(
@@ -4074,37 +4176,41 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		if nbu_requery_handled and nbu_requery_payload is not None:
 			return True, nbu_requery_payload
-		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
-			session_doc=session_doc,
-			request_id=request_id,
-			session_id=session_name,
-			user_id=user,
-			site_name=site_name,
-			raw_message=raw_msg,
-			current_artifact=latest_family_artifact,
-			latest_grounded_turn=latest_grounded_turn,
-			interaction_contract=interaction_contract,
-			user_message_already_appended=False,
-			append_message=_append_message,
-			append_tool_payload=_append_tool_payload,
-			assistant_text_payload=_assistant_text_payload,
-			save_session=_save_session,
-			clear_pending_clarification_signal=clear_pending_clarification_signal,
-			additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
-		)
-		if visible_context_handled and visible_context_payload is not None:
-			return True, visible_context_payload
+		if not fresh_governed_query_override_requested:
+			visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
+				session_doc=session_doc,
+				request_id=request_id,
+				session_id=session_name,
+				user_id=user,
+				site_name=site_name,
+				raw_message=raw_msg,
+				current_artifact=latest_family_artifact,
+				latest_grounded_turn=latest_grounded_turn,
+				interaction_contract=interaction_contract,
+				reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+				user_message_already_appended=False,
+				append_message=_append_message,
+				append_tool_payload=_append_tool_payload,
+				assistant_text_payload=_assistant_text_payload,
+				save_session=_save_session,
+				clear_pending_clarification_signal=clear_pending_clarification_signal,
+				additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
+			)
+			if visible_context_handled and visible_context_payload is not None:
+				return True, visible_context_payload
 	compiled_rollout = _compiled_first_turn_rollout_decision(
 		session_name=session_name,
 		user=user,
 		site_name=site_name,
 	)
 	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
+	frontdoor_direct_handling_authority = _frontdoor_contract_has_direct_handling_authority(frontdoor_contract)
 	compiled_fresh_query_breakout = bool(
 		bool(compiled_rollout.get("enabled"))
 		and not context_anchored_message
 		and not pending_clarification_response_preempts_runtime
 		and entity_drilldown is None
+		and not frontdoor_direct_handling_authority
 		and (
 			not latest_grounded_turn_available
 			or fresh_governed_query_override_requested
@@ -4132,6 +4238,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			append_message=_append_message,
 			append_tool_payload=_append_tool_payload,
 			handle_compiled_first_turn_result=_handle_compiled_first_turn_result,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			context_isolation=context_isolation,
 		)
 		_append_tool_payload_values(session_doc, nbu_shadow_tool_payloads)
 		if nbu_shadow_tool_payloads:
@@ -4183,7 +4291,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			if repair_control_decision_contract is not None:
 				_save_session(session_doc, ignore_permissions=False)
 			return True, repair_payload
-	if entity_drilldown is None and not pending_clarification_signal:
+	if (
+		entity_drilldown is None
+		and not pending_clarification_signal
+		and not _reasoning_activation_has_execution_authority(pre_frontdoor_reasoning_semantic_result)
+	):
 		nbu_early_handled, nbu_early_payload = _try_activate_nbu_presentation_response(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -4211,9 +4323,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		if nbu_early_handled and nbu_early_payload is not None:
 			return True, nbu_early_payload
-	if entity_drilldown is None and not _frontdoor_should_yield_to_current_artifact_evidence(
+	frontdoor_should_yield_to_reasoning = _frontdoor_should_yield_to_reasoning_activation(
+		reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+		latest_grounded_turn_available=latest_grounded_turn_available,
+		context_force_new_query=bool(context_isolation.force_new_query),
 		entity_drilldown=entity_drilldown,
-		artifact_local_refinement_has_grounded_evidence=artifact_local_refinement_has_grounded_evidence,
+	)
+	if (
+		entity_drilldown is None
+		and not frontdoor_should_yield_to_reasoning
+		and not _frontdoor_should_yield_to_current_artifact_evidence(
+			entity_drilldown=entity_drilldown,
+			artifact_local_refinement_has_grounded_evidence=artifact_local_refinement_has_grounded_evidence,
+		)
 	):
 		frontdoor_handled, frontdoor_payload = handle_frontdoor_turn(
 			session_doc=session_doc,
@@ -4398,6 +4520,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		reasoning_preempted_by_artifact_refinement = _reasoning_preempted_by_followup_refinement(
 			pre_reasoning_followup_resolution
 		)
+		if _reasoning_activation_supersedes_followup_refinement(
+			reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			followup_resolution=pre_reasoning_followup_resolution,
+			artifact_level_context_requested=_artifact_level_visible_context_requested(msg),
+		):
+			reasoning_preempted_by_artifact_refinement = False
 		precomputed_evidence_request_contract = _entity_detail_evidence_request_payload(
 			request_id=request_id,
 			raw_message=msg,
@@ -4416,6 +4544,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				grounded_turn=latest_grounded_turn,
 				evidence_request_contract=precomputed_evidence_request_contract,
 			)
+	reasoning_must_yield_to_current_artifact_evidence = _current_artifact_evidence_should_preempt_reasoning(
+		direct_evidence_answer=precomputed_evidence_answer,
+		evidence_boundary_answer=precomputed_evidence_boundary_answer,
+		latest_grounded_turn_available=followup_context_available,
+	)
 	reasoning_display_preferences = _latest_display_preferences(
 		session_doc,
 		[
@@ -4430,8 +4563,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not bool(context_isolation.force_new_query)
 		and entity_drilldown is None
 		and not reasoning_preempted_by_artifact_refinement
-		and not precomputed_evidence_answer
-		and not precomputed_evidence_boundary_answer
+		and not reasoning_must_yield_to_current_artifact_evidence
 	):
 		reasoning_activation_contract = (
 			pre_frontdoor_reasoning_activation_contract
@@ -4900,6 +5032,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		scope_decision_contract=scope_decision_contract,
 		message=msg,
 		language=interaction_contract.detected_language,
+		request_id=request_id,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_family_artifact=latest_family_artifact,
 	)
 	artifact_boundary_evaluated = False
 	if entity_drilldown is None and not skip_artifact_boundary:
@@ -5544,6 +5679,15 @@ def run_h3_discard_prefixed_targeted_restore_prefers_item_collection_over_newer_
 
 def run_phase1_4_customer_credit_policy_followup_smoke() -> Dict[str, Any]:
 	return _run_customer_credit_policy_followup_smoke_helper(
+		frappe_module=frappe,
+		session_doctype=QWEN_SESSION_DOCTYPE,
+		handle_qwen_user_message=handle_qwen_user_message,
+		latest_assistant_payload=_latest_assistant_payload,
+	)
+
+
+def run_phase1_4_customer_credit_policy_followup_probe() -> Dict[str, Any]:
+	return _run_customer_credit_policy_followup_probe_helper(
 		frappe_module=frappe,
 		session_doctype=QWEN_SESSION_DOCTYPE,
 		handle_qwen_user_message=handle_qwen_user_message,
@@ -6897,3 +7041,224 @@ def run_post_contract_regression_suite() -> Dict[str, Any]:
 	return _run_post_contract_regression_suite_helper(
 		deps=_conversation_control_smoke_dependencies(),
 	)
+
+
+def run_nbu_s7_same_session_fresh_query_matrix_smoke() -> Dict[str, Any]:
+	return _run_nbu_s7_same_session_fresh_query_smoke_helper()
+
+
+def run_nbu_s7_visible_context_latest_artifact_smoke() -> Dict[str, Any]:
+	return _run_nbu_s7_visible_context_latest_artifact_smoke_helper()
+
+
+def run_nbu_s7_safe_boundary_language_smoke() -> Dict[str, Any]:
+	return _run_nbu_s7_safe_boundary_language_smoke_helper()
+
+
+def _bounded_release_gate_smoke_registry() -> Dict[str, Callable[[], Dict[str, Any]]]:
+	return {
+		"phase1_1_delivery_note_detail": run_phase1_1_delivery_note_detail_smoke,
+		"phase1_1_invoice_delivery_proof": run_phase1_1_invoice_delivery_proof_smoke,
+		"phase1_1_fresh_chat_invoice_delivery_proof": run_phase1_1_fresh_chat_invoice_delivery_proof_smoke,
+		"phase1_2_sales_order_status_followup": run_phase1_2_sales_order_status_followup_smoke,
+		"phase1_3_purchase_order_detail": run_phase1_3_purchase_order_detail_smoke,
+		"phase1_3_purchase_order_status_followup": run_phase1_3_purchase_order_status_followup_smoke,
+		"phase1_4_customer_credit_exposure": run_phase1_4_customer_credit_exposure_smoke,
+		"phase1_4_customer_credit_scope_reset": run_phase1_4_customer_credit_scope_reset_smoke,
+		"phase1_4_customer_credit_detail_followup": run_phase1_4_customer_credit_detail_followup_smoke,
+		"phase1_4_customer_credit_policy_followup": run_phase1_4_customer_credit_policy_followup_smoke,
+		"nbu_governed_requery": _run_nbu_governed_requery_smoke_helper,
+		"nbu_s7_same_session_fresh_query": run_nbu_s7_same_session_fresh_query_matrix_smoke,
+		"nbu_s7_visible_context_latest_artifact": run_nbu_s7_visible_context_latest_artifact_smoke,
+		"nbu_s7_subject_switch": run_phase3_2_subject_switch_regression_debug,
+		"nbu_s7_ranking_projection_continuation": run_phase3_3_ranking_projection_continuation_regression_debug,
+		"nbu_s7_product_quantity_projection": run_phase3_3_product_quantity_projection_regression_debug,
+		"nbu_s7_safe_boundary_language": run_nbu_s7_safe_boundary_language_smoke,
+		"h5_release_gate_rollout_probe": run_h5_release_gate_rollout_probe,
+		"phase55_frontdoor_boundary": run_phase55_frontdoor_boundary_smoke,
+		"phase6_reasoning_live_debug": run_phase6_reasoning_live_debug,
+		"phase7d_boundary_response_live": run_phase7d_boundary_response_live_smoke,
+		"phase8_recovery_execution": run_phase8_recovery_execution_smoke,
+		"h4_recommendation_guarantee": run_h4_recommendation_guarantee_stays_bounded_smoke,
+		"phase55_hardening_suite": run_phase55_hardening_suite,
+		"phase6_recommendation_policy_probe": run_phase6a_recommendation_policy_probe,
+		"phase6_reasoning_live_rollout": run_phase6_reasoning_live_rollout_smoke,
+		"phase6_reasoning_without_grounding": run_phase6_reasoning_without_grounding_smoke,
+		"phase6_reasoning_frontdoor_boundary": run_phase6_reasoning_frontdoor_boundary_smoke,
+		"phase6_nonadvisory_recommendation_boundary": run_phase6_nonadvisory_recommendation_boundary_smoke,
+		"phase6_artifact_refinement_precedence": run_phase6_artifact_refinement_precedence_smoke,
+		"phase6_continuation_fulfillment": run_phase6_continuation_fulfillment_smoke,
+		"phase6_grounded_source_reset": run_phase6_grounded_source_reset_smoke,
+		"phase6_continuation_guardrail": run_phase6d_reasoning_continuation_guardrail_smoke,
+		"phase6_observability": run_phase6_observability_smoke,
+		"phase6_hardening_suite": run_phase6_hardening_suite,
+		"phase7_live_boundary_orchestration": run_phase7c_live_boundary_orchestration_smoke,
+		"phase7_boundary_response_live": run_phase7d_boundary_response_live_smoke,
+		"phase7_hardening_suite": run_phase7_hardening_suite,
+		"phase8_recovery_authority": run_phase8b_recovery_authority_smoke,
+		"phase8_repair_handling": run_phase8c_repair_handling_smoke,
+		"phase8_fresh_query_override": run_phase8d_fresh_query_override_smoke,
+		"phase8_hardening_suite": run_phase8_hardening_suite,
+	}
+
+
+def run_bounded_release_gate(
+	profile: str = "stabilization_fast",
+	fail_fast: Any = True,
+	timeout_seconds: Any = None,
+) -> Dict[str, Any]:
+	return _run_bounded_release_gate_helper(
+		registry=_bounded_release_gate_smoke_registry(),
+		profile=profile,
+		fail_fast=fail_fast,
+		timeout_seconds=timeout_seconds,
+	)
+
+
+def run_bounded_release_gate_phase1_core() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="phase1_core")
+
+
+def run_bounded_release_gate_phase1_document_detail() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="phase1_document_detail")
+
+
+def run_bounded_release_gate_phase1_order_followup() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="phase1_order_followup")
+
+
+def run_bounded_release_gate_phase1_customer_credit() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="phase1_customer_credit")
+
+
+def run_bounded_release_gate_release_sanity() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="release_sanity")
+
+
+def run_bounded_release_gate_nbu_s7_regression_matrix() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="nbu_s7_regression_matrix")
+
+
+def run_bounded_release_gate_nbu_s7_context_matrix() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="nbu_s7_context_matrix")
+
+
+def run_bounded_release_gate_nbu_s7_projection_matrix() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="nbu_s7_projection_matrix")
+
+
+def run_bounded_release_gate_nbu_s7_boundary_recovery_matrix() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="nbu_s7_boundary_recovery_matrix")
+
+
+def run_bounded_release_gate_nbu_s7_safe_boundary_language() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="nbu_s7_safe_boundary_language")
+
+
+def run_bounded_release_gate_post_contract_suites() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_suites")
+
+
+def run_bounded_release_gate_post_contract_phase55() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase55")
+
+
+def run_bounded_release_gate_post_contract_phase6() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6")
+
+
+def run_bounded_release_gate_post_contract_phase6_aggregate() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_aggregate")
+
+
+def run_bounded_release_gate_post_contract_phase6_recommendation_policy() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_recommendation_policy")
+
+
+def run_bounded_release_gate_post_contract_phase6_reasoning_live_rollout() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_reasoning_live_rollout")
+
+
+def run_bounded_release_gate_post_contract_phase6_reasoning_without_grounding() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_reasoning_without_grounding")
+
+
+def run_bounded_release_gate_post_contract_phase6_reasoning_frontdoor_boundary() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_reasoning_frontdoor_boundary")
+
+
+def run_bounded_release_gate_post_contract_phase6_nonadvisory_recommendation_boundary() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_nonadvisory_recommendation_boundary")
+
+
+def run_bounded_release_gate_post_contract_phase6_artifact_refinement_precedence() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_artifact_refinement_precedence")
+
+
+def run_bounded_release_gate_post_contract_phase6_continuation_fulfillment() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_continuation_fulfillment")
+
+
+def run_bounded_release_gate_post_contract_phase6_grounded_source_reset() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_grounded_source_reset")
+
+
+def run_bounded_release_gate_post_contract_phase6_continuation_guardrail() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_continuation_guardrail")
+
+
+def run_bounded_release_gate_post_contract_phase6_observability() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase6_observability")
+
+
+def run_bounded_release_gate_post_contract_phase7() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase7")
+
+
+def run_bounded_release_gate_post_contract_phase7_aggregate() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase7_aggregate")
+
+
+def run_bounded_release_gate_post_contract_phase7_live_boundary_orchestration() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase7_live_boundary_orchestration")
+
+
+def run_bounded_release_gate_post_contract_phase7_boundary_response_live() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase7_boundary_response_live")
+
+
+def run_bounded_release_gate_post_contract_phase8() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase8")
+
+
+def run_bounded_release_gate_post_contract_phase8_aggregate() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase8_aggregate")
+
+
+def run_bounded_release_gate_post_contract_phase8_recovery_authority() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase8_recovery_authority")
+
+
+def run_bounded_release_gate_post_contract_phase8_repair_handling() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase8_repair_handling")
+
+
+def run_bounded_release_gate_post_contract_phase8_fresh_query_override() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase8_fresh_query_override")
+
+
+def run_bounded_release_gate_post_contract_phase8_recovery_execution() -> Dict[str, Any]:
+	return run_bounded_release_gate(profile="post_contract_phase8_recovery_execution")
+
+
+def run_bounded_release_gate_inventory() -> Dict[str, Any]:
+	inventory = _bounded_release_gate_inventory_helper()
+	registry = _bounded_release_gate_smoke_registry()
+	registered = sorted(registry)
+	for profile_cases in (inventory.get("profiles") or {}).values():
+		for case in profile_cases:
+			case_id = str((case or {}).get("case_id") or "").strip()
+			if isinstance(case, dict):
+				case["registered"] = case_id in registry
+	inventory["registered_smokes"] = registered
+	return inventory

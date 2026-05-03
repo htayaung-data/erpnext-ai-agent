@@ -15,6 +15,30 @@ PYTHON_SCAN_ROOTS = [
 	REPO_ROOT / "experimental/qwen_agent_runtime/app",
 ]
 
+QWEN_CHAT_RUNTIME_ROOT = (
+	REPO_ROOT
+	/ "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat"
+)
+DUPLICATE_QWEN_CHAT_RUNTIME_TREE = QWEN_CHAT_RUNTIME_ROOT / "qwen_chat"
+
+PROTECTED_NBU_TOKEN_INTERSECTION_FILES = {
+	QWEN_CHAT_RUNTIME_ROOT
+	/ "natural_business_understanding_request_classification.py": (
+		"NBU request classification must not decide fresh-query or visible-context routing "
+		"from token-intersection business word bags."
+	),
+	QWEN_CHAT_RUNTIME_ROOT
+	/ "natural_business_understanding_governed_requery_activation.py": (
+		"Governed requery activation must receive structured requested-action contracts, "
+		"not infer entity-detail intent from token intersections."
+	),
+	QWEN_CHAT_RUNTIME_ROOT
+	/ "visible_context_followup_activation.py": (
+		"Visible-context follow-up activation must consume structured authority/evidence contracts, "
+		"not infer recommendation, prediction, causal, or explanation intent from token intersections."
+	),
+}
+
 JSON_SCAN_FILES = [
 	REPO_ROOT / "impl_factory/03_config/qwen_enterprise_metadata/business_ontology.json",
 	REPO_ROOT / "impl_factory/03_config/qwen_enterprise_metadata/intent_bias_rules_registry.json",
@@ -162,6 +186,39 @@ def _iter_python_files() -> Iterable[Path]:
 			if path.name == "__init__.py":
 				continue
 			yield path
+
+
+def _check_duplicate_qwen_chat_runtime_tree() -> List[Tuple[Path, int, str]]:
+	if not DUPLICATE_QWEN_CHAT_RUNTIME_TREE.exists():
+		return []
+	runtime_files = [
+		path
+		for path in DUPLICATE_QWEN_CHAT_RUNTIME_TREE.rglob("*.py")
+		if path.name != "__init__.py"
+	]
+	if not runtime_files:
+		return []
+	return [
+		(
+			DUPLICATE_QWEN_CHAT_RUNTIME_TREE,
+			1,
+			"Nested duplicate qwen_chat runtime tree detected. "
+			"Canonical runtime modules must live directly under ai_assistant_ui/qwen_chat; "
+			"archive or remove copied runtime trees before release.",
+		)
+	]
+
+
+def _check_protected_nbu_token_intersections() -> List[Tuple[Path, int, str]]:
+	issues: List[Tuple[Path, int, str]] = []
+	for path, message in PROTECTED_NBU_TOKEN_INTERSECTION_FILES.items():
+		if not path.exists():
+			continue
+		for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+			if "tokens.intersection(" not in line:
+				continue
+			issues.append((path, line_number, message))
+	return issues
 
 
 def _line_number_from_offset(text: str, offset: int) -> int:
@@ -353,6 +410,9 @@ def _check_followup_interpreter_concept_detection_scope() -> List[Tuple[Path, in
 
 def main() -> int:
 	issues: List[Tuple[Path, int, str]] = []
+
+	issues.extend(_check_duplicate_qwen_chat_runtime_tree())
+	issues.extend(_check_protected_nbu_token_intersections())
 
 	for path in _iter_python_files():
 		issues.extend(_check_python_file(path))

@@ -1,9 +1,14 @@
 import json
 import unittest
+from types import SimpleNamespace
 
 from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
 	try_activate_visible_context_followup_response,
 	visible_context_followup_requested,
+)
+from ai_assistant_ui.qwen_chat.natural_business_understanding_request_classification import (
+	artifact_level_visible_context_requested,
+	visible_context_target_reference,
 )
 
 
@@ -151,6 +156,34 @@ def _sales_invoice_artifact():
 	}
 
 
+def _sales_invoice_detail_artifact():
+	return {
+		"type": "qwen_normalized_family_artifact_contract",
+		"artifact_id": "sales-invoice-detail-1",
+		"request_id": "sales-invoice-detail-1",
+		"title": "ACC-SINV-2026-00194 Detail",
+		"family_id": "entity_detail",
+		"dimensions": {
+			"entity_type": "sales_invoice",
+			"entity_label": "ACC-SINV-2026-00194",
+			"entity_key": "ACC-SINV-2026-00194",
+		},
+		"sections": {
+			"document_row": {
+				"sales_invoice": "ACC-SINV-2026-00194",
+				"customer": "Zegyo Mobile Supply House",
+			},
+			"delivery_proof": [
+				{
+					"proof_state": "direct_delivery_proven_via_linked_delivery_note",
+					"submitted_delivery_notes": ["MAT-DN-2026-00011"],
+					"submitted_delivery_dates": ["2026-03-30"],
+				}
+			],
+		},
+	}
+
+
 def _balance_sheet_lines_artifact():
 	return {
 		"type": "qwen_normalized_family_artifact_contract",
@@ -197,16 +230,41 @@ def _item_rows_artifact():
 	}
 
 
-def _shadow_payload():
+def _shadow_payload(*, authority_class="", requested_action=""):
+	candidates = []
+	if requested_action:
+		candidates.append({"candidate_id": "candidate-1", "requested_action": requested_action})
 	return {
 		"type": "qwen_natural_business_understanding_trace_contract",
 		"request_id": "req-shadow",
+		"selected_candidate_id": "candidate-1" if candidates else "",
+		"candidate_interpretations": candidates,
+		"authority_plan": {"authority_class": authority_class} if authority_class else {},
 		"conversation_action_decision": {"action": "ask_clarification"},
 	}
 
 
+def _reasoning_result(reasoning_type=""):
+	if not reasoning_type:
+		return None
+	return SimpleNamespace(
+		status="accepted",
+		intent=SimpleNamespace(reasoning_type=reasoning_type),
+	)
+
+
 class VisibleContextFollowupActivationTests(unittest.TestCase):
-	def _activate(self, *, session_doc, raw_message, current_artifact=None, clear_callback=None):
+	def _activate(
+		self,
+		*,
+		session_doc,
+		raw_message,
+		current_artifact=None,
+		clear_callback=None,
+		authority_class="",
+		requested_action="",
+		reasoning_type="",
+	):
 		messages = []
 		payloads = []
 
@@ -229,12 +287,18 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 			site_name="erpai_prj1",
 			raw_message=raw_message,
 			current_artifact=current_artifact or {},
+			reasoning_semantic_result=_reasoning_result(reasoning_type),
 			append_message=append_message,
 			append_tool_payload=append_payload,
 			assistant_text_payload=lambda text: text,
 			save_session=save_session,
 			clear_pending_clarification_signal=clear_callback,
-			additional_tool_payloads=[_shadow_payload()],
+			additional_tool_payloads=[
+				_shadow_payload(
+					authority_class=authority_class,
+					requested_action=requested_action,
+				)
+			],
 		)
 		return handled, payload, messages, payloads
 
@@ -324,6 +388,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 
 	def test_ambiguous_deictic_question_asks_business_row_clarification(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
+		self.assertEqual(visible_context_target_reference("why is this customer risky?"), "selected_entity")
 		handled, payload, messages, _payloads = self._activate(
 			session_doc=session_doc,
 			raw_message="why is this customer risky?",
@@ -335,6 +400,48 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Rank 1: Capital Telecom (NPT)", answer)
 		self.assertIn("Rank 2: 35th Street Mobile Wholesale", answer)
 		self.assertNotIn("accounts_receivable_read", answer)
+
+	def test_artifact_level_summary_question_yields_to_reasoning_lane(self):
+		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
+		message = "Explain the overdue risk in this accounts receivable summary."
+		self.assertTrue(artifact_level_visible_context_requested(message))
+		self.assertEqual(visible_context_target_reference(message), "current_artifact")
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message=message,
+			current_artifact=_ar_artifact(),
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(messages)
+
+	def test_generic_artifact_meaning_question_yields_to_reasoning_lane(self):
+		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
+		message = "what does this mean"
+		self.assertTrue(artifact_level_visible_context_requested(message))
+		self.assertEqual(visible_context_target_reference(message), "current_artifact")
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message=message,
+			current_artifact=_ar_artifact(),
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(messages)
+
+	def test_generic_artifact_risk_question_yields_to_reasoning_lane(self):
+		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
+		message = "why is this risky?"
+		self.assertTrue(artifact_level_visible_context_requested(message))
+		self.assertEqual(visible_context_target_reference(message), "current_artifact")
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message=message,
+			current_artifact=_ar_artifact(),
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(messages)
 
 	def test_selected_row_focus_supports_later_this_customer_followup(self):
 		session_doc = {"messages": [_tool_message(_ar_artifact())]}
@@ -348,19 +455,49 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 			session_doc=session_doc,
 			raw_message="why is this customer risky?",
 			current_artifact=_ar_artifact(),
+			authority_class="safe_explanation",
+			requested_action="explain",
 		)
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_answer")
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("35th Street Mobile Wholesale", answer)
 		self.assertIn("rank 2", answer.lower())
-		self.assertIn("Visible evidence from that row", answer)
+		self.assertIn("Why this stands out from the visible row", answer)
+		self.assertIn("68.6% of the outstanding balance", answer)
+		self.assertIn("Facts from that row", answer)
+		self.assertIn("This is based only on the table above.", answer)
+
+	def test_reason_style_supplier_question_uses_visible_payable_signals(self):
+		session_doc = {"messages": [_tool_message(_ap_artifact())]}
+		handled, _payload, _messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ap_artifact(),
+		)
+		self.assertTrue(handled)
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="why is this supplier concerning?",
+			current_artifact=_ap_artifact(),
+			authority_class="safe_explanation",
+			requested_action="explain",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Sunflower Accessories Co.", answer)
+		self.assertIn("Why this stands out from the visible row", answer)
+		self.assertIn("136,661,500 MMK is overdue", answer)
+		self.assertIn("61.4% of the outstanding balance", answer)
+		self.assertIn("Facts from that row", answer)
 
 	def test_prediction_question_returns_boundary_not_visible_fact_answer(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
 		handled, payload, messages, _payloads = self._activate(
 			session_doc=session_doc,
 			raw_message="will the first customer default next month?",
+			authority_class="prediction",
 		)
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
@@ -375,12 +512,13 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		handled, payload, messages, _payloads = self._activate(
 			session_doc=session_doc,
 			raw_message="who should we collect from first?",
+			authority_class="recommendation",
 		)
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("can't choose who you should collect from first", answer)
-		self.assertIn("Current visible evidence for Rank 1", answer)
+		self.assertIn("Facts from the table above for Rank 1", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
 		self.assertIn("collection-priority policy", answer)
 
@@ -389,6 +527,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		handled, payload, messages, _payloads = self._activate(
 			session_doc=session_doc,
 			raw_message="what caused the first customer's risk to increase?",
+			authority_class="causal_driver_analysis",
 		)
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
@@ -422,6 +561,28 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Rank 2 is ACC-SINV-2026-00205", answer)
 		self.assertIn("Customer: Capital Telecom (NPT)", answer)
 		self.assertIn("Grand Total: 4,375,000 MMK", answer)
+
+	def test_entity_detail_evidence_followup_yields_to_artifact_boundary(self):
+		session_doc = {"messages": [_tool_message(_sales_invoice_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="items from this invoices are already delivered?",
+			current_artifact=_sales_invoice_detail_artifact(),
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(messages)
+
+	def test_entity_detail_delivery_date_followup_yields_to_artifact_boundary(self):
+		session_doc = {"messages": [_tool_message(_sales_invoice_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="what it was delivered",
+			current_artifact=_sales_invoice_detail_artifact(),
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(messages)
 
 	def test_latest_supplier_table_wins_over_stale_customer_focus_for_rank_reference(self):
 		stale_customer_selection = {
@@ -489,6 +650,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 			session_doc=session_doc,
 			raw_message="should we reorder the first item?",
 			current_artifact=_item_rows_artifact(),
+			authority_class="recommendation",
 		)
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
