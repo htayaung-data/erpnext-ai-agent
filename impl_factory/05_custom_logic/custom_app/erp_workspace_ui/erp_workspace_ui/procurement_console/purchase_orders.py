@@ -5,6 +5,7 @@ from frappe.utils import cstr
 from . import common
 
 
+DETAIL_ROUTE = "procurement-console-po-follow-up"
 PO_FIELDS = [
 	"name",
 	"supplier",
@@ -191,6 +192,11 @@ def _purchase_order_payload(
 	rows: list[dict[str, object]],
 	state: dict[str, object],
 ) -> dict[str, object]:
+	options_by_name = {
+		cstr(row.get("name")): {"return_queue": queue_key}
+		for row in rows
+		if cstr(row.get("name"))
+	}
 	return {
 		"page": {"title": title, "key": queue_key},
 		"summary": {
@@ -241,5 +247,5 @@ def _purchase_order_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.action_targets_for_rows("Purchase Order", rows),
+		"action_targets": common.page_action_targets_for_rows(DETAIL_ROUTE, rows, options_by_name),
 	}

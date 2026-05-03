@@ -89,10 +89,10 @@
     $kpiGrid.append(
       makeInsightCard({ key: "requests_to_source", label: "Requests To Source", meta: "Purchase requests needing buying action." })
         .on("click", () => routeToWorklist("requests_to_source")),
-      makeInsightCard({ key: "purchase_orders_pending_approval", label: "Pending Approval", meta: "Purchase Orders waiting on purchase approval." })
-        .on("click", () => routeToWorklist("purchase_orders_pending_approval")),
-      makeInsightCard({ key: "purchase_orders_late_or_unreceived", label: "Late / Unreceived", meta: "Open orders past required date." })
-        .on("click", () => routeToWorklist("purchase_orders_late_or_unreceived"))
+      makeInsightCard({ key: "purchase_orders_supplier_follow_up", label: "Supplier Follow-up", meta: "POs needing buyer follow-up." })
+        .on("click", () => routeToWorklist("purchase_orders_supplier_follow_up")),
+      makeInsightCard({ key: "purchase_orders_overdue", label: "Overdue POs", meta: "Open item lines past required date." })
+        .on("click", () => routeToWorklist("purchase_orders_overdue"))
     );
 
     const $priority = $(`
@@ -116,18 +116,18 @@
       makeQueueItem({
         key: "purchase_orders_pending_approval",
         title: "Purchase Orders Pending Approval",
-        meta: "Visibility only; approval actions are not enabled in Phase 1.",
+        meta: "Visibility only; approval actions are not enabled.",
         badgeClass: "blocker",
         sideLabel: "Pending",
         onClick: () => routeToWorklist("purchase_orders_pending_approval"),
       }),
       makeQueueItem({
-        key: "purchase_orders_late_or_unreceived",
-        title: "Late Or Unreceived Purchase Orders",
-        meta: "Open orders past required date and not fully received.",
+        key: "purchase_orders_supplier_follow_up",
+        title: "Supplier Follow-up",
+        meta: "Orders needing buyer follow-up because they are overdue, due soon, or partially received.",
         badgeClass: "attention",
         sideLabel: "Follow Up",
-        onClick: () => routeToWorklist("purchase_orders_late_or_unreceived"),
+        onClick: () => routeToWorklist("purchase_orders_supplier_follow_up"),
       }),
       makeQueueItem({
         key: "purchase_orders_open",
@@ -136,6 +136,50 @@
         badgeClass: "review",
         sideLabel: "Open",
         onClick: () => routeToWorklist("purchase_orders_open"),
+      })
+    );
+
+    const $orderFollowUp = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="order-follow-up">
+        <div class="sales-console-section-head">
+          <h2 class="sales-console-section-title">Order Follow-up</h2>
+          <div class="sales-console-section-note">Read-only PO posture</div>
+        </div>
+        <div class="sales-console-queue-grid" data-section-grid="order-follow-up"></div>
+      </section>
+    `);
+    $orderFollowUp.find(".sales-console-queue-grid").append(
+      makeQueueItem({
+        key: "purchase_orders_overdue",
+        title: "Overdue Purchase Orders",
+        meta: "Open item lines past required date.",
+        badgeClass: "blocker",
+        sideLabel: "Overdue",
+        onClick: () => routeToWorklist("purchase_orders_overdue"),
+      }),
+      makeQueueItem({
+        key: "purchase_orders_due_soon",
+        title: "Purchase Orders Due Soon",
+        meta: "Open item lines due in the next seven days.",
+        badgeClass: "attention",
+        sideLabel: "Due Soon",
+        onClick: () => routeToWorklist("purchase_orders_due_soon"),
+      }),
+      makeQueueItem({
+        key: "purchase_orders_partially_received",
+        title: "Partially Received Purchase Orders",
+        meta: "Some receipt posted but fulfillment is not complete.",
+        badgeClass: "attention",
+        sideLabel: "Partial",
+        onClick: () => routeToWorklist("purchase_orders_partially_received"),
+      }),
+      makeQueueItem({
+        key: "purchase_orders_not_billed_visibility",
+        title: "Received Not Fully Billed",
+        meta: "Downstream billing posture only; Finance owns invoice and payment work.",
+        badgeClass: "review",
+        sideLabel: "Visibility",
+        onClick: () => routeToWorklist("purchase_orders_not_billed_visibility"),
       })
     );
 
@@ -219,7 +263,7 @@
       })
     );
 
-    $root.append($header, $priority, $sourcing, $directories);
+    $root.append($header, $priority, $orderFollowUp, $sourcing, $directories);
     $(page.body).empty().append($root);
 
     frappe.call({ method: BOOTSTRAP_METHOD }).then((response) => {

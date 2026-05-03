@@ -196,14 +196,18 @@ def search_procurement_console_workspace(query: str, limit: int = 12) -> dict[st
 
 
 def _build_phase1_overview() -> dict[str, object]:
-	from . import purchase_orders, requests, sourcing, suppliers
+	from . import purchase_order_follow_up, purchase_orders, requests, sourcing, suppliers
 
 	requests_to_source = requests.count_purchase_requests_to_source()
 	requests_total = requests.count_purchase_request_directory()
 	orders_open = purchase_orders.count_purchase_orders_open()
 	orders_total = purchase_orders.count_purchase_order_directory()
 	orders_pending_approval = purchase_orders.count_purchase_orders_pending_approval()
-	orders_late = purchase_orders.count_purchase_orders_late_or_unreceived()
+	orders_late = purchase_order_follow_up.count_purchase_orders_overdue()
+	orders_due_soon = purchase_order_follow_up.count_purchase_orders_due_soon()
+	orders_partially_received = purchase_order_follow_up.count_purchase_orders_partially_received()
+	orders_not_billed_visibility = purchase_order_follow_up.count_purchase_orders_not_billed_visibility()
+	orders_supplier_follow_up = purchase_order_follow_up.count_purchase_orders_supplier_follow_up()
 	suppliers_total = suppliers.count_visible_suppliers()
 	rfqs_total = sourcing.count_rfq_directory()
 	rfqs_awaiting_response = sourcing.count_rfqs_awaiting_supplier_response()
@@ -228,8 +232,38 @@ def _build_phase1_overview() -> dict[str, object]:
 			"purchase_orders_late_or_unreceived": {
 				"state": "live",
 				"value": orders_late,
-				"note": "Open Purchase Orders past required date and not fully received.",
+				"note": "Submitted Purchase Orders with overdue open item lines.",
 				"badgeClass": "attention" if orders_late else "review",
+			},
+			"purchase_orders_due_soon": {
+				"state": "live",
+				"value": orders_due_soon,
+				"note": "Open item lines due within seven days.",
+				"badgeClass": "attention" if orders_due_soon else "review",
+			},
+			"purchase_orders_overdue": {
+				"state": "live",
+				"value": orders_late,
+				"note": "Open item lines past required date.",
+				"badgeClass": "blocker" if orders_late else "review",
+			},
+			"purchase_orders_partially_received": {
+				"state": "live",
+				"value": orders_partially_received,
+				"note": "Orders with some receipt but incomplete fulfillment.",
+				"badgeClass": "attention" if orders_partially_received else "review",
+			},
+			"purchase_orders_not_billed_visibility": {
+				"state": "live",
+				"value": orders_not_billed_visibility,
+				"note": "Received orders not fully billed; visibility only.",
+				"badgeClass": "review",
+			},
+			"purchase_orders_supplier_follow_up": {
+				"state": "live",
+				"value": orders_supplier_follow_up,
+				"note": "Orders needing buyer follow-up.",
+				"badgeClass": "blocker" if orders_supplier_follow_up else "review",
 			},
 			"purchase_orders_open": {
 				"state": "live",
@@ -292,6 +326,11 @@ def _build_phase1_overview() -> dict[str, object]:
 			"requests_to_source": requests_to_source,
 			"purchase_orders_pending_approval": orders_pending_approval,
 			"purchase_orders_late_or_unreceived": orders_late,
+			"purchase_orders_due_soon": orders_due_soon,
+			"purchase_orders_overdue": orders_late,
+			"purchase_orders_partially_received": orders_partially_received,
+			"purchase_orders_not_billed_visibility": orders_not_billed_visibility,
+			"purchase_orders_supplier_follow_up": orders_supplier_follow_up,
 			"purchase_orders_open": orders_open,
 			"rfqs_awaiting_supplier_response": rfqs_awaiting_response,
 			"supplier_quotations_to_compare": supplier_quotations_to_compare,
@@ -312,6 +351,21 @@ def _build_phase1_overview() -> dict[str, object]:
 				"state": "live",
 				"value": orders_late,
 				"note": "Need supplier follow-up.",
+			},
+			"purchase_orders_due_soon": {
+				"state": "live",
+				"value": orders_due_soon,
+				"note": "Need pre-due follow-up.",
+			},
+			"purchase_orders_overdue": {
+				"state": "live",
+				"value": orders_late,
+				"note": "Need urgent follow-up.",
+			},
+			"purchase_orders_supplier_follow_up": {
+				"state": "live",
+				"value": orders_supplier_follow_up,
+				"note": "Need buyer follow-up.",
 			},
 			"supplier_quotations_expiring": {
 				"state": "live",

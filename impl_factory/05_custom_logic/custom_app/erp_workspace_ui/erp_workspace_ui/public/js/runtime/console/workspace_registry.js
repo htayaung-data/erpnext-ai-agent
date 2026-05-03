@@ -56,7 +56,7 @@
 
   const procurementWorkspace = {
     workspaceId: "procurement",
-    status: "phase_2",
+    status: "phase_3",
     title: "Procurement Console",
     modeLabel: "Procurement Workspace",
     roleFamily: "Procurement",
@@ -67,6 +67,7 @@
       homePath: "/desk/procurement-console",
       worklist: "procurement-console-worklist",
       report: "procurement-console-report",
+      poFollowUp: "procurement-console-po-follow-up",
     },
     methods: {
       bootstrap: "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
@@ -74,6 +75,7 @@
       workspaceSearch: "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace",
       worklistContext: "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
       reportContext: "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
+      poFollowUpDetailContext: "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
     },
     managedDoctypes: {
       Supplier: "supplier_directory",
@@ -123,7 +125,7 @@
 
   const roadmap = [
     { workspaceId: "sales", matrixName: "Sales Console", recommendedName: "Sales Console", wave: "first", priority: 1, status: "frozen" },
-    { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_2" },
+    { workspaceId: "procurement", matrixName: "Procurement Console", recommendedName: "Procurement Console", wave: "first", priority: 2, status: "phase_3" },
     { workspaceId: "warehouse", matrixName: "Warehouse Console", recommendedName: "Warehouse Console", wave: "first", priority: 3, status: "planned" },
     { workspaceId: "finance", matrixName: "Finance Console", recommendedName: "Finance Control Desk", wave: "first", priority: 4, status: "name_review" },
     { workspaceId: "executive", matrixName: "Executive Console", recommendedName: "Management Daily Brief", wave: "second", priority: 5, status: "name_review" },
@@ -147,7 +149,7 @@
     for (let index = 0; index < workspaces.length; index += 1) {
       const workspace = workspaces[index];
       const routes = workspace.routes || {};
-      if ([routes.launcher, routes.home, routes.worklist, routes.report].includes(normalized)) {
+      if ([routes.launcher, routes.home, routes.worklist, routes.report, routes.poFollowUp].includes(normalized)) {
         return clone(workspace);
       }
     }

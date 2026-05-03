@@ -92,6 +92,11 @@
 
   function executeTarget(target) {
     if (!target) return;
+    if (target.kind === "page" && target.route) {
+      const routeParts = Array.isArray(target.route_parts) ? target.route_parts : [];
+      frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : null;
+      return frappe.set_route.apply(frappe, [target.route].concat(routeParts));
+    }
     if (target.kind === "form" && target.doctype && target.name) return frappe.set_route("Form", target.doctype, target.name);
     if (target.kind === "list" && target.doctype) return routeToList(target.doctype, target.filters || null);
     if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);

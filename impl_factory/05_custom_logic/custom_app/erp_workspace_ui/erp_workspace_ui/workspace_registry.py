@@ -58,7 +58,7 @@ _SALES_WORKSPACE: dict[str, Any] = {
 
 _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 	"workspace_id": "procurement",
-	"status": "phase_2",
+	"status": "phase_3",
 	"title": "Procurement Console",
 	"mode_label": "Procurement Workspace",
 	"role_family": "Procurement",
@@ -69,6 +69,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"home_path": "/desk/procurement-console",
 		"worklist": "procurement-console-worklist",
 		"report": "procurement-console-report",
+		"po_follow_up": "procurement-console-po-follow-up",
 	},
 	"methods": {
 		"bootstrap": "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
@@ -76,6 +77,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"workspace_search": "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace",
 		"worklist_context": "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
 		"report_context": "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
+		"po_follow_up_detail_context": "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
 	},
 	"managed_doctypes": {
 		"Supplier": "supplier_directory",
@@ -169,7 +171,7 @@ _WORKSPACE_ROADMAP: tuple[dict[str, Any], ...] = (
 		"recommended_name": "Procurement Console",
 		"wave": "first",
 		"priority": 2,
-		"status": "phase_2",
+		"status": "phase_3",
 	},
 	{
 		"workspace_id": "warehouse",
@@ -246,7 +248,7 @@ def get_workspace_by_route(route_key: str) -> dict[str, Any] | None:
 
 	for workspace in _ACTIVE_WORKSPACES.values():
 		routes = workspace.get("routes") or {}
-		if normalized in {routes.get("launcher"), routes.get("home"), routes.get("worklist"), routes.get("report")}:
+		if normalized in {routes.get("launcher"), routes.get("home"), routes.get("worklist"), routes.get("report"), routes.get("po_follow_up")}:
 			return deepcopy(workspace)
 	return None
 

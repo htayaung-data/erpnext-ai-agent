@@ -6,7 +6,15 @@ from datetime import date
 
 fake_frappe = types.ModuleType("frappe")
 CURRENT_ROLES = []
-READABLE_DOCTYPES = {"Supplier", "Material Request", "Purchase Order", "Request for Quotation", "Supplier Quotation"}
+READABLE_DOCTYPES = {
+    "Supplier",
+    "Material Request",
+    "Purchase Order",
+    "Purchase Receipt",
+    "Purchase Invoice",
+    "Request for Quotation",
+    "Supplier Quotation",
+}
 CAPTURED_GET_LIST_CALLS = []
 CAPTURED_GET_ALL_CALLS = []
 CAPTURED_REPORT_CALLS = []
@@ -39,6 +47,34 @@ def _count(doctype, filters=None):
     return 3 if doctype in READABLE_DOCTYPES else 0
 
 
+def _filter_rows(doctype, rows, filters):
+    if not filters:
+        return rows
+    filtered = list(rows)
+    for condition in filters:
+        if not isinstance(condition, (list, tuple)) or len(condition) < 4:
+            continue
+        condition_doctype, fieldname, operator, value = condition[:4]
+        if condition_doctype != doctype:
+            continue
+        if operator == "=":
+            filtered = [row for row in filtered if row.get(fieldname) == value]
+        elif operator == ">":
+            filtered = [row for row in filtered if float(row.get(fieldname) or 0) > float(value or 0)]
+        elif operator == "<":
+            filtered = [row for row in filtered if float(row.get(fieldname) or 0) < float(value or 0)]
+        elif operator == ">=":
+            filtered = [row for row in filtered if str(row.get(fieldname) or "") >= str(value)]
+        elif operator == "<=":
+            filtered = [row for row in filtered if str(row.get(fieldname) or "") <= str(value)]
+        elif operator == "not in":
+            filtered = [row for row in filtered if row.get(fieldname) not in set(value or [])]
+        elif operator == "like":
+            needle = str(value or "").strip("%").lower()
+            filtered = [row for row in filtered if needle in str(row.get(fieldname) or "").lower()]
+    return filtered
+
+
 def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_length=None, **kwargs):
     CAPTURED_GET_LIST_CALLS.append(
         {
@@ -50,7 +86,7 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
         }
     )
     if doctype == "Supplier":
-        return [
+        return _filter_rows(doctype, [
             {
                 "name": "SUP-001",
                 "supplier_name": "Alpha Supplier",
@@ -58,9 +94,9 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "disabled": 0,
                 "modified": "2026-05-03",
             }
-        ]
+        ], filters)
     if doctype == "Material Request":
-        return [
+        return _filter_rows(doctype, [
             {
                 "name": "MAT-MR-001",
                 "title": "Purchase Material",
@@ -73,27 +109,76 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "per_received": 0,
                 "modified": "2026-05-03",
             }
-        ]
+        ], filters)
     if doctype == "Purchase Order":
-        return [
+        return _filter_rows(doctype, [
             {
-                "name": "PUR-ORD-001",
+                "name": "PUR-DUE-001",
                 "supplier": "SUP-001",
                 "supplier_name": "Alpha Supplier",
                 "company": "Demo Company",
                 "transaction_date": "2026-05-02",
-                "schedule_date": "2026-05-10",
+                "schedule_date": "2026-06-01",
                 "status": "To Receive and Bill",
                 "workflow_state": "Pending Purchase Approval",
+                "docstatus": 1,
                 "per_received": 0,
                 "per_billed": 0,
                 "grand_total": 1000,
                 "currency": "MMK",
                 "modified": "2026-05-03",
-            }
-        ]
+            },
+            {
+                "name": "PUR-OVERDUE-001",
+                "supplier": "SUP-001",
+                "supplier_name": "Alpha Supplier",
+                "company": "Demo Company",
+                "transaction_date": "2026-04-20",
+                "schedule_date": "2026-04-30",
+                "status": "To Receive and Bill",
+                "workflow_state": "Approved",
+                "docstatus": 1,
+                "per_received": 0,
+                "per_billed": 0,
+                "grand_total": 2200,
+                "currency": "MMK",
+                "modified": "2026-05-03",
+            },
+            {
+                "name": "PUR-PARTIAL-001",
+                "supplier": "SUP-002",
+                "supplier_name": "Beta Supplier",
+                "company": "Demo Company",
+                "transaction_date": "2026-05-01",
+                "schedule_date": "2026-05-20",
+                "status": "To Receive and Bill",
+                "workflow_state": "Approved",
+                "docstatus": 1,
+                "per_received": 50,
+                "per_billed": 20,
+                "grand_total": 3000,
+                "currency": "MMK",
+                "modified": "2026-05-03",
+            },
+            {
+                "name": "PUR-BILLING-001",
+                "supplier": "SUP-003",
+                "supplier_name": "Gamma Supplier",
+                "company": "Demo Company",
+                "transaction_date": "2026-05-01",
+                "schedule_date": "2026-05-12",
+                "status": "To Bill",
+                "workflow_state": "Approved",
+                "docstatus": 1,
+                "per_received": 100,
+                "per_billed": 40,
+                "grand_total": 4000,
+                "currency": "MMK",
+                "modified": "2026-05-03",
+            },
+        ], filters)
     if doctype == "Request for Quotation":
-        return [
+        return _filter_rows(doctype, [
             {
                 "name": "RFQ-001",
                 "company": "Demo Company",
@@ -103,9 +188,9 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "docstatus": 1,
                 "modified": "2026-05-03",
             }
-        ]
+        ], filters)
     if doctype == "Supplier Quotation":
-        return [
+        return _filter_rows(doctype, [
             {
                 "name": "SUP-QTN-001",
                 "supplier": "SUP-001",
@@ -119,7 +204,7 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "docstatus": 1,
                 "modified": "2026-05-03",
             }
-        ]
+        ], filters)
     return []
 
 
@@ -146,7 +231,106 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
         if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
             rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
         return rows
+    if doctype == "Purchase Order Item":
+        rows = [
+            {
+                "name": "POI-DUE-001",
+                "parent": "PUR-DUE-001",
+                "item_code": "ITEM-001",
+                "item_name": "Widget",
+                "schedule_date": "2026-05-08",
+                "expected_delivery_date": "2026-05-06",
+                "qty": 10,
+                "received_qty": 0,
+                "warehouse": "Stores - DC",
+                "material_request": "MAT-MR-001",
+                "supplier_quotation": "SUP-QTN-001",
+            },
+            {
+                "name": "POI-OVERDUE-001",
+                "parent": "PUR-OVERDUE-001",
+                "item_code": "ITEM-002",
+                "item_name": "Overdue Widget",
+                "schedule_date": "2026-04-30",
+                "expected_delivery_date": "",
+                "qty": 5,
+                "received_qty": 0,
+                "warehouse": "Stores - DC",
+                "material_request": "MAT-MR-002",
+                "supplier_quotation": "SUP-QTN-002",
+            },
+            {
+                "name": "POI-PARTIAL-001",
+                "parent": "PUR-PARTIAL-001",
+                "item_code": "ITEM-003",
+                "item_name": "Partial Widget",
+                "schedule_date": "2026-05-20",
+                "expected_delivery_date": "",
+                "qty": 8,
+                "received_qty": 4,
+                "warehouse": "Stores - DC",
+                "material_request": "MAT-MR-003",
+                "supplier_quotation": "SUP-QTN-003",
+            },
+            {
+                "name": "POI-BILLING-001",
+                "parent": "PUR-BILLING-001",
+                "item_code": "ITEM-004",
+                "item_name": "Billing Widget",
+                "schedule_date": "2026-05-12",
+                "expected_delivery_date": "",
+                "qty": 6,
+                "received_qty": 6,
+                "warehouse": "Stores - DC",
+                "material_request": "MAT-MR-004",
+                "supplier_quotation": "SUP-QTN-004",
+            },
+        ]
+        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
+        if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
+            rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
+        elif parent_filter:
+            rows = [row for row in rows if row["parent"] == parent_filter]
+        return rows
+    if doctype == "Purchase Receipt Item":
+        return [
+            {
+                "parent": "MAT-PRE-001",
+                "item_code": "ITEM-003",
+                "qty": 4,
+                "received_qty": 4,
+                "rejected_qty": 0,
+                "warehouse": "Stores - DC",
+                "billed_amt": 500,
+            }
+        ]
+    if doctype == "Purchase Invoice Item":
+        return [
+            {
+                "parent": "ACC-PINV-001",
+                "item_code": "ITEM-003",
+                "qty": 2,
+                "amount": 500,
+                "purchase_receipt": "MAT-PRE-001",
+            }
+        ]
     return []
+
+
+def _db_get_value(doctype, name=None, fieldname=None, as_dict=False, **kwargs):
+    if doctype == "Purchase Order" and name:
+        rows = _get_list("Purchase Order", filters=[["Purchase Order", "name", "=", name]])
+        if not rows:
+            return None
+        row = rows[0]
+        if as_dict:
+            if isinstance(fieldname, (list, tuple)):
+                return {field: row.get(field) for field in fieldname}
+            return dict(row)
+        if isinstance(fieldname, (list, tuple)):
+            return tuple(row.get(field) for field in fieldname)
+        return row.get(fieldname)
+    return None
 
 
 class _FakeMeta:
@@ -205,7 +389,7 @@ fake_frappe.ValidationError = Exception
 fake_frappe.throw = _throw
 fake_frappe.session = types.SimpleNamespace(user="purchase@example.com")
 fake_frappe.db = types.SimpleNamespace(
-    get_value=lambda *args, **kwargs: None,
+    get_value=_db_get_value,
     exists=lambda *args, **kwargs: False,
     get_single_value=lambda doctype, fieldname: "Demo Company" if doctype == "Global Defaults" else None,
     count=_count,
@@ -274,7 +458,7 @@ sys.modules["erpnext.controllers"] = fake_erpnext_controllers
 sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 
 from erp_workspace_ui import boot
-from erp_workspace_ui.procurement_console import report, service, worklist
+from erp_workspace_ui.procurement_console import purchase_order_detail, report, service, worklist
 
 
 def _set_user(user, roles):
@@ -291,12 +475,55 @@ def _filter_contains(filters, condition):
     return list(condition) in [list(item) for item in filters]
 
 
-class TestProcurementConsolePhase2Contracts(unittest.TestCase):
+def _payload_actions(payload):
+    actions = []
+    controls = payload.get("controls") or {}
+    actions.extend(controls.get("actions") or [])
+    for row in ((payload.get("results") or {}).get("rows") or []):
+        actions.extend(row.get("actions") or [])
+    actions.extend((payload.get("action_targets") or {}).values())
+    return actions
+
+
+def _assert_no_forbidden_mutation_actions(testcase, payload):
+    fragments = []
+    for action in _payload_actions(payload):
+        if isinstance(action, dict):
+            fragments.append(" ".join(str(action.get(key) or "") for key in ["key", "label", "title", "kind", "doctype", "route"]))
+        else:
+            fragments.append(str(action))
+    text = " ".join(fragments).lower()
+    for forbidden in [
+        "approve",
+        "reject",
+        "submit",
+        "cancel",
+        "amend",
+        "close",
+        "receive",
+        "bill",
+        "pay",
+        "item_price",
+        "default_supplier",
+        "acknowledg",
+    ]:
+        testcase.assertNotIn(forbidden, text)
+
+
+class TestProcurementConsolePhase3Contracts(unittest.TestCase):
     def setUp(self):
         global HAS_QUOTE_STATUS
         HAS_QUOTE_STATUS = True
         _set_user("purchase@example.com", ["Purchase User"])
-        _set_readable_doctypes("Supplier", "Material Request", "Purchase Order", "Request for Quotation", "Supplier Quotation")
+        _set_readable_doctypes(
+            "Supplier",
+            "Material Request",
+            "Purchase Order",
+            "Purchase Receipt",
+            "Purchase Invoice",
+            "Request for Quotation",
+            "Supplier Quotation",
+        )
         CAPTURED_GET_LIST_CALLS.clear()
         CAPTURED_GET_ALL_CALLS.clear()
         CAPTURED_REPORT_CALLS.clear()
@@ -307,10 +534,11 @@ class TestProcurementConsolePhase2Contracts(unittest.TestCase):
         with self.assertRaises(_FakePermissionError):
             service.get_procurement_console_bootstrap()
 
-    def test_procurement_bootstrap_returns_ready_buyer_and_sourcing_workbench(self):
+    def test_procurement_bootstrap_returns_ready_buyer_sourcing_and_po_follow_up_workbench(self):
         payload = service.get_procurement_console_bootstrap()
 
         self.assertEqual(payload["workspace"]["workspace_id"], "procurement")
+        self.assertEqual(payload["workspace"]["status"], "phase_3")
         self.assertEqual(payload["state"]["kind"], "ready")
         self.assertEqual(payload["scope"]["default_routing_enabled"], False)
         self.assertEqual(payload["reports_catalog"][0]["key"], "supplier_quotation_comparison")
@@ -329,6 +557,11 @@ class TestProcurementConsolePhase2Contracts(unittest.TestCase):
         self.assertIn("rfqs_awaiting_supplier_response", payload["work"])
         self.assertIn("supplier_quotations_to_compare", payload["work"])
         self.assertIn("supplier_quotations_expiring", payload["work"])
+        self.assertIn("purchase_orders_due_soon", payload["work"])
+        self.assertIn("purchase_orders_overdue", payload["work"])
+        self.assertIn("purchase_orders_partially_received", payload["work"])
+        self.assertIn("purchase_orders_not_billed_visibility", payload["work"])
+        self.assertIn("purchase_orders_supplier_follow_up", payload["work"])
         self.assertIn("rfq_directory", payload["directories"])
         self.assertIn("supplier_quotation_directory", payload["directories"])
 
@@ -386,6 +619,88 @@ class TestProcurementConsolePhase2Contracts(unittest.TestCase):
         self.assertTrue(_filter_contains(filters, ["Purchase Order", "workflow_state", "=", "Pending Purchase Approval"]))
         self.assertNotIn("approve", str(payload).lower())
         self.assertNotIn("reject", str(payload).lower())
+        self.assertEqual(payload["action_targets"]["row:PUR-DUE-001:open_record"]["kind"], "page")
+
+    def test_purchase_orders_due_soon_uses_line_level_expected_date(self):
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_due_soon")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual([row["name"] for row in payload["results"]["rows"]], ["PUR-DUE-001"])
+        self.assertEqual(payload["results"]["rows"][0]["cells"]["required_by"], "2026-05-06")
+        filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
+        self.assertTrue(_filter_contains(filters, ["Purchase Order", "docstatus", "=", 1]))
+        self.assertTrue(_filter_contains(filters, ["Purchase Order", "status", "not in", ["Completed", "Closed", "Cancelled"]]))
+        self.assertTrue(any(call["doctype"] == "Purchase Order Item" and "expected_delivery_date" in call["fields"] for call in CAPTURED_GET_ALL_CALLS))
+        self.assertEqual(payload["action_targets"]["row:PUR-DUE-001:open_record"]["kind"], "page")
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_purchase_orders_overdue_uses_line_level_schedule_date(self):
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_overdue")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual([row["name"] for row in payload["results"]["rows"]], ["PUR-OVERDUE-001"])
+        self.assertEqual(payload["results"]["rows"][0]["cells"]["required_by"], "2026-04-30")
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_late_or_unreceived_queue_is_backward_compatible_overdue_alias(self):
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_late_or_unreceived")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(payload["results"]["rows"][0]["name"], "PUR-OVERDUE-001")
+        self.assertIn("Compatibility alias", payload["controls"]["scopeChips"])
+
+    def test_purchase_orders_partially_received_filters_buyer_follow_up(self):
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_partially_received")
+
+        filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertTrue(_filter_contains(filters, ["Purchase Order", "per_received", ">", 0]))
+        self.assertTrue(_filter_contains(filters, ["Purchase Order", "per_received", "<", 100]))
+        self.assertEqual([row["name"] for row in payload["results"]["rows"]], ["PUR-PARTIAL-001"])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_purchase_orders_billing_visibility_is_received_not_fully_billed_only(self):
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_not_billed_visibility")
+
+        filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertTrue(_filter_contains(filters, ["Purchase Order", "per_received", ">", 0]))
+        self.assertTrue(_filter_contains(filters, ["Purchase Order", "per_billed", "<", 100]))
+        self.assertEqual([row["name"] for row in payload["results"]["rows"]], ["PUR-PARTIAL-001", "PUR-BILLING-001"])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_purchase_orders_supplier_follow_up_combines_buyer_reasons(self):
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_supplier_follow_up")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(
+            [row["name"] for row in payload["results"]["rows"]],
+            ["PUR-OVERDUE-001", "PUR-DUE-001", "PUR-PARTIAL-001"],
+        )
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_finance_and_executive_direct_po_follow_up_queue_restricted(self):
+        _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])
+
+        payload = worklist.get_procurement_console_worklist_context("purchase_orders_overdue")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
+
+    def test_po_follow_up_detail_is_read_only_productized_page(self):
+        payload = purchase_order_detail.get_purchase_order_follow_up_detail_context("PUR-PARTIAL-001", return_queue="purchase_orders_partially_received")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["title"], "PUR-PARTIAL-001")
+        self.assertEqual(payload["detail"]["items"]["rows"][0]["cells"]["remaining_qty"], "4")
+        self.assertEqual(payload["action_targets"]["back_to_queue"]["kind"], "worklist")
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_po_follow_up_detail_restricted_for_finance_executive_only(self):
+        _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])
+
+        payload = purchase_order_detail.get_purchase_order_follow_up_detail_context("PUR-PARTIAL-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "restricted")
 
     def test_rfq_directory_is_read_only(self):
         payload = worklist.get_procurement_console_worklist_context("rfq_directory")

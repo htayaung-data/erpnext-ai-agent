@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-po-follow-up",
+  "page_name": "procurement-console-po-follow-up",
+  "title": "Purchase Order Follow-up",
+  "icon": "octicon octicon-checklist",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

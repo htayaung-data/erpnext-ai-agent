@@ -9,6 +9,7 @@
     "test:sales-order-analysis": "node sales_order_analysis_smoke.js",
     "test:procurement-phase1": "node procurement_phase1_smoke.js",
     "test:procurement-phase2": "node procurement_phase2_smoke.js",
+    "test:procurement-phase3": "node procurement_phase3_smoke.js",
     "test:docker": "bash ./run_playwright_docker.sh",
     "test:roles:docker": "bash ./run_playwright_docker.sh npm run test:roles",
     "test:headed": "playwright test --headed",

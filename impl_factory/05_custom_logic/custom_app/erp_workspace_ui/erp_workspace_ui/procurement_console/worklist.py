@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 
-from . import common, purchase_orders, requests, service, sourcing, suppliers
+from . import common, purchase_order_follow_up, purchase_orders, requests, service, sourcing, suppliers
 
 
 def _normalize_queue_key(queue_key: str | None) -> str:
@@ -57,7 +57,12 @@ def _queue_registry():
 		"purchase_order_directory": purchase_orders.build_purchase_order_directory,
 		"purchase_orders_pending_approval": purchase_orders.build_purchase_orders_pending_approval,
 		"purchase_orders_open": purchase_orders.build_purchase_orders_open,
-		"purchase_orders_late_or_unreceived": purchase_orders.build_purchase_orders_late_or_unreceived,
+		"purchase_orders_late_or_unreceived": purchase_order_follow_up.build_purchase_orders_late_or_unreceived,
+		"purchase_orders_due_soon": purchase_order_follow_up.build_purchase_orders_due_soon,
+		"purchase_orders_overdue": purchase_order_follow_up.build_purchase_orders_overdue,
+		"purchase_orders_partially_received": purchase_order_follow_up.build_purchase_orders_partially_received,
+		"purchase_orders_not_billed_visibility": purchase_order_follow_up.build_purchase_orders_not_billed_visibility,
+		"purchase_orders_supplier_follow_up": purchase_order_follow_up.build_purchase_orders_supplier_follow_up,
 		"rfq_directory": sourcing.build_rfq_directory,
 		"rfqs_awaiting_supplier_response": sourcing.build_rfqs_awaiting_supplier_response,
 		"rfqs_partially_quoted": sourcing.build_rfqs_partially_quoted,

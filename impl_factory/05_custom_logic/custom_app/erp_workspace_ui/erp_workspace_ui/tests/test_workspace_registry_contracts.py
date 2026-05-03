@@ -46,11 +46,11 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "sales")
 
-    def test_procurement_console_phase2_registry_definition(self):
+    def test_procurement_console_phase3_registry_definition(self):
         workspace = get_procurement_workspace_definition()
 
         self.assertEqual(workspace["workspace_id"], "procurement")
-        self.assertEqual(workspace["status"], "phase_2")
+        self.assertEqual(workspace["status"], "phase_3")
         self.assertEqual(workspace["title"], "Procurement Console")
         self.assertEqual(
             workspace["routes"],
@@ -61,6 +61,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "home_path": "/desk/procurement-console",
                 "worklist": "procurement-console-worklist",
                 "report": "procurement-console-report",
+                "po_follow_up": "procurement-console-po-follow-up",
             },
         )
         self.assertEqual(
@@ -74,6 +75,10 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["report_context"],
             "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["po_follow_up_detail_context"],
+            "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
         )
         self.assertEqual(
             workspace["fallback_items"],
@@ -129,6 +134,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             "procurement-console",
             "procurement-console-worklist",
             "procurement-console-report",
+            "procurement-console-po-follow-up",
         ]:
             with self.subTest(route_key=route_key):
                 workspace = get_workspace_by_route(route_key)
@@ -173,7 +179,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         finance = next(item for item in roadmap if item["workspace_id"] == "finance")
         executive = next(item for item in roadmap if item["workspace_id"] == "executive")
         self.assertEqual(procurement["recommended_name"], "Procurement Console")
-        self.assertEqual(procurement["status"], "phase_2")
+        self.assertEqual(procurement["status"], "phase_3")
         self.assertEqual(finance["recommended_name"], "Finance Control Desk")
         self.assertEqual(finance["status"], "name_review")
         self.assertEqual(executive["recommended_name"], "Management Daily Brief")

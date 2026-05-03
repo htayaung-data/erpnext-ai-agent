@@ -153,3 +153,23 @@ def action_targets_for_rows(doctype: str, rows: list[dict[str, Any]]) -> dict[st
 		if row_key and name:
 			targets[f"row:{row_key}:open_record"] = {"kind": "form", "doctype": doctype, "name": name}
 	return targets
+
+
+def page_action_targets_for_rows(
+	route: str,
+	rows: list[dict[str, Any]],
+	options_by_name: dict[str, dict[str, object]] | None = None,
+) -> dict[str, object]:
+	targets: dict[str, object] = {}
+	options_map = options_by_name or {}
+	for row in rows:
+		row_key = cstr(row.get("key") or row.get("name")).strip()
+		name = cstr(row.get("name") or row_key).strip()
+		if row_key and name:
+			targets[f"row:{row_key}:open_record"] = {
+				"kind": "page",
+				"route": route,
+				"route_parts": [name],
+				"options": options_map.get(name) or {},
+			}
+	return targets
