@@ -2232,7 +2232,14 @@
     const asset = PROCUREMENT_DIRECT_PAGE_ASSETS[pageKey];
     if (!asset) return false;
     if (renderProcurementDirectPage(pageKey)) return true;
-    if (procurementDirectPageLoads[pageKey]) return true;
+    if (procurementDirectPageLoads[pageKey]) {
+      setTimeout(() => {
+        if (String(currentRouteParts()[0] || "") === pageKey && procurementRouteShellCount(pageKey) === 0) {
+          renderProcurementDirectPage(pageKey);
+        }
+      }, 120);
+      return false;
+    }
     procurementDirectPageLoads[pageKey] = true;
     loadProcurementDirectPageAsset(pageKey, asset, () => {
       if (String(currentRouteParts()[0] || "") !== pageKey) return;

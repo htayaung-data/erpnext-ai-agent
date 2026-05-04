@@ -974,6 +974,14 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("appearance: none", source)
         self.assertIn("grid-template-columns", source)
 
+    def test_procurement_direct_page_asset_load_retries_when_shell_missing(self):
+        boot_path = Path(__file__).resolve().parents[1] / "public" / "js" / "erp_workspace_ui_boot.js"
+        source = boot_path.read_text()
+        self.assertNotIn('if (procurementDirectPageLoads[pageKey]) return true;', source)
+        self.assertIn('if (procurementDirectPageLoads[pageKey]) {', source)
+        self.assertIn('procurementRouteShellCount(pageKey) === 0', source)
+        self.assertIn('renderProcurementDirectPage(pageKey);', source)
+
     def test_procurement_sidebar_target_resolution_bypasses_sales_child_helper(self):
         sidebar_path = Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "console" / "workspace_console_sidebar.js"
         source = sidebar_path.read_text()
