@@ -464,6 +464,8 @@ sys.modules["erpnext.controllers"] = fake_erpnext_controllers
 sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 
 from erp_workspace_ui import boot
+from pathlib import Path
+
 from erp_workspace_ui.procurement_console import purchase_order_detail, report, service, worklist
 
 
@@ -480,6 +482,14 @@ def _set_readable_doctypes(*doctypes):
 def _filter_contains(filters, condition):
     return list(condition) in [list(item) for item in filters]
 
+
+
+
+def _field_by_key(payload, key):
+    for field in ((payload.get("controls") or {}).get("fields") or []):
+        if field.get("key") == key:
+            return field
+    return None
 
 def _payload_actions(payload):
     actions = []
@@ -606,12 +616,51 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["state"]["kind"], "restricted")
         self.assertEqual(payload["context"]["role_variant"], "restricted")
 
+    def test_procurement_sidebar_context_uses_procurement_title_and_order(self):
+        payload = service.get_procurement_console_sidebar_context()
+
+        self.assertEqual(payload["sidebar"]["title"], "Procurement Console")
+        self.assertEqual(payload["sidebar"]["mode_label"], "Procurement Workspace")
+        self.assertEqual(
+            [item["label"] for item in payload["sidebar"]["items"]],
+            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Quote Comparison"],
+        )
+        self.assertEqual(payload["sidebar"]["items"][-1]["target"]["kind"], "report_page")
+
+    def test_procurement_workspace_search_is_permission_aware_and_productized(self):
+        payload = service.search_procurement_console_workspace("Alpha")
+
+        self.assertEqual(payload["state"], "ready")
+        self.assertTrue(payload["results"])
+        self.assertTrue(all((item["target"] or {}).get("kind") == "worklist" for item in payload["results"]))
+        self.assertTrue(any(item["doctype"] == "Supplier" for item in payload["results"]))
+
+    def test_procurement_workspace_search_restricted_for_non_procurement_user(self):
+        _set_user("sales@example.com", ["Sales User"])
+
+        payload = service.search_procurement_console_workspace("Alpha")
+
+        self.assertEqual(payload["state"], "restricted")
+        self.assertEqual(payload["results"], [])
+
+    def test_list_shell_supports_link_autocomplete_contract(self):
+        shell_path = Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "list_page" / "list_page_shell.js"
+        source = shell_path.read_text()
+
+        self.assertIn("data-erpw-list-link-doctype", source)
+        self.assertIn("frappe.desk.search.search_link", source)
+        self.assertIn("data-erpw-list-link-option", source)
+        self.assertIn("ArrowDown", source)
+        self.assertIn("ArrowUp", source)
+
     def test_supplier_directory_uses_ready_read_only_list_contract(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_directory")
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
         self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["refresh", "reset_filters", "apply_filters"])
         self.assertIn("No create or edit action", payload["controls"]["scopeChips"])
+        self.assertEqual(_field_by_key(payload, "supplier_group")["type"], "link")
+        self.assertEqual(_field_by_key(payload, "supplier_group")["linkDoctype"], "Supplier Group")
         self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Open"}])
         self.assertNotIn("create_supplier", str(payload))
         self.assertEqual(payload["action_targets"]["row:SUP-001:open_record"]["kind"], "form")
@@ -622,6 +671,25 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
         filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
         self.assertTrue(_filter_contains(filters, ["Material Request", "material_request_type", "=", "Purchase"]))
+
+    def test_procurement_filters_use_link_metadata_where_business_fields_reference_doctypes(self):
+        request_payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
+        order_payload = worklist.get_procurement_console_worklist_context("purchase_order_directory")
+        follow_up_payload = worklist.get_procurement_console_worklist_context("purchase_orders_overdue")
+        rfq_payload = worklist.get_procurement_console_worklist_context("rfq_directory")
+        quotation_payload = worklist.get_procurement_console_worklist_context("supplier_quotation_directory")
+        comparison_payload = report.get_procurement_console_report_context("supplier_quotation_comparison", {"company": "Demo Company"})
+
+        self.assertEqual(_field_by_key(request_payload, "company")["linkDoctype"], "Company")
+        self.assertEqual(_field_by_key(order_payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertEqual(_field_by_key(order_payload, "company")["linkDoctype"], "Company")
+        self.assertEqual(_field_by_key(order_payload, "date_start")["label"], "PO Date From")
+        self.assertEqual(_field_by_key(follow_up_payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertEqual(_field_by_key(follow_up_payload, "date_end")["label"], "PO Date To")
+        self.assertEqual(_field_by_key(rfq_payload, "company")["linkDoctype"], "Company")
+        self.assertEqual(_field_by_key(quotation_payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertEqual(_field_by_key(comparison_payload, "supplier_quotation")["linkDoctype"], "Supplier Quotation")
+        self.assertEqual(_field_by_key(comparison_payload, "request_for_quotation")["linkDoctype"], "Request for Quotation")
 
     def test_requests_to_source_enforces_purchase_and_not_fully_ordered(self):
         worklist.get_procurement_console_worklist_context("requests_to_source")

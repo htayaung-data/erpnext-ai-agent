@@ -114,7 +114,7 @@
       { key: "purchase_order_directory", label: "Purchase Orders", icon: "order", target: { kind: "worklist", queue_key: "purchase_order_directory" } },
       { key: "rfq_directory", label: "RFQs", icon: "quotation", target: { kind: "worklist", queue_key: "rfq_directory" } },
       { key: "supplier_quotation_directory", label: "Supplier Quotations", icon: "quotation", target: { kind: "worklist", queue_key: "supplier_quotation_directory" } },
-      { key: "supplier_quotation_comparison", label: "Quote Comparison", icon: "report", target: { kind: "report", report_key: "supplier_quotation_comparison" } },
+      { key: "supplier_quotation_comparison", label: "Quote Comparison", icon: "report", target: { kind: "report_page", report_key: "supplier_quotation_comparison" } },
     ],
   };
 

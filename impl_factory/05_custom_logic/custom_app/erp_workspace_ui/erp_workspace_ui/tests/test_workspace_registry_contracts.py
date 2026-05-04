@@ -123,10 +123,19 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "key": "supplier_quotation_comparison",
                     "label": "Quote Comparison",
                     "icon": "report",
-                    "target": {"kind": "report", "report_key": "supplier_quotation_comparison"},
+                    "target": {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
                 }
             ],
         )
+
+
+    def test_procurement_quote_comparison_sidebar_target_uses_productized_report_page(self):
+        workspace = get_procurement_workspace_definition()
+        target = next(
+            item["target"] for item in workspace["fallback_items"] if item["key"] == "supplier_quotation_comparison"
+        )
+
+        self.assertEqual(target, {"kind": "report_page", "report_key": "supplier_quotation_comparison"})
 
     def test_procurement_console_routes_resolve_to_registry_definition(self):
         for route_key in [

@@ -92,13 +92,13 @@ def _supplier_payload(
 		"page": {"title": "Suppliers", "key": "supplier_directory"},
 		"summary": {
 			"title": "Suppliers",
-			"subtitle": "Read-only supplier directory for buying coordination.",
-			"chips": [{"label": "Read-only"}],
+			"subtitle": "Supplier directory for buying coordination. Records open in ERPNext according to user permissions.",
+			"chips": [{"label": "Supplier visibility"}],
 		},
 		"controls": {
 			"fields": [
 				{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Supplier name"},
-				{"key": "supplier_group", "label": "Supplier Group", "type": "text", "value": filters.get("supplier_group", "")},
+				{"key": "supplier_group", "label": "Supplier Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", "")},
 				{
 					"key": "disabled",
 					"label": "Status",

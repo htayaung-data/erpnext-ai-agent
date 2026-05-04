@@ -166,6 +166,78 @@ async function checkWorklist(page, item, user) {
   return { apiState: state, actionKeys: actionKeys.slice(0, 3), firstRow: ((payload.results || {}).rows || [])[0] || null };
 }
 
+async function checkDefaultLanding(page, user) {
+  await page.waitForFunction(() => Boolean(window.frappe), null, { timeout: TIMEOUT });
+  try {
+    await page.waitForURL(/\/(?:app|desk)\/procurement-console(?:-home)?(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: 20000 });
+  } catch (error) {
+    assert(/\/(?:app|desk)\/procurement-console(?:-home)?(?:[/?#]|$)/.test(page.url()), `${user.label}: did not land on Procurement Console after login`, { url: page.url() });
+  }
+  return page.url();
+}
+
+async function checkProcurementSidebar(page) {
+  await openDeskRoute(page, "/desk/procurement-console");
+  const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Quote Comparison"];
+  const sidebarText = page.locator(".erpw-sales-console-sidebar-text");
+  await sidebarText.first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const labels = (await sidebarText.evaluateAll((nodes) => nodes.map((node) => (node.textContent || "").trim()).filter(Boolean))).slice(0, expected.length);
+  assert(expected.every((label, index) => labels[index] === label), "Procurement sidebar labels/order mismatch", { labels, expected });
+  const headerSubtitle = await page.locator(".body-sidebar .header-subtitle").first().textContent({ timeout: TIMEOUT }).catch(() => "");
+  assert(/Procurement Console/i.test(headerSubtitle || ""), "Procurement sidebar header did not use Procurement Console", { headerSubtitle });
+  return labels;
+}
+
+async function checkSupplierAutocomplete(page) {
+  const supplierResponse = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", {
+    queue_key: "supplier_directory",
+  });
+  assert(supplierResponse.ok, "Supplier directory API failed for autocomplete setup", supplierResponse);
+  const supplierRows = (((supplierResponse.data.message || {}).results || {}).rows || []);
+  if (!supplierRows.length) return { skipped: true, reason: "No visible suppliers for autocomplete smoke" };
+  const firstSupplier = supplierRows[0];
+  const supplierCell = firstSupplier.cells && firstSupplier.cells.supplier;
+  const supplierText = normalizeText((supplierCell && (supplierCell.value || supplierCell.meta)) || firstSupplier.name || firstSupplier.key);
+  const query = supplierText.slice(0, Math.max(2, Math.min(5, supplierText.length))) || String(firstSupplier.name || firstSupplier.key).slice(0, 3);
+
+  await openDeskRoute(page, "/desk/procurement-console-worklist/purchase-order-directory");
+  await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const supplierInput = page.locator('[data-erpw-list-field-key="supplier"][data-erpw-list-link-doctype="Supplier"]').first();
+  await supplierInput.waitFor({ state: "visible", timeout: TIMEOUT });
+  await supplierInput.fill(query);
+  const suggestions = page.locator(".erpw-list-link-suggestions:not([hidden])").first();
+  await suggestions.waitFor({ state: "visible", timeout: TIMEOUT });
+  const option = suggestions.locator("[data-erpw-list-link-option]").first();
+  await option.waitFor({ state: "visible", timeout: TIMEOUT });
+  await option.click();
+  const selected = await supplierInput.inputValue();
+  assert(selected.length > 0, "Supplier autocomplete did not select a value", { query });
+
+  const urlBefore = page.url();
+  await page.evaluate(() => { window.__erpwProcurementSmokeMarker = String(Date.now()); });
+  await page.locator('[data-erpw-list-action-key="apply_filters"]').first().click();
+  await page.waitForFunction(() => document.querySelector(".erpw-list-shell") && document.querySelector(".erpw-list-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+  assert(await page.evaluate(() => Boolean(window.__erpwProcurementSmokeMarker)), "Apply reloaded the full page unexpectedly");
+  assert(page.url() === urlBefore, "Apply changed route unexpectedly", { before: urlBefore, after: page.url() });
+  await page.locator('[data-erpw-list-action-key="reset_filters"]').first().click();
+  await page.waitForFunction(() => document.querySelector(".erpw-list-shell") && document.querySelector(".erpw-list-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+  assert(await page.evaluate(() => Boolean(window.__erpwProcurementSmokeMarker)), "Reset reloaded the full page unexpectedly");
+  await page.locator('[data-erpw-list-action-key="refresh"]').first().click();
+  await page.waitForFunction(() => document.querySelector(".erpw-list-shell") && document.querySelector(".erpw-list-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+  assert(await page.evaluate(() => Boolean(window.__erpwProcurementSmokeMarker)), "Refresh reloaded the full page unexpectedly");
+  return { query, selected };
+}
+
+async function checkQuoteComparisonFromSidebar(page) {
+  await openDeskRoute(page, "/desk/procurement-console");
+  const quoteLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).first();
+  await quoteLink.waitFor({ state: "visible", timeout: TIMEOUT });
+  await quoteLink.click();
+  await page.waitForURL(/\/desk\/procurement-console-report\/supplier-quotation-comparison(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await page.locator(".erpw-report-shell, .erpw-report-results, .erpw-report-summary").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  return page.url();
+}
+
 async function checkDetail(page, purchaseOrderName) {
   const route = purchaseOrderName
     ? `/desk/procurement-console-po-follow-up/${encodeURIComponent(purchaseOrderName)}`
@@ -196,6 +268,8 @@ async function runUser(browser, user) {
   const report = { user: user.key };
   try {
     await login(page, user);
+    report.defaultLandingUrl = await checkDefaultLanding(page, user);
+    report.sidebarLabels = await checkProcurementSidebar(page);
     await openDeskRoute(page, "/desk/procurement-console");
     const bootstrap = await callMethod(page, "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap");
     assert(bootstrap.ok, `${user.label}: bootstrap failed`, bootstrap);
@@ -209,6 +283,8 @@ async function runUser(browser, user) {
         report.worklists[item.key] = result;
         if (!firstPoName && result.firstRow && result.firstRow.name) firstPoName = result.firstRow.name;
       }
+      report.supplierAutocomplete = await checkSupplierAutocomplete(page);
+      report.quoteComparisonUrl = await checkQuoteComparisonFromSidebar(page);
       report.detail = await checkDetail(page, firstPoName);
     } else {
       assert(state === "restricted", `${user.label}: unexpected bootstrap state`, { state });

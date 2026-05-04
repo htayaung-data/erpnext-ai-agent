@@ -6,6 +6,9 @@
   const sidebarRuntime = root.erpWorkspaceConsoleSidebar = root.erpWorkspaceConsoleSidebar || {};
   const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};
   const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
+  const procurementWorkspace = typeof workspaceRegistry.procurement === "function" ? workspaceRegistry.procurement() : null;
+  const activeWorkspaces = [salesWorkspace, procurementWorkspace].filter(Boolean);
+  const defaultWorkspace = salesWorkspace || procurementWorkspace || null;
   const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
   const salesMethods = salesWorkspace && salesWorkspace.methods ? salesWorkspace.methods : {};
   const salesSidebar = salesWorkspace && salesWorkspace.sidebar ? salesWorkspace.sidebar : {};
@@ -37,10 +40,71 @@
     delivery_note: "Delivery Note",
     "sales-invoice": "Sales Invoice",
     sales_invoice: "Sales Invoice",
+    supplier: "Supplier",
+    "material-request": "Material Request",
+    material_request: "Material Request",
+    "request-for-quotation": "Request for Quotation",
+    request_for_quotation: "Request for Quotation",
+    "supplier-quotation": "Supplier Quotation",
+    supplier_quotation: "Supplier Quotation",
+    "purchase-order": "Purchase Order",
+    purchase_order: "Purchase Order",
   };
 
+  function workspaceId(workspace) {
+    return String((workspace && (workspace.workspaceId || workspace.workspace_id)) || "sales");
+  }
+
+  function routeDoctype(route) {
+    if (!Array.isArray(route) || !route.length) return "";
+    const pageKey = String(route[0] || "");
+    if (pageKey === "Form") return String(route[1] || "");
+    return SLUG_FORM_DOCTYPES[pageKey] || "";
+  }
+
+  function workspaceForRoute(route) {
+    const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
+    if (pageKey && typeof workspaceRegistry.getByRoute === "function") {
+      const routedWorkspace = workspaceRegistry.getByRoute(pageKey);
+      if (routedWorkspace) return routedWorkspace;
+    }
+    const doctype = routeDoctype(route);
+    if (doctype) {
+      const matched = activeWorkspaces.find((workspace) => workspace && workspace.managedDoctypes && workspace.managedDoctypes[doctype]);
+      if (matched) return matched;
+    }
+    return defaultWorkspace;
+  }
+
+  function workspaceConfig(route) {
+    const workspace = workspaceForRoute(route) || defaultWorkspace || {};
+    const routes = workspace.routes || {};
+    const methods = workspace.methods || {};
+    const sidebar = workspace.sidebar || {};
+    const id = workspaceId(workspace);
+    return {
+      workspace,
+      workspaceId: id,
+      title: workspace.title || (id === "procurement" ? "Procurement Console" : WORKSPACE_TITLE),
+      modeLabel: workspace.modeLabel || (id === "procurement" ? "Procurement Workspace" : WORKSPACE_MODE_LABEL),
+      routes,
+      sidebar,
+      fallbackItems: Array.isArray(workspace.fallbackItems) ? workspace.fallbackItems : [],
+      homeRoute: routes.home || (id === "procurement" ? "procurement-console" : HOME_ROUTE),
+      launcherRoute: routes.launcher || (id === "procurement" ? "procurement-console-home" : salesRoutes.launcher || "sales-console-home"),
+      worklistRoute: routes.worklist || (id === "procurement" ? "procurement-console-worklist" : WORKLIST_ROUTE),
+      reportRoute: routes.report || (id === "procurement" ? "procurement-console-report" : REPORT_ROUTE),
+      homePath: routes.homePath || routes.home_path || `/desk/${routes.home || (id === "procurement" ? "procurement-console" : HOME_ROUTE)}`,
+      sidebarContextMethod: methods.sidebarContext || methods.sidebar_context || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.get_procurement_console_sidebar_context" : SIDEBAR_METHOD),
+      searchMethod: methods.workspaceSearch || methods.workspace_search || (id === "procurement" ? "erp_workspace_ui.procurement_console.service.search_procurement_console_workspace" : SEARCH_METHOD),
+      managedFormActiveKeys: Object.assign({}, workspace.managedDoctypes || {}),
+    };
+  }
+
   let cachedContext = null;
+  let cachedWorkspaceId = "";
   let contextPromise = null;
+  let contextPromiseWorkspaceId = "";
   let syncTimer = null;
   let mutationSyncTimer = null;
   let sidebarMutationObserver = null;
@@ -528,29 +592,30 @@
     return Array.isArray(route) && route.length ? route : routeFromLocation();
   }
 
-  function isSalesConsoleHomeRoute(route) {
+  function isWorkspaceHomeRoute(route) {
     const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
-    return pageKey === HOME_ROUTE || pageKey === (salesRoutes.launcher || "sales-console-home");
+    const config = workspaceConfig(route);
+    return pageKey === config.homeRoute || pageKey === config.launcherRoute;
+  }
+
+  function isSalesConsoleHomeRoute(route) {
+    return workspaceConfig(route).workspaceId === "sales" && isWorkspaceHomeRoute(route);
   }
 
   function getManagedFormDoctype(route) {
-    if (!Array.isArray(route) || !route.length) return "";
-
-    const pageKey = String(route[0] || "");
-    if (pageKey === "Form") {
-      const doctype = String(route[1] || "");
-      return MANAGED_FORM_ACTIVE_KEYS[doctype] ? doctype : "";
-    }
-
-    const slugDoctype = SLUG_FORM_DOCTYPES[pageKey];
-    return slugDoctype && MANAGED_FORM_ACTIVE_KEYS[slugDoctype] ? slugDoctype : "";
+    const doctype = routeDoctype(route);
+    if (!doctype) return "";
+    const config = workspaceConfig(route);
+    return config.managedFormActiveKeys[doctype] ? doctype : "";
   }
 
   function isManagedRoute(route) {
     if (!Array.isArray(route) || !route.length) return false;
     const pageKey = String(route[0] || "");
-    if (pageKey === HOME_ROUTE || pageKey === (salesRoutes.launcher || "sales-console-home")) return true;
-    if (pageKey === WORKLIST_ROUTE || pageKey === REPORT_ROUTE) return true;
+    const config = workspaceConfig(route);
+    if (pageKey === config.homeRoute || pageKey === config.launcherRoute) return true;
+    if (pageKey === config.worklistRoute || pageKey === config.reportRoute) return true;
+    if (Object.keys(config.routes || {}).some((key) => !/_path$/i.test(key) && config.routes[key] === pageKey)) return true;
     if (getManagedFormDoctype(route)) return true;
     return false;
   }
@@ -558,35 +623,30 @@
   function resolveActiveKey(route) {
     if (!Array.isArray(route) || !route.length) return "";
     const pageKey = String(route[0] || "");
+    const config = workspaceConfig(route);
     const managedDoctype = getManagedFormDoctype(route);
-    if (managedDoctype) return MANAGED_FORM_ACTIVE_KEYS[managedDoctype] || "";
-    if (pageKey === HOME_ROUTE || pageKey === (salesRoutes.launcher || "sales-console-home")) return salesSidebar.homeKey || "sales_console_home";
-    if (pageKey === WORKLIST_ROUTE) {
+    if (managedDoctype) return config.managedFormActiveKeys[managedDoctype] || "";
+    if (pageKey === config.homeRoute || pageKey === config.launcherRoute) {
+      return config.sidebar.homeKey || (config.workspaceId === "procurement" ? "procurement_console_home" : "sales_console_home");
+    }
+    if (pageKey === config.worklistRoute) {
       const worklistKey = String(route[1] || "").replace(/-/g, "_");
-      if (["quotation_directory", "quotations_waiting_action", "quotations_awaiting_approval", "expiring_quotations"].includes(worklistKey)) {
-        return "quotation_directory";
+      if (config.workspaceId === "sales") {
+        if (["quotation_directory", "quotations_waiting_action", "quotations_awaiting_approval", "expiring_quotations"].includes(worklistKey)) return "quotation_directory";
+        if (["sales_order_directory", "open_orders", "sales_orders_pending_fulfillment", "orders_due_soon", "orders_blocked_by_approval", "partially_delivered_orders", "invoices_outstanding", "sales_returns_in_progress"].includes(worklistKey)) return "sales_order_directory";
+        if (["customer_detail", "customer_editor"].includes(worklistKey)) return "customer_directory";
+        if (worklistKey === "item_detail") return "item_directory";
+        return worklistKey;
       }
-      if ([
-        "sales_order_directory",
-        "open_orders",
-        "sales_orders_pending_fulfillment",
-        "orders_due_soon",
-        "orders_blocked_by_approval",
-        "partially_delivered_orders",
-        "invoices_outstanding",
-        "sales_returns_in_progress",
-      ].includes(worklistKey)) {
-        return "sales_order_directory";
-      }
-	      if (["customer_detail", "customer_editor"].includes(worklistKey)) {
-	        return "customer_directory";
-	      }
-	      if (worklistKey === "item_detail") {
-	        return "item_directory";
-	      }
-	      return worklistKey;
-	    }
-    if (pageKey === REPORT_ROUTE) return "";
+      if (["requests_to_source"].includes(worklistKey)) return "purchase_request_directory";
+      if (["purchase_orders_due_soon", "purchase_orders_overdue", "purchase_orders_late_or_unreceived", "purchase_orders_partially_received", "purchase_orders_not_billed_visibility", "purchase_orders_supplier_follow_up", "purchase_orders_open", "purchase_orders_pending_approval"].includes(worklistKey)) return "purchase_order_directory";
+      if (["rfqs_awaiting_supplier_response", "rfqs_partially_quoted"].includes(worklistKey)) return "rfq_directory";
+      if (["supplier_quotations_to_compare", "supplier_quotations_expiring"].includes(worklistKey)) return "supplier_quotation_directory";
+      return worklistKey;
+    }
+    if (pageKey === config.reportRoute && config.workspaceId === "procurement") return "supplier_quotation_comparison";
+    if (config.workspaceId === "procurement" && config.routes && pageKey === config.routes.poFollowUp) return "purchase_order_directory";
+    if (pageKey === config.reportRoute) return "";
     return "";
   }
 
@@ -672,11 +732,12 @@
   function createManagedSidebarHeader() {
     const bodySidebar = document.querySelector(".body-sidebar");
     if (!bodySidebar) return null;
+    const config = workspaceConfig(getRoute());
 
     const header = document.createElement("a");
     header.className = "sidebar-header erpw-sales-console-sidebar-header";
     header.setAttribute("data-erpw-created-sales-console-header", "1");
-    header.setAttribute("href", HOME_PATH);
+    header.setAttribute("href", config.homePath);
     header.style.textDecoration = "none";
     header.style.width = "auto";
     header.style.cursor = "pointer";
@@ -688,7 +749,7 @@
       </div>
       <div class="title-container">
         <div class="sidebar-item-label header-title" data-name-style="">PrimeAxis</div>
-        <div class="sidebar-item-label header-subtitle">${escapeHtml(WORKSPACE_TITLE)}</div>
+        <div class="sidebar-item-label header-subtitle">${escapeHtml(config.title)}</div>
       </div>
       <button class="btn-reset drop-icon show-in-edit-mode">
         <svg class="icon icon-sm" style="display: block;margin:auto;" aria-hidden="true">
@@ -718,6 +779,7 @@
     if (!parts) return;
 
     const { header, icon, title, subtitle } = parts;
+    const config = workspaceConfig(getRoute());
     if (enabled) {
       if (!header.dataset.erpwNativeHeaderCaptured) {
         header.dataset.erpwNativeHeaderCaptured = "1";
@@ -726,10 +788,10 @@
         header.dataset.erpwNativeHeaderSubtitle = subtitle ? subtitle.textContent : "";
       }
       header.classList.add("erpw-sales-console-sidebar-header");
-      header.setAttribute("href", HOME_PATH);
+      header.setAttribute("href", config.homePath);
       if (icon) icon.innerHTML = managedHeaderIconMarkup();
       if (title) title.textContent = "PrimeAxis";
-      if (subtitle) subtitle.textContent = WORKSPACE_TITLE;
+      if (subtitle) subtitle.textContent = config.title;
       const dropIcon = header.querySelector(".drop-icon");
       if (dropIcon) {
         dropIcon.setAttribute("aria-hidden", "true");
@@ -784,25 +846,24 @@
     return null;
   }
 
-  function fallbackContext() {
-    const fallbackItems = salesWorkspace && Array.isArray(salesWorkspace.fallbackItems)
-      ? salesWorkspace.fallbackItems
+  function fallbackContext(route) {
+    const config = workspaceConfig(route || getRoute());
+    const fallbackItems = config.fallbackItems.length
+      ? config.fallbackItems
       : [
-        { key: "sales_console_home", label: "Overview", icon: "home", target: { kind: "page", route: HOME_ROUTE } },
-        { key: "quotation_directory", label: "Quotations", icon: "quotation", target: { kind: "worklist", queue_key: "quotation_directory" } },
-        { key: "sales_order_directory", label: "Sales Orders", icon: "order", target: { kind: "worklist", queue_key: "sales_order_directory" } },
-        { key: "customer_directory", label: "Customers", icon: "customer", target: { kind: "worklist", queue_key: "customer_directory" } },
-        { key: "item_directory", label: "Items", icon: "item", target: { kind: "worklist", queue_key: "item_directory" } },
+        { key: config.workspaceId === "procurement" ? "procurement_console_home" : "sales_console_home", label: "Overview", icon: "home", target: { kind: "page", route: config.homeRoute } },
       ];
     return {
+      workspace: config.workspace,
       sidebar: {
-        title: WORKSPACE_TITLE,
-        mode_label: WORKSPACE_MODE_LABEL,
+        workspace_id: config.workspaceId,
+        title: config.title,
+        mode_label: config.modeLabel,
         scope_label: "",
         sections: [
           {
-            key: salesSidebar.sectionKey || "browse",
-            label: salesSidebar.sectionLabel || "Browse",
+            key: config.sidebar.sectionKey || (config.workspaceId === "procurement" ? "workspace" : "browse"),
+            label: config.sidebar.sectionLabel || (config.workspaceId === "procurement" ? "Workspace" : "Browse"),
             items: fallbackItems,
           },
         ],
@@ -843,25 +904,27 @@
   }
 
   function routeToWorklist(queueKey, filters) {
+    const config = workspaceConfig(getRoute());
     const nextFilters = filters && Object.keys(filters).length ? filters : null;
     const normalizedQueueKey = String(queueKey || "").replace(/_/g, "-");
     const normalizedTargetKey = String(queueKey || "").replace(/-/g, "_");
     const routeCustomer = customerRouteValue(nextFilters);
     const routeItem = itemRouteValue(nextFilters);
     frappe.route_options = nextFilters;
-    if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
-      frappe.set_route(WORKLIST_ROUTE, normalizedQueueKey, encodeRoutePart(routeCustomer));
+    if (config.workspaceId === "sales" && ["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
+      frappe.set_route(config.worklistRoute, normalizedQueueKey, encodeRoutePart(routeCustomer));
       return;
     }
-    if (normalizedTargetKey === "item_detail" && routeItem) {
-      frappe.set_route(WORKLIST_ROUTE, normalizedQueueKey, encodeRoutePart(routeItem));
+    if (config.workspaceId === "sales" && normalizedTargetKey === "item_detail" && routeItem) {
+      frappe.set_route(config.worklistRoute, normalizedQueueKey, encodeRoutePart(routeItem));
       return;
     }
-    frappe.set_route(WORKLIST_ROUTE, normalizedQueueKey);
+    frappe.set_route(config.worklistRoute, normalizedQueueKey);
   }
 
   function routeToReportPage(reportKey) {
-    frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
+    const config = workspaceConfig(getRoute());
+    frappe.set_route(config.reportRoute, String(reportKey || "").replace(/_/g, "-"));
   }
 
   function openNativeNotifications() {
@@ -895,18 +958,19 @@
     if (target.kind === "report_page" && target.report_key) return routeToReportPage(target.report_key);
     if (target.kind === "worklist" && target.queue_key) {
       const route = getRoute();
-      const currentQueueKey = Array.isArray(route) && route[0] === WORKLIST_ROUTE
+      const config = workspaceConfig(route);
+      const currentQueueKey = Array.isArray(route) && route[0] === config.worklistRoute
         ? String(route[1] || "").replace(/-/g, "_")
         : "";
 	      const filters = target.filters && typeof target.filters === "object" ? target.filters : null;
 	      const normalizedTargetKey = String(target.queue_key || "").replace(/-/g, "_");
-	      if (["customer_detail", "customer_editor"].includes(normalizedTargetKey) && customerRouteValue(filters)) {
+	      if (config.workspaceId === "sales" && ["customer_detail", "customer_editor"].includes(normalizedTargetKey) && customerRouteValue(filters)) {
 	        return routeToWorklist(target.queue_key, filters);
 	      }
-	      if (normalizedTargetKey === "item_detail" && itemRouteValue(filters)) {
+	      if (config.workspaceId === "sales" && normalizedTargetKey === "item_detail" && itemRouteValue(filters)) {
 	        return routeToWorklist(target.queue_key, filters);
 	      }
-      const worklistRuntime = root.erpWorkspaceSalesConsoleWorklist;
+      const worklistRuntime = config.workspaceId === "sales" ? root.erpWorkspaceSalesConsoleWorklist : null;
       if (
         filters &&
         currentQueueKey === String(target.queue_key || "") &&
@@ -989,7 +1053,8 @@
     searchActiveIndex = searchResults.length ? 0 : -1;
 
     if (!searchResults.length) {
-      elements.$status.text((payload && payload.message) || "No Sales Console records match this search yet.").removeAttr("hidden");
+      const config = workspaceConfig(getRoute());
+      elements.$status.text((payload && payload.message) || `No ${config.title} records match this search yet.`).removeAttr("hidden");
       elements.$results.empty().attr("hidden", true);
       elements.$input.attr("aria-expanded", "false").removeAttr("aria-activedescendant");
       return;
@@ -1053,20 +1118,21 @@
       return;
     }
 
+    const config = workspaceConfig(getRoute());
     const elements = currentSearchElements();
     if (elements) {
       elements.$status.text("Searching...").removeAttr("hidden");
     }
 
     Promise.resolve(frappe.call({
-      method: SEARCH_METHOD,
+      method: config.searchMethod,
       args: { query: needle, limit: 12 },
     })).then((response) => {
       if (requestToken !== searchRequestToken) return;
       renderWorkspaceSearchResults(response && response.message ? response.message : {});
     }).catch(() => {
       if (requestToken !== searchRequestToken) return;
-      resetWorkspaceSearch("Sales Console search is temporarily unavailable.");
+      resetWorkspaceSearch(`${config.title} search is temporarily unavailable.`);
     });
   }
 
@@ -1084,6 +1150,10 @@
 
   function bindWorkspaceSearchDialog(dialog) {
     if (!dialog || !dialog.fields_dict || !dialog.fields_dict.search_html) return;
+    const config = workspaceConfig(getRoute());
+    const placeholder = config.workspaceId === "procurement"
+      ? "Search suppliers, purchase requests, RFQs, quotations, or purchase orders"
+      : "Search customers, items, quotations, or sales orders";
     const $root = dialog.fields_dict.search_html.$wrapper;
     $root.html(`
       <div class="erpw-sales-console-search-shell">
@@ -1093,12 +1163,12 @@
             type="text"
             class="erpw-sales-console-search-input"
             data-erpw-sales-search-input
-            aria-label="Search Sales Console"
+            aria-label="Search ${escapeHtml(config.title)}"
             role="combobox"
             aria-autocomplete="list"
             aria-expanded="false"
             aria-controls="erpw-sales-console-search-results"
-            placeholder="Search customers, items, quotations, or sales orders"
+            placeholder="${escapeHtml(placeholder)}"
             autocomplete="off"
           />
           <span class="erpw-sales-console-sidebar-utility-shortcut">${escapeHtml(shortcutLabel())}</span>
@@ -1109,7 +1179,7 @@
           data-erpw-sales-search-results
           id="erpw-sales-console-search-results"
           role="listbox"
-          aria-label="Sales Console search results"
+          aria-label="${escapeHtml(config.title)} search results"
           hidden
         ></div>
       </div>
@@ -1147,9 +1217,14 @@
   }
 
   function ensureWorkspaceSearchDialog() {
-    if (searchDialog) return searchDialog;
+    const config = workspaceConfig(getRoute());
+    if (searchDialog) {
+      if (typeof searchDialog.set_title === "function") searchDialog.set_title(__(`${config.title} Search`));
+      bindWorkspaceSearchDialog(searchDialog);
+      return searchDialog;
+    }
     searchDialog = new frappe.ui.Dialog({
-      title: __("Sales Console Search"),
+      title: __(`${config.title} Search`),
       size: "large",
       fields: [
         {
@@ -1186,7 +1261,10 @@
 
   function primePayload(payload) {
     if (!payload || !payload.sidebar) return false;
+    const workspace = payload.workspace || {};
+    cachedWorkspaceId = workspaceId(workspace) || workspaceId(workspaceConfig(getRoute()).workspace);
     cachedContext = {
+      workspace,
       context: payload.context || {},
       scope: payload.scope || {},
       ui_profile: payload.ui_profile || {},
@@ -1197,23 +1275,29 @@
   }
 
   function loadSidebarContext() {
-    if (cachedContext && cachedContext.sidebar) {
+    const route = getRoute();
+    const config = workspaceConfig(route);
+    if (cachedContext && cachedContext.sidebar && cachedWorkspaceId === config.workspaceId) {
       return Promise.resolve(cachedContext);
     }
 
-    if (contextPromise) return contextPromise;
+    if (contextPromise && contextPromiseWorkspaceId === config.workspaceId) return contextPromise;
 
+    contextPromiseWorkspaceId = config.workspaceId;
     contextPromise = Promise.resolve(frappe.call({
-      method: SIDEBAR_METHOD,
+      method: config.sidebarContextMethod,
     })).then((response) => {
       const payload = response && response.message ? response.message : {};
-      cachedContext = payload && payload.sidebar ? payload : fallbackContext();
+      cachedContext = payload && payload.sidebar ? payload : fallbackContext(route);
+      cachedWorkspaceId = config.workspaceId;
       return cachedContext;
     }).catch(() => {
-      cachedContext = fallbackContext();
+      cachedContext = fallbackContext(route);
+      cachedWorkspaceId = config.workspaceId;
       return cachedContext;
     }).then((payload) => {
       contextPromise = null;
+      contextPromiseWorkspaceId = "";
       return payload;
     });
 
@@ -1223,6 +1307,8 @@
   function buildSignature(sidebar, activeKey) {
     return JSON.stringify({
       activeKey: activeKey || "",
+      workspace_id: sidebar && sidebar.workspace_id,
+      title: sidebar && sidebar.title,
       mode_label: sidebar && sidebar.mode_label,
       scope_label: sidebar && sidebar.scope_label,
       sections: sidebar && sidebar.sections,
@@ -1234,7 +1320,9 @@
     const wrapper = ensureSidebarWrapper();
     if (!wrapper) return false;
 
-    const sidebar = contextPayload && contextPayload.sidebar ? contextPayload.sidebar : fallbackContext().sidebar;
+    const config = workspaceConfig(getRoute());
+    const sidebar = contextPayload && contextPayload.sidebar ? contextPayload.sidebar : fallbackContext(getRoute()).sidebar;
+    const workspaceTitle = sidebar.title || config.title;
     const sections = Array.isArray(sidebar.sections) ? sidebar.sections.filter(Boolean) : [];
     if (!sections.length) {
       removeSidebar();
@@ -1264,7 +1352,7 @@
           type="button"
           class="erpw-sales-console-sidebar-utility"
           data-erpw-sales-search-open="1"
-          aria-label="Open Sales Console search"
+          aria-label="Open ${escapeHtml(workspaceTitle)} search"
           title="Search"
         >
           <span class="erpw-sales-console-sidebar-utility-icon" aria-hidden="true">${iconMarkup("search")}</span>
@@ -1288,7 +1376,7 @@
         const indexKey = String(currentIndex);
         itemIndex.set(indexKey, item);
         const activeClass = item.key === activeKey ? " is-active" : "";
-        const itemLabel = item.label || "Sales Console";
+        const itemLabel = item.label || workspaceTitle;
         return `
           <div class="erpw-sales-console-sidebar-item">
             <div class="standard-sidebar-item">
@@ -1324,6 +1412,7 @@
       </div>
     `;
     wrapper._erpwSidebarItems = itemIndex;
+    wrapper.setAttribute("data-erpw-sidebar-workspace", config.workspaceId);
     wrapper.setAttribute("data-erpw-sidebar-signature", signature);
 
     wrapper.querySelectorAll("[data-erpw-sales-search-open]").forEach((element) => {
@@ -1367,7 +1456,11 @@
     }
 
     const activeKey = resolveActiveKey(route);
-    renderSidebar(cachedContext && cachedContext.sidebar ? cachedContext : fallbackContext(), activeKey);
+    const config = workspaceConfig(route);
+    const initialContext = cachedContext && cachedContext.sidebar && cachedWorkspaceId === config.workspaceId
+      ? cachedContext
+      : fallbackContext(route);
+    renderSidebar(initialContext, activeKey);
     return loadSidebarContext().then((contextPayload) => renderSidebar(contextPayload, activeKey));
   }
 

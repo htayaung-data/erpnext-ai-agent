@@ -312,6 +312,56 @@
         background-size: 16px 16px;
         cursor: pointer;
       }
+      .erpw-list-link-suggestions {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 4px);
+        z-index: 30;
+        display: grid;
+        gap: 2px;
+        max-height: 240px;
+        overflow: auto;
+        padding: 6px;
+        border: 1px solid rgba(203, 213, 225, 0.92);
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 18px 44px rgba(23, 42, 69, 0.16), 0 2px 8px rgba(23, 42, 69, 0.08);
+      }
+      .erpw-list-link-suggestions[hidden] {
+        display: none;
+      }
+      .erpw-list-link-suggestion {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+        padding: 8px 10px;
+        border-radius: 9px;
+        cursor: pointer;
+      }
+      .erpw-list-link-suggestion:hover,
+      .erpw-list-link-suggestion.is-active {
+        background: linear-gradient(180deg, #f4f8fd 0%, #edf4fb 100%);
+      }
+      .erpw-list-link-suggestion-value {
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.25;
+        color: #0f172a;
+      }
+      .erpw-list-link-suggestion-label {
+        color: #60728c;
+        font-size: 12px;
+        line-height: 1.3;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .erpw-list-link-suggestion-note {
+        padding: 10px;
+        color: #71839d;
+        font-size: 12px;
+      }
 	      .erpw-list-toolbar-actions {
 	        display: inline-flex;
 	        flex-wrap: wrap;
@@ -581,6 +631,13 @@
     });
   }
 
+  function controlBaseAttrs(field) {
+    const linkDoctype = field.linkDoctype || field.doctype || field.optionsDoctype || '';
+    return ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
+      ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"' +
+      (field.type === 'link' && linkDoctype ? ' data-erpw-list-link-doctype="' + escapeHtml(linkDoctype) + '"' : '');
+  }
+
   function renderControlInput(field, baseAttrs) {
     if (field.type === 'select') {
       return '<select class="erpw-list-control-select"' + baseAttrs + '>' + normalizeItems(field.options).map((option) => {
@@ -591,21 +648,27 @@
       }).join('') + '</select>';
     }
 
+    if (field.type === 'link' && (field.linkDoctype || field.doctype || field.optionsDoctype)) {
+      const popupId = 'erpw-list-link-options-' + String(field.key || '').replace(/[^a-zA-Z0-9_-]/g, '-');
+      return [
+        '<input type="text" class="erpw-list-control-input erpw-list-control-link"' + baseAttrs + ' autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + escapeHtml(popupId) + '"' + (field.placeholder ? ' placeholder="' + escapeHtml(field.placeholder) + '"' : '') + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">',
+        '<div class="erpw-list-link-suggestions" id="' + escapeHtml(popupId) + '" role="listbox" hidden></div>',
+      ].join('');
+    }
+
     return '<input type="text" class="erpw-list-control-input' + (field.type === 'date' ? ' erpw-list-control-date' : '') + '"' + baseAttrs + ' autocomplete="off"' + (field.placeholder || field.type === 'date' ? ' placeholder="' + escapeHtml(field.placeholder || 'YYYY-MM-DD') + '"' : '') + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
   }
 
   function renderControlField(field) {
     if (!field || !field.key || !field.label) return '';
-    const baseAttrs =
-      ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
-      ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"';
+    const baseAttrs = controlBaseAttrs(field);
 
     if (field.type === 'hidden') {
       return '<input type="hidden"' + baseAttrs + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
     }
 
     return [
-      '<label class="erpw-list-control-field' + (field.type === 'date' ? ' is-date' : '') + '" data-erpw-list-field-shell-key="' + escapeHtml(field.key) + '">',
+      '<label class="erpw-list-control-field' + (field.type === 'date' ? ' is-date' : '') + (field.type === 'link' ? ' is-link' : '') + '" data-erpw-list-field-shell-key="' + escapeHtml(field.key) + '">',
         '<span class="erpw-list-control-label">' + escapeHtml(field.label) + '</span>',
         renderControlInput(field, baseAttrs),
       '</label>'
@@ -614,9 +677,7 @@
 
   function renderUnifiedCommandField(field, hiddenFieldsMarkup, operatingActions) {
     if (!field || !field.key || !field.label) return "";
-    const baseAttrs =
-      ' data-erpw-list-field-key="' + escapeHtml(field.key) + '"' +
-      ' data-erpw-list-field-type="' + escapeHtml(field.type || 'text') + '"';
+    const baseAttrs = controlBaseAttrs(field);
 
     return [
       '<div class="erpw-list-unified-command">',
@@ -961,11 +1022,168 @@
     return $shell;
   }
 
+  function normalizeLinkSearchRows(rows) {
+    return normalizeItems(rows).map((row) => {
+      if (typeof row === 'string') return { value: row, label: '' };
+      const value = row.value || row.name || row.label || '';
+      const description = row.description || row.label || '';
+      return {
+        value: String(value || ''),
+        label: description && description !== value ? String(description) : '',
+      };
+    }).filter((row) => row.value);
+  }
+
+  function getLinkSuggestionPanel(input) {
+    const field = input && input.closest ? input.closest('.erpw-list-control-field') : null;
+    return field ? field.querySelector('.erpw-list-link-suggestions') : null;
+  }
+
+  function closeLinkSuggestions(input) {
+    const panel = getLinkSuggestionPanel(input);
+    if (!panel) return;
+    panel.innerHTML = '';
+    panel.hidden = true;
+    input.__erpwListLinkRows = [];
+    input.__erpwListLinkActiveIndex = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  }
+
+  function setLinkSuggestionActive(input, index) {
+    const panel = getLinkSuggestionPanel(input);
+    const rows = input.__erpwListLinkRows || [];
+    if (!panel || !rows.length) return;
+    const nextIndex = Math.max(0, Math.min(index, rows.length - 1));
+    input.__erpwListLinkActiveIndex = nextIndex;
+    Array.prototype.forEach.call(panel.querySelectorAll('[data-erpw-list-link-option]'), (option, optionIndex) => {
+      const isActive = optionIndex === nextIndex;
+      option.classList.toggle('is-active', isActive);
+      option.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    if (panel.id) {
+      input.setAttribute('aria-activedescendant', panel.id + '-option-' + nextIndex);
+    }
+  }
+
+  function renderLinkSuggestions(input, rows) {
+    const panel = getLinkSuggestionPanel(input);
+    if (!panel) return;
+    const normalizedRows = normalizeLinkSearchRows(rows).slice(0, 8);
+    input.__erpwListLinkRows = normalizedRows;
+    input.__erpwListLinkActiveIndex = normalizedRows.length ? 0 : -1;
+    input.setAttribute('aria-expanded', 'true');
+    panel.hidden = false;
+    if (!normalizedRows.length) {
+      input.removeAttribute('aria-activedescendant');
+      panel.innerHTML = '<div class="erpw-list-link-suggestion-note">No matches found</div>';
+      return;
+    }
+    panel.innerHTML = normalizedRows.map((row, index) => {
+      const label = row.label && row.label !== row.value
+        ? '<span class="erpw-list-link-suggestion-label">' + escapeHtml(row.label) + '</span>'
+        : '';
+      const id = panel.id ? ' id="' + escapeHtml(panel.id + '-option-' + index) + '"' : '';
+      return [
+        '<div class="erpw-list-link-suggestion" role="option"', id, ' aria-selected="false" data-erpw-list-link-option="', index, '">',
+          '<span class="erpw-list-link-suggestion-value">', escapeHtml(row.value), '</span>',
+          label,
+        '</div>'
+      ].join('');
+    }).join('');
+    setLinkSuggestionActive(input, 0);
+  }
+
+  function selectLinkSuggestion(input, row) {
+    if (!row || !row.value) return;
+    input.value = row.value;
+    closeLinkSuggestions(input);
+    $(input).trigger('change');
+  }
+
+  function fetchLinkSuggestions(input) {
+    const doctype = input.getAttribute('data-erpw-list-link-doctype') || '';
+    const txt = String(input.value || '').trim();
+    if (!doctype || txt.length < 1 || typeof frappe === 'undefined' || !frappe.call) {
+      closeLinkSuggestions(input);
+      return;
+    }
+    const requestToken = String(Date.now()) + '-' + Math.random();
+    input.__erpwListLinkRequestToken = requestToken;
+    Promise.resolve(frappe.call({
+      method: 'frappe.desk.search.search_link',
+      args: {
+        doctype,
+        txt,
+        page_length: 8,
+      },
+    })).then((response) => {
+      if (!document.body.contains(input)) return;
+      if (input.__erpwListLinkRequestToken !== requestToken) return;
+      renderLinkSuggestions(input, response && response.message ? response.message : []);
+    }).catch(() => {
+      if (input.__erpwListLinkRequestToken === requestToken) closeLinkSuggestions(input);
+    });
+  }
+
+  function bindLinkSuggestions($shell) {
+    const timers = new WeakMap();
+    $shell.on('input.erpwListShell focus.erpwListShell', '[data-erpw-list-link-doctype]', function () {
+      const input = this;
+      const existingTimer = timers.get(input);
+      if (existingTimer) clearTimeout(existingTimer);
+      const timer = setTimeout(() => fetchLinkSuggestions(input), 180);
+      timers.set(input, timer);
+    });
+    $shell.on('keydown.erpwListShell', '[data-erpw-list-link-doctype]', function (event) {
+      const input = this;
+      const rows = input.__erpwListLinkRows || [];
+      const panel = getLinkSuggestionPanel(input);
+      const isOpen = panel && !panel.hidden && rows.length;
+      if (event.key === 'Escape') {
+        closeLinkSuggestions(input);
+        return;
+      }
+      if (!isOpen) return;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setLinkSuggestionActive(input, (input.__erpwListLinkActiveIndex || 0) + 1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setLinkSuggestionActive(input, (input.__erpwListLinkActiveIndex || 0) - 1);
+      } else if (event.key === 'Enter') {
+        const activeIndex = input.__erpwListLinkActiveIndex == null ? 0 : input.__erpwListLinkActiveIndex;
+        if (rows[activeIndex]) {
+          event.preventDefault();
+          selectLinkSuggestion(input, rows[activeIndex]);
+        }
+      }
+    });
+    $shell.on('mousedown.erpwListShell', '[data-erpw-list-link-option]', function (event) {
+      event.preventDefault();
+      const option = this;
+      const field = option.closest('.erpw-list-control-field');
+      const input = field ? field.querySelector('[data-erpw-list-link-doctype]') : null;
+      const rows = input && input.__erpwListLinkRows ? input.__erpwListLinkRows : [];
+      const index = parseInt(option.getAttribute('data-erpw-list-link-option') || '0', 10);
+      if (input && rows[index]) selectLinkSuggestion(input, rows[index]);
+    });
+    $shell.on('focusout.erpwListShell', '[data-erpw-list-link-doctype]', function () {
+      const input = this;
+      setTimeout(() => {
+        const field = input.closest ? input.closest('.erpw-list-control-field') : null;
+        if (field && field.contains(document.activeElement)) return;
+        closeLinkSuggestions(input);
+      }, 120);
+    });
+  }
+
   function bindActions($shell, config) {
     if (!$shell || !$shell.length) return;
     const onAction = config && typeof config.onAction === 'function' ? config.onAction : null;
 
     $shell.off('.erpwListShell');
+    bindLinkSuggestions($shell);
     if (!onAction) return;
 
     $shell.on('click.erpwListShell', '[data-erpw-list-action-key]', function (event) {

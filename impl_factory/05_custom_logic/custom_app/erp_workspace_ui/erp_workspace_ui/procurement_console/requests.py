@@ -150,7 +150,7 @@ def _purchase_request_payload(
 		"controls": {
 			"fields": [
 				{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Request ID"},
-				{"key": "company", "label": "Company", "type": "text", "value": filters.get("company", "")},
+				{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 				{
 					"key": "status",
 					"label": "Status",
@@ -164,8 +164,8 @@ def _purchase_request_payload(
 						{"label": "Ordered", "value": "Ordered"},
 					],
 				},
-				{"key": "date_start", "label": "From", "type": "date", "value": filters.get("date_start", "")},
-				{"key": "date_end", "label": "To", "type": "date", "value": filters.get("date_end", "")},
+				{"key": "date_start", "label": "Request Date From", "type": "date", "value": filters.get("date_start", "")},
+				{"key": "date_end", "label": "Request Date To", "type": "date", "value": filters.get("date_end", "")},
 			],
 			"actions": common.standard_actions(),
 			"scopeChips": ["Material Request", "Purchase only"],

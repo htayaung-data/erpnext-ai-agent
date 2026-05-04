@@ -87,55 +87,75 @@
 
     const $kpiGrid = $header.find(".sales-console-kpi-grid");
     $kpiGrid.append(
-      makeInsightCard({ key: "requests_to_source", label: "Requests To Source", meta: "Purchase requests needing buying action." })
+      makeInsightCard({ key: "requests_to_source", label: "Requests To Source", meta: "Purchase demand needing buying action." })
         .on("click", () => routeToWorklist("requests_to_source")),
-      makeInsightCard({ key: "purchase_orders_supplier_follow_up", label: "Supplier Follow-up", meta: "POs needing buyer follow-up." })
-        .on("click", () => routeToWorklist("purchase_orders_supplier_follow_up")),
       makeInsightCard({ key: "purchase_orders_overdue", label: "Overdue POs", meta: "Open item lines past required date." })
-        .on("click", () => routeToWorklist("purchase_orders_overdue"))
+        .on("click", () => routeToWorklist("purchase_orders_overdue")),
+      makeInsightCard({ key: "purchase_orders_supplier_follow_up", label: "Supplier Follow-up", meta: "Orders needing buyer coordination." })
+        .on("click", () => routeToWorklist("purchase_orders_supplier_follow_up")),
+      makeInsightCard({ key: "rfqs_awaiting_supplier_response", label: "RFQs Awaiting Response", meta: "Supplier responses still pending." })
+        .on("click", () => routeToWorklist("rfqs_awaiting_supplier_response")),
+      makeInsightCard({ key: "supplier_quotations_expiring", label: "Expiring Supplier Quotations", meta: "Quoted offers nearing validity end." })
+        .on("click", () => routeToWorklist("supplier_quotations_expiring"))
     );
 
-    const $priority = $(`
-      <section class="sales-console-card sales-console-section" data-section-key="work">
+    const $pipeline = $(`
+      <section class="sales-console-card sales-console-section" data-section-key="buying-pipeline">
         <div class="sales-console-section-head">
-          <h2 class="sales-console-section-title">Priority Work</h2>
-          <div class="sales-console-section-note">Buyer queues</div>
+          <h2 class="sales-console-section-title">Buying Pipeline</h2>
+          <div class="sales-console-section-note">Demand to downstream visibility</div>
         </div>
-        <div class="sales-console-queue-grid" data-section-grid="work"></div>
+        <div class="sales-console-queue-grid" data-section-grid="buying-pipeline"></div>
       </section>
     `);
-    $priority.find(".sales-console-queue-grid").append(
+    $pipeline.find(".sales-console-queue-grid").append(
       makeQueueItem({
         key: "requests_to_source",
-        title: "Requests To Source",
-        meta: "Submitted purchase requests that are not fully ordered.",
+        title: "Purchase Request",
+        meta: "Submitted purchase demand waiting for sourcing or ordering.",
         badgeClass: "attention",
-        sideLabel: "Open",
+        sideLabel: "Source",
         onClick: () => routeToWorklist("requests_to_source"),
       }),
       makeQueueItem({
-        key: "purchase_orders_pending_approval",
-        title: "Purchase Orders Pending Approval",
-        meta: "Visibility only; approval actions are not enabled.",
-        badgeClass: "blocker",
-        sideLabel: "Pending",
-        onClick: () => routeToWorklist("purchase_orders_pending_approval"),
-      }),
-      makeQueueItem({
-        key: "purchase_orders_supplier_follow_up",
-        title: "Supplier Follow-up",
-        meta: "Orders needing buyer follow-up because they are overdue, due soon, or partially received.",
+        key: "rfqs_awaiting_supplier_response",
+        title: "RFQ",
+        meta: "Supplier response posture for active requests.",
         badgeClass: "attention",
-        sideLabel: "Follow Up",
-        onClick: () => routeToWorklist("purchase_orders_supplier_follow_up"),
+        sideLabel: "Response",
+        onClick: () => routeToWorklist("rfqs_awaiting_supplier_response"),
       }),
       makeQueueItem({
-        key: "purchase_orders_open",
-        title: "Open Purchase Orders",
-        meta: "Submitted orders still active for buyer awareness.",
+        key: "supplier_quotations_to_compare",
+        title: "Supplier Quotation",
+        meta: "Quoted offers ready for buyer comparison.",
+        badgeClass: "attention",
+        sideLabel: "Compare",
+        onClick: () => routeToWorklist("supplier_quotations_to_compare"),
+      }),
+      makeQueueItem({
+        key: "purchase_order_directory",
+        title: "Purchase Order",
+        meta: "Orders visible for buyer follow-up and supplier coordination.",
         badgeClass: "review",
-        sideLabel: "Open",
-        onClick: () => routeToWorklist("purchase_orders_open"),
+        sideLabel: "Orders",
+        onClick: () => routeToWorklist("purchase_order_directory"),
+      }),
+      makeQueueItem({
+        key: "purchase_orders_partially_received",
+        title: "Receipt Visibility",
+        meta: "Receiving posture only; warehouse teams own execution.",
+        badgeClass: "review",
+        sideLabel: "Receipt",
+        onClick: () => routeToWorklist("purchase_orders_partially_received"),
+      }),
+      makeQueueItem({
+        key: "purchase_orders_not_billed_visibility",
+        title: "Billing Visibility",
+        meta: "Billing posture only; Finance owns invoice and payment work.",
+        badgeClass: "review",
+        sideLabel: "Billing",
+        onClick: () => routeToWorklist("purchase_orders_not_billed_visibility"),
       })
     );
 
@@ -143,7 +163,7 @@
       <section class="sales-console-card sales-console-section" data-section-key="order-follow-up">
         <div class="sales-console-section-head">
           <h2 class="sales-console-section-title">Order Follow-up</h2>
-          <div class="sales-console-section-note">Read-only PO posture</div>
+          <div class="sales-console-section-note">Buyer coordination queues</div>
         </div>
         <div class="sales-console-queue-grid" data-section-grid="order-follow-up"></div>
       </section>
@@ -187,7 +207,7 @@
       <section class="sales-console-card sales-console-section" data-section-key="directories">
         <div class="sales-console-section-head">
           <h2 class="sales-console-section-title">Directories</h2>
-          <div class="sales-console-section-note">Read and review</div>
+          <div class="sales-console-section-note">Compact record access</div>
         </div>
         <div class="sales-console-queue-grid" data-section-grid="directories"></div>
       </section>
@@ -196,7 +216,7 @@
       makeQueueItem({
         key: "supplier_directory",
         title: "Suppliers",
-        meta: "Read-only supplier directory.",
+        meta: "Supplier records for buying coordination.",
         badgeClass: "review",
         sideLabel: "Browse",
         onClick: () => routeToWorklist("supplier_directory"),
@@ -216,14 +236,30 @@
         badgeClass: "review",
         sideLabel: "Browse",
         onClick: () => routeToWorklist("purchase_order_directory"),
+      }),
+      makeQueueItem({
+        key: "rfq_directory",
+        title: "RFQs",
+        meta: "Request for Quotation records visible to this user.",
+        badgeClass: "review",
+        sideLabel: "Browse",
+        onClick: () => routeToWorklist("rfq_directory"),
+      }),
+      makeQueueItem({
+        key: "supplier_quotation_directory",
+        title: "Supplier Quotations",
+        meta: "Supplier quotation records visible to this user.",
+        badgeClass: "review",
+        sideLabel: "Browse",
+        onClick: () => routeToWorklist("supplier_quotation_directory"),
       })
     );
 
     const $sourcing = $(`
       <section class="sales-console-card sales-console-section" data-section-key="sourcing">
         <div class="sales-console-section-head">
-          <h2 class="sales-console-section-title">Sourcing</h2>
-          <div class="sales-console-section-note">RFQ and quotation review</div>
+          <h2 class="sales-console-section-title">Sourcing Desk</h2>
+          <div class="sales-console-section-note">RFQ and quotation decisions</div>
         </div>
         <div class="sales-console-queue-grid" data-section-grid="sourcing"></div>
       </section>
@@ -255,15 +291,15 @@
       }),
       makeQueueItem({
         key: "supplier_quotation_comparison",
-        title: "Supplier Quotation Comparison",
-        meta: "Read-only wrapper over the native ERPNext comparison report.",
+        title: "Quote Comparison",
+        meta: "Compare quoted prices, validity, supplier, item, and RFQ reference.",
         badgeClass: "review",
         sideLabel: "Report",
         onClick: () => routeToReport("supplier_quotation_comparison"),
       })
     );
 
-    $root.append($header, $priority, $orderFollowUp, $sourcing, $directories);
+    $root.append($header, $pipeline, $orderFollowUp, $sourcing, $directories);
     $(page.body).empty().append($root);
 
     frappe.call({ method: BOOTSTRAP_METHOD }).then((response) => {

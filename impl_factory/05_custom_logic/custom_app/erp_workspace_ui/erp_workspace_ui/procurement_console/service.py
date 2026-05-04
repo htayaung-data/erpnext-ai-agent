@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import cstr, now_datetime
 
 from erp_workspace_ui.workspace_registry import get_procurement_workspace_definition
 
@@ -101,6 +101,9 @@ def build_sidebar(context: dict[str, object] | None = None) -> dict[str, object]
 	) if not context or has_procurement_access(context) else restricted_state()
 	return {
 		"workspace_id": workspace.get("workspace_id"),
+		"title": workspace.get("title"),
+		"mode_label": workspace.get("mode_label"),
+		"scope_label": "Buyer workbench" if not context or has_procurement_access(context) else "Restricted",
 		"active_key": sidebar.get("home_key") or "procurement_console_home",
 		"home_key": sidebar.get("home_key") or "procurement_console_home",
 		"items": items,
@@ -186,12 +189,124 @@ def search_procurement_console_workspace(query: str, limit: int = 12) -> dict[st
 			"message": "Procurement Console search is restricted to procurement roles.",
 			"results": [],
 		}
+	if len(needle) < 2:
+		return {
+			"state": "idle",
+			"query": needle,
+			"message": "Type at least 2 characters to search suppliers, purchase requests, RFQs, quotations, and purchase orders.",
+			"results": [],
+		}
+
+	results = _build_procurement_workspace_search_results(needle, limit)
+	if not results:
+		return {
+			"state": "empty",
+			"query": needle,
+			"message": "No visible Procurement Console records match this search yet.",
+			"results": [],
+		}
 	return {
-		"state": "unavailable",
+		"state": "ready",
 		"query": needle,
-		"message": "Procurement Console search is not available yet.",
-		"results": [],
-		"limit": limit,
+		"message": f"{len(results)} Procurement Console result{'s' if len(results) != 1 else ''} found.",
+		"results": results,
+	}
+
+
+def _build_procurement_workspace_search_results(query: str, limit: int) -> list[dict[str, object]]:
+	from . import common
+
+	per_doctype_limit = max(2, min(8, int(limit or 12)))
+	search_plan = [
+		{
+			"doctype": "Supplier",
+			"fields": ["name", "supplier_name", "supplier_group", "modified"],
+			"search_fields": ["name", "supplier_name"],
+			"queue_key": "supplier_directory",
+			"keyword_field": "supplier_name",
+			"label_field": "supplier_name",
+			"meta_fields": ["supplier_group"],
+		},
+		{
+			"doctype": "Material Request",
+			"fields": ["name", "title", "material_request_type", "status", "modified"],
+			"search_fields": ["name", "title"],
+			"queue_key": "purchase_request_directory",
+			"keyword_field": "name",
+			"label_field": "name",
+			"meta_fields": ["title", "status"],
+			"filters": [["Material Request", "material_request_type", "=", "Purchase"]],
+		},
+		{
+			"doctype": "Request for Quotation",
+			"fields": ["name", "company", "status", "modified"],
+			"search_fields": ["name"],
+			"queue_key": "rfq_directory",
+			"keyword_field": "name",
+			"label_field": "name",
+			"meta_fields": ["status", "company"],
+		},
+		{
+			"doctype": "Supplier Quotation",
+			"fields": ["name", "supplier", "supplier_name", "status", "modified"],
+			"search_fields": ["name", "supplier", "supplier_name"],
+			"queue_key": "supplier_quotation_directory",
+			"keyword_field": "name",
+			"label_field": "name",
+			"meta_fields": ["supplier_name", "status"],
+		},
+		{
+			"doctype": "Purchase Order",
+			"fields": ["name", "supplier", "supplier_name", "status", "modified"],
+			"search_fields": ["name", "supplier", "supplier_name"],
+			"queue_key": "purchase_order_directory",
+			"keyword_field": "name",
+			"label_field": "name",
+			"meta_fields": ["supplier_name", "status"],
+		},
+	]
+	results: list[dict[str, object]] = []
+	seen: set[tuple[str, str]] = set()
+	for plan in search_plan:
+		if not common.can_read(plan["doctype"]):
+			continue
+		for row in _search_procurement_rows(plan, query, per_doctype_limit):
+			key = (cstr(plan["doctype"]), cstr(row.get("name")))
+			if not key[1] or key in seen:
+				continue
+			seen.add(key)
+			results.append(_search_result_from_row(plan, row))
+			if len(results) >= int(limit or 12):
+				return results
+	return results[: int(limit or 12)]
+
+
+def _search_procurement_rows(plan: dict[str, object], query: str, limit: int) -> list[dict[str, object]]:
+	from . import common
+
+	rows: list[dict[str, object]] = []
+	base_filters = list(plan.get("filters") or [])
+	for fieldname in plan.get("search_fields") or []:
+		filters = list(base_filters)
+		filters.append([cstr(plan["doctype"]), cstr(fieldname), "like", f"%{query}%"])
+		rows.extend(common.get_list(cstr(plan["doctype"]), fields=list(plan.get("fields") or ["name"]), filters=filters, order_by="modified desc", limit=limit))
+	return rows
+
+
+def _search_result_from_row(plan: dict[str, object], row: dict[str, object]) -> dict[str, object]:
+	name = cstr(row.get("name")).strip()
+	label_field = cstr(plan.get("label_field")).strip()
+	keyword_field = cstr(plan.get("keyword_field")).strip()
+	label = cstr(row.get(label_field)).strip() or name
+	keyword = cstr(row.get(keyword_field)).strip() or name
+	meta_parts = [cstr(row.get(field)).strip() for field in plan.get("meta_fields") or []]
+	meta = " | ".join(part for part in meta_parts if part)
+	return {
+		"doctype": plan.get("doctype"),
+		"name": name,
+		"label": label,
+		"meta": meta,
+		"target": {"kind": "worklist", "queue_key": plan.get("queue_key"), "filters": {"keyword": keyword}},
 	}
 
 
@@ -203,11 +318,12 @@ def _build_phase1_overview() -> dict[str, object]:
 	orders_open = purchase_orders.count_purchase_orders_open()
 	orders_total = purchase_orders.count_purchase_order_directory()
 	orders_pending_approval = purchase_orders.count_purchase_orders_pending_approval()
-	orders_late = purchase_order_follow_up.count_purchase_orders_overdue()
-	orders_due_soon = purchase_order_follow_up.count_purchase_orders_due_soon()
-	orders_partially_received = purchase_order_follow_up.count_purchase_orders_partially_received()
-	orders_not_billed_visibility = purchase_order_follow_up.count_purchase_orders_not_billed_visibility()
-	orders_supplier_follow_up = purchase_order_follow_up.count_purchase_orders_supplier_follow_up()
+	orders_follow_up = purchase_order_follow_up.build_purchase_order_follow_up_summary()
+	orders_late = orders_follow_up["overdue"]
+	orders_due_soon = orders_follow_up["due_soon"]
+	orders_partially_received = orders_follow_up["partially_received"]
+	orders_not_billed_visibility = orders_follow_up["billing_visibility"]
+	orders_supplier_follow_up = orders_follow_up["supplier_follow_up"]
 	suppliers_total = suppliers.count_visible_suppliers()
 	rfqs_total = sourcing.count_rfq_directory()
 	rfqs_awaiting_response = sourcing.count_rfqs_awaiting_supplier_response()
@@ -294,7 +410,7 @@ def _build_phase1_overview() -> dict[str, object]:
 			"supplier_directory": {
 				"state": "live",
 				"value": suppliers_total,
-				"note": "Read-only supplier records visible to this user.",
+				"note": "Supplier records visible to this user.",
 				"badgeClass": "review",
 			},
 			"purchase_request_directory": {
@@ -377,7 +493,7 @@ def _build_phase1_overview() -> dict[str, object]:
 			{
 				"key": "supplier_quotation_comparison",
 				"label": "Supplier Quotation Comparison",
-				"description": "Read-only comparison of quoted supplier prices and validity.",
+				"description": "Governed comparison of quoted supplier prices and validity.",
 			}
 		],
 	}

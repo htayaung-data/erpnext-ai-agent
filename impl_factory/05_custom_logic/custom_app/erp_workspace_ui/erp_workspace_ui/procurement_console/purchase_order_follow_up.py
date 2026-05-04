@@ -112,6 +112,26 @@ def count_purchase_orders_supplier_follow_up() -> int:
 	return len(_records_for_queue({}, "supplier_follow_up", FOLLOW_UP_SCAN_LIMIT))
 
 
+def build_purchase_order_follow_up_summary() -> dict[str, int]:
+	if not common.can_read("Purchase Order"):
+		return {
+			"due_soon": 0,
+			"overdue": 0,
+			"partially_received": 0,
+			"billing_visibility": 0,
+			"supplier_follow_up": 0,
+		}
+	supplier_records = _records_for_queue({}, "supplier_follow_up", FOLLOW_UP_SCAN_LIMIT)
+	billing_records = _records_for_queue({}, "billing_visibility", FOLLOW_UP_SCAN_LIMIT)
+	return {
+		"due_soon": sum(1 for item in supplier_records if "due_soon" in set(item.get("reasons") or [])),
+		"overdue": sum(1 for item in supplier_records if "overdue" in set(item.get("reasons") or [])),
+		"partially_received": sum(1 for item in supplier_records if "partially_received" in set(item.get("reasons") or [])),
+		"billing_visibility": len(billing_records),
+		"supplier_follow_up": len(supplier_records),
+	}
+
+
 def build_purchase_orders_due_soon(filters: dict[str, str] | None = None) -> dict[str, object]:
 	return _build_payload(
 		queue_key="purchase_orders_due_soon",
@@ -379,8 +399,8 @@ def _sort_key(item: dict[str, object], queue: str) -> tuple[object, ...]:
 def _control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
 		{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID"},
-		{"key": "supplier", "label": "Supplier", "type": "text", "value": filters.get("supplier", "")},
-		{"key": "company", "label": "Company", "type": "text", "value": filters.get("company", "")},
+		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
+		{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 		{
 			"key": "status",
 			"label": "Status",
@@ -394,8 +414,8 @@ def _control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 				{"label": "On Hold", "value": "On Hold"},
 			],
 		},
-		{"key": "date_start", "label": "From", "type": "date", "value": filters.get("date_start", "")},
-		{"key": "date_end", "label": "To", "type": "date", "value": filters.get("date_end", "")},
+		{"key": "date_start", "label": "PO Date From", "type": "date", "value": filters.get("date_start", "")},
+		{"key": "date_end", "label": "PO Date To", "type": "date", "value": filters.get("date_end", "")},
 	]
 
 

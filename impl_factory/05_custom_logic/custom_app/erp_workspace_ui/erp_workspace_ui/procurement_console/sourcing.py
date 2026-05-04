@@ -142,7 +142,7 @@ def build_rfq_directory(filters: dict[str, str] | None = None) -> dict[str, obje
 	return _build_rfq_payload(
 		queue_key="rfq_directory",
 		title="RFQs",
-		subtitle="Read-only Request for Quotation records for sourcing follow-up.",
+		subtitle="Request for Quotation records for sourcing follow-up. Records open in ERPNext according to user permissions.",
 		filters=filters or {},
 		queue="directory",
 	)
@@ -186,7 +186,7 @@ def build_supplier_quotation_directory(filters: dict[str, str] | None = None) ->
 	return _build_supplier_quotation_payload(
 		queue_key="supplier_quotation_directory",
 		title="Supplier Quotations",
-		subtitle="Read-only supplier quotation records for sourcing review.",
+		subtitle="Supplier quotation records for sourcing review. Records open in ERPNext according to user permissions.",
 		filters=filters or {},
 		queue="directory",
 	)
@@ -273,7 +273,7 @@ def _rfq_payload(
 		"summary": {
 			"title": title,
 			"subtitle": subtitle,
-			"chips": [{"label": "Read-only sourcing"}],
+			"chips": [{"label": "Sourcing visibility"}],
 		},
 		"controls": {
 			"fields": _rfq_control_fields(filters),
@@ -372,12 +372,12 @@ def _supplier_quotation_payload(
 		"summary": {
 			"title": title,
 			"subtitle": subtitle,
-			"chips": [{"label": "Read-only"}],
+			"chips": [{"label": "Quotation visibility"}],
 		},
 		"controls": {
 			"fields": _supplier_quotation_control_fields(filters),
 			"actions": common.standard_actions(),
-			"scopeChips": ["Supplier Quotation", "Read-only sourcing"],
+			"scopeChips": ["Supplier Quotation", "No purchase order action"],
 		},
 		"metrics": [common.metric("Visible quotations", len(rows), "Filtered supplier quotation records.")],
 		"results": {
@@ -460,7 +460,7 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
 		{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "RFQ ID"},
-		{"key": "company", "label": "Company", "type": "text", "value": filters.get("company", "")},
+		{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 		{
 			"key": "status",
 			"label": "Status",
@@ -473,16 +473,16 @@ def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 				{"label": "Cancelled", "value": "Cancelled"},
 			],
 		},
-		{"key": "date_start", "label": "From", "type": "date", "value": filters.get("date_start", "")},
-		{"key": "date_end", "label": "To", "type": "date", "value": filters.get("date_end", "")},
+		{"key": "date_start", "label": "Date From", "type": "date", "value": filters.get("date_start", "")},
+		{"key": "date_end", "label": "Date To", "type": "date", "value": filters.get("date_end", "")},
 	]
 
 
 def _supplier_quotation_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
 		{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Quotation ID"},
-		{"key": "supplier", "label": "Supplier", "type": "text", "value": filters.get("supplier", "")},
-		{"key": "company", "label": "Company", "type": "text", "value": filters.get("company", "")},
+		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
+		{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 		{
 			"key": "status",
 			"label": "Status",
@@ -497,8 +497,8 @@ def _supplier_quotation_control_fields(filters: dict[str, str]) -> list[dict[str
 				{"label": "Cancelled", "value": "Cancelled"},
 			],
 		},
-		{"key": "date_start", "label": "From", "type": "date", "value": filters.get("date_start", "")},
-		{"key": "date_end", "label": "To", "type": "date", "value": filters.get("date_end", "")},
+		{"key": "date_start", "label": "Date From", "type": "date", "value": filters.get("date_start", "")},
+		{"key": "date_end", "label": "Date To", "type": "date", "value": filters.get("date_end", "")},
 	]
 
 

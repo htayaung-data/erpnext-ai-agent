@@ -107,7 +107,7 @@ def build_purchase_orders_pending_approval(filters: dict[str, str] | None = None
 	return _build_purchase_order_payload(
 		queue_key="purchase_orders_pending_approval",
 		title="Purchase Orders Pending Approval",
-		subtitle="Purchase orders currently waiting for purchase approval. This is visibility only in Phase 1.",
+		subtitle="Purchase orders currently waiting for purchase approval. Approval actions are not exposed here.",
 		filters=filters or {},
 		queue="pending_approval",
 	)
@@ -207,8 +207,8 @@ def _purchase_order_payload(
 		"controls": {
 			"fields": [
 				{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID"},
-				{"key": "supplier", "label": "Supplier", "type": "text", "value": filters.get("supplier", "")},
-				{"key": "company", "label": "Company", "type": "text", "value": filters.get("company", "")},
+				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
+				{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 				{
 					"key": "status",
 					"label": "Status",
@@ -223,8 +223,8 @@ def _purchase_order_payload(
 						{"label": "Closed", "value": "Closed"},
 					],
 				},
-				{"key": "date_start", "label": "From", "type": "date", "value": filters.get("date_start", "")},
-				{"key": "date_end", "label": "To", "type": "date", "value": filters.get("date_end", "")},
+				{"key": "date_start", "label": "PO Date From", "type": "date", "value": filters.get("date_start", "")},
+				{"key": "date_end", "label": "PO Date To", "type": "date", "value": filters.get("date_end", "")},
 			],
 			"actions": common.standard_actions(),
 			"scopeChips": ["Purchase Order", "Visibility only"],
