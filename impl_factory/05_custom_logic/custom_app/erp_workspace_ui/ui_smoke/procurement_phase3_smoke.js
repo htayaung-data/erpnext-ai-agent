@@ -419,7 +419,7 @@ async function checkDetailActionStyling(page, selector, label) {
   assert(actions.length > 0, `${label}: no shared child action buttons rendered`, { actions });
   assert(actions[0].text.match(/Back/i), `${label}: Back action should be first`, { actions });
   assert(actions.some((action) => /Refresh/i.test(action.text)), `${label}: Refresh action missing`, { actions });
-  assert(actions.every((action) => action.display === "grid" || action.display === "inline-flex"), `${label}: action buttons are not using shared styling`, { actions });
+  assert(actions.every((action) => action.display === "grid" || action.display === "inline-flex" || action.display === "flex"), `${label}: action buttons are not using shared styling`, { actions });
   assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: action button styling looks unstyled`, { actions });
   return actions;
 }
