@@ -521,6 +521,22 @@
             return /^(material-request|request-for-quotation|supplier-quotation|purchase-order|supplier|item)$/.test(String(slug || ""));
           }
 
+          function procurementNativeRouteSignature(context) {
+            const route = window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [];
+            if (Array.isArray(route) && route[0] === "Form" && route[1]) {
+              const doctype = String(route[1] || context.doctype || "");
+              const docname = String(route[2] || "");
+              if (/^new-/i.test(docname)) return `${doctype}|new`;
+              if (docname) return `${doctype}|${docname}`;
+              return `${doctype}|form`;
+            }
+            const segments = routeSegmentsFromPath();
+            const slug = segments[0] || "";
+            const docname = segments[1] || "";
+            if (/^new-/i.test(docname)) return `${context.doctype || slug}|new`;
+            return segments.join("/") || safeCurrentRouteString() || window.location.pathname || "";
+          }
+
           function isProcurementManagedNativeRoute() {
             const context = procurementNativeContextFromStorage();
             if (!context) return null;
@@ -534,7 +550,7 @@
               }
               return null;
             }
-            const routeSignature = routeSegmentsFromPath().join("/") || safeCurrentRouteString() || window.location.pathname || "";
+            const routeSignature = procurementNativeRouteSignature(context);
             if (!context.resolvedRouteSignature) {
               context.resolvedRouteSignature = routeSignature;
               writeProcurementNativeContext(context);
