@@ -9,6 +9,8 @@
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
+  const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
+  let consoleRuntimePromise = null;
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
   }
@@ -20,7 +22,41 @@
   }
 
   function escapeHtml(value) {
-    return runtimeMethod("escapeHtml")(value);
+    const method = consoleRuntime().escapeHtml;
+    if (typeof method === "function") return method(value);
+    if (frappe.utils && typeof frappe.utils.escape_html === "function") {
+      return frappe.utils.escape_html(value == null ? "" : String(value));
+    }
+    return String(value == null ? "" : value).replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "\"": "&quot;",
+      "'": "&#39;",
+    }[character] || character));
+  }
+
+  function hasConsoleRuntime() {
+    const runtime = consoleRuntime();
+    return Boolean(runtime && typeof runtime.makeInsightCard === "function" && typeof runtime.makeAction === "function" && typeof runtime.makeQueueItem === "function");
+  }
+
+  function ensureConsoleRuntime() {
+    if (hasConsoleRuntime()) return Promise.resolve(consoleRuntime());
+    if (consoleRuntimePromise) return consoleRuntimePromise;
+    consoleRuntimePromise = new Promise((resolve, reject) => {
+      frappe.require(CONSOLE_RUNTIME_URL, () => {
+        if (hasConsoleRuntime()) {
+          resolve(consoleRuntime());
+          return;
+        }
+        reject(new Error("Shared console runtime is not loaded on this page."));
+      });
+    }).catch((error) => {
+      consoleRuntimePromise = null;
+      throw error;
+    });
+    return consoleRuntimePromise;
   }
 
   function routeToWorklist(queueKey, filters) {
@@ -479,7 +515,15 @@
         routeSignature: Array.isArray(route) ? route.join("|") : "",
       };
     }
-    renderWorkbench(page);
+    ensureConsoleRuntime().then(() => {
+      renderWorkbench(page);
+    }).catch((error) => {
+      renderState(page, {
+        kind: "error",
+        title: "Procurement Console could not be loaded",
+        detail: error && error.message ? error.message : "The shared console runtime could not be loaded.",
+      });
+    });
   }
 
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};

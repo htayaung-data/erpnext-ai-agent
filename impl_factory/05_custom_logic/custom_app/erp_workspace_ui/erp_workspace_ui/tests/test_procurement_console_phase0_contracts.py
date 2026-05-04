@@ -715,6 +715,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("new_doc", source)
         self.assertIn('frappe.set_route("Form"', source)
         self.assertIn("cleanupProcurementRouteShells", source)
+        self.assertIn("workspace_console_runtime.js", source)
+        self.assertIn("ensureConsoleRuntime", source)
         self.assertNotIn("frappe.new_doc", source)
         self.assertIn('data-section-key="create-actions"', source)
         self.assertIn("Start Buying Work", source)
