@@ -322,6 +322,21 @@ async function procurementChromeSnapshot(page, label) {
   }, label);
 }
 
+async function suppressUnsavedFormGuard(page) {
+  await page.evaluate(() => {
+    window.onbeforeunload = null;
+    if (window.cur_frm) {
+      try {
+        if (cur_frm.doc) cur_frm.doc.__unsaved = 0;
+        cur_frm.dirty = () => false;
+        cur_frm.is_dirty = () => false;
+      } catch (error) {
+        // Smoke-only navigation guard cleanup.
+      }
+    }
+  }).catch(() => {});
+}
+
 async function firstVisibleRowName(page, queueKey) {
   const response = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", { queue_key: queueKey });
   if (!response.ok) return "";
@@ -331,6 +346,7 @@ async function firstVisibleRowName(page, queueKey) {
 }
 
 async function clickProcurementCreateAction(page, actionKey, expectedPathPattern) {
+  await suppressUnsavedFormGuard(page);
   await openDeskRoute(page, "/desk/procurement-console");
   await page.locator('[data-erpw-console-bootstrap="ready"]').first().waitFor({ state: "attached", timeout: TIMEOUT });
   await page.locator(`[data-erpw-procurement-create-action="${actionKey}"]`).first().click();
@@ -353,6 +369,7 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
     snapshots.push(await procurementChromeSnapshot(page, item.label));
     const parentCrumb = page.locator('[data-erpw-procurement-native-kind="parent"]').first();
     await parentCrumb.waitFor({ state: "visible", timeout: TIMEOUT });
+    await suppressUnsavedFormGuard(page);
     await parentCrumb.click();
     await page.waitForURL(/\/desk\/procurement-console-worklist\//, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     assert(!/\/desk\/(stock|buying|material-request|request-for-quotation|supplier-quotation|purchase-order)(?:[/?#]|$)/i.test(page.url()), `${item.label}: parent breadcrumb leaked to native ERP route`, { url: page.url() });
