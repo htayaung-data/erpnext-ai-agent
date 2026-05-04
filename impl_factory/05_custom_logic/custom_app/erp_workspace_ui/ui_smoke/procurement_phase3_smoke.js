@@ -580,7 +580,11 @@ async function runUser(browser, user) {
         report.worklists[item.key] = result;
         if (!firstPoName && result.firstRow && result.firstRow.name) firstPoName = result.firstRow.name;
       }
-      const directPoName = process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || "PUR-ORD-2026-00010";
+      if (!firstPoName) {
+        const purchaseOrderPayload = await worklistPayload(page, "purchase_order_directory");
+        firstPoName = firstRowName(purchaseOrderPayload);
+      }
+      const directPoName = process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010";
       report.directDetail = await checkDetail(page, directPoName, { requireReadyShell: true });
       report.supplierAutocomplete = await checkSupplierAutocomplete(page);
       report.supplierDetail = await checkSupplierDetail(page, user);
