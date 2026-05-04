@@ -558,6 +558,18 @@ def _latest_nbu_trace_payload(payloads: List[Dict[str, Any]] | None) -> Dict[str
 	return {}
 
 
+def _nbu_selected_candidate_payload(nbu_trace_payload: Dict[str, Any] | None) -> Dict[str, Any]:
+	payload = _clean_dict(nbu_trace_payload)
+	selected_id = _clean_text(payload.get("selected_candidate_id"))
+	candidates = _clean_list(payload.get("candidate_interpretations"))
+	for candidate in candidates:
+		candidate_payload = _clean_dict(candidate)
+		if selected_id and _clean_text(candidate_payload.get("candidate_id")) != selected_id:
+			continue
+		return candidate_payload
+	return {}
+
+
 def _should_explain_row_signal(
 	row: Dict[str, Any],
 	*,
@@ -569,10 +581,22 @@ def _should_explain_row_signal(
 	authority_class = _nbu_authority_class(nbu_trace_payload)
 	requested_action = _nbu_selected_requested_action(nbu_trace_payload)
 	reasoning_type = _reasoning_type(reasoning_semantic_result)
+	selected_candidate = _nbu_selected_candidate_payload(nbu_trace_payload)
+	if authority_class or requested_action:
+		return (
+			authority_class == "safe_explanation"
+			or requested_action == "explain"
+			or (
+				requested_action == "detail"
+				and reasoning_type in {"explanation", "interpretation"}
+			)
+			or (
+				_clean_text(selected_candidate.get("target_reference")).lower() == "selected_entity"
+				and bool(_clean_list(selected_candidate.get("candidate_composite_family_ids")))
+			)
+		)
 	return (
-		authority_class == "safe_explanation"
-		or requested_action == "explain"
-		or reasoning_type in {"explanation", "interpretation"}
+		reasoning_type in {"explanation", "interpretation"}
 	)
 
 
@@ -591,6 +615,31 @@ def _visible_followup_authority_intent(
 	if _reasoning_type(reasoning_semantic_result) == "recommendation":
 		return "recommendation_boundary"
 	return "safe_visible_fact"
+
+
+def _should_defer_visible_context_to_governed_detail(
+	resolution: Dict[str, Any],
+	*,
+	nbu_trace_payload: Dict[str, Any] | None,
+	reasoning_semantic_result: Any = None,
+) -> bool:
+	if _clean_text(_clean_dict(resolution).get("status")).lower() != "resolved":
+		return False
+	if _reasoning_type(reasoning_semantic_result) in {"explanation", "interpretation", "recommendation"}:
+		return False
+	selected_candidate = _nbu_selected_candidate_payload(nbu_trace_payload)
+	if (
+		_clean_text(selected_candidate.get("target_reference")).lower() == "selected_entity"
+		and bool(_clean_list(selected_candidate.get("candidate_composite_family_ids")))
+	):
+		return False
+	if _nbu_selected_requested_action(nbu_trace_payload) != "detail":
+		return False
+	entity = _clean_dict(_clean_dict(resolution).get("resolved_entity"))
+	return bool(
+		_clean_text(entity.get("entity_type"))
+		and _clean_text(entity.get("entity_label") or entity.get("entity_key"))
+	)
 
 
 def _resolved_answer_text(
@@ -796,6 +845,12 @@ def try_activate_visible_context_followup_response(
 		return False, None
 
 	nbu_trace_payload = _latest_nbu_trace_payload(additional_tool_payloads)
+	if _should_defer_visible_context_to_governed_detail(
+		resolution,
+		nbu_trace_payload=nbu_trace_payload,
+		reasoning_semantic_result=reasoning_semantic_result,
+	):
+		return False, None
 	authority_intent = _visible_followup_authority_intent(
 		nbu_trace_payload=nbu_trace_payload,
 		reasoning_semantic_result=reasoning_semantic_result,

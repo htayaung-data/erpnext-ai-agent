@@ -170,6 +170,156 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 		self.assertEqual(result["requested_metrics"], ["credit_limit_amount"])
 		self.assertEqual(result["blockers"], [])
 
+	def test_ready_entity_detail_requery_accepts_contract_name_target(self):
+		trace = _detail_trace_payload()
+		trace["conversation_action_decision"] = {
+			"action": "ask_clarification",
+			"response_mode": "clarification",
+			"safe_to_execute": False,
+		}
+		trace["governed_requery_plan"]["target_entity"] = {
+			"entity_type": "supplier",
+			"name": "Sunflower Accessories Co.",
+		}
+
+		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
+			result = activation.build_nbu_governed_requery_activation(
+				trace,
+				activation_level="governed_requery",
+			)
+
+		self.assertEqual(result["activation_state"], "ready")
+		self.assertEqual(result["target_entity"]["entity_key"], "Sunflower Accessories Co.")
+		self.assertEqual(result["target_entity"]["entity_label"], "Sunflower Accessories Co.")
+		self.assertEqual(result["blockers"], [])
+
+	def test_selected_detail_candidate_can_activate_without_shadow_plan_when_entity_is_resolved(self):
+		trace = _detail_trace_payload()
+		trace["conversation_action_decision"] = {
+			"action": "ask_clarification",
+			"response_mode": "clarification",
+			"safe_to_execute": False,
+		}
+		trace["candidate_interpretations"][0]["target_entity"] = {
+			"name": "Sunflower Accessories Co.",
+			"type": "supplier",
+		}
+		trace["governed_requery_plan"] = {
+			"status": "not_required",
+			"planner_mode": "none",
+			"target_entity": {},
+			"required_context": ["target_entity"],
+			"shadow_execution_ready": False,
+		}
+
+		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
+			result = activation.build_nbu_governed_requery_activation(
+				trace,
+				activation_level="governed_requery",
+			)
+
+		self.assertEqual(result["activation_state"], "ready")
+		self.assertEqual(result["planner_mode"], "entity_detail_requery")
+		self.assertEqual(result["target_entity"]["entity_type"], "supplier")
+		self.assertEqual(result["target_entity"]["entity_key"], "Sunflower Accessories Co.")
+		self.assertEqual(result["blockers"], [])
+
+	def test_local_followup_plan_does_not_hijack_visible_row_identity_question(self):
+		trace = _trace_payload(entity_type="supplier")
+		candidate = trace["candidate_interpretations"][0]
+		candidate["intent_scope"] = "context_reference"
+		candidate["requested_action"] = "show"
+		candidate["candidate_route"] = "local_followup"
+		candidate["target_entity"] = {
+			"type": "supplier",
+			"name": "Sunflower Accessories Co.",
+		}
+		trace["governed_requery_plan"].update(
+			{
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "local_followup",
+				"target_entity": {
+					"type": "supplier",
+					"name": "Sunflower Accessories Co.",
+				},
+				"shadow_execution_ready": True,
+			}
+		)
+
+		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
+			result = activation.build_nbu_governed_requery_activation(
+				trace,
+				activation_level="governed_requery",
+			)
+
+		self.assertEqual(result["activation_state"], "blocked")
+		self.assertIn("governed_requery_plan_not_ready", result["blockers"])
+
+	def test_non_entity_detail_candidate_route_does_not_activate_entity_detail_plan(self):
+		trace = _trace_payload(entity_type="supplier")
+		candidate = trace["candidate_interpretations"][0]
+		candidate["intent_scope"] = "unknown"
+		candidate["requested_action"] = "show"
+		candidate["candidate_route"] = "governed_kpi"
+		candidate["target_entity"] = {
+			"entity_type": "supplier",
+			"name": "Sunflower Accessories Co.",
+		}
+		trace["governed_requery_plan"].update(
+			{
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "governed_kpi",
+				"target_entity": {
+					"entity_type": "supplier",
+					"name": "Sunflower Accessories Co.",
+				},
+				"shadow_execution_ready": True,
+			}
+		)
+
+		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
+			result = activation.build_nbu_governed_requery_activation(
+				trace,
+				activation_level="governed_requery",
+			)
+
+		self.assertEqual(result["activation_state"], "blocked")
+		self.assertIn("governed_requery_plan_not_ready", result["blockers"])
+
+	def test_fresh_query_entity_detail_plan_does_not_hijack_new_business_question(self):
+		trace = _trace_payload(entity_type="supplier")
+		candidate = trace["candidate_interpretations"][0]
+		candidate["intent_scope"] = "fresh_query"
+		candidate["requested_action"] = "show"
+		candidate["candidate_route"] = "entity_detail"
+		candidate["target_entity"] = {
+			"entity_type": "supplier",
+			"name": "Sunflower Accessories Co.",
+		}
+		trace["governed_requery_plan"].update(
+			{
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "entity_detail",
+				"target_entity": {
+					"entity_type": "supplier",
+					"name": "Sunflower Accessories Co.",
+				},
+				"shadow_execution_ready": True,
+			}
+		)
+
+		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
+			result = activation.build_nbu_governed_requery_activation(
+				trace,
+				activation_level="governed_requery",
+			)
+
+		self.assertEqual(result["activation_state"], "blocked")
+		self.assertIn("governed_requery_plan_not_ready", result["blockers"])
+
 	def test_non_entity_detail_planner_mode_remains_shadow_only(self):
 		with patch.object(activation, "entity_detail_runtime_policy", return_value={"can_execute": True}):
 			result = activation.build_nbu_governed_requery_activation(
@@ -403,6 +553,9 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 	def test_broad_detail_requery_prefers_rich_entity_detail_over_direct_evidence(self):
 		session_doc = {"name": "session-1", "messages": []}
 		direct_calls = []
+		trace_payload = _detail_trace_payload()
+		trace_payload["governed_requery_plan"]["requested_metrics"] = ["Outstanding", "Total Due", "Overdue (31+)"]
+		trace_payload["governed_requery_plan"]["missing_fields"] = ["outstanding", "total_due", "overdue__31"]
 
 		def append_message(session, role, content):
 			session["messages"].append({"role": role, "content": content})
@@ -458,7 +611,7 @@ class NaturalBusinessUnderstandingGovernedRequeryActivationTests(unittest.TestCa
 				user_id="Administrator",
 				site_name="erpai_prj1",
 				raw_message="give me more information about rank 2 suppliers",
-				nbu_trace_payload=_detail_trace_payload(),
+				nbu_trace_payload=trace_payload,
 				current_artifact={},
 				latest_grounded_turn={"grounded": True, "family_id": "accounts_payable_aging"},
 				interaction_contract=_InteractionContract(),

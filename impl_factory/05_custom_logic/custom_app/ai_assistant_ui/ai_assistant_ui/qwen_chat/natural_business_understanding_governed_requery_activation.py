@@ -389,6 +389,8 @@ def _prefer_rich_entity_detail_answer(
 	suppliers, items, and documents.
 	"""
 
+	if _clean_text(_selected_candidate(_clean_dict(nbu_trace_payload)).get("requested_action")).lower() == "detail":
+		return True
 	return _trace_requests_broad_entity_detail(nbu_trace_payload, assessment) and not _assessment_requests_specific_fields(assessment)
 
 
@@ -481,7 +483,7 @@ def _target_entity_from_plan(trace_payload: Dict[str, Any]) -> Dict[str, Any]:
 		candidate.get("target_entity"),
 	):
 		entity = _clean_dict(source)
-		label = _clean_text(entity.get("entity_label") or entity.get("entity_key"))
+		label = _clean_text(entity.get("entity_label") or entity.get("entity_key") or entity.get("name") or entity.get("value"))
 		if label:
 			return entity
 	return {}
@@ -499,9 +501,10 @@ def _entity_detail_can_execute(entity: Dict[str, Any]) -> bool:
 
 
 def _entity_reference(entity: Dict[str, Any]) -> Dict[str, Any]:
-	entity_type = _clean_text(entity.get("entity_type")).lower()
-	entity_label = _clean_text(entity.get("entity_label") or entity.get("entity_key"))
-	entity_key = _clean_text(entity.get("entity_key")) or entity_label
+	raw_type = _clean_text(entity.get("entity_type") or entity.get("type")).lower()
+	entity_type = "" if raw_type in {"artifact", "entity"} else raw_type
+	entity_label = _clean_text(entity.get("entity_label") or entity.get("entity_key") or entity.get("name") or entity.get("value"))
+	entity_key = _clean_text(entity.get("entity_key") or entity.get("name") or entity.get("value")) or entity_label
 	return {
 		key: value
 		for key, value in {
@@ -511,6 +514,33 @@ def _entity_reference(entity: Dict[str, Any]) -> Dict[str, Any]:
 		}.items()
 		if value
 	}
+
+
+def _candidate_entity_detail_ready(candidate: Dict[str, Any]) -> bool:
+	clean_candidate = _clean_dict(candidate)
+	entity = _entity_reference(_clean_dict(clean_candidate.get("target_entity")))
+	return bool(
+		_clean_text(clean_candidate.get("candidate_route")).lower() == "entity_detail"
+		and _clean_text(clean_candidate.get("requested_action")).lower() == "detail"
+		and _clean_text(clean_candidate.get("intent_scope")).lower() != "fresh_query"
+		and entity
+	)
+
+
+def _plan_entity_detail_ready(plan: Dict[str, Any], candidate: Dict[str, Any]) -> bool:
+	clean_plan = _clean_dict(plan)
+	clean_candidate = _clean_dict(candidate)
+	requested_action = _clean_text(clean_candidate.get("requested_action")).lower()
+	return bool(
+		_clean_text(clean_plan.get("status")) == "ready_shadow"
+		and _clean_text(clean_plan.get("planner_mode")) in SUPPORTED_PLANNER_MODES
+		and _clean_text(clean_plan.get("target_route")).lower() == "entity_detail"
+		and _clean_text(clean_candidate.get("candidate_route")).lower() == "entity_detail"
+		and _clean_text(clean_candidate.get("intent_scope")).lower() != "fresh_query"
+		and requested_action in {"detail", "lookup"}
+		and bool(clean_plan.get("shadow_execution_ready"))
+		and not _clean_list(clean_plan.get("required_context"))
+	)
 
 
 def build_nbu_governed_requery_activation(
@@ -529,7 +559,19 @@ def build_nbu_governed_requery_activation(
 	decision = _clean_dict(trace.get("conversation_action_decision"))
 	plan = _clean_dict(trace.get("governed_requery_plan"))
 	candidate = _selected_candidate(trace)
-	action = _clean_text(decision.get("action"))
+	candidate_detail_ready = _candidate_entity_detail_ready(candidate)
+	plan_planner_mode = _clean_text(plan.get("planner_mode"))
+	planner_mode = (
+		plan_planner_mode
+		if plan_planner_mode in SUPPORTED_PLANNER_MODES
+		else ("entity_detail_requery" if candidate_detail_ready else plan_planner_mode)
+	)
+	plan_ready_for_live_activation = _plan_entity_detail_ready(plan, candidate) or candidate_detail_ready
+	action = (
+		"execute_governed_requery"
+		if plan_ready_for_live_activation
+		else _clean_text(decision.get("action"))
+	)
 	action_support = nbu_activation_level_supports_action(
 		action=action,
 		activation_level=activation_level,
@@ -539,13 +581,13 @@ def build_nbu_governed_requery_activation(
 		blockers.append("action_not_governed_requery")
 	if not bool(action_support.get("supported")):
 		blockers.append("activation_level_does_not_allow_requery")
-	if not bool(decision.get("safe_to_execute")):
+	if not (bool(decision.get("safe_to_execute")) or plan_ready_for_live_activation):
 		blockers.append("conversation_decision_not_safe_to_execute")
-	if _clean_text(plan.get("status")) != "ready_shadow":
+	if not plan_ready_for_live_activation:
 		blockers.append("governed_requery_plan_not_ready")
-	if _clean_text(plan.get("planner_mode")) not in SUPPORTED_PLANNER_MODES:
+	if planner_mode not in SUPPORTED_PLANNER_MODES:
 		blockers.append("planner_mode_not_live_enabled")
-	if _clean_list(plan.get("required_context")):
+	if _clean_list(plan.get("required_context")) and not candidate_detail_ready:
 		blockers.append("required_context_missing")
 	entity = _target_entity_from_plan(trace)
 	entity_reference = _entity_reference(entity)
@@ -563,7 +605,7 @@ def build_nbu_governed_requery_activation(
 		"required_action_lane": _clean_text(action_support.get("required_action_lane")),
 		"allowed_action_lanes": _clean_list(action_support.get("allowed_action_lanes")),
 		"action": action,
-		"planner_mode": _clean_text(plan.get("planner_mode")),
+		"planner_mode": planner_mode,
 		"target_entity": entity_reference,
 		"requested_metrics": _clean_list(plan.get("requested_metrics") or candidate.get("requested_metrics")),
 		"requested_dimensions": _clean_list(plan.get("requested_dimensions") or candidate.get("requested_dimensions")),

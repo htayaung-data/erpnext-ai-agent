@@ -258,10 +258,22 @@ def _item_rows_artifact():
 	}
 
 
-def _shadow_payload(*, authority_class="", requested_action=""):
+def _shadow_payload(
+	*,
+	authority_class="",
+	requested_action="",
+	governed_requery_plan=None,
+	target_reference="",
+	candidate_composite_family_ids=None,
+):
 	candidates = []
 	if requested_action:
-		candidates.append({"candidate_id": "candidate-1", "requested_action": requested_action})
+		candidate = {"candidate_id": "candidate-1", "requested_action": requested_action}
+		if target_reference:
+			candidate["target_reference"] = target_reference
+		if candidate_composite_family_ids is not None:
+			candidate["candidate_composite_family_ids"] = list(candidate_composite_family_ids)
+		candidates.append(candidate)
 	return {
 		"type": "qwen_natural_business_understanding_trace_contract",
 		"request_id": "req-shadow",
@@ -269,6 +281,7 @@ def _shadow_payload(*, authority_class="", requested_action=""):
 		"candidate_interpretations": candidates,
 		"authority_plan": {"authority_class": authority_class} if authority_class else {},
 		"conversation_action_decision": {"action": "ask_clarification"},
+		"governed_requery_plan": governed_requery_plan or {},
 	}
 
 
@@ -292,6 +305,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		authority_class="",
 		requested_action="",
 		reasoning_type="",
+		governed_requery_plan=None,
+		target_reference="",
+		candidate_composite_family_ids=None,
 	):
 		messages = []
 		payloads = []
@@ -325,6 +341,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 				_shadow_payload(
 					authority_class=authority_class,
 					requested_action=requested_action,
+					governed_requery_plan=governed_requery_plan,
+					target_reference=target_reference,
+					candidate_composite_family_ids=candidate_composite_family_ids,
 				)
 			],
 		)
@@ -352,6 +371,51 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 	def test_ranked_entity_detail_request_is_visible_context_not_fresh_query(self):
 		self.assertTrue(visible_context_followup_requested("give me more information about rank 2 suppliers"))
 
+	def test_ranked_row_identity_does_not_defer_to_local_followup_shadow_plan(self):
+		session_doc = {"messages": [_tool_message(_ap_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ap_artifact(),
+			requested_action="show",
+			governed_requery_plan={
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "local_followup",
+				"shadow_execution_ready": True,
+				"target_entity": {
+					"entity_type": "supplier",
+					"name": "Sunflower Accessories Co.",
+				},
+			},
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Sunflower Accessories Co.", answer)
+
+	def test_ranked_entity_detail_request_defers_to_governed_detail_lane(self):
+		session_doc = {"messages": [_tool_message(_ap_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="give me more information about rank 2 suppliers",
+			current_artifact=_ap_artifact(),
+			requested_action="detail",
+			governed_requery_plan={
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "entity_detail",
+				"shadow_execution_ready": True,
+				"target_entity": {
+					"entity_type": "supplier",
+					"name": "Sunflower Accessories Co.",
+				},
+			},
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertEqual(messages, [])
+
 	def test_presentation_only_million_request_is_not_visible_row_followup(self):
 		self.assertFalse(visible_context_followup_requested("Show in Million"))
 		self.assertFalse(visible_context_followup_requested("Show as Million"))
@@ -368,6 +432,32 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(any("Overdue Amount: 58,212,000 MMK" in message[1] for message in messages))
 		self.assertFalse(any("customer_risk_as_of" in message[1] for message in messages))
 		self.assertTrue(any(row.get("type") == "qwen_visible_context_followup_trace_contract" for row in payloads))
+
+	def test_safe_read_row_identity_does_not_expand_into_reasoning_style_explanation(self):
+		session_doc = {"messages": [_tool_message(_ap_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ap_artifact(),
+			authority_class="safe_read",
+			requested_action="show",
+			reasoning_type="interpretation",
+			governed_requery_plan={
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "local_followup",
+				"shadow_execution_ready": True,
+				"target_entity": {
+					"entity_type": "supplier",
+					"name": "Sunflower Accessories Co.",
+				},
+			},
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Sunflower Accessories Co.", answer)
+		self.assertNotIn("Why this stands out", answer)
 
 	def test_clears_stale_pending_clarification_when_visible_row_is_answered(self):
 		session_doc = {"messages": [_tool_message(_ar_artifact())]}
@@ -485,6 +575,16 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 			current_artifact=_ar_artifact(),
 			authority_class="safe_explanation",
 			requested_action="explain",
+			governed_requery_plan={
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "entity_detail",
+				"shadow_execution_ready": True,
+				"target_entity": {
+					"entity_type": "customer",
+					"name": "35th Street Mobile Wholesale",
+				},
+			},
 		)
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_answer")
@@ -519,6 +619,63 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("136,661,500 MMK is overdue", answer)
 		self.assertIn("61.4% of the outstanding balance", answer)
 		self.assertIn("Facts from that row", answer)
+
+	def test_reasoning_explanation_overrides_detail_shadow_for_visible_row_signal(self):
+		session_doc = {"messages": [_tool_message(_ar_artifact())]}
+		handled, _payload, _messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="why is this customer risky?",
+			current_artifact=_ar_artifact(),
+			authority_class="safe_read",
+			requested_action="detail",
+			reasoning_type="explanation",
+			governed_requery_plan={
+				"status": "ready_shadow",
+				"planner_mode": "entity_detail_requery",
+				"target_route": "entity_detail",
+				"shadow_execution_ready": True,
+				"target_entity": {
+					"entity_type": "customer",
+					"name": "35th Street Mobile Wholesale",
+				},
+			},
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("35th Street Mobile Wholesale", answer)
+		self.assertIn("Why this stands out from the visible row", answer)
+		self.assertIn("58,212,000 MMK is overdue", answer)
+
+	def test_selected_entity_composite_context_uses_visible_row_explanation(self):
+		session_doc = {"messages": [_tool_message(_ar_artifact())]}
+		handled, _payload, _messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="why is this customer risky?",
+			current_artifact=_ar_artifact(),
+			authority_class="safe_read",
+			requested_action="show",
+			target_reference="selected_entity",
+			candidate_composite_family_ids=["customer_risk_as_of"],
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("35th Street Mobile Wholesale", answer)
+		self.assertIn("Why this stands out from the visible row", answer)
+		self.assertIn("58,212,000 MMK is overdue", answer)
 
 	def test_prediction_question_returns_boundary_not_visible_fact_answer(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}

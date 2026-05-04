@@ -650,6 +650,9 @@ def _message_looks_like_self_contained_governed_business_query(
 		clean = str(term or "").strip().lower()
 		if clean and text == clean:
 			return True
+	for concept_id in ontology_detect_concepts(text, language=language, include_extended=False):
+		if text in ontology_concept_aliases(str(concept_id or "").strip(), language=language):
+			return True
 	prefixes = [
 		str(value or "").strip().lower()
 		for value in ontology_self_contained_prefixes(language)
@@ -2317,6 +2320,42 @@ def _frontdoor_clarification_requires_fresh_query_reset(
 	)
 
 
+def _frontdoor_clarification_fresh_query_resolution(
+	*,
+	request_id: str,
+	followup_resolution,
+	clarification_continuation_active: bool,
+):
+	if not bool(clarification_continuation_active):
+		return followup_resolution
+	if str(getattr(followup_resolution, "mode", "") or "").strip() != "new_query":
+		return followup_resolution
+	if (
+		bool(getattr(followup_resolution, "self_contained", False))
+		and not bool(getattr(followup_resolution, "depends_on_grounded_turn", False))
+	):
+		return followup_resolution
+	reason = str(getattr(followup_resolution, "reason", "") or "").strip()
+	continuation_reason = "The selected clarification option resolved to an executable fresh ERP query."
+	return build_followup_resolution_contract(
+		request_id=request_id,
+		mode=str(getattr(followup_resolution, "mode", "") or "").strip(),
+		requested_modes=list(getattr(followup_resolution, "requested_modes", []) or []),
+		target_dimension=str(getattr(followup_resolution, "target_dimension", "") or "").strip(),
+		target_limit=int(max(0, getattr(followup_resolution, "target_limit", 0) or 0)),
+		sort_direction=str(getattr(followup_resolution, "sort_direction", "") or "").strip(),
+		target_metric=str(getattr(followup_resolution, "target_metric", "") or "").strip(),
+		requested_columns=list(getattr(followup_resolution, "requested_columns", []) or []),
+		requested_time_scope=str(getattr(followup_resolution, "requested_time_scope", "") or "").strip(),
+		target_capability_id=str(getattr(followup_resolution, "target_capability_id", "") or "").strip(),
+		target_report=str(getattr(followup_resolution, "target_report", "") or "").strip(),
+		depends_on_grounded_turn=False,
+		self_contained=True,
+		latest_grounded_turn_available=False,
+		reason=f"{reason} {continuation_reason}".strip(),
+	)
+
+
 def _apply_frontdoor_clarification_reentry_state(
 	*,
 	frontdoor_semantic_result,
@@ -3669,6 +3708,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	frontdoor_render_result = None
 	frontdoor_answer = ""
 	artifact_boundary_clarification_continuation_active = False
+	frontdoor_clarification_continuation_active = False
 	artifact_local_projection_followup_requested = False
 	fresh_governed_query_override_requested = _message_should_override_stale_context_as_fresh_query(
 		message=msg,
@@ -4166,7 +4206,36 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		pending_clarification_signal
 		and _pending_clarification_response_should_preempt_runtime(clarification_response_contract)
 	)
-	if entity_drilldown is None and not pending_clarification_response_preempts_runtime:
+	frontdoor_direct_handling_authority = _frontdoor_contract_has_direct_handling_authority(frontdoor_contract)
+	nbu_requery_activation_may_continue_context = bool(
+		entity_drilldown is None
+		and not pending_clarification_response_preempts_runtime
+		and not fresh_governed_query_override_requested
+		and not bool(getattr(context_isolation, "force_new_query", False))
+		and not frontdoor_direct_handling_authority
+	)
+	if nbu_requery_activation_may_continue_context:
+		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			current_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			user_message_already_appended=False,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+			additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
+		)
+		if visible_context_handled and visible_context_payload is not None:
+			return True, visible_context_payload
 		nbu_requery_handled, nbu_requery_payload = _try_activate_nbu_governed_requery_response(
 			session_doc=session_doc,
 			request_id=request_id,
@@ -4192,35 +4261,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		if nbu_requery_handled and nbu_requery_payload is not None:
 			return True, nbu_requery_payload
-		if not fresh_governed_query_override_requested:
-			visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
-				session_doc=session_doc,
-				request_id=request_id,
-				session_id=session_name,
-				user_id=user,
-				site_name=site_name,
-				raw_message=raw_msg,
-				current_artifact=latest_family_artifact,
-				latest_grounded_turn=latest_grounded_turn,
-				interaction_contract=interaction_contract,
-				reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
-				user_message_already_appended=False,
-				append_message=_append_message,
-				append_tool_payload=_append_tool_payload,
-				assistant_text_payload=_assistant_text_payload,
-				save_session=_save_session,
-				clear_pending_clarification_signal=clear_pending_clarification_signal,
-				additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
-			)
-			if visible_context_handled and visible_context_payload is not None:
-				return True, visible_context_payload
 	compiled_rollout = _compiled_first_turn_rollout_decision(
 		session_name=session_name,
 		user=user,
 		site_name=site_name,
 	)
 	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
-	frontdoor_direct_handling_authority = _frontdoor_contract_has_direct_handling_authority(frontdoor_contract)
 	compiled_fresh_query_breakout = bool(
 		bool(compiled_rollout.get("enabled"))
 		and not context_anchored_message
@@ -4230,6 +4276,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not (
 			latest_grounded_turn_available
 			and semantic_intent_has_explicit_query_shape
+			and not fresh_governed_query_override_requested
 		)
 		and (
 			not latest_grounded_turn_available
@@ -4353,7 +4400,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		latest_grounded_turn_available=latest_grounded_turn_available,
 		context_force_new_query=bool(context_isolation.force_new_query),
 		entity_drilldown=entity_drilldown,
-	)
+	) and not frontdoor_direct_handling_authority
 	if (
 		entity_drilldown is None
 		and not frontdoor_should_yield_to_reasoning
@@ -4467,10 +4514,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			and entity_drilldown is None
 			and (clarification_lane == "front_door" or clarification_decision == "new_request")
 		):
+			clarified_frontdoor_grounded_context_available = bool(
+				latest_grounded_turn_available
+				and not frontdoor_clarification_continuation_active
+			)
+			clarified_frontdoor_grounded_turn = (
+				latest_grounded_turn
+				if clarified_frontdoor_grounded_context_available
+				else {}
+			)
 			clarified_frontdoor_recent_messages = _frontdoor_recent_messages_for_message(
 				message=frontdoor_reentry_message,
 				recent_messages=repair_recent_messages,
-				grounded_context_available=latest_grounded_turn_available,
+				grounded_context_available=clarified_frontdoor_grounded_context_available,
 				language=interaction_contract.detected_language,
 			)
 			(
@@ -4485,8 +4541,8 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				site_name=site_name,
 				message=frontdoor_reentry_message,
 				recent_messages=clarified_frontdoor_recent_messages,
-				grounded_context_available=latest_grounded_turn_available,
-				latest_grounded_turn=latest_grounded_turn,
+				grounded_context_available=clarified_frontdoor_grounded_context_available,
+				latest_grounded_turn=clarified_frontdoor_grounded_turn,
 				latest_recovery_contract_available=bool(latest_recovery_contract),
 				pre_frontdoor_reasoning_semantic_result=None,
 			)
@@ -4500,9 +4556,9 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				frontdoor_contract=clarified_frontdoor_contract,
 				frontdoor_render_result=clarified_frontdoor_render_result,
 				frontdoor_answer=clarified_frontdoor_answer,
-				context_force_new_query=False,
-				latest_grounded_turn_available=latest_grounded_turn_available,
-				latest_grounded_turn=latest_grounded_turn,
+				context_force_new_query=bool(frontdoor_clarification_continuation_active),
+				latest_grounded_turn_available=clarified_frontdoor_grounded_context_available,
+				latest_grounded_turn=clarified_frontdoor_grounded_turn,
 				append_message=_append_message,
 				append_tool_payload=_append_tool_payload,
 				append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
@@ -4771,6 +4827,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			evidence_boundary_answer=precomputed_evidence_boundary_answer,
 			latest_grounded_turn_available=followup_context_available,
 		)
+	followup_resolution = _frontdoor_clarification_fresh_query_resolution(
+		request_id=request_id,
+		followup_resolution=followup_resolution,
+		clarification_continuation_active=frontdoor_clarification_continuation_active,
+	)
 	continuation_contract = None
 	if followup_context_available:
 		continuation_contract = build_artifact_continuation_contract(
@@ -5277,7 +5338,11 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		scope_decision_contract=scope_decision_contract,
 		compiled_rollout=(
 			{**compiled_rollout, "enabled": False}
-			if context_anchored_message and isinstance(compiled_rollout, dict)
+			if (
+				context_anchored_message
+				and not frontdoor_clarification_continuation_active
+				and isinstance(compiled_rollout, dict)
+			)
 			else compiled_rollout
 		),
 		append_tool_payload=_append_tool_payload,
