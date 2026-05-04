@@ -489,7 +489,7 @@ async function checkProcurementTargetAudit(page, user) {
   return audit;
 }
 
-async function waitForProcurementShell(page, shellKey) {
+async function waitForProcurementShell(page, shellKey, label = "Procurement shell") {
   const selectors = {
     overview: ".sales-console-shell[data-erpw-workspace=\"procurement\"]",
     worklist: ".erpw-list-shell",
@@ -500,11 +500,19 @@ async function waitForProcurementShell(page, shellKey) {
   };
   const selector = selectors[shellKey];
   assert(selector, `Unknown procurement shell key ${shellKey}`);
-  await page.locator(selector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+  try {
+    await page.locator(selector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+  } catch (error) {
+    const state = await procurementShellState(page).catch(() => ({}));
+    throw Object.assign(new Error(`${label}: expected ${shellKey} shell did not become visible`), {
+      cause: error,
+      details: { url: page.url(), state, selector },
+    });
+  }
 }
 
 async function assertSingleProcurementShell(page, expectedShell, label) {
-  await waitForProcurementShell(page, expectedShell);
+  await waitForProcurementShell(page, expectedShell, label);
   await page.waitForFunction((shellKey) => {
     function visibleCount(selector) {
       return Array.from(document.querySelectorAll(selector)).filter((node) => {

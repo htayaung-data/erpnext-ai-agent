@@ -59,14 +59,28 @@
     return consoleRuntimePromise;
   }
 
+  function fallbackToManagedRoute(pageKey, slug, shellSelector) {
+    setTimeout(() => {
+      const route = frappe.get_route ? frappe.get_route() : [];
+      const activePage = Array.isArray(route) ? String(route[0] || "") : "";
+      const activeSlug = Array.isArray(route) ? String(route[1] || "") : "";
+      if (activePage !== pageKey || activeSlug !== slug || document.querySelector(shellSelector)) return;
+      window.location.href = `/desk/${pageKey}/${slug}`;
+    }, 900);
+  }
+
   function routeToWorklist(queueKey, filters) {
+    const slug = String(queueKey || "").replace(/_/g, "-");
     frappe.route_options = filters && Object.keys(filters).length ? filters : {};
-    frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
+    frappe.set_route(WORKLIST_ROUTE, slug);
+    fallbackToManagedRoute(WORKLIST_ROUTE, slug, ".erpw-list-shell");
   }
 
   function routeToReport(reportKey, filters) {
+    const slug = String(reportKey || "").replace(/_/g, "-");
     frappe.route_options = filters && Object.keys(filters).length ? filters : {};
-    frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
+    frappe.set_route(REPORT_ROUTE, slug);
+    fallbackToManagedRoute(REPORT_ROUTE, slug, ".erpw-report-shell");
   }
 
   function cleanupForNativeRoute() {
