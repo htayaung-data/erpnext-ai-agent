@@ -522,6 +522,9 @@
     $root.append($header, $createActions, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
     $(page.body).empty().append($root);
     pruneRouteShells($root.get(0));
+    cleanupOverviewPageHeads();
+    setTimeout(cleanupOverviewPageHeads, 0);
+    setTimeout(cleanupOverviewPageHeads, 120);
 
     frappe.call({ method: BOOTSTRAP_METHOD }).then((response) => {
       const payload = response && response.message ? response.message : {};
@@ -555,8 +558,24 @@
     }
   }
 
+
+  function cleanupOverviewPageHeads() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    const routeKey = Array.isArray(route) ? String(route[0] || "") : "";
+    if (routeKey !== PAGE_KEY) return;
+    document.querySelectorAll(".page-head").forEach((head) => {
+      if (!(head instanceof HTMLElement)) return;
+      const text = String(head.textContent || "").replace(/\s+/g, " ").trim();
+      const hasManagedTitle = /Procurement Console/i.test(text);
+      if (!hasManagedTitle && (!text || text === "Actions")) {
+        head.remove();
+      }
+    });
+  }
+
   function render(wrapper) {
     cleanupRouteShells();
+    cleanupOverviewPageHeads();
     const page = makeConsolePage(wrapper);
     if (wrapper) {
       const route = frappe.get_route ? frappe.get_route() : [];
@@ -582,7 +601,14 @@
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
-    if ($(host || []).find(".sales-console-shell").length) return;
+    const $existingShell = $(host || []).find(".sales-console-shell").first();
+    if ($existingShell.length) {
+      pruneRouteShells($existingShell.get(0));
+      cleanupOverviewPageHeads();
+      setTimeout(cleanupOverviewPageHeads, 0);
+      setTimeout(cleanupOverviewPageHeads, 120);
+      return;
+    }
     render(wrapper);
   };
 })();
