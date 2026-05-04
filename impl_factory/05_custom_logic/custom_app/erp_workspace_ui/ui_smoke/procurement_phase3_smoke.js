@@ -259,6 +259,218 @@ async function procurementShellState(page) {
   return state;
 }
 
+async function procurementChromeSnapshot(page, label) {
+  await page.waitForTimeout(800);
+  return page.evaluate((label) => {
+    function visible(node) {
+      if (!(node instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+    }
+    function textOf(node) {
+      return String((node && node.textContent) || "").replace(/\s+/g, " ").trim();
+    }
+    const pageHeads = Array.from(document.querySelectorAll(".page-head")).filter(visible);
+    const breadcrumbRows = Array.from(document.querySelectorAll(".navbar-breadcrumbs, .breadcrumb, .breadcrumbs, .page-breadcrumbs, .breadcrumb-container, .page-title")).filter(visible);
+    const headerRows = pageHeads.map((node) => ({
+      text: textOf(node),
+      links: Array.from(node.querySelectorAll("a")).map((link) => ({
+        text: textOf(link),
+        href: link.href || "",
+        route: link.getAttribute("data-route") || "",
+      })),
+    }));
+    const breadcrumbDetails = breadcrumbRows.map((node) => ({
+      text: textOf(node),
+      links: Array.from(node.querySelectorAll("a")).map((link) => ({
+        text: textOf(link),
+        href: link.href || "",
+        route: link.getAttribute("data-route") || "",
+      })),
+    })).filter((row) => row.text || row.links.length);
+    const nativeParentWords = /^(Stock|Buying|Material Request|Request for Quotation|Supplier Quotation|Purchase Order|Supplier|Item)$/i;
+    const parentLinkLeaks = breadcrumbDetails.flatMap((row) => row.links).filter((link) => {
+      const label = String(link.text || "").replace(/\s+/g, " ").trim();
+      const href = String(link.href || "");
+      const route = String(link.route || "");
+      return nativeParentWords.test(label) && !/procurement-console/i.test(href + " " + route);
+    });
+    const parentTextLeaks = headerRows.filter((row) => /^(Stock|Buying)(Material Request|Request for Quotation|Supplier Quotation|Purchase Order|Supplier|Item)/i.test(row.text));
+    const overviewVisible = Array.from(document.querySelectorAll(".sales-console-title, .sales-console-header-note")).some((node) => visible(node) && /Procurement Console|Buyer workbench/i.test(textOf(node)));
+    return {
+      label,
+      url: window.location.href,
+      route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [],
+      pageHeadCount: pageHeads.length,
+      breadcrumbRowCount: breadcrumbDetails.length,
+      headerRows,
+      breadcrumbRows: breadcrumbDetails,
+      parentLinkLeaks,
+      parentTextLeaks: parentTextLeaks.map((row) => row.text),
+      overviewVisible,
+      procurementShellState: {
+        overview: document.querySelectorAll('.sales-console-shell[data-erpw-workspace="procurement"]').length,
+        worklist: document.querySelectorAll(".erpw-procurement-console-worklist-page").length,
+        report: document.querySelectorAll(".erpw-procurement-console-report-page").length,
+        poDetail: document.querySelectorAll(".erpw-procurement-po-follow-up-page").length,
+        supplierDetail: document.querySelectorAll(".erpw-procurement-supplier-detail-page").length,
+        itemDetail: document.querySelectorAll(".erpw-procurement-item-detail-page").length,
+      },
+    };
+  }, label);
+}
+
+async function firstVisibleRowName(page, queueKey) {
+  const response = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", { queue_key: queueKey });
+  if (!response.ok) return "";
+  const rows = (((response.data || {}).message || {}).results || {}).rows || [];
+  const row = rows[0] || {};
+  return row.name || row.key || "";
+}
+
+async function clickProcurementCreateAction(page, actionKey, expectedPathPattern) {
+  await openDeskRoute(page, "/desk/procurement-console");
+  await page.locator('[data-erpw-console-bootstrap="ready"]').first().waitFor({ state: "attached", timeout: TIMEOUT });
+  await page.locator(`[data-erpw-procurement-create-action="${actionKey}"]`).first().click();
+  await page.waitForURL((url) => expectedPathPattern.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+}
+
+async function checkProcurementNativeChromeLifecycle(page, user) {
+  if (user.key !== "manager") return { skipped: "native create chrome is checked with manager permissions" };
+  const snapshots = [];
+  const createRoutes = [
+    { key: "new_purchase_request", label: "New Purchase Request", path: /\/desk\/material-request\// },
+    { key: "new_rfq", label: "New RFQ", path: /\/desk\/request-for-quotation\// },
+    { key: "new_supplier_quotation", label: "New Supplier Quotation", path: /\/desk\/supplier-quotation\// },
+    { key: "new_purchase_order", label: "New Purchase Order", path: /\/desk\/purchase-order\// },
+  ];
+  await openDeskRoute(page, "/desk/procurement-console");
+  snapshots.push(await procurementChromeSnapshot(page, "Procurement Overview"));
+  for (const item of createRoutes) {
+    await clickProcurementCreateAction(page, item.key, item.path);
+    snapshots.push(await procurementChromeSnapshot(page, item.label));
+    const parentCrumb = page.locator('[data-erpw-procurement-native-kind="parent"]').first();
+    await parentCrumb.waitFor({ state: "visible", timeout: TIMEOUT });
+    await parentCrumb.click();
+    await page.waitForURL(/\/desk\/procurement-console-worklist\//, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    assert(!/\/desk\/(stock|buying|material-request|request-for-quotation|supplier-quotation|purchase-order)(?:[/?#]|$)/i.test(page.url()), `${item.label}: parent breadcrumb leaked to native ERP route`, { url: page.url() });
+  }
+
+  await openDeskRoute(page, "/desk/procurement-console-report/supplier-quotation-comparison");
+  await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  snapshots.push(await procurementChromeSnapshot(page, "Quote Comparison"));
+
+  const supplierName = await firstVisibleRowName(page, "supplier_directory");
+  if (supplierName) {
+    await openDeskRoute(page, `/desk/procurement-console-supplier/${encodeURIComponent(supplierName)}`);
+    await page.locator(".erpw-procurement-supplier-detail-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    snapshots.push(await procurementChromeSnapshot(page, "Supplier Detail"));
+  }
+  const itemName = await firstVisibleRowName(page, "buying_item_directory");
+  if (itemName) {
+    await openDeskRoute(page, `/desk/procurement-console-item/${encodeURIComponent(itemName)}`);
+    await page.locator(".erpw-procurement-item-detail-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    snapshots.push(await procurementChromeSnapshot(page, "Item Detail"));
+  }
+  const purchaseOrder = await firstVisibleRowName(page, "purchase_orders_due_soon") || await firstVisibleRowName(page, "purchase_orders_overdue");
+  if (purchaseOrder) {
+    await openDeskRoute(page, `/desk/procurement-console-po-follow-up/${encodeURIComponent(purchaseOrder)}`);
+    await page.locator(".erpw-procurement-po-follow-up-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    snapshots.push(await procurementChromeSnapshot(page, "PO Follow-up Detail"));
+  }
+
+  const defects = snapshots.filter((snapshot) => {
+    const duplicateHeader = snapshot.pageHeadCount > 1;
+    const parentLeak = (snapshot.parentLinkLeaks || []).length > 0 || (snapshot.parentTextLeaks || []).length > 0;
+    const oldOverview = snapshot.label !== "Procurement Overview" && snapshot.overviewVisible;
+    return duplicateHeader || parentLeak || oldOverview;
+  });
+  assert(defects.length === 0, "Procurement native chrome has duplicate headers or ERPNext parent breadcrumb leaks", { defects, snapshots });
+  return { snapshots };
+}
+
+async function checkQuoteComparisonHeaderLifecycle(page) {
+  const snapshots = [];
+  for (let index = 0; index < 5; index += 1) {
+    await openDeskRoute(page, "/desk/procurement-console-report/supplier-quotation-comparison");
+    await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const snapshot = await procurementChromeSnapshot(page, `Quote Comparison repeat ${index + 1}`);
+    snapshots.push(snapshot);
+    assert(snapshot.pageHeadCount <= 1, "Quote Comparison repeated open created duplicate page headers", snapshot);
+    assert(snapshot.procurementShellState.report === 1, "Quote Comparison repeated open created duplicate report shells", snapshot);
+  }
+  return { snapshots };
+}
+
+async function checkDetailActionStyling(page, selector, label) {
+  const shell = page.locator(selector).first();
+  await shell.waitFor({ state: "visible", timeout: TIMEOUT });
+  const actions = await shell.locator(".erpw-child-action").evaluateAll((nodes) => nodes.map((node) => {
+    const style = getComputedStyle(node);
+    return {
+      text: (node.textContent || "").replace(/\s+/g, " ").trim(),
+      padding: style.padding,
+      borderRadius: style.borderRadius,
+      border: style.border,
+      display: style.display,
+    };
+  }));
+  assert(actions.length > 0, `${label}: no shared child action buttons rendered`, { actions });
+  assert(actions[0].text.match(/Back/i), `${label}: Back action should be first`, { actions });
+  assert(actions.some((action) => /Refresh/i.test(action.text)), `${label}: Refresh action missing`, { actions });
+  assert(actions.every((action) => action.display === "grid" || action.display === "inline-flex"), `${label}: action buttons are not using shared styling`, { actions });
+  assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: action button styling looks unstyled`, { actions });
+  return actions;
+}
+
+async function checkProcurementTargetAudit(page, user) {
+  const audit = [];
+  const expectations = [
+    { queue: "supplier_directory", label: "Supplier Directory", actionKey: "open_record", classification: "productized Procurement page", route: "procurement-console-supplier" },
+    { queue: "buying_item_directory", label: "Buying Item Directory", actionKey: "open_record", classification: "productized Procurement page", route: "procurement-console-item" },
+    { queue: "purchase_order_directory", label: "Purchase Order Directory", actionKey: "open_record", classification: "productized Procurement PO Follow-up Detail", route: "procurement-console-po-follow-up" },
+    { queue: "purchase_request_directory", label: "Purchase Request Directory", actionKey: "open_erp_form", classification: "governed native ERP form with Procurement chrome", doctype: "Material Request" },
+    { queue: "rfq_directory", label: "RFQ Directory", actionKey: "open_erp_form", classification: "governed native ERP form with Procurement chrome", doctype: "Request for Quotation" },
+    { queue: "supplier_quotation_directory", label: "Supplier Quotation Directory", actionKey: "open_erp_form", classification: "governed native ERP form with Procurement chrome", doctype: "Supplier Quotation" },
+  ];
+  for (const item of expectations) {
+    const payload = await worklistPayload(page, item.queue);
+    const firstRow = ((payload.results || {}).rows || [])[0] || {};
+    const state = stateKind(payload);
+    const result = { queue: item.queue, classification: item.classification, state, skipped: !firstRow.key };
+    if (firstRow.key) {
+      const actions = Array.isArray(firstRow.actions) ? firstRow.actions : [];
+      const target = (payload.action_targets || {})[`row:${firstRow.key}:${item.actionKey}`] || {};
+      result.actionKey = item.actionKey;
+      result.targetKind = target.kind;
+      result.targetRoute = target.route || "";
+      result.targetDoctype = target.doctype || "";
+      assert(actions.some((action) => action.key === item.actionKey), `${item.label}: expected row action missing`, { actions, item });
+      if (item.route) {
+        assert(target.kind === "page" && target.route === item.route, `${item.label}: productized target mismatch`, { target, item });
+      } else {
+        assert(target.kind === "form" && target.doctype === item.doctype, `${item.label}: native target mismatch`, { target, item });
+        assert(target.native_chrome && target.native_chrome.workspace === "procurement", `${item.label}: native target missing Procurement chrome context`, { target });
+        assert(/Open ERP Form/i.test(actions.map((action) => action.label || "").join(" ")), `${item.label}: native row target must be explicitly labeled`, { actions });
+      }
+    }
+    audit.push(result);
+  }
+
+  if (user.key === "manager") {
+    await openDeskRoute(page, "/desk/procurement-console-worklist/rfq-directory");
+    const nativeButton = page.locator('[data-erpw-list-action-key="open_erp_form"]').first();
+    if (await nativeButton.count()) {
+      await nativeButton.click();
+      await page.waitForURL(/\/desk\/request-for-quotation\//, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      const snapshot = await procurementChromeSnapshot(page, "RFQ governed native row open");
+      assert(snapshot.parentLinkLeaks.length === 0 && snapshot.pageHeadCount <= 1, "RFQ row native form did not receive Procurement-owned chrome", snapshot);
+    }
+  }
+  return audit;
+}
+
 async function waitForProcurementShell(page, shellKey) {
   const selectors = {
     overview: ".sales-console-shell[data-erpw-workspace=\"procurement\"]",
@@ -590,6 +802,7 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
     assert(/Item lines/i.test(text), "Direct PO detail route did not render item line section", { text, route });
     assert(/Receipt posture/i.test(text) && /Billing posture/i.test(text), "Direct PO detail route did not render downstream posture", { text, route });
   }
+  const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-po-follow-up-shell", "PO Follow-up Detail");
   const detailResponse = await callMethod(page, "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context", {
     purchase_order: purchaseOrderName || "",
   });
@@ -597,7 +810,7 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
   const payload = detailResponse.data.message || {};
   assert(["ready", "restricted", "unavailable", "empty"].includes((payload.detail && payload.detail.state && payload.detail.state.kind) || "missing"), "Detail API invalid state", payload);
   assertNoForbiddenActions(payload, "po_follow_up_detail");
-  return { route, state: payload.detail && payload.detail.state ? payload.detail.state.kind : "missing" };
+  return { route, state: payload.detail && payload.detail.state ? payload.detail.state.kind : "missing", actionStyles };
 }
 
 async function checkSupplierDetail(page, user) {
@@ -621,6 +834,7 @@ async function checkSupplierDetail(page, user) {
   assert(/Open or overdue purchase orders/i.test(text), "Supplier Detail did not render PO posture", { text });
   assert(/RFQs/i.test(text) && /Supplier quotations/i.test(text), "Supplier Detail did not render sourcing context", { text });
   assert(!/Detail runtime unavailable/i.test(text), "Supplier Detail fell back to missing runtime state", { text });
+  const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-supplier-detail-shell", "Supplier Detail");
 
   const detailResponse = await callMethod(page, "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context", {
     supplier: supplierName,
@@ -634,7 +848,7 @@ async function checkSupplierDetail(page, user) {
   if (user.key !== "manager") {
     assert(!hasNativeFormAction, "Non-manager user should not see governed native Supplier form action", payload.action_targets || {});
   }
-  return { supplierName, state, hasNativeFormAction };
+  return { supplierName, state, hasNativeFormAction, actionStyles };
 }
 
 async function checkItemDetail(page, user) {
@@ -658,6 +872,7 @@ async function checkItemDetail(page, user) {
   assert(/Approved suppliers|Supplier price review/i.test(text), "Item Detail did not render supplier or price context", { text });
   assert(/Recent supplier quotations|Open purchase orders/i.test(text), "Item Detail did not render buying movement context", { text });
   assert(!/Detail runtime unavailable/i.test(text), "Item Detail fell back to missing runtime state", { text });
+  const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-item-detail-shell", "Item Detail");
 
   const detailResponse = await callMethod(page, "erp_workspace_ui.procurement_console.items.get_item_detail_context", {
     item: itemCode,
@@ -671,7 +886,7 @@ async function checkItemDetail(page, user) {
   if (user.key !== "manager") {
     assert(!hasNativeFormAction, "Non-manager user should not see governed native Item form action", payload.action_targets || {});
   }
-  return { itemCode, state, hasNativeFormAction };
+  return { itemCode, state, hasNativeFormAction, actionStyles };
 }
 
 async function checkCreateActions(page, user, bootstrapPayload) {
@@ -693,10 +908,31 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   const labels = await page.locator("[data-erpw-procurement-create-action]").evaluateAll((nodes) =>
     nodes.map((node) => (node.textContent || "").replace(/\s+/g, " ").trim())
   );
+  const variants = actions.reduce((result, action) => {
+    if (action && action.key) result[action.key] = action.variant || "";
+    return result;
+  }, {});
+  ["new_purchase_request", "new_rfq", "new_supplier_quotation", "new_purchase_order"].forEach((key) => {
+    if (keys.includes(key)) assert(variants[key] === "primary", `${key} should be a primary Procurement create action`, { variants });
+  });
+  ["new_supplier", "new_item"].forEach((key) => {
+    if (keys.includes(key)) assert(variants[key] === "secondary", `${key} should remain a secondary governed master-data action`, { variants });
+  });
   const actionCardCount = await visibleElementCount(page, ".sales-console-action[data-erpw-procurement-create-action]");
   const childActionCount = await visibleElementCount(page, ".erpw-child-action[data-erpw-procurement-create-action]");
+  const primaryLayout = await page.locator('[data-section-key="create-actions"] .sales-console-action-strip.primary').first().evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      columns: style.gridTemplateColumns,
+      actionCount: node.querySelectorAll('.sales-console-action[data-erpw-procurement-create-variant="primary"]').length,
+      declaredColumns: node.getAttribute("data-erpw-action-columns") || "",
+    };
+  });
   assert(actionCardCount === keys.length, "Procurement create actions do not use shared Sales Console action cards", { keys, actionCardCount, childActionCount });
   assert(childActionCount === 0, "Procurement create actions still use child-page action styling", { childActionCount });
+  if (["new_purchase_request", "new_rfq", "new_supplier_quotation", "new_purchase_order"].every((key) => keys.includes(key))) {
+    assert(primaryLayout.actionCount === 4 && primaryLayout.declaredColumns === "2", "Core Procurement create actions should render as a balanced 2x2 primary grid", primaryLayout);
+  }
   let createRoute = null;
   if (keys.includes("new_purchase_request")) {
     await page.locator('[data-erpw-procurement-create-action="new_purchase_request"]').first().click();
@@ -729,6 +965,9 @@ async function runUser(browser, user) {
     await login(page, user);
     report.defaultLandingUrl = await checkDefaultLanding(page, user);
     report.overviewStyles = await checkOverviewStyling(page);
+    report.nativeChromeLifecycle = await checkProcurementNativeChromeLifecycle(page, user);
+    report.reportHeaderLifecycle = await checkQuoteComparisonHeaderLifecycle(page);
+    report.targetAudit = await checkProcurementTargetAudit(page, user);
     report.overviewNavigationLifecycle = await checkProcurementOverviewNavigationLifecycle(page);
     report.backForwardLifecycle = await checkProcurementBackForwardLifecycle(page);
     report.sidebarLabels = await checkProcurementSidebar(page);

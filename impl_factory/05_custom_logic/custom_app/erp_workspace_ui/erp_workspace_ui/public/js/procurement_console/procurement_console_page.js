@@ -77,10 +77,53 @@
     }
   }
 
+  function procurementNativeContextForDoctype(doctype) {
+    const contexts = {
+      "Material Request": { parentLabel: "Purchase Requests", parentRoute: "/desk/procurement-console-worklist/purchase-request-directory", leafLabel: "New Purchase Request" },
+      "Request for Quotation": { parentLabel: "RFQs", parentRoute: "/desk/procurement-console-worklist/rfq-directory", leafLabel: "New RFQ" },
+      "Supplier Quotation": { parentLabel: "Supplier Quotations", parentRoute: "/desk/procurement-console-worklist/supplier-quotation-directory", leafLabel: "New Supplier Quotation" },
+      "Purchase Order": { parentLabel: "Purchase Orders", parentRoute: "/desk/procurement-console-worklist/purchase-order-directory", leafLabel: "New Purchase Order" },
+      "Supplier": { parentLabel: "Suppliers", parentRoute: "/desk/procurement-console-worklist/supplier-directory", leafLabel: "ERP Supplier Form" },
+      "Item": { parentLabel: "Buying Items", parentRoute: "/desk/procurement-console-worklist/buying-item-directory", leafLabel: "ERP Item Form" },
+    };
+    const context = contexts[doctype];
+    if (!context) return null;
+    return Object.assign({
+      workspace: "procurement",
+      doctype,
+      homeLabel: "Procurement Console",
+      homeRoute: "/desk/procurement-console",
+      createdAt: Date.now(),
+    }, context);
+  }
+
+  function rememberProcurementNativeContext(context) {
+    if (!context) return;
+    const nativeChrome = window.erpWorkspaceUiProcurementNativeChrome || {};
+    if (typeof nativeChrome.remember === "function") {
+      nativeChrome.remember(context);
+      return;
+    }
+    try {
+      window.sessionStorage.setItem("erpwProcurementNativeChromeContext", JSON.stringify(context));
+    } catch (error) {
+      window.__erpwProcurementNativeChromeContext = context;
+    }
+  }
+
   function executeTarget(target) {
     if (!target) return;
     if (target.kind === "new_doc" && target.doctype) {
-      frappe.route_options = target.defaults && typeof target.defaults === "object" ? Object.assign({}, target.defaults) : {};
+      const nativeContext = procurementNativeContextForDoctype(target.doctype);
+      const defaults = target.defaults && typeof target.defaults === "object" ? Object.assign({}, target.defaults) : {};
+      if (nativeContext) {
+        defaults.__erpw_procurement_native_chrome = 1;
+        defaults.__erpw_procurement_parent_route = nativeContext.parentRoute;
+        defaults.__erpw_procurement_parent_label = nativeContext.parentLabel;
+        defaults.__erpw_procurement_leaf_label = nativeContext.leafLabel;
+        rememberProcurementNativeContext(nativeContext);
+      }
+      frappe.route_options = defaults;
       cleanupForNativeRoute();
       return frappe.set_route("Form", target.doctype, "new-" + String(target.doctype).toLowerCase().replace(/\s+/g, "-"));
     }
@@ -174,22 +217,28 @@
     $section.removeAttr("hidden");
     const $primary = $grid.find(".sales-console-action-strip.primary").first();
     const $secondary = $grid.find(".sales-console-action-strip.secondary").first();
-    actions.forEach((action, index) => {
-      const isPrimary = index < 3;
+    actions.forEach((action) => {
+      const variant = action.variant === "primary" ? "primary" : "secondary";
+      const isPrimary = variant === "primary";
       const $button = makeAction({
         key: action.key || "",
         title: action.title || action.label || action.key,
         meta: action.note || "Open the governed ERPNext form.",
         icon: "square",
         primary: isPrimary,
-        tier: isPrimary ? "primary" : "secondary",
+        tier: variant,
         onClick: () => executeTarget(targets[action.key]),
       });
       $button.attr("data-erpw-procurement-create-action", action.key || "");
+      $button.attr("data-erpw-procurement-create-variant", variant);
       (isPrimary ? $primary : $secondary).append($button);
     });
     if (typeof runtimeMethod("rebalanceActionStrips") === "function") {
-      runtimeMethod("rebalanceActionStrips")($section);
+      const primaryCount = actions.filter((action) => action.variant === "primary").length;
+      runtimeMethod("rebalanceActionStrips")($section, {
+        maxPrimaryActions: 4,
+        primaryColumns: primaryCount === 4 ? 2 : 0,
+      });
     }
   }
 

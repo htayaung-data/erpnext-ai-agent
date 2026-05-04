@@ -217,7 +217,12 @@ def _detail_payload(
 				"note": "Uses ERPNext item master permissions.",
 			}
 		)
-		action_targets["open_item_form"] = {"kind": "form", "doctype": "Item", "name": name}
+		action_targets["open_item_form"] = {
+			"kind": "form",
+			"doctype": "Item",
+			"name": name,
+			"native_chrome": common.native_form_context("Item", name=name, leaf_label="ERP Item Form"),
+		}
 
 	return {
 		"page": {"title": "Buying Item Detail", "key": "buying_item_detail", "item": name},
@@ -346,8 +351,8 @@ def _available_fields(doctype: str, fields: list[str]) -> list[str]:
 
 def _base_actions() -> list[dict[str, object]]:
 	return [
-		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
 		{"key": "back_to_items", "title": "Back to items", "label": "Back to items", "variant": "secondary", "category": "navigation"},
+		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
 	]
 
 

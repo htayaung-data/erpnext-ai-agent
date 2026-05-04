@@ -66,6 +66,30 @@
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "supplier_directory").replace(/_/g, "-"));
   }
 
+  function cleanupForNativeRoute() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true });
+      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 0);
+      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 80);
+    }
+  }
+
+  function rememberNativeChromeTarget(target) {
+    const context = target && target.native_chrome && typeof target.native_chrome === "object" ? Object.assign({}, target.native_chrome) : null;
+    if (!context) return;
+    context.createdAt = Date.now();
+    const nativeChrome = window.erpWorkspaceUiProcurementNativeChrome || {};
+    if (typeof nativeChrome.remember === "function") {
+      nativeChrome.remember(context);
+      return;
+    }
+    try {
+      window.sessionStorage.setItem("erpwProcurementNativeChromeContext", JSON.stringify(context));
+    } catch (error) {
+      window.__erpwProcurementNativeChromeContext = context;
+    }
+  }
+
   function ensureHost(page, wrapper) {
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     let $host = $parent.children(".erpw-procurement-supplier-detail-page").first();
@@ -127,7 +151,11 @@
         if (action.key === "refresh") return loadRoute(viewState);
         const target = ((payload && payload.action_targets) || {})[action.key];
         if (target && target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key);
-        if (target && target.kind === "form" && target.doctype && target.name) return frappe.set_route("Form", target.doctype, target.name);
+        if (target && target.kind === "form" && target.doctype && target.name) {
+          rememberNativeChromeTarget(target);
+          cleanupForNativeRoute();
+          return frappe.set_route("Form", target.doctype, target.name);
+        }
       },
     }));
   }

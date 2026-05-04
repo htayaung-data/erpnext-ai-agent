@@ -117,7 +117,12 @@ def _detail_payload(
 				"note": "Uses ERPNext permissions for any master-data changes.",
 			}
 		)
-		action_targets["open_supplier_form"] = {"kind": "form", "doctype": "Supplier", "name": name}
+		action_targets["open_supplier_form"] = {
+			"kind": "form",
+			"doctype": "Supplier",
+			"name": name,
+			"native_chrome": common.native_form_context("Supplier", name=name, leaf_label="ERP Supplier Form"),
+		}
 
 	return {
 		"page": {"title": "Supplier Detail", "key": "supplier_detail", "supplier": name},
@@ -262,8 +267,8 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 
 def _base_actions() -> list[dict[str, object]]:
 	return [
-		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
 		{"key": "back_to_suppliers", "title": "Back to suppliers", "label": "Back to suppliers", "variant": "secondary", "category": "navigation"},
+		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
 	]
 
 

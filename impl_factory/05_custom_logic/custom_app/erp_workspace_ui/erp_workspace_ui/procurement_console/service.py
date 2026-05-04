@@ -586,7 +586,7 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 				"key": key,
 				"title": item.get("title"),
 				"label": item.get("title"),
-				"variant": "primary" if key in {"new_purchase_request", "new_purchase_order"} else "secondary",
+				"variant": "primary" if key in {"new_purchase_request", "new_rfq", "new_supplier_quotation", "new_purchase_order"} else "secondary",
 				"category": "create",
 				"note": item.get("note"),
 			}

@@ -482,7 +482,9 @@
     secondaryTier.forEach((element) => $secondary.append(element));
   }
 
-  function rebalanceActionStrips($root) {
+  function rebalanceActionStrips($root, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const maxPrimaryActions = Number(settings.maxPrimaryActions || 3);
     const $primary = $root.find(".sales-console-action-strip.primary");
     const $secondary = $root.find(".sales-console-action-strip.secondary");
     const $actions = $root.find("[data-action-key]");
@@ -514,7 +516,7 @@
     });
 
     visiblePrimary.forEach((element, index) => {
-      if (index < 3) {
+      if (index < maxPrimaryActions) {
         $primary.append(element);
       } else {
         $secondary.append(element);
@@ -525,11 +527,13 @@
       $secondary.append(element);
     });
 
-    const primaryVisibleCount = Math.min(visiblePrimary.length, 3);
-    const secondaryVisibleCount = Math.max(visiblePrimary.length - 3, 0) + visibleSecondary.length;
+    const primaryVisibleCount = Math.min(visiblePrimary.length, maxPrimaryActions);
+    const secondaryVisibleCount = Math.max(visiblePrimary.length - maxPrimaryActions, 0) + visibleSecondary.length;
 
-    const primaryColumns = Math.max(primaryVisibleCount, 1);
+    const requestedPrimaryColumns = Number(settings.primaryColumns || 0);
+    const primaryColumns = requestedPrimaryColumns > 0 ? requestedPrimaryColumns : Math.max(primaryVisibleCount, 1);
     $primary.css("grid-template-columns", `repeat(${primaryColumns}, minmax(0, 1fr))`);
+    $primary.attr("data-erpw-action-columns", String(primaryColumns));
 
     if (secondaryVisibleCount > 0) {
       const secondaryColumns = Math.min(Math.max(secondaryVisibleCount, 1), 2);

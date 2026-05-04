@@ -25,6 +25,30 @@
     frappe.set_route("query-report", reportName);
   }
 
+  function cleanupForNativeRoute() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true });
+      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 0);
+      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 80);
+    }
+  }
+
+  function rememberNativeChromeTarget(target) {
+    const context = target && target.native_chrome && typeof target.native_chrome === "object" ? Object.assign({}, target.native_chrome) : null;
+    if (!context) return;
+    context.createdAt = Date.now();
+    const nativeChrome = window.erpWorkspaceUiProcurementNativeChrome || {};
+    if (typeof nativeChrome.remember === "function") {
+      nativeChrome.remember(context);
+      return;
+    }
+    try {
+      window.sessionStorage.setItem("erpwProcurementNativeChromeContext", JSON.stringify(context));
+    } catch (error) {
+      window.__erpwProcurementNativeChromeContext = context;
+    }
+  }
+
   function resolveQueueKey(route) {
     return Array.isArray(route) && route.length > 1 ? String(route[1] || "").replace(/-/g, "_") : "";
   }
@@ -102,7 +126,11 @@
       frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : {};
       return frappe.set_route.apply(frappe, [target.route].concat(routeParts));
     }
-    if (target.kind === "form" && target.doctype && target.name) return frappe.set_route("Form", target.doctype, target.name);
+    if (target.kind === "form" && target.doctype && target.name) {
+      rememberNativeChromeTarget(target);
+      cleanupForNativeRoute();
+      return frappe.set_route("Form", target.doctype, target.name);
+    }
     if (target.kind === "list" && target.doctype) return routeToList(target.doctype, target.filters || null);
     if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);

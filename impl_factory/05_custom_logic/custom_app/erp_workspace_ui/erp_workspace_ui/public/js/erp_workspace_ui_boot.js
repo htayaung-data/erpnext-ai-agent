@@ -461,6 +461,188 @@
 	  window.erpWorkspaceUiSalesConsoleChrome = Object.assign(window.erpWorkspaceUiSalesConsoleChrome || {}, {
 	    sync: syncSalesConsoleNativeChrome,
 	  });
+
+
+          const PROCUREMENT_NATIVE_CHROME_KEY = "erpwProcurementNativeChromeContext";
+          const PROCUREMENT_NATIVE_CONTEXT_TTL_MS = 5 * 60 * 1000;
+
+          function clearProcurementNativeContext() {
+            window.__erpwProcurementNativeChromeContext = null;
+            try {
+              if (window.sessionStorage) window.sessionStorage.removeItem(PROCUREMENT_NATIVE_CHROME_KEY);
+            } catch (error) {
+              // Ignore storage cleanup failures.
+            }
+          }
+
+          function procurementNativeContextFromStorage() {
+            let context = window.__erpwProcurementNativeChromeContext || null;
+            try {
+              const stored = window.sessionStorage ? window.sessionStorage.getItem(PROCUREMENT_NATIVE_CHROME_KEY) : "";
+              if (stored) context = JSON.parse(stored);
+            } catch (error) {
+              context = window.__erpwProcurementNativeChromeContext || null;
+            }
+            if (!context || context.workspace !== "procurement" || !context.doctype) return null;
+            if (context.createdAt && Date.now() - Number(context.createdAt) > PROCUREMENT_NATIVE_CONTEXT_TTL_MS) {
+              clearProcurementNativeContext();
+              return null;
+            }
+            return context;
+          }
+
+          function writeProcurementNativeContext(context) {
+            window.__erpwProcurementNativeChromeContext = context;
+            try {
+              if (window.sessionStorage) {
+                window.sessionStorage.setItem(PROCUREMENT_NATIVE_CHROME_KEY, JSON.stringify(context));
+              }
+            } catch (error) {
+              // Keep in-memory context when storage is unavailable.
+            }
+          }
+
+          function currentFormRouteDoctype() {
+            const route = window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [];
+            if (Array.isArray(route) && route[0] === "Form" && route[1]) return String(route[1]);
+            const segments = routeSegmentsFromPath();
+            const slugs = {
+              "material-request": "Material Request",
+              "request-for-quotation": "Request for Quotation",
+              "supplier-quotation": "Supplier Quotation",
+              "purchase-order": "Purchase Order",
+              supplier: "Supplier",
+              item: "Item",
+            };
+            return slugs[segments[0] || ""] || "";
+          }
+
+          function isNativeProcurementDoctypeSlug(slug) {
+            return /^(material-request|request-for-quotation|supplier-quotation|purchase-order|supplier|item)$/.test(String(slug || ""));
+          }
+
+          function isProcurementManagedNativeRoute() {
+            const context = procurementNativeContextFromStorage();
+            if (!context) return null;
+            const currentDoctype = currentFormRouteDoctype();
+            if (!currentDoctype || currentDoctype !== context.doctype) {
+              const route = window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [];
+              const first = Array.isArray(route) ? String(route[0] || "") : "";
+              const pathFirst = routeSegmentsFromPath()[0] || "";
+              if (first && first !== "Form" && !isNativeProcurementDoctypeSlug(pathFirst)) {
+                clearProcurementNativeContext();
+              }
+              return null;
+            }
+            const routeSignature = routeSegmentsFromPath().join("/") || safeCurrentRouteString() || window.location.pathname || "";
+            if (!context.resolvedRouteSignature) {
+              context.resolvedRouteSignature = routeSignature;
+              writeProcurementNativeContext(context);
+            } else if (context.resolvedRouteSignature !== routeSignature) {
+              return null;
+            }
+            return context;
+          }
+
+          function visiblePageHeads() {
+            return Array.from(document.querySelectorAll(".page-head")).filter((head) => {
+              if (!(head instanceof HTMLElement)) return false;
+              const rect = head.getBoundingClientRect();
+              const style = window.getComputedStyle(head);
+              return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+            });
+          }
+
+          function pruneProcurementNativePageHeads() {
+            const heads = visiblePageHeads();
+            if (heads.length <= 1) return heads[0] || null;
+            const keep = heads.find((head) => /Not Saved|Save|Discard|Toggle Sidebar/i.test(String(head.textContent || ""))) || heads[heads.length - 1];
+            heads.forEach((head) => {
+              if (head === keep) return;
+              if (head.parentNode) head.parentNode.removeChild(head);
+            });
+            return keep;
+          }
+
+          function renderProcurementBreadcrumbs(list, context) {
+            if (!(list instanceof HTMLElement)) return false;
+            const crumbs = [
+              { label: context.homeLabel || "Procurement Console", route: context.homeRoute || "/desk/procurement-console", kind: "home" },
+              { label: context.parentLabel || "Procurement", route: context.parentRoute || "/desk/procurement-console", kind: "parent" },
+              { label: context.leafLabel || context.doctype || "ERP Form", route: "", current: true },
+            ];
+            list.textContent = "";
+            list.setAttribute("data-erpw-procurement-native-breadcrumbs", "1");
+            crumbs.forEach((crumb, index) => {
+              const item = document.createElement("li");
+              const link = document.createElement("a");
+              const isCurrent = crumb.current || index === crumbs.length - 1;
+              link.textContent = crumb.label;
+              link.setAttribute("href", isCurrent ? "" : crumb.route);
+              if (isCurrent) {
+                link.setAttribute("aria-current", "page");
+                link.classList.add("title-text");
+              } else {
+                link.setAttribute("data-erpw-procurement-native-route", crumb.route);
+                link.setAttribute("data-erpw-procurement-native-kind", crumb.kind);
+              }
+              item.appendChild(link);
+              list.appendChild(item);
+            });
+            return true;
+          }
+
+          function syncProcurementNativeChrome() {
+            const context = isProcurementManagedNativeRoute();
+            if (!context) return false;
+            const keepHead = pruneProcurementNativePageHeads();
+            if (!(keepHead instanceof HTMLElement)) return false;
+            const lists = Array.from(keepHead.querySelectorAll(".navbar-breadcrumbs"));
+            let synced = false;
+            lists.forEach((list) => {
+              synced = renderProcurementBreadcrumbs(list, context) || synced;
+            });
+            if (synced) {
+              if (document.body) document.body.classList.remove("no-breadcrumbs");
+              if (window.frappe && frappe.utils && typeof frappe.utils.set_title === "function") {
+                frappe.utils.set_title(context.leafLabel || context.doctype || "Procurement");
+              }
+            }
+            return synced;
+          }
+
+          function bindProcurementNativeBreadcrumbOwnership() {
+            if (document.__erpwProcurementNativeBreadcrumbOwnershipBound) return;
+            document.__erpwProcurementNativeBreadcrumbOwnershipBound = true;
+            document.addEventListener("click", (event) => {
+              const link = event.target && event.target.closest
+                ? event.target.closest("[data-erpw-procurement-native-route]")
+                : null;
+              if (!(link instanceof HTMLElement)) return;
+              const route = link.getAttribute("data-erpw-procurement-native-route") || "";
+              if (!route) return;
+              event.preventDefault();
+              event.stopPropagation();
+              clearProcurementNativeContext();
+              const path = route.replace(/^\/(?:desk|app)\//, "").split("/").filter(Boolean);
+              if (window.frappe && typeof frappe.set_route === "function" && path.length) {
+                frappe.set_route.apply(frappe, path);
+              } else {
+                window.location.href = route;
+              }
+            }, true);
+          }
+
+          window.erpWorkspaceUiProcurementNativeChrome = Object.assign(window.erpWorkspaceUiProcurementNativeChrome || {}, {
+            sync: syncProcurementNativeChrome,
+            clear: clearProcurementNativeContext,
+            remember(context) {
+              const nextContext = Object.assign({ createdAt: Date.now() }, context || {});
+              if (nextContext.workspace === "procurement" && nextContext.doctype) {
+                writeProcurementNativeContext(nextContext);
+              }
+            },
+          });
   function applySalesOrderRouteChrome() {
     const isSalesOrder = isChildExecutionRoute();
     if (!isSalesOrder) {
@@ -651,8 +833,10 @@
 	        applySalesOrderRouteChrome();
 	        collapseEmptyChildTopChrome();
 	        bindSalesConsoleBreadcrumbOwnership();
+	        bindProcurementNativeBreadcrumbOwnership();
 	        syncSalesConsoleNativeChrome();
 	        syncSalesConsoleBreadcrumbLinks();
+	        syncProcurementNativeChrome();
 	        ensureChildGridActionLabels();
 	        bindDraftLookupSurface();
         prewarmDraftLookupDefaults();

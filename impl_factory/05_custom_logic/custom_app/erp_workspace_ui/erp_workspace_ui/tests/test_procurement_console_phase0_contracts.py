@@ -684,6 +684,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             [action["key"] for action in payload["create_actions"]],
             ["new_purchase_request", "new_rfq", "new_supplier_quotation", "new_purchase_order"],
         )
+        self.assertEqual([action["variant"] for action in payload["create_actions"]], ["primary", "primary", "primary", "primary"])
         self.assertEqual(payload["action_targets"]["new_purchase_request"]["kind"], "new_doc")
         self.assertEqual(payload["action_targets"]["new_purchase_request"]["doctype"], "Material Request")
         self.assertEqual(payload["action_targets"]["new_purchase_request"]["defaults"], {"material_request_type": "Purchase"})
@@ -698,6 +699,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         manager_payload = service.get_procurement_console_bootstrap()
 
         self.assertEqual([action["key"] for action in manager_payload["create_actions"]], ["new_supplier"])
+        self.assertEqual([action["variant"] for action in manager_payload["create_actions"]], ["secondary"])
         self.assertEqual(manager_payload["action_targets"]["new_supplier"], {"kind": "new_doc", "doctype": "Supplier", "defaults": {}})
         self.assertNotIn("new_item", manager_payload["action_targets"])
 
@@ -705,6 +707,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         master_payload = service.get_procurement_console_bootstrap()
 
         self.assertEqual([action["key"] for action in master_payload["create_actions"]], ["new_supplier", "new_item"])
+        self.assertEqual([action["variant"] for action in master_payload["create_actions"]], ["secondary", "secondary"])
         self.assertEqual(master_payload["action_targets"]["new_item"], {"kind": "new_doc", "doctype": "Item", "defaults": {}})
 
     def test_procurement_overview_renders_create_actions_from_backend_payload(self):
@@ -901,6 +904,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("makeAction({", source)
         self.assertIn("sales-console-action-strip primary", source)
         self.assertIn("data-erpw-procurement-create-action", source)
+        self.assertIn("data-erpw-procurement-create-variant", source)
+        self.assertIn("maxPrimaryActions: 4", source)
+        self.assertIn("primaryColumns: primaryCount === 4 ? 2 : 0", source)
         self.assertNotIn("erpw-child-action secondary erpw-procurement-create-action", source)
         self.assertIn("Shared workspace action cards", css_source)
         self.assertIn(".sales-console-action", css_source)
@@ -1050,7 +1056,13 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         manager_payload = supplier_detail.get_supplier_detail_context("SUP-001")
 
-        self.assertEqual(manager_payload["action_targets"]["open_supplier_form"], {"kind": "form", "doctype": "Supplier", "name": "SUP-001"})
+        supplier_target = manager_payload["action_targets"]["open_supplier_form"]
+        self.assertEqual(supplier_target["kind"], "form")
+        self.assertEqual(supplier_target["doctype"], "Supplier")
+        self.assertEqual(supplier_target["name"], "SUP-001")
+        self.assertEqual(supplier_target["native_chrome"]["parentLabel"], "Suppliers")
+        self.assertEqual(supplier_target["native_chrome"]["leafLabel"], "ERP Supplier Form")
+        self.assertEqual([action["key"] for action in manager_payload["controls"]["actions"]], ["back_to_suppliers", "refresh", "open_supplier_form"])
 
         _set_user("purchase@example.com", ["Purchase User"])
         user_payload = supplier_detail.get_supplier_detail_context("SUP-001")
@@ -1113,7 +1125,13 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         payload = items.get_item_detail_context("ITEM-001")
 
-        self.assertEqual(payload["action_targets"]["open_item_form"], {"kind": "form", "doctype": "Item", "name": "ITEM-001"})
+        item_target = payload["action_targets"]["open_item_form"]
+        self.assertEqual(item_target["kind"], "form")
+        self.assertEqual(item_target["doctype"], "Item")
+        self.assertEqual(item_target["name"], "ITEM-001")
+        self.assertEqual(item_target["native_chrome"]["parentLabel"], "Buying Items")
+        self.assertEqual(item_target["native_chrome"]["leafLabel"], "ERP Item Form")
+        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_items", "refresh", "open_item_form"])
 
         _set_user("manager@example.com", ["Purchase Manager"])
         manager_payload = items.get_item_detail_context("ITEM-001")
@@ -1124,6 +1142,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_erp_form", "label": "Open ERP Form"}])
+        request_target = payload["action_targets"]["row:MAT-MR-001:open_erp_form"]
+        self.assertEqual(request_target["kind"], "form")
+        self.assertEqual(request_target["doctype"], "Material Request")
+        self.assertEqual(request_target["native_chrome"]["parentLabel"], "Purchase Requests")
+        self.assertEqual(request_target["native_chrome"]["leafLabel"], "MAT-MR-001")
         filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
         self.assertTrue(_filter_contains(filters, ["Material Request", "material_request_type", "=", "Purchase"]))
 
@@ -1246,6 +1270,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         payload = purchase_order_detail.get_purchase_order_follow_up_detail_context("PUR-PARTIAL-001", return_queue="purchase_orders_partially_received")
 
         self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_queue", "refresh"])
         self.assertEqual(payload["summary"]["title"], "PUR-PARTIAL-001")
         self.assertEqual(payload["detail"]["items"]["rows"][0]["cells"]["remaining_qty"], "4")
         self.assertEqual(payload["action_targets"]["back_to_queue"]["kind"], "worklist")
@@ -1280,7 +1305,11 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         payload = worklist.get_procurement_console_worklist_context("rfq_directory")
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
-        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Open"}])
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_erp_form", "label": "Open ERP Form"}])
+        rfq_target = payload["action_targets"]["row:RFQ-001:open_erp_form"]
+        self.assertEqual(rfq_target["kind"], "form")
+        self.assertEqual(rfq_target["doctype"], "Request for Quotation")
+        self.assertEqual(rfq_target["native_chrome"]["parentLabel"], "RFQs")
         self.assertIn("No send/email action", payload["controls"]["scopeChips"])
         self.assertNotIn("send_email", str(payload))
 
@@ -1316,6 +1345,11 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn("purchase_order", payload_text)
         self.assertNotIn("item_price", payload_text)
         self.assertNotIn("set_default_supplier", payload_text)
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_erp_form", "label": "Open ERP Form"}])
+        quotation_target = payload["action_targets"]["row:SUP-QTN-001:open_erp_form"]
+        self.assertEqual(quotation_target["kind"], "form")
+        self.assertEqual(quotation_target["doctype"], "Supplier Quotation")
+        self.assertEqual(quotation_target["native_chrome"]["parentLabel"], "Supplier Quotations")
 
     def test_supplier_quotations_to_compare_filters_submitted_visible_records(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_quotations_to_compare")

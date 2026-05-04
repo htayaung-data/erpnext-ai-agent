@@ -234,8 +234,8 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 
 def _base_actions(return_queue: str | None) -> list[dict[str, object]]:
 	return [
-		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
 		{"key": "back_to_queue", "title": "Back to queue", "label": "Back to queue", "variant": "secondary", "category": "navigation"},
+		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
 	]
 
 
