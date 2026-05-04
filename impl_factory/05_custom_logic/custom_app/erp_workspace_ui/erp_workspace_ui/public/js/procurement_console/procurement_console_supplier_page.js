@@ -27,11 +27,9 @@
   }
 
   function requireRuntimeAsset(url) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       frappe.require(url, () => {
         resolve();
-      }, (error) => {
-        reject(error || new Error("Could not load shared detail runtime."));
       });
     });
   }
