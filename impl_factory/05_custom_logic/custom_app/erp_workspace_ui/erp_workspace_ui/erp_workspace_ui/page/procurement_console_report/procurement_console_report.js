@@ -61,6 +61,26 @@
     if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
   }
 
+  function pathRouteSignature() {
+    const path = String(window.location && window.location.pathname || "").replace(/^\/+/, "");
+    const parts = path.split("/").filter(Boolean);
+    const routeParts = parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
+    return routeParts.map((part) => {
+      try {
+        return decodeURIComponent(part || "");
+      } catch (error) {
+        return part || "";
+      }
+    }).join("|");
+  }
+
+  function isCurrentReportRoute(routeSignature) {
+    const pathSignature = pathRouteSignature();
+    if (pathSignature === routeSignature) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === PAGE_KEY && route.join("|") === routeSignature;
+  }
+
   function resolveReportKey(route) {
     return Array.isArray(route) && route.length > 1 ? String(route[1] || "").replace(/-/g, "_") : "";
   }
@@ -215,6 +235,7 @@
   }
 
   function mountPayload(viewState, payload, options) {
+    if (viewState && viewState.routeSignature && !isCurrentReportRoute(viewState.routeSignature)) return;
     syncReportChromeTitle(viewState, payload);
     return ensureReportRuntime().then((runtime) => {
       const config = Object.assign({}, payload || {}, {
@@ -284,12 +305,12 @@
     }
 
     frappe.call({ method: CONTEXT_METHOD, args }).then((response) => {
-      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentReportRoute(routeSignature)) return;
       const payload = response && response.message ? response.message : {};
       syncReportChromeTitle(viewState, payload);
       mountPayload(viewState, payload, { partialDataRefresh, refreshControls: Boolean(settings.refreshControls) });
     }).catch((error) => {
-      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentReportRoute(routeSignature)) return;
       setDataRefreshing(viewState, false);
       mountPayload(viewState, errorConfig(error && error.message ? error.message : "The report could not be loaded."));
     });

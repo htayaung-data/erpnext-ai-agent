@@ -53,6 +53,26 @@
     return Array.isArray(route) && route.length > 1 ? String(route[1] || "").replace(/-/g, "_") : "";
   }
 
+  function pathRouteSignature() {
+    const path = String(window.location && window.location.pathname || "").replace(/^\/+/, "");
+    const parts = path.split("/").filter(Boolean);
+    const routeParts = parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
+    return routeParts.map((part) => {
+      try {
+        return decodeURIComponent(part || "");
+      } catch (error) {
+        return part || "";
+      }
+    }).join("|");
+  }
+
+  function isCurrentWorklistRoute(routeSignature) {
+    const pathSignature = pathRouteSignature();
+    if (pathSignature === routeSignature) return true;
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === PAGE_KEY && route.join("|") === routeSignature;
+  }
+
   function consumeRouteFilters() {
     const options = frappe.route_options && typeof frappe.route_options === "object"
       ? Object.assign({}, frappe.route_options)
@@ -197,6 +217,7 @@
   }
 
   function mountPayload(viewState, payload, options) {
+    if (viewState && viewState.routeSignature && !isCurrentWorklistRoute(viewState.routeSignature)) return;
     const runtime = window.erpWorkspaceUiListPage && window.erpWorkspaceUiListPage.shell;
     if (!runtime || typeof runtime.mountWorklist !== "function") {
       viewState.$host.html('<div class="erpw-list-shell"><section class="erpw-child-card erpw-list-results"><div class="erpw-list-state error"><div class="erpw-list-state-title">List runtime unavailable</div><div class="erpw-list-state-detail">Shared worklist runtime is not loaded on this page.</div></div></section></div>');
@@ -254,12 +275,12 @@
         filters: viewState.activeFilters || {},
       },
     }).then((response) => {
-      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentWorklistRoute(routeSignature)) return;
       const payload = response && response.message ? response.message : {};
       syncWorklistChromeTitle(viewState, payload);
       mountPayload(viewState, payload, { partialDataRefresh, refreshControls: Boolean(settings.refreshControls) });
     }).catch((error) => {
-      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
+      if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken || !isCurrentWorklistRoute(routeSignature)) return;
       setDataRefreshing(viewState, false);
       mountPayload(viewState, {
         summary: {

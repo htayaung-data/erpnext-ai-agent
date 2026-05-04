@@ -2152,11 +2152,7 @@
     });
   }
 
-  function currentRouteParts() {
-    if (window.frappe && typeof frappe.get_route === "function") {
-      const route = frappe.get_route();
-      if (Array.isArray(route) && route.length) return route;
-    }
+  function routePartsFromLocationPath() {
     const path = String(window.location && window.location.pathname || "").replace(/^\/+/, "");
     const parts = path.split("/").filter(Boolean);
     const routeParts = parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
@@ -2167,6 +2163,16 @@
         return part || "";
       }
     });
+  }
+
+  function currentRouteParts() {
+    const pathRouteParts = routePartsFromLocationPath();
+    if (isProcurementConsoleRoute(String(pathRouteParts[0] || ""))) return pathRouteParts;
+    if (window.frappe && typeof frappe.get_route === "function") {
+      const route = frappe.get_route();
+      if (Array.isArray(route) && route.length) return route;
+    }
+    return pathRouteParts;
   }
 
   function procurementDirectPageWrapper(pageKey, pageDef) {

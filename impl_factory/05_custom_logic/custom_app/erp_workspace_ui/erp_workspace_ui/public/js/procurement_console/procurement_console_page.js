@@ -83,7 +83,22 @@
     fallbackToManagedRoute(REPORT_ROUTE, slug, ".erpw-report-shell");
   }
 
+  function pathRouteParts() {
+    const path = String(window.location && window.location.pathname || "").replace(/^\/+/, "");
+    const parts = path.split("/").filter(Boolean);
+    const routeParts = parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
+    return routeParts.map((part) => {
+      try {
+        return decodeURIComponent(part || "");
+      } catch (error) {
+        return part || "";
+      }
+    });
+  }
+
   function isActiveProcurementRoute() {
+    const pathRoute = pathRouteParts();
+    if (String(pathRoute[0] || "") === PAGE_KEY) return true;
     const route = frappe.get_route ? frappe.get_route() : [];
     return Array.isArray(route) && String(route[0] || "") === PAGE_KEY;
   }
@@ -615,6 +630,7 @@
   }
 
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
+  frappe.pages[PAGE_KEY].__erpwProcurementConsoleRenderer = true;
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
   frappe.pages[PAGE_KEY].on_page_show = function (wrapper) {
     if (window.erpWorkspaceConsoleSidebar && typeof window.erpWorkspaceConsoleSidebar.refresh === "function") {
