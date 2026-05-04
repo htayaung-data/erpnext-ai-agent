@@ -1,3 +1,3 @@
 /* global frappe */
 
-frappe.require("/assets/erp_workspace_ui/js/procurement_console/procurement_console_item_page.js?v=procurement-item-detail-v1");
+frappe.require("/assets/erp_workspace_ui/js/procurement_console/procurement_console_item_page.js");

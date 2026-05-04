@@ -9,8 +9,8 @@
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const CONTEXT_METHOD = procurementMethods.supplierDetailContext || "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context";
   const CHILD_PAGE_RUNTIME_URLS = [
-    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js?v=procurement-supplier-detail-v1",
-    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js?v=procurement-supplier-detail-v1",
+    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
+    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
   ];
   let runtimePromise = null;
 

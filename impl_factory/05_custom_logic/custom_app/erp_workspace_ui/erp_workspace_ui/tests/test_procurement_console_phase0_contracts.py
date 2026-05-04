@@ -835,6 +835,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("existing.routeSignature === routeSignature", boot_source)
         self.assertIn("loadProcurementDirectPageAsset", boot_source)
         self.assertIn("document.createElement(\"script\")", boot_source)
+        self.assertNotIn("?v=procurement", boot_source)
         self.assertNotIn("frappe.require(asset", boot_source)
         self.assertIn("procurement-console-po-follow-up", boot_source)
         self.assertIn("procurement-console-supplier", boot_source)
@@ -874,6 +875,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             self.assertIn("frappe.require(url, () =>", source, filename)
             self.assertNotIn("Could not load shared detail runtime", source, filename)
             self.assertNotIn("frappe.require(url, () => resolve(), (error)", source, filename)
+            self.assertNotIn("?v=procurement", source, filename)
 
     def test_procurement_routes_do_not_null_native_route_options(self):
         paths = [

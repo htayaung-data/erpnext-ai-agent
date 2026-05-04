@@ -9,8 +9,8 @@
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const CONTEXT_METHOD = procurementMethods.poFollowUpDetailContext || "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context";
   const CHILD_PAGE_RUNTIME_URLS = [
-    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js?v=procurement-po-follow-up-v1",
-    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js?v=procurement-po-follow-up-v1",
+    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
+    "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
   ];
   let activeViewState = null;
   let runtimePromise = null;

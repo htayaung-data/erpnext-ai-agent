@@ -1850,10 +1850,10 @@
 
 
   const PROCUREMENT_DIRECT_PAGE_ASSETS = {
-    "procurement-console": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js?v=procurement-overview-v1",
-    "procurement-console-po-follow-up": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_po_follow_up_page.js?v=procurement-po-follow-up-v1",
-    "procurement-console-supplier": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_supplier_page.js?v=procurement-supplier-detail-v1",
-    "procurement-console-item": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_item_page.js?v=procurement-item-detail-v1",
+    "procurement-console": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js",
+    "procurement-console-po-follow-up": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_po_follow_up_page.js",
+    "procurement-console-supplier": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_supplier_page.js",
+    "procurement-console-item": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_item_page.js",
   };
   const PROCUREMENT_DIRECT_PAGE_STATE_KEYS = {
     "procurement-console": "__erpwProcurementConsole",

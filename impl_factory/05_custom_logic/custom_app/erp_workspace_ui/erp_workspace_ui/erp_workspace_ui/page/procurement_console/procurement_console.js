@@ -2,6 +2,6 @@
 
 (function () {
   frappe.require([
-    "/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js?v=procurement-overview-v1"
+    "/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js"
   ]);
 })();
