@@ -22,12 +22,12 @@
   }
 
   function routeToWorklist(queueKey, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
   }
 
   function routeToReport(reportKey, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
   }
 

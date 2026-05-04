@@ -11,17 +11,17 @@
   let activeViewState = null;
 
   function routeToWorklist(queueKey, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route(PAGE_KEY, String(queueKey || "").replace(/_/g, "-"));
   }
 
   function routeToList(doctype, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route("List", doctype);
   }
 
   function routeToReport(reportName, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route("query-report", reportName);
   }
 
@@ -33,7 +33,7 @@
     const options = frappe.route_options && typeof frappe.route_options === "object"
       ? Object.assign({}, frappe.route_options)
       : null;
-    frappe.route_options = null;
+    frappe.route_options = {};
     return options;
   }
 
@@ -94,7 +94,7 @@
     if (!target) return;
     if (target.kind === "page" && target.route) {
       const routeParts = Array.isArray(target.route_parts) ? target.route_parts : [];
-      frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : null;
+      frappe.route_options = target.options && typeof target.options === "object" ? Object.assign({}, target.options) : {};
       return frappe.set_route.apply(frappe, [target.route].concat(routeParts));
     }
     if (target.kind === "form" && target.doctype && target.name) return frappe.set_route("Form", target.doctype, target.name);

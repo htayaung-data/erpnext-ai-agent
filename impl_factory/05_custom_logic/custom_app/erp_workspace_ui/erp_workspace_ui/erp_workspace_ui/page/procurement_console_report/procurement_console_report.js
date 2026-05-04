@@ -14,12 +14,12 @@
   const REPORT_SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
 
   function routeToWorklist(queueKey, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
   }
 
   function routeToReport(reportName, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route("query-report", reportName);
   }
 

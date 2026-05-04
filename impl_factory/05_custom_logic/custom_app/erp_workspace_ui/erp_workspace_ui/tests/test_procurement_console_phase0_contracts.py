@@ -653,6 +653,17 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("ArrowDown", source)
         self.assertIn("ArrowUp", source)
 
+    def test_procurement_routes_do_not_null_native_route_options(self):
+        paths = [
+            Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "console" / "workspace_console_sidebar.js",
+            Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console" / "procurement_console.js",
+            Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_worklist" / "procurement_console_worklist.js",
+            Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_report" / "procurement_console_report.js",
+            Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_po_follow_up" / "procurement_console_po_follow_up.js",
+        ]
+        for path in paths:
+            self.assertNotIn("frappe.route_options = null", path.read_text(), str(path))
+
     def test_shared_console_styles_are_global_asset_contract(self):
         css_path = Path(__file__).resolve().parents[1] / "public" / "css" / "erp_workspace_ui.css"
         source = css_path.read_text()

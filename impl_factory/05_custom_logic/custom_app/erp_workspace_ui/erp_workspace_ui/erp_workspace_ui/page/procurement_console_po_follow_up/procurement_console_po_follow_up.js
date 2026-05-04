@@ -36,7 +36,7 @@
     const options = frappe.route_options && typeof frappe.route_options === "object"
       ? Object.assign({}, frappe.route_options)
       : {};
-    frappe.route_options = null;
+    frappe.route_options = {};
     return options;
   }
 

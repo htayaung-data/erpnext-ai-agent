@@ -940,12 +940,12 @@
   }
 
   function routeToList(doctype, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route("List", doctype);
   }
 
   function routeToReport(reportName, filters) {
-    frappe.route_options = filters && Object.keys(filters).length ? filters : null;
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route("query-report", reportName);
   }
 
@@ -968,7 +968,7 @@
     const normalizedTargetKey = String(queueKey || "").replace(/-/g, "_");
     const routeCustomer = customerRouteValue(nextFilters);
     const routeItem = itemRouteValue(nextFilters);
-    frappe.route_options = nextFilters;
+    frappe.route_options = nextFilters || {};
     if (config.workspaceId === "sales" && ["customer_detail", "customer_editor"].includes(normalizedTargetKey) && routeCustomer) {
       frappe.set_route(config.worklistRoute, normalizedQueueKey, encodeRoutePart(routeCustomer));
       return;
