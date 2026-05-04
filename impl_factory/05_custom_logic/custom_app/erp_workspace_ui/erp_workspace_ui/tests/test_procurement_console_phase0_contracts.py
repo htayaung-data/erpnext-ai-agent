@@ -547,7 +547,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["workspace"]["workspace_id"], "procurement")
         self.assertEqual(payload["workspace"]["status"], "phase_3")
         self.assertEqual(payload["state"]["kind"], "ready")
-        self.assertEqual(payload["scope"]["default_routing_enabled"], False)
+        self.assertEqual(payload["scope"]["default_routing_enabled"], True)
         self.assertEqual(payload["reports_catalog"][0]["key"], "supplier_quotation_comparison")
         self.assertEqual(
             [item["key"] for item in payload["sidebar"]["items"]],
@@ -572,10 +572,23 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("rfq_directory", payload["directories"])
         self.assertIn("supplier_quotation_directory", payload["directories"])
 
-    def test_purchase_roles_do_not_receive_default_app_in_phase2(self):
+    def test_purchase_roles_receive_procurement_home_without_sales_default_app(self):
         _set_user("purchase@example.com", ["Purchase User"])
+        bootinfo = {}
 
         self.assertIsNone(boot.resolve_default_app("purchase@example.com"))
+        self.assertEqual(boot.resolve_default_home_page("purchase@example.com"), "procurement-console-home")
+        boot.apply_role_based_boot_home(bootinfo)
+        self.assertEqual(bootinfo["home_page"], "procurement-console-home")
+
+    def test_sales_roles_keep_sales_home_and_default_app(self):
+        _set_user("sales@example.com", ["Sales User"])
+        bootinfo = {}
+
+        self.assertEqual(boot.resolve_default_app("sales@example.com"), "erp_workspace_ui")
+        self.assertEqual(boot.resolve_default_home_page("sales@example.com"), "sales-console-home")
+        boot.apply_role_based_boot_home(bootinfo)
+        self.assertEqual(bootinfo["home_page"], "sales-console-home")
 
     def test_non_procurement_bootstrap_returns_restricted(self):
         _set_user("sales@example.com", ["Sales User"])

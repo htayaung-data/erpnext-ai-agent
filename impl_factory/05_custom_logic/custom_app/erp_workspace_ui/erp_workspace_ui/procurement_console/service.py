@@ -121,7 +121,7 @@ def _base_payload(context: dict[str, object], payload_state: dict[str, str]) -> 
 		"context": context,
 		"scope": {
 			"scope_mode": "procurement_role_scope" if has_procurement_access(context) else "restricted",
-			"default_routing_enabled": False,
+			"default_routing_enabled": has_procurement_access(context),
 		},
 		"state": payload_state,
 		"navigation": {
@@ -166,7 +166,7 @@ def get_procurement_console_sidebar_context() -> dict[str, object]:
 		"context": context,
 		"scope": {
 			"scope_mode": "procurement_role_scope" if has_procurement_access(context) else "restricted",
-			"default_routing_enabled": False,
+			"default_routing_enabled": has_procurement_access(context),
 		},
 		"state": payload_state,
 		"sidebar": build_sidebar(context),

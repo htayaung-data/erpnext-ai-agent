@@ -3,16 +3,36 @@ from __future__ import annotations
 import frappe
 
 
-SALES_CONSOLE_APP = "erp_workspace_ui"
+ERP_WORKSPACE_UI_APP = "erp_workspace_ui"
+SALES_CONSOLE_APP = ERP_WORKSPACE_UI_APP
 SALES_CONSOLE_ROUTE = "/desk/sales-console"
 SALES_CONSOLE_APP_HOME = "/desk/sales-console-home"
 SALES_CONSOLE_HOME_PAGE = "sales-console-home"
+PROCUREMENT_CONSOLE_HOME_PAGE = "procurement-console-home"
 DEFAULT_APP_EXCLUDED_USERS = {"Administrator"}
+SALES_CONSOLE_ROLES = frozenset({"Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"})
+PROCUREMENT_CONSOLE_ROLES = frozenset({"Purchase User", "Purchase Manager", "Purchase Master Manager"})
 DEFAULT_APP_RULES = (
-	(SALES_CONSOLE_APP, {"Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"}),
+	(SALES_CONSOLE_APP, SALES_CONSOLE_ROLES),
+)
+DEFAULT_HOME_PAGE_RULES = (
+	(SALES_CONSOLE_HOME_PAGE, SALES_CONSOLE_ROLES),
+	(PROCUREMENT_CONSOLE_HOME_PAGE, PROCUREMENT_CONSOLE_ROLES),
 )
 MANAGED_DEFAULT_APPS = {app_name for app_name, _roles in DEFAULT_APP_RULES}
-MANAGED_DESK_HOME_PAGES = {"sales-console", "sales-console-home"}
+MANAGED_DESK_HOME_PAGES = {
+	"sales-console",
+	"sales-console-home",
+	"procurement-console",
+	"procurement-console-home",
+}
+
+
+def _current_user_roles(user: str) -> set[str]:
+	try:
+		return set(frappe.get_roles(user))
+	except Exception:
+		return set()
 
 
 def resolve_default_app(user: str | None = None) -> str | None:
@@ -23,10 +43,26 @@ def resolve_default_app(user: str | None = None) -> str | None:
 	if user in DEFAULT_APP_EXCLUDED_USERS:
 		return None
 
-	user_roles = set(frappe.get_roles(user))
+	user_roles = _current_user_roles(user)
 	for app_name, roles in DEFAULT_APP_RULES:
 		if user_roles.intersection(roles):
 			return app_name
+
+	return None
+
+
+def resolve_default_home_page(user: str | None = None) -> str | None:
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		return None
+
+	if user in DEFAULT_APP_EXCLUDED_USERS:
+		return None
+
+	user_roles = _current_user_roles(user)
+	for home_page, roles in DEFAULT_HOME_PAGE_RULES:
+		if user_roles.intersection(roles):
+			return home_page
 
 	return None
 
@@ -70,17 +106,17 @@ def sync_current_user_default_app(_login_manager=None) -> None:
 		return
 
 	desired_app = resolve_default_app(user)
+	desired_home_page = resolve_default_home_page(user)
 	current_app = _get_current_user_default_app(user)
 
 	if desired_app:
 		if current_app != desired_app:
 			frappe.db.set_value("User", user, "default_app", desired_app, update_modified=False)
-		_sync_desktop_home_page(user, SALES_CONSOLE_HOME_PAGE)
-		return
+	else:
+		if current_app in MANAGED_DEFAULT_APPS:
+			frappe.db.set_value("User", user, "default_app", "", update_modified=False)
 
-	if current_app in MANAGED_DEFAULT_APPS:
-		frappe.db.set_value("User", user, "default_app", "", update_modified=False)
-	_sync_desktop_home_page(user, None)
+	_sync_desktop_home_page(user, desired_home_page)
 
 
 def sync_managed_default_apps() -> dict[str, str | None]:
@@ -93,19 +129,19 @@ def sync_managed_default_apps() -> dict[str, str | None]:
 
 	for user in users:
 		desired_app = resolve_default_app(user)
+		desired_home_page = resolve_default_home_page(user)
 		current_app = _get_current_user_default_app(user)
 
 		if desired_app:
 			if current_app != desired_app:
 				frappe.db.set_value("User", user, "default_app", desired_app, update_modified=False)
 				updated[user] = desired_app
-			_sync_desktop_home_page(user, SALES_CONSOLE_HOME_PAGE)
-			continue
+		else:
+			if current_app in MANAGED_DEFAULT_APPS:
+				frappe.db.set_value("User", user, "default_app", "", update_modified=False)
+				updated[user] = None
 
-		if current_app in MANAGED_DEFAULT_APPS:
-			frappe.db.set_value("User", user, "default_app", "", update_modified=False)
-			updated[user] = None
-		_sync_desktop_home_page(user, None)
+		_sync_desktop_home_page(user, desired_home_page)
 
 	return updated
 
@@ -114,9 +150,9 @@ def apply_role_based_boot_home(bootinfo) -> None:
 	"""Set the first Desk page from role policy, not only global defaults.
 
 	Frappe's native boot path resolves ``boot.home_page`` from the global
-	``desktop:home_page`` default. That ignores user-specific values, so sales
-	users would still land on the generic workspace desktop even when their
-	per-user defaults were correct.
+	``desktop:home_page`` default. That ignores user-specific values, so
+	workspace users can land on the wrong role console when the global app home
+	points at a different workspace.
 
 	We fix that here at the actual boot payload level, which is the value Desk
 	uses on first render when the route is plain ``/desk``.
@@ -126,5 +162,6 @@ def apply_role_based_boot_home(bootinfo) -> None:
 	if not user or user == "Guest":
 		return
 
-	if resolve_default_app(user) == SALES_CONSOLE_APP:
-		bootinfo["home_page"] = SALES_CONSOLE_HOME_PAGE
+	home_page = resolve_default_home_page(user)
+	if home_page:
+		bootinfo["home_page"] = home_page
