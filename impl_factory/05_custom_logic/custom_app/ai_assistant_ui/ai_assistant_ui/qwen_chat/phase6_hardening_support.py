@@ -150,7 +150,7 @@ def run_reasoning_frontdoor_boundary_smoke(
 		frappe_module.clear_cache()
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="show me sales invoices",
+			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -515,10 +515,51 @@ def run_observability_smoke(
 	handle_qwen_user_message,
 	session_tool_payloads,
 ) -> Dict[str, Any]:
+	def _compact_payload_for_failure(payload: Dict[str, Any]) -> Dict[str, Any]:
+		payload_type = str(payload.get("type") or "").strip()
+		compact = {
+			"type": payload_type,
+			"request_id": str(payload.get("request_id") or "").strip(),
+		}
+		if payload_type == "qwen_grounded_turn_context":
+			compact.update(
+				{
+					"source_name": str(payload.get("source_name") or "").strip(),
+					"artifact_family_id": str(payload.get("artifact_family_id") or "").strip(),
+					"artifact_source_reports": list(payload.get("artifact_source_reports") or []),
+					"row_count": payload.get("row_count"),
+					"metrics": list(payload.get("metrics") or []),
+				}
+			)
+		elif payload_type == "qwen_governed_scope_decision_contract":
+			compact.update(
+				{
+					"execution_mode": str(payload.get("execution_mode") or "").strip(),
+					"recommended_next_lane": str(payload.get("recommended_next_lane") or "").strip(),
+					"latest_grounded_turn_available": bool(payload.get("latest_grounded_turn_available")),
+					"preserve_grounded_context": bool(payload.get("preserve_grounded_context")),
+					"reason": str(payload.get("reason") or "").strip(),
+				}
+			)
+		elif payload_type == "qwen_phase6_observability_event":
+			compact.update(
+				{
+					"event_family": str(payload.get("event_family") or "").strip(),
+					"event_name": str(payload.get("event_name") or "").strip(),
+					"event_level": str(payload.get("event_level") or "").strip(),
+					"details": dict(payload.get("details") or {}),
+				}
+			)
+		else:
+			for key in ("mode", "status", "reasoning_type", "grounding_sufficient", "allowed_to_answer"):
+				if key in payload:
+					compact[key] = payload.get(key)
+		return compact
+
 	def _runner(doc) -> Dict[str, Any]:
 		ok, first_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="show me sales invoices",
+			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
 			user="Administrator",
 		)
 		if not ok or str((first_payload or {}).get("mode") or "").strip() not in {
@@ -531,11 +572,40 @@ def run_observability_smoke(
 		frappe_module.clear_cache()
 		ok, second_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="why is this risky?",
+			message="Explain the overdue risk in this accounts receivable summary.",
 			user="Administrator",
 		)
 		if not ok or str((second_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":
-			raise RuntimeError("Phase 6 observability smoke failed: second turn was not handled in the reasoning lane.")
+			session_doc = frappe_module.get_doc(session_doctype, doc.name)
+			tool_payloads = session_tool_payloads(session_doc)
+			interesting_types = {
+				"qwen_context_isolation_decision_contract",
+				"qwen_frontdoor_decision_contract",
+				"qwen_governed_scope_decision_contract",
+				"qwen_grounded_turn_context",
+				"qwen_followup_resolution_contract",
+				"qwen_followup_evidence_request_contract",
+				"qwen_visible_context_followup_contract",
+				"qwen_erp_business_reasoning_activation_contract",
+				"qwen_erp_business_reasoning_contract",
+				"qwen_erp_business_reasoning_execution",
+				"qwen_phase6_observability_event",
+			}
+			interesting_payloads = [
+				item
+				for item in tool_payloads
+				if str(item.get("type") or "").strip() in interesting_types
+			]
+			compact_interesting_payloads = [
+				_compact_payload_for_failure(item)
+				for item in interesting_payloads[-8:]
+			]
+			raise RuntimeError(
+				"Phase 6 observability smoke failed: second turn was not handled in the reasoning lane. "
+				f"ok={ok!r}; second_payload={second_payload!r}; "
+				f"tool_types={[item.get('type') for item in tool_payloads]!r}; "
+				f"interesting_payloads={compact_interesting_payloads!r}."
+			)
 		session_doc = frappe_module.get_doc(session_doctype, doc.name)
 		tool_payloads = session_tool_payloads(session_doc)
 		events = [

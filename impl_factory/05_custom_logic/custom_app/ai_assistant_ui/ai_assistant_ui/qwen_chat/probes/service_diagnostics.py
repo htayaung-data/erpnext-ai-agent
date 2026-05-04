@@ -187,6 +187,37 @@ def run_phase6_reasoning_live_debug() -> Dict[str, Any]:
 				message="what does this mean",
 				user="Administrator",
 			)
+			session_doc_after_second = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads_after_second = service_module._session_tool_payloads(session_doc_after_second)
+			interesting_types = {
+				"qwen_context_isolation_decision_contract",
+				"qwen_frontdoor_decision_contract",
+				"qwen_governed_scope_decision_contract",
+				"qwen_followup_resolution_contract",
+				"qwen_artifact_continuation_contract",
+				"qwen_visible_context_followup_contract",
+				"qwen_erp_business_reasoning_activation_contract",
+				"qwen_semantic_reasoning_activation",
+				"qwen_erp_business_reasoning_contract",
+				"qwen_erp_business_reasoning_execution",
+				"qwen_phase6_observability_event",
+			}
+			interesting_payloads_after_second = [
+				{
+					"type": str(item.get("type") or "").strip(),
+					"request_id": str(item.get("request_id") or "").strip(),
+					"mode": str(item.get("mode") or item.get("execution_mode") or "").strip(),
+					"status": str(item.get("status") or item.get("event_name") or "").strip(),
+					"reason": str(item.get("reason") or "").strip(),
+					"details": dict(item.get("details") or {}),
+					"requested_modes": list(item.get("requested_modes") or []),
+					"recommended_next_lane": str(item.get("recommended_next_lane") or "").strip(),
+					"latest_grounded_turn_available": item.get("latest_grounded_turn_available"),
+					"preserve_grounded_context": item.get("preserve_grounded_context"),
+				}
+				for item in tool_payloads_after_second
+				if str(item.get("type") or "").strip() in interesting_types
+			]
 			second_payload_summary = {
 				"request_id": str((second_payload or {}).get("request_id") or "").strip(),
 				"mode": str((second_payload or {}).get("mode") or "").strip(),
@@ -207,8 +238,13 @@ def run_phase6_reasoning_live_debug() -> Dict[str, Any]:
 				"direct_execution": direct_execution.to_payload(),
 				"second_ok": ok2,
 				"second_payload": second_payload_summary,
+				"second_tool_types": [
+					str(item.get("type") or "").strip()
+					for item in tool_payloads_after_second
+				],
+				"second_interesting_payloads": interesting_payloads_after_second[-12:],
 				"latest_assistant_payload": service_module._latest_assistant_payload(
-					frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+					session_doc_after_second
 				),
 			}
 
@@ -1447,6 +1483,197 @@ def run_phase1_1_invoice_detail_delivery_trend_debug() -> Dict[str, Any]:
 	return service_module._run_phase55_smoke_session("Phase 1.1 Invoice Detail Delivery Trend Debug", _runner)
 
 
+def run_phase1_1_invoice_delivery_proof_exact_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+
+	def _runner(doc) -> Dict[str, Any]:
+		frappe.db.commit()
+		frappe.clear_cache()
+		doc.reload()
+		steps = [
+			"show me 7 latest sale invoice",
+			"tell me more about ACC-SINV-2026-00194",
+			"items from this invoices are already delivered?",
+			"what it was delivered",
+		]
+		results: List[Dict[str, Any]] = []
+		for message in steps:
+			ok, payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError(
+					f"Phase1.1 exact invoice delivery proof debug failed: request {message!r} did not complete."
+				)
+			frappe.db.commit()
+			frappe.clear_cache()
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = service_module._session_tool_payloads(session_doc)
+			request_id = str((payload or {}).get("request_id") or "").strip()
+			results.append(
+				{
+					"message": message,
+					"payload": {
+						"request_id": request_id,
+						"mode": str((payload or {}).get("mode") or "").strip(),
+						"family_validation_status": str((payload or {}).get("family_validation_status") or "").strip(),
+						"semantic_validation_status": str((payload or {}).get("semantic_validation_status") or "").strip(),
+						"agent_meta": dict(((payload or {}).get("agent_meta") or {})),
+					},
+					"assistant_text": str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip(),
+					"scope_decision": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_governed_scope_decision_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"followup_resolution": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_followup_resolution_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"evidence_request": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_entity_detail_evidence_request_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"grounded_turn": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_grounded_turn_context",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"execution_path": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_execution_path_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"rendered_family_response": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_rendered_family_response_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"normalized_family_artifact": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_normalized_family_artifact_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+				}
+			)
+		return {
+			"ok": True,
+			"steps": results,
+		}
+
+	return service_module._run_phase55_smoke_session("Phase 1.1 Exact Invoice Delivery Proof Debug", _runner)
+
+
+def run_phase1_3_purchase_order_status_followup_exact_debug() -> Dict[str, Any]:
+	service_module = _service_module()
+	frappe = service_module.frappe
+
+	def _runner(doc) -> Dict[str, Any]:
+		frappe.db.commit()
+		frappe.clear_cache()
+		doc.reload()
+		steps = [
+			"tell me more about PUR-ORD-2026-00004",
+			"is it received?",
+			"how much is billed?",
+			"when is receipt due?",
+			"when was it received?",
+		]
+		results: List[Dict[str, Any]] = []
+		for message in steps:
+			ok, payload = service_module.handle_qwen_user_message(
+				session_name=doc.name,
+				message=message,
+				user="Administrator",
+			)
+			if not ok:
+				raise RuntimeError(
+					f"Phase1.3 exact purchase order status debug failed: request {message!r} did not complete."
+				)
+			frappe.db.commit()
+			frappe.clear_cache()
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
+			tool_payloads = service_module._session_tool_payloads(session_doc)
+			request_id = str((payload or {}).get("request_id") or "").strip()
+			results.append(
+				{
+					"message": message,
+					"payload": {
+						"request_id": request_id,
+						"mode": str((payload or {}).get("mode") or "").strip(),
+						"family_validation_status": str((payload or {}).get("family_validation_status") or "").strip(),
+						"semantic_validation_status": str((payload or {}).get("semantic_validation_status") or "").strip(),
+						"agent_meta": dict(((payload or {}).get("agent_meta") or {})),
+					},
+					"assistant_text": str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip(),
+					"scope_decision": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_governed_scope_decision_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"evidence_request": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_entity_detail_evidence_request_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"execution_path": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_execution_path_contract",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+					"grounded_turn": _payload_summary(
+						_request_scoped_payload(
+							tool_payloads,
+							"qwen_grounded_turn_context",
+							request_id,
+							latest_tool_payload_by_type=service_module._latest_tool_payload_by_type,
+						)
+					),
+				}
+			)
+		return {
+			"ok": True,
+			"steps": results,
+		}
+
+	return service_module._run_phase55_smoke_session("Phase 1.3 Exact Purchase Order Status Debug", _runner)
+
+
 def run_phase3_2_projection_followup_debug() -> Dict[str, Any]:
 	service_module = _service_module()
 	frappe = service_module.frappe
@@ -1623,7 +1850,10 @@ def run_phase3_3_ranking_projection_continuation_regression_debug() -> Dict[str,
 			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, doc.name)
 			projection_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
 			if "| Rank | Customer | Revenue | Average Order Value |" not in projection_text:
-				raise RuntimeError("Phase3.3 regression failed: projection refinement did not keep only the requested Customer, Revenue, and AOV columns.")
+				raise RuntimeError(
+					"Phase3.3 regression failed: projection refinement did not keep only the requested "
+					f"Customer, Revenue, and AOV columns. observed={projection_text[:360]!r}"
+				)
 			if "Summary" in projection_text:
 				raise RuntimeError("Phase3.3 regression failed: explicit projection refinement still leaked the summary block.")
 			if "Quantity" in projection_text:
@@ -1746,7 +1976,9 @@ def run_phase3_3_product_quantity_projection_regression_debug() -> Dict[str, Any
 
 			base_headers = {
 				"| Rank | Product | Revenue |",
+				"| Rank | Product | Revenue (MMK) |",
 				"| Rank | Item | Revenue |",
+				"| Rank | Item | Revenue (MMK) |",
 				"| Rank | Product | Sales Amount |",
 				"| Rank | Item | Sales Amount |",
 				"| Rank | Product | Selling Amount |",

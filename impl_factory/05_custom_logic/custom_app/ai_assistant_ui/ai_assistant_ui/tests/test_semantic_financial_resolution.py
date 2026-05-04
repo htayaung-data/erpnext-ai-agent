@@ -257,6 +257,51 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			)
 		)
 
+	def test_recovery_semantic_bypass_uses_report_family_markers_from_metadata(self):
+		self.assertTrue(
+			_message_looks_like_self_contained_governed_business_query(
+				message="show me statement",
+			)
+		)
+		self.assertTrue(
+			_message_looks_like_self_contained_governed_business_query(
+				message="Balance Sheet",
+			)
+		)
+
+	def test_artifact_boundary_preserves_current_artifact_when_it_can_answer(self):
+		decision = build_scope_decision_input()
+		artifact_payload = {
+			"family_id": "financial_statement",
+			"dimensions": {
+				"statement_type": "balance_sheet",
+				"currency": "MMK",
+			},
+			"metrics": {
+				"total_liability": 1290195600,
+			},
+			"sections": {
+				"liabilities": [
+					{"label": "Creditors", "amount": 906366600},
+					{"label": "Bank Overdraft Account", "amount": 118000000},
+				]
+			},
+		}
+		grounded_turn = {
+			"artifact_family_id": "financial_statement",
+			"artifact_payload": artifact_payload,
+		}
+
+		self.assertFalse(
+			_should_skip_artifact_boundary(
+				scope_decision_contract=decision,
+				message="tell me more about Liabilities",
+				request_id="artifact-section-followup",
+				latest_grounded_turn=grounded_turn,
+				latest_family_artifact=artifact_payload,
+			)
+		)
+
 	def test_recovery_semantic_bypass_does_not_trigger_on_short_acknowledgement(self):
 		self.assertFalse(
 			_message_looks_like_self_contained_governed_business_query(
@@ -1018,6 +1063,43 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertEqual(outcome.mode, "grounded_follow_up")
 		self.assertEqual(outcome.target_limit, 0)
 		self.assertEqual(outcome.sort_direction, "")
+
+	def test_build_followup_resolution_preserves_structured_ranking_continuation_context(self):
+		semantic_intent = types.SimpleNamespace(
+			requested_modes=["sort_or_limit"],
+			target_dimension="Customer",
+			target_limit=7,
+			sort_direction="desc",
+			target_metric="revenue",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			self_contained=True,
+			reason="Accepted structured follow-up intent over the latest ranking.",
+		)
+
+		outcome = build_followup_resolution(
+			request_id="semantic-followup-preserve-ranking-context",
+			message="give me top 7",
+			latest_grounded_turn_available=True,
+			latest_grounded_turn={
+				"grounded": True,
+				"source_name": "ranking_analytics",
+				"artifact_family_id": "ranking_analytics",
+				"dimensions": ["Customer"],
+				"metrics": ["revenue"],
+				"returned_schema": ["Customer", "Revenue"],
+				"approved_follow_up_modes": ["sort_or_limit", "column_refinement"],
+			},
+			semantic_intent=semantic_intent,
+			allow_heuristic_fallback=False,
+		)
+
+		self.assertEqual(outcome.mode, "local_grounded_transform")
+		self.assertEqual(outcome.target_limit, 7)
+		self.assertEqual(outcome.requested_modes, ["sort_or_limit"])
+		self.assertFalse(outcome.self_contained)
+		self.assertTrue(outcome.depends_on_grounded_turn)
 
 	def test_build_followup_resolution_no_longer_uses_lexical_parser_when_heuristic_flag_is_true(self):
 		outcome = build_followup_resolution(
@@ -4607,6 +4689,110 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			signal.suggested_options,
 			["monthly trend", "top customers", "top products", "sales statement-style summary"],
 		)
+
+	def test_financial_summary_cross_domain_clarification_carries_executable_option(self):
+		signal = _translate_compiler_signal(
+			request_id="semantic-fin-summary-cross-domain",
+			compiler_reason="Multiple domains require a safe choice.",
+			compiler_reason_type="financial_summary_multi_domain_clarification",
+			compiler_details={},
+		)
+
+		self.assertEqual(
+			signal.user_question,
+			"Do you want one specific area, or do you want a combined cross-domain health summary?",
+		)
+		self.assertIn("cross-domain health", signal.suggested_options)
+		self.assertEqual(
+			signal.internal_details.get("resolved_message_by_option", {}).get("cross-domain health"),
+			"show me working capital health",
+		)
+		self.assertEqual(
+			(signal.internal_details.get("resolved_slot_payload_by_option", {}).get("cross-domain health") or {}).get("intent_class"),
+			"financial_summary",
+		)
+		self.assertEqual(
+			(
+				(signal.internal_details.get("resolved_slot_payload_by_option", {}).get("cross-domain health") or {})
+				.get("extracted_slots", {})
+				.get("composite_profile_context")
+			),
+			["working_capital_health"],
+		)
+		self.assertIn(
+			"combined cross-domain health summary",
+			signal.internal_details.get("option_aliases_by_option", {}).get("cross-domain health", []),
+		)
+
+	def test_financial_summary_clarification_seed_builds_executable_composite_plan_without_runtime(self):
+		clarification_resolution = {
+			"decision": "resolved_option",
+			"resolved_option": "cross-domain health",
+			"resolved_slot": {
+				"intent_class": "financial_summary",
+				"candidate_capability_ids": [
+					"accounts_receivable_read",
+					"accounts_payable_read",
+				],
+				"candidate_reports": [
+					"Accounts Receivable Summary",
+					"Accounts Payable Summary",
+				],
+				"requested_metrics": ["Outstanding", "Total Due"],
+				"requested_time_scope": "as_of_today",
+				"extracted_slots": {
+					"composite_profile_context": ["working_capital_health"],
+				},
+			},
+		}
+
+		with patch(
+			"ai_assistant_ui.qwen_chat.fresh_query_interpreter.call_qwen_runtime_fresh_query_interpretation"
+		) as runtime_interpretation, patch(
+			"ai_assistant_ui.qwen_chat.compiler._single_company_name",
+			return_value="Enterprise Co",
+		):
+			pipeline = compile_from_fresh_query_message(
+				session_id="semantic-fin-summary-cross-domain-seed",
+				user_id="Administrator",
+				site_name="erp.test",
+				message="show me working capital health",
+				recent_messages=[],
+				clarification_resolution=clarification_resolution,
+			)
+		runtime_interpretation.assert_not_called()
+		interpretation_payload = (pipeline.get("fresh_query_interpretation") or {}).get("interpretation") or {}
+		self.assertEqual(interpretation_payload.get("intent_class"), "financial_summary")
+		self.assertEqual(
+			(interpretation_payload.get("extracted_slots") or {}).get("composite_profile_context"),
+			["working_capital_health"],
+		)
+		interpretation = build_fresh_query_interpretation_contract(
+			request_id=interpretation_payload.get("request_id") or "semantic-fin-summary-cross-domain-seed",
+			session_id=interpretation_payload.get("session_id") or "semantic-fin-summary-cross-domain-seed",
+			intent_class=interpretation_payload.get("intent_class") or "",
+			candidate_capability_ids=interpretation_payload.get("candidate_capability_ids") or [],
+			candidate_reports=interpretation_payload.get("candidate_reports") or [],
+			requested_dimensions=interpretation_payload.get("requested_dimensions") or [],
+			requested_metrics=interpretation_payload.get("requested_metrics") or [],
+			requested_time_scope=interpretation_payload.get("requested_time_scope") or "",
+			target_limit=interpretation_payload.get("target_limit") or 0,
+			requested_presentation=interpretation_payload.get("requested_presentation") or [],
+			extracted_slots=interpretation_payload.get("extracted_slots") or {},
+			ambiguity_flags=interpretation_payload.get("ambiguity_flags") or [],
+			ambiguity_reason=interpretation_payload.get("ambiguity_reason") or "",
+			confidence=interpretation_payload.get("confidence") or 0.0,
+		)
+		with patch("ai_assistant_ui.qwen_chat.compiler._single_company_name", return_value="Enterprise Co"):
+			composite_plan = plan_composite_read(
+				request_id="semantic-fin-summary-cross-domain-plan",
+				session_id="semantic-fin-summary-cross-domain-seed",
+				message="show me working capital health",
+				interpretation=interpretation,
+				response_policy={},
+			)
+		self.assertEqual(composite_plan.status, "execute")
+		self.assertEqual(composite_plan.plan_contract.plan_id, "working_capital_health")
 
 	def test_financial_summary_clarification_translation_allows_governed_detail_override(self):
 		signal = _translate_compiler_signal(

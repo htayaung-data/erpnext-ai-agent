@@ -2698,38 +2698,52 @@ def compile_from_fresh_query_message(
 ) -> Dict[str, Any]:
 	request_id = uuid.uuid4().hex
 	proposal_started = time.perf_counter()
-	semantic_result = interpret_fresh_query_semantically(
+	clarification_seed_interpretation = _interpretation_from_clarification_resolution(
 		request_id=request_id,
 		session_id=session_id,
-		user_id=user_id,
-		site_name=site_name,
-		message=message,
-		recent_messages=list(recent_messages or []),
+		clarification_resolution=clarification_resolution,
+		confidence_threshold=_confidence_threshold(),
 	)
-	if _should_retry_with_runtime_default(semantic_result, ""):
-		fallback_result = interpret_fresh_query_semantically(
+	if clarification_seed_interpretation is not None:
+		semantic_result = SemanticFreshQueryResult(
+			status="clarification_resolution_seed",
+			interpretation=clarification_seed_interpretation,
+			confidence_threshold=_confidence_threshold(),
+			agent_meta={"clarification_resolution_seed": True},
+		)
+	else:
+		semantic_result = interpret_fresh_query_semantically(
 			request_id=request_id,
 			session_id=session_id,
 			user_id=user_id,
 			site_name=site_name,
 			message=message,
 			recent_messages=list(recent_messages or []),
-			model_override=_RUNTIME_DEFAULT_MODEL_OVERRIDE,
 		)
-		if fallback_result.interpretation is not None:
-			fallback_result = SemanticFreshQueryResult(
-				status=fallback_result.status,
-				interpretation=fallback_result.interpretation,
-				confidence_threshold=fallback_result.confidence_threshold,
-				runtime_error=fallback_result.runtime_error,
-				validation_error=fallback_result.validation_error,
-				agent_meta=_merge_fallback_agent_meta(
-					semantic_result.agent_meta,
-					fallback_result.agent_meta,
-					semantic_result.status,
-				),
+		if _should_retry_with_runtime_default(semantic_result, ""):
+			fallback_result = interpret_fresh_query_semantically(
+				request_id=request_id,
+				session_id=session_id,
+				user_id=user_id,
+				site_name=site_name,
+				message=message,
+				recent_messages=list(recent_messages or []),
+				model_override=_RUNTIME_DEFAULT_MODEL_OVERRIDE,
 			)
-			semantic_result = fallback_result
+			if fallback_result.interpretation is not None:
+				fallback_result = SemanticFreshQueryResult(
+					status=fallback_result.status,
+					interpretation=fallback_result.interpretation,
+					confidence_threshold=fallback_result.confidence_threshold,
+					runtime_error=fallback_result.runtime_error,
+					validation_error=fallback_result.validation_error,
+					agent_meta=_merge_fallback_agent_meta(
+						semantic_result.agent_meta,
+						fallback_result.agent_meta,
+						semantic_result.status,
+					),
+				)
+				semantic_result = fallback_result
 	master_data_frontdoor_assessment = _frontdoor_master_data_assessment_payload(front_door_contract)
 	if master_data_frontdoor_assessment:
 		semantic_result = SemanticFreshQueryResult(
@@ -2948,33 +2962,151 @@ def _resolve_capability_ids_for_business_area(option: str) -> List[str]:
 	return list(dict.fromkeys(matches))
 
 
+def _clarification_resolved_slot(clarification_resolution: Dict[str, Any] | None) -> Dict[str, Any]:
+	payload = clarification_resolution if isinstance(clarification_resolution, dict) else {}
+	if str(payload.get("decision") or "").strip() != "resolved_option":
+		return {}
+	resolved_slot = payload.get("resolved_slot") if isinstance(payload.get("resolved_slot"), dict) else {}
+	return dict(resolved_slot) if resolved_slot else {}
+
+
+def _merge_clarification_extracted_slots(
+	base_slots: Dict[str, Any] | None,
+	resolved_slot: Dict[str, Any],
+) -> Dict[str, Any]:
+	merged = dict(base_slots or {})
+	embedded_slots = resolved_slot.get("extracted_slots")
+	if isinstance(embedded_slots, dict):
+		for key, value in embedded_slots.items():
+			clean_key = str(key or "").strip()
+			if clean_key:
+				merged[clean_key] = value
+	for key in (
+		"composite_profile_context",
+		"financial_summary_resolution_contract",
+		"statement_variant",
+		"summary_focus",
+		"entity_grain",
+		"lookup_mode",
+		"lookup_projection",
+		"lookup_search_text",
+		"scope_id",
+	):
+		if key in resolved_slot:
+			merged[key] = resolved_slot.get(key)
+	return merged
+
+
+def _infer_intent_class_from_resolution(
+	*,
+	candidate_capability_ids: List[str],
+	candidate_reports: List[str],
+) -> str:
+	intent_classes: List[str] = []
+	for capability_id in candidate_capability_ids:
+		for intent_class in capability_intent_classes(capability_id):
+			clean_intent = str(intent_class or "").strip()
+			if clean_intent:
+				intent_classes.append(clean_intent)
+	for report_name in candidate_reports:
+		for intent_class in report_supported_intent_classes(report_name):
+			clean_intent = str(intent_class or "").strip()
+			if clean_intent:
+				intent_classes.append(clean_intent)
+	unique = list(dict.fromkeys(intent_classes))
+	return unique[0] if len(unique) == 1 else ""
+
+
+def _interpretation_from_clarification_resolution(
+	*,
+	request_id: str,
+	session_id: str,
+	clarification_resolution: Dict[str, Any] | None,
+	confidence_threshold: float,
+) -> FreshQueryInterpretationContract | None:
+	resolved_slot = _clarification_resolved_slot(clarification_resolution)
+	if not resolved_slot:
+		return None
+	candidate_capability_ids = _clean_list(resolved_slot.get("candidate_capability_ids"))
+	candidate_reports = _clean_list(resolved_slot.get("candidate_reports"))
+	intent_class = str(resolved_slot.get("intent_class") or "").strip() or _infer_intent_class_from_resolution(
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+	)
+	if not intent_class:
+		return None
+	extracted_slots = _merge_clarification_extracted_slots({}, resolved_slot)
+	return build_fresh_query_interpretation_contract(
+		request_id=request_id,
+		session_id=session_id,
+		intent_class=intent_class,
+		candidate_capability_ids=candidate_capability_ids,
+		candidate_reports=candidate_reports,
+		requested_dimensions=_clean_list(resolved_slot.get("requested_dimensions")),
+		requested_metrics=_clean_list(resolved_slot.get("requested_metrics")),
+		requested_time_scope=_normalize_time_scope(
+			resolved_slot.get("requested_time_scope")
+			or resolved_slot.get("selected_time_scope")
+		),
+		target_limit=int(max(0, resolved_slot.get("target_limit") or 0)),
+		requested_presentation=_clean_list(resolved_slot.get("requested_presentation")),
+		extracted_slots=extracted_slots,
+		ambiguity_flags=_clean_list(resolved_slot.get("ambiguity_flags")),
+		ambiguity_reason=str(resolved_slot.get("ambiguity_reason") or "").strip(),
+		confidence=max(float(confidence_threshold or 0.0), 0.9),
+	)
+
+
 def _apply_clarification_resolution_to_interpretation(
 	*,
 	interpretation: FreshQueryInterpretationContract,
 	clarification_resolution: Dict[str, Any] | None = None,
 ) -> FreshQueryInterpretationContract:
-	payload = clarification_resolution if isinstance(clarification_resolution, dict) else {}
-	if str(payload.get("decision") or "").strip() != "resolved_option":
-		return interpretation
-	resolved_slot = payload.get("resolved_slot") if isinstance(payload.get("resolved_slot"), dict) else {}
+	resolved_slot = _clarification_resolved_slot(clarification_resolution)
 	if not resolved_slot:
 		return interpretation
 
+	intent_class = str(resolved_slot.get("intent_class") or interpretation.intent_class or "").strip()
 	candidate_capability_ids = list(_clean_list(interpretation.candidate_capability_ids))
 	candidate_reports = list(_clean_list(interpretation.candidate_reports))
 	requested_time_scope = str(interpretation.requested_time_scope or "").strip()
-	extracted_slots = dict(interpretation.extracted_slots)
+	extracted_slots = _merge_clarification_extracted_slots(dict(interpretation.extracted_slots), resolved_slot)
 	requested_dimensions = list(interpretation.requested_dimensions)
+	requested_metrics = list(interpretation.requested_metrics)
+	requested_presentation = list(interpretation.requested_presentation)
 	ambiguity_flags = [
 		flag
 		for flag in _clean_list(interpretation.ambiguity_flags)
 		if flag not in {"ambiguous_report", "ambiguous_capability", "missing_time_scope"}
 	]
 	ambiguity_reason = str(interpretation.ambiguity_reason or "").strip()
+	explicit_capability_ids = _clean_list(resolved_slot.get("candidate_capability_ids"))
+	if explicit_capability_ids:
+		candidate_capability_ids = explicit_capability_ids
+		ambiguity_reason = ""
+	explicit_reports = _clean_list(resolved_slot.get("candidate_reports"))
+	if explicit_reports:
+		candidate_reports = explicit_reports
+		ambiguity_reason = ""
+	explicit_dimensions = _clean_list(resolved_slot.get("requested_dimensions"))
+	if explicit_dimensions:
+		requested_dimensions = explicit_dimensions
+	explicit_metrics = _clean_list(resolved_slot.get("requested_metrics"))
+	if explicit_metrics:
+		requested_metrics = explicit_metrics
+	explicit_presentation = _clean_list(resolved_slot.get("requested_presentation"))
+	if explicit_presentation:
+		requested_presentation = explicit_presentation
+	explicit_flags = _clean_list(resolved_slot.get("ambiguity_flags"))
+	if explicit_flags:
+		ambiguity_flags = explicit_flags
+	explicit_reason = str(resolved_slot.get("ambiguity_reason") or "").strip()
+	if explicit_reason:
+		ambiguity_reason = explicit_reason
 
 	selected_report = str(resolved_slot.get("selected_report") or "").strip()
 	statement_variant = str(resolved_slot.get("statement_variant") or "").strip()
-	if not selected_report and statement_variant and str(interpretation.intent_class or "").strip() == "financial_statement":
+	if not selected_report and statement_variant and intent_class == "financial_statement":
 		selected_report = str(financial_statement_report_name(statement_variant) or "").strip()
 	if selected_report:
 		candidate_reports = [selected_report]
@@ -2987,6 +3119,9 @@ def _apply_clarification_resolution_to_interpretation(
 	if selected_time_scope:
 		requested_time_scope = selected_time_scope
 		ambiguity_reason = ""
+	explicit_requested_time_scope = _normalize_time_scope(resolved_slot.get("requested_time_scope"))
+	if explicit_requested_time_scope:
+		requested_time_scope = explicit_requested_time_scope
 
 	if statement_variant:
 		extracted_slots["statement_variant"] = statement_variant
@@ -3017,13 +3152,13 @@ def _apply_clarification_resolution_to_interpretation(
 	return build_fresh_query_interpretation_contract(
 		request_id=interpretation.request_id,
 		session_id=interpretation.session_id,
-		intent_class=interpretation.intent_class,
+		intent_class=intent_class,
 		candidate_capability_ids=candidate_capability_ids,
 		candidate_reports=candidate_reports,
 		requested_dimensions=requested_dimensions,
-		requested_metrics=list(interpretation.requested_metrics),
+		requested_metrics=requested_metrics,
 		requested_time_scope=requested_time_scope,
-		requested_presentation=list(interpretation.requested_presentation),
+		requested_presentation=requested_presentation,
 		extracted_slots=extracted_slots,
 		ambiguity_flags=ambiguity_flags,
 		ambiguity_reason=ambiguity_reason,

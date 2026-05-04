@@ -1694,7 +1694,7 @@ def _render_active_customer_scalar_answer(
 	metric_aliases = _customer_metric_alias_keys(message)
 	if artifact.status == "blocked_missing_data":
 		answer_lines = [
-			f"I can't calculate {definition_state.label.lower()} for {customer_label} as of {as_of_date} yet because {_clean_text(artifact.blocked_reason) or 'required governed source data is missing'}.",
+			f"I can't calculate {definition_state.label.lower()} for {customer_label} as of {as_of_date} yet because {_clean_text(artifact.blocked_reason) or 'required ERP source data is missing'}.",
 		]
 		return "\n".join(answer_lines).strip()
 	value_text = _clean_text(artifact.display_value)
@@ -1885,7 +1885,7 @@ def _render_active_entity_period_ranking_answer(
 	if include_business_purpose and business_purpose:
 		answer_lines.append(_sentence(f"It matters because {business_purpose}"))
 	if not artifact.rows:
-		answer_lines.append(f"No {entity_label} matched the current governed ranking scope.")
+		answer_lines.append(f"No {entity_label} matched the current ranking scope.")
 	else:
 		for index, row in enumerate(artifact.rows, start=1):
 			entity_name = (
@@ -2338,6 +2338,49 @@ def maybe_build_governed_kpi_value_frontdoor_response(
 		"kpi_ranking_artifact": ranking_artifact.to_payload() if ranking_artifact is not None else {},
 		"clarification_signal_payload": clarification_signal_payload,
 	}
+
+
+def governed_kpi_value_frontdoor_candidate_available(
+	*,
+	message: str,
+	company_name: str = "",
+	grounded_turn: Dict[str, Any] | None = None,
+) -> bool:
+	"""
+	Return whether the governed KPI front door can own this turn.
+
+	This is intentionally a lightweight ownership check: it uses the same
+	definition/execution registry resolution as the renderer path, but it does
+	not execute KPI data reads or render an answer.
+	"""
+	raw_message = _clean_text(message)
+	if not raw_message:
+		return False
+	normalized_message = _with_business_purpose_suffix_removed(raw_message)
+	resolved_company_name = _current_company_name(company_name)
+	requested_time_scope = _extract_period_time_scope(normalized_message)
+	is_customer_ranking_request = _looks_like_customer_ranking_request(normalized_message)
+	if period_definition_state := _resolve_definition_state_from_message_match(
+		message=normalized_message,
+		company_name=resolved_company_name,
+	):
+		if _looks_like_runtime_value_request(
+			normalized_message,
+			requested_time_scope=requested_time_scope,
+			definition_state=period_definition_state,
+		):
+			return True
+	customer_definition_state = _resolve_customer_definition_state_from_message(
+		message=normalized_message,
+		company_name=resolved_company_name,
+		is_ranking_request=is_customer_ranking_request,
+	)
+	if customer_definition_state is None:
+		return False
+	return _looks_like_customer_runtime_value_request(
+		normalized_message,
+		is_ranking_request=is_customer_ranking_request,
+	)
 
 
 def _probe_safe_response(payload: Dict[str, Any]) -> Dict[str, Any]:

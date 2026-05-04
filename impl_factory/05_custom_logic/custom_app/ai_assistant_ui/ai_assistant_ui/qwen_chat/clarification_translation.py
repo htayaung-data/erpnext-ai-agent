@@ -421,6 +421,19 @@ def _translate_financial_summary_signal(
 	if not spec:
 		return None
 	details = dict(compiler_details or {})
+	for key in (
+		"option_aliases_by_option",
+		"resolved_message_by_option",
+		"resolved_message_template",
+		"resolved_message_placeholder",
+		"semantic_slot_name",
+		"semantic_slot_value_by_option",
+		"resolved_slot_payload_by_option",
+		"selected_report_by_option",
+		"carryover_slot_values",
+	):
+		if key not in details and key in spec:
+			details[key] = spec.get(key)
 	question = _clean_text(details.get("user_question")) or _clean_text(spec.get("user_question"))
 	options = _clean_list(details.get("suggested_options")) or _clean_list(spec.get("suggested_options"))
 	return build_clarification_signal_contract(

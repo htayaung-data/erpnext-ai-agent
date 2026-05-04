@@ -165,12 +165,14 @@ from ai_assistant_ui.qwen_chat.service import (
 	_current_artifact_evidence_should_block_requery,
 	_current_artifact_evidence_should_preserve_context,
 	_frontdoor_should_yield_to_current_artifact_evidence,
+	_frontdoor_should_yield_to_reasoning_activation,
 	_resolve_compound_execution_runtime_message,
 	_strip_leading_control_discard_preamble,
 	_latest_recovery_contract,
 	_resolved_clarification_runtime_message,
 	_source_compatible_reasoning_contract,
 	_snapshot_recent_focus_state,
+	_reasoning_activation_supersedes_followup_refinement,
 	_reasoning_preempted_by_followup_refinement,
 )
 from ai_assistant_ui.qwen_chat.lanes.clarification_lane import (
@@ -1989,6 +1991,110 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 		)
 
 		self.assertTrue(_reasoning_preempted_by_followup_refinement(followup_resolution))
+
+	def test_accepted_reasoning_supersedes_capability_requery_refinement(self):
+		accepted_reasoning = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="explanation"),
+		)
+		followup_resolution = build_followup_resolution_contract(
+			request_id="reasoning-supersede-1",
+			mode="capability_requery",
+			requested_modes=["dimension_breakdown"],
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The follow-up asks for an explanation that can be answered from the current grounded artifact.",
+		)
+
+		self.assertTrue(_reasoning_preempted_by_followup_refinement(followup_resolution))
+		self.assertTrue(
+			_reasoning_activation_supersedes_followup_refinement(
+				reasoning_semantic_result=accepted_reasoning,
+				followup_resolution=followup_resolution,
+			)
+		)
+
+	def test_accepted_reasoning_does_not_supersede_entity_detail_followup(self):
+		accepted_reasoning = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="continuation_detail"),
+		)
+		followup_resolution = build_followup_resolution_contract(
+			request_id="reasoning-supersede-2",
+			mode="grounded_follow_up",
+			requested_modes=["detail_followup"],
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The follow-up asks for more detail about a selected row.",
+		)
+
+		self.assertTrue(_reasoning_preempted_by_followup_refinement(followup_resolution))
+		self.assertFalse(
+			_reasoning_activation_supersedes_followup_refinement(
+				reasoning_semantic_result=accepted_reasoning,
+				followup_resolution=followup_resolution,
+			)
+		)
+
+	def test_artifact_level_reasoning_supersedes_generic_grounded_detail_followup(self):
+		accepted_reasoning = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="interpretation"),
+		)
+		followup_resolution = build_followup_resolution_contract(
+			request_id="reasoning-supersede-3",
+			mode="grounded_follow_up",
+			requested_modes=["detail_followup"],
+			depends_on_grounded_turn=True,
+			self_contained=False,
+			latest_grounded_turn_available=True,
+			reason="The follow-up asks what the current grounded artifact means.",
+		)
+
+		self.assertFalse(
+			_reasoning_activation_supersedes_followup_refinement(
+				reasoning_semantic_result=accepted_reasoning,
+				followup_resolution=followup_resolution,
+			)
+		)
+		self.assertTrue(
+			_reasoning_activation_supersedes_followup_refinement(
+				reasoning_semantic_result=accepted_reasoning,
+				followup_resolution=followup_resolution,
+				artifact_level_context_requested=True,
+			)
+		)
+
+	def test_artifact_level_reasoning_supersedes_new_query_followup_classification(self):
+		accepted_reasoning = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="interpretation"),
+		)
+		followup_resolution = build_followup_resolution_contract(
+			request_id="reasoning-supersede-4",
+			mode="new_query",
+			requested_modes=[],
+			depends_on_grounded_turn=False,
+			self_contained=True,
+			latest_grounded_turn_available=True,
+			reason="The semantic follow-up classified this as explanation of the previous response.",
+		)
+
+		self.assertFalse(
+			_reasoning_activation_supersedes_followup_refinement(
+				reasoning_semantic_result=accepted_reasoning,
+				followup_resolution=followup_resolution,
+			)
+		)
+		self.assertTrue(
+			_reasoning_activation_supersedes_followup_refinement(
+				reasoning_semantic_result=accepted_reasoning,
+				followup_resolution=followup_resolution,
+				artifact_level_context_requested=True,
+			)
+		)
 
 	def test_recent_focus_decision_accepts_shared_affordance_passthrough(self):
 		recent_focus_state = {
@@ -12305,6 +12411,44 @@ class TestPostContractStateIntegrity(unittest.TestCase):
 			_frontdoor_should_yield_to_current_artifact_evidence(
 				entity_drilldown={"source": "explicit_identifier"},
 				artifact_local_refinement_has_grounded_evidence=True,
+			)
+		)
+
+	def test_frontdoor_yields_when_grounded_reasoning_activation_is_authoritative(self):
+		accepted_reasoning = types.SimpleNamespace(
+			status="accepted",
+			intent=types.SimpleNamespace(reasoning_type="interpretation"),
+		)
+		self.assertTrue(
+			_frontdoor_should_yield_to_reasoning_activation(
+				reasoning_semantic_result=accepted_reasoning,
+				latest_grounded_turn_available=True,
+				context_force_new_query=False,
+				entity_drilldown=None,
+			)
+		)
+		self.assertFalse(
+			_frontdoor_should_yield_to_reasoning_activation(
+				reasoning_semantic_result=accepted_reasoning,
+				latest_grounded_turn_available=False,
+				context_force_new_query=False,
+				entity_drilldown=None,
+			)
+		)
+		self.assertFalse(
+			_frontdoor_should_yield_to_reasoning_activation(
+				reasoning_semantic_result=accepted_reasoning,
+				latest_grounded_turn_available=True,
+				context_force_new_query=True,
+				entity_drilldown=None,
+			)
+		)
+		self.assertFalse(
+			_frontdoor_should_yield_to_reasoning_activation(
+				reasoning_semantic_result=accepted_reasoning,
+				latest_grounded_turn_available=True,
+				context_force_new_query=False,
+				entity_drilldown={"source": "explicit_identifier"},
 			)
 		)
 

@@ -615,6 +615,7 @@ from ai_assistant_ui.qwen_chat.governed_kpi_support import (
 	run_governed_kpi_frontdoor_probe as _run_governed_kpi_frontdoor_probe_helper,
 )
 from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
+	governed_kpi_value_frontdoor_candidate_available,
 	run_governed_kpi_customer_execution_probe as _run_governed_kpi_customer_execution_probe_helper,
 	run_governed_kpi_period_execution_probe as _run_governed_kpi_period_execution_probe_helper,
 )
@@ -808,6 +809,12 @@ def _capability_requery_should_reenter_frontdoor(*, followup_resolution, continu
 	if str(getattr(followup_resolution, "mode", "") or "").strip() != "capability_requery":
 		return False
 	return bool(str(getattr(continuation_contract, "source_composite_family_id", "") or "").strip())
+
+
+def _nbu_presentation_activation_allowed_for_followup(followup_resolution: Any) -> bool:
+	"""Presentation-only NBU may explain current context, but must not override execution lanes."""
+	mode = str(getattr(followup_resolution, "mode", "") or "").strip()
+	return mode == "grounded_follow_up"
 
 
 def _current_artifact_evidence_should_block_requery(
@@ -3667,9 +3674,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		message=msg,
 		language=interaction_contract.detected_language,
 	)
+	runtime_frontdoor_is_composite_candidate = bool(governed_composite_frontdoor_candidate_available(message=msg))
+	runtime_frontdoor_is_kpi_value_candidate = bool(
+		governed_kpi_value_frontdoor_candidate_available(
+			message=msg,
+			grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
+		)
+	)
+	runtime_frontdoor_candidate_available = bool(
+		runtime_frontdoor_is_composite_candidate or runtime_frontdoor_is_kpi_value_candidate
+	)
 	if (
 		pending_clarification_signal
-		and fresh_governed_query_override_requested
+		and (fresh_governed_query_override_requested or runtime_frontdoor_candidate_available)
 		and not pending_clarification_message_matches_option(raw_msg, pending_clarification_signal)
 	):
 		clear_pending_clarification_signal(session_doc)
@@ -3707,7 +3724,6 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				clarification_response_contract=clarification_response_contract,
 			)
 	else:
-		runtime_frontdoor_is_composite_candidate = bool(governed_composite_frontdoor_candidate_available(message=msg))
 		message_has_grounded_context_anchor = _message_has_grounded_context_anchor(msg)
 		self_contained_frontdoor_query = _message_looks_like_self_contained_governed_business_query(
 			message=msg,
@@ -3745,7 +3761,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			and (
 				artifact_local_refinement_has_grounded_evidence
 				or artifact_local_projection_followup_requested
-				or not runtime_frontdoor_is_composite_candidate
+				or not runtime_frontdoor_candidate_available
 			)
 		):
 			defer_runtime_value_frontdoor, pre_frontdoor_followup_semantic_result = _artifact_local_refinement_should_defer_runtime_frontdoor(
@@ -4211,11 +4227,16 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not pending_clarification_response_preempts_runtime
 		and entity_drilldown is None
 		and not frontdoor_direct_handling_authority
+		and not (
+			latest_grounded_turn_available
+			and semantic_intent_has_explicit_query_shape
+		)
 		and (
 			not latest_grounded_turn_available
 			or fresh_governed_query_override_requested
 			or bool(context_isolation.force_new_query)
 		)
+		and not runtime_frontdoor_candidate_available
 		and not (
 			_frontdoor_contract_handle_in_front_door(frontdoor_contract)
 			and _frontdoor_contract_intent_class(frontdoor_contract)
@@ -4295,6 +4316,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		entity_drilldown is None
 		and not pending_clarification_signal
 		and not _reasoning_activation_has_execution_authority(pre_frontdoor_reasoning_semantic_result)
+		and not (
+			latest_grounded_turn_available
+			and semantic_intent_has_explicit_query_shape
+		)
 	):
 		nbu_early_handled, nbu_early_payload = _try_activate_nbu_presentation_response(
 			session_doc=session_doc,
@@ -4953,7 +4978,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not precomputed_evidence_answer
 		and not precomputed_evidence_boundary_answer
 		and not _visible_context_followup_requested(raw_msg)
-		and str(getattr(followup_resolution, "mode", "") or "").strip() != "local_grounded_transform"
+		and _nbu_presentation_activation_allowed_for_followup(followup_resolution)
 	):
 		nbu_presentation_handled, nbu_presentation_payload = _try_activate_nbu_presentation_response(
 			session_doc=session_doc,

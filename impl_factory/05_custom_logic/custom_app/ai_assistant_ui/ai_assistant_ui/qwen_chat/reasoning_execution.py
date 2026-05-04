@@ -156,7 +156,7 @@ def build_reasoning_boundary_answer(
 	intent = dict(semantic_activation_result.get("intent") or {})
 	reasoning_type = str(intent.get("reasoning_type") or "").strip()
 	source_name = str(activation_contract.get("grounded_source_name") or "").strip()
-	source_label = source_name or "the current ERP result"
+	source_label = source_name or "the answer above"
 	grounding_gaps = {
 		str(item or "").strip()
 		for item in ((execution_result.reasoning_contract or {}).get("grounding_gaps") or [])
@@ -165,16 +165,16 @@ def build_reasoning_boundary_answer(
 	if execution_result.status == "insufficient_grounding" and "predictive_guarantee_requires_governed_policy" in grounding_gaps:
 		return (
 			f"I can't answer it safely as a guarantee or prediction from {source_label}. "
-			"The current governed evidence can support grounded facts and explanations, but it does not include an approved prediction policy, "
+			"The current ERP data can support facts and explanations, but it does not include an approved prediction policy, "
 			"payment-commitment evidence, or collection/default model needed to say who will pay or default. "
-			"Please ask for the current evidence, aging breakdown, or an approved governed prediction/collection policy first."
+			"Please ask for the current ERP facts, aging breakdown, or an approved prediction or collections policy first."
 		)
 	if execution_result.status == "insufficient_grounding" and "unsupported_operational_inference_requires_governed_evidence" in grounding_gaps:
 		return (
 			f"I can't answer that safely as a causal or subjective operational inference from {source_label}. "
-			"The current governed evidence can show recorded ERP facts, but it does not include customer sentiment, complaint, dispute, "
-			"or delay-reason evidence needed to infer dissatisfaction or intent. Please ask for the recorded fields, or use a governed "
-			"complaint/dispute/delay-reason artifact first."
+			"The current ERP data can show recorded facts, but it does not include customer sentiment, complaint, dispute, "
+			"or delay-reason evidence needed to infer dissatisfaction or intent. Please ask for the recorded fields, "
+			"or use a complaint, dispute, or delay-reason view first."
 		)
 	grounding_summary = activation_contract.get("grounding_summary") if isinstance(activation_contract.get("grounding_summary"), dict) else {}
 	policy_boundary_answer = render_business_reasoning_policy_boundary_answer(
@@ -188,26 +188,26 @@ def build_reasoning_boundary_answer(
 			and not bool(activation_contract.get("recommendation_allowed"))
 		):
 			return (
-				f"I can explain {source_label}, but I can't safely give management recommendations from this grounded source alone. "
-				"This source is a detailed operational view, so recommendations should come from a governed summary or analysis artifact first."
+				f"I can explain {source_label}, but I can't safely give management recommendations from this result alone. "
+				"This is a detailed operational view, so recommendations should come from an approved summary or analysis view first."
 			)
 		if "prior_reasoning_source_mismatch" in grounding_gaps or "prior_reasoning_report_mismatch" in grounding_gaps:
 			return (
-				"I can't safely continue that prior recommendation from the current grounded source because the source context no longer matches. "
-				"Please return to the original analysis or ask for a fresh governed summary before continuing."
+				"I can't safely continue that prior recommendation because the current ERP context no longer matches the original analysis. "
+				"Please return to the original analysis or ask for a fresh summary before continuing."
 			)
 		return (
-			f"I couldn't safely complete grounded ERP reasoning from {source_label} without overreaching beyond the available evidence. "
-			"Please ask for a broader governed summary or reframe the question around the current result."
+			f"I couldn't safely complete that ERP explanation from {source_label} without going beyond the available data. "
+			"Please ask for a broader summary or reframe the question around the current result."
 		)
 	if execution_result.status in {"invalid_payload", "runtime_error"}:
 		return (
 			f"I stopped rather than guess because I couldn't safely generate a bounded reasoning answer from {source_label} just now. "
-			"Please try the reasoning follow-up again or ask for a governed summary view."
+			"Please try the follow-up again or ask for a summary view."
 		)
 	return (
 		f"I couldn't safely continue reasoning from {source_label}. "
-		"Please ask for a governed summary or a narrower explanation request."
+		"Please ask for a summary view or a narrower explanation request."
 	)
 
 

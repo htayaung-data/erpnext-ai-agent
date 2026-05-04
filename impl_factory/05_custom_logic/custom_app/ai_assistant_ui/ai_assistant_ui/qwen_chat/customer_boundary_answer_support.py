@@ -214,11 +214,11 @@ def customer_boundary_direct_evidence_answer(
 	if "overdue_ratio" in requested_metrics:
 		if outstanding_total <= 0:
 			return (
-				f"As of the current governed receivable snapshot, {entity_label} has an overdue ratio of 0.0%{company_phrase}.\n\n"
-				"There is no positive outstanding balance in the current governed artifact."
+				f"As of the current receivable snapshot, {entity_label} has an overdue ratio of 0.0%{company_phrase}.\n\n"
+				"There is no positive outstanding balance in this snapshot."
 			)
 		return (
-			f"As of the current governed receivable snapshot, {entity_label} has an overdue ratio of {overdue_ratio * 100:.1f}%{company_phrase}.\n\n"
+			f"As of the current receivable snapshot, {entity_label} has an overdue ratio of {overdue_ratio * 100:.1f}%{company_phrase}.\n\n"
 			f"This is based on overdue amount {_money(overdue_total)} MMK against outstanding amount {_money(outstanding_total)} MMK."
 		)
 

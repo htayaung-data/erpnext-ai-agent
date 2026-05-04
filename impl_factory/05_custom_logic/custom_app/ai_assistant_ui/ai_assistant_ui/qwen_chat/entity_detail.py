@@ -1442,11 +1442,11 @@ def _customer_or_supplier_detail(entity_type: str, entity_key: str, company: str
 	bullets = []
 	if entity_type != "customer":
 		if int(stats.get("invoice_count") or 0) > 0:
-			bullets.append(f"{entity_label} has {int(stats.get('invoice_count') or 0)} posted {invoice_doctype.lower()} records in the governed history.")
+			bullets.append(f"{entity_label} has {int(stats.get('invoice_count') or 0)} posted {invoice_doctype.lower()} records in the ERP history.")
 		if _numeric(stats.get("outstanding_amount")) > 0:
 			bullets.append(f"Current outstanding balance is {_money(stats.get('outstanding_amount'))} MMK.")
 		if _clean_text(stats.get("latest_date")):
-			bullets.append(f"Most recent governed transaction was on {_iso_date(stats.get('latest_date'))}.")
+			bullets.append(f"Most recent ERP transaction was on {_iso_date(stats.get('latest_date'))}.")
 		if _numeric((payable_snapshot.get("metrics") or {}).get("overdue_total")) > 0:
 			bullets.append(
 				f"Current overdue payable balance is {_money((payable_snapshot.get('metrics') or {}).get('overdue_total'))} MMK."
@@ -1759,7 +1759,7 @@ def _item_detail(entity_key: str, company: str = "") -> Dict[str, Any]:
 	]
 	bullets = []
 	if int(stats.get("invoice_count") or 0) > 0:
-		bullets.append(f"{entity_label} appears on {int(stats.get('invoice_count') or 0)} posted sales invoices in the governed history.")
+		bullets.append(f"{entity_label} appears on {int(stats.get('invoice_count') or 0)} posted sales invoices in the ERP history.")
 	if _clean_text(stats.get("latest_date")):
 		bullets.append(f"Most recent sale was on {_iso_date(stats.get('latest_date'))}.")
 	if int(stock_snapshot.get("warehouse_count") or 0) > 0:

@@ -469,7 +469,7 @@ def _recommendation_execution_contract_from_policy_payload(policy_payload: Dict[
 			else (
 				"Recommendation execution is blocked because runtime recommendation execution is not enabled."
 				if policy_gate_ready
-				else "Recommendation execution is blocked until policy approval and required governed evidence are complete."
+				else "Recommendation execution is blocked until the policy approval and required ERP inputs are complete."
 			)
 		),
 	}
@@ -628,7 +628,7 @@ def assess_business_reasoning_authority(
 				boundary_reason=f"The {family_label} metadata blocks {driver_mode}.",
 				safe_response_mode="grounded_evidence_only",
 				safe_next_action=(
-					"Ask for a governed trend, payment-behavior, or transaction-history analysis artifact "
+					"Ask for a trend, payment-behavior, or transaction-history analysis view "
 					"before requesting causal or change-driver analysis."
 				),
 				selected_row=selected_row,
@@ -653,7 +653,7 @@ def assess_business_reasoning_authority(
 		artifact_payload=artifact,
 		selected_row=selected_row,
 	)
-	default_next_action = "Use the governed ranking as evidence, or define an approved policy artifact before asking for a decision or recommendation."
+	default_next_action = "Use the current ranking as supporting evidence, or define an approved company policy before asking for a decision or recommendation."
 	return BusinessReasoningAuthorityDecision(
 		policy_state="blocked",
 		source_family_id=family_id,
@@ -713,7 +713,7 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 	policy = policy_payload if isinstance(policy_payload, dict) else {}
 	if _clean_text(policy.get("policy_state")) != "blocked":
 		return ""
-	family_label = _clean_text(policy.get("source_family_label")) or "the current governed artifact"
+	family_label = _clean_text(policy.get("source_family_label")) or "the answer above"
 	variation_label = _clean_text(policy.get("blocked_variation_label")) or "that decision"
 	selected_row = policy.get("selected_row") if isinstance(policy.get("selected_row"), dict) else {}
 	metric_rows = [dict(item) for item in (policy.get("metric_rows") or []) if isinstance(item, dict)]
@@ -725,7 +725,7 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 		else {}
 	)
 	lines = [
-		f"The current {family_label} artifact can support ranked evidence, but it does not authorize a {variation_label}.",
+		f"The current {family_label} result can support ranked facts, but it does not authorize a {variation_label}.",
 	]
 	entity_label = _entity_label(selected_row)
 	if selected_row and entity_label:
@@ -733,7 +733,7 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 		lines.extend(
 			[
 				"",
-				f"Grounded evidence from the current ranking:",
+				f"Current ERP facts from the current ranking:",
 				f"- Rank {rank}: {entity_label}",
 			]
 		)
@@ -750,7 +750,7 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 			[
 				"",
 				"Required policy before this can become a recommendation:",
-				f"- Policy artifact: {policy_label}",
+				f"- Policy: {policy_label}",
 				f"- Approval state: {policy_state}",
 				f"- Gate state: {gate_state}",
 			]
@@ -762,11 +762,11 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 		if required_metrics:
 			lines.append(f"- Required evidence metrics: {', '.join(required_metrics)}")
 		if required_artifacts:
-			lines.append(f"- Required governed artifacts: {', '.join(required_artifacts)}")
+			lines.append(f"- Required supporting views: {', '.join(required_artifacts)}")
 		if missing_metrics:
 			lines.append(f"- Missing evidence metrics: {', '.join(missing_metrics)}")
 		if missing_artifacts:
-			lines.append(f"- Missing governed artifacts: {', '.join(missing_artifacts)}")
+			lines.append(f"- Missing supporting views: {', '.join(missing_artifacts)}")
 	execution_rows = _recommendation_execution_observability_rows(recommendation_execution_contract)
 	if execution_rows:
 		lines.extend(
@@ -780,8 +780,8 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 	lines.extend(
 		[
 			"",
-			"This is a governed evidence boundary, not a recommendation, prediction, score, or approval decision.",
-			_clean_text(policy.get("safe_next_action")) or "Ask for a governed summary or approved policy artifact before requesting a decision.",
+			"This is a data-safety limit, not a recommendation, prediction, score, or approval decision.",
+			_clean_text(policy.get("safe_next_action")) or "Ask for a summary view or approved company policy before requesting a decision.",
 		]
 	)
 	return "\n".join(lines).strip()
@@ -847,13 +847,13 @@ def composite_driver_analysis_answer(
 	)
 	if not metric_rows:
 		return (
-			f"I can identify {entity_label} in the current {family_label} result, but this artifact does not carry "
-			"the governed metric components needed for driver analysis. Please ask for a broader governed analysis artifact."
+			f"I can identify {entity_label} in the current {family_label} result, but this result does not carry "
+			"the metric components needed for driver analysis. Please ask for a broader analysis view."
 		)
 	lines = [
-		f"Within the current {family_label} artifact{date_phrase}, the explainable drivers for {entity_label} are the governed ranking and supporting metrics already carried by this result.",
+		f"Within the current {family_label} result{date_phrase}, the explainable drivers for {entity_label} are the ranking and supporting metrics already carried by this result.",
 		"",
-		f"Grounded driver evidence:",
+		f"Current ERP driver facts:",
 		f"- Rank {rank}: {entity_label}",
 	]
 	for item in metric_rows[:6]:
@@ -864,7 +864,7 @@ def composite_driver_analysis_answer(
 	lines.extend(
 		[
 			"",
-			"This is current-artifact metric-driver analysis only. It is not causal, trend, payment-behavior, prediction, or collection-recommendation analysis.",
+			"This is current-result metric-driver analysis only. It is not causal, trend, payment-behavior, prediction, or collection-recommendation analysis.",
 		]
 	)
 	return "\n".join(lines).strip()
@@ -897,7 +897,7 @@ def composite_blocked_reasoning_boundary_rendered_payload(
 		blocks.append(
 			{
 				"block_type": "data_table",
-				"title": "Grounded Evidence",
+				"title": "Current ERP Facts",
 				"columns": ["Metric", "Value"],
 				"rows": [
 					[_clean_text(item.get("label")), _clean_text(item.get("value"))]
@@ -908,15 +908,15 @@ def composite_blocked_reasoning_boundary_rendered_payload(
 		)
 	if authority_policy:
 		policy_rows = [
-			["Policy Artifact", _clean_text(authority_policy.get("policy_artifact_label")) or _clean_text(authority_policy.get("policy_artifact_id"))],
+			["Policy", _clean_text(authority_policy.get("policy_artifact_label")) or _clean_text(authority_policy.get("policy_artifact_id"))],
 			["Approval State", _clean_text(authority_policy.get("approval_state")) or "not_configured"],
 			["Required Policy State", _clean_text(authority_policy.get("required_policy_state"))],
 			["Gate State", _clean_text(authority_policy_gate.get("gate_state"))],
 			["Recommendation Result Type", _clean_text(authority_policy.get("recommendation_result_type"))],
 			["Required Evidence Metrics", ", ".join(_policy_list_values(authority_policy, "required_evidence_metrics"))],
-			["Required Governed Artifacts", ", ".join(_policy_list_values(authority_policy, "required_governed_artifacts"))],
+			["Required Supporting Views", ", ".join(_policy_list_values(authority_policy, "required_governed_artifacts"))],
 			["Missing Evidence Metrics", ", ".join(_policy_list_values(authority_policy_gate, "missing_evidence_metrics"))],
-			["Missing Governed Artifacts", ", ".join(_policy_list_values(authority_policy_gate, "missing_governed_artifacts"))],
+			["Missing Supporting Views", ", ".join(_policy_list_values(authority_policy_gate, "missing_governed_artifacts"))],
 		]
 		blocks.append(
 			{
@@ -937,14 +937,14 @@ def composite_blocked_reasoning_boundary_rendered_payload(
 			}
 		)
 	blocks.append(
-		{
-			"block_type": "bullet_list",
-			"title": "Boundary",
-			"items": [
-				f"Blocked variation: {_clean_text(policy.get('blocked_variation_label')) or _clean_text(policy.get('blocked_variation'))}",
-				"Uses current governed artifact evidence only.",
-				"Does not create recommendation, prediction, score, or approval decisions.",
-			],
+			{
+				"block_type": "bullet_list",
+				"title": "Decision Limit",
+				"items": [
+					f"Blocked variation: {_clean_text(policy.get('blocked_variation_label')) or _clean_text(policy.get('blocked_variation'))}",
+					"Uses only the facts shown above.",
+					"Does not create recommendation, prediction, score, or approval decisions.",
+				],
 		}
 	)
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
@@ -955,7 +955,7 @@ def composite_blocked_reasoning_boundary_rendered_payload(
 		"family_id": _clean_text(artifact.get("family_id")),
 		"renderer_id": "business_reasoning_authority_boundary",
 		"rendering_policy": "deterministic",
-		"title": "Governed Reasoning Boundary",
+		"title": "Decision Limit",
 		"answer_text": answer_text,
 		"source_reports": [
 			_clean_text(value)
@@ -1012,9 +1012,9 @@ def composite_driver_analysis_rendered_payload(
 	blocks.append(
 		{
 			"block_type": "bullet_list",
-			"title": "Boundary",
+			"title": "Decision Limit",
 			"items": [
-				"Current-artifact metric-driver analysis only.",
+				"Current-result metric-driver analysis only.",
 				"Does not infer causal, trend, payment-behavior, prediction, or recommendation drivers.",
 			],
 		}
@@ -1026,7 +1026,7 @@ def composite_driver_analysis_rendered_payload(
 		"family_id": _clean_text(artifact.get("family_id")),
 		"renderer_id": "business_reasoning_driver_analysis",
 		"rendering_policy": "deterministic",
-		"title": "Governed Driver Evidence",
+		"title": "Driver Evidence",
 		"answer_text": answer_text,
 		"source_reports": [
 			_clean_text(value)

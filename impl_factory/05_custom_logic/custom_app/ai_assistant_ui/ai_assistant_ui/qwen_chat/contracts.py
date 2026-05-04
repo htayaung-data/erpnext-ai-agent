@@ -19,6 +19,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	capability_semantic_tags,
 	get_composite_family_spec,
 	governed_self_contained_business_terms,
+	governed_standalone_business_terms,
 	get_frontdoor_intent_spec,
 	list_capability_specs,
 	ontology_detect_concepts,
@@ -43,6 +44,7 @@ from ai_assistant_ui.qwen_chat.entity_detail_clarification import (
 )
 from ai_assistant_ui.qwen_chat.entity_dimension_support import entity_type_from_dimension
 from ai_assistant_ui.qwen_chat.entity_detail_request_support import (
+	entity_detail_capability_id,
 	resolve_entity_detail_request_interpretation,
 )
 from ai_assistant_ui.qwen_chat.composite_subject_support import (
@@ -132,6 +134,10 @@ def _message_looks_like_self_contained_governed_business_query(
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
 		return False
+	for term in governed_standalone_business_terms(language):
+		clean = str(term or "").strip().lower()
+		if clean and text == clean:
+			return True
 	prefixes = [
 		str(value or "").strip().lower()
 		for value in ontology_self_contained_prefixes(language)
@@ -2384,15 +2390,15 @@ def translate_front_door_intent_gate_contract(
 	if mode == "continue_current_flow":
 		if grounded_context_available:
 			return {
-				"text": "I can continue the current ERP context. Ask for more details, another view, or a new governed query.",
+				"text": "I can continue the current ERP context. Ask for more details, another view, or a new ERP question.",
 				"suggested_prompts": [
 					"Give me more details",
 					"Show another view",
 					"Start a new query",
 				],
-			}
+		}
 		return {
-			"text": "There is no current governed result to continue yet. Ask a new ERP question and I can start from there.",
+			"text": "There is no previous ERP answer to continue from yet. Ask a new ERP question and I can start from there.",
 			"suggested_prompts": [
 				"Show me sales trend",
 				"Analyze inventory",
@@ -2405,9 +2411,9 @@ def translate_front_door_intent_gate_contract(
 			"suggested_prompts": [],
 		}
 	text_by_intent = {
-		"greeting": "I can help with governed ERP reports and follow-up analysis. What would you like to look at?",
-		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new governed query.",
-		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new governed query.",
+		"greeting": "I can help with ERP reports and follow-up analysis. What would you like to look at?",
+		"thanks": "You're welcome. If you want, I can continue the current ERP analysis or start a new ERP question.",
+		"acknowledgement": "Okay. When you're ready, ask for the next ERP view or a new ERP question.",
 		"closure_signoff": "Understood. Feel free to come back anytime, and we can pick up from a new ERP question or continue from there.",
 		"governed_kpi_definition": "I can explain governed KPI definitions and approved formula bases from the active business-definition registry.",
 		"low_signal_non_business": "That request is outside this ERP/business assistant. I’m ready when you want to return to the current ERP analysis or continue with an ERP question or follow-up.",
@@ -2943,17 +2949,7 @@ def build_clarification_response_resolution_contract(
 
 
 def _entity_detail_capability_id(entity_type: str) -> str:
-	entity_key = str(entity_type or "").strip().lower()
-	capability_by_entity_type = {
-		"customer": "accounts_receivable_read",
-		"supplier": "accounts_payable_read",
-		"item": "stock_read",
-		"product": "stock_read",
-		"purchase_order": "purchase_order_read",
-		"sales_order": "sales_order_read",
-		"sales_invoice": "sales_read",
-	}
-	return str(capability_by_entity_type.get(entity_key) or "").strip()
+	return entity_detail_capability_id(entity_type)
 
 
 def _ordered_unique_values(values: List[str] | None) -> List[str]:
@@ -4101,8 +4097,8 @@ def build_artifact_enrichment_compatibility_contract(
 		or source_family_id == "ranking_analytics"
 	):
 		reason = (
-			"The current governed ranking path is anchored to one primary metric basis, so it cannot safely combine "
-			"multiple metric bases into one ranking artifact."
+			"The current ranking path is anchored to one primary metric basis, so it cannot safely combine "
+			"multiple metric bases into one ranking result."
 		)
 		return ArtifactEnrichmentCompatibilityContract(
 			request_id=str(request_id or "").strip(),
@@ -4215,12 +4211,12 @@ def build_artifact_enrichment_compatibility_contract(
 		)
 
 	reason = (
-		"The current governed artifact does not expose the requested column or metric, "
-		"and no compatible governed enrichment path was proven inside the current family and capability boundary."
+		"The answer above does not expose the requested column or metric, "
+		"and no compatible enrichment path was proven inside the current report family."
 	)
 	if source_selector_filters and len(required_keys) > 1:
 		reason = (
-			"The current governed report uses a metric-selector surface, so it cannot safely add the requested metric union "
+			"The current ERP report uses a metric-selector surface, so it cannot safely add the requested metric union "
 			"without switching the report basis."
 		)
 	return ArtifactEnrichmentCompatibilityContract(
@@ -4427,8 +4423,8 @@ def build_recovery_contract_from_enrichment_compatibility(
 	reason = str(getattr(compatibility_contract, "reason", "") or "").strip()
 	if not reason:
 		reason = (
-			"The current governed artifact cannot satisfy the requested enrichment safely, "
-			"so recovery must stay within governed requery or clarified target output."
+			"The answer above cannot satisfy the requested enrichment safely, "
+			"so recovery must use a fresh ERP lookup or clarify the target output."
 		)
 	return build_artifact_enrichment_recovery_contract(
 		request_id=request_id,
@@ -4469,8 +4465,8 @@ def build_recovery_contract_from_evidence_boundary(
 	recovery_reason = str(reason or "").strip()
 	if not recovery_reason:
 		recovery_reason = (
-			"The current grounded artifact does not contain direct governed evidence for the requested operational status, "
-			"so the next safe step is to clarify the target output or switch to a governed operational source."
+			"The answer above does not contain direct evidence for the requested operational status, "
+			"so the next safe step is to clarify the target output or switch to an operational source."
 		)
 	return build_artifact_enrichment_recovery_contract(
 		request_id=request_id,
@@ -5370,6 +5366,7 @@ def build_followup_resolution(
 	):
 		self_contained = True
 	grounded_turn = latest_grounded_turn if isinstance(latest_grounded_turn, dict) else {}
+	grounded_family_id = str(grounded_turn.get("artifact_family_id") or "").strip()
 	local_grounded_modes = {
 		"presentation_transform",
 		"table_presentation",
@@ -5382,6 +5379,8 @@ def build_followup_resolution(
 	if supports_local_followup_mode(grounded_turn, "dimension_breakdown", target_dimension=target_dimension):
 		local_grounded_modes.add("dimension_breakdown")
 	if supports_local_followup_mode(grounded_turn, "sort_or_limit"):
+		local_grounded_modes.add("sort_or_limit")
+	if grounded_family_id == "ranking_analytics":
 		local_grounded_modes.add("sort_or_limit")
 	requested_mode_set = {
 		str(mode or "").strip()
@@ -5398,6 +5397,26 @@ def build_followup_resolution(
 	}
 	target_dimension_present = not target_dimension or str(target_dimension or "").strip().lower() in grounded_dimensions
 	dimension_change_requested = bool(target_dimension) and not target_dimension_present
+	grounded_metric_keys = set(
+		_canonical_metric_keys(
+			[
+				*(
+					grounded_turn.get("metrics")
+					if isinstance(grounded_turn.get("metrics"), list)
+					else []
+				),
+				*(
+					grounded_turn.get("returned_schema")
+					if isinstance(grounded_turn.get("returned_schema"), list)
+					else []
+				),
+			]
+		)
+	)
+	target_metric_keys = _canonical_metric_keys([target_metric]) if target_metric else []
+	target_metric_present = not target_metric or bool(
+		grounded_metric_keys.intersection(target_metric_keys)
+	)
 	presentation_only_request = bool(requested_mode_set) and requested_mode_set.issubset(
 		{"presentation_transform", "table_presentation", "bullet_presentation"}
 	)
@@ -5409,9 +5428,30 @@ def build_followup_resolution(
 		or requested_time_scope
 		or target_capability_id
 	)
-	local_transform_only = (
-		bool(requested_mode_set)
+	semantic_self_contained_grounded_continuation = bool(
+		latest_grounded_turn_available
+		and semantic_intent is not None
+		and self_contained
+		and explicit_query_shape
+		and requested_mode_set
 		and requested_mode_set.issubset(local_grounded_modes)
+		and not target_capability_id
+		and not requested_time_scope
+		and not dimension_change_requested
+		and target_metric_present
+	)
+	if semantic_self_contained_grounded_continuation:
+		self_contained = False
+		semantic_reason = (
+			semantic_reason
+			or "The structured follow-up is compatible with the latest grounded ranking and should preserve that context."
+		)
+	local_requested_mode_set = set(requested_mode_set)
+	if "sort_or_limit" in local_requested_mode_set and not target_limit and not sort_direction:
+		local_requested_mode_set.discard("sort_or_limit")
+	local_transform_only = (
+		bool(local_requested_mode_set)
+		and local_requested_mode_set.issubset(local_grounded_modes)
 		and not dimension_change_requested
 		and not (presentation_only_request and structured_breakout_request)
 	)

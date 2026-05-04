@@ -320,10 +320,10 @@ def _bucket_breakdown_answer(
 	date_phrase = f" as of {as_of_date}" if as_of_date else ""
 	if not bucket_rows:
 		return (
-			f"I can identify {entity_label} in the current {family_label} result, but the current governed artifact "
+			f"I can identify {entity_label} in the current {family_label} result, but the answer above "
 			f"does not expose bucket-level aging amounts for that selected row{date_phrase}.\n\n"
 			"I won't fabricate bucket values from the aggregate row. Please open the customer detail or receivable aging view "
-			"if you want a governed bucket-level requery."
+			"if you want a bucket-level refresh."
 		)
 	table_lines = [
 		"| Aging Bucket | Amount (MMK) |",
@@ -343,12 +343,12 @@ def _bucket_breakdown_answer(
 	if oldest_bucket is not None:
 		summary_lines.append(f"- 121+ day bucket: {_format_number(oldest_bucket)} MMK.")
 	return (
-		f"{entity_label} aging breakdown from the current {family_label} artifact{date_phrase}:\n\n"
+		f"{entity_label} aging breakdown from the current {family_label} result{date_phrase}:\n\n"
 		+ "\n".join(table_lines)
 		+ "\n\nSummary:\n"
 		+ "\n".join(summary_lines)
 		+ "\n\n"
-		"This uses only selected-row governed evidence already carried by the current artifact."
+		"This is based only on the selected row above."
 	)
 
 
@@ -407,9 +407,9 @@ def composite_ranked_row_direct_evidence_answer(
 	date_phrase = f" as of {as_of_date}" if as_of_date else ""
 	return (
 		f"{entity_label} is highlighted in the {family_label} because it ranks #{rank} "
-		f"on the governed composite evidence{date_phrase}.\n\n"
-		f"Key evidence:\n{metric_lines}\n\n"
-		"This is an evidence explanation from the current governed artifact only. "
+		f"in the current result{date_phrase}.\n\n"
+		f"Key ERP facts:\n{metric_lines}\n\n"
+		"This explanation is based only on the answer above. "
 		"It is not a prediction, severity label, or collection recommendation."
 	)
 
@@ -512,7 +512,7 @@ def composite_ranked_row_direct_evidence_rendered_payload(
 		blocks.append(
 			{
 				"block_type": "data_table",
-				"title": "Composite Evidence Metrics",
+				"title": "Current ERP Metrics",
 				"columns": ["Metric", "Value"],
 				"rows": [[item["label"], item["value"]] for item in metric_rows],
 			}
@@ -520,9 +520,9 @@ def composite_ranked_row_direct_evidence_rendered_payload(
 	blocks.append(
 		{
 			"block_type": "bullet_list",
-			"title": "Boundary",
+			"title": "Decision Limit",
 			"items": [
-				"Uses only the current governed composite artifact.",
+				"Uses only the facts shown above.",
 				"Does not create prediction, severity, or collection recommendation labels.",
 			],
 		}

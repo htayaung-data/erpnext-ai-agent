@@ -684,14 +684,14 @@ def build_nbu_current_artifact_answer_response(
 		return {"activated": False, "reason": "Resolved row did not include enough displayable evidence."}
 
 	rank_text = f"Rank {rank}" if rank > 0 else "The selected row"
-	lines = [f"{rank_text} is {label} in the current ERP result."]
+	lines = [f"{rank_text} is {label} in the table above."]
 	metric_lines = _row_metric_lines(row, _clean_list(candidate.get("requested_metrics")))
 	if metric_lines:
 		lines.append("")
 		lines.append("Current row facts:")
 		lines.extend(metric_lines)
 	lines.append("")
-	lines.append("This answer uses only the current ERP result already shown in this conversation.")
+	lines.append("This is based only on the table above.")
 	answer_text = "\n".join(lines).strip()
 	activation_contract = {
 		"type": "qwen_nbu_current_artifact_answer_activation_contract",

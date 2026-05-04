@@ -53,6 +53,27 @@ def delete_qwen_session(session_name: str):
 
 
 @frappe.whitelist()
+def clear_qwen_sessions(confirm: int | None = None):
+	rows = frappe.get_all(
+		QWEN_SESSION_DOCTYPE,
+		filters={"owner": frappe.session.user},
+		fields=["name"],
+		order_by="modified desc",
+		limit_page_length=0,
+	)
+	if not bool(int(confirm or 0)):
+		return {"ok": False, "requires_confirmation": True, "count": len(rows)}
+	deleted = 0
+	for row in rows:
+		name = row.get("name")
+		if not name:
+			continue
+		frappe.delete_doc(QWEN_SESSION_DOCTYPE, name, ignore_permissions=False)
+		deleted += 1
+	return {"ok": True, "deleted": deleted}
+
+
+@frappe.whitelist()
 def get_qwen_messages(session_name: str, debug: int | None = None):
 	doc = _get_qwen_session(session_name)
 	include_tool = bool(int(debug or 0))

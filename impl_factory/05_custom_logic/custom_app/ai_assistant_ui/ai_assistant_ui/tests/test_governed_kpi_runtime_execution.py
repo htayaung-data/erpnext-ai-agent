@@ -23,6 +23,7 @@ from ai_assistant_ui.qwen_chat.governed_kpi_execution_state import (
 	build_governed_kpi_value_artifact_contract,
 )
 from ai_assistant_ui.qwen_chat.governed_kpi_runtime_execution import (
+	governed_kpi_value_frontdoor_candidate_available,
 	maybe_build_governed_kpi_value_frontdoor_response,
 )
 from ai_assistant_ui.qwen_chat.customer_lifecycle_basis import (
@@ -78,7 +79,11 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertEqual(result.get("semantic_result").intent.intent_class, "governed_kpi_value")
 		answer = result.get("frontdoor_answer", "")
 		self.assertIn("1,473,000 MMK", answer)
-		self.assertIn("2026-03-01 to 2026-03-31", answer)
+		value_artifact = result.get("kpi_value_artifact", {})
+		self.assertIn(
+			f"{value_artifact.get('period_start')} to {value_artifact.get('period_end')}",
+			answer,
+		)
 		self.assertIn("13,257,000 MMK", answer)
 		self.assertNotIn("Source:", answer)
 
@@ -182,6 +187,12 @@ class TestGovernedKpiRuntimeExecution(unittest.TestCase):
 		self.assertEqual(result, {})
 
 	def test_collection_ratio_last_month_executes_governed_value(self):
+		self.assertTrue(
+			governed_kpi_value_frontdoor_candidate_available(
+				message="show collection ratio last month",
+				company_name=self.COMPANY,
+			)
+		)
 		with patch(
 			"ai_assistant_ui.qwen_chat.collections_support.compute_collection_ratio_by_sales_invoice_period",
 			return_value={

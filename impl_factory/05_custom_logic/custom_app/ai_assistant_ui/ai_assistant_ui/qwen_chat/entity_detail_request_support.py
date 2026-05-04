@@ -25,6 +25,20 @@ def _ordered_unique_values(values: List[str] | None) -> List[str]:
 	return ordered
 
 
+def entity_detail_capability_id(entity_type: str) -> str:
+	entity_key = str(entity_type or "").strip().lower()
+	capability_by_entity_type = {
+		"customer": "accounts_receivable_read",
+		"supplier": "accounts_payable_read",
+		"item": "stock_read",
+		"product": "stock_read",
+		"purchase_order": "purchase_order_read",
+		"sales_order": "sales_order_read",
+		"sales_invoice": "sales_read",
+	}
+	return str(capability_by_entity_type.get(entity_key) or "").strip()
+
+
 def _artifact_has_stock_position_sections(artifact_payload: Dict[str, Any]) -> bool:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}

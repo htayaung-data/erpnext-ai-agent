@@ -69,16 +69,16 @@ def supplier_boundary_direct_evidence_answer(
 		return f"The current outstanding payable balance for {entity_label} is {_money(outstanding_total)} MMK."
 
 	if "invoice_count" in requested_metrics:
-		return f"{entity_label} has {invoice_count} posted purchase invoices in the governed history{company_phrase}."
+		return f"{entity_label} has {invoice_count} posted purchase invoices in the ERP history{company_phrase}."
 
 	if "overdue_ratio" in requested_metrics:
 		if outstanding_total <= 0:
 			return (
-				f"As of the current governed payable snapshot, {entity_label} has an overdue ratio of 0.0%{company_phrase}.\n\n"
-				"There is no positive outstanding payable balance in the current governed artifact."
+				f"As of the current payable snapshot, {entity_label} has an overdue ratio of 0.0%{company_phrase}.\n\n"
+				"There is no positive outstanding payable balance in this snapshot."
 			)
 		return (
-			f"As of the current governed payable snapshot, {entity_label} has an overdue ratio of {overdue_ratio * 100:.1f}%{company_phrase}.\n\n"
+			f"As of the current payable snapshot, {entity_label} has an overdue ratio of {overdue_ratio * 100:.1f}%{company_phrase}.\n\n"
 			f"This is based on overdue amount {_money(overdue_total)} MMK against outstanding amount {_money(outstanding_total)} MMK."
 		)
 

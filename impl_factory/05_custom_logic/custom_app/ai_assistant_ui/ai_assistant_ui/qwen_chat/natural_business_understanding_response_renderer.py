@@ -334,7 +334,7 @@ def _render_unsupported(trace_payload: Dict[str, Any]) -> Dict[str, Any]:
 		return {
 			"title": "Nearest ERP Options",
 			"answer_text": (
-				f"I cannot prove {missing_phrase} from the current ERP result, "
+				f"I cannot prove {missing_phrase} from the answer above, "
 				"but these nearby ERP options are available."
 			),
 			"next_steps": alternatives,
@@ -343,7 +343,7 @@ def _render_unsupported(trace_payload: Dict[str, Any]) -> Dict[str, Any]:
 	return {
 		"title": "Missing Data For This Answer",
 		"answer_text": (
-			f"I can help with this business area, but the current ERP result does not safely expose {missing_phrase}."
+			f"I can help with this business area, but the answer above does not safely expose {missing_phrase}."
 		),
 		"next_steps": ["ask for an ERP report or source that includes that data", "provide a more specific metric, entity, or period"],
 		"boundary_class": "unsupported_evidence",

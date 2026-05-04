@@ -43,6 +43,7 @@ from ai_assistant_ui.qwen_chat.context.session_context import save_session
 from ai_assistant_ui.qwen_chat.service import (
 	_build_recovery_guidance_answer,
 	_latest_recovery_contract,
+	_nbu_presentation_activation_allowed_for_followup,
 )
 from ai_assistant_ui.qwen_chat.semantic_repair_intent import (
 	SemanticRepairIntent,
@@ -92,6 +93,16 @@ class TestPostContractGuardProbes(unittest.TestCase):
 		with mock.patch("ai_assistant_ui.qwen_chat.context.session_context.time.sleep", return_value=None):
 			save_session(session_doc, ignore_permissions=False)
 		self.assertEqual(session_doc.calls, 2, "Transient lock timeout should be retried exactly once before succeeding.")
+
+	def test_nbu_presentation_does_not_override_execution_lanes(self):
+		for mode in ("new_query", "capability_requery", "local_grounded_transform", "front_door"):
+			self.assertFalse(
+				_nbu_presentation_activation_allowed_for_followup(types.SimpleNamespace(mode=mode)),
+				f"NBU presentation must not override {mode!r}.",
+			)
+		self.assertTrue(
+			_nbu_presentation_activation_allowed_for_followup(types.SimpleNamespace(mode="grounded_follow_up"))
+		)
 
 	def test_session_save_reloads_and_retries_transient_deadlock_for_append_only_state(self):
 		class QueryDeadlockError(Exception):
@@ -314,10 +325,10 @@ class TestPostContractGuardProbes(unittest.TestCase):
 			boundary_contract={
 				"knowledge_coverage_state": "unsupported_non_erp",
 			},
-			detail_answer="I can help with governed ERP reporting instead.",
+			detail_answer="I can help with ERP reporting instead.",
 		)
-		self.assertIn("governed ERP assistant coverage", answer)
-		self.assertIn("I can help with governed ERP reporting instead.", answer)
+		self.assertIn("current ERP assistant coverage", answer)
+		self.assertIn("I can help with ERP reporting instead.", answer)
 
 	def test_semantic_repair_rejects_unknown_recovery_action(self):
 		intent = _validate_semantic_payload(

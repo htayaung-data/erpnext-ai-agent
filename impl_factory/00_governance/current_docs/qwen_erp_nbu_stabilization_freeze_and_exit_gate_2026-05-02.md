@@ -498,13 +498,13 @@ Expected behavior:
 | --- | --- | --- |
 | NBU-S0 | Baseline recorded | Branch, commit, dirty-work ownership, known failures, and freeze rules recorded on 2026-05-02. Cleanup decisions remain controlled because broad unrelated work exists. |
 | NBU-S0.5 | Baseline recorded | Fast/full gate shape recorded on 2026-05-02. Current guardrail is red and NBU regression has one known failure. |
-| NBU-S1 | Pending | Shared visible artifact intent contract |
-| NBU-S3 | Pending | Latest relevant artifact selection |
-| NBU-S2 | Pending | Shared projection contract |
-| NBU-S4 | Pending | Entity detail enrichment contract |
-| NBU-S5 | Pending | Professional clarification and fallback language |
-| NBU-S6 | Pending | Enterprise guardrail closure |
-| NBU-S7 | Pending | Regression matrix |
+| NBU-S1 | Implemented and verified through S7 | Shared visible artifact intent decisions are active for visible-context answer, requery, projection, detail, clarification, and boundary paths. |
+| NBU-S3 | Implemented and verified through S7 | Latest relevant artifact selection is green for customer risk, supplier lists/AP, sales invoice rows, and fresh ranking resets. |
+| NBU-S2 | Implemented and verified through S7 | Projection preserves ranking metric while adding or formatting requested fields, including million display and quantity add-ons. |
+| NBU-S4 | Implemented and verified through S7 | Broad detail requests enrich approved customer, supplier, product, and supported row targets instead of only repeating visible row facts. |
+| NBU-S5 | Implemented and verified through S7 | Shared boundary and clarification renderers use business-facing language and avoid user-facing internal architecture terms. |
+| NBU-S6 | Green as of S7 closure | Enterprise guardrail audit passed after the S7 shared-language cleanup. |
+| NBU-S7 | Automated gate complete | Context, projection, and boundary/recovery matrices are green on the live backend. |
 | NBU-S8 | Pending | Manual browser UAT gate |
 | NBU-S9 | Pending | Service and duplicate lane consolidation |
 
@@ -1030,3 +1030,1070 @@ Before closing this slice:
 2. NBU response-renderer regression must pass.
 3. Semantic financial regression must pass for the new finance wording.
 4. Browser UAT must confirm no technical option ids and no stale Balance Sheet artifact-boundary response for vague finance wording.
+
+## 18. Browser UAT Finding: Finance Re-Entry And Executable Clarification Options
+
+### 18.1 Finding
+
+Browser UAT after the vague-finance slice showed three remaining shared issues:
+
+1. `show me statement` could still be treated as a follow-up to the previous supplier list instead of a new financial-statement request.
+2. `tell me more about Liabilities` after a Balance Sheet could repeat the full statement instead of answering the liabilities section from the current artifact.
+3. The clarification option `combined cross-domain health summary` was offered for `show me money situation`, but selecting it did not execute a grounded composite read.
+
+These are shared NBU/context-contract issues, not prompt-specific defects.
+
+### 18.2 Implementation
+
+Implemented changes:
+
+1. The self-contained governed-request detector now uses report-family `routing_hints.intent_markers` from metadata, so family-level requests such as `show me statement` can break out of stale visible context.
+2. Standalone canonical report names such as `Balance Sheet` are accepted as fresh governed requests using metadata report names.
+3. Artifact-boundary skipping now preserves the current artifact when the current artifact can directly answer the follow-up, such as a Balance Sheet liabilities section request.
+4. Financial-summary clarification translation now carries governed option metadata from the clarification registry.
+5. The `cross-domain health` option now carries aliases including `combined cross-domain health summary` and resolves to the executable continuation `show me working capital health`.
+
+### 18.3 Verification
+
+Server verification:
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: passed.
+
+Targeted regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest \
+  ai_assistant_ui.tests.test_semantic_financial_resolution \
+  ai_assistant_ui.tests.test_financial_statement_followup_clarification_contracts
+```
+
+Result: 277 tests passed.
+
+NBU regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest <NBU regression suite>
+```
+
+Result: 147 tests passed.
+
+Official semantic matrix:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+bash scripts/qwen_verify_enterprise_matrix.sh semantic
+```
+
+Result: passed.
+
+Backend status:
+
+1. Server repo and backend container checksums matched for touched runtime files.
+2. Metadata checksum matched inside the backend container.
+3. Backend was restarted.
+4. Container returned healthy status after restart.
+
+### 18.4 Browser UAT Gate
+
+Manual browser UAT should confirm:
+
+1. `show me statement` after a supplier list asks for Profit & Loss, Balance Sheet, or Cash Flow.
+2. Selecting `Balance Sheet` executes the Balance Sheet.
+3. `tell me more about Liabilities` after Balance Sheet returns liabilities details, not the full statement.
+4. `show me money situation` should not offer an option that cannot execute.
+5. If `combined cross-domain health summary` is offered and selected, it should execute the working-capital health / AR-AP style summary.
+
+## 19. Stabilization Progress: Artifact-Level Reasoning Authority
+
+### 19.1 Finding
+
+Browser and live smoke checks showed that broad artifact-level reasoning follow-ups could still be preempted by older follow-up refinement paths.
+
+Examples of the failure class:
+
+1. `what does this mean` after a risk or finance artifact could route into legacy runtime instead of the accepted ERP reasoning lane.
+2. `why is this risky?` without an explicit row or entity reference could be treated as a row clarification instead of an artifact-level explanation.
+3. Recommendation or prediction questions could fall through to inconsistent runtime behavior instead of returning a bounded, evidence-first answer.
+
+This was classified as a shared NBU authority issue, not a prompt-specific issue.
+
+### 19.2 Implementation
+
+Implemented changes:
+
+1. Accepted ERP reasoning activation can now supersede capability requery, grounded-detail follow-up, and new-query refinement only when the request is artifact-level and the reasoning activation has already been accepted.
+2. Entity-detail follow-ups remain protected. Requests such as `tell me more about that customer` still route to the approved entity-detail path instead of being swallowed by broad reasoning.
+3. Artifact-level explanation language now recognizes broad risk and driver wording such as `why`, `risk`, `risky`, `cause`, and `driver` when no explicit row or entity target is present.
+4. Visible-context follow-up activation now yields to the reasoning lane for ambiguous artifact-level analysis requests instead of forcing row clarification.
+5. H4 and H5 live-smoke setup now uses the correct AR/risk fixture instead of an unrelated sales-invoice fixture, so the smoke tests validate the intended business context.
+6. Live diagnostic output was compacted to show routing payloads and modes without dumping full ERP report rows.
+
+### 19.3 Verification
+
+Server verification:
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: passed.
+
+Focused visible-context and post-contract tests:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_visible_context_followup_activation
+```
+
+Result: 26 tests passed.
+
+NBU regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest discover -s ai_assistant_ui/tests -p 'test_natural_business_understanding*.py'
+```
+
+Result: 147 tests passed.
+
+Official semantic matrix:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+bash scripts/qwen_verify_enterprise_matrix.sh semantic
+```
+
+Result: passed.
+
+Live backend gates:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_phase6_observability_smoke
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_h4_recommendation_guarantee_stays_bounded_smoke
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_h5_release_gate_sanity_pack
+```
+
+Result: all passed.
+
+### 19.4 Current Release Status
+
+This slice is green for the artifact-level reasoning and bounded recommendation/prediction behavior.
+
+The full long post-contract release gate is not yet declared green. Historical failures remain in older Phase 1, Phase 2, and Phase 3 smoke groups, and the full gate has also shown long runtime behavior. Phase 4 should remain blocked until those remaining release-gate failures are grouped, triaged, and re-run.
+
+### 19.5 Next Stabilization Slice
+
+Recommended next slice:
+
+1. Group the remaining long-gate failures by failure class instead of prompt.
+2. Start with document delivery proof, order-status follow-up, customer-credit follow-up, governed KPI execution, and customer commercial composite follow-up.
+3. Keep guardrails green before and after each slice.
+4. Keep fixes contract-led and shared, with no protected phrase-routing logic.
+5. Re-run the full post-contract gate only after each targeted class is green, so long-gate time is not wasted on known failures.
+
+## 20. Stabilization Progress: Entity Detail Evidence Beats Stale Visible Lists
+
+### 20.1 Finding
+
+The Phase 1.1 invoice delivery-proof release-gate class was still failing. The live failure was not a delivery-data problem. The current invoice detail artifact already contained the delivery proof, but visible-context row selection could still preempt the entity-detail evidence path when the user used rough wording such as:
+
+1. `items from this invoices are already delivered?`
+2. `that item is already delivered to the customer?`
+3. `what it was delivered`
+
+This caused the assistant to ask for a row from an older invoice list instead of answering from the current invoice-detail evidence.
+
+### 20.2 Implementation
+
+Implemented changes:
+
+1. Added a shared entity-detail capability resolver to `entity_detail_request_support`.
+2. Updated `contracts` to use that shared resolver instead of owning a separate private mapping.
+3. Updated visible-context follow-up activation so it yields when the current artifact is an entity-detail artifact and the entity-detail evidence interpretation recognizes a supported evidence or status follow-up.
+4. Added focused unit coverage proving visible-context does not intercept sales-invoice delivery evidence/date follow-ups when the current artifact can answer them.
+5. Added a compact diagnostic probe for the exact invoice delivery-proof smoke sequence.
+
+This is a shared contract fix. It is not a single invoice or single prompt exception.
+
+### 20.3 Verification
+
+Server verification:
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: passed.
+
+Focused regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest \
+  ai_assistant_ui.tests.test_visible_context_followup_activation \
+  ai_assistant_ui.tests.test_entity_detail_contracts
+```
+
+Result: 110 tests passed.
+
+NBU regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest discover -s impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests -p 'test_natural_business_understanding*.py'
+```
+
+Result: 147 tests passed.
+
+Official semantic matrix:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+bash scripts/qwen_verify_enterprise_matrix.sh semantic
+```
+
+Result: passed.
+
+Live backend release-gate smokes:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_phase1_1_invoice_delivery_proof_smoke
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_phase1_1_fresh_chat_invoice_delivery_proof_smoke
+```
+
+Result: both passed.
+
+### 20.4 Current Release Status
+
+The invoice-to-delivery proof failure class is now closed for the targeted live gates.
+
+The broader long post-contract release gate is still not declared fully green. Continue triaging the remaining historical classes one at a time, using the same pattern:
+
+1. reproduce the failing release-gate smoke,
+2. identify the shared contract seam,
+3. fix the shared seam,
+4. run guardrails and focused regression,
+5. only then advance to the next class.
+
+## 21. Stabilization Progress: Actual Event Boundary Beats Same-Entity Requery
+
+### 21.1 Finding
+
+The Phase 1.3 purchase-order status follow-up class exposed an authority-order bug. The purchase-order detail artifact could safely answer:
+
+1. receipt status,
+2. billing status,
+3. planned receipt date.
+
+But when the user asked when the order was actually received, the NBU governed-requery lane re-ran the same purchase-order detail query. That was incorrect because the current purchase-order detail only proves planned receipt date and receipt progress. It does not prove the downstream actual receipt event date.
+
+This was not a purchase-order-specific wording problem. It was a shared authority problem: requery must not override the current artifact's evidence boundary when the requested fact requires downstream event evidence.
+
+### 21.2 Implementation
+
+Implemented changes:
+
+1. Added shared entity-detail boundary preemption before NBU governed requery activation.
+2. Reused the entity-detail request interpretation contract instead of adding prompt-specific routing.
+3. Made requery yield when the current artifact is an entity-detail artifact and the interpreted request requires unsupported actual event evidence.
+4. Covered actual receipt-event boundary behavior for purchase orders with a focused NBU activation unit test.
+
+This keeps the correct distinction:
+
+1. answer planned receipt date from the purchase order,
+2. answer receipt progress from the purchase order,
+3. stop safely on actual receipt date until linked purchase-receipt evidence is available.
+
+### 21.3 Verification
+
+Compile gate:
+
+```bash
+python3 -m py_compile \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/natural_business_understanding_governed_requery_activation.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_natural_business_understanding_governed_requery_activation.py
+```
+
+Result: passed.
+
+Focused NBU activation regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_natural_business_understanding_governed_requery_activation
+```
+
+Result: 10 tests passed.
+
+Live backend diagnostic:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.probes.service_diagnostics.run_phase1_3_purchase_order_status_followup_exact_debug
+```
+
+Result: actual receipt-date follow-up returned `grounded_evidence_boundary` instead of same-entity requery.
+
+Live backend smoke:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_phase1_3_purchase_order_status_followup_smoke
+```
+
+Result: passed.
+
+Enterprise guardrail:
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: passed.
+
+NBU regression:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest discover -s impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests -p 'test_natural_business_understanding*.py'
+```
+
+Result: 148 tests passed.
+
+### 21.4 Current Release Status
+
+The purchase-order actual-event boundary failure class is now closed for the targeted live gate.
+
+The broader release remains in stabilization freeze. Do not start Phase 4 or add new feature surfaces until remaining release-gate classes are closed and the repeatable release gate is green.
+
+## 22. Stabilization Progress: Bounded Release-Gate Harness
+
+### 22.1 Finding
+
+The old full post-contract regression entry point was operationally weak as a quality gate. It could run for a long time with little visibility, making it hard to know whether the system was:
+
+1. healthy but slow,
+2. stuck in one expensive smoke,
+3. failing a known historical class,
+4. or drifting into another single-case fix loop.
+
+This created the wrong engineering behavior. Instead of one silent monolith, stabilization needs a bounded harness that exposes the next failure class quickly and safely.
+
+### 22.2 Implementation
+
+Implemented a bounded release-gate harness:
+
+1. Added `evaluation/bounded_release_gate.py`.
+2. Added profile-based smoke selection.
+3. Added per-smoke timeout enforcement using backend Unix signal timers.
+4. Added fail-fast behavior.
+5. Added concise per-case result payloads with case id, label, group, duration, status, and first failure.
+6. Added no-argument service wrappers to avoid shell quoting mistakes:
+   - `run_bounded_release_gate`
+   - `run_bounded_release_gate_inventory`
+   - `run_bounded_release_gate_phase1_core`
+   - `run_bounded_release_gate_release_sanity`
+   - `run_bounded_release_gate_post_contract_suites`
+7. Added unit coverage for pass, failure, fail-fast, profile registry validation, inventory, and timeout behavior.
+
+This is quality infrastructure. It does not change business answering behavior.
+
+### 22.3 Current Profiles
+
+`stabilization_fast`:
+
+1. Phase 1.1 invoice delivery proof,
+2. Phase 1.1 fresh-chat invoice delivery proof,
+3. Phase 1.2 sales-order status follow-up,
+4. Phase 1.3 purchase-order status follow-up,
+5. NBU governed requery.
+
+`release_sanity`:
+
+1. H5 rollout probe,
+2. Phase 5.5 frontdoor boundary,
+3. Phase 6 reasoning live debug,
+4. Phase 7D boundary response live,
+5. Phase 8 recovery execution,
+6. H4 recommendation guarantee boundary.
+
+`phase1_core` and `post_contract_suites` are available for broader follow-up runs. Use them after fast profiles are green.
+
+### 22.4 Verification
+
+Compile gate:
+
+```bash
+python3 -m py_compile \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/evaluation/bounded_release_gate.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py \
+  impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/tests/test_bounded_release_gate.py
+```
+
+Result: passed.
+
+Enterprise guardrail:
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: passed.
+
+Focused harness unit test:
+
+```bash
+PYTHONPATH=impl_factory/05_custom_logic/custom_app/ai_assistant_ui \
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_bounded_release_gate
+```
+
+Result: 7 tests passed.
+
+Live inventory:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_inventory
+```
+
+Result: all profile cases registered; timeout enforcement is `signal`.
+
+Live bounded stabilization gate:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate
+```
+
+Result: `stabilization_fast` passed 5 / 5 cases in 326.864 seconds.
+
+Live bounded release sanity gate:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_release_sanity
+```
+
+Result: `release_sanity` passed 6 / 6 cases in 205.919 seconds.
+
+### 22.5 Current Release Status
+
+The release gate is not fully complete yet, but it is now operationally healthier. The team can identify the next failure class without waiting on a silent long-running suite.
+
+Recommended next order:
+
+1. Run `phase1_core`.
+2. Fix the first failure class only, if any.
+3. Re-run guardrail plus the same bounded profile.
+4. Then run `post_contract_suites` only after `phase1_core` and `release_sanity` stay green.
+5. Start manual browser UAT only after bounded automated gates are green enough to justify manual effort.
+
+## 23. Stabilization Progress: Phase 1 Core Failure Classes
+
+### 23.1 Finding: Compiled Fresh-Query Scope Contract Drift
+
+`phase1_core` exposed a contract consistency failure in the customer-credit scope-reset smoke.
+
+The user-facing answer was correct and returned the governed Accounts Receivable Aging result, but the latest governed scope decision contract reported `covered_family` instead of `fresh_query_breakout`.
+
+Root cause:
+
+1. `service.py` correctly identified a self-contained fresh query while prior grounded context existed.
+2. `lanes/compiled_query_lane.py` rebuilt its own follow-up and scope contracts with `latest_grounded_turn_available=False`.
+3. The compiled lane therefore erased the breakout context in the audit trail.
+
+Resolution:
+
+1. `handle_compiled_query_turn` now accepts `latest_grounded_turn_available` and `context_isolation`.
+2. The compiled lane records `fresh_query_breakout` when it executes a self-contained fresh query from an existing grounded conversation.
+3. Added focused regression coverage in `test_compiled_query_lane_scope.py`.
+
+Verification:
+
+1. Enterprise guardrail passed.
+2. Focused compiled-query lane test passed: 2 tests.
+3. `run_phase1_4_customer_credit_scope_reset_smoke` passed with `scope_status=fresh_query_breakout` and `followup_mode=new_query`.
+
+### 23.2 Finding: Reasoning Preempted Direct Artifact Evidence
+
+The customer-credit policy follow-up smoke exposed a second shared lane-priority failure.
+
+After a customer detail artifact showed `Default Price List`, the follow-up `what is this customer's default price list?` routed to ERP business reasoning and answered that the value was not explicitly stated.
+
+Root cause:
+
+1. The current entity-detail artifact contained the direct governed value.
+2. The direct evidence layer could answer it.
+3. Reasoning execution authority was allowed to override direct current-artifact evidence.
+
+Resolution:
+
+1. Added a shared reasoning-yield guard.
+2. If the current grounded artifact already has a direct evidence answer or a direct evidence boundary, reasoning must yield.
+3. Reasoning still runs when the user asks for interpretation and no direct factual artifact answer applies.
+
+Verification:
+
+1. Enterprise guardrail passed.
+2. Policy follow-up probe confirmed:
+   - credit-limit status: `grounded_evidence_answer`,
+   - credit-limit amount: `grounded_evidence_answer`,
+   - payment terms: `grounded_evidence_answer`,
+   - default price list: `grounded_evidence_answer`.
+3. `run_phase1_4_customer_credit_policy_followup_smoke` passed.
+4. `run_phase6_reasoning_live_rollout_smoke` passed, confirming reasoning remains active for interpretation use cases.
+5. `stabilization_fast` passed 5 / 5 cases in 322.758 seconds after the fixes.
+
+### 23.3 Current Gate Status
+
+The core behavior fixes are shared-seam fixes, not single prompt patches.
+
+Current status:
+
+1. Fast stabilization gate: green.
+2. Enterprise guardrail: green.
+3. Customer-credit scope reset: green.
+4. Customer-credit detail follow-up: green.
+5. Customer-credit policy follow-up: green.
+6. Reasoning sanity: green.
+
+Open gate hygiene issue:
+
+`phase1_core` as one monolithic live command can exceed a 15-minute shell budget before emitting final JSON because it contains ten expensive live smokes. This is operationally weak even with per-case signal timeouts.
+
+Next recommended stabilization action:
+
+1. Split `phase1_core` into smaller bounded profiles such as document detail, order follow-up, and customer-credit.
+2. Keep the existing full `phase1_core` profile for overnight or explicit long-budget runs only.
+3. Use segmented profiles as the normal CI/manual pre-UAT gate so failures return quickly and clearly.
+
+## 24. Stabilization Progress: Segmented Phase 1 Live Gate
+
+### 24.1 Finding: Monolithic Phase 1 Gate Was Operationally Weak
+
+The full `phase1_core` profile remains valuable as a long-budget verification profile, but it is too large for normal stabilization work.
+
+It contains ten expensive live smoke cases. Even when every case is healthy, the command can exceed an outer shell timeout before it returns final JSON. That makes it hard to distinguish real product failures from harness/runtime-budget failures.
+
+Resolution:
+
+1. Added smaller bounded profiles:
+   - `phase1_document_detail`
+   - `phase1_order_followup`
+   - `phase1_customer_credit`
+2. Kept `phase1_core` as the full combined profile for explicit long-budget or overnight runs.
+3. Added profile timeout-budget metadata to release-gate inventory output.
+4. Added test coverage proving the segmented profiles cover the same case ids as `phase1_core`.
+5. Added service wrappers so each segment can be executed directly from Frappe.
+
+### 24.2 Verification
+
+Static and unit verification:
+
+```bash
+python3 -m py_compile \
+  ai_assistant_ui/qwen_chat/evaluation/bounded_release_gate.py \
+  ai_assistant_ui/qwen_chat/service.py \
+  ai_assistant_ui/tests/test_bounded_release_gate.py
+```
+
+Result: compile passed.
+
+```bash
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_bounded_release_gate
+```
+
+Result: 8 tests passed.
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: Qwen enterprise guardrail audit passed.
+
+Live inventory:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_inventory
+```
+
+Result: all segmented profiles registered with timeout budgets.
+
+Registered profile budgets:
+
+1. `phase1_core`: 1800 seconds.
+2. `phase1_document_detail`: 540 seconds.
+3. `phase1_order_followup`: 540 seconds.
+4. `phase1_customer_credit`: 720 seconds.
+
+Live segmented gates:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_phase1_document_detail
+```
+
+Result: `phase1_document_detail` passed 3 / 3 cases in 141.257 seconds.
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_phase1_order_followup
+```
+
+Result: `phase1_order_followup` passed 3 / 3 cases in 145.729 seconds.
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_phase1_customer_credit
+```
+
+Result: `phase1_customer_credit` passed 4 / 4 cases in 187.907 seconds.
+
+Important retained behaviors:
+
+1. Customer-credit scope reset remains green with `scope_status=fresh_query_breakout` and `followup_mode=new_query`.
+2. Customer-credit policy follow-up remains green with direct evidence answers where the current artifact supports the answer.
+3. All segmented profiles use signal-based timeout enforcement.
+
+### 24.3 Current Gate Status
+
+Phase 1 is now healthier as an operational release gate.
+
+Current status:
+
+1. Fast stabilization gate: green.
+2. Release sanity gate: green.
+3. Phase 1 document-detail segment: green.
+4. Phase 1 order-follow-up segment: green.
+5. Phase 1 customer-credit segment: green.
+6. Enterprise guardrail: green.
+
+Normal pre-UAT gate should use the segmented Phase 1 profiles. The full `phase1_core` profile should be retained for explicit long-budget verification, not as the default human-in-the-loop stabilization command.
+
+Next recommended stabilization action:
+
+1. Apply the same bounded-profile discipline to the post-contract suites.
+2. Re-run the post-contract suites in smaller profiles.
+3. Start manual browser UAT only after the automated stabilization gates remain green.
+
+## 25. Stabilization Progress: Atomic Phase 6 Post-Contract Gate
+
+### 25.1 Finding: Phase 6 Aggregate Suite Was Still Too Opaque
+
+The first segmented post-contract run exposed a harness weakness in `post_contract_phase6`.
+
+The profile originally executed `phase6_hardening_suite` as one aggregate case. That aggregate internally runs ten different reasoning and boundary checks. When the command ran too long, the release gate could not immediately identify which sub-check was slow or failing.
+
+This was not treated as a product feature failure or a single prompt failure. It was treated as a release-gate architecture issue.
+
+Resolution:
+
+1. Converted `post_contract_phase6` into an atomic operational profile.
+2. Kept the historical aggregate as `post_contract_phase6_aggregate` for explicit long-budget comparison only.
+3. Added one-case profiles for each Phase 6 sub-check so operators can run the exact failing seam directly.
+4. Added service wrappers for repeatable Frappe execution without brittle shell `--kwargs` quoting.
+5. Added unit coverage proving `post_contract_phase6` uses the expected atomic case order and no longer hides `phase6_hardening_suite`.
+
+Atomic Phase 6 cases:
+
+1. `phase6_recommendation_policy_probe`
+2. `phase6_reasoning_live_rollout`
+3. `phase6_reasoning_without_grounding`
+4. `phase6_reasoning_frontdoor_boundary`
+5. `phase6_nonadvisory_recommendation_boundary`
+6. `phase6_artifact_refinement_precedence`
+7. `phase6_continuation_fulfillment`
+8. `phase6_grounded_source_reset`
+9. `phase6_continuation_guardrail`
+10. `phase6_observability`
+
+### 25.2 Verification
+
+Static and unit verification:
+
+```bash
+python3 -m py_compile \
+  ai_assistant_ui/qwen_chat/evaluation/bounded_release_gate.py \
+  ai_assistant_ui/qwen_chat/service.py \
+  ai_assistant_ui/tests/test_bounded_release_gate.py
+```
+
+Result: compile passed.
+
+```bash
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_bounded_release_gate
+```
+
+Result: 9 tests passed.
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: Qwen enterprise guardrail audit passed.
+
+Live inventory:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_inventory
+```
+
+Result: `post_contract_phase6` is registered as ten atomic cases; `post_contract_phase6_aggregate` remains available as the long-budget aggregate.
+
+Live atomic Phase 6 gate results:
+
+| Profile | Result | Duration |
+| --- | --- | --- |
+| `post_contract_phase6_recommendation_policy` | Passed 1 / 1 | 0.005s |
+| `post_contract_phase6_reasoning_live_rollout` | Passed 1 / 1 | 52.283s |
+| `post_contract_phase6_reasoning_without_grounding` | Passed 1 / 1 | 10.772s |
+| `post_contract_phase6_reasoning_frontdoor_boundary` | Passed 1 / 1 | 32.986s |
+| `post_contract_phase6_nonadvisory_recommendation_boundary` | Passed 1 / 1 | 36.139s |
+| `post_contract_phase6_artifact_refinement_precedence` | Passed 1 / 1 | 37.289s |
+| `post_contract_phase6_continuation_fulfillment` | Passed 1 / 1 | 62.904s |
+| `post_contract_phase6_grounded_source_reset` | Passed 1 / 1 | 69.046s |
+| `post_contract_phase6_continuation_guardrail` | Passed 1 / 1 | 0.000s |
+| `post_contract_phase6_observability` | Passed 1 / 1 | 42.911s |
+
+### 25.3 Current Gate Status
+
+Phase 6 is now green when tested through atomic bounded gates.
+
+Important interpretation:
+
+1. The old aggregate command should not be used as the default human-in-the-loop stabilization gate.
+2. The atomic Phase 6 profiles are the operational source of truth for release triage.
+3. If Phase 6 regresses again, the team can identify the failing seam directly instead of waiting on a long black-box suite.
+
+Current status:
+
+1. Fast stabilization gate: green.
+2. Release sanity gate: green.
+3. Phase 1 segmented gates: green.
+4. Post-contract Phase 5.5 segment: green.
+5. Post-contract Phase 6 atomic gates: green.
+6. Enterprise guardrail: green.
+
+Next recommended stabilization action:
+
+1. Run or atomize post-contract Phase 7 and Phase 8 using the same bounded discipline.
+2. Re-run the fast gate after any new fix.
+3. Start manual browser UAT only after Phase 7 and Phase 8 are also verified.
+
+## 26. Stabilization Progress: Atomic Phase 7 And Phase 8 Post-Contract Gates
+
+### 26.1 Naming Clarification
+
+The terms `Phase 7` and `Phase 8` in this section refer to historical post-contract hardening suites already present in the codebase.
+
+They are not the NBU mini-phases:
+
+1. Historical post-contract Phase 7: knowledge-boundary orchestration and boundary response checks.
+2. Historical post-contract Phase 8: recovery authority, repair handling, fresh-query override, and recovery execution checks.
+3. `NBU-S7`: the future NBU Regression Matrix phase.
+4. `NBU-S8`: the future Manual Browser UAT gate.
+
+Current roadmap position remains NBU Stabilization Freeze. The team has not moved to Phase 4 complex business questions yet.
+
+### 26.2 Finding: Phase 7 And Phase 8 Needed The Same Atomic Gate Discipline
+
+After Phase 6 was atomized, Phase 7 and Phase 8 still had the same structural risk: each post-contract profile could hide multiple checks inside a historical aggregate suite.
+
+Resolution:
+
+1. Converted `post_contract_phase7` into atomic operational cases.
+2. Converted `post_contract_phase8` into atomic operational cases.
+3. Kept historical aggregate profiles available as:
+   - `post_contract_phase7_aggregate`
+   - `post_contract_phase8_aggregate`
+4. Added one-case Frappe wrappers for repeatable operator execution.
+5. Added unit coverage proving Phase 7 and Phase 8 operational profiles no longer hide aggregate suite cases.
+
+Atomic Phase 7 cases:
+
+1. `phase7_live_boundary_orchestration`
+2. `phase7_boundary_response_live`
+
+Atomic Phase 8 cases:
+
+1. `phase8_recovery_authority`
+2. `phase8_repair_handling`
+3. `phase8_fresh_query_override`
+4. `phase8_recovery_execution`
+
+### 26.3 Verification
+
+Static and unit verification:
+
+```bash
+python3 -m py_compile \
+  ai_assistant_ui/qwen_chat/evaluation/bounded_release_gate.py \
+  ai_assistant_ui/qwen_chat/service.py \
+  ai_assistant_ui/tests/test_bounded_release_gate.py
+```
+
+Result: compile passed.
+
+```bash
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_bounded_release_gate
+```
+
+Result: 11 tests passed.
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: Qwen enterprise guardrail audit passed.
+
+Live inventory:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_inventory
+```
+
+Result: Phase 7 and Phase 8 atomic profiles registered; aggregate profiles retained separately.
+
+Live atomic Phase 7 gate results:
+
+| Profile | Result | Duration |
+| --- | --- | --- |
+| `post_contract_phase7_live_boundary_orchestration` | Passed 1 / 1 | 64.877s |
+| `post_contract_phase7_boundary_response_live` | Passed 1 / 1 | 40.558s |
+
+Live atomic Phase 8 gate results:
+
+| Profile | Result | Duration |
+| --- | --- | --- |
+| `post_contract_phase8_recovery_authority` | Passed 1 / 1 | 1.016s |
+| `post_contract_phase8_repair_handling` | Passed 1 / 1 | 33.969s |
+| `post_contract_phase8_fresh_query_override` | Passed 1 / 1 | 37.315s |
+| `post_contract_phase8_recovery_execution` | Passed 1 / 1 | 17.270s |
+
+### 26.4 Current Gate Status
+
+The automated stabilization gate is now materially healthier.
+
+Current status:
+
+1. Fast stabilization gate: green.
+2. Release sanity gate: green.
+3. Phase 1 segmented gates: green.
+4. Post-contract Phase 5.5 segment: green.
+5. Post-contract Phase 6 atomic gates: green.
+6. Post-contract Phase 7 atomic gates: green.
+7. Post-contract Phase 8 atomic gates: green.
+8. Enterprise guardrail: green.
+
+Important interpretation:
+
+1. The release gate now identifies failures by seam instead of hiding them inside long aggregate commands.
+2. Aggregate profiles remain available for explicit long-budget comparison only.
+3. Normal stabilization and pre-UAT checks should use the atomic/segmented profiles.
+
+Next recommended stabilization action:
+
+1. Run a final lightweight automated readiness sweep.
+2. Prepare `NBU-S7` Regression Matrix coverage from the now-stable automated gate results.
+3. Only after `NBU-S7` is green, begin `NBU-S8` Manual Browser UAT.
+
+## 27. Stabilization Progress: Final Lightweight Readiness Sweep
+
+### 27.1 Purpose
+
+This sweep verifies that the stabilization gate remains healthy after atomizing historical post-contract Phase 6, Phase 7, and Phase 8 profiles.
+
+This is still part of NBU Stabilization Freeze. It is not Phase 4 feature expansion.
+
+### 27.2 Verification Results
+
+Static and unit verification:
+
+```bash
+python3 -m py_compile \
+  ai_assistant_ui/qwen_chat/evaluation/bounded_release_gate.py \
+  ai_assistant_ui/qwen_chat/service.py \
+  ai_assistant_ui/tests/test_bounded_release_gate.py
+```
+
+Result: compile passed.
+
+```bash
+QWEN_ENTERPRISE_METADATA_DIR=/home/deploy/erp-projects/erpai_project1/impl_factory/03_config/qwen_enterprise_metadata \
+python3 -m unittest ai_assistant_ui.tests.test_bounded_release_gate
+```
+
+Result: 11 tests passed.
+
+```bash
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result: Qwen enterprise guardrail audit passed.
+
+Live inventory:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_inventory
+```
+
+Result: all segmented and atomic profiles are registered; timeout enforcement is `signal`.
+
+Live readiness profiles:
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate
+```
+
+Result: `stabilization_fast` passed 5 / 5 cases in 324.923 seconds.
+
+```bash
+docker compose exec -T backend bench --site erpai_prj1 execute ai_assistant_ui.qwen_chat.service.run_bounded_release_gate_release_sanity
+```
+
+Result: `release_sanity` passed 6 / 6 cases in 197.442 seconds.
+
+### 27.3 Current Gate Status
+
+Final lightweight readiness sweep is green.
+
+Current status:
+
+1. Compile: green.
+2. Bounded release-gate unit tests: green.
+3. Enterprise guardrail: green.
+4. Live bounded-gate inventory: green.
+5. `stabilization_fast`: green.
+6. `release_sanity`: green.
+7. Historical post-contract Phase 5.5 / 6 / 7 / 8 gates: atomized or segmented and verified.
+
+### 27.4 Next Roadmap Step
+
+The next step is `NBU-S7` Regression Matrix.
+
+`NBU-S7` should not add new business capability. It should convert the stabilized behavior into a systematic regression matrix that covers:
+
+1. Fresh-query routing.
+2. Visible-context row and rank follow-ups.
+3. Projection/refinement requests such as units, quantity, million-format, and row limits.
+4. Entity-detail expansion from ranked rows.
+5. Recovery and clarification behavior.
+6. Unsupported prediction, guarantee, and policy boundaries.
+7. Cross-family context reset so stale AR/AP/customer/supplier/product/document context does not leak.
+
+Exit gate for `NBU-S7`:
+
+1. Matrix cases are documented.
+2. Automated replay/smoke coverage exists for the critical cases.
+3. Guardrails remain green.
+4. No user-facing internal terms leak in fallback or clarification responses.
+5. The team agrees the matrix is good enough to proceed to `NBU-S8` Manual Browser UAT.
+
+## 28. Stabilization Progress: NBU-S7 Regression Matrix Closure - 2026-05-03
+
+### 28.1 Purpose
+
+This section records the closure of `NBU-S7` after the shared NBU stabilization work was converted into segmented automated regression gates.
+
+This is still part of the stabilization freeze. It is not Phase 4 complex business-question expansion.
+
+### 28.2 What Changed
+
+The S7 closure hardened shared seams rather than single browser prompts:
+
+1. Latest visible result selection now prevents stale customer, supplier, product, and document context from owning unrelated follow-ups.
+2. Fresh self-contained ranking questions now break out of prior table context.
+3. Projection follow-ups preserve the original ranking metric and add or format requested columns without changing the ranking basis.
+4. Broad detail requests route to approved entity detail where available.
+5. Prediction, recommendation, and unsupported decision requests stop safely with business-facing language.
+6. Shared response renderers were cleaned so user-facing answers avoid internal architecture wording such as runtime, contract, artifact, governed boundary, and governed support.
+
+### 28.3 Verification
+
+Static and unit verification:
+
+```text
+python3 -m unittest \
+  ai_assistant_ui.tests.test_composite_evidence_support \
+  ai_assistant_ui.tests.test_financial_statement_followup_clarification_contracts \
+  ai_assistant_ui.tests.test_bounded_release_gate
+```
+
+Result:
+
+```text
+Ran 51 tests in 0.168s
+OK
+```
+
+Enterprise guardrail:
+
+```text
+python3 scripts/check_qwen_enterprise_guardrails.py
+```
+
+Result:
+
+```text
+Qwen enterprise guardrail audit: PASS
+```
+
+Live backend S7 segmented profiles:
+
+| Profile | Result | Duration |
+| --- | --- | --- |
+| `nbu_s7_context_matrix` | Passed 3 / 3 | 218.790s |
+| `nbu_s7_projection_matrix` | Passed 3 / 3 | 93.581s |
+| `nbu_s7_boundary_recovery_matrix` | Passed 4 / 4 | 167.352s |
+
+### 28.4 Current Gate Status
+
+`NBU-S7` automated regression matrix is green.
+
+Current status:
+
+1. Guardrail audit: green.
+2. Targeted unit tests: green.
+3. Context matrix: green.
+4. Projection matrix: green.
+5. Boundary/recovery matrix: green.
+6. Manual browser UAT: not yet started.
+7. Phase 4: still blocked until NBU-S8 passes.
+
+### 28.5 Remaining Risks
+
+The project is healthier, but not finished:
+
+1. Browser UAT can still reveal frontend/session behavior that automated server replay does not fully represent.
+2. Broad aggregate release profiles are slower than future enterprise targets; this is a performance-hardening backlog, not a current correctness blocker.
+3. `service.py` and duplicate lane ownership remain structural risks for NBU-S9.
+4. New families such as HR or CRM must be onboarded through NBU metadata and contracts, not phrase patches.
+
+### 28.6 Next Step
+
+Move to `NBU-S8` Manual Browser UAT.
+
+Manual UAT must run one group at a time. If a browser result fails, classify it as one of:
+
+1. Latest-visible-result selection.
+2. Fresh-query breakout.
+3. Projection or presentation transform.
+4. Entity or document detail enrichment.
+5. Clarification or executable-options quality.
+6. Unsupported prediction, recommendation, or policy boundary.
+7. Unsupported capability or future-family gap.
+
+Fixes must improve the shared path for that class of failure. Do not fix only the single wording that failed in the browser.

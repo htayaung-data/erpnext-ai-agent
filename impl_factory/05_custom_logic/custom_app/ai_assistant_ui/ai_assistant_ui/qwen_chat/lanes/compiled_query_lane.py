@@ -28,9 +28,17 @@ def handle_compiled_query_turn(
 	append_message: Callable[..., None],
 	append_tool_payload: Callable[..., None],
 	handle_compiled_first_turn_result: Callable[..., Tuple[bool, Dict[str, Any]]],
+	latest_grounded_turn_available: bool = False,
+	context_isolation=None,
 ) -> Tuple[bool, Dict[str, Any]]:
+	latest_context_available = bool(latest_grounded_turn_available)
 	response_policy_contract = build_response_policy_contract(
 		interaction_contract=interaction_contract,
+	)
+	reason = (
+		"The request is self-contained, so it should run as a fresh governed ERP query instead of continuing the previous result."
+		if latest_context_available
+		else "No grounded context exists yet, so the request should be treated as a fresh governed ERP query."
 	)
 	followup_resolution = build_followup_resolution_contract(
 		request_id=request_id,
@@ -46,8 +54,8 @@ def handle_compiled_query_turn(
 		target_report="",
 		depends_on_grounded_turn=False,
 		self_contained=True,
-		latest_grounded_turn_available=False,
-		reason="No grounded context exists yet, so the request should be treated as a fresh governed ERP query.",
+		latest_grounded_turn_available=latest_context_available,
+		reason=reason,
 	)
 	execution_path = build_execution_path(
 		request_id=request_id,
@@ -58,14 +66,14 @@ def handle_compiled_query_turn(
 		request_id=request_id,
 		stage="followup_orchestration",
 		followup_resolution=followup_resolution,
-		context_isolation=build_scope_decision_input(),
-		latest_grounded_turn_available=False,
+		context_isolation=context_isolation if context_isolation is not None else build_scope_decision_input(),
+		latest_grounded_turn_available=latest_context_available,
 		entity_drilldown=None,
 		continuation_contract=None,
 		clarification_required=False,
 	)
 	if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
-		session_doc.title = (raw_message[:60] + "…") if len(raw_message) > 60 else raw_message
+		session_doc.title = (raw_message[:60] + "...") if len(raw_message) > 60 else raw_message
 	append_message(session_doc, "user", raw_message)
 	append_tool_payload(session_doc, interaction_contract.to_payload())
 	append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())

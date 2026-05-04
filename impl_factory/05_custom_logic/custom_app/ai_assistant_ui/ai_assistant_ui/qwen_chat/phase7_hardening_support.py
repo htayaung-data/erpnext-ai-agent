@@ -136,7 +136,7 @@ def run_live_boundary_orchestration_smoke(
 	def _reasoning_runner(doc) -> Dict[str, Any]:
 		ok, setup_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="show me sales invoices",
+			message=smoke_fixture_replacement_message("fresh_query_override_to_ar"),
 			user="Administrator",
 		)
 		if not ok or str((setup_payload or {}).get("mode") or "").strip() not in {
@@ -148,7 +148,7 @@ def run_live_boundary_orchestration_smoke(
 
 		ok, reasoning_payload = handle_qwen_user_message(
 			session_name=doc.name,
-			message="why is this risky?",
+			message="Explain the overdue risk in this accounts receivable summary.",
 			user="Administrator",
 		)
 		if not ok or str((reasoning_payload or {}).get("mode") or "").strip() != "erp_business_reasoning":

@@ -1056,6 +1056,69 @@ class TestClarificationResolutionContracts(unittest.TestCase):
 			"show me Balance Sheet",
 		)
 
+	def test_financial_summary_cross_domain_option_resolves_to_executable_message(self):
+		signal = translate_clarification_signal(
+			request_id="clarify-financial-summary-cross-domain",
+			compiler_reason="Multiple areas are possible.",
+			compiler_reason_type="financial_summary_multi_domain_clarification",
+			compiler_details={},
+		)
+		contract = resolve_pending_clarification_response(
+			request_id="clarify-financial-summary-cross-domain-response",
+			session_id="session-a",
+			user_id="Administrator",
+			site_name="erp.test",
+			message="combined cross-domain health summary",
+			signal_payload=signal.to_payload(),
+			clarification_attempt_count=0,
+			max_attempts=3,
+			grounded_turn={},
+		)
+
+		self.assertEqual(contract.decision, "resolved_option")
+		self.assertEqual(contract.resolved_option, "cross-domain health")
+		self.assertEqual(contract.resolved_slot.get("intent_class"), "financial_summary")
+		self.assertEqual(
+			contract.resolved_slot.get("candidate_capability_ids"),
+			["accounts_receivable_read", "accounts_payable_read"],
+		)
+		self.assertEqual(
+			(contract.resolved_slot.get("extracted_slots") or {}).get("composite_profile_context"),
+			["working_capital_health"],
+		)
+		self.assertEqual(
+			clarification_resolved_continuation_message(
+				signal_payload=signal.to_payload(),
+				resolved_option=contract.resolved_option,
+			),
+			"show me working capital health",
+		)
+
+	def test_financial_summary_single_area_option_resolves_to_next_safe_clarification(self):
+		signal = translate_clarification_signal(
+			request_id="clarify-financial-summary-single-area",
+			compiler_reason="Multiple areas are possible.",
+			compiler_reason_type="financial_summary_multi_domain_clarification",
+			compiler_details={},
+		)
+		contract = resolve_pending_clarification_response(
+			request_id="clarify-financial-summary-single-area-response",
+			session_id="session-a",
+			user_id="Administrator",
+			site_name="erp.test",
+			message="one specific area",
+			signal_payload=signal.to_payload(),
+			clarification_attempt_count=0,
+			max_attempts=3,
+			grounded_turn={},
+		)
+
+		self.assertEqual(contract.decision, "resolved_option")
+		self.assertEqual(contract.resolved_option, "one specific area")
+		self.assertEqual(contract.resolved_slot.get("intent_class"), "financial_summary")
+		self.assertEqual(contract.resolved_slot.get("requested_time_scope"), "as_of_today")
+		self.assertEqual(contract.resolved_slot.get("ambiguity_flags"), ["ambiguous_capability"])
+
 	def test_report_ambiguity_translation_carries_report_resolution_payload_fields(self):
 		signal = translate_clarification_signal(
 			request_id="clarify-report-resolution-payload",

@@ -261,7 +261,7 @@ def financial_statement_section_direct_evidence_answer(
 				continue
 			lines.append(f"| {label} | {_money(row.get('amount'))} |")
 	lines.append("")
-	lines.append("This uses only the current governed financial statement artifact.")
+	lines.append("This is based only on the financial statement above.")
 	return "\n".join(lines).strip()
 
 
@@ -992,19 +992,19 @@ def grounded_artifact_evidence_boundary_answer(
 		if entity_type == "purchase_order" and entity_question_type == "purchase_order_actual_receipt_event_date":
 			return (
 				"The current purchase order shows planned receipt date and receipt progress, but it does not prove the actual receipt event date.\n\n"
-				"To answer when it was actually received, I need governed downstream receipt evidence such as linked purchase-receipt records."
+				"To answer when it was actually received, I need linked downstream receipt evidence such as purchase-receipt records."
 			)
 		if entity_type == "sales_order" and entity_question_type == "sales_order_actual_delivery_event_date":
 			return (
 				"The current sales order shows planned delivery date and delivery progress, but it does not prove the actual shipment event date.\n\n"
-				"To answer when it was actually delivered, I need governed downstream fulfillment evidence such as linked delivery-note records."
+				"To answer when it was actually delivered, I need linked downstream fulfillment evidence such as delivery-note records."
 			)
 		if entity_type == "sales_invoice" and entity_question_type in {"sales_invoice_delivery_evidence", "sales_invoice_delivery_event_date"}:
 			evidence_concepts = artifact_evidence_concepts(artifact, grounded_turn)
 			if "fulfillment" not in evidence_concepts:
 				return (
-					"The current governed artifact does not include direct fields proving that fulfillment status, so I can't confirm it confidently from this artifact alone.\n\n"
-					"I can confirm the billing and payment fields shown here, but this question needs governed operational evidence such as delivery or stock-movement records."
+					"The answer above does not include direct fields proving fulfillment status, so I can't confirm it confidently from that answer alone.\n\n"
+					"I can confirm the billing and payment fields shown here, but this question needs operational evidence such as delivery or stock-movement records."
 				)
 		return ""
 	if entity_type == "purchase_order":
@@ -1018,7 +1018,7 @@ def grounded_artifact_evidence_boundary_answer(
 		if "posting_date" in requested_dimensions and "planned_receipt_date" not in requested_dimensions:
 			return (
 				"The current purchase order shows planned receipt date and receipt progress, but it does not prove the actual receipt event date.\n\n"
-				"To answer when it was actually received, I need governed downstream receipt evidence such as linked purchase-receipt records."
+				"To answer when it was actually received, I need linked downstream receipt evidence such as purchase-receipt records."
 			)
 	if entity_type == "sales_order":
 		request_concepts = {
@@ -1036,7 +1036,7 @@ def grounded_artifact_evidence_boundary_answer(
 		if "posting_date" in requested_dimensions and "planned_delivery_date" not in requested_dimensions and "fulfillment" in request_concepts:
 			return (
 				"The current sales order shows planned delivery date and delivery progress, but it does not prove the actual shipment event date.\n\n"
-				"To answer when it was actually delivered, I need governed downstream fulfillment evidence such as linked delivery-note records."
+				"To answer when it was actually delivered, I need linked downstream fulfillment evidence such as delivery-note records."
 			)
 	request_concepts = {
 		str(value or "").strip()
@@ -1055,9 +1055,9 @@ def grounded_artifact_evidence_boundary_answer(
 	concept_aliases = ontology_concept_aliases(high_risk_missing[0])
 	concept_label = str(concept_aliases[0] or "").strip() if concept_aliases else high_risk_missing[0].replace("_", " ")
 	return (
-		"The current governed artifact does not include direct fields proving that "
-		f"{concept_label} status, so I can't confirm it confidently from this artifact alone.\n\n"
-		"I can confirm the billing and payment fields shown here, but this question needs governed operational evidence such as "
+		"The answer above does not include direct fields proving "
+		f"{concept_label} status, so I can't confirm it confidently from that answer alone.\n\n"
+		"I can confirm the billing and payment fields shown here, but this question needs operational evidence such as "
 		"delivery or stock-movement records."
 	)
 
@@ -1099,23 +1099,23 @@ def artifact_enrichment_boundary_answer(
 	label_text = _join_labels(requested_labels) or "the requested columns or metrics"
 	base_metric_label = _label_for(target_metric) if target_metric else ""
 	source_report = str(getattr(compatibility_contract, "source_report", "") or "").strip()
-	report_basis = source_report or "the current governed report"
+	report_basis = source_report or "the current ERP report"
 	missing_reason = str(getattr(compatibility_contract, "reason", "") or "").strip()
 	if raw_requested:
 		return (
-			f"The current governed source cannot safely add {label_text} from {report_basis}.\n\n"
-			f"This artifact does not expose those requested fields directly, so this follow-up needs a governed requery instead of local reshaping."
+			f"The answer above cannot safely add {label_text} from {report_basis}.\n\n"
+			f"This result does not expose those requested fields directly, so this follow-up needs a fresh ERP lookup instead of local reshaping."
 			+ (f"\n\nWhy: {missing_reason}" if missing_reason else "")
 		)
 	if base_metric_label:
 		return (
-			f"The current governed source cannot safely switch this artifact to {base_metric_label} from {report_basis}.\n\n"
-			"This follow-up needs a governed requery because the requested metric is not directly populated in the current grounded artifact."
+			f"The answer above cannot safely switch this result to {base_metric_label} from {report_basis}.\n\n"
+			"This follow-up needs a fresh ERP lookup because the requested metric is not directly populated in the current result."
 			+ (f"\n\nWhy: {missing_reason}" if missing_reason else "")
 		)
 	return (
-		f"The current governed source cannot safely produce that enriched output from {report_basis}.\n\n"
-		"This follow-up needs a governed requery instead of local reshaping."
+		f"The answer above cannot safely produce that enriched output from {report_basis}.\n\n"
+		"This follow-up needs a fresh ERP lookup instead of local reshaping."
 		+ (f"\n\nWhy: {missing_reason}" if missing_reason else "")
 	)
 

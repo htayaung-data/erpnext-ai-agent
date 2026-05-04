@@ -1055,6 +1055,20 @@ def governed_self_contained_business_terms(language: str = "en") -> List[str]:
 		report_names = spec.get("report_names")
 		if isinstance(report_names, list):
 			out.extend(str(x or "").strip().lower() for x in report_names if str(x or "").strip())
+		routing_hints = spec.get("routing_hints")
+		if isinstance(routing_hints, dict):
+			intent_markers = routing_hints.get("intent_markers")
+			if isinstance(intent_markers, list):
+				out.extend(str(x or "").strip().lower() for x in intent_markers if str(x or "").strip())
+	return list(dict.fromkeys(out))
+
+
+def governed_standalone_business_terms(language: str = "en") -> List[str]:
+	out: List[str] = []
+	for spec in list_report_family_specs():
+		report_names = spec.get("report_names")
+		if isinstance(report_names, list):
+			out.extend(str(x or "").strip().lower() for x in report_names if str(x or "").strip())
 	return list(dict.fromkeys(out))
 
 

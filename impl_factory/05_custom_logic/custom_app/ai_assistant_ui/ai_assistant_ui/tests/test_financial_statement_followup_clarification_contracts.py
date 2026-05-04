@@ -259,7 +259,30 @@ class FinancialStatementFollowupClarificationContractsTest(unittest.TestCase):
 		self.assertIn("Liabilities in the current Balance Sheet total 1,290,195,600 MMK", answer)
 		self.assertIn("Creditors", answer)
 		self.assertIn("Bank Overdraft Account", answer)
-		self.assertIn("current governed financial statement artifact", answer)
+		self.assertIn("current financial statement result", answer)
+
+	def test_balance_sheet_liability_section_followup_supports_natural_more_wording(self):
+		answer = financial_statement_section_direct_evidence_answer(
+			raw_message="tell me more about Liabilities",
+			artifact_payload={
+				"family_id": "financial_statement",
+				"dimensions": {
+					"statement_type": "balance_sheet",
+					"currency": "MMK",
+				},
+				"metrics": {
+					"total_liability": 1290195600,
+				},
+				"sections": {
+					"liabilities": [
+						{"label": "Creditors", "amount": 906366600},
+						{"label": "Bank Overdraft Account", "amount": 118000000},
+					]
+				},
+			},
+		)
+		self.assertIn("Liabilities in the current Balance Sheet", answer)
+		self.assertIn("Creditors", answer)
 
 	def test_statement_section_followup_does_not_capture_statement_switch(self):
 		answer = financial_statement_section_direct_evidence_answer(

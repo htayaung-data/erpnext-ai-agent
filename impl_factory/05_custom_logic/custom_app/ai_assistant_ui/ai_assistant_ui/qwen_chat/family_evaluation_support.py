@@ -1676,6 +1676,60 @@ def run_customer_credit_policy_followup_smoke(
 	)
 
 
+def run_customer_credit_policy_followup_probe(
+	*,
+	frappe_module,
+	session_doctype: str,
+	handle_qwen_user_message,
+	latest_assistant_payload,
+) -> Dict[str, Any]:
+	def _run() -> Dict[str, Any]:
+		doc = _create_committed_smoke_session_doc(
+			frappe_module=frappe_module,
+			session_doctype=session_doctype,
+			title="Phase1.4 Customer Credit Policy Followup Probe",
+		)
+		try:
+			steps: List[Dict[str, Any]] = []
+			for label, message in [
+				("detail", "tell me more about Zegyo Mobile Supply House"),
+				("credit_limit_status", "has this customer exceeded credit limit?"),
+				("credit_limit_amount", "what is this customer's credit limit?"),
+				("payment_terms", "what are this customer's payment terms?"),
+				("default_price_list", "what is this customer's default price list?"),
+			]:
+				ok, payload = handle_qwen_user_message(
+					session_name=doc.name,
+					message=message,
+					user="Administrator",
+				)
+				session_doc = frappe_module.get_doc(session_doctype, doc.name)
+				answer_text = str(latest_assistant_payload(session_doc).get("text") or "").strip()
+				agent_meta = (payload or {}).get("agent_meta") if isinstance(payload, dict) else {}
+				steps.append(
+					{
+						"label": label,
+						"ok": bool(ok),
+						"message": message,
+						"mode": str((payload or {}).get("mode") or "").strip() if isinstance(payload, dict) else "",
+						"engine": str((agent_meta or {}).get("engine") or "").strip() if isinstance(agent_meta, dict) else "",
+						"answer_text": answer_text,
+					}
+				)
+			return {"ok": True, "steps": steps}
+		finally:
+			_delete_committed_smoke_session_doc(
+				frappe_module=frappe_module,
+				session_doctype=session_doctype,
+				doc_name=doc.name,
+			)
+
+	return _with_compiled_first_turn_full_rollout(
+		frappe_module=frappe_module,
+		callback=_run,
+	)
+
+
 def run_governed_kpi_frontdoor_smoke(
 	*,
 	frappe_module,

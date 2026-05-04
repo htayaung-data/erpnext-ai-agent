@@ -409,7 +409,7 @@
   },
   "interaction_hints": {
     "self_contained_prefixes": {
-      "en": ["show me", "give me", "tell me", "display", "list", "analyze", "what is", "how much", "show"],
+      "en": ["show me", "give me", "tell me", "display", "list", "analyze", "what is", "how much", "show", "top", "bottom", "highest", "lowest", "largest", "smallest"],
       "my": []
     }
   }

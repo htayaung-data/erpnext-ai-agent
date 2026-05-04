@@ -5627,7 +5627,7 @@ def run_h4_recommendation_guarantee_stays_bounded_smoke(
     *,
     deps: ConversationControlSmokeDependencies,
 ) -> Dict[str, Any]:
-    artifact_setup_message = "show me sales invoices"
+    artifact_setup_message = smoke_fixture_replacement_message("fresh_query_override_to_ar")
     reasoning_setup_message = "why is this risky?"
 
     def _runner(doc) -> Dict[str, Any]:

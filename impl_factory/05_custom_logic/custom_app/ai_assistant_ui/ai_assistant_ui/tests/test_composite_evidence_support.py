@@ -200,7 +200,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 		self.assertIn("0-30 day bucket: 23,190,000 MMK", answer)
 		self.assertIn("121+ day bucket: 15,000,000 MMK", answer)
 		self.assertNotIn("No amounts are current", answer)
-		self.assertIn("current artifact", answer)
+		self.assertIn("current result", answer)
 
 	def test_composite_evidence_fails_closed_for_selected_row_aging_breakdown_without_buckets(self):
 		answer = grounded_artifact_direct_evidence_answer(
@@ -568,7 +568,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 		)
 
 		self.assertIn("does not authorize a causal root-cause driver analysis", answer)
-		self.assertIn("Ask for a governed trend, payment-behavior, or transaction-history analysis artifact", answer)
+		self.assertIn("Ask for a trend, payment-behavior, or transaction-history analysis view", answer)
 		self.assertIn("Rank 1: Ko Nay Lin Mobile Center", answer)
 
 	def test_boundary_support_uses_composite_multi_row_evidence_boundary(self):
@@ -626,7 +626,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 
 		self.assertEqual(payload.get("renderer_id"), "composite_ranked_row_direct_evidence")
 		self.assertEqual(payload.get("rendering_policy"), "deterministic")
-		self.assertEqual((payload.get("blocks") or [])[0].get("title"), "Composite Evidence Metrics")
+		self.assertEqual((payload.get("blocks") or [])[0].get("title"), "Current ERP Metrics")
 		self.assertIn("not a prediction", payload.get("answer_text"))
 		self.assertIn("37,335,000 MMK", payload.get("answer_text"))
 		self.assertNotIn("37.34 MMK", payload.get("answer_text"))
@@ -641,7 +641,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 		self.assertEqual(payload.get("renderer_id"), "business_reasoning_authority_boundary")
 		self.assertEqual(payload.get("rendering_policy"), "deterministic")
 		self.assertIn("does not authorize a collection recommendation", payload.get("answer_text"))
-		self.assertEqual((payload.get("blocks") or [])[0].get("title"), "Grounded Evidence")
+		self.assertEqual((payload.get("blocks") or [])[0].get("title"), "Current ERP Facts")
 		self.assertEqual((payload.get("blocks") or [])[1].get("title"), "Required Policy")
 		self.assertEqual((payload.get("blocks") or [])[2].get("title"), "Recommendation Execution Gate")
 		self.assertIn(["Production Execution Allowed", "No"], (payload.get("blocks") or [])[2].get("rows") or [])
@@ -656,7 +656,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 
 		self.assertEqual(payload.get("renderer_id"), "business_reasoning_driver_analysis")
 		self.assertEqual(payload.get("rendering_policy"), "deterministic")
-		self.assertIn("current-artifact metric-driver analysis only", payload.get("answer_text"))
+		self.assertIn("current-result metric-driver analysis only", payload.get("answer_text"))
 		self.assertEqual((payload.get("blocks") or [])[0].get("title"), "Driver Evidence")
 
 	def test_phase_3_5_customer_risk_reasoning_boundary_matrix_is_locked(self):
@@ -683,7 +683,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 				[
 					"explainable drivers",
 					"Rank 1: Ko Nay Lin Mobile Center",
-					"current-artifact metric-driver analysis only",
+					"current-result metric-driver analysis only",
 				],
 				["does not authorize"],
 			),
@@ -691,7 +691,7 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 				"what caused the first customer's risk to increase?",
 				[
 					"does not authorize a causal root-cause driver analysis",
-					"Ask for a governed trend, payment-behavior, or transaction-history analysis artifact",
+					"Ask for a trend, payment-behavior, or transaction-history analysis view",
 					"Rank 1: Ko Nay Lin Mobile Center",
 				],
 				[],
@@ -738,10 +738,10 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 		self.assertEqual(
 			block_titles,
 			[
-				"Grounded Evidence",
+				"Current ERP Facts",
 				"Required Policy",
 				"Recommendation Execution Gate",
-				"Boundary",
+				"Decision Limit",
 			],
 		)
 		gate_rows = {

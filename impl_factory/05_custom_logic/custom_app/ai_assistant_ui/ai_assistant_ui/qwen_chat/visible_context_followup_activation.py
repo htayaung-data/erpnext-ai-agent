@@ -340,10 +340,13 @@ def _current_entity_detail_evidence_followup_requested(raw_message: str, current
 		requested_concepts=requested_concepts,
 		artifact_payload=artifact,
 	)
-	if bool(interpretation.get("clarification_required")):
-		return False
 	entity_question_type = _clean_text(interpretation.get("entity_question_type"))
-	return bool(entity_question_type or requested_metrics or requested_dimensions)
+	return bool(
+		interpretation.get("clarification_required")
+		or entity_question_type
+		or requested_metrics
+		or requested_dimensions
+	)
 
 
 def _row_rank(row: Dict[str, Any], fallback_index: int) -> int:

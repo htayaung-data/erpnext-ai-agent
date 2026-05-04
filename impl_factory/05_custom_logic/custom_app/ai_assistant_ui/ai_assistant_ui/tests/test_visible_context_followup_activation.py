@@ -184,6 +184,34 @@ def _sales_invoice_detail_artifact():
 	}
 
 
+def _customer_detail_artifact():
+	return {
+		"type": "qwen_normalized_family_artifact_contract",
+		"artifact_id": "customer-detail-1",
+		"request_id": "customer-detail-1",
+		"title": "Zegyo Mobile Supply House Details",
+		"family_id": "entity_detail",
+		"dimensions": {
+			"entity_type": "customer",
+			"entity_label": "Zegyo Mobile Supply House",
+			"entity_key": "Zegyo Mobile Supply House",
+		},
+		"sections": {
+			"profile": [
+				{"label": "Name", "value": "Zegyo Mobile Supply House"},
+				{"label": "Code", "value": "Zegyo Mobile Supply House"},
+				{"label": "Group", "value": "Wholesale"},
+			],
+			"lifecycle": [
+				{"label": "Customer Created Date", "value": "2026-03-30"},
+				{"label": "Tenure from Customer Created (2026-05-03)", "value": "34 days"},
+				{"label": "First Sales Order Date", "value": "2026-03-30"},
+				{"label": "Tenure from First Sales Order (2026-05-03)", "value": "34 days"},
+			],
+		},
+	}
+
+
 def _balance_sheet_lines_artifact():
 	return {
 		"type": "qwen_normalized_family_artifact_contract",
@@ -579,6 +607,17 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 			session_doc=session_doc,
 			raw_message="what it was delivered",
 			current_artifact=_sales_invoice_detail_artifact(),
+		)
+		self.assertFalse(handled)
+		self.assertIsNone(payload)
+		self.assertFalse(messages)
+
+	def test_entity_detail_tenure_clarification_yields_to_artifact_boundary(self):
+		session_doc = {"messages": [_tool_message(_customer_detail_artifact())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="what is this customer's tenure?",
+			current_artifact=_customer_detail_artifact(),
 		)
 		self.assertFalse(handled)
 		self.assertIsNone(payload)

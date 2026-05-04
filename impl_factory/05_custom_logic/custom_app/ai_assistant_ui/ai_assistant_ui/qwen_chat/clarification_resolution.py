@@ -717,6 +717,68 @@ def pending_clarification_discard_answer(signal_payload: Dict[str, Any]) -> str:
 	)
 
 
+def _resolved_slot_payload_value(value: Any) -> Any:
+	if isinstance(value, dict):
+		out: Dict[str, Any] = {}
+		for key, nested_value in value.items():
+			clean_key = str(key or "").strip()
+			if not clean_key:
+				continue
+			clean_value = _resolved_slot_payload_value(nested_value)
+			if clean_value in ("", [], {}):
+				continue
+			out[clean_key] = clean_value
+		return out
+	if isinstance(value, list):
+		out: List[Any] = []
+		for item in value:
+			clean_item = _resolved_slot_payload_value(item)
+			if clean_item in ("", [], {}):
+				continue
+			out.append(clean_item)
+		return out
+	if isinstance(value, (bool, int, float)):
+		return value
+	return str(value or "").strip()
+
+
+def _option_payload_value_by_option(
+	payload_by_option: Dict[str, Any],
+	matched_option: str,
+) -> Any:
+	if not isinstance(payload_by_option, dict) or not str(matched_option or "").strip():
+		return None
+	if matched_option in payload_by_option:
+		return payload_by_option.get(matched_option)
+	normalized_target = _normalize_text(matched_option)
+	for option, value in payload_by_option.items():
+		if _normalize_text(option) == normalized_target:
+			return value
+	return None
+
+
+def _merge_resolved_slot_payload(
+	resolved: Dict[str, Any],
+	payload: Dict[str, Any],
+) -> Dict[str, Any]:
+	merged = dict(resolved or {})
+	if not isinstance(payload, dict):
+		return merged
+	for key, value in payload.items():
+		clean_key = str(key or "").strip()
+		if not clean_key:
+			continue
+		clean_value = _resolved_slot_payload_value(value)
+		if clean_value in ("", [], {}):
+			continue
+		if clean_key == "extracted_slots" and isinstance(clean_value, dict):
+			existing_slots = merged.get("extracted_slots") if isinstance(merged.get("extracted_slots"), dict) else {}
+			merged["extracted_slots"] = {**existing_slots, **clean_value}
+			continue
+		merged[clean_key] = clean_value
+	return merged
+
+
 def _resolved_slot(
 	reason_type: str,
 	matched_option: str,
@@ -738,6 +800,11 @@ def _resolved_slot(
 		if isinstance(details.get("carryover_slot_values"), dict)
 		else {}
 	)
+	resolved_slot_payload_by_option = (
+		details.get("resolved_slot_payload_by_option")
+		if isinstance(details.get("resolved_slot_payload_by_option"), dict)
+		else {}
+	)
 	selected_report_by_option = (
 		details.get("selected_report_by_option")
 		if isinstance(details.get("selected_report_by_option"), dict)
@@ -756,13 +823,18 @@ def _resolved_slot(
 		resolved["selected_basis"] = matched_option
 	else:
 		resolved["selected_option"] = matched_option
-	semantic_slot_value = str(semantic_slot_value_by_option.get(matched_option) or "").strip()
-	if semantic_slot_name and semantic_slot_value:
+	semantic_slot_value = _resolved_slot_payload_value(
+		_option_payload_value_by_option(semantic_slot_value_by_option, matched_option)
+	)
+	if semantic_slot_name and semantic_slot_value not in ("", [], {}, None):
 		resolved[semantic_slot_name] = semantic_slot_value
+	option_payload = _option_payload_value_by_option(resolved_slot_payload_by_option, matched_option)
+	if isinstance(option_payload, dict):
+		resolved = _merge_resolved_slot_payload(resolved, option_payload)
 	for key, value in carryover_slot_values.items():
 		clean_key = str(key or "").strip()
-		clean_value = str(value or "").strip()
-		if clean_key and clean_value and clean_key not in resolved:
+		clean_value = _resolved_slot_payload_value(value)
+		if clean_key and clean_value not in ("", [], {}, None) and clean_key not in resolved:
 			resolved[clean_key] = clean_value
 	return resolved
 
@@ -775,6 +847,9 @@ def _clarification_has_structured_resolution_authority(internal_details: Dict[st
 		slot_values = details.get("semantic_slot_value_by_option")
 		if isinstance(slot_values, dict) and slot_values:
 			return True
+	resolved_payloads = details.get("resolved_slot_payload_by_option")
+	if isinstance(resolved_payloads, dict) and resolved_payloads:
+		return True
 	selected_reports = details.get("selected_report_by_option")
 	if isinstance(selected_reports, dict) and selected_reports:
 		return True
@@ -902,6 +977,7 @@ def _clarification_structured_options(
 	for key in (
 		"resolved_message_by_option",
 		"semantic_slot_value_by_option",
+		"resolved_slot_payload_by_option",
 		"selected_report_by_option",
 		"option_aliases_by_option",
 	):

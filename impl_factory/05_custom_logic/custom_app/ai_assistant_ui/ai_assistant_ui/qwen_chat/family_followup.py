@@ -437,6 +437,8 @@ def render_local_family_followup(
 	# Handle presentation_transform (million)
 	if show_million or "presentation_transform" in modes:
 		overrides["show_million"] = True
+	if requested_columns or "column_refinement" in modes:
+		overrides["suppress_summary"] = True
 	render_outcome = render_normalized_family_response(
 		request_id=request_id,
 		artifact_contract=artifact_contract,
