@@ -87,14 +87,14 @@
 
     const $kpiGrid = $header.find(".sales-console-kpi-grid");
     $kpiGrid.append(
-      makeInsightCard({ key: "requests_to_source", label: "Requests To Source", meta: "Purchase demand needing buying action." })
-        .on("click", () => routeToWorklist("requests_to_source")),
       makeInsightCard({ key: "purchase_orders_overdue", label: "Overdue POs", meta: "Open item lines past required date." })
         .on("click", () => routeToWorklist("purchase_orders_overdue")),
       makeInsightCard({ key: "purchase_orders_supplier_follow_up", label: "Supplier Follow-up", meta: "Orders needing buyer coordination." })
         .on("click", () => routeToWorklist("purchase_orders_supplier_follow_up")),
-      makeInsightCard({ key: "rfqs_awaiting_supplier_response", label: "RFQs Awaiting Response", meta: "Supplier responses still pending." })
-        .on("click", () => routeToWorklist("rfqs_awaiting_supplier_response")),
+      makeInsightCard({ key: "purchase_orders_due_soon", label: "Due Soon", meta: "Open item lines due in the next seven days." })
+        .on("click", () => routeToWorklist("purchase_orders_due_soon")),
+      makeInsightCard({ key: "requests_to_source", label: "Requests To Source", meta: "Purchase demand needing buying action." })
+        .on("click", () => routeToWorklist("requests_to_source")),
       makeInsightCard({ key: "supplier_quotations_expiring", label: "Expiring Supplier Quotations", meta: "Quoted offers nearing validity end." })
         .on("click", () => routeToWorklist("supplier_quotations_expiring"))
     );

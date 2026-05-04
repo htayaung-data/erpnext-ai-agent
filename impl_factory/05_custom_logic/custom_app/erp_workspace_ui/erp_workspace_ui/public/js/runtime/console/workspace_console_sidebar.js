@@ -4,14 +4,47 @@
   const root = window;
   const consoleRuntime = root.erpWorkspaceConsoleRuntime || {};
   const sidebarRuntime = root.erpWorkspaceConsoleSidebar = root.erpWorkspaceConsoleSidebar || {};
-  const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};
-  const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
-  const procurementWorkspace = typeof workspaceRegistry.procurement === "function" ? workspaceRegistry.procurement() : null;
-  const activeWorkspaces = [salesWorkspace, procurementWorkspace].filter(Boolean);
-  const defaultWorkspace = salesWorkspace || procurementWorkspace || null;
+  function currentWorkspaceRegistry() {
+    return root.erpWorkspaceUiWorkspaceRegistry || {};
+  }
+
+  function workspaceFromRegistry(workspaceId) {
+    const key = String(workspaceId || "").trim();
+    if (!key) return null;
+    const registry = currentWorkspaceRegistry();
+    if (typeof registry.get === "function") {
+      const workspace = registry.get(key);
+      if (workspace) return workspace;
+    }
+    if (typeof registry[key] === "function") {
+      const workspace = registry[key]();
+      if (workspace) return workspace;
+    }
+    return null;
+  }
+
+  function workspaceFromRouteKey(routeKey) {
+    const normalized = String(routeKey || "").trim();
+    if (!normalized) return null;
+    const registry = currentWorkspaceRegistry();
+    if (typeof registry.getByRoute === "function") {
+      const workspace = registry.getByRoute(normalized);
+      if (workspace) return workspace;
+    }
+    return null;
+  }
+
+  function configuredWorkspaces() {
+    return [workspaceFromRegistry("sales"), workspaceFromRegistry("procurement")].filter(Boolean);
+  }
+
+  function defaultWorkspaceForSidebar() {
+    return workspaceFromRegistry("sales") || workspaceFromRegistry("procurement") || null;
+  }
+
+  const salesWorkspace = workspaceFromRegistry("sales");
   const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
   const salesMethods = salesWorkspace && salesWorkspace.methods ? salesWorkspace.methods : {};
-  const salesSidebar = salesWorkspace && salesWorkspace.sidebar ? salesWorkspace.sidebar : {};
   const STYLE_ID = "erpw-sales-console-sidebar-style";
   const SIDEBAR_METHOD = salesMethods.sidebarContext || "erp_workspace_ui.sales_console.service.get_sales_console_sidebar_context";
   const SEARCH_METHOD = salesMethods.workspaceSearch || "erp_workspace_ui.sales_console.service.search_sales_console_workspace";
@@ -30,6 +63,19 @@
     "Delivery Note": "sales_order_directory",
     "Sales Invoice": "sales_order_directory",
   }, (salesWorkspace && salesWorkspace.managedDoctypes) || {});
+  const SALES_FORM_DOCTYPES = new Set(["Quotation", "Sales Order", "Customer", "Item", "Delivery Note", "Sales Invoice"]);
+  const PROCUREMENT_FORM_DOCTYPES = new Set([
+    "Supplier",
+    "Supplier Group",
+    "Item Supplier",
+    "Item Price",
+    "Material Request",
+    "Request for Quotation",
+    "Supplier Quotation",
+    "Purchase Order",
+    "Purchase Receipt",
+    "Purchase Invoice",
+  ]);
   const SLUG_FORM_DOCTYPES = {
     quotation: "Quotation",
     "sales-order": "Sales Order",
@@ -62,22 +108,34 @@
     return SLUG_FORM_DOCTYPES[pageKey] || "";
   }
 
+  function inferredWorkspaceId(route) {
+    const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
+    if (pageKey.indexOf("procurement-console") === 0) return "procurement";
+    if (pageKey.indexOf("sales-console") === 0) return "sales";
+    const doctype = routeDoctype(route);
+    if (PROCUREMENT_FORM_DOCTYPES.has(doctype)) return "procurement";
+    if (SALES_FORM_DOCTYPES.has(doctype)) return "sales";
+    return "";
+  }
+
   function workspaceForRoute(route) {
     const pageKey = Array.isArray(route) ? String(route[0] || "") : "";
-    if (pageKey && typeof workspaceRegistry.getByRoute === "function") {
-      const routedWorkspace = workspaceRegistry.getByRoute(pageKey);
-      if (routedWorkspace) return routedWorkspace;
-    }
+    const routedWorkspace = workspaceFromRouteKey(pageKey);
+    if (routedWorkspace) return routedWorkspace;
+
+    const inferredId = inferredWorkspaceId(route);
+    if (inferredId) return workspaceFromRegistry(inferredId) || { workspaceId: inferredId };
+
     const doctype = routeDoctype(route);
     if (doctype) {
-      const matched = activeWorkspaces.find((workspace) => workspace && workspace.managedDoctypes && workspace.managedDoctypes[doctype]);
+      const matched = configuredWorkspaces().find((workspace) => workspace && workspace.managedDoctypes && workspace.managedDoctypes[doctype]);
       if (matched) return matched;
     }
-    return defaultWorkspace;
+    return defaultWorkspaceForSidebar();
   }
 
   function workspaceConfig(route) {
-    const workspace = workspaceForRoute(route) || defaultWorkspace || {};
+    const workspace = workspaceForRoute(route) || defaultWorkspaceForSidebar() || {};
     const routes = workspace.routes || {};
     const methods = workspace.methods || {};
     const sidebar = workspace.sidebar || {};
@@ -939,10 +997,11 @@
 
   function executeTarget(target) {
     if (!target) return;
+    const config = workspaceConfig(getRoute());
     if (target.notice) {
       frappe.show_alert({ message: __(target.notice), indicator: "blue" });
     }
-    const routeOwner = root.erpWorkspaceUiChildPage && root.erpWorkspaceUiChildPage.helpers;
+    const routeOwner = config.workspaceId === "sales" ? root.erpWorkspaceUiChildPage && root.erpWorkspaceUiChildPage.helpers : null;
     if (
       routeOwner
       && typeof routeOwner.routeToSalesConsoleTarget === "function"

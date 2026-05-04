@@ -176,6 +176,61 @@ async function checkDefaultLanding(page, user) {
   return page.url();
 }
 
+async function checkOverviewStyling(page) {
+  await openDeskRoute(page, "/desk/procurement-console");
+  await page.locator(".sales-console-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.locator(".sales-console-kpi-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const styles = await page.evaluate(() => {
+    function px(value) {
+      return Number.parseFloat(String(value || "0").replace("px", "")) || 0;
+    }
+    function compact(style) {
+      return {
+        display: style.display,
+        gridTemplateColumns: style.gridTemplateColumns,
+        paddingTop: px(style.paddingTop),
+        borderRadius: px(style.borderTopLeftRadius),
+        borderTopWidth: px(style.borderTopWidth),
+        boxShadow: style.boxShadow,
+        backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage,
+      };
+    }
+    const shell = document.querySelector(".sales-console-shell");
+    const card = document.querySelector(".sales-console-card.sales-console-header") || document.querySelector(".sales-console-card");
+    const kpiGrid = document.querySelector(".sales-console-kpi-grid");
+    const kpi = document.querySelector(".sales-console-kpi-card");
+    const queueGrid = document.querySelector(".sales-console-queue-grid");
+    const pipelineGrid = document.querySelector('[data-section-grid="buying-pipeline"]');
+    const pipelineFirst = pipelineGrid ? pipelineGrid.querySelector(".sales-console-queue-card") : null;
+    const sectionHead = document.querySelector(".sales-console-section-head");
+    return {
+      shell: compact(getComputedStyle(shell)),
+      card: compact(getComputedStyle(card)),
+      kpiGrid: compact(getComputedStyle(kpiGrid)),
+      kpi: compact(getComputedStyle(kpi)),
+      kpiLabels: Array.from(document.querySelectorAll(".sales-console-kpi-label")).map((node) => (node.textContent || "").trim()),
+      queueGrid: compact(getComputedStyle(queueGrid)),
+      pipelineGrid: compact(getComputedStyle(pipelineGrid)),
+      pipelineStep: pipelineFirst ? getComputedStyle(pipelineFirst, "::before").content : "",
+      sectionHead: compact(getComputedStyle(sectionHead)),
+    };
+  });
+  assert(styles.shell.display === "grid", "Overview shell is not using shared grid layout", styles);
+  assert(styles.card.paddingTop > 0, "Overview card has no shared padding", styles);
+  assert(styles.card.borderRadius > 0, "Overview card has no shared radius", styles);
+  assert(styles.card.borderTopWidth > 0 || styles.card.boxShadow !== "none", "Overview card has no border or shadow", styles);
+  assert(styles.kpi.display === "grid", "KPI cards look like unstyled browser buttons", styles);
+  assert(styles.kpi.paddingTop > 8, "KPI cards have default button padding", styles);
+  assert(styles.kpiGrid.display === "grid", "KPI grid is not styled", styles);
+  assert(styles.queueGrid.display === "grid", "Queue sections are not styled as grids", styles);
+  assert(styles.pipelineGrid.display === "grid", "Buying pipeline is not styled as a process grid", styles);
+  assert(styles.pipelineStep && styles.pipelineStep !== "none", "Buying pipeline does not expose visible step markers", styles);
+  assert(styles.kpiLabels.slice(0, 5).join("|") === "Overdue POs|Supplier Follow-up|Due Soon|Requests To Source|Expiring Supplier Quotations", "Priority strip order is not buyer-focused", styles);
+  assert(["flex", "grid"].includes(styles.sectionHead.display), "Section header layout is not styled", styles);
+  return styles;
+}
+
 async function checkProcurementSidebar(page) {
   await openDeskRoute(page, "/desk/procurement-console");
   const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Quote Comparison"];
@@ -185,7 +240,31 @@ async function checkProcurementSidebar(page) {
   assert(expected.every((label, index) => labels[index] === label), "Procurement sidebar labels/order mismatch", { labels, expected });
   const headerSubtitle = await page.locator(".body-sidebar .header-subtitle").first().textContent({ timeout: TIMEOUT }).catch(() => "");
   assert(/Procurement Console/i.test(headerSubtitle || ""), "Procurement sidebar header did not use Procurement Console", { headerSubtitle });
-  return labels;
+
+  const routeChecks = [
+    { label: "Suppliers", expectedPath: "/desk/procurement-console-worklist/supplier-directory" },
+    { label: "Purchase Requests", expectedPath: "/desk/procurement-console-worklist/purchase-request-directory" },
+    { label: "Purchase Orders", expectedPath: "/desk/procurement-console-worklist/purchase-order-directory" },
+    { label: "RFQs", expectedPath: "/desk/procurement-console-worklist/rfq-directory" },
+    { label: "Supplier Quotations", expectedPath: "/desk/procurement-console-worklist/supplier-quotation-directory" },
+  ];
+  const clickedRoutes = [];
+  for (const check of routeChecks) {
+    const link = page.locator(".erpw-sales-console-sidebar-link", { hasText: check.label }).first();
+    await link.waitFor({ state: "visible", timeout: TIMEOUT });
+    await link.click();
+    await page.waitForURL((url) => url.pathname === check.expectedPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    assert(!/\/desk\/sales-console-worklist\//.test(new URL(page.url()).pathname), `${check.label}: routed to Sales Console worklist`, { url: page.url() });
+    clickedRoutes.push(page.url());
+  }
+
+  const quoteLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).first();
+  await quoteLink.waitFor({ state: "visible", timeout: TIMEOUT });
+  await quoteLink.click();
+  await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report/supplier-quotation-comparison", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  clickedRoutes.push(page.url());
+
+  return { labels, clickedRoutes };
 }
 
 async function checkSupplierAutocomplete(page) {
@@ -269,6 +348,7 @@ async function runUser(browser, user) {
   try {
     await login(page, user);
     report.defaultLandingUrl = await checkDefaultLanding(page, user);
+    report.overviewStyles = await checkOverviewStyling(page);
     report.sidebarLabels = await checkProcurementSidebar(page);
     await openDeskRoute(page, "/desk/procurement-console");
     const bootstrap = await callMethod(page, "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap");

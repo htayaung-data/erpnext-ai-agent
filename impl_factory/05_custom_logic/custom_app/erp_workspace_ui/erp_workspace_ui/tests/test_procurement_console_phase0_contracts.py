@@ -653,6 +653,35 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("ArrowDown", source)
         self.assertIn("ArrowUp", source)
 
+    def test_shared_console_styles_are_global_asset_contract(self):
+        css_path = Path(__file__).resolve().parents[1] / "public" / "css" / "erp_workspace_ui.css"
+        source = css_path.read_text()
+
+        self.assertIn("Shared console workbench styles", source)
+        self.assertIn(".sales-console-card", source)
+        self.assertIn(".sales-console-kpi-card", source)
+        self.assertIn(".sales-console-queue-grid", source)
+        self.assertIn('data-section-grid="buying-pipeline"', source)
+        self.assertIn("counter-reset: erpw-pipeline-step", source)
+        self.assertIn("appearance: none", source)
+        self.assertIn("grid-template-columns", source)
+
+    def test_procurement_sidebar_target_resolution_bypasses_sales_child_helper(self):
+        sidebar_path = Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "console" / "workspace_console_sidebar.js"
+        source = sidebar_path.read_text()
+        execute_target = source[source.index("  function executeTarget(target)"):source.index("  function resetSearchTimer()")]
+
+        self.assertIn('const config = workspaceConfig(getRoute());', execute_target)
+        self.assertIn('config.workspaceId === "sales"', execute_target)
+        self.assertIn('routeToSalesConsoleTarget(target)', execute_target)
+        self.assertLess(execute_target.index('config.workspaceId === "sales"'), execute_target.index('routeToSalesConsoleTarget(target)'))
+        self.assertIn('function workspaceFromRouteKey(routeKey)', source)
+        self.assertIn('pageKey.indexOf("procurement-console") === 0', source)
+        self.assertIn('if (inferredId) return workspaceFromRegistry(inferredId) || { workspaceId: inferredId };', source)
+        self.assertNotIn('const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};', source)
+        self.assertIn('frappe.set_route(config.worklistRoute, normalizedQueueKey)', source)
+        self.assertIn('frappe.set_route(config.reportRoute, String(reportKey || "").replace(/_/g, "-"))', source)
+
     def test_supplier_directory_uses_ready_read_only_list_contract(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_directory")
 
