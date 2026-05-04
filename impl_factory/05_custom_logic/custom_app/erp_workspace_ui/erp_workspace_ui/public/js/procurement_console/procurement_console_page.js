@@ -50,6 +50,10 @@
     return runtimeMethod("makeInsightCard")(config);
   }
 
+  function makeAction(config) {
+    return runtimeMethod("makeAction")(config);
+  }
+
   function makeQueueItem(config) {
     return runtimeMethod("makeQueueItem")(config);
   }
@@ -62,7 +66,7 @@
   function renderState(page, state) {
     const payloadState = state || {};
     const $root = $(`
-      <div class="sales-console-shell" data-procurement-console-state="${escapeHtml(payloadState.kind || "unavailable")}">
+      <div class="sales-console-shell" data-erpw-workspace="procurement" data-procurement-console-state="${escapeHtml(payloadState.kind || "unavailable")}">
         <section class="sales-console-card sales-console-section">
           <div class="sales-console-section-head">
             <h2 class="sales-console-section-title">${escapeHtml(payloadState.title || "Procurement Console unavailable")}</h2>
@@ -117,30 +121,39 @@
     const targets = (payload && payload.action_targets) || {};
     const $section = $root.find('[data-section-key="create-actions"]').first();
     const $grid = $section.find('[data-section-grid="create-actions"]').first();
-    $grid.empty();
+    $grid.empty().append(`
+      <div class="sales-console-action-strip primary"></div>
+      <div class="sales-console-action-strip secondary" hidden></div>
+    `);
     if (!actions.length) {
       $section.attr("hidden", "hidden");
       return;
     }
     $section.removeAttr("hidden");
-    actions.forEach((action) => {
-      const $button = $(`
-        <button type="button" class="erpw-child-action secondary erpw-procurement-create-action" data-erpw-procurement-create-action="${escapeHtml(action.key || "")}">
-          <span class="erpw-child-action-accent" aria-hidden="true">+</span>
-          <span class="erpw-child-action-copy">
-            <span class="erpw-child-action-title">${escapeHtml(action.title || action.label || action.key)}</span>
-            ${action.note ? `<span class="erpw-child-action-note">${escapeHtml(action.note)}</span>` : ""}
-          </span>
-        </button>
-      `);
-      $button.on("click", () => executeTarget(targets[action.key]));
-      $grid.append($button);
+    const $primary = $grid.find(".sales-console-action-strip.primary").first();
+    const $secondary = $grid.find(".sales-console-action-strip.secondary").first();
+    actions.forEach((action, index) => {
+      const isPrimary = index < 3;
+      const $button = makeAction({
+        key: action.key || "",
+        title: action.title || action.label || action.key,
+        meta: action.note || "Open the governed ERPNext form.",
+        icon: "square",
+        primary: isPrimary,
+        tier: isPrimary ? "primary" : "secondary",
+        onClick: () => executeTarget(targets[action.key]),
+      });
+      $button.attr("data-erpw-procurement-create-action", action.key || "");
+      (isPrimary ? $primary : $secondary).append($button);
     });
+    if (typeof runtimeMethod("rebalanceActionStrips") === "function") {
+      runtimeMethod("rebalanceActionStrips")($section);
+    }
   }
 
   function renderWorkbench(page) {
     const pageState = { payload: {} };
-    const $root = $('<div class="sales-console-shell" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="loading"></div>');
+    const $root = $('<div class="sales-console-shell" data-erpw-workspace="procurement" data-erpw-console-runtime="ready" data-erpw-console-bootstrap="loading"></div>');
 
     const $header = $(`
       <section class="sales-console-card sales-console-header">
@@ -200,7 +213,10 @@
           <h2 class="sales-console-section-title">Start Buying Work</h2>
           <div class="sales-console-section-note">Only actions available to your role</div>
         </div>
-        <div class="sales-console-queue-grid" data-section-grid="create-actions"></div>
+        <div class="sales-console-action-groups" data-section-grid="create-actions">
+          <div class="sales-console-action-strip primary"></div>
+          <div class="sales-console-action-strip secondary" hidden></div>
+        </div>
       </section>
     `);
 
@@ -433,7 +449,14 @@
     });
   }
 
+  function cleanupRouteShells() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY);
+    }
+  }
+
   function render(wrapper) {
+    cleanupRouteShells();
     const page = makeConsolePage(wrapper);
     if (wrapper) {
       const route = frappe.get_route ? frappe.get_route() : [];

@@ -229,7 +229,14 @@
     });
   }
 
+  function cleanupRouteShells() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY);
+    }
+  }
+
   function render(wrapper) {
+    cleanupRouteShells();
     const page = frappe.ui.make_app_page({
       parent: wrapper,
       title: "Procurement Console Worklist",

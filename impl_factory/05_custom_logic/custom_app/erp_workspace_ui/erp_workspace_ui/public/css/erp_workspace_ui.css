@@ -7060,3 +7060,150 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
     animation: none !important;
   }
 }
+
+
+/* Shared workspace action cards. Mirrors the Sales Console action visual contract for all ERP workspaces. */
+.sales-console-action-groups {
+  display: grid;
+  gap: 10px;
+}
+.sales-console-action-strip {
+  display: grid;
+  gap: 14px;
+}
+.sales-console-action-strip.primary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sales-console-action-strip.secondary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.sales-console-action-strip.secondary[hidden] {
+  display: none;
+}
+.sales-console-action {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+  text-align: left;
+  padding: 18px 20px 17px;
+  border-radius: 16px;
+  border: 1px solid var(--erpw-border-strong, rgba(255, 255, 255, 0.92));
+  background: var(--erpw-surface-elevated, #ffffff);
+  color: inherit;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  min-width: 0;
+  box-shadow: var(--erpw-shadow-card, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 10px 24px rgba(15, 23, 42, 0.04));
+  appearance: none;
+}
+.sales-console-action::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 20px;
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: #d7e0ea;
+}
+.sales-console-action:hover {
+  border-color: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--erpw-shadow-card-hover, 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 30px rgba(15, 23, 42, 0.07));
+}
+.sales-console-action.primary {
+  background: #ffffff;
+}
+.sales-console-action.primary::before {
+  background: linear-gradient(90deg, #0f766e 0%, #2dd4bf 100%);
+}
+.sales-console-action.secondary {
+  padding-top: 15px;
+  background: #ffffff;
+}
+.sales-console-action.secondary::before {
+  width: 40px;
+  background: #8ea4bf;
+}
+.sales-console-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  border: 1px solid var(--erpw-icon-dark-border, #35465f);
+  background: var(--erpw-icon-dark-bg, #2a3850);
+  color: #f8fafc;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 10px 20px rgba(15, 23, 42, 0.16);
+}
+.sales-console-action.primary .sales-console-action-icon,
+.sales-console-action.secondary .sales-console-action-icon {
+  border-color: var(--erpw-icon-dark-border, #314259);
+  background: var(--erpw-icon-dark-bg, #243247);
+  color: #f8fafc;
+}
+.sales-console-action-icon .icon {
+  width: 17px;
+  height: 17px;
+}
+.sales-console-action-icon svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+.sales-console-action-icon .icon use {
+  stroke: currentColor;
+}
+.sales-console-action-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.sales-console-action-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.sales-console-action.primary .sales-console-action-title {
+  font-size: 14.75px;
+}
+.sales-console-action-meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.42;
+  color: #64748b;
+}
+.sales-console-action.is-pending {
+  pointer-events: none;
+  opacity: 0.72;
+}
+.sales-console-action.is-pending .sales-console-action-meta {
+  color: #94a3b8;
+}
+@media (max-width: 960px) {
+  .sales-console-action-strip.primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sales-console-action-strip.primary > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 720px) {
+  .sales-console-action-strip.primary,
+  .sales-console-action-strip.secondary {
+    grid-template-columns: 1fr;
+  }
+  .sales-console-action {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .sales-console-action-icon {
+    width: 36px;
+    height: 36px;
+  }
+}

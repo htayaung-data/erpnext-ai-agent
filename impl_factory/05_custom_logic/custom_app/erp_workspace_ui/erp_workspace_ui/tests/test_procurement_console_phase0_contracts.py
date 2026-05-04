@@ -860,13 +860,53 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn('worklistPayload(page, "purchase_order_directory")', source)
         self.assertIn('process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010"', source)
         self.assertIn("data-erpw-report-link-option", source)
+        self.assertIn("checkProcurementOverviewNavigationLifecycle", source)
+        self.assertIn("assertSingleProcurementShell", source)
+        self.assertIn("old Procurement Overview remains visible", source)
+        self.assertIn("multiple Procurement shells are visible", source)
+        self.assertIn("sales-console-action[data-erpw-procurement-create-action]", source)
+        self.assertIn("still use child-page action styling", source)
+        self.assertIn("checkProcurementBackForwardLifecycle", source)
+        self.assertIn("Create action left Procurement shell visible", source)
+        self.assertIn("new_purchase_request", source)
+        self.assertIn("Repeated navigation", source)
+        self.assertIn("PO Follow-up Detail direct route", source)
+        self.assertIn("Supplier Detail direct route", source)
+        self.assertIn("Buying Item Detail direct route", source)
+        self.assertIn("Pipeline Billing Visibility", source)
         self.assertIn("Detail runtime unavailable", source)
         self.assertIn("Receipt posture", source)
         self.assertIn("Billing posture", source)
 
+    def test_procurement_create_actions_use_shared_action_cards(self):
+        source = (Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js").read_text()
+        css_source = (Path(__file__).resolve().parents[1] / "public" / "css" / "erp_workspace_ui.css").read_text()
+
+        self.assertIn("makeAction({", source)
+        self.assertIn("sales-console-action-strip primary", source)
+        self.assertIn("data-erpw-procurement-create-action", source)
+        self.assertNotIn("erpw-child-action secondary erpw-procurement-create-action", source)
+        self.assertIn("Shared workspace action cards", css_source)
+        self.assertIn(".sales-console-action", css_source)
+        self.assertIn(".sales-console-action-strip.primary", css_source)
+
+    def test_procurement_pages_call_route_cleanup_contract(self):
+        paths = [
+            Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js",
+            Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_worklist" / "procurement_console_worklist.js",
+            Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_report" / "procurement_console_report.js",
+            Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_po_follow_up_page.js",
+            Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_supplier_page.js",
+            Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_item_page.js",
+        ]
+        for path in paths:
+            source = path.read_text()
+            self.assertIn("cleanupProcurementRouteShells", source, str(path))
+
     def test_procurement_overview_uses_dynamic_shared_console_runtime(self):
         source = (Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js").read_text()
 
+        self.assertIn('data-erpw-workspace="procurement"', source)
         self.assertIn("function consoleRuntime()", source)
         self.assertIn("window.erpWorkspaceConsoleRuntime || {}", source)
         self.assertIn("const method = consoleRuntime()[name]", source)
@@ -904,6 +944,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn(".sales-console-card", source)
         self.assertIn(".sales-console-kpi-card", source)
         self.assertIn(".sales-console-queue-grid", source)
+        self.assertIn(".sales-console-action", source)
+        self.assertIn(".sales-console-action-strip", source)
         self.assertIn('data-section-grid="buying-pipeline"', source)
         self.assertIn("counter-reset: erpw-pipeline-step", source)
         self.assertIn("appearance: none", source)

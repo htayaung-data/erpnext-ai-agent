@@ -302,7 +302,14 @@
     });
   }
 
+  function cleanupRouteShells() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY);
+    }
+  }
+
   function render(wrapper) {
+    cleanupRouteShells();
     const page = makeDetailPage(wrapper);
     const hosts = ensureHost(page, wrapper);
     const viewState = {

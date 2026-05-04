@@ -236,6 +236,127 @@ async function checkOverviewStyling(page) {
   return styles;
 }
 
+
+async function visibleElementCount(page, selector) {
+  return page.locator(selector).evaluateAll((nodes) => nodes.filter((node) => {
+    const style = window.getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+  }).length);
+}
+
+async function procurementShellState(page) {
+  const state = {
+    overview: await visibleElementCount(page, ".sales-console-shell[data-erpw-workspace=\"procurement\"]"),
+    worklist: await visibleElementCount(page, ".erpw-list-shell"),
+    report: await visibleElementCount(page, ".erpw-report-shell"),
+    poDetail: await visibleElementCount(page, ".erpw-procurement-po-follow-up-shell"),
+    supplierDetail: await visibleElementCount(page, ".erpw-procurement-supplier-detail-shell"),
+    itemDetail: await visibleElementCount(page, ".erpw-procurement-item-detail-shell"),
+  };
+  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail;
+  state.url = page.url();
+  return state;
+}
+
+async function waitForProcurementShell(page, shellKey) {
+  const selectors = {
+    overview: ".sales-console-shell[data-erpw-workspace=\"procurement\"]",
+    worklist: ".erpw-list-shell",
+    report: ".erpw-report-shell",
+    poDetail: ".erpw-procurement-po-follow-up-shell",
+    supplierDetail: ".erpw-procurement-supplier-detail-shell",
+    itemDetail: ".erpw-procurement-item-detail-shell",
+  };
+  const selector = selectors[shellKey];
+  assert(selector, `Unknown procurement shell key ${shellKey}`);
+  await page.locator(selector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+}
+
+async function assertSingleProcurementShell(page, expectedShell, label) {
+  await waitForProcurementShell(page, expectedShell);
+  const state = await procurementShellState(page);
+  assert(state[expectedShell] === 1, `${label}: expected ${expectedShell} shell to be visible once`, state);
+  assert(state.total === 1, `${label}: multiple Procurement shells are visible`, state);
+  if (expectedShell !== "overview") {
+    assert(state.overview === 0, `${label}: old Procurement Overview remains visible on child route`, state);
+  }
+  return state;
+}
+
+async function clickOverviewTarget(page, target) {
+  await openDeskRoute(page, "/desk/procurement-console");
+  await assertSingleProcurementShell(page, "overview", `${target.label}: before overview card click`);
+  const shellSelector = '.sales-console-shell[data-erpw-workspace="procurement"]';
+  const selector = target.insightKey
+    ? `${shellSelector} [data-insight-key="${target.insightKey}"]`
+    : target.sectionKey
+      ? `${shellSelector} [data-section-key="${target.sectionKey}"] [data-queue-key="${target.queueKey}"]`
+      : `${shellSelector} [data-queue-key="${target.queueKey}"]`;
+  const card = page.locator(selector).first();
+  await card.waitFor({ state: "visible", timeout: TIMEOUT });
+  await card.click();
+  await page.waitForURL((url) => url.pathname === target.expectedPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  return assertSingleProcurementShell(page, target.expectedShell, `${target.label}: after overview card click`);
+}
+
+async function checkProcurementOverviewNavigationLifecycle(page) {
+  const targets = [
+    { label: "Overdue POs", insightKey: "purchase_orders_overdue", expectedPath: "/desk/procurement-console-worklist/purchase-orders-overdue", expectedShell: "worklist" },
+    { label: "Supplier Follow-up", insightKey: "purchase_orders_supplier_follow_up", expectedPath: "/desk/procurement-console-worklist/purchase-orders-supplier-follow-up", expectedShell: "worklist" },
+    { label: "Due Soon", insightKey: "purchase_orders_due_soon", expectedPath: "/desk/procurement-console-worklist/purchase-orders-due-soon", expectedShell: "worklist" },
+    { label: "Requests To Source", sectionKey: "priority-work", queueKey: "requests_to_source", expectedPath: "/desk/procurement-console-worklist/requests-to-source", expectedShell: "worklist" },
+    { label: "Priority Expiring Supplier Quotations", sectionKey: "priority-work", queueKey: "supplier_quotations_expiring", expectedPath: "/desk/procurement-console-worklist/supplier-quotations-expiring", expectedShell: "worklist" },
+    { label: "Pipeline Purchase Request", sectionKey: "buying-pipeline", queueKey: "requests_to_source", expectedPath: "/desk/procurement-console-worklist/requests-to-source", expectedShell: "worklist" },
+    { label: "Pipeline RFQ", sectionKey: "buying-pipeline", queueKey: "rfqs_awaiting_supplier_response", expectedPath: "/desk/procurement-console-worklist/rfqs-awaiting-supplier-response", expectedShell: "worklist" },
+    { label: "Pipeline Supplier Quotation", sectionKey: "buying-pipeline", queueKey: "supplier_quotations_to_compare", expectedPath: "/desk/procurement-console-worklist/supplier-quotations-to-compare", expectedShell: "worklist" },
+    { label: "Pipeline Purchase Order", sectionKey: "buying-pipeline", queueKey: "purchase_order_directory", expectedPath: "/desk/procurement-console-worklist/purchase-order-directory", expectedShell: "worklist" },
+    { label: "Pipeline Receipt Visibility", sectionKey: "buying-pipeline", queueKey: "purchase_orders_partially_received", expectedPath: "/desk/procurement-console-worklist/purchase-orders-partially-received", expectedShell: "worklist" },
+    { label: "Pipeline Billing Visibility", sectionKey: "buying-pipeline", queueKey: "purchase_orders_not_billed_visibility", expectedPath: "/desk/procurement-console-worklist/purchase-orders-not-billed-visibility", expectedShell: "worklist" },
+    { label: "Overdue Purchase Orders", sectionKey: "order-follow-up", queueKey: "purchase_orders_overdue", expectedPath: "/desk/procurement-console-worklist/purchase-orders-overdue", expectedShell: "worklist" },
+    { label: "Purchase Orders Due Soon", sectionKey: "order-follow-up", queueKey: "purchase_orders_due_soon", expectedPath: "/desk/procurement-console-worklist/purchase-orders-due-soon", expectedShell: "worklist" },
+    { label: "Partially Received Purchase Orders", sectionKey: "order-follow-up", queueKey: "purchase_orders_partially_received", expectedPath: "/desk/procurement-console-worklist/purchase-orders-partially-received", expectedShell: "worklist" },
+    { label: "Received Not Fully Billed", sectionKey: "order-follow-up", queueKey: "purchase_orders_not_billed_visibility", expectedPath: "/desk/procurement-console-worklist/purchase-orders-not-billed-visibility", expectedShell: "worklist" },
+    { label: "RFQs Awaiting Supplier Response", sectionKey: "sourcing", queueKey: "rfqs_awaiting_supplier_response", expectedPath: "/desk/procurement-console-worklist/rfqs-awaiting-supplier-response", expectedShell: "worklist" },
+    { label: "Supplier Quotations To Compare", sectionKey: "sourcing", queueKey: "supplier_quotations_to_compare", expectedPath: "/desk/procurement-console-worklist/supplier-quotations-to-compare", expectedShell: "worklist" },
+    { label: "Sourcing Expiring Supplier Quotations", sectionKey: "sourcing", queueKey: "supplier_quotations_expiring", expectedPath: "/desk/procurement-console-worklist/supplier-quotations-expiring", expectedShell: "worklist" },
+    { label: "Quote Comparison", sectionKey: "sourcing", queueKey: "supplier_quotation_comparison", expectedPath: "/desk/procurement-console-report/supplier-quotation-comparison", expectedShell: "report" },
+    { label: "Suppliers", sectionKey: "directories", queueKey: "supplier_directory", expectedPath: "/desk/procurement-console-worklist/supplier-directory", expectedShell: "worklist" },
+    { label: "Purchase Requests", sectionKey: "directories", queueKey: "purchase_request_directory", expectedPath: "/desk/procurement-console-worklist/purchase-request-directory", expectedShell: "worklist" },
+    { label: "Purchase Orders", sectionKey: "directories", queueKey: "purchase_order_directory", expectedPath: "/desk/procurement-console-worklist/purchase-order-directory", expectedShell: "worklist" },
+    { label: "RFQs", sectionKey: "directories", queueKey: "rfq_directory", expectedPath: "/desk/procurement-console-worklist/rfq-directory", expectedShell: "worklist" },
+    { label: "Supplier Quotations", sectionKey: "directories", queueKey: "supplier_quotation_directory", expectedPath: "/desk/procurement-console-worklist/supplier-quotation-directory", expectedShell: "worklist" },
+    { label: "Buying Items", sectionKey: "directories", queueKey: "buying_item_directory", expectedPath: "/desk/procurement-console-worklist/buying-item-directory", expectedShell: "worklist" },
+  ];
+  const results = [];
+  for (const target of targets) {
+    results.push(await clickOverviewTarget(page, target));
+  }
+  return results;
+}
+
+
+async function checkProcurementBackForwardLifecycle(page) {
+  await openDeskRoute(page, "/desk/procurement-console");
+  await assertSingleProcurementShell(page, "overview", "Back/forward: overview start");
+  await clickOverviewTarget(page, { label: "Back/forward Purchase Orders", sectionKey: "directories", queueKey: "purchase_order_directory", expectedPath: "/desk/procurement-console-worklist/purchase-order-directory", expectedShell: "worklist" });
+  await openDeskRoute(page, "/desk/procurement-console");
+  await assertSingleProcurementShell(page, "overview", "Back/forward: overview middle");
+  await clickOverviewTarget(page, { label: "Back/forward Quote Comparison", sectionKey: "sourcing", queueKey: "supplier_quotation_comparison", expectedPath: "/desk/procurement-console-report/supplier-quotation-comparison", expectedShell: "report" });
+  await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await page.waitForURL((url) => url.pathname === "/desk/procurement-console", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "overview", "Back/forward: after browser back");
+  await page.goForward({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report/supplier-quotation-comparison", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Back/forward: after browser forward");
+  for (let index = 0; index < 5; index += 1) {
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", `Repeated navigation ${index + 1}: overview`);
+    await clickOverviewTarget(page, { label: `Repeated navigation ${index + 1} Suppliers`, sectionKey: "directories", queueKey: "supplier_directory", expectedPath: "/desk/procurement-console-worklist/supplier-directory", expectedShell: "worklist" });
+  }
+  return { ok: true };
+}
+
 async function checkProcurementSidebar(page) {
   await openDeskRoute(page, "/desk/procurement-console");
   const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Quote Comparison"];
@@ -261,6 +382,7 @@ async function checkProcurementSidebar(page) {
     await link.click();
     await page.waitForURL((url) => url.pathname === check.expectedPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     assert(!/\/desk\/sales-console-worklist\//.test(new URL(page.url()).pathname), `${check.label}: routed to Sales Console worklist`, { url: page.url() });
+    await assertSingleProcurementShell(page, "worklist", `${check.label}: after sidebar click`);
     clickedRoutes.push(page.url());
   }
 
@@ -268,6 +390,7 @@ async function checkProcurementSidebar(page) {
   await quoteLink.waitFor({ state: "visible", timeout: TIMEOUT });
   await quoteLink.click();
   await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report/supplier-quotation-comparison", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Quote Comparison: after sidebar click");
   clickedRoutes.push(page.url());
 
   return { labels, clickedRoutes };
@@ -430,6 +553,7 @@ async function checkQuoteComparisonFromSidebar(page) {
   await quoteLink.click();
   await page.waitForURL(/\/desk\/procurement-console-report\/supplier-quotation-comparison(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   await page.locator(".erpw-report-shell, .erpw-report-results, .erpw-report-summary").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Quote Comparison direct route");
   return page.url();
 }
 
@@ -439,6 +563,7 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
     : "/desk/procurement-console-po-follow-up";
   await openDeskRoute(page, route);
   await page.locator(".erpw-procurement-po-follow-up-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "poDetail", "PO Follow-up Detail direct route");
   const text = normalizeText(await page.locator(".erpw-procurement-po-follow-up-shell").first().innerText({ timeout: TIMEOUT }));
   assert(!/Detail runtime unavailable/i.test(text), "Detail page fell back to missing runtime state", { text, route });
   assert(/Purchase Order|follow-up|required|Item lines|unavailable/i.test(text), "Detail page did not render expected read-only shell", { text });
@@ -471,6 +596,7 @@ async function checkSupplierDetail(page, user) {
 
   await openDeskRoute(page, `/desk/procurement-console-supplier/${encodeURIComponent(supplierName)}`);
   await page.locator(".erpw-procurement-supplier-detail-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "supplierDetail", "Supplier Detail direct route");
   const text = normalizeText(await page.locator(".erpw-procurement-supplier-detail-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Supplier buying profile|Supplier Detail/i.test(text), "Supplier Detail shell did not render supplier summary", { text });
   assert(/Open or overdue purchase orders/i.test(text), "Supplier Detail did not render PO posture", { text });
@@ -507,6 +633,7 @@ async function checkItemDetail(page, user) {
 
   await openDeskRoute(page, `/desk/procurement-console-item/${encodeURIComponent(itemCode)}`);
   await page.locator(".erpw-procurement-item-detail-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "itemDetail", "Buying Item Detail direct route");
   const text = normalizeText(await page.locator(".erpw-procurement-item-detail-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Buying item profile|Buying Item Detail/i.test(text), "Item Detail shell did not render item summary", { text });
   assert(/Approved suppliers|Supplier price review/i.test(text), "Item Detail did not render supplier or price context", { text });
@@ -547,7 +674,25 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   const labels = await page.locator("[data-erpw-procurement-create-action]").evaluateAll((nodes) =>
     nodes.map((node) => (node.textContent || "").replace(/\s+/g, " ").trim())
   );
-  return { keys, labels };
+  const actionCardCount = await visibleElementCount(page, ".sales-console-action[data-erpw-procurement-create-action]");
+  const childActionCount = await visibleElementCount(page, ".erpw-child-action[data-erpw-procurement-create-action]");
+  assert(actionCardCount === keys.length, "Procurement create actions do not use shared Sales Console action cards", { keys, actionCardCount, childActionCount });
+  assert(childActionCount === 0, "Procurement create actions still use child-page action styling", { childActionCount });
+  let createRoute = null;
+  if (keys.includes("new_purchase_request")) {
+    await page.locator('[data-erpw-procurement-create-action="new_purchase_request"]').first().click();
+    await page.waitForFunction(() => {
+      const route = window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [];
+      const routeText = Array.isArray(route) ? route.join("|") : String(route || "");
+      return /Material Request|material-request/i.test(routeText) || /material-request/i.test(window.location.pathname || "");
+    }, null, { timeout: TIMEOUT });
+    createRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    const nativeState = await procurementShellState(page);
+    assert(nativeState.total === 0, "Create action left Procurement shell visible on native form route", nativeState);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After create action return to Procurement Overview");
+  }
+  return { keys, labels, createRoute };
 }
 
 async function runUser(browser, user) {
@@ -558,12 +703,15 @@ async function runUser(browser, user) {
   });
   const page = await context.newPage();
   const pageErrors = [];
+  page.on("dialog", (dialog) => dialog.accept().catch(() => {}));
   page.on("pageerror", (error) => pageErrors.push(error.message));
   const report = { user: user.key };
   try {
     await login(page, user);
     report.defaultLandingUrl = await checkDefaultLanding(page, user);
     report.overviewStyles = await checkOverviewStyling(page);
+    report.overviewNavigationLifecycle = await checkProcurementOverviewNavigationLifecycle(page);
+    report.backForwardLifecycle = await checkProcurementBackForwardLifecycle(page);
     report.sidebarLabels = await checkProcurementSidebar(page);
     await openDeskRoute(page, "/desk/procurement-console");
     const bootstrap = await callMethod(page, "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap");

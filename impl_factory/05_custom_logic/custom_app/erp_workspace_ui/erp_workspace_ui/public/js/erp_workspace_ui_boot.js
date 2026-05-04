@@ -1861,7 +1861,32 @@
     "procurement-console-supplier": "__erpwProcurementSupplierDetail",
     "procurement-console-item": "__erpwProcurementItemDetail",
   };
+  const PROCUREMENT_ROUTE_SHELLS = {
+    "procurement-console": ['.sales-console-shell[data-erpw-workspace="procurement"]'],
+    "procurement-console-worklist": [".erpw-procurement-console-worklist-page"],
+    "procurement-console-report": [".erpw-procurement-console-report-page"],
+    "procurement-console-po-follow-up": [".erpw-procurement-po-follow-up-page"],
+    "procurement-console-supplier": [".erpw-procurement-supplier-detail-page"],
+    "procurement-console-item": [".erpw-procurement-item-detail-page"],
+  };
   const procurementDirectPageLoads = Object.create(null);
+
+  function isProcurementConsoleRoute(pageKey) {
+    return Object.prototype.hasOwnProperty.call(PROCUREMENT_ROUTE_SHELLS, pageKey || "");
+  }
+
+  function cleanupProcurementRouteShells(activePageKey) {
+    if (!document || !document.querySelectorAll) return;
+    const hasActiveProcurementRoute = isProcurementConsoleRoute(activePageKey);
+    Object.keys(PROCUREMENT_ROUTE_SHELLS).forEach((pageKey) => {
+      if (hasActiveProcurementRoute && pageKey === activePageKey) return;
+      PROCUREMENT_ROUTE_SHELLS[pageKey].forEach((selector) => {
+        document.querySelectorAll(selector).forEach((node) => {
+          if (node && node.parentNode) node.parentNode.removeChild(node);
+        });
+      });
+    });
+  }
 
   function currentRouteParts() {
     if (window.frappe && typeof frappe.get_route === "function") {
@@ -1893,10 +1918,13 @@
   }
 
   function renderProcurementDirectPage(pageKey) {
+    const route = currentRouteParts();
+    if (String(route[0] || "") !== pageKey) return false;
+    cleanupProcurementRouteShells(pageKey);
     const pageDef = window.frappe && frappe.pages ? frappe.pages[pageKey] : null;
     const wrapper = procurementDirectPageWrapper(pageKey, pageDef);
     if (!pageDef || !wrapper) return false;
-    const routeSignature = currentRouteParts().join("|");
+    const routeSignature = route.join("|");
     const stateKey = PROCUREMENT_DIRECT_PAGE_STATE_KEYS[pageKey] || "";
     const existing = stateKey ? wrapper[stateKey] : null;
     if (existing && existing.routeSignature === routeSignature) {
@@ -1936,12 +1964,14 @@
     if (!window.frappe || !frappe.pages) return false;
     const route = currentRouteParts();
     const pageKey = String(route[0] || "");
+    cleanupProcurementRouteShells(pageKey);
     const asset = PROCUREMENT_DIRECT_PAGE_ASSETS[pageKey];
     if (!asset) return false;
     if (renderProcurementDirectPage(pageKey)) return true;
     if (procurementDirectPageLoads[pageKey]) return true;
     procurementDirectPageLoads[pageKey] = true;
     loadProcurementDirectPageAsset(pageKey, asset, () => {
+      if (String(currentRouteParts()[0] || "") !== pageKey) return;
       renderProcurementDirectPage(pageKey);
     });
     return true;
@@ -2009,6 +2039,7 @@
     runActiveChildPageBootstrap,
     ensureActiveChildPageBootstrap,
     scheduleActiveChildPageBootstrap,
+    cleanupProcurementRouteShells,
     primeManagedDraftLookups,
     setSalesOrderPrep() {
       // First-paint prep takeover has been intentionally disabled.
