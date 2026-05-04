@@ -458,7 +458,7 @@
 
     const $primary = $root.find(".sales-console-action-strip.primary");
     const $secondary = $root.find(".sales-console-action-strip.secondary");
-    $actions.detach();
+    $(elements).detach();
     $primary.empty();
     $secondary.empty();
 
@@ -499,6 +499,7 @@
       }
     });
 
+    $actions.detach();
     $primary.empty();
     $secondary.empty();
 

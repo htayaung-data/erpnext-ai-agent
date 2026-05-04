@@ -721,10 +721,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
     def test_shared_action_rebalance_preserves_click_handlers(self):
         runtime_path = Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "console" / "workspace_console_runtime.js"
         source = runtime_path.read_text()
-        detach_index = source.index("$actions.detach();")
-        empty_index = source.index("$primary.empty();", detach_index)
+        rebalance_index = source.index("function rebalanceActionStrips")
+        detach_index = source.index("$actions.detach();", rebalance_index)
+        empty_index = source.index("$primary.empty();", rebalance_index)
 
         self.assertLess(detach_index, empty_index)
+        self.assertIn("$(elements).detach();", source)
         self.assertIn('if (typeof config.onClick === "function") config.onClick(event);', source)
 
     def test_purchase_roles_receive_procurement_home_without_sales_default_app(self):
