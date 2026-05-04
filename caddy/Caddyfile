@@ -42,6 +42,7 @@ meet.erpbosai.com {
     }
     reverse_proxy @socketio websocket:9000 {
         header_up Host {host}
+        header_up Origin https://{host}
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Port 443
         header_up X-Frappe-Site-Name erpai_prj1
