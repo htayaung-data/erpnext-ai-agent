@@ -6,11 +6,15 @@ from . import common
 
 
 SUPPLIER_FIELDS = ["name", "supplier_name", "supplier_group", "disabled", "modified"]
+SUPPLIER_DETAIL_ROUTE = "procurement-console-supplier"
 
 
 def supplier_filters(filters: dict[str, str] | None = None) -> list[list[object]]:
 	applied = filters or {}
 	conditions: list[list[object]] = []
+	supplier = cstr(applied.get("supplier")).strip()
+	if supplier:
+		conditions.append(["Supplier", "name", "=", supplier])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
 		conditions.append(["Supplier", "supplier_name", "like", f"%{keyword}%"])
@@ -92,12 +96,13 @@ def _supplier_payload(
 		"page": {"title": "Suppliers", "key": "supplier_directory"},
 		"summary": {
 			"title": "Suppliers",
-			"subtitle": "Supplier directory for buying coordination. Records open in ERPNext according to user permissions.",
+			"subtitle": "Supplier directory for buying coordination. Records open in a read-only Procurement view.",
 			"chips": [{"label": "Supplier visibility"}],
 		},
 		"controls": {
 			"fields": [
-				{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Supplier name"},
+				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
+				{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Supplier name contains"},
 				{"key": "supplier_group", "label": "Supplier Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", "")},
 				{
 					"key": "disabled",
@@ -112,7 +117,7 @@ def _supplier_payload(
 				},
 			],
 			"actions": common.standard_actions(),
-			"scopeChips": ["Supplier read access", "No create or edit action"],
+			"scopeChips": ["Supplier read access", "Read-only supplier detail"],
 		},
 		"metrics": [common.metric("Visible suppliers", total, "Current filtered supplier records.")],
 		"results": {
@@ -128,5 +133,5 @@ def _supplier_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.action_targets_for_rows("Supplier", rows),
+		"action_targets": common.page_action_targets_for_rows(SUPPLIER_DETAIL_ROUTE, rows),
 	}

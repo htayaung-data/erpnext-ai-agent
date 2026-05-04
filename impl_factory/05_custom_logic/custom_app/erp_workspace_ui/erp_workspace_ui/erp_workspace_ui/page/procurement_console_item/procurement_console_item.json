@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-item",
+  "page_name": "procurement-console-item",
+  "title": "Buying Item Detail",
+  "icon": "octicon octicon-package",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

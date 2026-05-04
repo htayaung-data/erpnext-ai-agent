@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-supplier",
+  "page_name": "procurement-console-supplier",
+  "title": "Supplier Detail",
+  "icon": "octicon octicon-organization",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

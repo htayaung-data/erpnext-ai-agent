@@ -68,6 +68,8 @@
       worklist: "procurement-console-worklist",
       report: "procurement-console-report",
       poFollowUp: "procurement-console-po-follow-up",
+      supplierDetail: "procurement-console-supplier",
+      itemDetail: "procurement-console-item",
     },
     methods: {
       bootstrap: "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
@@ -76,13 +78,15 @@
       worklistContext: "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
       reportContext: "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
       poFollowUpDetailContext: "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
+      supplierDetailContext: "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context",
+      itemDetailContext: "erp_workspace_ui.procurement_console.items.get_item_detail_context",
     },
     managedDoctypes: {
       Supplier: "supplier_directory",
       "Supplier Group": "supplier_directory",
-      Item: "supplier_price_review",
-      "Item Price": "supplier_price_review",
-      "Item Supplier": "supplier_price_review",
+      Item: "buying_item_directory",
+      "Item Price": "buying_item_directory",
+      "Item Supplier": "buying_item_directory",
       "Material Request": "purchase_request_directory",
       "Request for Quotation": "rfq_directory",
       "Supplier Quotation": "supplier_quotation_directory",
@@ -92,6 +96,7 @@
     },
     directoryQueuesByDoctype: {
       Supplier: "supplier_directory",
+      Item: "buying_item_directory",
       "Material Request": "purchase_request_directory",
       "Request for Quotation": "rfq_directory",
       "Supplier Quotation": "supplier_quotation_directory",
@@ -114,6 +119,7 @@
       { key: "purchase_order_directory", label: "Purchase Orders", icon: "order", target: { kind: "worklist", queue_key: "purchase_order_directory" } },
       { key: "rfq_directory", label: "RFQs", icon: "quotation", target: { kind: "worklist", queue_key: "rfq_directory" } },
       { key: "supplier_quotation_directory", label: "Supplier Quotations", icon: "quotation", target: { kind: "worklist", queue_key: "supplier_quotation_directory" } },
+      { key: "buying_item_directory", label: "Buying Items", icon: "item", target: { kind: "worklist", queue_key: "buying_item_directory" } },
       { key: "supplier_quotation_comparison", label: "Quote Comparison", icon: "report", target: { kind: "report_page", report_key: "supplier_quotation_comparison" } },
     ],
   };
@@ -149,7 +155,7 @@
     for (let index = 0; index < workspaces.length; index += 1) {
       const workspace = workspaces[index];
       const routes = workspace.routes || {};
-      if ([routes.launcher, routes.home, routes.worklist, routes.report, routes.poFollowUp].includes(normalized)) {
+      if ([routes.launcher, routes.home, routes.worklist, routes.report, routes.poFollowUp, routes.supplierDetail, routes.itemDetail].includes(normalized)) {
         return clone(workspace);
       }
     }

@@ -48,6 +48,9 @@ PO_ITEM_FIELDS = [
 def purchase_order_follow_up_filters(filters: dict[str, str] | None = None, queue: str = "supplier_follow_up") -> list[list[object]]:
 	applied = filters or {}
 	conditions: list[list[object]] = []
+	purchase_order = cstr(applied.get("purchase_order")).strip()
+	if purchase_order:
+		conditions.append(["Purchase Order", "name", "=", purchase_order])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
 		conditions.append(["Purchase Order", "name", "like", f"%{keyword}%"])
@@ -398,9 +401,9 @@ def _sort_key(item: dict[str, object], queue: str) -> tuple[object, ...]:
 
 def _control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
-		{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID"},
+		{"key": "purchase_order", "label": "Purchase Order", "type": "link", "linkDoctype": "Purchase Order", "value": filters.get("purchase_order", "")},
+		{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID contains"},
 		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
-		{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 		{
 			"key": "status",
 			"label": "Status",

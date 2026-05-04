@@ -184,7 +184,6 @@ def _comparison_controls(filters: dict[str, object]) -> dict[str, object]:
 			{"label": "Source", "value": "ERPNext native report"},
 		],
 		"fields": [
-			{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company"), "row": 1},
 			{"key": "from_date", "label": "From", "type": "date", "value": filters.get("from_date"), "row": 1},
 			{"key": "to_date", "label": "To", "type": "date", "value": filters.get("to_date"), "row": 1},
 			{

@@ -70,6 +70,8 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"worklist": "procurement-console-worklist",
 		"report": "procurement-console-report",
 		"po_follow_up": "procurement-console-po-follow-up",
+		"supplier_detail": "procurement-console-supplier",
+		"item_detail": "procurement-console-item",
 	},
 	"methods": {
 		"bootstrap": "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
@@ -78,13 +80,15 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"worklist_context": "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
 		"report_context": "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context",
 		"po_follow_up_detail_context": "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
+		"supplier_detail_context": "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context",
+		"item_detail_context": "erp_workspace_ui.procurement_console.items.get_item_detail_context",
 	},
 	"managed_doctypes": {
 		"Supplier": "supplier_directory",
 		"Supplier Group": "supplier_directory",
-		"Item": "supplier_price_review",
-		"Item Price": "supplier_price_review",
-		"Item Supplier": "supplier_price_review",
+		"Item": "buying_item_directory",
+		"Item Price": "buying_item_directory",
+		"Item Supplier": "buying_item_directory",
 		"Material Request": "purchase_request_directory",
 		"Request for Quotation": "rfq_directory",
 		"Supplier Quotation": "supplier_quotation_directory",
@@ -94,6 +98,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 	},
 	"directory_queues_by_doctype": {
 		"Supplier": "supplier_directory",
+		"Item": "buying_item_directory",
 		"Material Request": "purchase_request_directory",
 		"Request for Quotation": "rfq_directory",
 		"Supplier Quotation": "supplier_quotation_directory",
@@ -145,6 +150,12 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 			"label": "Supplier Quotations",
 			"icon": "quotation",
 			"target": {"kind": "worklist", "queue_key": "supplier_quotation_directory"},
+		},
+		{
+			"key": "buying_item_directory",
+			"label": "Buying Items",
+			"icon": "item",
+			"target": {"kind": "worklist", "queue_key": "buying_item_directory"},
 		},
 		{
 			"key": "supplier_quotation_comparison",
@@ -248,7 +259,15 @@ def get_workspace_by_route(route_key: str) -> dict[str, Any] | None:
 
 	for workspace in _ACTIVE_WORKSPACES.values():
 		routes = workspace.get("routes") or {}
-		if normalized in {routes.get("launcher"), routes.get("home"), routes.get("worklist"), routes.get("report"), routes.get("po_follow_up")}:
+		if normalized in {
+			routes.get("launcher"),
+			routes.get("home"),
+			routes.get("worklist"),
+			routes.get("report"),
+			routes.get("po_follow_up"),
+			routes.get("supplier_detail"),
+			routes.get("item_detail"),
+		}:
 			return deepcopy(workspace)
 	return None
 

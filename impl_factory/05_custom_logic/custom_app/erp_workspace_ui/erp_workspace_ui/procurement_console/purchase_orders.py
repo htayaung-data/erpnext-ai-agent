@@ -29,6 +29,9 @@ PENDING_PURCHASE_APPROVAL_STATE = "Pending Purchase Approval"
 def purchase_order_filters(filters: dict[str, str] | None = None, queue: str = "directory") -> list[list[object]]:
 	applied = filters or {}
 	conditions: list[list[object]] = []
+	purchase_order = cstr(applied.get("purchase_order")).strip()
+	if purchase_order:
+		conditions.append(["Purchase Order", "name", "=", purchase_order])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
 		conditions.append(["Purchase Order", "name", "like", f"%{keyword}%"])
@@ -206,9 +209,9 @@ def _purchase_order_payload(
 		},
 		"controls": {
 			"fields": [
-				{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID"},
+				{"key": "purchase_order", "label": "Purchase Order", "type": "link", "linkDoctype": "Purchase Order", "value": filters.get("purchase_order", "")},
+				{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID contains"},
 				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
-				{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 				{
 					"key": "status",
 					"label": "Status",

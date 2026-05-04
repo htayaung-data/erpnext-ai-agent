@@ -45,6 +45,9 @@ def quote_status_available() -> bool:
 def rfq_filters(filters: dict[str, str] | None = None, queue: str = "directory") -> list[list[object]]:
 	applied = filters or {}
 	conditions: list[list[object]] = []
+	request_for_quotation = cstr(applied.get("request_for_quotation")).strip()
+	if request_for_quotation:
+		conditions.append(["Request for Quotation", "name", "=", request_for_quotation])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
 		conditions.append(["Request for Quotation", "name", "like", f"%{keyword}%"])
@@ -68,6 +71,9 @@ def rfq_filters(filters: dict[str, str] | None = None, queue: str = "directory")
 def supplier_quotation_filters(filters: dict[str, str] | None = None, queue: str = "directory") -> list[list[object]]:
 	applied = filters or {}
 	conditions: list[list[object]] = []
+	supplier_quotation = cstr(applied.get("supplier_quotation")).strip()
+	if supplier_quotation:
+		conditions.append(["Supplier Quotation", "name", "=", supplier_quotation])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
 		conditions.append(["Supplier Quotation", "name", "like", f"%{keyword}%"])
@@ -459,8 +465,8 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 
 def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
-		{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "RFQ ID"},
-		{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
+		{"key": "request_for_quotation", "label": "RFQ", "type": "link", "linkDoctype": "Request for Quotation", "value": filters.get("request_for_quotation", "")},
+		{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "RFQ ID contains"},
 		{
 			"key": "status",
 			"label": "Status",
@@ -480,9 +486,9 @@ def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 
 def _supplier_quotation_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
-		{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Quotation ID"},
+		{"key": "supplier_quotation", "label": "Supplier Quotation", "type": "link", "linkDoctype": "Supplier Quotation", "value": filters.get("supplier_quotation", "")},
+		{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Quotation ID contains"},
 		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
-		{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
 		{
 			"key": "status",
 			"label": "Status",

@@ -8,7 +8,31 @@ Source repo: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design`
 
 Custom app: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_factory/05_custom_logic/custom_app/erp_workspace_ui`
 
-Status: design plan only. Do not implement until owner approval.
+Status: implementation plan with accepted Phase 0-3 build decisions. Later phases still require owner approval.
+
+## 0. Current Phase 3 Completion Decisions
+
+Updated: 2026-05-04
+
+The current Procurement Console is a buyer workbench, not a raw DocType launcher. It now includes demand, sourcing, ordering follow-up, supplier context, and item/catalog visibility while keeping Warehouse and Finance execution outside Procurement.
+
+Current accepted surfaces:
+
+- Procurement Overview with buyer priority signals, buying pipeline, sourcing desk, order follow-up, directories, and governed create actions.
+- Supplier Directory and productized read-only Supplier Detail.
+- Purchase Request and Purchase Order worklists.
+- RFQ and Supplier Quotation worklists.
+- Governed read-only Supplier Quotation Comparison.
+- Productized read-only Purchase Order Follow-up Detail.
+- Buying Items directory and productized read-only Buying Item Detail with supplier, price, quotation, and order context.
+
+Current explicit deferrals:
+
+- Do not add a separate Reports catalog page until at least three or four procurement reports are useful and implemented. Quote Comparison remains the only active Procurement report surface for now.
+- Do not add Procurement Query, Inquiry, or AI summary yet. That feature is deferred until supplier, item, RFQ, quotation, and purchase order details are stable enough to summarize reliably.
+- Do not expose Purchase Receipt, Purchase Invoice, payment, approval, submit, cancel, close, Item Price update, default supplier, or supplier acknowledgment mutation actions from Procurement.
+- Do not implement custom create overlays yet. Governed create actions open ERPNext native new-document forms and rely on native permission and workflow behavior.
+- Do not make Procurement responsible for warehouse stock operations, receipt execution, invoice settlement, payment, or accounting.
 
 ## 1. Planning Context
 

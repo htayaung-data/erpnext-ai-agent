@@ -1847,6 +1847,112 @@
     sidebarPatched = true;
   }
 
+
+
+  const PROCUREMENT_DIRECT_PAGE_ASSETS = {
+    "procurement-console": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js?v=procurement-overview-v1",
+    "procurement-console-po-follow-up": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_po_follow_up_page.js?v=procurement-po-follow-up-v1",
+    "procurement-console-supplier": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_supplier_page.js?v=procurement-supplier-detail-v1",
+    "procurement-console-item": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_item_page.js?v=procurement-item-detail-v1",
+  };
+  const PROCUREMENT_DIRECT_PAGE_STATE_KEYS = {
+    "procurement-console": "__erpwProcurementConsole",
+    "procurement-console-po-follow-up": "__erpwProcurementPoFollowUp",
+    "procurement-console-supplier": "__erpwProcurementSupplierDetail",
+    "procurement-console-item": "__erpwProcurementItemDetail",
+  };
+  const procurementDirectPageLoads = Object.create(null);
+
+  function currentRouteParts() {
+    if (window.frappe && typeof frappe.get_route === "function") {
+      const route = frappe.get_route();
+      if (Array.isArray(route) && route.length) return route;
+    }
+    const path = String(window.location && window.location.pathname || "").replace(/^\/+/, "");
+    const parts = path.split("/").filter(Boolean);
+    const routeParts = parts[0] === "desk" || parts[0] === "app" ? parts.slice(1) : parts;
+    return routeParts.map((part) => {
+      try {
+        return decodeURIComponent(part || "");
+      } catch (error) {
+        return part || "";
+      }
+    });
+  }
+
+  function procurementDirectPageWrapper(pageKey, pageDef) {
+    if (pageDef && (pageDef.page_name === pageKey || pageDef.jquery || pageDef[0] || pageDef.nodeType)) {
+      return pageDef;
+    }
+    const deskBody = document.getElementById("body");
+    if (deskBody) return deskBody;
+    if (!window.frappe || !frappe.container) return null;
+    const page = frappe.container.page || null;
+    if (page && page.wrapper) return page.wrapper;
+    return page;
+  }
+
+  function renderProcurementDirectPage(pageKey) {
+    const pageDef = window.frappe && frappe.pages ? frappe.pages[pageKey] : null;
+    const wrapper = procurementDirectPageWrapper(pageKey, pageDef);
+    if (!pageDef || !wrapper) return false;
+    const routeSignature = currentRouteParts().join("|");
+    const stateKey = PROCUREMENT_DIRECT_PAGE_STATE_KEYS[pageKey] || "";
+    const existing = stateKey ? wrapper[stateKey] : null;
+    if (existing && existing.routeSignature === routeSignature) {
+      return true;
+    }
+    if (typeof pageDef.on_page_show === "function") {
+      pageDef.on_page_show(wrapper);
+      return true;
+    }
+    if (typeof pageDef.on_page_load === "function") {
+      pageDef.on_page_load(wrapper);
+      return true;
+    }
+    return false;
+  }
+
+  function loadProcurementDirectPageAsset(pageKey, asset, callback) {
+    const scriptId = `erpw-direct-page-${pageKey}`;
+    const existing = document.getElementById(scriptId);
+    if (existing) {
+      existing.addEventListener("load", callback, { once: true });
+      setTimeout(callback, 160);
+      return;
+    }
+    const script = document.createElement("script");
+    script.id = scriptId;
+    script.src = asset;
+    script.async = true;
+    script.onload = callback;
+    script.onerror = () => {
+      procurementDirectPageLoads[pageKey] = false;
+    };
+    document.head.appendChild(script);
+  }
+
+  function ensureProcurementDirectPage() {
+    if (!window.frappe || !frappe.pages) return false;
+    const route = currentRouteParts();
+    const pageKey = String(route[0] || "");
+    const asset = PROCUREMENT_DIRECT_PAGE_ASSETS[pageKey];
+    if (!asset) return false;
+    if (renderProcurementDirectPage(pageKey)) return true;
+    if (procurementDirectPageLoads[pageKey]) return true;
+    procurementDirectPageLoads[pageKey] = true;
+    loadProcurementDirectPageAsset(pageKey, asset, () => {
+      renderProcurementDirectPage(pageKey);
+    });
+    return true;
+  }
+
+  function scheduleProcurementDirectPage() {
+    ensureProcurementDirectPage();
+    setTimeout(ensureProcurementDirectPage, 80);
+    setTimeout(ensureProcurementDirectPage, 220);
+  }
+
   window.erpWorkspaceUiBoot = Object.assign(window.erpWorkspaceUiBoot || {}, {
     registerChildPageBootstrap(doctype, bootstrap) {
       if (!doctype || typeof bootstrap !== "function") return;
@@ -1863,10 +1969,12 @@
     },
   });
 
+  scheduleProcurementDirectPage();
   patchFooter();
   patchSidebar();
   patchNativeDraftLinkLookup();
   bindRouteChrome();
+  scheduleProcurementDirectPage();
   ensureChildGridActionLabels();
   bindDraftLookupSurface();
   setTimeout(patchFooter, 0);
@@ -1880,9 +1988,18 @@
   setTimeout(patchNativeDraftLinkLookup, 320);
   setTimeout(bindRouteChrome, 80);
   setTimeout(bindRouteChrome, 220);
+  setTimeout(scheduleProcurementDirectPage, 80);
+  setTimeout(scheduleProcurementDirectPage, 260);
+  setTimeout(scheduleProcurementDirectPage, 700);
+  setTimeout(scheduleProcurementDirectPage, 1400);
+  setTimeout(scheduleProcurementDirectPage, 2600);
   setTimeout(ensureChildGridActionLabels, 0);
   setTimeout(ensureChildGridActionLabels, 140);
   setTimeout(ensureChildGridActionLabels, 360);
+  if (window.frappe && frappe.router && typeof frappe.router.on === "function" && !frappe.router.erpwProcurementDirectPageRouteBound) {
+    frappe.router.on("change", scheduleProcurementDirectPage);
+    frappe.router.erpwProcurementDirectPageRouteBound = true;
+  }
   setTimeout(scheduleDraftLookupPositioning, 0);
   setTimeout(scheduleDraftLookupPositioning, 180);
 })();

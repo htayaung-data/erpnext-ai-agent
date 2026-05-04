@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import frappe
 
-from . import common, purchase_order_follow_up, purchase_orders, requests, service, sourcing, suppliers
+from . import common, items, purchase_order_follow_up, purchase_orders, requests, service, sourcing, suppliers
 
 
 def _normalize_queue_key(queue_key: str | None) -> str:
@@ -52,6 +52,7 @@ def get_procurement_console_worklist_context(
 def _queue_registry():
 	return {
 		"supplier_directory": suppliers.build_supplier_directory,
+		"buying_item_directory": items.build_buying_item_directory,
 		"purchase_request_directory": requests.build_purchase_request_directory,
 		"requests_to_source": requests.build_requests_to_source,
 		"purchase_order_directory": purchase_orders.build_purchase_order_directory,

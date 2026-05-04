@@ -38,6 +38,20 @@ def can_read(doctype: str) -> bool:
 		return False
 
 
+def can_write(doctype: str) -> bool:
+	try:
+		return bool(frappe.has_permission(doctype, ptype="write"))
+	except Exception:
+		return False
+
+
+def can_create(doctype: str) -> bool:
+	try:
+		return bool(frappe.has_permission(doctype, ptype="create"))
+	except Exception:
+		return False
+
+
 def count(doctype: str, filters: list | dict | None = None) -> int:
 	try:
 		return int(frappe.db.count(doctype, filters=filters or {}))

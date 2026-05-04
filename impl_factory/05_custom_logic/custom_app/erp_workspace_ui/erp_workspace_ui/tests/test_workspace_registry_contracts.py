@@ -62,6 +62,8 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "worklist": "procurement-console-worklist",
                 "report": "procurement-console-report",
                 "po_follow_up": "procurement-console-po-follow-up",
+                "supplier_detail": "procurement-console-supplier",
+                "item_detail": "procurement-console-item",
             },
         )
         self.assertEqual(
@@ -79,6 +81,14 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["po_follow_up_detail_context"],
             "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["supplier_detail_context"],
+            "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["item_detail_context"],
+            "erp_workspace_ui.procurement_console.items.get_item_detail_context",
         )
         self.assertEqual(
             workspace["fallback_items"],
@@ -120,6 +130,12 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "target": {"kind": "worklist", "queue_key": "supplier_quotation_directory"},
                 },
                 {
+                    "key": "buying_item_directory",
+                    "label": "Buying Items",
+                    "icon": "item",
+                    "target": {"kind": "worklist", "queue_key": "buying_item_directory"},
+                },
+                {
                     "key": "supplier_quotation_comparison",
                     "label": "Quote Comparison",
                     "icon": "report",
@@ -144,6 +160,8 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             "procurement-console-worklist",
             "procurement-console-report",
             "procurement-console-po-follow-up",
+            "procurement-console-supplier",
+            "procurement-console-item",
         ]:
             with self.subTest(route_key=route_key):
                 workspace = get_workspace_by_route(route_key)

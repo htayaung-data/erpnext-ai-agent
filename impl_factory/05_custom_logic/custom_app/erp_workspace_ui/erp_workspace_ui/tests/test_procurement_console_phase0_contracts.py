@@ -8,6 +8,8 @@ fake_frappe = types.ModuleType("frappe")
 CURRENT_ROLES = []
 READABLE_DOCTYPES = {
     "Supplier",
+    "Item",
+    "Item Price",
     "Material Request",
     "Purchase Order",
     "Purchase Receipt",
@@ -15,6 +17,8 @@ READABLE_DOCTYPES = {
     "Request for Quotation",
     "Supplier Quotation",
 }
+WRITEABLE_DOCTYPES = set()
+CREATEABLE_DOCTYPES = set()
 CAPTURED_GET_LIST_CALLS = []
 CAPTURED_GET_ALL_CALLS = []
 CAPTURED_REPORT_CALLS = []
@@ -41,7 +45,13 @@ def _throw(message, exc=None):
 
 
 def _has_permission(doctype, ptype=None, *args, **kwargs):
-    return ptype == "read" and doctype in READABLE_DOCTYPES
+    if ptype == "read":
+        return doctype in READABLE_DOCTYPES
+    if ptype == "write":
+        return doctype in WRITEABLE_DOCTYPES
+    if ptype == "create":
+        return doctype in CREATEABLE_DOCTYPES
+    return False
 
 
 def _count(doctype, filters=None):
@@ -70,6 +80,8 @@ def _filter_rows(doctype, rows, filters):
             filtered = [row for row in filtered if str(row.get(fieldname) or "") <= str(value)]
         elif operator == "not in":
             filtered = [row for row in filtered if row.get(fieldname) not in set(value or [])]
+        elif operator == "in":
+            filtered = [row for row in filtered if row.get(fieldname) in set(value or [])]
         elif operator == "like":
             needle = str(value or "").strip("%").lower()
             filtered = [row for row in filtered if needle in str(row.get(fieldname) or "").lower()]
@@ -165,6 +177,35 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "modified": "2026-05-03",
             }
         ], filters)
+    if doctype == "Item":
+        return _filter_rows(doctype, [
+            {
+                "name": "ITEM-001",
+                "item_name": "Widget",
+                "item_group": "Products",
+                "stock_uom": "Nos",
+                "disabled": 0,
+                "is_purchase_item": 1,
+                "has_variants": 0,
+                "modified": "2026-05-03",
+            }
+        ], filters)
+    if doctype == "Item Price":
+        return _filter_rows(doctype, [
+            {
+                "name": "PRICE-001",
+                "item_code": "ITEM-001",
+                "price_list": "Standard Buying",
+                "price_list_rate": 1000,
+                "currency": "MMK",
+                "valid_from": "2026-05-01",
+                "valid_upto": "2026-05-31",
+                "uom": "Nos",
+                "supplier": "SUP-001",
+                "buying": 1,
+                "modified": "2026-05-03",
+            }
+        ], filters)
     if doctype == "Material Request":
         return _filter_rows(doctype, [
             {
@@ -211,6 +252,18 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "modified": "2026-05-03",
             }
         ], filters)
+    if doctype == "Contact":
+        return _filter_rows(doctype, [
+            {
+                "name": "CONT-001",
+                "first_name": "Buyer",
+                "last_name": "Contact",
+                "email_id": "buyer.contact@example.com",
+                "phone": "012345",
+                "mobile_no": "",
+                "modified": "2026-05-03",
+            }
+        ], filters)
     return []
 
 
@@ -237,6 +290,27 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
         if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
             rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
         return rows
+    if doctype == "Dynamic Link":
+        if isinstance(filters, dict) and filters.get("link_doctype") == "Supplier" and filters.get("link_name") == "SUP-001":
+            return [{"parent": "CONT-001"}]
+        return []
+    if doctype == "Item Supplier":
+        if isinstance(filters, dict) and filters.get("parent") == "ITEM-001":
+            return [
+                {
+                    "name": "ITEM-SUP-001",
+                    "parent": "ITEM-001",
+                    "supplier": "SUP-001",
+                    "supplier_part_no": "SUP-WIDGET-001",
+                    "lead_time_days": 5,
+                    "modified": "2026-05-03",
+                }
+            ]
+        return []
+    if doctype == "Supplier Quotation Item":
+        if isinstance(filters, dict) and filters.get("item_code") == "ITEM-001":
+            return [{"parent": "SUP-QTN-001", "item_code": "ITEM-001"}]
+        return []
     if doctype == "Purchase Order Item":
         rows = [
             {
@@ -297,6 +371,9 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
             rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
         elif parent_filter:
             rows = [row for row in rows if row["parent"] == parent_filter]
+        item_filter = (filters or {}).get("item_code") if isinstance(filters, dict) else None
+        if item_filter:
+            rows = [row for row in rows if row["item_code"] == item_filter]
         return rows
     if doctype == "Purchase Receipt Item":
         return [
@@ -466,7 +543,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import purchase_order_detail, report, service, worklist
+from erp_workspace_ui.procurement_console import items, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -477,6 +554,16 @@ def _set_user(user, roles):
 def _set_readable_doctypes(*doctypes):
     READABLE_DOCTYPES.clear()
     READABLE_DOCTYPES.update(doctypes)
+
+
+def _set_writeable_doctypes(*doctypes):
+    WRITEABLE_DOCTYPES.clear()
+    WRITEABLE_DOCTYPES.update(doctypes)
+
+
+def _set_createable_doctypes(*doctypes):
+    CREATEABLE_DOCTYPES.clear()
+    CREATEABLE_DOCTYPES.update(doctypes)
 
 
 def _filter_contains(filters, condition):
@@ -533,6 +620,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         _set_user("purchase@example.com", ["Purchase User"])
         _set_readable_doctypes(
             "Supplier",
+            "Item",
+            "Item Price",
             "Material Request",
             "Purchase Order",
             "Purchase Receipt",
@@ -540,6 +629,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             "Request for Quotation",
             "Supplier Quotation",
         )
+        _set_writeable_doctypes()
+        _set_createable_doctypes()
         CAPTURED_GET_LIST_CALLS.clear()
         CAPTURED_GET_ALL_CALLS.clear()
         CAPTURED_REPORT_CALLS.clear()
@@ -568,6 +659,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 "purchase_order_directory",
                 "rfq_directory",
                 "supplier_quotation_directory",
+                "buying_item_directory",
                 "supplier_quotation_comparison",
             ],
         )
@@ -581,6 +673,49 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("purchase_orders_supplier_follow_up", payload["work"])
         self.assertIn("rfq_directory", payload["directories"])
         self.assertIn("supplier_quotation_directory", payload["directories"])
+        self.assertIn("buying_item_directory", payload["directories"])
+
+    def test_procurement_create_actions_follow_erpnext_create_permissions(self):
+        _set_createable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
+
+        payload = service.get_procurement_console_bootstrap()
+
+        self.assertEqual(
+            [action["key"] for action in payload["create_actions"]],
+            ["new_purchase_request", "new_rfq", "new_supplier_quotation", "new_purchase_order"],
+        )
+        self.assertEqual(payload["action_targets"]["new_purchase_request"]["kind"], "new_doc")
+        self.assertEqual(payload["action_targets"]["new_purchase_request"]["doctype"], "Material Request")
+        self.assertEqual(payload["action_targets"]["new_purchase_request"]["defaults"], {"material_request_type": "Purchase"})
+        self.assertEqual(payload["action_targets"]["new_purchase_order"]["doctype"], "Purchase Order")
+        self.assertNotIn("new_supplier", payload["action_targets"])
+        self.assertNotIn("new_item", payload["action_targets"])
+
+    def test_procurement_supplier_and_item_create_actions_are_more_restricted(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        _set_createable_doctypes("Supplier", "Item")
+
+        manager_payload = service.get_procurement_console_bootstrap()
+
+        self.assertEqual([action["key"] for action in manager_payload["create_actions"]], ["new_supplier"])
+        self.assertEqual(manager_payload["action_targets"]["new_supplier"], {"kind": "new_doc", "doctype": "Supplier", "defaults": {}})
+        self.assertNotIn("new_item", manager_payload["action_targets"])
+
+        _set_user("master@example.com", ["Purchase Master Manager"])
+        master_payload = service.get_procurement_console_bootstrap()
+
+        self.assertEqual([action["key"] for action in master_payload["create_actions"]], ["new_supplier", "new_item"])
+        self.assertEqual(master_payload["action_targets"]["new_item"], {"kind": "new_doc", "doctype": "Item", "defaults": {}})
+
+    def test_procurement_overview_renders_create_actions_from_backend_payload(self):
+        overview_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js"
+        source = overview_public_path.read_text()
+
+        self.assertIn("create_actions", source)
+        self.assertIn("new_doc", source)
+        self.assertIn("frappe.new_doc", source)
+        self.assertIn('data-section-key="create-actions"', source)
+        self.assertIn("Start Buying Work", source)
 
     def test_purchase_roles_receive_procurement_home_without_sales_default_app(self):
         _set_user("purchase@example.com", ["Purchase User"])
@@ -623,7 +758,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["sidebar"]["mode_label"], "Procurement Workspace")
         self.assertEqual(
             [item["label"] for item in payload["sidebar"]["items"]],
-            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Quote Comparison"],
+            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Quote Comparison"],
         )
         self.assertEqual(payload["sidebar"]["items"][-1]["target"]["kind"], "report_page")
 
@@ -652,6 +787,68 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("data-erpw-list-link-option", source)
         self.assertIn("ArrowDown", source)
         self.assertIn("ArrowUp", source)
+        self.assertIn("grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 220px))", source)
+        self.assertIn("justify-content: start", source)
+
+    def test_po_follow_up_detail_loads_shared_runtime_contract(self):
+        public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_po_follow_up_page.js"
+        supplier_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_supplier_page.js"
+        item_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_item_page.js"
+        overview_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js"
+        page_path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_po_follow_up" / "procurement_console_po_follow_up.js"
+        boot_path = Path(__file__).resolve().parents[1] / "public" / "js" / "erp_workspace_ui_boot.js"
+        source = public_path.read_text()
+        supplier_source = supplier_public_path.read_text()
+        item_source = item_public_path.read_text()
+        overview_source = overview_public_path.read_text()
+        page_source = page_path.read_text()
+        boot_source = boot_path.read_text()
+
+        self.assertIn("makeConsolePage", overview_source)
+        self.assertIn("erpw-direct-console-body", overview_source)
+        self.assertIn("__erpwProcurementConsole", overview_source)
+        self.assertIn("procurement-console-supplier", supplier_source)
+        self.assertIn("get_supplier_detail_context", supplier_source)
+        self.assertIn("Buying contacts", supplier_source)
+        self.assertIn("supplier_directory", supplier_source)
+        self.assertIn("procurement-console-item", item_source)
+        self.assertIn("get_item_detail_context", item_source)
+        self.assertIn("Supplier price review", item_source)
+        self.assertIn("buying_item_directory", item_source)
+        self.assertIn("CHILD_PAGE_RUNTIME_URLS", source)
+        self.assertIn("child_page_shell_content.js", source)
+        self.assertIn("ensureDetailRuntime", source)
+        self.assertIn("makeFallbackPage", source)
+        self.assertIn("erpw-direct-child-body", source)
+        self.assertIn("frappe.require", source)
+        self.assertNotIn("Detail runtime unavailable", source)
+        self.assertIn("procurement_console_po_follow_up_page.js", page_source)
+        self.assertIn("PROCUREMENT_DIRECT_PAGE_ASSETS", boot_source)
+        self.assertIn("procurement_console_page.js", boot_source)
+        self.assertIn("ensureProcurementDirectPage", boot_source)
+        self.assertIn("procurementDirectPageWrapper(pageKey, pageDef)", boot_source)
+        self.assertIn("pageDef.page_name === pageKey", boot_source)
+        self.assertIn("document.getElementById(\"body\")", boot_source)
+        self.assertIn("__erpwProcurementConsole", boot_source)
+        self.assertIn("__erpwProcurementSupplierDetail", boot_source)
+        self.assertIn("__erpwProcurementItemDetail", boot_source)
+        self.assertIn("existing.routeSignature === routeSignature", boot_source)
+        self.assertIn("loadProcurementDirectPageAsset", boot_source)
+        self.assertIn("document.createElement(\"script\")", boot_source)
+        self.assertNotIn("frappe.require(asset", boot_source)
+        self.assertIn("procurement-console-po-follow-up", boot_source)
+        self.assertIn("procurement-console-supplier", boot_source)
+        self.assertIn("procurement-console-item", boot_source)
+
+    def test_phase3_smoke_covers_direct_po_follow_up_route(self):
+        smoke_path = Path(__file__).resolve().parents[2] / "ui_smoke" / "procurement_phase3_smoke.js"
+        source = smoke_path.read_text()
+
+        self.assertIn("ERPW_PROCUREMENT_DIRECT_PO_NAME", source)
+        self.assertIn("PUR-ORD-2026-00010", source)
+        self.assertIn("Detail runtime unavailable", source)
+        self.assertIn("Receipt posture", source)
+        self.assertIn("Billing posture", source)
 
     def test_procurement_routes_do_not_null_native_route_options(self):
         paths = [
@@ -699,12 +896,135 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
         self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["refresh", "reset_filters", "apply_filters"])
-        self.assertIn("No create or edit action", payload["controls"]["scopeChips"])
+        self.assertIn("Read-only supplier detail", payload["controls"]["scopeChips"])
+        self.assertEqual(_field_by_key(payload, "supplier")["type"], "link")
+        self.assertEqual(_field_by_key(payload, "supplier")["linkDoctype"], "Supplier")
         self.assertEqual(_field_by_key(payload, "supplier_group")["type"], "link")
         self.assertEqual(_field_by_key(payload, "supplier_group")["linkDoctype"], "Supplier Group")
         self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Open"}])
         self.assertNotIn("create_supplier", str(payload))
-        self.assertEqual(payload["action_targets"]["row:SUP-001:open_record"]["kind"], "form")
+        self.assertEqual(payload["action_targets"]["row:SUP-001:open_record"]["kind"], "page")
+        self.assertEqual(payload["action_targets"]["row:SUP-001:open_record"]["route"], "procurement-console-supplier")
+        self.assertEqual(payload["action_targets"]["row:SUP-001:open_record"]["route_parts"], ["SUP-001"])
+
+    def test_supplier_detail_is_productized_and_permission_aware(self):
+        payload = supplier_detail.get_supplier_detail_context("SUP-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["title"], "Alpha Supplier")
+        self.assertEqual(payload["detail"]["supplier"]["supplier_group"], "All Supplier Groups")
+        self.assertEqual(payload["detail"]["recent_purchase_orders"]["rows"][0]["key"], "PUR-DUE-001")
+        self.assertEqual(payload["detail"]["rfqs"]["rows"][0]["key"], "RFQ-001")
+        self.assertEqual(payload["detail"]["supplier_quotations"]["rows"][0]["key"], "SUP-QTN-001")
+        self.assertEqual(payload["action_targets"]["back_to_suppliers"]["kind"], "worklist")
+        self.assertNotIn("open_supplier_form", payload["action_targets"])
+        self.assertTrue(
+            any(
+                call["doctype"] == "Supplier"
+                and _filter_contains(call["filters"], ["Supplier", "name", "=", "SUP-001"])
+                for call in CAPTURED_GET_LIST_CALLS
+            )
+        )
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_supplier_detail_does_not_load_children_when_parent_not_visible(self):
+        CAPTURED_GET_LIST_CALLS.clear()
+        CAPTURED_GET_ALL_CALLS.clear()
+
+        payload = supplier_detail.get_supplier_detail_context("SUP-HIDDEN")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["detail"]["state"]["title"], "Supplier not found")
+        self.assertTrue(
+            any(
+                call["doctype"] == "Supplier"
+                and _filter_contains(call["filters"], ["Supplier", "name", "=", "SUP-HIDDEN"])
+                for call in CAPTURED_GET_LIST_CALLS
+            )
+        )
+        self.assertFalse(
+            any(
+                call["doctype"] in {"Purchase Order", "Request for Quotation", "Supplier Quotation", "Contact"}
+                for call in CAPTURED_GET_LIST_CALLS
+            )
+        )
+        self.assertFalse(any(call["doctype"] in {"Request for Quotation Supplier", "Dynamic Link"} for call in CAPTURED_GET_ALL_CALLS))
+
+    def test_supplier_detail_native_form_action_requires_manager_and_write_permission(self):
+        _set_user("manager@example.com", ["Purchase Manager"])
+        _set_writeable_doctypes("Supplier")
+
+        manager_payload = supplier_detail.get_supplier_detail_context("SUP-001")
+
+        self.assertEqual(manager_payload["action_targets"]["open_supplier_form"], {"kind": "form", "doctype": "Supplier", "name": "SUP-001"})
+
+        _set_user("purchase@example.com", ["Purchase User"])
+        user_payload = supplier_detail.get_supplier_detail_context("SUP-001")
+
+        self.assertNotIn("open_supplier_form", user_payload["action_targets"])
+
+    def test_supplier_detail_restricted_for_finance_executive_only(self):
+        _set_user("approver@example.com", ["Finance Lead Approver", "Executive Approver"])
+
+        payload = supplier_detail.get_supplier_detail_context("SUP-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "restricted")
+
+    def test_buying_item_directory_is_read_only_and_productized(self):
+        payload = worklist.get_procurement_console_worklist_context("buying_item_directory")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(_field_by_key(payload, "item")["linkDoctype"], "Item")
+        self.assertEqual(_field_by_key(payload, "item_group")["linkDoctype"], "Item Group")
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Open"}])
+        self.assertEqual(payload["action_targets"]["row:ITEM-001:open_record"]["kind"], "page")
+        self.assertEqual(payload["action_targets"]["row:ITEM-001:open_record"]["route"], "procurement-console-item")
+        filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
+        self.assertTrue(_filter_contains(filters, ["Item", "is_purchase_item", "=", 1]))
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_buying_item_detail_is_read_only_productized_context(self):
+        payload = items.get_item_detail_context("ITEM-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["title"], "Widget")
+        self.assertEqual(payload["detail"]["item_suppliers"]["rows"][0]["cells"]["supplier"], "SUP-001")
+        self.assertEqual(payload["detail"]["item_prices"]["rows"][0]["cells"]["rate"], "1,000 MMK")
+        self.assertEqual(payload["detail"]["supplier_quotations"]["rows"][0]["key"], "SUP-QTN-001")
+        self.assertEqual(payload["detail"]["purchase_orders"]["rows"][0]["key"], "PUR-DUE-001")
+        self.assertEqual(payload["action_targets"]["back_to_items"], {"kind": "worklist", "queue_key": "buying_item_directory"})
+        self.assertNotIn("open_item_form", payload["action_targets"])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_buying_item_detail_parent_visibility_is_enforced_before_children(self):
+        CAPTURED_GET_LIST_CALLS.clear()
+        CAPTURED_GET_ALL_CALLS.clear()
+
+        payload = items.get_item_detail_context("ITEM-HIDDEN")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["detail"]["state"]["title"], "Item not found")
+        self.assertTrue(
+            any(
+                call["doctype"] == "Item"
+                and _filter_contains(call["filters"], ["Item", "name", "=", "ITEM-HIDDEN"])
+                for call in CAPTURED_GET_LIST_CALLS
+            )
+        )
+        self.assertFalse(any(call["doctype"] in {"Item Supplier", "Supplier Quotation Item", "Purchase Order Item"} for call in CAPTURED_GET_ALL_CALLS))
+
+    def test_buying_item_native_form_action_requires_item_write_governance(self):
+        _set_user("master@example.com", ["Purchase Master Manager"])
+        _set_writeable_doctypes("Item")
+
+        payload = items.get_item_detail_context("ITEM-001")
+
+        self.assertEqual(payload["action_targets"]["open_item_form"], {"kind": "form", "doctype": "Item", "name": "ITEM-001"})
+
+        _set_user("manager@example.com", ["Purchase Manager"])
+        manager_payload = items.get_item_detail_context("ITEM-001")
+
+        self.assertNotIn("open_item_form", manager_payload["action_targets"])
 
     def test_material_request_directory_is_purchase_only(self):
         payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
@@ -719,16 +1039,29 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         follow_up_payload = worklist.get_procurement_console_worklist_context("purchase_orders_overdue")
         rfq_payload = worklist.get_procurement_console_worklist_context("rfq_directory")
         quotation_payload = worklist.get_procurement_console_worklist_context("supplier_quotation_directory")
+        item_payload = worklist.get_procurement_console_worklist_context("buying_item_directory")
         comparison_payload = report.get_procurement_console_report_context("supplier_quotation_comparison", {"company": "Demo Company"})
 
-        self.assertEqual(_field_by_key(request_payload, "company")["linkDoctype"], "Company")
+        self.assertEqual(_field_by_key(request_payload, "material_request")["linkDoctype"], "Material Request")
+        self.assertIsNone(_field_by_key(request_payload, "company"))
+        self.assertEqual(_field_by_key(request_payload, "keyword")["label"], "Keyword")
+        self.assertEqual(_field_by_key(order_payload, "purchase_order")["linkDoctype"], "Purchase Order")
         self.assertEqual(_field_by_key(order_payload, "supplier")["linkDoctype"], "Supplier")
-        self.assertEqual(_field_by_key(order_payload, "company")["linkDoctype"], "Company")
+        self.assertIsNone(_field_by_key(order_payload, "company"))
         self.assertEqual(_field_by_key(order_payload, "date_start")["label"], "PO Date From")
+        self.assertEqual(_field_by_key(follow_up_payload, "purchase_order")["linkDoctype"], "Purchase Order")
         self.assertEqual(_field_by_key(follow_up_payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertIsNone(_field_by_key(follow_up_payload, "company"))
         self.assertEqual(_field_by_key(follow_up_payload, "date_end")["label"], "PO Date To")
-        self.assertEqual(_field_by_key(rfq_payload, "company")["linkDoctype"], "Company")
+        self.assertEqual(_field_by_key(rfq_payload, "request_for_quotation")["linkDoctype"], "Request for Quotation")
+        self.assertIsNone(_field_by_key(rfq_payload, "company"))
+        self.assertEqual(_field_by_key(quotation_payload, "supplier_quotation")["linkDoctype"], "Supplier Quotation")
         self.assertEqual(_field_by_key(quotation_payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertIsNone(_field_by_key(quotation_payload, "company"))
+        self.assertEqual(_field_by_key(item_payload, "item")["linkDoctype"], "Item")
+        self.assertEqual(_field_by_key(item_payload, "item_group")["linkDoctype"], "Item Group")
+        self.assertIsNone(_field_by_key(comparison_payload, "company"))
+        self.assertEqual(_field_by_key(comparison_payload, "item_code")["linkDoctype"], "Item")
         self.assertEqual(_field_by_key(comparison_payload, "supplier_quotation")["linkDoctype"], "Supplier Quotation")
         self.assertEqual(_field_by_key(comparison_payload, "request_for_quotation")["linkDoctype"], "Request for Quotation")
 
@@ -942,6 +1275,16 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn("default_supplier", payload_text)
         self.assertNotIn("item price", payload_text)
         self.assertNotIn("purchase order", payload_text)
+
+    def test_supplier_quotation_comparison_defaults_company_without_noisy_filter(self):
+        CAPTURED_REPORT_CALLS.clear()
+
+        payload = report.get_procurement_console_report_context("supplier_quotation_comparison", {})
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertIsNone(_field_by_key(payload, "company"))
+        self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["company"], "Demo Company")
+        self.assertNotIn("Company", " ".join(field.get("label", "") for field in payload["controls"]["fields"]))
 
     def test_supplier_quotation_comparison_restricted_without_supplier_quotation_read(self):
         _set_readable_doctypes("Supplier", "Material Request", "Purchase Order", "Request for Quotation")

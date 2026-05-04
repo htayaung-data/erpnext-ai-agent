@@ -26,6 +26,9 @@ def purchase_request_base_filters() -> list[list[object]]:
 def purchase_request_filters(filters: dict[str, str] | None = None, source_only: bool = False) -> list[list[object]]:
 	applied = filters or {}
 	conditions = purchase_request_base_filters()
+	material_request = cstr(applied.get("material_request")).strip()
+	if material_request:
+		conditions.append(["Material Request", "name", "=", material_request])
 	keyword = cstr(applied.get("keyword")).strip()
 	if keyword:
 		conditions.append(["Material Request", "name", "like", f"%{keyword}%"])
@@ -149,8 +152,8 @@ def _purchase_request_payload(
 		},
 		"controls": {
 			"fields": [
-				{"key": "keyword", "label": "Search", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Request ID"},
-				{"key": "company", "label": "Company", "type": "link", "linkDoctype": "Company", "value": filters.get("company", "")},
+				{"key": "material_request", "label": "Purchase Request", "type": "link", "linkDoctype": "Material Request", "value": filters.get("material_request", "")},
+				{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Request ID contains"},
 				{
 					"key": "status",
 					"label": "Status",

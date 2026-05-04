@@ -136,6 +136,8 @@ def _base_payload(context: dict[str, object], payload_state: dict[str, str]) -> 
 		"queues": {},
 		"insights": {},
 		"reports_catalog": [],
+		"create_actions": [],
+		"action_targets": {},
 		"fetched_at": str(now_datetime()),
 	}
 
@@ -152,6 +154,7 @@ def get_procurement_console_bootstrap() -> dict[str, object]:
 		"Buyer workbench queues are available for procurement roles.",
 	))
 	payload.update(_build_phase1_overview())
+	payload.update(_build_create_action_payload(context))
 	return payload
 
 
@@ -226,6 +229,16 @@ def _build_procurement_workspace_search_results(query: str, limit: int) -> list[
 			"keyword_field": "supplier_name",
 			"label_field": "supplier_name",
 			"meta_fields": ["supplier_group"],
+		},
+		{
+			"doctype": "Item",
+			"fields": ["name", "item_name", "item_group", "modified"],
+			"search_fields": ["name", "item_name"],
+			"queue_key": "buying_item_directory",
+			"keyword_field": "item_name",
+			"label_field": "item_name",
+			"meta_fields": ["item_group"],
+			"filters": [["Item", "is_purchase_item", "=", 1]],
 		},
 		{
 			"doctype": "Material Request",
@@ -311,7 +324,7 @@ def _search_result_from_row(plan: dict[str, object], row: dict[str, object]) -> 
 
 
 def _build_phase1_overview() -> dict[str, object]:
-	from . import purchase_order_follow_up, purchase_orders, requests, sourcing, suppliers
+	from . import items, purchase_order_follow_up, purchase_orders, requests, sourcing, suppliers
 
 	requests_to_source = requests.count_purchase_requests_to_source()
 	requests_total = requests.count_purchase_request_directory()
@@ -325,6 +338,7 @@ def _build_phase1_overview() -> dict[str, object]:
 	orders_not_billed_visibility = orders_follow_up["billing_visibility"]
 	orders_supplier_follow_up = orders_follow_up["supplier_follow_up"]
 	suppliers_total = suppliers.count_visible_suppliers()
+	buying_items_total = items.count_buying_items()
 	rfqs_total = sourcing.count_rfq_directory()
 	rfqs_awaiting_response = sourcing.count_rfqs_awaiting_supplier_response()
 	supplier_quotations_total = sourcing.count_supplier_quotation_directory()
@@ -437,6 +451,12 @@ def _build_phase1_overview() -> dict[str, object]:
 				"note": "Supplier Quotation records visible to this user.",
 				"badgeClass": "review",
 			},
+			"buying_item_directory": {
+				"state": "live",
+				"value": buying_items_total,
+				"note": "Purchase-enabled items visible to this user.",
+				"badgeClass": "review",
+			},
 		},
 		"queues": {
 			"requests_to_source": requests_to_source,
@@ -497,3 +517,83 @@ def _build_phase1_overview() -> dict[str, object]:
 			}
 		],
 	}
+
+
+def _build_create_action_payload(context: dict[str, object]) -> dict[str, object]:
+	from . import common
+
+	roles = set(context.get("roles") or [])
+	plan = [
+		{
+			"key": "new_purchase_request",
+			"title": "New Purchase Request",
+			"doctype": "Material Request",
+			"defaults": {"material_request_type": "Purchase"},
+			"note": "Starts a Purchase Material Request in ERPNext.",
+		},
+		{
+			"key": "new_rfq",
+			"title": "New RFQ",
+			"doctype": "Request for Quotation",
+			"defaults": {},
+			"note": "Starts an ERPNext Request for Quotation.",
+		},
+		{
+			"key": "new_supplier_quotation",
+			"title": "New Supplier Quotation",
+			"doctype": "Supplier Quotation",
+			"defaults": {},
+			"note": "Starts an ERPNext Supplier Quotation.",
+		},
+		{
+			"key": "new_purchase_order",
+			"title": "New Purchase Order",
+			"doctype": "Purchase Order",
+			"defaults": {},
+			"note": "Starts an ERPNext Purchase Order.",
+		},
+	]
+	if roles.intersection({"Purchase Manager", "Purchase Master Manager"}):
+		plan.append(
+			{
+				"key": "new_supplier",
+				"title": "New Supplier",
+				"doctype": "Supplier",
+				"defaults": {},
+				"note": "Uses ERPNext supplier master permissions.",
+			}
+		)
+	if roles.intersection({"Purchase Master Manager", "Item Manager", "Stock Manager", "System Manager"}):
+		plan.append(
+			{
+				"key": "new_item",
+				"title": "New Item",
+				"doctype": "Item",
+				"defaults": {},
+				"note": "Uses ERPNext item master permissions.",
+			}
+		)
+
+	actions: list[dict[str, object]] = []
+	targets: dict[str, object] = {}
+	for item in plan:
+		doctype = cstr(item.get("doctype")).strip()
+		if not doctype or not common.can_create(doctype):
+			continue
+		key = cstr(item.get("key")).strip()
+		actions.append(
+			{
+				"key": key,
+				"title": item.get("title"),
+				"label": item.get("title"),
+				"variant": "primary" if key in {"new_purchase_request", "new_purchase_order"} else "secondary",
+				"category": "create",
+				"note": item.get("note"),
+			}
+		)
+		targets[key] = {
+			"kind": "new_doc",
+			"doctype": doctype,
+			"defaults": dict(item.get("defaults") or {}),
+		}
+	return {"create_actions": actions, "action_targets": targets}

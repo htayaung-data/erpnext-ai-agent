@@ -106,6 +106,13 @@
         pointer-events: none;
         transition: opacity 120ms ease;
       }
+      .erpw-list-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 220px));
+        justify-content: start;
+        gap: 0.72rem;
+        max-width: min(760px, 100%);
+      }
 	      .erpw-list-controls-strip {
 	        --erpw-list-control-height: 40px;
 	        --erpw-list-control-label-offset: 23px;
