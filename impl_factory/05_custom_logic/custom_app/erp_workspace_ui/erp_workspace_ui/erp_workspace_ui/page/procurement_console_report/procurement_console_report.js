@@ -249,7 +249,7 @@
 
   function cleanupRouteShells() {
     if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
-      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY);
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY, { removeActive: true });
     }
   }
 

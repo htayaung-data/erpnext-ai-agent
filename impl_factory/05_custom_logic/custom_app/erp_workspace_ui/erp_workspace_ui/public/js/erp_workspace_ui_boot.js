@@ -1875,11 +1875,17 @@
     return Object.prototype.hasOwnProperty.call(PROCUREMENT_ROUTE_SHELLS, pageKey || "");
   }
 
-  function cleanupProcurementRouteShells(activePageKey) {
+  function procurementRouteShellCount(pageKey) {
+    if (!isProcurementConsoleRoute(pageKey) || !document || !document.querySelectorAll) return 0;
+    return PROCUREMENT_ROUTE_SHELLS[pageKey].reduce((count, selector) => count + document.querySelectorAll(selector).length, 0);
+  }
+
+  function cleanupProcurementRouteShells(activePageKey, options) {
     if (!document || !document.querySelectorAll) return;
+    const settings = options && typeof options === "object" ? options : {};
     const hasActiveProcurementRoute = isProcurementConsoleRoute(activePageKey);
     Object.keys(PROCUREMENT_ROUTE_SHELLS).forEach((pageKey) => {
-      if (hasActiveProcurementRoute && pageKey === activePageKey) return;
+      if (!settings.removeActive && hasActiveProcurementRoute && pageKey === activePageKey) return;
       PROCUREMENT_ROUTE_SHELLS[pageKey].forEach((selector) => {
         document.querySelectorAll(selector).forEach((node) => {
           if (node && node.parentNode) node.parentNode.removeChild(node);
@@ -1927,7 +1933,7 @@
     const routeSignature = route.join("|");
     const stateKey = PROCUREMENT_DIRECT_PAGE_STATE_KEYS[pageKey] || "";
     const existing = stateKey ? wrapper[stateKey] : null;
-    if (existing && existing.routeSignature === routeSignature) {
+    if (existing && existing.routeSignature === routeSignature && procurementRouteShellCount(pageKey) === 1) {
       return true;
     }
     if (typeof pageDef.on_page_show === "function") {

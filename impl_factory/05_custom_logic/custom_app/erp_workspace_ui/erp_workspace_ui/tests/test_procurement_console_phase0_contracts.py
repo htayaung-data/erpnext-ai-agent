@@ -901,7 +901,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         ]
         for path in paths:
             source = path.read_text()
-            self.assertIn("cleanupProcurementRouteShells", source, str(path))
+            self.assertIn("cleanupProcurementRouteShells(PAGE_KEY, { removeActive: true })", source, str(path))
 
     def test_procurement_overview_uses_dynamic_shared_console_runtime(self):
         source = (Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js").read_text()
