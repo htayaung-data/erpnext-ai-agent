@@ -127,11 +127,12 @@ async function callMethod(page, method, args = {}) {
         },
         body,
       });
+      const raw = await response.text();
       let data = null;
       try {
-        data = await response.json();
+        data = raw ? JSON.parse(raw) : null;
       } catch (error) {
-        data = { raw: await response.text() };
+        data = { raw };
       }
       return { ok: response.ok, status: response.status, data };
     },
