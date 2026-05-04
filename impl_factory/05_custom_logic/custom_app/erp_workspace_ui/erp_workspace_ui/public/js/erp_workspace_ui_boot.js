@@ -571,6 +571,11 @@
               { label: context.parentLabel || "Procurement", route: context.parentRoute || "/desk/procurement-console", kind: "parent" },
               { label: context.leafLabel || context.doctype || "ERP Form", route: "", current: true },
             ];
+            const desiredText = crumbs.map((crumb) => crumb.label).join("");
+            const currentText = String(list.textContent || "").replace(/\s+/g, "").trim();
+            if (list.getAttribute("data-erpw-procurement-native-breadcrumbs") === "1" && currentText === desiredText) {
+              return true;
+            }
             list.textContent = "";
             list.setAttribute("data-erpw-procurement-native-breadcrumbs", "1");
             crumbs.forEach((crumb, index) => {
@@ -593,6 +598,34 @@
           }
 
           let procurementNativeChromeSyncToken = 0;
+          let procurementNativeChromeObserver = null;
+          let procurementNativeChromeObserverPending = false;
+
+          function disconnectProcurementNativeChromeObserver() {
+            if (procurementNativeChromeObserver && typeof procurementNativeChromeObserver.disconnect === "function") {
+              procurementNativeChromeObserver.disconnect();
+            }
+            procurementNativeChromeObserver = null;
+            procurementNativeChromeObserverPending = false;
+          }
+
+          function ensureProcurementNativeChromeObserver() {
+            if (procurementNativeChromeObserver || typeof MutationObserver !== "function" || !document.body) return;
+            procurementNativeChromeObserver = new MutationObserver(() => {
+              if (!procurementNativeContextFromStorage()) {
+                disconnectProcurementNativeChromeObserver();
+                return;
+              }
+              if (procurementNativeChromeObserverPending) return;
+              procurementNativeChromeObserverPending = true;
+              window.requestAnimationFrame(() => {
+                procurementNativeChromeObserverPending = false;
+                syncProcurementNativeChrome();
+              });
+            });
+            procurementNativeChromeObserver.observe(document.body, { childList: true, subtree: true });
+            window.setTimeout(disconnectProcurementNativeChromeObserver, 15000);
+          }
 
           function syncProcurementNativeChrome() {
             const context = isProcurementManagedNativeRoute();
@@ -614,6 +647,7 @@
           }
 
           function scheduleProcurementNativeChromeSync() {
+            ensureProcurementNativeChromeObserver();
             const token = ++procurementNativeChromeSyncToken;
             [0, 120, 320, 700, 1200, 2000, 4000, 7000].forEach((delay) => {
               window.setTimeout(() => {
