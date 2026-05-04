@@ -3,6 +3,8 @@ from __future__ import annotations
 from app.mock_engine import run_mock_engine
 from app.qwen_agent_engine import QwenAgentEngineError, run_qwen_agent_engine
 from app.schemas import (
+	BusinessUnderstandingInterpretRequest,
+	BusinessUnderstandingInterpretResponse,
 	ChatRequest,
 	ChatResponse,
 	FrontDoorInterpretRequest,
@@ -48,6 +50,10 @@ from app.semantic_reasoning_activation_engine import (
 from app.semantic_repair_intent_engine import (
 	SemanticRepairIntentEngineError,
 	run_semantic_repair_intent_engine,
+)
+from app.semantic_business_understanding_engine import (
+	SemanticBusinessUnderstandingEngineError,
+	run_semantic_business_understanding_engine,
 )
 from app.settings import Settings
 from app.validation import summarize_artifact_narrative_validation, summarize_read_validation
@@ -306,4 +312,26 @@ def handle_repair_intent_interpretation(
 			interpretation=None,
 			agent_meta={"engine": "semantic_repair_intent"},
 			error=f"Unexpected semantic repair intent error: {exc}",
+		)
+
+
+def handle_business_understanding_interpretation(
+	request: BusinessUnderstandingInterpretRequest,
+	settings: Settings,
+) -> BusinessUnderstandingInterpretResponse:
+	try:
+		return run_semantic_business_understanding_engine(request, settings)
+	except SemanticBusinessUnderstandingEngineError as exc:
+		return BusinessUnderstandingInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_business_understanding", "shadow_mode": True},
+			error=str(exc),
+		)
+	except Exception as exc:  # pragma: no cover - defensive runtime hardening
+		return BusinessUnderstandingInterpretResponse(
+			ok=False,
+			interpretation=None,
+			agent_meta={"engine": "semantic_business_understanding", "shadow_mode": True},
+			error=f"Unexpected semantic business-understanding error: {exc}",
 		)

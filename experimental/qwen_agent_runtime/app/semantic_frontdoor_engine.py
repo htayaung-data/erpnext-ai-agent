@@ -35,6 +35,7 @@ Return only a single JSON object with these keys:
 - intent_class: string
 - confidence: number from 0 to 1
 - reason: short string
+- extracted_slots: object
 
 Rules:
 - Use only intent_class values from interpretation_context.intent_classes.
@@ -43,6 +44,13 @@ Rules:
 - Use capability_question only when the user is asking what the assistant can help with.
 - Use session_flow only when the message is about continuing the current thread and depends on the existing grounded context.
 - Use closure_signoff for polite turns that end, pause, or defer the conversation without asking for ERP data.
+- Use extracted_slots only when the message is clearly a master-data navigation request that can be safely structured.
+- Allowed extracted_slots keys are entity_grain, lookup_mode, lookup_projection, and lookup_search_text.
+- Use only entity_grain values from interpretation_context.active_master_data_entity_grains.
+- Use only lookup_mode values from interpretation_context.active_master_data_lookup_modes.
+- Use only lookup_projection values from interpretation_context.active_master_data_lookup_projections.
+- If the master-data grain or mode is not clear enough, leave extracted_slots empty or partially empty instead of guessing.
+- For non-route_onward intents, extracted_slots should usually be empty.
 - If uncertain, choose route_onward.
 - Keep the JSON compact, valid, and schema-aligned."""
 
@@ -116,6 +124,45 @@ def _extract_json_content(data: Dict[str, Any]) -> Dict[str, Any]:
 	return obj
 
 
+def _clean_list(values: Any) -> List[str]:
+	if not isinstance(values, list):
+		return []
+	return [str(value or "").strip() for value in values if str(value or "").strip()]
+
+
+def _clean_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _canonicalize_interpretation_obj(
+	raw_obj: Dict[str, Any],
+	request: FrontDoorInterpretRequest,
+) -> Dict[str, Any]:
+	obj = dict(raw_obj or {})
+	intent_class = _clean_text(obj.get("intent_class"))
+	context = request.interpretation_context if isinstance(request.interpretation_context, dict) else {}
+	allowed_entity_grains = set(_clean_list(context.get("active_master_data_entity_grains")))
+	allowed_lookup_modes = set(_clean_list(context.get("active_master_data_lookup_modes")))
+	allowed_lookup_projections = set(_clean_list(context.get("active_master_data_lookup_projections")))
+	raw_slots = obj.get("extracted_slots") if isinstance(obj.get("extracted_slots"), dict) else {}
+	canonical_slots: Dict[str, Any] = {}
+	if intent_class == "route_onward":
+		entity_grain = _clean_text(raw_slots.get("entity_grain"))
+		lookup_mode = _clean_text(raw_slots.get("lookup_mode"))
+		lookup_projection = _clean_text(raw_slots.get("lookup_projection"))
+		lookup_search_text = _clean_text(raw_slots.get("lookup_search_text"))
+		if entity_grain in allowed_entity_grains:
+			canonical_slots["entity_grain"] = entity_grain
+		if lookup_mode in allowed_lookup_modes:
+			canonical_slots["lookup_mode"] = lookup_mode
+		if lookup_projection in allowed_lookup_projections:
+			canonical_slots["lookup_projection"] = lookup_projection
+		if lookup_search_text:
+			canonical_slots["lookup_search_text"] = lookup_search_text
+	obj["extracted_slots"] = canonical_slots
+	return obj
+
+
 def run_semantic_frontdoor_engine(
 	request: FrontDoorInterpretRequest,
 	settings: Settings,
@@ -143,6 +190,7 @@ def run_semantic_frontdoor_engine(
 			time.sleep(min(2.0, (settings.semantic_frontdoor_backoff_ms * attempt) / 1000.0))
 	if obj is None:
 		raise SemanticFrontDoorEngineError(last_error or "Semantic front-door engine failed.")
+	obj = _canonicalize_interpretation_obj(obj, request)
 
 	return FrontDoorInterpretResponse(
 		ok=True,
@@ -150,6 +198,7 @@ def run_semantic_frontdoor_engine(
 			intent_class=str(obj.get("intent_class") or "").strip(),
 			confidence=max(0.0, min(1.0, float(obj.get("confidence") or 0.0))),
 			reason=str(obj.get("reason") or "").strip(),
+			extracted_slots=obj.get("extracted_slots") if isinstance(obj.get("extracted_slots"), dict) else {},
 		),
 		agent_meta={
 			"engine": "semantic_frontdoor",

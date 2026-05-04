@@ -36,6 +36,9 @@ Return only a single JSON object with these keys:
 - target_dimension: string
 - target_limit: integer
 - sort_direction: \"asc\" | \"desc\" | \"\"
+- target_metric: string
+- requested_columns: array of strings
+- requested_time_scope: string
 - target_capability_id: string
 - self_contained: boolean
 - confidence: number from 0 to 1
@@ -44,10 +47,16 @@ Return only a single JSON object with these keys:
 Rules:
 - Use only follow-up modes from interpretation_context.approved_follow_up_modes.
 - Use only dimensions from interpretation_context.available_dimensions.
+- Use only metrics from interpretation_context.available_metrics.
 - Use only sibling capability ids from interpretation_context.available_sibling_capabilities.
+- If interpretation_context.grounded_followup_supported is false, do not keep the turn as a grounded follow-up unless you are returning an explicit sibling_switch. In that case, a fresh ERP ask should come back with self_contained true.
 - If the user asks to switch business area (for example payable to receivable), include \"sibling_switch\" and set target_capability_id.
 - If the user asks for a local display change like by supplier, by customer, top N, as table, or in million, prefer follow-up modes instead of self_contained.
 - If the request is a fresh standalone ERP question that should not depend on the previous grounded result, set self_contained true.
+- If the user restates a complete ERP business ask, including repeating the same governed business question again, set self_contained true instead of treating it as a grounded follow-up.
+- Use target_metric, requested_columns, and requested_time_scope when the user explicitly asks for those structured refinements.
+- presentation_transform, table_presentation, and bullet_presentation are only for explicit display-format changes. Do not use them for repeated business/report asks, and do not combine them with target_dimension, target_limit, sort_direction, target_metric, requested_columns, requested_time_scope, or target_capability_id.
+- Do not infer a ranked customer/supplier/item subview from the current grounded result unless the user explicitly asks for that local transform.
 - Do not invent dimensions, modes, or capability ids that are not present in the provided context.
 - Keep the JSON compact and valid."""
 
@@ -183,6 +192,9 @@ def run_semantic_followup_engine(request: FollowUpInterpretRequest, settings: Se
 		target_dimension=str(obj.get("target_dimension") or "").strip(),
 		target_limit=int(max(0, obj.get("target_limit") or 0)),
 		sort_direction=str(obj.get("sort_direction") or "").strip().lower(),
+		target_metric=str(obj.get("target_metric") or "").strip(),
+		requested_columns=[str(x or "").strip() for x in (obj.get("requested_columns") or []) if str(x or "").strip()],
+		requested_time_scope=str(obj.get("requested_time_scope") or "").strip(),
 		target_capability_id=str(obj.get("target_capability_id") or "").strip(),
 		self_contained=bool(obj.get("self_contained")),
 		confidence=max(0.0, min(1.0, float(obj.get("confidence") or 0.0))),
