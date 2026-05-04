@@ -961,6 +961,18 @@
     return filters && typeof filters === "object" ? String(filters.item || filters.item_code || "").trim() : "";
   }
 
+
+  function fallbackToProcurementManagedRoute(config, pageKey, slug, shellSelector) {
+    if (!config || config.workspaceId !== "procurement") return;
+    window.setTimeout(() => {
+      const route = getRoute();
+      const activePage = Array.isArray(route) ? String(route[0] || "") : "";
+      const activeSlug = Array.isArray(route) ? String(route[1] || "") : "";
+      if (activePage !== pageKey || activeSlug !== slug || document.querySelector(shellSelector)) return;
+      window.location.href = `/desk/${pageKey}/${slug}`;
+    }, 900);
+  }
+
   function routeToWorklist(queueKey, filters) {
     const config = workspaceConfig(getRoute());
     const nextFilters = filters && Object.keys(filters).length ? filters : null;
@@ -978,11 +990,14 @@
       return;
     }
     frappe.set_route(config.worklistRoute, normalizedQueueKey);
+    fallbackToProcurementManagedRoute(config, config.worklistRoute, normalizedQueueKey, ".erpw-list-shell");
   }
 
   function routeToReportPage(reportKey) {
     const config = workspaceConfig(getRoute());
-    frappe.set_route(config.reportRoute, String(reportKey || "").replace(/_/g, "-"));
+    const slug = String(reportKey || "").replace(/_/g, "-");
+    frappe.set_route(config.reportRoute, slug);
+    fallbackToProcurementManagedRoute(config, config.reportRoute, slug, ".erpw-report-shell");
   }
 
   function openNativeNotifications() {
