@@ -1953,6 +1953,53 @@
     setTimeout(ensureProcurementDirectPage, 220);
   }
 
+  let roleHomeRedirectDone = false;
+
+  function currentBootRoles() {
+    const boot = window.frappe && frappe.boot ? frappe.boot : {};
+    const candidates = [
+      boot.user && boot.user.roles,
+      boot.user_roles,
+      boot.roles,
+    ];
+    for (let index = 0; index < candidates.length; index += 1) {
+      if (Array.isArray(candidates[index])) return candidates[index].map((role) => String(role || ""));
+    }
+    return [];
+  }
+
+  function hasAnyBootRole(roleNames) {
+    const roleSet = new Set(currentBootRoles());
+    return roleNames.some((role) => roleSet.has(role));
+  }
+
+  function isPlainDeskPath() {
+    const path = String(window.location && window.location.pathname || "").replace(/\/+$/, "");
+    return path === "/desk" || path === "/app";
+  }
+
+  function routeToRoleHome() {
+    if (roleHomeRedirectDone || !isPlainDeskPath() || !window.frappe || typeof frappe.set_route !== "function") return;
+    const user = String((frappe.session && frappe.session.user) || (frappe.boot && frappe.boot.user && frappe.boot.user.name) || "");
+    if (!user || user === "Guest" || user === "Administrator") return;
+    if (hasAnyBootRole(["Purchase User", "Purchase Manager", "Purchase Master Manager"])) {
+      roleHomeRedirectDone = true;
+      frappe.set_route("procurement-console");
+      return;
+    }
+    if (hasAnyBootRole(["Sales Manager", "Sales User", "Sales Master Manager", "Sales Executive", "Key Account Sales"])) {
+      roleHomeRedirectDone = true;
+      frappe.set_route(salesWorkspaceRoute("launcher", "sales-console-home"));
+    }
+  }
+
+  function scheduleRoleHomeRedirect() {
+    routeToRoleHome();
+    setTimeout(routeToRoleHome, 80);
+    setTimeout(routeToRoleHome, 240);
+    setTimeout(routeToRoleHome, 700);
+  }
+
   window.erpWorkspaceUiBoot = Object.assign(window.erpWorkspaceUiBoot || {}, {
     registerChildPageBootstrap(doctype, bootstrap) {
       if (!doctype || typeof bootstrap !== "function") return;
@@ -1969,6 +2016,7 @@
     },
   });
 
+  scheduleRoleHomeRedirect();
   scheduleProcurementDirectPage();
   patchFooter();
   patchSidebar();
@@ -1993,11 +2041,14 @@
   setTimeout(scheduleProcurementDirectPage, 700);
   setTimeout(scheduleProcurementDirectPage, 1400);
   setTimeout(scheduleProcurementDirectPage, 2600);
+  setTimeout(scheduleRoleHomeRedirect, 80);
+  setTimeout(scheduleRoleHomeRedirect, 400);
   setTimeout(ensureChildGridActionLabels, 0);
   setTimeout(ensureChildGridActionLabels, 140);
   setTimeout(ensureChildGridActionLabels, 360);
   if (window.frappe && frappe.router && typeof frappe.router.on === "function" && !frappe.router.erpwProcurementDirectPageRouteBound) {
     frappe.router.on("change", scheduleProcurementDirectPage);
+    frappe.router.on("change", scheduleRoleHomeRedirect);
     frappe.router.erpwProcurementDirectPageRouteBound = true;
   }
   setTimeout(scheduleDraftLookupPositioning, 0);

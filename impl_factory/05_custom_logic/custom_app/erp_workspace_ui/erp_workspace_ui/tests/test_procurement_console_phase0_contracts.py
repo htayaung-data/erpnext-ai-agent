@@ -840,6 +840,16 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("procurement-console-supplier", boot_source)
         self.assertIn("procurement-console-item", boot_source)
 
+    def test_procurement_boot_runtime_has_role_home_fallback(self):
+        boot_path = Path(__file__).resolve().parents[1] / "public" / "js" / "erp_workspace_ui_boot.js"
+        source = boot_path.read_text()
+
+        self.assertIn("function routeToRoleHome", source)
+        self.assertIn("Purchase Manager", source)
+        self.assertIn('frappe.set_route("procurement-console")', source)
+        self.assertIn('salesWorkspaceRoute("launcher", "sales-console-home")', source)
+        self.assertIn("scheduleRoleHomeRedirect", source)
+
     def test_phase3_smoke_covers_direct_po_follow_up_route(self):
         smoke_path = Path(__file__).resolve().parents[2] / "ui_smoke" / "procurement_phase3_smoke.js"
         source = smoke_path.read_text()
