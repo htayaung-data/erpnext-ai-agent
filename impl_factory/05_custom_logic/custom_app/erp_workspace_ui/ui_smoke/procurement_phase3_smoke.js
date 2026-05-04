@@ -346,7 +346,7 @@ async function exerciseReportLinkAutocomplete(page, route, key, doctype, seed, l
   await input.fill(query);
   const suggestions = page.locator(".erpw-report-link-suggestions:not([hidden])").first();
   await suggestions.waitFor({ state: "visible", timeout: TIMEOUT });
-  const option = suggestions.locator("[data-erpw-link-option]").first();
+  const option = suggestions.locator("[data-erpw-report-link-option]").first();
   await option.waitFor({ state: "visible", timeout: TIMEOUT });
   await option.click();
   const selected = await input.inputValue();

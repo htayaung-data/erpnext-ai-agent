@@ -858,6 +858,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("PUR-ORD-2026-00010", source)
         self.assertIn('worklistPayload(page, "purchase_order_directory")', source)
         self.assertIn('process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010"', source)
+        self.assertIn("data-erpw-report-link-option", source)
         self.assertIn("Detail runtime unavailable", source)
         self.assertIn("Receipt posture", source)
         self.assertIn("Billing posture", source)
