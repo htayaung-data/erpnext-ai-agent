@@ -862,6 +862,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("data-erpw-report-link-option", source)
         self.assertIn("checkProcurementOverviewNavigationLifecycle", source)
         self.assertIn("assertSingleProcurementShell", source)
+        self.assertIn("waitForFunction((shellKey)", source)
         self.assertIn("old Procurement Overview remains visible", source)
         self.assertIn("multiple Procurement shells are visible", source)
         self.assertIn("sales-console-action[data-erpw-procurement-create-action]", source)
@@ -902,6 +903,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         for path in paths:
             source = path.read_text()
             self.assertIn("cleanupProcurementRouteShells(PAGE_KEY, { removeActive: true })", source, str(path))
+            self.assertIn("pruneProcurementRouteShells", source, str(path))
 
     def test_procurement_overview_uses_dynamic_shared_console_runtime(self):
         source = (Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js").read_text()

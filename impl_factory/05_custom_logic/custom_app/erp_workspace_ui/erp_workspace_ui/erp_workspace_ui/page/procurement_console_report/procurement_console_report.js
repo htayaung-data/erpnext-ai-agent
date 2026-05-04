@@ -253,6 +253,14 @@
     }
   }
 
+  function pruneRouteShells(keepNode) {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.pruneProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode);
+      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 0);
+      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 80);
+    }
+  }
+
   function render(wrapper) {
     cleanupRouteShells();
     const page = frappe.ui.make_app_page({

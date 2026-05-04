@@ -275,6 +275,25 @@ async function waitForProcurementShell(page, shellKey) {
 
 async function assertSingleProcurementShell(page, expectedShell, label) {
   await waitForProcurementShell(page, expectedShell);
+  await page.waitForFunction((shellKey) => {
+    function visibleCount(selector) {
+      return Array.from(document.querySelectorAll(selector)).filter((node) => {
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+      }).length;
+    }
+    const counts = {
+      overview: visibleCount('.sales-console-shell[data-erpw-workspace="procurement"]'),
+      worklist: visibleCount(".erpw-list-shell"),
+      report: visibleCount(".erpw-report-shell"),
+      poDetail: visibleCount(".erpw-procurement-po-follow-up-shell"),
+      supplierDetail: visibleCount(".erpw-procurement-supplier-detail-shell"),
+      itemDetail: visibleCount(".erpw-procurement-item-detail-shell"),
+    };
+    const total = counts.overview + counts.worklist + counts.report + counts.poDetail + counts.supplierDetail + counts.itemDetail;
+    return counts[shellKey] === 1 && total === 1;
+  }, expectedShell, { timeout: TIMEOUT });
   const state = await procurementShellState(page);
   assert(state[expectedShell] === 1, `${label}: expected ${expectedShell} shell to be visible once`, state);
   assert(state.total === 1, `${label}: multiple Procurement shells are visible`, state);

@@ -1894,6 +1894,17 @@
     });
   }
 
+  function pruneProcurementRouteShells(activePageKey, keepNode) {
+    cleanupProcurementRouteShells(activePageKey);
+    if (!isProcurementConsoleRoute(activePageKey) || !keepNode || !document || !document.querySelectorAll) return;
+    PROCUREMENT_ROUTE_SHELLS[activePageKey].forEach((selector) => {
+      document.querySelectorAll(selector).forEach((node) => {
+        if (node === keepNode || node.contains(keepNode) || keepNode.contains(node)) return;
+        if (node.parentNode) node.parentNode.removeChild(node);
+      });
+    });
+  }
+
   function currentRouteParts() {
     if (window.frappe && typeof frappe.get_route === "function") {
       const route = frappe.get_route();
@@ -2046,6 +2057,7 @@
     ensureActiveChildPageBootstrap,
     scheduleActiveChildPageBootstrap,
     cleanupProcurementRouteShells,
+    pruneProcurementRouteShells,
     primeManagedDraftLookups,
     setSalesOrderPrep() {
       // First-paint prep takeover has been intentionally disabled.

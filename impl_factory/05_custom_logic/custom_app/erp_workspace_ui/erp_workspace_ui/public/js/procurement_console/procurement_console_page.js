@@ -430,6 +430,7 @@
 
     $root.append($header, $createActions, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
     $(page.body).empty().append($root);
+    pruneRouteShells($root.get(0));
 
     frappe.call({ method: BOOTSTRAP_METHOD }).then((response) => {
       const payload = response && response.message ? response.message : {};
@@ -452,6 +453,14 @@
   function cleanupRouteShells() {
     if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
       window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY, { removeActive: true });
+    }
+  }
+
+  function pruneRouteShells(keepNode) {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.pruneProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode);
+      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 0);
+      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 80);
     }
   }
 
