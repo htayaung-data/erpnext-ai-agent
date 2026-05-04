@@ -77,6 +77,11 @@
     return { $host, $shell };
   }
 
+  function isAttached($node) {
+    const node = $node && $node.get ? $node.get(0) : null;
+    return Boolean(node && document.documentElement.contains(node));
+  }
+
   function makeFallbackPage(wrapper) {
     const $parent = $(wrapper);
     $parent.empty().append(`
@@ -282,6 +287,7 @@
     const hosts = ensureHost(page, wrapper);
     const viewState = { page, $host: hosts.$host, $shell: hosts.$shell };
     wrapper.__erpwProcurementItemDetail = viewState;
+    pruneRouteShells(hosts.$host.get(0));
     loadRoute(viewState);
   }
 
@@ -292,7 +298,7 @@
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     const existing = wrapper && wrapper.__erpwProcurementItemDetail;
-    if (existing) {
+    if (existing && isAttached(existing.$host) && isAttached(existing.$shell)) {
       loadRoute(existing);
       return;
     }

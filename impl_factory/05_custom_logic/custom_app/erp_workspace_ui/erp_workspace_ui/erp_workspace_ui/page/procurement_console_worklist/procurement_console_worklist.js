@@ -47,6 +47,11 @@
     return $host;
   }
 
+  function isAttached($node) {
+    const node = $node && $node.get ? $node.get(0) : null;
+    return Boolean(node && document.documentElement.contains(node));
+  }
+
   function collectFilterValues($host) {
     const values = {};
     if (!$host || !$host.length) return values;
@@ -265,9 +270,10 @@
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
   frappe.pages[PAGE_KEY].on_page_show = function (wrapper) {
-    if (wrapper && wrapper.__erpwProcurementConsoleWorklist) {
-      activeViewState = wrapper.__erpwProcurementConsoleWorklist;
-      loadRoute(wrapper.__erpwProcurementConsoleWorklist);
+    const existing = wrapper && wrapper.__erpwProcurementConsoleWorklist;
+    if (existing && isAttached(existing.$host)) {
+      activeViewState = existing;
+      loadRoute(existing);
       return;
     }
     render(wrapper);

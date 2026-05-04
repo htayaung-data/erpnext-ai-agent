@@ -96,6 +96,11 @@
     return $host;
   }
 
+  function isAttached($node) {
+    const node = $node && $node.get ? $node.get(0) : null;
+    return Boolean(node && document.documentElement.contains(node));
+  }
+
   function syncReportChromeTitle(viewState, payload) {
     if (!viewState || !viewState.page) return;
     const payloadTitle = payload && payload.page && payload.page.title ? payload.page.title : "";
@@ -277,14 +282,16 @@
       filterOverrides: null,
     };
     wrapper.__erpwProcurementConsoleReport = viewState;
+    pruneRouteShells(viewState.$host.get(0));
     loadRoute(viewState);
   }
 
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
   frappe.pages[PAGE_KEY].on_page_show = function (wrapper) {
-    if (wrapper && wrapper.__erpwProcurementConsoleReport) {
-      loadRoute(wrapper.__erpwProcurementConsoleReport);
+    const existing = wrapper && wrapper.__erpwProcurementConsoleReport;
+    if (existing && isAttached(existing.$host)) {
+      loadRoute(existing);
       return;
     }
     render(wrapper);

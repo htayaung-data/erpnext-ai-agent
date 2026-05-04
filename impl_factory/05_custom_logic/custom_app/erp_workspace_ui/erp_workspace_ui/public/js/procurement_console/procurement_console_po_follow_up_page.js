@@ -90,6 +90,11 @@
     return { $host, $shell };
   }
 
+  function isAttached($node) {
+    const node = $node && $node.get ? $node.get(0) : null;
+    return Boolean(node && document.documentElement.contains(node));
+  }
+
   function makeFallbackPage(wrapper) {
     const $parent = $(wrapper);
     $parent.empty().append(`
@@ -340,7 +345,7 @@
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     const existing = wrapper && wrapper.__erpwProcurementPoFollowUp;
-    if (existing) {
+    if (existing && isAttached(existing.$host) && isAttached(existing.$shell)) {
       activeViewState = existing;
       existing.routeOptionsConsumed = false;
       loadRoute(existing);
