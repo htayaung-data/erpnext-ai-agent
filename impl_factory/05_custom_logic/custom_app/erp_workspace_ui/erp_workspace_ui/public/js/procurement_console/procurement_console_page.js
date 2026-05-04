@@ -33,10 +33,19 @@
     frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
   }
 
+  function cleanupForNativeRoute() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true });
+      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 0);
+      setTimeout(() => window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true }), 80);
+    }
+  }
+
   function executeTarget(target) {
     if (!target) return;
     if (target.kind === "new_doc" && target.doctype) {
       frappe.route_options = target.defaults && typeof target.defaults === "object" ? Object.assign({}, target.defaults) : {};
+      cleanupForNativeRoute();
       return frappe.set_route("Form", target.doctype, "new-" + String(target.doctype).toLowerCase().replace(/\s+/g, "-"));
     }
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
