@@ -9,10 +9,12 @@
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
-  const consoleRuntime = window.erpWorkspaceConsoleRuntime || {};
+  function consoleRuntime() {
+    return window.erpWorkspaceConsoleRuntime || {};
+  }
 
   function runtimeMethod(name) {
-    const method = consoleRuntime[name];
+    const method = consoleRuntime()[name];
     if (typeof method === "function") return method;
     throw new Error("Procurement Console runtime is missing method: " + name);
   }

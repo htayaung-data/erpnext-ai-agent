@@ -864,6 +864,14 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("Receipt posture", source)
         self.assertIn("Billing posture", source)
 
+    def test_procurement_overview_uses_dynamic_shared_console_runtime(self):
+        source = (Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js").read_text()
+
+        self.assertIn("function consoleRuntime()", source)
+        self.assertIn("window.erpWorkspaceConsoleRuntime || {}", source)
+        self.assertIn("const method = consoleRuntime()[name]", source)
+        self.assertNotIn("const consoleRuntime = window.erpWorkspaceConsoleRuntime || {}", source)
+
     def test_procurement_detail_asset_loaders_use_frappe_require_contract(self):
         public_js = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console"
         for filename in [
