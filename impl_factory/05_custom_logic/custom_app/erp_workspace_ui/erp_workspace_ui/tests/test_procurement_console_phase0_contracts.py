@@ -681,6 +681,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn('const workspaceRegistry = root.erpWorkspaceUiWorkspaceRegistry || {};', source)
         self.assertIn('frappe.set_route(config.worklistRoute, normalizedQueueKey)', source)
         self.assertIn('frappe.set_route(config.reportRoute, String(reportKey || "").replace(/_/g, "-"))', source)
+        self.assertGreaterEqual(source.count('event.stopImmediatePropagation'), 3)
 
     def test_supplier_directory_uses_ready_read_only_list_contract(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_directory")

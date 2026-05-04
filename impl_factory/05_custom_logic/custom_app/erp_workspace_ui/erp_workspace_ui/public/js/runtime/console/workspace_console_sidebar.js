@@ -1478,6 +1478,7 @@
       element.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
         openWorkspaceSearch("");
       });
     });
@@ -1485,6 +1486,7 @@
       element.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
         openNativeNotifications();
       });
     });
@@ -1492,6 +1494,7 @@
       element.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
         const item = wrapper._erpwSidebarItems && wrapper._erpwSidebarItems.get(element.getAttribute("data-erpw-sidebar-index"));
         executeTarget(item && item.target ? item.target : null);
       });
