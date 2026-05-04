@@ -592,12 +592,14 @@
             return true;
           }
 
+          let procurementNativeChromeSyncToken = 0;
+
           function syncProcurementNativeChrome() {
             const context = isProcurementManagedNativeRoute();
             if (!context) return false;
             const keepHead = pruneProcurementNativePageHeads();
             if (!(keepHead instanceof HTMLElement)) return false;
-            const lists = Array.from(keepHead.querySelectorAll(".navbar-breadcrumbs"));
+            const lists = Array.from(keepHead.querySelectorAll(".navbar-breadcrumbs, .breadcrumb, .breadcrumbs"));
             let synced = false;
             lists.forEach((list) => {
               synced = renderProcurementBreadcrumbs(list, context) || synced;
@@ -609,6 +611,17 @@
               }
             }
             return synced;
+          }
+
+          function scheduleProcurementNativeChromeSync() {
+            const token = ++procurementNativeChromeSyncToken;
+            [0, 120, 320, 700, 1200, 2000, 4000, 7000].forEach((delay) => {
+              window.setTimeout(() => {
+                if (token !== procurementNativeChromeSyncToken) return;
+                syncProcurementNativeChrome();
+        scheduleProcurementNativeChromeSync();
+              }, delay);
+            });
           }
 
           function bindProcurementNativeBreadcrumbOwnership() {
