@@ -7207,3 +7207,409 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
     height: 36px;
   }
 }
+
+/* Shared compact detail shell for productized read-only record pages. */
+.erpw-child-detail-shell {
+  gap: 0.72rem;
+}
+
+.erpw-child-detail-shell .erpw-child-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+  padding: 0.98rem 1.1rem 0.88rem;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid rgba(220, 228, 238, 0.94);
+  box-shadow: var(--erpw-shadow-card);
+}
+
+.erpw-child-detail-shell .erpw-child-summary-copy {
+  padding: 0;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(255, 255, 255, 0.98) 100%);
+}
+
+.erpw-child-detail-shell .erpw-child-summary-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.erpw-child-detail-shell .erpw-child-summary-main {
+  min-width: 0;
+}
+
+.erpw-child-detail-shell .erpw-child-kicker {
+  margin-bottom: 0.34rem;
+  color: #0f766e;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+}
+
+.erpw-child-detail-shell .erpw-child-title {
+  color: #0f172a;
+  font-size: 1.22rem;
+  line-height: 1.18;
+  letter-spacing: 0;
+}
+
+.erpw-child-detail-shell .erpw-child-subtitle {
+  max-width: 760px;
+  margin-top: 0.34rem;
+  color: #526174;
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
+.erpw-child-detail-shell .erpw-child-chip-row-header {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  align-content: flex-start;
+  max-width: 46%;
+  margin-top: 0;
+}
+
+.erpw-child-detail-shell .erpw-child-chip {
+  min-height: 28px;
+  padding: 0.28rem 0.62rem;
+  background: #f8fafc;
+  color: #475569;
+  border-color: rgba(203, 213, 225, 0.86);
+  font-size: 0.69rem;
+}
+
+.erpw-child-detail-shell .erpw-child-chip.pending {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: rgba(191, 219, 254, 0.88);
+}
+
+.erpw-child-detail-shell .erpw-child-chip.approved,
+.erpw-child-detail-shell .erpw-child-chip.good {
+  background: #f0fdfa;
+  color: #0f766e;
+  border-color: rgba(153, 246, 228, 0.72);
+}
+
+.erpw-child-detail-shell .erpw-child-chip.attention {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: rgba(252, 211, 77, 0.72);
+}
+
+.erpw-child-detail-shell .erpw-child-chip.blocker {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: rgba(254, 202, 202, 0.9);
+}
+
+.erpw-child-detail-shell .erpw-child-summary-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.62rem;
+  padding: 0.82rem 1rem 1rem;
+  background: #f8fafc;
+  border-top: 1px solid rgba(226, 232, 240, 0.86);
+}
+
+.erpw-child-detail-shell .erpw-child-fact {
+  min-width: 0;
+  padding: 0.64rem 0.72rem;
+  border: 1px solid rgba(226, 232, 240, 0.92);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: var(--erpw-shadow-panel);
+}
+
+.erpw-child-detail-shell .erpw-child-fact-label {
+  color: #64748b;
+  font-size: 0.66rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 760;
+}
+
+.erpw-child-detail-shell .erpw-child-fact-value {
+  margin-top: 0.24rem;
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  font-weight: 760;
+  overflow-wrap: anywhere;
+}
+
+.erpw-child-detail-shell .erpw-child-fact-meta {
+  margin-top: 0.18rem;
+  color: #64748b;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 980px) {
+  .erpw-child-detail-shell .erpw-child-summary-top {
+    flex-direction: column;
+    gap: 0.62rem;
+  }
+
+  .erpw-child-detail-shell .erpw-child-chip-row-header {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .erpw-child-detail-shell .erpw-child-summary-facts {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0.72rem;
+  }
+}
+
+.erpw-child-detail-shell .erpw-child-actions-band {
+  padding: 0.7rem 0.82rem;
+  background: var(--erpw-surface-shell);
+  box-shadow: var(--erpw-shadow-card);
+}
+
+.erpw-child-detail-shell .erpw-child-action-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.erpw-child-detail-shell .erpw-child-action-row {
+  display: grid;
+  gap: 0.55rem;
+  align-items: stretch;
+}
+
+.erpw-child-detail-shell .erpw-child-action-row-primary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.erpw-child-detail-shell .erpw-child-action-row-secondary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.erpw-child-detail-shell .erpw-child-action-row-primary[data-count="1"],
+.erpw-child-detail-shell .erpw-child-action-row-secondary[data-count="1"] {
+  grid-template-columns: minmax(220px, 360px);
+}
+
+.erpw-child-detail-shell .erpw-child-action-row-primary[data-count="2"],
+.erpw-child-detail-shell .erpw-child-action-row-secondary[data-count="2"] {
+  grid-template-columns: repeat(2, minmax(220px, 360px));
+  justify-content: start;
+}
+
+.erpw-child-detail-shell .erpw-child-action {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.72rem;
+  width: 100%;
+  min-height: 46px;
+  padding: 0.68rem 0.82rem;
+  border-radius: 14px;
+  border: 1px solid var(--erpw-border-strong);
+  background: #ffffff;
+  color: #162033;
+  box-shadow: var(--erpw-shadow-card-strong);
+  text-align: left;
+  white-space: normal;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.erpw-child-detail-shell .erpw-child-action::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0.82rem;
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--erpw-accent-neutral);
+}
+
+.erpw-child-detail-shell .erpw-child-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 14px 30px rgba(15, 23, 42, 0.09);
+  background: #ffffff;
+}
+
+.erpw-child-detail-shell .erpw-child-action.primary::before {
+  background: var(--erpw-accent-teal);
+}
+
+.erpw-child-detail-shell .erpw-child-action.secondary::before {
+  background: #8ea4bf;
+}
+
+.erpw-child-detail-shell .erpw-child-action-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--erpw-icon-dark-bg);
+  border: 1px solid var(--erpw-icon-dark-border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 10px 20px rgba(15, 23, 42, 0.16);
+  color: #f8fafc;
+}
+
+.erpw-child-detail-shell .erpw-child-action-accent svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.erpw-child-detail-shell .erpw-child-action-copy {
+  min-width: 0;
+}
+
+.erpw-child-detail-shell .erpw-child-action-title {
+  display: block;
+  color: #162033;
+  font-size: 0.82rem;
+  font-weight: 730;
+  line-height: 1.18;
+}
+
+.erpw-child-detail-shell .erpw-child-action-note {
+  margin-top: 0.22rem;
+  color: #64748b;
+  font-size: 0.71rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.erpw-child-detail-shell .erpw-child-action.is-disabled,
+.erpw-child-detail-shell .erpw-child-action[disabled] {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+  box-shadow: none;
+}
+
+.erpw-child-detail-shell .erpw-child-action.is-disabled .erpw-child-action-accent,
+.erpw-child-detail-shell .erpw-child-action[disabled] .erpw-child-action-accent {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #64748b;
+  box-shadow: none;
+}
+
+@media (max-width: 980px) {
+  .erpw-child-detail-shell .erpw-child-action-row-primary,
+  .erpw-child-detail-shell .erpw-child-action-row-secondary,
+  .erpw-child-detail-shell .erpw-child-action-row-primary[data-count="1"],
+  .erpw-child-detail-shell .erpw-child-action-row-primary[data-count="2"],
+  .erpw-child-detail-shell .erpw-child-action-row-secondary[data-count="1"],
+  .erpw-child-detail-shell .erpw-child-action-row-secondary[data-count="2"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+.erpw-list-control-field.is-link,
+.erpw-report-control-field {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.erpw-list-control-field.is-link {
+  position: relative;
+}
+
+.erpw-list-control-input,
+.erpw-list-control-select,
+.erpw-report-control-input {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.erpw-list-link-suggestions,
+.erpw-report-link-suggestions {
+  box-sizing: border-box;
+  min-width: 100%;
+  max-width: min(420px, calc(100vw - 32px));
+  overflow-x: hidden;
+  contain: layout paint;
+}
+
+.erpw-list-link-suggestion,
+.erpw-report-link-suggestion {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.erpw-procurement-table-link {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #0f766e;
+  font: inherit;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.erpw-procurement-table-link:hover,
+.erpw-procurement-table-link:focus-visible {
+  color: #115e59;
+  outline: none;
+  text-decoration-thickness: 2px;
+}
+
+.erpw-list-shell .erpw-list-controls-strip,
+.erpw-report-shell .erpw-report-controls {
+  border-color: rgba(220, 228, 238, 0.94) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfe 100%) !important;
+  box-shadow: var(--erpw-shadow-card) !important;
+}
+
+.erpw-list-shell .erpw-list-control-form,
+.erpw-report-shell .erpw-report-control-grid {
+  align-items: end !important;
+}
+
+.erpw-list-shell .erpw-list-control-field,
+.erpw-report-shell .erpw-report-control-field {
+  min-width: 0 !important;
+}
+
+.erpw-list-shell .erpw-list-action-field,
+.erpw-report-shell .erpw-report-command-actions,
+.erpw-report-shell .erpw-report-control-actions {
+  align-self: end !important;
+}
+
+.erpw-list-shell .erpw-list-metrics,
+.erpw-report-shell .erpw-report-metrics {
+  grid-template-columns: repeat(auto-fit, minmax(178px, 240px)) !important;
+  justify-content: start !important;
+}
+
+.erpw-list-shell .erpw-list-metric,
+.erpw-report-shell .erpw-report-metric {
+  min-width: 0 !important;
+}
+
+@media (max-width: 720px) {
+  .erpw-list-shell .erpw-list-metrics,
+  .erpw-report-shell .erpw-report-metrics {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}

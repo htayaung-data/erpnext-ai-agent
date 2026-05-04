@@ -9,7 +9,10 @@
   const HOME_ROUTE = procurementRoutes.home || "procurement-console";
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const CONTEXT_METHOD = procurementMethods.reportContext || "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context";
-  const REPORT_CHROME_TITLE = "Procurement Console Report";
+  const REPORT_CHROME_TITLE = "Procurement Report";
+  const REPORT_CHROME_LABELS = {
+    supplier_quotation_comparison: "Quote Comparison",
+  };
   const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-05-02-report-link-suggest-v1";
   const REPORT_SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
 
@@ -132,12 +135,24 @@
   function syncReportChromeTitle(viewState, payload) {
     if (!viewState || !viewState.page) return;
     const payloadTitle = payload && payload.page && payload.page.title ? payload.page.title : "";
-    const chromeTitle = payloadTitle || REPORT_CHROME_TITLE;
+    const reportKey = viewState.reportKey || payload && payload.page && payload.page.key || "";
+    const chromeTitle = REPORT_CHROME_LABELS[reportKey] || payloadTitle || REPORT_CHROME_TITLE;
     if (typeof viewState.page.set_title === "function") {
       viewState.page.set_title(chromeTitle);
     }
     const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
     $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(chromeTitle);
+    const $breadcrumbs = $wrapper.find(".navbar-breadcrumbs").first();
+    if ($breadcrumbs.length) {
+      $breadcrumbs.html([
+        '<li><a href="/desk/' + HOME_ROUTE + '" data-erpw-procurement-home="1">Procurement Console</a></li>',
+        '<li><a class="title-text" aria-current="page">' + frappe.utils.escape_html(chromeTitle) + '</a></li>',
+      ].join(""));
+    }
+    $wrapper.off("click.erpWProcurementReportChrome").on("click.erpWProcurementReportChrome", "[data-erpw-procurement-home]", function (event) {
+      event.preventDefault();
+      frappe.set_route(HOME_ROUTE);
+    });
   }
 
   function ensureReportRuntime() {

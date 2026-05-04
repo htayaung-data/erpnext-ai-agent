@@ -101,9 +101,9 @@ def _supplier_payload(
 		},
 		"controls": {
 			"fields": [
-				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
-				{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Supplier name contains"},
-				{"key": "supplier_group", "label": "Supplier Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", "")},
+				{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Select supplier"},
+				{"key": "keyword", "label": "Search supplier text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search supplier text"},
+				{"key": "supplier_group", "label": "Supplier Group", "type": "link", "linkDoctype": "Supplier Group", "value": filters.get("supplier_group", ""), "placeholder": "Select supplier group"},
 				{
 					"key": "disabled",
 					"label": "Status",

@@ -107,9 +107,9 @@ def _item_directory_payload(
 		},
 		"controls": {
 			"fields": [
-				{"key": "item", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item", "")},
-				{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Item name contains"},
-				{"key": "item_group", "label": "Item Group", "type": "link", "linkDoctype": "Item Group", "value": filters.get("item_group", "")},
+				{"key": "item", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item", ""), "placeholder": "Select item"},
+				{"key": "keyword", "label": "Search item text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search item text"},
+				{"key": "item_group", "label": "Item Group", "type": "link", "linkDoctype": "Item Group", "value": filters.get("item_group", ""), "placeholder": "Select item group"},
 				{
 					"key": "disabled",
 					"label": "Status",
@@ -462,7 +462,11 @@ def _purchase_order_table(rows: list[dict[str, object]]) -> dict[str, object]:
 			{
 				"key": cstr(row.get("name")),
 				"cells": {
-					"purchase_order": row.get("name") or "-",
+					"purchase_order": {
+						"value": row.get("name") or "-",
+						"route": "procurement-console-po-follow-up",
+						"route_parts": [row.get("name")],
+					},
 					"supplier": row.get("supplier_name") or row.get("supplier") or "-",
 					"required_by": cstr(row.get("schedule_date") or ""),
 					"status": row.get("status") or "-",

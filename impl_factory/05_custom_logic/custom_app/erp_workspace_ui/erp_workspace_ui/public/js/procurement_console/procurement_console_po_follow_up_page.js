@@ -82,9 +82,9 @@
       $host = $('<section class="erpw-procurement-po-follow-up-page"></section>');
       $parent.empty().append($host);
     }
-    let $shell = $host.children(".erpw-child-shell.erpw-procurement-po-follow-up-shell").first();
+    let $shell = $host.children(".erpw-child-shell.erpw-child-detail-shell.erpw-procurement-po-follow-up-shell").first();
     if (!$shell.length) {
-      $shell = $('<div class="erpw-child-shell erpw-procurement-po-follow-up-shell"></div>');
+      $shell = $('<div class="erpw-child-shell erpw-child-detail-shell erpw-procurement-po-follow-up-shell"></div>');
       $host.append($shell);
     }
     return { $host, $shell };

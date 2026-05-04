@@ -152,8 +152,8 @@ def _purchase_request_payload(
 		},
 		"controls": {
 			"fields": [
-				{"key": "material_request", "label": "Purchase Request", "type": "link", "linkDoctype": "Material Request", "value": filters.get("material_request", "")},
-				{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Request ID contains"},
+				{"key": "material_request", "label": "Purchase Request", "type": "link", "linkDoctype": "Material Request", "value": filters.get("material_request", ""), "placeholder": "Select purchase request"},
+				{"key": "keyword", "label": "Search request text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search request text"},
 				{
 					"key": "status",
 					"label": "Status",

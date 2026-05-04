@@ -895,6 +895,7 @@
     const key = escapeHtml(rawKey);
     const value = escapeHtml(field.value == null ? "" : field.value);
     const type = field.type || "text";
+    const placeholder = escapeHtml(field.placeholder || "");
     const linkDoctype = field.linkDoctype || field.doctype || field.optionsDoctype || "";
     if (type === "select") {
       const options = normalizeItems(field.options).map((option) => {
@@ -911,11 +912,11 @@
     if (type === "link" && linkDoctype) {
       const popupId = 'erpw-report-link-options-' + rawKey.replace(/[^a-zA-Z0-9_-]/g, '-');
       return [
-        '<input class="erpw-report-control-input" type="text" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + escapeHtml(popupId) + '" data-erpw-control-key="' + key + '" data-erpw-link-doctype="' + escapeHtml(linkDoctype) + '" value="' + value + '">',
+        '<input class="erpw-report-control-input" type="text" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="' + escapeHtml(popupId) + '" data-erpw-control-key="' + key + '" data-erpw-link-doctype="' + escapeHtml(linkDoctype) + '"' + (placeholder ? ' placeholder="' + placeholder + '"' : '') + ' value="' + value + '">',
         '<div class="erpw-report-link-suggestions" id="' + escapeHtml(popupId) + '" role="listbox" hidden></div>',
       ].join("");
     }
-    return '<input class="erpw-report-control-input" type="' + escapeHtml(type) + '" data-erpw-control-key="' + key + '" value="' + value + '">';
+    return '<input class="erpw-report-control-input" type="' + escapeHtml(type) + '" data-erpw-control-key="' + key + '"' + (placeholder ? ' placeholder="' + placeholder + '"' : '') + ' value="' + value + '">';
   }
 
   function renderControlField(field) {

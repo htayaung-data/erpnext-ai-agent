@@ -2312,6 +2312,8 @@
     scheduleActiveChildPageBootstrap,
     cleanupProcurementRouteShells,
     pruneProcurementRouteShells,
+    ensureProcurementDirectPage,
+    scheduleProcurementDirectPage,
     primeManagedDraftLookups,
     setSalesOrderPrep() {
       // First-paint prep takeover has been intentionally disabled.

@@ -1,7 +1,11 @@
 const { chromium } = require("playwright");
+const fs = require("fs");
+const path = require("path");
 
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
 const TIMEOUT = Number(process.env.ERPW_PROCUREMENT_SMOKE_TIMEOUT || 60000);
+const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_ARTIFACT_DIR || path.join(__dirname, "artifacts", "procurement-phase3-assurance");
+fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 const USERS = [
   {
@@ -43,6 +47,16 @@ function normalizeText(value) {
 
 function routeUrl(route) {
   return new URL(route, BASE_URL).toString();
+}
+
+function safeFileName(value) {
+  return String(value || "shot").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+}
+
+async function captureSmokeScreenshot(page, name) {
+  const file = path.join(ARTIFACT_DIR, `${safeFileName(name)}.png`);
+  await page.screenshot({ path: file, fullPage: true });
+  return file;
 }
 
 function valuesFromContainer(value) {
@@ -246,6 +260,32 @@ async function visibleElementCount(page, selector) {
   }).length);
 }
 
+async function measureProcurementLayout(page) {
+  return page.evaluate(() => {
+    const main = document.querySelector(".layout-main-section, .page-container, main") || document.body;
+    const filter = document.querySelector(".erpw-list-controls-strip, .erpw-report-controls, .erpw-list-control-form, .erpw-report-control-grid");
+    const mainRect = main.getBoundingClientRect();
+    const filterRect = filter ? filter.getBoundingClientRect() : { width: 0, height: 0 };
+    return {
+      clientWidth: document.documentElement.clientWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      mainWidth: mainRect.width,
+      filterWidth: filterRect.width,
+      filterHeight: filterRect.height,
+    };
+  });
+}
+
+function maxLayoutDelta(before, states) {
+  return states.reduce((maxDelta, state) => Math.max(
+    maxDelta,
+    Math.abs(state.clientWidth - before.clientWidth),
+    Math.abs(state.bodyScrollWidth - before.bodyScrollWidth),
+    Math.abs(state.mainWidth - before.mainWidth),
+    Math.abs(state.filterWidth - before.filterWidth)
+  ), 0);
+}
+
 async function procurementShellState(page) {
   const state = {
     overview: await visibleElementCount(page, ".sales-console-shell[data-erpw-workspace=\"procurement\"]"),
@@ -440,6 +480,40 @@ async function checkDetailActionStyling(page, selector, label) {
   assert(actions.every((action) => action.display === "grid" || action.display === "inline-flex" || action.display === "flex"), `${label}: action buttons are not using shared styling`, { actions });
   assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: action button styling looks unstyled`, { actions });
   return actions;
+}
+
+
+async function checkCompactDetailHeader(page, selector, label) {
+  const shell = page.locator(selector).first();
+  await shell.waitFor({ state: "visible", timeout: TIMEOUT });
+  await captureSmokeScreenshot(page, `${label}-detail-page`);
+  const styles = await shell.locator(".erpw-child-summary").first().evaluate((node) => {
+    const style = getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    const title = node.querySelector(".erpw-child-title");
+    const titleStyle = title ? getComputedStyle(title) : null;
+    return {
+      height: rect.height,
+      paddingTop: Number.parseFloat(style.paddingTop) || 0,
+      paddingLeft: Number.parseFloat(style.paddingLeft) || 0,
+      borderRadius: Number.parseFloat(style.borderTopLeftRadius) || 0,
+      borderTopWidth: Number.parseFloat(style.borderTopWidth) || 0,
+      boxShadow: style.boxShadow,
+      backgroundColor: style.backgroundColor,
+      backgroundImage: style.backgroundImage,
+      color: style.color,
+      titleColor: titleStyle ? titleStyle.color : "",
+      overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(styles.paddingTop > 0 && styles.paddingLeft > 0, `${label}: detail header has no shared compact padding`, styles);
+  assert(styles.borderRadius > 0, `${label}: detail header has no premium radius`, styles);
+  assert(styles.borderTopWidth > 0 || styles.boxShadow !== "none", `${label}: detail header has no border or elevation`, styles);
+  assert(!/gradient/i.test(styles.backgroundImage || ""), `${label}: detail header still uses Overview-style dark hero gradient`, styles);
+  assert(!/rgb\(15, 23, 42\)|rgb\(17, 24, 39\)|rgb\(30, 41, 59\)/i.test(styles.backgroundColor || ""), `${label}: detail header still uses dark Overview hero background`, styles);
+  assert(styles.height <= 320, `${label}: detail header is too tall for compact detail treatment`, styles);
+  assert(styles.overflowX <= 1, `${label}: detail page introduced horizontal overflow`, styles);
+  return styles;
 }
 
 async function checkProcurementTargetAudit(page, user) {
@@ -657,9 +731,17 @@ function fieldByKey(payload, key) {
   return (((payload && payload.controls) || {}).fields || []).find((field) => field && field.key === key) || null;
 }
 
-function assertLinkField(payload, key, doctype, label) {
+function assertLinkField(payload, key, doctype, label, placeholder) {
   const field = fieldByKey(payload, key);
   assert(field && field.type === "link" && field.linkDoctype === doctype, `${label}: link filter metadata mismatch`, { key, doctype, field });
+  if (placeholder) {
+    assert(field.placeholder === placeholder, `${label}: link filter placeholder mismatch`, { key, expected: placeholder, field });
+  }
+}
+
+function assertTextSearchField(payload, key, label, expectedLabel) {
+  const field = fieldByKey(payload, key);
+  assert(field && field.type === "text" && field.label === expectedLabel, `${label}: text search filter label mismatch`, { key, expectedLabel, field });
 }
 
 function assertNoCompanyField(payload, label) {
@@ -748,27 +830,34 @@ async function checkSupplierAutocomplete(page) {
   assert(comparisonResponse.ok, "Quote comparison API failed for autocomplete setup", comparisonResponse);
   const comparisonPayload = comparisonResponse.data.message || {};
 
-  assertLinkField(supplierPayload, "supplier", "Supplier", "Supplier Directory");
-  assertLinkField(supplierPayload, "supplier_group", "Supplier Group", "Supplier Directory");
-  assertLinkField(requestPayload, "material_request", "Material Request", "Purchase Requests");
+  assertLinkField(supplierPayload, "supplier", "Supplier", "Supplier Directory", "Select supplier");
+  assertLinkField(supplierPayload, "supplier_group", "Supplier Group", "Supplier Directory", "Select supplier group");
+  assertTextSearchField(supplierPayload, "keyword", "Supplier Directory", "Search supplier text");
+  assertLinkField(requestPayload, "material_request", "Material Request", "Purchase Requests", "Select purchase request");
+  assertTextSearchField(requestPayload, "keyword", "Purchase Requests", "Search request text");
   assertNoCompanyField(requestPayload, "Purchase Requests");
-  assertLinkField(orderPayload, "purchase_order", "Purchase Order", "Purchase Orders");
-  assertLinkField(orderPayload, "supplier", "Supplier", "Purchase Orders");
+  assertLinkField(orderPayload, "purchase_order", "Purchase Order", "Purchase Orders", "Select purchase order");
+  assertLinkField(orderPayload, "supplier", "Supplier", "Purchase Orders", "Select supplier");
+  assertTextSearchField(orderPayload, "keyword", "Purchase Orders", "Search order ID or supplier");
   assertNoCompanyField(orderPayload, "Purchase Orders");
-  assertLinkField(followUpPayload, "purchase_order", "Purchase Order", "PO Follow-up");
-  assertLinkField(followUpPayload, "supplier", "Supplier", "PO Follow-up");
+  assertLinkField(followUpPayload, "purchase_order", "Purchase Order", "PO Follow-up", "Select purchase order");
+  assertLinkField(followUpPayload, "supplier", "Supplier", "PO Follow-up", "Select supplier");
+  assertTextSearchField(followUpPayload, "keyword", "PO Follow-up", "Search order ID or supplier");
   assertNoCompanyField(followUpPayload, "PO Follow-up");
-  assertLinkField(rfqPayload, "request_for_quotation", "Request for Quotation", "RFQs");
+  assertLinkField(rfqPayload, "request_for_quotation", "Request for Quotation", "RFQs", "Select RFQ");
+  assertTextSearchField(rfqPayload, "keyword", "RFQs", "Search RFQ text");
   assertNoCompanyField(rfqPayload, "RFQs");
-  assertLinkField(quotationPayload, "supplier_quotation", "Supplier Quotation", "Supplier Quotations");
-  assertLinkField(quotationPayload, "supplier", "Supplier", "Supplier Quotations");
+  assertLinkField(quotationPayload, "supplier_quotation", "Supplier Quotation", "Supplier Quotations", "Select supplier quotation");
+  assertLinkField(quotationPayload, "supplier", "Supplier", "Supplier Quotations", "Select supplier");
+  assertTextSearchField(quotationPayload, "keyword", "Supplier Quotations", "Search quotation text");
   assertNoCompanyField(quotationPayload, "Supplier Quotations");
-  assertLinkField(itemPayload, "item", "Item", "Buying Items");
-  assertLinkField(itemPayload, "item_group", "Item Group", "Buying Items");
-  assertLinkField(comparisonPayload, "item_code", "Item", "Quote Comparison");
-  assertLinkField(comparisonPayload, "supplier", "Supplier", "Quote Comparison");
-  assertLinkField(comparisonPayload, "supplier_quotation", "Supplier Quotation", "Quote Comparison");
-  assertLinkField(comparisonPayload, "request_for_quotation", "Request for Quotation", "Quote Comparison");
+  assertLinkField(itemPayload, "item", "Item", "Buying Items", "Select item");
+  assertTextSearchField(itemPayload, "keyword", "Buying Items", "Search item text");
+  assertLinkField(itemPayload, "item_group", "Item Group", "Buying Items", "Select item group");
+  assertLinkField(comparisonPayload, "item_code", "Item", "Quote Comparison", "Select item");
+  assertLinkField(comparisonPayload, "supplier", "Supplier", "Quote Comparison", "Select supplier");
+  assertLinkField(comparisonPayload, "supplier_quotation", "Supplier Quotation", "Quote Comparison", "Select supplier quotation");
+  assertLinkField(comparisonPayload, "request_for_quotation", "Request for Quotation", "Quote Comparison", "Select RFQ");
   assertNoCompanyField(comparisonPayload, "Quote Comparison");
 
   const supplierSeed = firstRowName(supplierPayload) || await fetchLinkSeed(page, "Supplier", "S");
@@ -803,6 +892,82 @@ async function checkSupplierAutocomplete(page) {
   return { results };
 }
 
+async function exerciseFocusStability(page, scenario) {
+  await openDeskRoute(page, scenario.route);
+  await page.locator(scenario.shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const input = page.locator(scenario.selector).first();
+  await input.waitFor({ state: "visible", timeout: TIMEOUT });
+  await captureSmokeScreenshot(page, `${scenario.key}-before-focus`);
+  const before = await measureProcurementLayout(page);
+  await input.focus();
+  await page.waitForTimeout(350);
+  await captureSmokeScreenshot(page, `${scenario.key}-after-focus`);
+  const focused = await measureProcurementLayout(page);
+  await input.fill(scenario.query);
+  await page.waitForTimeout(900);
+  await captureSmokeScreenshot(page, `${scenario.key}-after-typing`);
+  const typed = await measureProcurementLayout(page);
+  if (scenario.suggestionSelector) {
+    await page.locator(scenario.suggestionSelector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+  }
+  await input.blur();
+  await page.waitForTimeout(350);
+  await captureSmokeScreenshot(page, `${scenario.key}-after-blur`);
+  const blurred = await measureProcurementLayout(page);
+  const maxDelta = maxLayoutDelta(before, [focused, typed, blurred]);
+  assert(maxDelta <= 2, `${scenario.label}: filter focus caused layout width shift`, { scenario, before, focused, typed, blurred, maxDelta });
+  return { label: scenario.label, before, focused, typed, blurred, maxDelta };
+}
+
+async function checkFocusStability(page) {
+  const scenarios = [
+    { key: "supplier-link", label: "Supplier Link", route: "/desk/procurement-console-worklist/supplier-directory", shell: ".erpw-list-shell", selector: '[data-erpw-list-field-key="supplier"]', query: "Golden", suggestionSelector: ".erpw-list-link-suggestions:not([hidden])" },
+    { key: "po-supplier-link", label: "PO Supplier Link", route: "/desk/procurement-console-worklist/purchase-order-directory", shell: ".erpw-list-shell", selector: '[data-erpw-list-field-key="supplier"]', query: "Myanmar", suggestionSelector: ".erpw-list-link-suggestions:not([hidden])" },
+    { key: "item-link", label: "Item Link", route: "/desk/procurement-console-worklist/buying-item-directory", shell: ".erpw-list-shell", selector: '[data-erpw-list-field-key="item"]', query: "Samsung", suggestionSelector: ".erpw-list-link-suggestions:not([hidden])" },
+    { key: "item-group-link", label: "Item Group Link", route: "/desk/procurement-console-worklist/buying-item-directory", shell: ".erpw-list-shell", selector: '[data-erpw-list-field-key="item_group"]', query: "Phone", suggestionSelector: ".erpw-list-link-suggestions:not([hidden])" },
+    { key: "quote-supplier-link", label: "Quote Comparison Supplier Link", route: "/desk/procurement-console-report/supplier-quotation-comparison", shell: ".erpw-report-shell", selector: '[data-erpw-control-key="supplier"]', query: "Golden", suggestionSelector: ".erpw-report-link-suggestions:not([hidden])" },
+  ];
+  const viewports = [
+    { key: "desktop", width: 1366, height: 900 },
+    { key: "mobile", width: 390, height: 820 },
+  ];
+  const results = [];
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const scenario of scenarios) {
+      results.push(Object.assign({ viewport: viewport.key }, await exerciseFocusStability(page, Object.assign({}, scenario, { key: `${viewport.key}-${scenario.key}` }))));
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  return results;
+}
+
+async function checkTopChrome(page) {
+  const pages = [
+    { route: "/desk/procurement-console-worklist/supplier-directory", shell: ".erpw-list-shell", title: "Suppliers" },
+    { route: "/desk/procurement-console-worklist/purchase-order-directory", shell: ".erpw-list-shell", title: "Purchase Orders" },
+    { route: "/desk/procurement-console-worklist/purchase-orders-overdue", shell: ".erpw-list-shell", title: "Overdue Purchase Orders" },
+    { route: "/desk/procurement-console-worklist/buying-item-directory", shell: ".erpw-list-shell", title: "Buying Items" },
+    { route: "/desk/procurement-console-worklist/supplier-quotation-directory", shell: ".erpw-list-shell", title: "Supplier Quotations" },
+    { route: "/desk/procurement-console-report/supplier-quotation-comparison", shell: ".erpw-report-shell", title: "Quote Comparison" },
+  ];
+  const results = [];
+  for (const item of pages) {
+    await openDeskRoute(page, item.route);
+    await page.locator(item.shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const snapshot = await procurementChromeSnapshot(page, item.title);
+    const headerText = normalizeText((snapshot.pageHeads || []).map((row) => row.text).join(" ") + " " + (snapshot.breadcrumbRows || []).map((row) => row.text).join(" "));
+    assert(headerText.includes("Procurement Console") && headerText.includes(item.title), `${item.title}: top chrome did not show workspace and page context`, { headerText, snapshot });
+    const parent = page.locator('[data-erpw-procurement-home="1"]').first();
+    await parent.waitFor({ state: "visible", timeout: TIMEOUT });
+    await parent.click();
+    await page.waitForURL(/\/desk\/procurement-console(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "overview", `${item.title}: parent breadcrumb to overview`);
+    results.push({ title: item.title, headerText });
+  }
+  return results;
+}
+
 async function checkQuoteComparisonFromSidebar(page) {
   await openDeskRoute(page, "/desk/procurement-console");
   const quoteLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).first();
@@ -829,6 +994,7 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
     assert(/Receipt posture/i.test(text) && /Billing posture/i.test(text), "Direct PO detail route did not render downstream posture", { text, route });
   }
   const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-po-follow-up-shell", "PO Follow-up Detail");
+  const compactHeader = await checkCompactDetailHeader(page, ".erpw-procurement-po-follow-up-shell", "PO Follow-up Detail");
   const detailResponse = await callMethod(page, "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context", {
     purchase_order: purchaseOrderName || "",
   });
@@ -836,7 +1002,7 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
   const payload = detailResponse.data.message || {};
   assert(["ready", "restricted", "unavailable", "empty"].includes((payload.detail && payload.detail.state && payload.detail.state.kind) || "missing"), "Detail API invalid state", payload);
   assertNoForbiddenActions(payload, "po_follow_up_detail");
-  return { route, state: payload.detail && payload.detail.state ? payload.detail.state.kind : "missing", actionStyles };
+  return { route, state: payload.detail && payload.detail.state ? payload.detail.state.kind : "missing", actionStyles, compactHeader };
 }
 
 async function checkSupplierDetail(page, user) {
@@ -861,6 +1027,7 @@ async function checkSupplierDetail(page, user) {
   assert(/RFQs/i.test(text) && /Supplier quotations/i.test(text), "Supplier Detail did not render sourcing context", { text });
   assert(!/Detail runtime unavailable/i.test(text), "Supplier Detail fell back to missing runtime state", { text });
   const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-supplier-detail-shell", "Supplier Detail");
+  const compactHeader = await checkCompactDetailHeader(page, ".erpw-procurement-supplier-detail-shell", "Supplier Detail");
 
   const detailResponse = await callMethod(page, "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context", {
     supplier: supplierName,
@@ -874,7 +1041,7 @@ async function checkSupplierDetail(page, user) {
   if (user.key !== "manager") {
     assert(!hasNativeFormAction, "Non-manager user should not see governed native Supplier form action", payload.action_targets || {});
   }
-  return { supplierName, state, hasNativeFormAction, actionStyles };
+  return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader };
 }
 
 async function checkItemDetail(page, user) {
@@ -899,6 +1066,7 @@ async function checkItemDetail(page, user) {
   assert(/Recent supplier quotations|Open purchase orders/i.test(text), "Item Detail did not render buying movement context", { text });
   assert(!/Detail runtime unavailable/i.test(text), "Item Detail fell back to missing runtime state", { text });
   const actionStyles = await checkDetailActionStyling(page, ".erpw-procurement-item-detail-shell", "Item Detail");
+  const compactHeader = await checkCompactDetailHeader(page, ".erpw-procurement-item-detail-shell", "Item Detail");
 
   const detailResponse = await callMethod(page, "erp_workspace_ui.procurement_console.items.get_item_detail_context", {
     item: itemCode,
@@ -912,7 +1080,25 @@ async function checkItemDetail(page, user) {
   if (user.key !== "manager") {
     assert(!hasNativeFormAction, "Non-manager user should not see governed native Item form action", payload.action_targets || {});
   }
-  return { itemCode, state, hasNativeFormAction, actionStyles };
+  const purchaseRows = (((payload.detail || {}).purchase_orders || {}).rows || []);
+  let purchaseOrderNavigation = { skipped: "no visible open purchase orders" };
+  if (purchaseRows.length) {
+    const firstPurchaseOrder = purchaseRows[0];
+    const purchaseOrderCell = ((firstPurchaseOrder.cells || {}).purchase_order || {});
+    const purchaseOrderName = purchaseOrderCell.value || firstPurchaseOrder.key || "";
+    assert(purchaseOrderCell.route === "procurement-console-po-follow-up", "Item Detail purchase order cell must use Procurement PO Follow-up route", { purchaseOrderCell });
+    const poButton = page.locator('.erpw-procurement-item-detail-shell [data-erpw-procurement-detail-route="procurement-console-po-follow-up"]').first();
+    await poButton.waitFor({ state: "visible", timeout: TIMEOUT });
+    await poButton.click();
+    await page.waitForURL((url) => url.pathname === `/desk/procurement-console-po-follow-up/${encodeURIComponent(purchaseOrderName)}`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "poDetail", "Item Detail purchase order navigation");
+    const poText = normalizeText(await page.locator(".erpw-procurement-po-follow-up-shell").first().innerText({ timeout: TIMEOUT }));
+    assert(poText.includes(purchaseOrderName), "Item Detail PO navigation did not load the selected Procurement PO detail", { purchaseOrderName, poText });
+    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "itemDetail", "Item Detail after browser back from PO detail");
+    purchaseOrderNavigation = { purchaseOrderName };
+  }
+  return { itemCode, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation };
 }
 
 async function checkCreateActions(page, user, bootstrapPayload) {
@@ -1004,6 +1190,10 @@ async function runUser(browser, user) {
     const state = bootstrapPayload && bootstrapPayload.state ? bootstrapPayload.state.kind : "missing";
     report.bootstrapState = state;
     if (state === "ready") {
+      if (user.key === "manager") {
+        report.topChrome = await checkTopChrome(page);
+        report.focusStability = await checkFocusStability(page);
+      }
       report.createActions = await checkCreateActions(page, user, bootstrapPayload);
       report.worklists = {};
       let firstPoName = process.env.ERPW_PROCUREMENT_PO_NAME || "";

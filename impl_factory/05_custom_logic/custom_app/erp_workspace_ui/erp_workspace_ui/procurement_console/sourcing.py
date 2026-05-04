@@ -465,8 +465,8 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 
 def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
-		{"key": "request_for_quotation", "label": "RFQ", "type": "link", "linkDoctype": "Request for Quotation", "value": filters.get("request_for_quotation", "")},
-		{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "RFQ ID contains"},
+		{"key": "request_for_quotation", "label": "RFQ", "type": "link", "linkDoctype": "Request for Quotation", "value": filters.get("request_for_quotation", ""), "placeholder": "Select RFQ"},
+		{"key": "keyword", "label": "Search RFQ text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search RFQ text"},
 		{
 			"key": "status",
 			"label": "Status",
@@ -486,9 +486,9 @@ def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 
 def _supplier_quotation_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
-		{"key": "supplier_quotation", "label": "Supplier Quotation", "type": "link", "linkDoctype": "Supplier Quotation", "value": filters.get("supplier_quotation", "")},
-		{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Quotation ID contains"},
-		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
+		{"key": "supplier_quotation", "label": "Supplier Quotation", "type": "link", "linkDoctype": "Supplier Quotation", "value": filters.get("supplier_quotation", ""), "placeholder": "Select supplier quotation"},
+		{"key": "keyword", "label": "Search quotation text", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search quotation text"},
+		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Select supplier"},
 		{
 			"key": "status",
 			"label": "Status",

@@ -97,9 +97,9 @@
       $host = $('<section class="erpw-procurement-supplier-detail-page"></section>');
       $parent.empty().append($host);
     }
-    let $shell = $host.children(".erpw-child-shell.erpw-procurement-supplier-detail-shell").first();
+    let $shell = $host.children(".erpw-child-shell.erpw-child-detail-shell.erpw-procurement-supplier-detail-shell").first();
     if (!$shell.length) {
-      $shell = $('<div class="erpw-child-shell erpw-procurement-supplier-detail-shell"></div>');
+      $shell = $('<div class="erpw-child-shell erpw-child-detail-shell erpw-procurement-supplier-detail-shell"></div>');
       $host.append($shell);
     }
     return { $host, $shell };

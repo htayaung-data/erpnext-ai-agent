@@ -83,6 +83,11 @@
     fallbackToManagedRoute(REPORT_ROUTE, slug, ".erpw-report-shell");
   }
 
+  function isActiveProcurementRoute() {
+    const route = frappe.get_route ? frappe.get_route() : [];
+    return Array.isArray(route) && String(route[0] || "") === PAGE_KEY;
+  }
+
   function cleanupForNativeRoute() {
     if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
       window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true });
@@ -598,6 +603,7 @@
       };
     }
     ensureConsoleRuntime().then(() => {
+      if (!isActiveProcurementRoute()) return;
       renderWorkbench(page);
     }).catch((error) => {
       renderState(page, {

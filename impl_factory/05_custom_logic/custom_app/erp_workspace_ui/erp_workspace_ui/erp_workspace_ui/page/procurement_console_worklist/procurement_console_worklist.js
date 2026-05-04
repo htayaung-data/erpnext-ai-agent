@@ -177,6 +177,25 @@
     runtime.setDataRefreshing(viewState && viewState.$host, enabled);
   }
 
+  function syncWorklistChromeTitle(viewState, payload) {
+    if (!viewState || !viewState.page) return;
+    const title = payload && payload.page && payload.page.title ? payload.page.title : "Procurement Queue";
+    if (typeof viewState.page.set_title === "function") viewState.page.set_title(title);
+    const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
+    $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(title);
+    const $breadcrumbs = $wrapper.find(".navbar-breadcrumbs").first();
+    if ($breadcrumbs.length) {
+      $breadcrumbs.html([
+        '<li><a href="/desk/' + HOME_ROUTE + '" data-erpw-procurement-home="1">Procurement Console</a></li>',
+        '<li><a class="title-text" aria-current="page">' + frappe.utils.escape_html(title) + '</a></li>',
+      ].join(""));
+    }
+    $wrapper.off("click.erpWProcurementWorklistChrome").on("click.erpWProcurementWorklistChrome", "[data-erpw-procurement-home]", function (event) {
+      event.preventDefault();
+      frappe.set_route(HOME_ROUTE);
+    });
+  }
+
   function mountPayload(viewState, payload, options) {
     const runtime = window.erpWorkspaceUiListPage && window.erpWorkspaceUiListPage.shell;
     if (!runtime || typeof runtime.mountWorklist !== "function") {
@@ -237,9 +256,7 @@
     }).then((response) => {
       if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
       const payload = response && response.message ? response.message : {};
-      if (viewState.page && typeof viewState.page.set_title === "function" && payload.page && payload.page.title) {
-        viewState.page.set_title(payload.page.title);
-      }
+      syncWorklistChromeTitle(viewState, payload);
       mountPayload(viewState, payload, { partialDataRefresh, refreshControls: Boolean(settings.refreshControls) });
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature || viewState.requestToken !== requestToken) return;
@@ -280,7 +297,7 @@
     cleanupRouteShells();
     const page = frappe.ui.make_app_page({
       parent: wrapper,
-      title: "Procurement Console Worklist",
+      title: "Procurement Queue",
       single_column: true,
     });
     const viewState = {

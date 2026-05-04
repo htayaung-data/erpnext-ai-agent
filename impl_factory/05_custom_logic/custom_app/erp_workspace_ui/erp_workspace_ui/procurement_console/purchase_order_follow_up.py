@@ -401,9 +401,9 @@ def _sort_key(item: dict[str, object], queue: str) -> tuple[object, ...]:
 
 def _control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 	return [
-		{"key": "purchase_order", "label": "Purchase Order", "type": "link", "linkDoctype": "Purchase Order", "value": filters.get("purchase_order", "")},
-		{"key": "keyword", "label": "Keyword", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Purchase Order ID contains"},
-		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", "")},
+		{"key": "purchase_order", "label": "Purchase Order", "type": "link", "linkDoctype": "Purchase Order", "value": filters.get("purchase_order", ""), "placeholder": "Select purchase order"},
+		{"key": "keyword", "label": "Search order ID or supplier", "type": "text", "value": filters.get("keyword", ""), "placeholder": "Search order ID or supplier"},
+		{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier", ""), "placeholder": "Select supplier"},
 		{
 			"key": "status",
 			"label": "Status",
