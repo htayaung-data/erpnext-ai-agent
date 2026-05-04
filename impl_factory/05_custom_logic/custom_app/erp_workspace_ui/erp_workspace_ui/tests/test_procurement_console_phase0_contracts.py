@@ -718,6 +718,15 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn('data-section-key="create-actions"', source)
         self.assertIn("Start Buying Work", source)
 
+    def test_shared_action_rebalance_preserves_click_handlers(self):
+        runtime_path = Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "console" / "workspace_console_runtime.js"
+        source = runtime_path.read_text()
+        detach_index = source.index("$actions.detach();")
+        empty_index = source.index("$primary.empty();", detach_index)
+
+        self.assertLess(detach_index, empty_index)
+        self.assertIn('if (typeof config.onClick === "function") config.onClick(event);', source)
+
     def test_purchase_roles_receive_procurement_home_without_sales_default_app(self):
         _set_user("purchase@example.com", ["Purchase User"])
         bootinfo = {}
