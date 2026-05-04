@@ -619,7 +619,6 @@
               window.setTimeout(() => {
                 if (token !== procurementNativeChromeSyncToken) return;
                 syncProcurementNativeChrome();
-        scheduleProcurementNativeChromeSync();
               }, delay);
             });
           }
@@ -850,6 +849,7 @@
 	        syncSalesConsoleNativeChrome();
 	        syncSalesConsoleBreadcrumbLinks();
 	        syncProcurementNativeChrome();
+        scheduleProcurementNativeChromeSync();
 	        ensureChildGridActionLabels();
 	        bindDraftLookupSurface();
         prewarmDraftLookupDefaults();
