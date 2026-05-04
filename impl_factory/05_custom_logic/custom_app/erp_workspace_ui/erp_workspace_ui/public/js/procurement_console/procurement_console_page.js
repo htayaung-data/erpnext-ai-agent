@@ -37,9 +37,6 @@
     if (!target) return;
     if (target.kind === "new_doc" && target.doctype) {
       frappe.route_options = target.defaults && typeof target.defaults === "object" ? Object.assign({}, target.defaults) : {};
-      if (typeof frappe.new_doc === "function") {
-        return frappe.new_doc(target.doctype);
-      }
       return frappe.set_route("Form", target.doctype, "new-" + String(target.doctype).toLowerCase().replace(/\s+/g, "-"));
     }
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);

@@ -713,7 +713,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         self.assertIn("create_actions", source)
         self.assertIn("new_doc", source)
-        self.assertIn("frappe.new_doc", source)
+        self.assertIn('frappe.set_route("Form"', source)
+        self.assertNotIn("frappe.new_doc", source)
         self.assertIn('data-section-key="create-actions"', source)
         self.assertIn("Start Buying Work", source)
 
