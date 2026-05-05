@@ -2190,7 +2190,6 @@
   function renderProcurementDirectPage(pageKey) {
     const route = currentRouteParts();
     if (String(route[0] || "") !== pageKey) return false;
-    cleanupProcurementRouteShells(pageKey);
     const pageDef = window.frappe && frappe.pages ? frappe.pages[pageKey] : null;
     const wrapper = procurementDirectPageWrapper(pageKey, pageDef);
     if (!pageDef || !wrapper) return false;
@@ -2198,8 +2197,10 @@
     const stateKey = PROCUREMENT_DIRECT_PAGE_STATE_KEYS[pageKey] || "";
     const existing = stateKey ? wrapper[stateKey] : null;
     if (existing && existing.routeSignature === routeSignature && procurementRouteShellCount(pageKey) === 1) {
+      cleanupProcurementRouteShells(pageKey);
       return true;
     }
+    cleanupProcurementRouteShells(pageKey, { removeActive: true });
     if (typeof pageDef.on_page_show === "function") {
       pageDef.on_page_show(wrapper);
       return true;
@@ -2234,9 +2235,11 @@
     if (!window.frappe || !frappe.pages) return false;
     const route = currentRouteParts();
     const pageKey = String(route[0] || "");
-    cleanupProcurementRouteShells(pageKey);
     const asset = PROCUREMENT_DIRECT_PAGE_ASSETS[pageKey];
-    if (!asset) return false;
+    if (!asset) {
+      cleanupProcurementRouteShells(pageKey);
+      return false;
+    }
     if (renderProcurementDirectPage(pageKey)) return true;
     if (procurementDirectPageLoads[pageKey]) {
       setTimeout(() => {

@@ -857,6 +857,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("__erpwProcurementSupplierDetail", boot_source)
         self.assertIn("__erpwProcurementItemDetail", boot_source)
         self.assertIn("existing.routeSignature === routeSignature", boot_source)
+        self.assertIn("procurementRouteShellCount(pageKey) === 1", boot_source)
+        self.assertIn("cleanupProcurementRouteShells(pageKey, { removeActive: true })", boot_source)
         self.assertIn("loadProcurementDirectPageAsset", boot_source)
         self.assertIn("document.createElement(\"script\")", boot_source)
         self.assertNotIn("?v=procurement", boot_source)
