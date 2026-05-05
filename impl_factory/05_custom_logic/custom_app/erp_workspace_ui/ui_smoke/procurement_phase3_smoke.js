@@ -1063,8 +1063,12 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     const main = deck && deck.querySelector(".erpw-list-filter-main-row");
     const dateGroup = deck && deck.querySelector(".erpw-list-date-window-group");
     const actionCell = deck && deck.querySelector(".erpw-list-command-action-cell");
-    const metrics = shell && shell.querySelector(".erpw-list-metrics");
+    const summary = shell && shell.querySelector(".erpw-list-summary-card");
+    const metrics = summary && summary.querySelector(".erpw-list-summary-metrics");
     const metric = metrics && metrics.querySelector(".erpw-list-metric");
+    const detachedMetricCount = shell
+      ? Array.from(shell.children).filter((child) => child.classList && child.classList.contains("erpw-list-metrics") && !child.classList.contains("erpw-list-summary-metrics")).length
+      : 0;
     const field = (key) => deck && deck.querySelector(`[data-erpw-list-field-shell-key="${key}"]`);
     const firstIdentity = deck && deck.querySelector('[data-erpw-list-field-role="identity"]');
     const search = field("keyword") || (deck && deck.querySelector('[data-erpw-list-field-role="search"]'));
@@ -1081,6 +1085,7 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       hasDateGroup: visible(dateGroup),
       hasActions: visible(actionCell),
       filter: rect(shell && shell.querySelector(".erpw-list-controls-strip")),
+      deck: rect(deck),
       main: rect(main),
       firstIdentity: rect(firstIdentity),
       search: rect(search),
@@ -1092,6 +1097,8 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       metricCount: metrics ? metrics.getAttribute("data-erpw-list-metric-count") : "",
       metricClass: metrics ? metrics.className : "",
       metricLabel: metric ? String((metric.querySelector(".erpw-list-metric-label") && metric.querySelector(".erpw-list-metric-label").textContent) || "").replace(/\s+/g, " ").trim() : "",
+      metricParentClass: metrics && metrics.closest(".erpw-list-summary-card") ? metrics.closest(".erpw-list-summary-card").className : "",
+      detachedMetricCount,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
@@ -1105,25 +1112,48 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     assert(Math.abs(layout.start.top - layout.end.top) <= 4, `${label}: date fields are not paired`, layout);
     assert(layout.end.left > layout.start.left, `${label}: Date To should appear after Date From`, layout);
   }
-  if (layout.actionCell && layout.search) {
-    assert(Math.abs(layout.actionCell.bottom - layout.search.bottom) <= 14, `${label}: filter actions should align with the main filter row`, layout);
+  if (layout.actionCell && layout.deck) {
+    const actionCenter = (layout.actionCell.top + layout.actionCell.bottom) / 2;
+    const deckCenter = (layout.deck.top + layout.deck.bottom) / 2;
+    assert(Math.abs(actionCenter - deckCenter) <= 18, `${label}: filter actions should be vertically centered in the shared filter panel`, layout);
   }
-  assert(layout.metricClass.includes("erpw-list-result-summary"), `${label}: metrics should use the shared result-summary strip`, layout);
+  assert(layout.detachedMetricCount === 0, `${label}: detached one-card metric summaries should not render below filters`, layout);
+  if (layout.metricCount) {
+    assert(layout.metricClass.includes("erpw-list-summary-metrics"), `${label}: metrics should be integrated into the shared page header`, layout);
+    assert(layout.metricParentClass.includes("erpw-list-summary-card"), `${label}: metrics should live inside the compact page header card`, layout);
+  }
   if (layout.metricCount === "1" && layout.metric) {
-    assert(layout.metric.width <= 310, `${label}: single metric card is too wide`, layout);
-    assert(layout.metric.height <= 96, `${label}: single metric card is too tall`, layout);
+    assert(layout.metric.width <= 240, `${label}: integrated single metric chip is too wide`, layout);
+    assert(layout.metric.height <= 82, `${label}: integrated single metric chip is too tall`, layout);
   }
   assert(layout.overflow <= 1, `${label}: enterprise filter layout introduced horizontal overflow`, layout);
   return { label, route, layout };
 }
 
 async function checkEnterpriseListFilterLayouts(page) {
-  return [
-    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/rfq-directory", "RFQ Directory"),
-    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/purchase-order-directory", "Purchase Order Directory"),
-    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/supplier-directory", "Supplier Directory"),
-    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/buying-item-directory", "Buying Item Directory"),
+  const worklists = [
+    ["/desk/procurement-console-worklist/supplier-directory", "Supplier Directory"],
+    ["/desk/procurement-console-worklist/purchase-request-directory", "Purchase Request Directory"],
+    ["/desk/procurement-console-worklist/requests-to-source", "Requests To Source"],
+    ["/desk/procurement-console-worklist/purchase-order-directory", "Purchase Order Directory"],
+    ["/desk/procurement-console-worklist/purchase-orders-open", "Open Purchase Orders"],
+    ["/desk/procurement-console-worklist/purchase-orders-due-soon", "Purchase Orders Due Soon"],
+    ["/desk/procurement-console-worklist/purchase-orders-overdue", "Overdue Purchase Orders"],
+    ["/desk/procurement-console-worklist/purchase-orders-partially-received", "Partially Received Purchase Orders"],
+    ["/desk/procurement-console-worklist/purchase-orders-not-billed-visibility", "Received Not Fully Billed"],
+    ["/desk/procurement-console-worklist/purchase-orders-supplier-follow-up", "Supplier Follow-up"],
+    ["/desk/procurement-console-worklist/rfq-directory", "RFQ Directory"],
+    ["/desk/procurement-console-worklist/rfqs-awaiting-supplier-response", "RFQs Awaiting Supplier Response"],
+    ["/desk/procurement-console-worklist/supplier-quotation-directory", "Supplier Quotation Directory"],
+    ["/desk/procurement-console-worklist/supplier-quotations-to-compare", "Supplier Quotations To Compare"],
+    ["/desk/procurement-console-worklist/supplier-quotations-expiring", "Expiring Supplier Quotations"],
+    ["/desk/procurement-console-worklist/buying-item-directory", "Buying Item Directory"],
   ];
+  const results = [];
+  for (const [route, label] of worklists) {
+    results.push(await assertEnterpriseListFilterLayout(page, route, label));
+  }
+  return results;
 }
 
 async function exerciseFocusStability(page, scenario) {

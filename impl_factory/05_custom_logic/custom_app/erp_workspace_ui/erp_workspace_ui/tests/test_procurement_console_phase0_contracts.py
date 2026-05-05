@@ -846,6 +846,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("erpw-list-filter-deck", source)
         self.assertIn("erpw-list-filter-main-row", source)
         self.assertIn("erpw-list-date-window-group", source)
+        self.assertIn("erpw-list-command-action-cell", source)
+        self.assertIn("grid-template-areas:", source)
+        self.assertIn('"main actions"', source)
+        self.assertIn('"secondary actions"', source)
         self.assertIn("main-count-4", source)
         self.assertIn('data-erpw-list-field-shell-key="date_start"', source)
         self.assertIn('data-erpw-list-field-shell-key="date_end"', source)
@@ -853,7 +857,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("data-erpw-list-field-group", source)
         self.assertIn("erpw-list-result-summary", source)
         self.assertIn("data-erpw-list-metric-count", source)
-        self.assertIn("grid-template-columns: minmax(210px, 270px)", source)
+        self.assertIn("erpw-list-summary-side", source)
+        self.assertIn("erpw-list-summary-metrics", source)
+        self.assertIn("renderSummary(page.summary, page.controls, page.metrics)", source)
+        self.assertIn("renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) })", source)
 
     def test_po_follow_up_detail_loads_shared_runtime_contract(self):
         public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_po_follow_up_page.js"

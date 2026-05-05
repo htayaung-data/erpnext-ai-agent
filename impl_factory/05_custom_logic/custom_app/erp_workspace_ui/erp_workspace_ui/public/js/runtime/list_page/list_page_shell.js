@@ -212,18 +212,29 @@
         align-items: end;
         min-width: 0;
       }
+      .erpw-list-filter-deck.has-actions {
+        grid-template-columns: minmax(0, 1fr) max-content;
+        grid-template-areas:
+          "main actions"
+          "secondary actions";
+        column-gap: 12px;
+        align-items: stretch;
+      }
+      .erpw-list-filter-deck.has-actions:not(.has-date-window) {
+        grid-template-areas: "main actions";
+      }
       .erpw-list-filter-deck.has-actions.main-count-1 .erpw-list-filter-main-row {
-        grid-template-columns: minmax(210px, 300px) max-content;
+        grid-template-columns: minmax(210px, 300px);
       }
       .erpw-list-filter-deck.has-actions.main-count-2 .erpw-list-filter-main-row {
-        grid-template-columns: minmax(200px, 280px) minmax(240px, 1fr) max-content;
+        grid-template-columns: minmax(200px, 280px) minmax(240px, 1fr);
       }
       .erpw-list-filter-deck.has-actions.main-count-3 .erpw-list-filter-main-row {
-        grid-template-columns: minmax(190px, 250px) minmax(250px, 1fr) minmax(150px, 200px) max-content;
+        grid-template-columns: minmax(190px, 250px) minmax(250px, 1fr) minmax(150px, 200px);
       }
       .erpw-list-filter-deck.has-actions.main-count-4 .erpw-list-filter-main-row,
       .erpw-list-filter-deck.has-actions.main-count-5 .erpw-list-filter-main-row {
-        grid-template-columns: minmax(190px, 240px) minmax(240px, 1.15fr) minmax(180px, 230px) minmax(150px, 190px) max-content;
+        grid-template-columns: minmax(190px, 240px) minmax(240px, 1.15fr) minmax(180px, 230px) minmax(150px, 190px);
       }
       .erpw-list-filter-deck:not(.has-actions) .erpw-list-filter-main-row {
         grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -231,7 +242,11 @@
       .erpw-list-filter-deck:not(.has-actions).main-count-1 .erpw-list-filter-main-row {
         grid-template-columns: minmax(210px, 300px);
       }
+      .erpw-list-filter-main-row {
+        grid-area: main;
+      }
       .erpw-list-filter-secondary-row {
+        grid-area: secondary;
         display: flex;
         align-items: end;
         justify-content: space-between;
@@ -246,13 +261,52 @@
         max-width: min(450px, 100%);
       }
       .erpw-list-command-action-cell {
+        grid-area: actions;
         display: inline-flex;
-        align-items: flex-end;
+        align-items: center;
         justify-content: flex-end;
-        align-self: end;
+        align-self: center;
         min-height: var(--erpw-list-control-height);
         padding-top: 0;
         box-sizing: border-box;
+      }
+      .erpw-list-summary-side {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.58rem;
+        margin-left: auto;
+      }
+      .erpw-list-summary-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.45rem;
+        max-width: 100%;
+        margin: 0;
+      }
+      .erpw-list-summary-metric {
+        min-width: 132px;
+        max-width: 220px;
+        min-height: 42px;
+        padding: 0.42rem 0.62rem;
+        border-radius: 13px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.025);
+      }
+      .erpw-list-summary-metric .erpw-list-metric-label {
+        font-size: 10px;
+      }
+      .erpw-list-summary-metric .erpw-list-metric-value {
+        margin-top: 0.16rem;
+        font-size: 1.04rem;
+      }
+      .erpw-list-summary-metric .erpw-list-metric-meta {
+        margin-top: 0.1rem;
+        font-size: 11px;
+        line-height: 1.28;
       }
       .erpw-list-unified-command {
         display: grid;
@@ -594,6 +648,46 @@
           justify-content: flex-start;
         }
       }
+      @media (max-width: 980px) {
+        .erpw-list-command-grid.erpw-list-filter-deck.has-actions {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            "main"
+            "secondary"
+            "actions";
+        }
+        .erpw-list-command-grid.erpw-list-filter-deck.has-actions:not(.has-date-window) {
+          grid-template-areas:
+            "main"
+            "actions";
+        }
+        .erpw-list-filter-deck.has-actions .erpw-list-filter-main-row {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .erpw-list-filter-deck.has-actions .erpw-list-command-action-cell {
+          justify-content: flex-start;
+        }
+      }
+      @media (max-width: 760px) {
+        .erpw-list-filter-deck.has-actions .erpw-list-filter-main-row,
+        .erpw-list-filter-deck.has-actions .erpw-list-date-window-group {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-list-filter-deck.has-actions .erpw-list-command-action-cell {
+          grid-column: auto;
+          grid-row: auto;
+        }
+        .erpw-list-summary-head,
+        .erpw-list-summary-side,
+        .erpw-list-summary-metrics {
+          align-items: flex-start;
+          justify-content: flex-start;
+        }
+        .erpw-list-summary-side {
+          width: 100%;
+          margin-left: 0;
+        }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -621,12 +715,34 @@
     return '<span class="' + joinClassNames('erpw-list-pill', tone, extraClass) + '">' + escapeHtml(label) + '</span>';
   }
 
-  function renderSummary(summary, controls) {
+  function renderSummaryMetrics(metrics) {
+    const items = normalizeItems(metrics);
+    if (!items.length) return "";
+    return [
+      '<div class="erpw-list-summary-metrics erpw-list-metrics erpw-list-result-summary" data-erpw-list-metric-count="' + escapeHtml(items.length) + '">',
+        items.map((item) => [
+          '<article class="erpw-list-summary-metric erpw-list-metric ' + escapeHtml(item.tone || 'neutral') + '">',
+            '<div class="erpw-list-metric-label">' + escapeHtml(item.label || '') + '</div>',
+            '<div class="erpw-list-metric-value">' + escapeHtml(item.value == null ? '--' : item.value) + '</div>',
+            item.meta ? '<div class="erpw-list-metric-meta">' + escapeHtml(item.meta) + '</div>' : '',
+          '</article>'
+        ].join('')).join(''),
+      '</div>'
+    ].join('');
+  }
+
+  function renderSummary(summary, controls, metrics) {
     if (!summary || !summary.title) return "";
     const chips = normalizeItems(summary.chips);
+    const metricMarkup = renderSummaryMetrics(metrics);
     const navigationActions = normalizeItems(controls && controls.actions)
       .filter((action) => action && action.key !== 'open_native')
       .filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
+    const sideMarkup = [
+      metricMarkup,
+      chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '',
+      navigationActions.length ? '<div class="erpw-list-navigation-actions">' + navigationActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div>' : '',
+    ].filter(Boolean).join('');
 
     return [
       '<section class="erpw-child-card erpw-list-summary-card">',
@@ -635,8 +751,7 @@
             summary.title ? '<h2 class="erpw-list-title">' + escapeHtml(summary.title) + '</h2>' : '',
             summary.subtitle ? '<div class="erpw-list-subtitle">' + escapeHtml(summary.subtitle) + '</div>' : '',
           '</div>',
-          chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '',
-          navigationActions.length ? '<div class="erpw-list-navigation-actions">' + navigationActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div>' : '',
+          sideMarkup ? '<div class="erpw-list-summary-side">' + sideMarkup + '</div>' : '',
         '</div>',
       '</section>'
     ].join('');
@@ -803,9 +918,9 @@
 	        '<div class="' + joinClassNames('erpw-list-command-grid', 'erpw-list-filter-deck', fieldCountClass, mainCountClass, hasDateWindow ? 'has-date-window' : '', operatingActions.length ? 'has-actions' : '') + '">',
 	          '<div class="erpw-list-filter-main-row">',
 	            mainFields.map((field) => renderControlField(field)).join(''),
-	            renderCommandActionCell(operatingActions),
 	          '</div>',
 	          dateFields.length ? '<div class="erpw-list-filter-secondary-row"><div class="erpw-list-date-window-group">' + dateFields.map((field) => renderControlField(field)).join('') + '</div></div>' : '',
+	            renderCommandActionCell(operatingActions),
 	        '</div>',
 	      '</div>',
 	    ].join('');
@@ -875,9 +990,9 @@
 	    ].join('');
   }
 
-  function renderMetrics(metrics) {
+  function renderMetrics(metrics, options) {
     const items = normalizeItems(metrics);
-    if (!items.length) return "";
+    if (!items.length || (options && options.integrated)) return "";
 
     return [
       '<section class="erpw-list-metrics erpw-list-result-summary" data-erpw-list-metric-count="' + escapeHtml(items.length) + '">',
@@ -1031,9 +1146,9 @@
   function renderWorklist(config) {
     const page = config || {};
     return [
-      renderSummary(page.summary, page.controls),
+      renderSummary(page.summary, page.controls, page.metrics),
       renderControls(page.controls),
-      renderMetrics(page.metrics),
+      renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) }),
       renderResults(page.results, page.controls),
     ].filter(Boolean).join('');
   }
@@ -1094,10 +1209,11 @@
 
     const page = config || {};
     const settings = options && typeof options === 'object' ? options : {};
+    replaceShellSection($shell, '.erpw-list-summary-card', renderSummary(page.summary, page.controls, page.metrics), '.erpw-list-controls-strip, .erpw-list-metrics, .erpw-list-results');
     if (settings.refreshControls) {
       replaceShellSection($shell, '.erpw-list-controls-strip', renderControls(page.controls), '.erpw-list-metrics, .erpw-list-results');
     }
-    replaceShellSection($shell, '.erpw-list-metrics', renderMetrics(page.metrics), '.erpw-list-results');
+    replaceShellSection($shell, '.erpw-list-metrics:not(.erpw-list-summary-metrics)', renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) }), '.erpw-list-results');
     replaceShellSection($shell, '.erpw-list-results', renderResults(page.results, page.controls));
     $shell.attr('data-erpw-list-signature', renderWorklist(page));
     setDataRefreshing($shell, false);
