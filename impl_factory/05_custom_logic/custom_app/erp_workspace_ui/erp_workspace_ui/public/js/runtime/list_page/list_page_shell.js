@@ -688,6 +688,181 @@
           margin-left: 0;
         }
       }
+
+      .erpw-list-shell.is-procurement-worklist {
+        gap: 12px;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-summary-card {
+        padding: 13px 16px !important;
+        border-radius: 14px !important;
+        border-color: rgba(221, 229, 239, 0.9) !important;
+        background: #ffffff !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.022) !important;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-summary-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        min-height: 46px;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-title {
+        font-size: 17px;
+        line-height: 1.18;
+        letter-spacing: 0;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-subtitle {
+        margin-top: 5px;
+        max-width: 680px;
+        font-size: 12.75px;
+        line-height: 1.42;
+        color: #475569;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-summary-side {
+        min-width: max-content;
+        gap: 10px;
+      }
+      .erpw-list-summary-facts {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        color: #475569;
+        font-size: 12.25px;
+        line-height: 1.25;
+        white-space: nowrap;
+      }
+      .erpw-list-summary-fact {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
+        min-height: 24px;
+      }
+      .erpw-list-summary-fact + .erpw-list-summary-fact::before {
+        content: "/";
+        margin-right: 8px;
+        color: #94a3b8;
+        font-weight: 700;
+      }
+      .erpw-list-summary-fact-value {
+        color: #0f172a;
+        font-size: 16px;
+        line-height: 1;
+        font-weight: 800;
+      }
+      .erpw-list-summary-fact-label {
+        color: #475569;
+        font-weight: 650;
+      }
+      .erpw-list-summary-fact-chip {
+        color: #334155;
+        font-weight: 650;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-controls-strip {
+        width: min(1180px, 100%);
+        margin: 0 0 14px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border-color: rgba(221, 229, 239, 0.9) !important;
+        background: #ffffff !important;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 6px 16px rgba(15, 23, 42, 0.018) !important;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-row {
+        gap: 0;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions {
+        grid-template-columns: minmax(0, 1fr) max-content;
+        grid-template-areas:
+          "main main"
+          "secondary actions";
+        row-gap: 12px;
+        column-gap: 14px;
+        align-items: end;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions:not(.has-date-window) {
+        grid-template-areas: "main actions";
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-main-row {
+        gap: 10px;
+        align-items: end;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-1 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(210px, 300px);
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-2 .erpw-list-filter-main-row {
+        grid-template-columns: repeat(2, minmax(210px, 300px));
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-3 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(190px, 260px) minmax(240px, 1fr) minmax(160px, 220px);
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-4 .erpw-list-filter-main-row,
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-5 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(190px, 260px) minmax(240px, 1.1fr) minmax(190px, 260px) minmax(150px, 200px);
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-secondary-row {
+        justify-content: flex-start;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-date-window-group {
+        grid-template-columns: repeat(2, minmax(180px, 220px));
+        max-width: min(460px, 100%);
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
+        align-self: end;
+        justify-content: flex-end;
+        min-height: var(--erpw-list-control-height);
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-toolbar-actions {
+        min-height: 38px;
+        padding: 2px;
+        border-radius: 14px;
+        border-color: rgba(226, 232, 240, 0.86);
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset;
+      }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-toolbar-actions .erpw-list-action-button {
+        min-height: 32px;
+        padding-inline: 13px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+      @media (max-width: 1080px) {
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            "main"
+            "secondary"
+            "actions";
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions:not(.has-date-window) {
+          grid-template-areas:
+            "main"
+            "actions";
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
+          justify-content: flex-start;
+        }
+      }
+      @media (max-width: 760px) {
+        .erpw-list-shell.is-procurement-worklist .erpw-list-summary-head {
+          grid-template-columns: minmax(0, 1fr);
+          align-items: start;
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-summary-side,
+        .erpw-list-shell.is-procurement-worklist .erpw-list-summary-facts {
+          justify-content: flex-start;
+          min-width: 0;
+          white-space: normal;
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-main-row,
+        .erpw-list-shell.is-procurement-worklist .erpw-list-date-window-group {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell,
+        .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell .erpw-list-toolbar-actions {
+          width: 100%;
+        }
+      }
     `;
     document.head.appendChild(style);
   }
@@ -731,16 +906,35 @@
     ].join('');
   }
 
-  function renderSummary(summary, controls, metrics) {
+  function isProcurementWorklist(config) {
+    return String(config && (config.workspace || (config.page && config.page.workspace)) || '').toLowerCase() === 'procurement';
+  }
+
+  function renderSummaryFacts(metrics, chips) {
+    const metricFacts = normalizeItems(metrics).map((item) => {
+      const value = item && item.value == null ? '--' : item && item.value;
+      const label = item && item.label ? item.label : '';
+      return '<span class="erpw-list-summary-fact"><strong class="erpw-list-summary-fact-value">' + escapeHtml(value) + '</strong><span class="erpw-list-summary-fact-label">' + escapeHtml(label) + '</span></span>';
+    });
+    const chipFacts = normalizeItems(chips).map((chip) => {
+      const label = typeof chip === 'string' ? chip : chip && chip.label;
+      return label ? '<span class="erpw-list-summary-fact erpw-list-summary-fact-chip"><span class="erpw-list-summary-fact-label">' + escapeHtml(label) + '</span></span>' : '';
+    }).filter(Boolean);
+    const facts = metricFacts.concat(chipFacts);
+    return facts.length ? '<div class="erpw-list-summary-facts">' + facts.join('') + '</div>' : '';
+  }
+
+  function renderSummary(summary, controls, metrics, pageConfig) {
     if (!summary || !summary.title) return "";
     const chips = normalizeItems(summary.chips);
-    const metricMarkup = renderSummaryMetrics(metrics);
+    const compactFacts = isProcurementWorklist(pageConfig);
+    const metricMarkup = compactFacts ? renderSummaryFacts(metrics, chips) : renderSummaryMetrics(metrics);
     const navigationActions = normalizeItems(controls && controls.actions)
       .filter((action) => action && action.key !== 'open_native')
       .filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
     const sideMarkup = [
       metricMarkup,
-      chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '',
+      !compactFacts && chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '',
       navigationActions.length ? '<div class="erpw-list-navigation-actions">' + navigationActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div>' : '',
     ].filter(Boolean).join('');
 
@@ -1146,7 +1340,7 @@
   function renderWorklist(config) {
     const page = config || {};
     return [
-      renderSummary(page.summary, page.controls, page.metrics),
+      renderSummary(page.summary, page.controls, page.metrics, page),
       renderControls(page.controls),
       renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) }),
       renderResults(page.results, page.controls),
@@ -1180,6 +1374,11 @@
     return $shell;
   }
 
+  function applyWorkspaceMode($shell, config) {
+    if (!$shell || !$shell.length) return;
+    $shell.toggleClass('is-procurement-worklist', isProcurementWorklist(config));
+  }
+
   function replaceShellSection($shell, selector, markup, beforeSelector) {
     const $existing = $shell.children(selector).first();
     if (!markup) {
@@ -1209,7 +1408,8 @@
 
     const page = config || {};
     const settings = options && typeof options === 'object' ? options : {};
-    replaceShellSection($shell, '.erpw-list-summary-card', renderSummary(page.summary, page.controls, page.metrics), '.erpw-list-controls-strip, .erpw-list-metrics, .erpw-list-results');
+    applyWorkspaceMode($shell, page);
+    replaceShellSection($shell, '.erpw-list-summary-card', renderSummary(page.summary, page.controls, page.metrics, page), '.erpw-list-controls-strip, .erpw-list-metrics, .erpw-list-results');
     if (settings.refreshControls) {
       replaceShellSection($shell, '.erpw-list-controls-strip', renderControls(page.controls), '.erpw-list-metrics, .erpw-list-results');
     }
@@ -1447,6 +1647,7 @@
     const $shell = ensureShell(target);
     if (!$shell.length) return $();
 
+    applyWorkspaceMode($shell, config || {});
     const markup = renderWorklist(config || {});
     const signature = markup;
     if ($shell.attr('data-erpw-list-signature') !== signature) {

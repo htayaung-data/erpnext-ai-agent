@@ -121,14 +121,14 @@ def _comparison_payload(
 	return {
 		"page": {"title": "Supplier Quotation Comparison", "key": "supplier_quotation_comparison"},
 		"summary": {
-			"kicker": "Procurement Console report",
-			"title": "Supplier Quotation Comparison",
+			"kicker": "Sourcing review",
+			"title": "Quote Comparison",
 			"subtitle": "Compare supplier offers by price, validity, item, supplier, and RFQ reference. Read-only view for buyer review.",
 		},
 		"controls": _comparison_controls(filters),
 		"metrics": metrics,
 		"results": {
-			"title": "Quotation comparison detail",
+			"title": "Supplier offers",
 			"subtitle": "Quoted prices, validity, lead time, supplier, item, and RFQ reference for buyer comparison.",
 			"meta": f"{len(rows)} shown",
 			"columns": _comparison_display_columns(),

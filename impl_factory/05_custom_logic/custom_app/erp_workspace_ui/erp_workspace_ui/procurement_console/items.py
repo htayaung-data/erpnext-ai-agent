@@ -102,8 +102,8 @@ def _item_directory_payload(
 		"page": {"title": "Buying Items", "key": "buying_item_directory"},
 		"summary": {
 			"title": "Buying Items",
-			"subtitle": "Purchase-enabled item and catalog context for buyers. Stock operations remain with Warehouse.",
-			"chips": [{"label": "Item visibility"}, {"label": "No item or price mutation"}],
+			"subtitle": "Purchase-enabled item and catalog context for buyers. Stock execution remains with Warehouse.",
+			"chips": [{"label": "Read-only item view"}],
 		},
 		"controls": {
 			"fields": [

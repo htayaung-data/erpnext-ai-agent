@@ -148,7 +148,7 @@ def build_rfq_directory(filters: dict[str, str] | None = None) -> dict[str, obje
 	return _build_rfq_payload(
 		queue_key="rfq_directory",
 		title="RFQs",
-		subtitle="Request for Quotation records for sourcing follow-up. Records open in ERPNext according to user permissions.",
+		subtitle="RFQs for sourcing follow-up and supplier response tracking.",
 		filters=filters or {},
 		queue="directory",
 	)
@@ -192,7 +192,7 @@ def build_supplier_quotation_directory(filters: dict[str, str] | None = None) ->
 	return _build_supplier_quotation_payload(
 		queue_key="supplier_quotation_directory",
 		title="Supplier Quotations",
-		subtitle="Supplier quotation records for sourcing review. Records open in ERPNext according to user permissions.",
+		subtitle="Supplier quotations for sourcing review and buyer comparison.",
 		filters=filters or {},
 		queue="directory",
 	)
@@ -284,7 +284,7 @@ def _rfq_payload(
 		"controls": {
 			"fields": _rfq_control_fields(filters),
 			"actions": common.standard_actions(),
-			"scopeChips": ["Request for Quotation", "No send/email action"],
+			"scopeChips": ["Request for Quotation", "Supplier response visibility"],
 		},
 		"metrics": [common.metric("RFQs in view", len(rows), "Matching RFQs.")],
 		"results": {
@@ -383,7 +383,7 @@ def _supplier_quotation_payload(
 		"controls": {
 			"fields": _supplier_quotation_control_fields(filters),
 			"actions": common.standard_actions(),
-			"scopeChips": ["Supplier Quotation", "No purchase order action"],
+			"scopeChips": ["Supplier Quotation", "Read-only quote review"],
 		},
 		"metrics": [common.metric("Quotations in view", len(rows), "Matching supplier quotations.")],
 		"results": {

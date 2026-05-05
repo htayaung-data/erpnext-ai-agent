@@ -255,6 +255,8 @@
     syncReportChromeTitle(viewState, payload);
     return ensureReportRuntime().then((runtime) => {
       const config = Object.assign({}, payload || {}, {
+        workspace: "procurement",
+        page: Object.assign({ workspace: "procurement" }, payload && payload.page ? payload.page : {}),
         reportKey: viewState.reportKey || "",
         onAction(details) {
           if (!details) return;

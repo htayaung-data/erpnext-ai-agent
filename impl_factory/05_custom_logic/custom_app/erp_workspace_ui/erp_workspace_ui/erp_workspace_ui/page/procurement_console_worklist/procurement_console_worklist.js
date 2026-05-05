@@ -224,6 +224,8 @@
       return;
     }
     const config = Object.assign({}, payload || {}, {
+      workspace: "procurement",
+      page: Object.assign({ workspace: "procurement" }, payload && payload.page ? payload.page : {}),
       onAction(details) {
         if (!details) return;
         if (details.key === "refresh") return loadRoute(viewState, viewState.activeFilters || {}, { partialDataRefresh: true });

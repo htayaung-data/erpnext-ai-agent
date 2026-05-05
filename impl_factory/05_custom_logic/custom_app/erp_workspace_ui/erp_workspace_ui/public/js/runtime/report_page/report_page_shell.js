@@ -13,6 +13,10 @@
     return Array.isArray(items) ? items.filter(Boolean) : [];
   }
 
+  function isProcurementReport(config) {
+    return String(config && (config.workspace || (config.page && config.page.workspace)) || '').toLowerCase() === 'procurement';
+  }
+
   function normalizeFields(fields) {
     return Array.isArray(fields) ? fields.filter((field) => field && field.key) : [];
   }
@@ -817,6 +821,103 @@
         font-weight: 600;
         cursor: pointer;
       }
+
+      .erpw-report-shell.is-procurement-report {
+        width: min(1180px, calc(100% - 24px));
+        gap: 12px;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-summary {
+        padding: 13px 16px;
+        gap: 5px;
+        border-radius: 14px;
+        border-color: rgba(221, 229, 239, 0.9);
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.022);
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-kicker {
+        font-size: 10.5px;
+        letter-spacing: 0.08em;
+        color: #64748b;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-title {
+        font-size: 18px;
+        line-height: 1.18;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-subtitle {
+        max-width: 760px;
+        font-size: 12.75px;
+        line-height: 1.42;
+        color: #475569;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-controls.analytics-compact {
+        padding: 12px 14px;
+        gap: 12px;
+        border-radius: 14px;
+        border-color: rgba(221, 229, 239, 0.9);
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 6px 16px rgba(15, 23, 42, 0.018);
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-panel {
+        gap: 12px;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-meta {
+        gap: 10px;
+        padding: 0 2px;
+        color: #475569;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-meta strong {
+        color: #0f172a;
+        font-weight: 700;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row {
+        grid-template-columns: minmax(0, 1fr) max-content;
+        align-items: end;
+        gap: 14px;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.without-actions {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-fields {
+        gap: 10px;
+        align-items: end;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
+        align-self: end;
+        min-height: 38px;
+        margin-top: 0;
+        padding: 2px;
+        border-radius: 14px;
+        border-color: rgba(226, 232, 240, 0.86);
+        background: #ffffff;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-actions .erpw-report-control-button {
+        min-height: 32px;
+        padding: 0 13px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-actions .erpw-report-control-button.navigation {
+        border-radius: 999px;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 240px));
+        justify-content: start;
+        gap: 10px;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-metric.analytics-compact {
+        min-height: 84px;
+        padding: 12px 13px;
+        border-radius: 14px;
+      }
+      @media (max-width: 1080px) {
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
+          justify-content: flex-start;
+        }
+      }
       @media (max-width: 1024px) {
         .erpw-report-control-grid,
         .erpw-report-metrics,
@@ -1258,6 +1359,11 @@
     return $shell;
   }
 
+  function applyWorkspaceMode($shell, config) {
+    if (!$shell || !$shell.length) return;
+    $shell.toggleClass('is-procurement-report', isProcurementReport(config));
+  }
+
   function replaceShellSection($shell, selector, markup, beforeSelector) {
     const $existing = $shell.children(selector).first();
     if (!markup) {
@@ -1497,6 +1603,7 @@
     const page = config || {};
     const settings = options && typeof options === 'object' ? options : {};
     $shell.attr('data-report-key', escapeHtml(page.reportKey || ''));
+    applyWorkspaceMode($shell, page);
 
     if (settings.refreshControls) {
       replaceShellSection($shell, '.erpw-report-controls', renderControls(page.controls), '.erpw-report-metrics, .erpw-report-secondary, .erpw-report-results');
@@ -1515,6 +1622,7 @@
     if (!$shell.length) return $shell;
 
     $shell.attr('data-report-key', escapeHtml((config && config.reportKey) || ''));
+    applyWorkspaceMode($shell, config || {});
     $shell.html([
       renderSummary(config && config.summary),
       renderControls(config && config.controls),

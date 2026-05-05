@@ -858,9 +858,21 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("erpw-list-result-summary", source)
         self.assertIn("data-erpw-list-metric-count", source)
         self.assertIn("erpw-list-summary-side", source)
-        self.assertIn("erpw-list-summary-metrics", source)
-        self.assertIn("renderSummary(page.summary, page.controls, page.metrics)", source)
+        self.assertIn("erpw-list-summary-facts", source)
+        self.assertIn("is-procurement-worklist", source)
+        self.assertIn("renderSummary(page.summary, page.controls, page.metrics, page)", source)
         self.assertIn("renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) })", source)
+
+        page_source = (Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_worklist" / "procurement_console_worklist.js").read_text()
+        self.assertIn('workspace: "procurement"', page_source)
+
+        report_shell_source = (Path(__file__).resolve().parents[1] / "public" / "js" / "runtime" / "report_page" / "report_page_shell.js").read_text()
+        self.assertIn("is-procurement-report", report_shell_source)
+        self.assertIn("applyWorkspaceMode", report_shell_source)
+        self.assertIn("erpw-report-command-actions", report_shell_source)
+
+        report_page_source = (Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_report" / "procurement_console_report.js").read_text()
+        self.assertIn('workspace: "procurement"', report_page_source)
 
     def test_po_follow_up_detail_loads_shared_runtime_contract(self):
         public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_po_follow_up_page.js"
@@ -1428,7 +1440,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(rfq_target["kind"], "form")
         self.assertEqual(rfq_target["doctype"], "Request for Quotation")
         self.assertEqual(rfq_target["native_chrome"]["parentLabel"], "RFQs")
-        self.assertIn("No send/email action", payload["controls"]["scopeChips"])
+        self.assertIn("Supplier response visibility", payload["controls"]["scopeChips"])
+        self.assertNotIn("send", str(payload.get("controls", {})).lower())
+        self.assertNotIn("email", str(payload.get("controls", {})).lower())
         self.assertNotIn("send_email", str(payload))
 
     def test_rfqs_awaiting_response_uses_quote_status(self):

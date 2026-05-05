@@ -1064,8 +1064,9 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     const dateGroup = deck && deck.querySelector(".erpw-list-date-window-group");
     const actionCell = deck && deck.querySelector(".erpw-list-command-action-cell");
     const summary = shell && shell.querySelector(".erpw-list-summary-card");
-    const metrics = summary && summary.querySelector(".erpw-list-summary-metrics");
-    const metric = metrics && metrics.querySelector(".erpw-list-metric");
+    const facts = summary && summary.querySelector(".erpw-list-summary-facts");
+    const factItems = facts ? Array.from(facts.querySelectorAll(".erpw-list-summary-fact")) : [];
+    const summaryMetrics = summary && summary.querySelector(".erpw-list-summary-metrics");
     const detachedMetricCount = shell
       ? Array.from(shell.children).filter((child) => child.classList && child.classList.contains("erpw-list-metrics") && !child.classList.contains("erpw-list-summary-metrics")).length
       : 0;
@@ -1092,12 +1093,10 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       actionCell: rect(actionCell),
       start: rect(start),
       end: rect(end),
-      metrics: rect(metrics),
-      metric: rect(metric),
-      metricCount: metrics ? metrics.getAttribute("data-erpw-list-metric-count") : "",
-      metricClass: metrics ? metrics.className : "",
-      metricLabel: metric ? String((metric.querySelector(".erpw-list-metric-label") && metric.querySelector(".erpw-list-metric-label").textContent) || "").replace(/\s+/g, " ").trim() : "",
-      metricParentClass: metrics && metrics.closest(".erpw-list-summary-card") ? metrics.closest(".erpw-list-summary-card").className : "",
+      facts: rect(facts),
+      factCount: factItems.length,
+      factText: facts ? String(facts.textContent || "").replace(/\s+/g, " ").trim() : "",
+      hasSummaryMetricCards: !!summaryMetrics,
       detachedMetricCount,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
@@ -1112,21 +1111,63 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     assert(Math.abs(layout.start.top - layout.end.top) <= 4, `${label}: date fields are not paired`, layout);
     assert(layout.end.left > layout.start.left, `${label}: Date To should appear after Date From`, layout);
   }
-  if (layout.actionCell && layout.deck) {
-    const actionCenter = (layout.actionCell.top + layout.actionCell.bottom) / 2;
-    const deckCenter = (layout.deck.top + layout.deck.bottom) / 2;
-    assert(Math.abs(actionCenter - deckCenter) <= 18, `${label}: filter actions should be vertically centered in the shared filter panel`, layout);
+  if (layout.actionCell && layout.start && layout.end) {
+    const dateBottom = Math.max(layout.start.bottom, layout.end.bottom);
+    assert(Math.abs(layout.actionCell.bottom - dateBottom) <= 10, `${label}: filter actions should align with the date-window command row`, layout);
+  } else if (layout.actionCell && layout.main) {
+    assert(Math.abs(layout.actionCell.bottom - layout.main.bottom) <= 10, `${label}: filter actions should align with the active filter row`, layout);
   }
   assert(layout.detachedMetricCount === 0, `${label}: detached one-card metric summaries should not render below filters`, layout);
-  if (layout.metricCount) {
-    assert(layout.metricClass.includes("erpw-list-summary-metrics"), `${label}: metrics should be integrated into the shared page header`, layout);
-    assert(layout.metricParentClass.includes("erpw-list-summary-card"), `${label}: metrics should live inside the compact page header card`, layout);
-  }
-  if (layout.metricCount === "1" && layout.metric) {
-    assert(layout.metric.width <= 240, `${label}: integrated single metric chip is too wide`, layout);
-    assert(layout.metric.height <= 82, `${label}: integrated single metric chip is too tall`, layout);
-  }
+  assert(layout.facts && layout.factCount >= 1, `${label}: header metrics should render as flat inline facts`, layout);
+  assert(!layout.hasSummaryMetricCards, `${label}: header metrics should not render as nested metric cards`, layout);
+  assert(/in view/i.test(layout.factText), `${label}: header facts should include the visible record count`, layout);
   assert(layout.overflow <= 1, `${label}: enterprise filter layout introduced horizontal overflow`, layout);
+  return { label, route, layout };
+}
+
+async function assertEnterpriseReportFilterLayout(page, route, label) {
+  await openDeskRoute(page, route);
+  await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const layout = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const rect = (node) => {
+      if (!node) return null;
+      const box = node.getBoundingClientRect();
+      return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom), width: Math.round(box.width), height: Math.round(box.height) };
+    };
+    const shell = document.querySelector(".erpw-report-shell");
+    const summary = shell && shell.querySelector(".erpw-report-summary");
+    const controls = shell && shell.querySelector(".erpw-report-controls");
+    const actionCell = controls && controls.querySelector(".erpw-report-command-actions");
+    const rows = controls ? Array.from(controls.querySelectorAll(".erpw-report-command-row")).filter(visible) : [];
+    const lastRow = rows.length ? rows[rows.length - 1] : null;
+    const title = summary ? String(summary.textContent || "").replace(/\s+/g, " ").trim() : "";
+    return {
+      hasProcurementMode: !!(shell && shell.classList.contains("is-procurement-report")),
+      summary: rect(summary),
+      controls: rect(controls),
+      actionCell: rect(actionCell),
+      lastRow: rect(lastRow),
+      title,
+      rowCount: rows.length,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(layout.hasProcurementMode, `${label}: report shell did not opt into Procurement enterprise mode`, layout);
+  assert(layout.summary && layout.summary.height <= 120, `${label}: report header is too tall`, layout);
+  assert(layout.controls && layout.controls.height <= 320, `${label}: report filter panel is too tall`, layout);
+  assert(layout.rowCount >= 1, `${label}: report filter rows are missing`, layout);
+  if (layout.actionCell && layout.lastRow) {
+    assert(Math.abs(layout.actionCell.bottom - layout.lastRow.bottom) <= 10, `${label}: report actions should align with the active filter row`, layout);
+  }
+  assert(/Quote Comparison/i.test(layout.title), `${label}: report header should use business-facing page title`, layout);
+  assert(!/native report|mutation tools/i.test(layout.title), `${label}: report copy exposes implementation language`, layout);
+  assert(layout.overflow <= 1, `${label}: report filter layout introduced horizontal overflow`, layout);
   return { label, route, layout };
 }
 
@@ -1153,6 +1194,7 @@ async function checkEnterpriseListFilterLayouts(page) {
   for (const [route, label] of worklists) {
     results.push(await assertEnterpriseListFilterLayout(page, route, label));
   }
+  results.push(await assertEnterpriseReportFilterLayout(page, "/desk/procurement-console-report/supplier-quotation-comparison", "Quote Comparison"));
   return results;
 }
 
