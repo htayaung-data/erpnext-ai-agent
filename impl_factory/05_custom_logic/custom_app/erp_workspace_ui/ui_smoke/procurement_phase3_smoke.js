@@ -124,6 +124,10 @@ async function openDeskRoute(page, route) {
   if (/\/login(?:[/?#]|$)/.test(page.url())) throw new Error(`Route ${route} redirected to login`);
   await page.waitForFunction(() => Boolean(window.frappe), null, { timeout: TIMEOUT });
   if (/\/desk\/procurement-console/.test(route)) {
+    await page.waitForFunction(() => {
+      const boot = window.erpWorkspaceUiBoot || {};
+      return typeof boot.scheduleProcurementDirectPage === "function" || typeof boot.ensureProcurementDirectPage === "function";
+    }, null, { timeout: TIMEOUT }).catch(() => {});
     await page.evaluate(() => {
       const boot = window.erpWorkspaceUiBoot || {};
       if (typeof boot.scheduleProcurementDirectPage === "function") {
