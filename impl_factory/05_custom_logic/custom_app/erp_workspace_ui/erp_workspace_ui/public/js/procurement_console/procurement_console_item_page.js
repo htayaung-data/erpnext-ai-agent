@@ -103,6 +103,11 @@
     }
   }
 
+  function cleanupManagedPageChrome(wrapper) {
+    const $wrapper = $(wrapper);
+    $wrapper.find(".page-head").remove();
+  }
+
   function ensureHost(page, wrapper) {
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     let $host = $parent.children(".erpw-procurement-item-detail-page").first();
@@ -196,7 +201,7 @@
                   const routeParts = cell && typeof cell === "object" && Array.isArray(cell.route_parts) ? cell.route_parts : [];
                   const routeName = routeParts.length ? routeParts[0] : value;
                   const valueMarkup = route
-                    ? `<button type="button" class="erpw-list-inline-open erpw-procurement-table-link" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">?</span></button>`
+                    ? `<button type="button" class="erpw-list-inline-open erpw-procurement-table-link" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">&rarr;</span></button>`
                     : `<span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>`;
                   return `<td>${valueMarkup}${meta ? `<span class="erpw-list-cell-meta">${escapeHtml(meta)}</span>` : ""}</td>`;
                 }).join("")}
@@ -341,6 +346,7 @@
   function render(wrapper) {
     cleanupRouteShells();
     const page = makeDetailPage(wrapper);
+    cleanupManagedPageChrome(wrapper);
     const hosts = ensureHost(page, wrapper);
     const viewState = { page, $host: hosts.$host, $shell: hosts.$shell };
     wrapper.__erpwProcurementItemDetail = viewState;
@@ -356,6 +362,7 @@
     }
     const existing = wrapper && wrapper.__erpwProcurementItemDetail;
     if (existing && isAttached(existing.$host) && isAttached(existing.$shell)) {
+      cleanupManagedPageChrome(wrapper);
       loadRoute(existing);
       return;
     }

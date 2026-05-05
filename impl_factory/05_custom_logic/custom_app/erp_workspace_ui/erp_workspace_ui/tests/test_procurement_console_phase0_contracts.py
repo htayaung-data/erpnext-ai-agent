@@ -832,6 +832,13 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("get_item_detail_context", item_source)
         self.assertIn("Supplier price review", item_source)
         self.assertIn("buying_item_directory", item_source)
+        self.assertIn("&rarr;", item_source)
+        self.assertNotIn('aria-hidden="true">?</span>', item_source)
+        self.assertIn("cleanupManagedPageChrome", item_source)
+        self.assertIn("routeToPurchaseOrderFollowUp", supplier_source)
+        self.assertIn("&rarr;", supplier_source)
+        self.assertIn("cleanupManagedPageChrome", supplier_source)
+        self.assertIn("cleanupManagedPageChrome", source)
         self.assertIn("CHILD_PAGE_RUNTIME_URLS", source)
         self.assertIn("child_page_shell_content.js", source)
         self.assertIn("ensureDetailRuntime", source)
@@ -1023,6 +1030,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["summary"]["title"], "Alpha Supplier")
         self.assertEqual(payload["detail"]["supplier"]["supplier_group"], "All Supplier Groups")
         self.assertEqual(payload["detail"]["recent_purchase_orders"]["rows"][0]["key"], "PUR-DUE-001")
+        recent_po_cell = payload["detail"]["recent_purchase_orders"]["rows"][0]["cells"]["purchase_order"]
+        self.assertEqual(recent_po_cell["route"], "procurement-console-po-follow-up")
+        self.assertEqual(recent_po_cell["route_parts"], ["PUR-DUE-001"])
+        open_po_cell = payload["detail"]["open_purchase_orders"]["rows"][0]["cells"]["purchase_order"]
+        self.assertEqual(open_po_cell["route"], "procurement-console-po-follow-up")
+        self.assertEqual(open_po_cell["route_parts"], ["PUR-DUE-001"])
         self.assertEqual(payload["detail"]["rfqs"]["rows"][0]["key"], "RFQ-001")
         self.assertEqual(payload["detail"]["supplier_quotations"]["rows"][0]["key"], "SUP-QTN-001")
         self.assertEqual(payload["action_targets"]["back_to_suppliers"]["kind"], "worklist")
@@ -1298,6 +1311,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["detail"]["state"]["kind"], "ready")
         self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_queue", "refresh"])
         self.assertEqual(payload["summary"]["title"], "PUR-PARTIAL-001")
+        item_cell = payload["detail"]["items"]["rows"][0]["cells"]["item"]
+        self.assertEqual(item_cell["value"], "ITEM-003")
+        self.assertEqual(item_cell["meta"], "Partial Widget")
         self.assertEqual(payload["detail"]["items"]["rows"][0]["cells"]["remaining_qty"], "4")
         self.assertEqual(payload["action_targets"]["back_to_queue"]["kind"], "worklist")
         _assert_no_forbidden_mutation_actions(self, payload)
@@ -1439,6 +1455,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIsNone(_field_by_key(payload, "company"))
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["company"], "Demo Company")
         self.assertNotIn("Company", " ".join(field.get("label", "") for field in payload["controls"]["fields"]))
+        payload_text = str(payload)
+        self.assertIn("Compare supplier offers by price, validity, item, supplier, and RFQ reference", payload_text)
+        self.assertNotIn("ERPNext native report", payload_text)
+        self.assertNotIn("Mutation tools are not exposed", payload_text)
 
     def test_supplier_quotation_comparison_restricted_without_supplier_quotation_read(self):
         _set_readable_doctypes("Supplier", "Material Request", "Purchase Order", "Request for Quotation")

@@ -293,6 +293,7 @@
     `);
 
     const $kpiGrid = $header.find(".sales-console-kpi-grid");
+    $kpiGrid.attr("data-count", "3");
     $kpiGrid.append(
       makeInsightCard({ key: "purchase_orders_overdue", label: "Overdue POs", meta: "Open item lines past required date." })
         .on("click", () => routeToWorklist("purchase_orders_overdue")),

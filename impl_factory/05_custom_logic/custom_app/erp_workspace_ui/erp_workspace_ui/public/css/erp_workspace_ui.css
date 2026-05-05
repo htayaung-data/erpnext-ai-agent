@@ -6354,6 +6354,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 .erpw-list-cell-meta {
+  display: block;
   margin-top: 0.16rem;
   color: #64748b;
   font-size: 0.74rem;
@@ -6632,6 +6633,10 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(55, 73, 98, 0.88) 0%, rgba(40, 56, 78, 0.82) 100%);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 18px 28px rgba(8, 15, 28, 0.1);
+}
+
+.sales-console-shell[data-erpw-workspace="procurement"] .sales-console-kpi-grid[data-count="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .sales-console-kpi-card {

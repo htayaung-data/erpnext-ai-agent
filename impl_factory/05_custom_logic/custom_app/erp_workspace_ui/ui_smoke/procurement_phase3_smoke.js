@@ -1065,13 +1065,37 @@ async function checkSupplierDetail(page, user) {
   const state = payload.detail && payload.detail.state ? payload.detail.state.kind : "missing";
   assert(["ready", "restricted", "unavailable", "empty"].includes(state), "Supplier Detail API invalid state", payload);
   assertNoForbiddenActions(payload, "supplier_detail");
+  const supplierPurchaseRows = [
+    ...((((payload.detail || {}).open_purchase_orders || {}).rows) || []),
+    ...((((payload.detail || {}).recent_purchase_orders || {}).rows) || []),
+  ];
+  let purchaseOrderNavigation = { skipped: "no visible supplier purchase orders" };
+  if (supplierPurchaseRows.length) {
+    const firstPurchaseOrder = supplierPurchaseRows[0];
+    const purchaseOrderCell = ((firstPurchaseOrder.cells || {}).purchase_order || {});
+    const purchaseOrderName = purchaseOrderCell.value || firstPurchaseOrder.key || "";
+    assert(purchaseOrderCell.route === "procurement-console-po-follow-up", "Supplier Detail purchase order cell must use Procurement PO Follow-up route", { purchaseOrderCell });
+    const poButton = page.locator('.erpw-procurement-supplier-detail-shell [data-erpw-procurement-detail-route="procurement-console-po-follow-up"]').first();
+    await poButton.waitFor({ state: "visible", timeout: TIMEOUT });
+    const poIconText = normalizeText(await poButton.locator(".erpw-list-inline-open-icon").first().innerText({ timeout: TIMEOUT }));
+    assert(poIconText && poIconText !== "?", "Supplier Detail PO link must use shared row-action arrow affordance", { poIconText });
+    await poButton.click();
+    await page.waitForURL((url) => url.pathname === `/desk/procurement-console-po-follow-up/${encodeURIComponent(purchaseOrderName)}`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "poDetail", "Supplier Detail purchase order navigation");
+    const poText = normalizeText(await page.locator(".erpw-procurement-po-follow-up-shell").first().innerText({ timeout: TIMEOUT }));
+    assert(poText.includes(purchaseOrderName), "Supplier Detail PO navigation did not load the selected Procurement PO detail", { purchaseOrderName, poText });
+    assert(!/Supplier Detail|Supplier buying profile/i.test(poText), "PO Detail retained stale Supplier Detail context after supplier row navigation", { purchaseOrderName, poText });
+    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "supplierDetail", "Supplier Detail after browser back from PO detail");
+    purchaseOrderNavigation = { purchaseOrderName };
+  }
   const hasNativeFormAction = Boolean((payload.action_targets || {}).open_supplier_form);
   if (user.key !== "manager") {
     assert(!hasNativeFormAction, "Non-manager user should not see governed native Supplier form action", payload.action_targets || {});
   }
   await exerciseDetailRefresh(page, ".erpw-procurement-supplier-detail-shell", "supplierDetail", "Supplier Detail");
   await exerciseDetailBack(page, ".erpw-procurement-supplier-detail-shell", "/desk/procurement-console-worklist/supplier-directory", "worklist", "Supplier Detail");
-  return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader, toolbarExercise: { refresh: true, back: true } };
+  return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation, toolbarExercise: { refresh: true, back: true } };
 }
 
 async function checkItemDetail(page, user) {
@@ -1119,6 +1143,8 @@ async function checkItemDetail(page, user) {
     assert(purchaseOrderCell.route === "procurement-console-po-follow-up", "Item Detail purchase order cell must use Procurement PO Follow-up route", { purchaseOrderCell });
     const poButton = page.locator('.erpw-procurement-item-detail-shell [data-erpw-procurement-detail-route="procurement-console-po-follow-up"]').first();
     await poButton.waitFor({ state: "visible", timeout: TIMEOUT });
+    const poIconText = normalizeText(await poButton.locator(".erpw-list-inline-open-icon").first().innerText({ timeout: TIMEOUT }));
+    assert(poIconText && poIconText !== "?", "Item Detail PO link must use shared row-action arrow affordance", { poIconText });
     await poButton.click();
     await page.waitForURL((url) => url.pathname === `/desk/procurement-console-po-follow-up/${encodeURIComponent(purchaseOrderName)}`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "poDetail", "Item Detail purchase order navigation");

@@ -88,7 +88,7 @@ def _build_supplier_quotation_comparison(overrides: dict[str, object]) -> dict[s
 			rows=[],
 			state=common.unavailable_state(
 				"Company is required",
-				"Supplier quotation comparison needs a company before the native report can run.",
+				"Supplier quotation comparison needs the buying company context before it can run.",
 			),
 			metrics=[],
 		)
@@ -123,13 +123,13 @@ def _comparison_payload(
 		"summary": {
 			"kicker": "Procurement Console report",
 			"title": "Supplier Quotation Comparison",
-			"subtitle": "Governed read-only wrapper over ERPNext supplier quotation comparison. Mutation tools are not exposed.",
+			"subtitle": "Compare supplier offers by price, validity, item, supplier, and RFQ reference. Read-only view for buyer review.",
 		},
 		"controls": _comparison_controls(filters),
 		"metrics": metrics,
 		"results": {
 			"title": "Quotation comparison detail",
-			"subtitle": "Quoted prices, validity, lead time, supplier, item, and RFQ reference from the native ERPNext report.",
+			"subtitle": "Quoted prices, validity, lead time, supplier, item, and RFQ reference for buyer comparison.",
 			"meta": f"{len(rows)} shown",
 			"columns": _comparison_display_columns(),
 			"rows": rows[:ROW_LIMIT],
@@ -182,7 +182,7 @@ def _comparison_controls(filters: dict[str, object]) -> dict[str, object]:
 		"resetLabel": "Reset",
 		"meta": [
 			{"label": "Mode", "value": "Read-only"},
-			{"label": "Source", "value": "ERPNext native report"},
+			{"label": "Scope", "value": "Buyer comparison"},
 		],
 		"fields": [
 			{"key": "from_date", "label": "From", "type": "date", "value": filters.get("from_date"), "row": 1},

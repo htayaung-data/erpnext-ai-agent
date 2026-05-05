@@ -75,6 +75,11 @@
     return options;
   }
 
+  function cleanupManagedPageChrome(wrapper) {
+    const $wrapper = $(wrapper);
+    $wrapper.find(".page-head").remove();
+  }
+
   function ensureHost(page, wrapper) {
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     let $host = $parent.children(".erpw-procurement-po-follow-up-page").first();
@@ -324,6 +329,7 @@
   function render(wrapper) {
     cleanupRouteShells();
     const page = makeDetailPage(wrapper);
+    cleanupManagedPageChrome(wrapper);
     const hosts = ensureHost(page, wrapper);
     const viewState = {
       page,
@@ -346,6 +352,7 @@
     }
     const existing = wrapper && wrapper.__erpwProcurementPoFollowUp;
     if (existing && isAttached(existing.$host) && isAttached(existing.$shell)) {
+      cleanupManagedPageChrome(wrapper);
       activeViewState = existing;
       existing.routeOptionsConsumed = false;
       loadRoute(existing);

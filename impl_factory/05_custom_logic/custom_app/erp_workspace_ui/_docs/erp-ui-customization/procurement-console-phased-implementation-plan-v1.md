@@ -34,6 +34,15 @@ Current explicit deferrals:
 - Do not implement custom create overlays yet. Governed create actions open ERPNext native new-document forms and rely on native permission and workflow behavior.
 - Do not make Procurement responsible for warehouse stock operations, receipt execution, invoice settlement, payment, or accounting.
 
+Current native-form exception boundary:
+
+- Native Purchase Request, RFQ, Supplier Quotation, and Purchase Order create/edit forms are accepted Phase 3 exceptions.
+- These forms retain Procurement sidebar/chrome where the workspace launches them, but the form body remains ERPNext native and continues to rely on ERPNext permission and workflow control.
+- They are not custom premium managed Procurement forms yet.
+- Supplier create/edit remains deferred to a later Supplier Master phase.
+- Item create/edit remains deferred to a later Item Governance phase because Item master changes affect buying, selling, stock, accounting, and reporting.
+- Warehouse receiving, Finance billing/payment, Item Price mutation, Default Supplier mutation, submit/cancel/amend/close, and approval/rejection actions remain outside the Phase 3 Procurement surface.
+
 ## 1. Planning Context
 
 Procurement Console is the next first-wave ERP workspace after the frozen Sales Console.

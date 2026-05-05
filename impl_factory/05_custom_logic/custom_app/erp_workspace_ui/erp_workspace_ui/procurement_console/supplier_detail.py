@@ -300,7 +300,11 @@ def _purchase_order_table(rows: list[dict[str, object]], title: str) -> dict[str
 			{
 				"key": cstr(row.get("name")),
 				"cells": {
-					"purchase_order": row.get("name") or "-",
+					"purchase_order": {
+						"value": row.get("name") or "-",
+						"route": "procurement-console-po-follow-up",
+						"route_parts": [row.get("name") or ""],
+					},
 					"status": row.get("workflow_state") or row.get("status") or "-",
 					"required_by": cstr(row.get("schedule_date") or ""),
 					"received": _percent(row.get("per_received")),

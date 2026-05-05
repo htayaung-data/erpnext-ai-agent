@@ -7,6 +7,7 @@
   const procurementMethods = procurementWorkspace && procurementWorkspace.methods ? procurementWorkspace.methods : {};
   const PAGE_KEY = procurementRoutes.supplierDetail || "procurement-console-supplier";
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
+  const PO_DETAIL_ROUTE = procurementRoutes.poFollowUpDetail || "procurement-console-po-follow-up";
   const CONTEXT_METHOD = procurementMethods.supplierDetailContext || "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context";
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
@@ -66,6 +67,22 @@
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "supplier_directory").replace(/_/g, "-"));
   }
 
+  function cleanupBeforeProductizedRoute(nextPageKey) {
+    const boot = window.erpWorkspaceUiBoot || {};
+    if (typeof boot.cleanupProcurementRouteShells === "function") {
+      boot.cleanupProcurementRouteShells("", { removeActive: true });
+      setTimeout(() => boot.cleanupProcurementRouteShells(nextPageKey || "", { removeActive: false }), 0);
+      setTimeout(() => boot.cleanupProcurementRouteShells(nextPageKey || "", { removeActive: false }), 80);
+    }
+  }
+
+  function routeToPurchaseOrderFollowUp(purchaseOrder) {
+    const name = String(purchaseOrder || "").trim();
+    if (!name) return;
+    cleanupBeforeProductizedRoute(PO_DETAIL_ROUTE);
+    frappe.set_route(PO_DETAIL_ROUTE, name);
+  }
+
   function cleanupForNativeRoute() {
     if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
       window.erpWorkspaceUiBoot.cleanupProcurementRouteShells("", { removeActive: true });
@@ -88,6 +105,11 @@
     } catch (error) {
       window.__erpwProcurementNativeChromeContext = context;
     }
+  }
+
+  function cleanupManagedPageChrome(wrapper) {
+    const $wrapper = $(wrapper);
+    $wrapper.find(".page-head").remove();
   }
 
   function ensureHost(page, wrapper) {
@@ -185,7 +207,13 @@
                   const cell = row.cells && row.cells[column.key] !== undefined ? row.cells[column.key] : "";
                   const value = cell && typeof cell === "object" ? cell.value : cell;
                   const meta = cell && typeof cell === "object" ? cell.meta : "";
-                  return `<td><span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>${meta ? `<span class="erpw-list-cell-meta">${escapeHtml(meta)}</span>` : ""}</td>`;
+                  const route = cell && typeof cell === "object" ? String(cell.route || "") : "";
+                  const routeParts = cell && typeof cell === "object" && Array.isArray(cell.route_parts) ? cell.route_parts : [];
+                  const routeName = routeParts.length ? routeParts[0] : value;
+                  const valueMarkup = route
+                    ? `<button type="button" class="erpw-list-inline-open erpw-procurement-table-link" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">&rarr;</span></button>`
+                    : `<span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>`;
+                  return `<td>${valueMarkup}${meta ? `<span class="erpw-list-cell-meta">${escapeHtml(meta)}</span>` : ""}</td>`;
                 }).join("")}
               </tr>
             `).join("")}
@@ -245,6 +273,12 @@
         actionLayout: { mode: "toolbar", sparseSecondaryThreshold: 3 },
         extraSectionsHtml: extraSections(payload),
         guidance: {},
+      });
+      viewState.$shell.off("click.erpWProcurementSupplierDetailRoute").on("click.erpWProcurementSupplierDetailRoute", "[data-erpw-procurement-detail-route]", function (event) {
+        event.preventDefault();
+        const route = String($(this).attr("data-erpw-procurement-detail-route") || "");
+        const name = String($(this).attr("data-erpw-procurement-detail-name") || "");
+        if (route === PO_DETAIL_ROUTE) routeToPurchaseOrderFollowUp(name);
       });
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature) return;
@@ -325,6 +359,7 @@
   function render(wrapper) {
     cleanupRouteShells();
     const page = makeDetailPage(wrapper);
+    cleanupManagedPageChrome(wrapper);
     const hosts = ensureHost(page, wrapper);
     const viewState = {
       page,
@@ -344,6 +379,7 @@
     }
     const existing = wrapper && wrapper.__erpwProcurementSupplierDetail;
     if (existing && isAttached(existing.$host) && isAttached(existing.$shell)) {
+      cleanupManagedPageChrome(wrapper);
       loadRoute(existing);
       return;
     }
