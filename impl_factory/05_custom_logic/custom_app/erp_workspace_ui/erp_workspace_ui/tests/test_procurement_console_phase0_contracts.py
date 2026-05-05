@@ -813,12 +813,14 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         item_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_item_page.js"
         overview_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js"
         page_path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_po_follow_up" / "procurement_console_po_follow_up.js"
+        report_page_path = Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_report" / "procurement_console_report.js"
         boot_path = Path(__file__).resolve().parents[1] / "public" / "js" / "erp_workspace_ui_boot.js"
         source = public_path.read_text()
         supplier_source = supplier_public_path.read_text()
         item_source = item_public_path.read_text()
         overview_source = overview_public_path.read_text()
         page_source = page_path.read_text()
+        report_page_source = report_page_path.read_text()
         boot_source = boot_path.read_text()
 
         self.assertIn("makeConsolePage", overview_source)
@@ -847,6 +849,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("frappe.require", source)
         self.assertNotIn("Detail runtime unavailable", source)
         self.assertIn("procurement_console_po_follow_up_page.js", page_source)
+        self.assertIn("cleanupDuplicateReportChrome", report_page_source)
+        self.assertIn("Procurement Console Report", report_page_source)
         self.assertIn("PROCUREMENT_DIRECT_PAGE_ASSETS", boot_source)
         self.assertIn("procurement_console_page.js", boot_source)
         self.assertIn("ensureProcurementDirectPage", boot_source)

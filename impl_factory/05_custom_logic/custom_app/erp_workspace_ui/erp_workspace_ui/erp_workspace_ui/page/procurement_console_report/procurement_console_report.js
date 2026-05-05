@@ -173,6 +173,22 @@
       event.preventDefault();
       frappe.set_route(HOME_ROUTE);
     });
+    cleanupDuplicateReportChrome($wrapper);
+    setTimeout(() => cleanupDuplicateReportChrome($wrapper), 0);
+    setTimeout(() => cleanupDuplicateReportChrome($wrapper), 120);
+  }
+
+  function cleanupDuplicateReportChrome($wrapper) {
+    const wrapper = $wrapper && $wrapper.jquery ? $wrapper : $($wrapper || []);
+    const heads = wrapper.find(".page-head").toArray();
+    if (heads.length <= 1) return;
+    const keep = heads.find((head) => {
+      const text = String((head && head.textContent) || "").replace(/\s+/g, " ").trim();
+      return !/Procurement Console Report/i.test(text);
+    }) || heads[0];
+    heads.forEach((head) => {
+      if (head !== keep && head.parentNode) head.parentNode.removeChild(head);
+    });
   }
 
   function ensureReportRuntime() {
@@ -332,6 +348,7 @@
 
   function render(wrapper) {
     cleanupRouteShells();
+    cleanupDuplicateReportChrome($(wrapper));
     const page = frappe.ui.make_app_page({
       parent: wrapper,
       title: REPORT_CHROME_TITLE,
@@ -357,6 +374,7 @@
     if (existing && isAttached(existing.$host)) {
       pruneRouteShells(existing.$host.get(0));
       syncReportChromeTitle(existing);
+      cleanupDuplicateReportChrome($(wrapper));
       loadRoute(existing);
       return;
     }
