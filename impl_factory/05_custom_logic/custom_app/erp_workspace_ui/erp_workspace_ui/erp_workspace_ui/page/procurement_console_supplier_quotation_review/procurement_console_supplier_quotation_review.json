@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-supplier-quotation-review",
+  "page_name": "procurement-console-supplier-quotation-review",
+  "title": "Supplier Quotation Review",
+  "icon": "octicon octicon-file",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

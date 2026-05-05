@@ -372,8 +372,11 @@ async function procurementShellState(page) {
     poDetail: await visibleElementCount(page, ".erpw-procurement-po-follow-up-shell"),
     supplierDetail: await visibleElementCount(page, ".erpw-procurement-supplier-detail-shell"),
     itemDetail: await visibleElementCount(page, ".erpw-procurement-item-detail-shell"),
+    purchaseRequestReview: await visibleElementCount(page, ".erpw-procurement-purchase-request-review-shell"),
+    rfqReview: await visibleElementCount(page, ".erpw-procurement-rfq-review-shell"),
+    supplierQuotationReview: await visibleElementCount(page, ".erpw-procurement-supplier-quotation-review-shell"),
   };
-  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail;
+  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview;
   state.url = page.url();
   return state;
 }
@@ -656,18 +659,23 @@ async function checkCompactDetailHeader(page, selector, label) {
 async function checkProcurementTargetAudit(page, user) {
   const audit = [];
   const expectations = [
-    { queue: "supplier_directory", label: "Supplier Directory", actionKey: "open_record", classification: "productized Procurement page", route: "procurement-console-supplier" },
-    { queue: "buying_item_directory", label: "Buying Item Directory", actionKey: "open_record", classification: "productized Procurement page", route: "procurement-console-item" },
-    { queue: "purchase_order_directory", label: "Purchase Order Directory", actionKey: "open_record", classification: "productized Procurement PO Follow-up Detail", route: "procurement-console-po-follow-up" },
-    { queue: "purchase_request_directory", label: "Purchase Request Directory", actionKey: "open_erp_form", classification: "governed native ERP form with Procurement chrome", doctype: "Material Request" },
-    { queue: "rfq_directory", label: "RFQ Directory", actionKey: "open_erp_form", classification: "governed native ERP form with Procurement chrome", doctype: "Request for Quotation" },
-    { queue: "supplier_quotation_directory", label: "Supplier Quotation Directory", actionKey: "open_erp_form", classification: "governed native ERP form with Procurement chrome", doctype: "Supplier Quotation" },
+    { queue: "supplier_directory", label: "Supplier Directory", actionKey: "open_record", actionLabel: "Open", classification: "productized Procurement page", route: "procurement-console-supplier", shellKey: "supplierDetail", shellSelector: ".erpw-procurement-supplier-detail-shell" },
+    { queue: "buying_item_directory", label: "Buying Item Directory", actionKey: "open_record", actionLabel: "Open", classification: "productized Procurement page", route: "procurement-console-item", shellKey: "itemDetail", shellSelector: ".erpw-procurement-item-detail-shell" },
+    { queue: "purchase_order_directory", label: "Purchase Order Directory", actionKey: "open_record", actionLabel: "Open", classification: "productized Procurement PO Follow-up Detail", route: "procurement-console-po-follow-up", shellKey: "poDetail", shellSelector: ".erpw-procurement-po-follow-up-shell" },
+    { queue: "purchase_request_directory", label: "Purchase Request Directory", actionKey: "open_record", actionLabel: "Review Request", classification: "productized Procurement Purchase Request Review", route: "procurement-console-purchase-request-review", shellKey: "purchaseRequestReview", shellSelector: ".erpw-procurement-purchase-request-review-shell" },
+    { queue: "requests_to_source", label: "Requests To Source", actionKey: "open_record", actionLabel: "Review Request", classification: "productized Procurement Purchase Request Review", route: "procurement-console-purchase-request-review", shellKey: "purchaseRequestReview", shellSelector: ".erpw-procurement-purchase-request-review-shell" },
+    { queue: "rfq_directory", label: "RFQ Directory", actionKey: "open_record", actionLabel: "Review RFQ", classification: "productized Procurement RFQ Review", route: "procurement-console-rfq-review", shellKey: "rfqReview", shellSelector: ".erpw-procurement-rfq-review-shell" },
+    { queue: "rfqs_awaiting_supplier_response", label: "RFQs Awaiting Supplier Response", actionKey: "open_record", actionLabel: "Review RFQ", classification: "productized Procurement RFQ Review", route: "procurement-console-rfq-review", shellKey: "rfqReview", shellSelector: ".erpw-procurement-rfq-review-shell" },
+    { queue: "supplier_quotation_directory", label: "Supplier Quotation Directory", actionKey: "open_record", actionLabel: "Review Quote", classification: "productized Procurement Supplier Quotation Review", route: "procurement-console-supplier-quotation-review", shellKey: "supplierQuotationReview", shellSelector: ".erpw-procurement-supplier-quotation-review-shell" },
+    { queue: "supplier_quotations_to_compare", label: "Supplier Quotations To Compare", actionKey: "open_record", actionLabel: "Review Quote", classification: "productized Procurement Supplier Quotation Review", route: "procurement-console-supplier-quotation-review", shellKey: "supplierQuotationReview", shellSelector: ".erpw-procurement-supplier-quotation-review-shell" },
+    { queue: "supplier_quotations_expiring", label: "Supplier Quotations Expiring", actionKey: "open_record", actionLabel: "Review Quote", classification: "productized Procurement Supplier Quotation Review", route: "procurement-console-supplier-quotation-review", shellKey: "supplierQuotationReview", shellSelector: ".erpw-procurement-supplier-quotation-review-shell" },
   ];
   for (const item of expectations) {
     const payload = await worklistPayload(page, item.queue);
     const firstRow = ((payload.results || {}).rows || [])[0] || {};
     const state = stateKind(payload);
     const result = { queue: item.queue, classification: item.classification, state, skipped: !firstRow.key };
+    assertNoForbiddenActions(payload, `${item.queue}_worklist`);
     if (firstRow.key) {
       const actions = Array.isArray(firstRow.actions) ? firstRow.actions : [];
       const target = (payload.action_targets || {})[`row:${firstRow.key}:${item.actionKey}`] || {};
@@ -675,27 +683,48 @@ async function checkProcurementTargetAudit(page, user) {
       result.targetKind = target.kind;
       result.targetRoute = target.route || "";
       result.targetDoctype = target.doctype || "";
-      assert(actions.some((action) => action.key === item.actionKey), `${item.label}: expected row action missing`, { actions, item });
-      if (item.route) {
-        assert(target.kind === "page" && target.route === item.route, `${item.label}: productized target mismatch`, { target, item });
-      } else {
-        assert(target.kind === "form" && target.doctype === item.doctype, `${item.label}: native target mismatch`, { target, item });
-        assert(target.native_chrome && target.native_chrome.workspace === "procurement", `${item.label}: native target missing Procurement chrome context`, { target });
-        assert(/Open ERP Form/i.test(actions.map((action) => action.label || "").join(" ")), `${item.label}: native row target must be explicitly labeled`, { actions });
-      }
+      assert(actions.some((action) => action.key === item.actionKey && action.label === item.actionLabel), `${item.label}: expected business row action missing`, { actions, item });
+      assert(!actions.some((action) => /Open ERP Form/i.test(action.label || "")), `${item.label}: productized worklist still exposes generic Open ERP Form row action`, { actions });
+      assert(target.kind === "page" && target.route === item.route, `${item.label}: productized target mismatch`, { target, item });
+      assert(!Object.values(payload.action_targets || {}).some((candidate) => candidate && candidate.kind === "form" && /Material Request|Request for Quotation|Supplier Quotation/.test(candidate.doctype || "")), `${item.label}: productized worklist still exposes native form row target`, { targets: payload.action_targets });
     }
     audit.push(result);
   }
 
-  if (user.key === "manager") {
-    await openDeskRoute(page, "/desk/procurement-console-worklist/rfq-directory");
-    const nativeButton = page.locator('[data-erpw-list-action-key="open_erp_form"]').first();
-    if (await nativeButton.count()) {
-      await nativeButton.click();
-      await page.waitForURL(/\/desk\/request-for-quotation\//, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-      const snapshot = await procurementChromeSnapshot(page, "RFQ governed native row open");
-      assert(snapshot.parentLinkLeaks.length === 0 && snapshot.pageHeadCount <= 1, "RFQ row native form did not receive Procurement-owned chrome", snapshot);
-    }
+  const clickChecks = expectations.filter((item) => item.route && item.queue !== "supplier_directory" && item.queue !== "buying_item_directory" && item.queue !== "purchase_order_directory");
+  for (const item of clickChecks) {
+    const payload = await worklistPayload(page, item.queue);
+    const firstRow = ((payload.results || {}).rows || [])[0] || {};
+    if (!firstRow.key) continue;
+    await openDeskRoute(page, `/desk/procurement-console-worklist/${item.queue.replace(/_/g, "-")}`);
+    const beforeText = normalizeText(await page.locator(".erpw-list-shell").first().innerText({ timeout: TIMEOUT }));
+    assert(!/Open ERP Form/i.test(beforeText), `${item.label}: visible worklist still shows Open ERP Form`, { beforeText });
+    await page.waitForFunction(
+      ({ actionKey, rowKey }) => Array.from(document.querySelectorAll("[data-erpw-list-action-key]")).some((node) =>
+        node.getAttribute("data-erpw-list-action-key") === actionKey && node.getAttribute("data-erpw-row-key") === rowKey
+      ),
+      { actionKey: item.actionKey, rowKey: firstRow.key },
+      { timeout: TIMEOUT }
+    );
+    await page.evaluate(({ actionKey, rowKey }) => {
+      const node = Array.from(document.querySelectorAll("[data-erpw-list-action-key]")).find((candidate) =>
+        candidate.getAttribute("data-erpw-list-action-key") === actionKey && candidate.getAttribute("data-erpw-row-key") === rowKey
+      );
+      if (!node) throw new Error(`Missing row action ${actionKey} for ${rowKey}`);
+      node.click();
+    }, { actionKey: item.actionKey, rowKey: firstRow.key });
+    await page.waitForURL((url) => url.pathname === `/desk/${item.route}/${encodeURIComponent(firstRow.key)}`, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.locator(item.shellSelector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, item.shellKey, `${item.label}: productized review route`);
+    const reviewText = normalizeText(await page.locator(item.shellSelector).first().innerText({ timeout: TIMEOUT }));
+    assert(reviewText.includes(firstRow.key), `${item.label}: productized review did not show selected document`, { firstRow, reviewText });
+    assert(/Read-only|review/i.test(reviewText), `${item.label}: productized review lacks read-only buyer review context`, { reviewText });
+    const forbiddenReviewActions = await page.locator(`${item.shellSelector} button, ${item.shellSelector} a`).evaluateAll((nodes) =>
+      nodes.map((node) => (node.textContent || "").replace(/\s+/g, " ").trim()).filter((label) =>
+        /^(Approve|Reject|Submit|Cancel|Amend|Close|Unclose|Receive|Bill|Pay|Set Default Supplier|Update Item Price|Item Price)$/i.test(label)
+      )
+    );
+    assert(forbiddenReviewActions.length === 0, `${item.label}: productized review exposes forbidden mutation action`, { forbiddenReviewActions, reviewText });
   }
   return audit;
 }
@@ -708,6 +737,9 @@ async function waitForProcurementShell(page, shellKey, label = "Procurement shel
     poDetail: ".erpw-procurement-po-follow-up-shell",
     supplierDetail: ".erpw-procurement-supplier-detail-shell",
     itemDetail: ".erpw-procurement-item-detail-shell",
+    purchaseRequestReview: ".erpw-procurement-purchase-request-review-shell",
+    rfqReview: ".erpw-procurement-rfq-review-shell",
+    supplierQuotationReview: ".erpw-procurement-supplier-quotation-review-shell",
   };
   const selector = selectors[shellKey];
   assert(selector, `Unknown procurement shell key ${shellKey}`);
@@ -739,8 +771,11 @@ async function assertSingleProcurementShell(page, expectedShell, label) {
       poDetail: visibleCount(".erpw-procurement-po-follow-up-shell"),
       supplierDetail: visibleCount(".erpw-procurement-supplier-detail-shell"),
       itemDetail: visibleCount(".erpw-procurement-item-detail-shell"),
+      purchaseRequestReview: visibleCount(".erpw-procurement-purchase-request-review-shell"),
+      rfqReview: visibleCount(".erpw-procurement-rfq-review-shell"),
+      supplierQuotationReview: visibleCount(".erpw-procurement-supplier-quotation-review-shell"),
     };
-    const total = counts.overview + counts.worklist + counts.report + counts.poDetail + counts.supplierDetail + counts.itemDetail;
+    const total = counts.overview + counts.worklist + counts.report + counts.poDetail + counts.supplierDetail + counts.itemDetail + counts.purchaseRequestReview + counts.rfqReview + counts.supplierQuotationReview;
     return counts[shellKey] === 1 && total === 1;
   }, expectedShell, { timeout: TIMEOUT });
   const state = await procurementShellState(page);

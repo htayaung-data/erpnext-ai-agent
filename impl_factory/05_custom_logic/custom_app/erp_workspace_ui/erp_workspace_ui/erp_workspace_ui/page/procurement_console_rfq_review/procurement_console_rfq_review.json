@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-rfq-review",
+  "page_name": "procurement-console-rfq-review",
+  "title": "RFQ Review",
+  "icon": "octicon octicon-comment-discussion",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

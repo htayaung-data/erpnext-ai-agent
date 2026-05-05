@@ -260,7 +260,7 @@ def _rfq_rows(filters: dict[str, str], queue: str) -> list[dict[str, object]]:
 					"pending": summary.get("Pending", 0),
 					"received": summary.get("Received", 0),
 				},
-				"actions": [{"key": "open_erp_form", "label": "Open ERP Form"}],
+				"actions": [{"key": "open_record", "label": "Review RFQ"}],
 			}
 		)
 	return rows
@@ -302,7 +302,7 @@ def _rfq_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.action_targets_for_rows("Request for Quotation", rows, action_key="open_erp_form", include_native_chrome=True),
+		"action_targets": common.page_action_targets_for_rows("procurement-console-rfq-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")}),
 	}
 
 
@@ -359,7 +359,7 @@ def _supplier_quotation_rows(filters: dict[str, str], queue: str) -> list[dict[s
 					"status": record.get("status") or "-",
 					"total": _money(record.get("grand_total"), record.get("currency")),
 				},
-				"actions": [{"key": "open_erp_form", "label": "Open ERP Form"}],
+				"actions": [{"key": "open_record", "label": "Review Quote"}],
 			}
 		)
 	return rows
@@ -401,7 +401,7 @@ def _supplier_quotation_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.action_targets_for_rows("Supplier Quotation", rows, action_key="open_erp_form", include_native_chrome=True),
+		"action_targets": common.page_action_targets_for_rows("procurement-console-supplier-quotation-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")}),
 	}
 
 

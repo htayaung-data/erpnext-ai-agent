@@ -70,6 +70,9 @@
       poFollowUp: "procurement-console-po-follow-up",
       supplierDetail: "procurement-console-supplier",
       itemDetail: "procurement-console-item",
+      purchaseRequestReview: "procurement-console-purchase-request-review",
+      rfqReview: "procurement-console-rfq-review",
+      supplierQuotationReview: "procurement-console-supplier-quotation-review",
     },
     methods: {
       bootstrap: "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
@@ -80,6 +83,9 @@
       poFollowUpDetailContext: "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
       supplierDetailContext: "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context",
       itemDetailContext: "erp_workspace_ui.procurement_console.items.get_item_detail_context",
+      purchaseRequestReviewContext: "erp_workspace_ui.procurement_console.document_reviews.get_purchase_request_review_context",
+      rfqReviewContext: "erp_workspace_ui.procurement_console.document_reviews.get_rfq_review_context",
+      supplierQuotationReviewContext: "erp_workspace_ui.procurement_console.document_reviews.get_supplier_quotation_review_context",
     },
     managedDoctypes: {
       Supplier: "supplier_directory",
@@ -155,7 +161,18 @@
     for (let index = 0; index < workspaces.length; index += 1) {
       const workspace = workspaces[index];
       const routes = workspace.routes || {};
-      if ([routes.launcher, routes.home, routes.worklist, routes.report, routes.poFollowUp, routes.supplierDetail, routes.itemDetail].includes(normalized)) {
+      if ([
+        routes.launcher,
+        routes.home,
+        routes.worklist,
+        routes.report,
+        routes.poFollowUp,
+        routes.supplierDetail,
+        routes.itemDetail,
+        routes.purchaseRequestReview,
+        routes.rfqReview,
+        routes.supplierQuotationReview,
+      ].includes(normalized)) {
         return clone(workspace);
       }
     }

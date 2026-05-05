@@ -72,6 +72,9 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"po_follow_up": "procurement-console-po-follow-up",
 		"supplier_detail": "procurement-console-supplier",
 		"item_detail": "procurement-console-item",
+		"purchase_request_review": "procurement-console-purchase-request-review",
+		"rfq_review": "procurement-console-rfq-review",
+		"supplier_quotation_review": "procurement-console-supplier-quotation-review",
 	},
 	"methods": {
 		"bootstrap": "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap",
@@ -82,6 +85,9 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"po_follow_up_detail_context": "erp_workspace_ui.procurement_console.purchase_order_detail.get_purchase_order_follow_up_detail_context",
 		"supplier_detail_context": "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context",
 		"item_detail_context": "erp_workspace_ui.procurement_console.items.get_item_detail_context",
+		"purchase_request_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_purchase_request_review_context",
+		"rfq_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_rfq_review_context",
+		"supplier_quotation_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_supplier_quotation_review_context",
 	},
 	"managed_doctypes": {
 		"Supplier": "supplier_directory",

@@ -45,6 +45,15 @@ Current native-form exception boundary:
 - Item create/edit remains deferred to a later Item Governance phase because Item master changes affect buying, selling, stock, accounting, and reporting.
 - Warehouse receiving, Finance billing/payment, Item Price mutation, Default Supplier mutation, submit/cancel/amend/close, and approval/rejection actions remain outside the Phase 3 Procurement surface.
 
+Current ERPNext leakage and governed native access policy:
+
+- Productized Procurement pages are custom workspace pages, worklists, reports, and read-only review/detail pages controlled by ERP Workspace UI. Their primary row actions must stay inside productized Procurement routes.
+- Productized worklists must not expose generic `Open ERP Form` as the primary row action. Purchase Request rows use `Review Request`, RFQ rows use `Review RFQ`, and Supplier Quotation rows use `Review Quote`.
+- Purchase Request Review, RFQ Review, and Supplier Quotation Review are productized read-only buyer review pages. They provide document context, status, dates, supplier/request references, and item lines without exposing workflow mutation shortcuts.
+- If native ERP form access is needed for an authorized user, it is a secondary governed action inside the productized review/detail toolbar, not a default row action on every worklist row.
+- Governed native create/edit forms opened from Start Buying Work may show ERPNext workflow controls such as `Get Items From`, `Tools`, `Save`, `Add row`, `Add multiple`, grid controls, download/upload tools, and document conversion helpers. These are allowed only inside the intentionally native form body and remain governed by ERPNext permissions and workflow.
+- Bad leakage means a productized Procurement page sends users to ERPNext native list/form pages as the default review action without a custom buyer review surface. Allowed native controls inside governed create/edit forms are not leakage.
+
 Current shared UI contract decisions:
 
 - Procurement Overview direct route must not render as sidebar-only blank content. The route lifecycle must render a stable buyer workbench shell by first paint and must replace, not stack, on back/forward or repeated navigation.

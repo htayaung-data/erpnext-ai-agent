@@ -129,7 +129,7 @@ def _purchase_request_rows(filters: dict[str, str], source_only: bool) -> list[d
 					"status": record.get("status") or "-",
 					"ordered": f"{per_ordered or 0}%",
 				},
-				"actions": [{"key": "open_erp_form", "label": "Open ERP Form"}],
+				"actions": [{"key": "open_record", "label": "Review Request"}],
 			}
 		)
 	return rows
@@ -190,5 +190,5 @@ def _purchase_request_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.action_targets_for_rows("Material Request", rows, action_key="open_erp_form", include_native_chrome=True),
+		"action_targets": common.page_action_targets_for_rows("procurement-console-purchase-request-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")}),
 	}

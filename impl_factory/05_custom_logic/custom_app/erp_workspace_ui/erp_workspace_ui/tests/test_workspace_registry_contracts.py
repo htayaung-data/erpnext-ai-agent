@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import unittest
 
 from erp_workspace_ui import hooks
@@ -46,6 +48,24 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 self.assertIsNotNone(workspace)
                 self.assertEqual(workspace["workspace_id"], "sales")
 
+    def test_procurement_review_page_json_files_are_valid(self):
+        app_root = Path(__file__).resolve().parents[1]
+        pages = {
+            "procurement_console_purchase_request_review": "procurement-console-purchase-request-review",
+            "procurement_console_rfq_review": "procurement-console-rfq-review",
+            "procurement_console_supplier_quotation_review": "procurement-console-supplier-quotation-review",
+        }
+
+        for folder, page_name in pages.items():
+            with self.subTest(page=page_name):
+                path = app_root / "erp_workspace_ui" / "page" / folder / f"{folder}.json"
+                payload = json.loads(path.read_text())
+                self.assertEqual(payload["doctype"], "Page")
+                self.assertEqual(payload["name"], page_name)
+                self.assertEqual(payload["page_name"], page_name)
+                self.assertEqual(payload["module"], "ERP Workspace UI")
+                self.assertEqual(payload["standard"], "Yes")
+
     def test_procurement_console_phase3_registry_definition(self):
         workspace = get_procurement_workspace_definition()
 
@@ -64,6 +84,9 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "po_follow_up": "procurement-console-po-follow-up",
                 "supplier_detail": "procurement-console-supplier",
                 "item_detail": "procurement-console-item",
+                "purchase_request_review": "procurement-console-purchase-request-review",
+                "rfq_review": "procurement-console-rfq-review",
+                "supplier_quotation_review": "procurement-console-supplier-quotation-review",
             },
         )
         self.assertEqual(
@@ -73,6 +96,18 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["worklist_context"],
             "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["purchase_request_review_context"],
+            "erp_workspace_ui.procurement_console.document_reviews.get_purchase_request_review_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["rfq_review_context"],
+            "erp_workspace_ui.procurement_console.document_reviews.get_rfq_review_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["supplier_quotation_review_context"],
+            "erp_workspace_ui.procurement_console.document_reviews.get_supplier_quotation_review_context",
         )
         self.assertEqual(
             workspace["methods"]["report_context"],

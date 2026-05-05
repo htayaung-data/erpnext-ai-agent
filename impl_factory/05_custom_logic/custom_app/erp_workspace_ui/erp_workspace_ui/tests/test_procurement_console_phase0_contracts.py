@@ -24,6 +24,9 @@ CAPTURED_GET_ALL_CALLS = []
 CAPTURED_REPORT_CALLS = []
 HAS_QUOTE_STATUS = True
 HIDDEN_PURCHASE_ORDER_LIST_NAMES = set()
+HIDDEN_MATERIAL_REQUEST_LIST_NAMES = set()
+HIDDEN_RFQ_LIST_NAMES = set()
+HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES = set()
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -207,7 +210,7 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
             }
         ], filters)
     if doctype == "Material Request":
-        return _filter_rows(doctype, [
+        rows = _filter_rows(doctype, [
             {
                 "name": "MAT-MR-001",
                 "title": "Purchase Material",
@@ -221,11 +224,12 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "modified": "2026-05-03",
             }
         ], filters)
+        return [row for row in rows if row["name"] not in HIDDEN_MATERIAL_REQUEST_LIST_NAMES]
     if doctype == "Purchase Order":
         rows = _filter_rows(doctype, _purchase_order_rows(), filters)
         return [row for row in rows if row["name"] not in HIDDEN_PURCHASE_ORDER_LIST_NAMES]
     if doctype == "Request for Quotation":
-        return _filter_rows(doctype, [
+        rows = _filter_rows(doctype, [
             {
                 "name": "RFQ-001",
                 "company": "Demo Company",
@@ -236,8 +240,9 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "modified": "2026-05-03",
             }
         ], filters)
+        return [row for row in rows if row["name"] not in HIDDEN_RFQ_LIST_NAMES]
     if doctype == "Supplier Quotation":
-        return _filter_rows(doctype, [
+        rows = _filter_rows(doctype, [
             {
                 "name": "SUP-QTN-001",
                 "supplier": "SUP-001",
@@ -252,6 +257,7 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "modified": "2026-05-03",
             }
         ], filters)
+        return [row for row in rows if row["name"] not in HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES]
     if doctype == "Contact":
         return _filter_rows(doctype, [
             {
@@ -307,7 +313,55 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 }
             ]
         return []
+    if doctype == "Material Request Item":
+        if isinstance(filters, dict) and filters.get("parent") == "MAT-MR-001":
+            return [
+                {
+                    "name": "MRI-001",
+                    "parent": "MAT-MR-001",
+                    "item_code": "ITEM-001",
+                    "item_name": "Widget",
+                    "qty": 5,
+                    "ordered_qty": 1,
+                    "received_qty": 0,
+                    "uom": "Nos",
+                    "schedule_date": "2026-05-10",
+                    "warehouse": "Stores - DC",
+                }
+            ]
+        return []
+    if doctype == "Request for Quotation Item":
+        if isinstance(filters, dict) and filters.get("parent") == "RFQ-001":
+            return [
+                {
+                    "name": "RFQI-001",
+                    "parent": "RFQ-001",
+                    "item_code": "ITEM-001",
+                    "item_name": "Widget",
+                    "qty": 5,
+                    "uom": "Nos",
+                    "schedule_date": "2026-05-10",
+                    "warehouse": "Stores - DC",
+                    "material_request": "MAT-MR-001",
+                }
+            ]
+        return []
     if doctype == "Supplier Quotation Item":
+        if isinstance(filters, dict) and filters.get("parent") == "SUP-QTN-001":
+            return [
+                {
+                    "name": "SQI-001",
+                    "parent": "SUP-QTN-001",
+                    "item_code": "ITEM-001",
+                    "item_name": "Widget",
+                    "qty": 5,
+                    "uom": "Nos",
+                    "rate": 200,
+                    "amount": 1000,
+                    "request_for_quotation": "RFQ-001",
+                    "material_request": "MAT-MR-001",
+                }
+            ]
         if isinstance(filters, dict) and filters.get("item_code") == "ITEM-001":
             return [{"parent": "SUP-QTN-001", "item_code": "ITEM-001"}]
         return []
@@ -543,7 +597,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import items, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_reviews, items, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -635,6 +689,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         CAPTURED_GET_ALL_CALLS.clear()
         CAPTURED_REPORT_CALLS.clear()
         HIDDEN_PURCHASE_ORDER_LIST_NAMES.clear()
+        HIDDEN_MATERIAL_REQUEST_LIST_NAMES.clear()
+        HIDDEN_RFQ_LIST_NAMES.clear()
+        HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -1249,12 +1306,11 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
-        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_erp_form", "label": "Open ERP Form"}])
-        request_target = payload["action_targets"]["row:MAT-MR-001:open_erp_form"]
-        self.assertEqual(request_target["kind"], "form")
-        self.assertEqual(request_target["doctype"], "Material Request")
-        self.assertEqual(request_target["native_chrome"]["parentLabel"], "Purchase Requests")
-        self.assertEqual(request_target["native_chrome"]["leafLabel"], "MAT-MR-001")
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Review Request"}])
+        request_target = payload["action_targets"]["row:MAT-MR-001:open_record"]
+        self.assertEqual(request_target["kind"], "page")
+        self.assertEqual(request_target["route"], "procurement-console-purchase-request-review")
+        self.assertEqual(request_target["options"], {"return_queue": "purchase_request_directory"})
         filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
         self.assertTrue(_filter_contains(filters, ["Material Request", "material_request_type", "=", "Purchase"]))
 
@@ -1320,6 +1376,28 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertTrue(_filter_contains(filters, ["Material Request", "material_request_type", "=", "Purchase"]))
         self.assertTrue(_filter_contains(filters, ["Material Request", "docstatus", "=", 1]))
         self.assertTrue(_filter_contains(filters, ["Material Request", "per_ordered", "<", 100]))
+
+    def test_purchase_request_review_is_read_only_productized_context(self):
+        payload = document_reviews.get_purchase_request_review_context("MAT-MR-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["title"], "MAT-MR-001")
+        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_worklist", "refresh"])
+        self.assertEqual(payload["detail"]["sections"][0]["table"]["rows"][0]["cells"]["item"]["value"], "ITEM-001")
+        self.assertEqual(payload["action_targets"]["back_to_worklist"], {"kind": "worklist", "queue_key": "purchase_request_directory"})
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_purchase_request_review_requires_parent_visible_before_children(self):
+        HIDDEN_MATERIAL_REQUEST_LIST_NAMES.add("MAT-MR-001")
+        CAPTURED_GET_LIST_CALLS.clear()
+        CAPTURED_GET_ALL_CALLS.clear()
+
+        payload = document_reviews.get_purchase_request_review_context("MAT-MR-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["detail"]["state"]["title"], "Purchase Request not found")
+        self.assertTrue(any(call["doctype"] == "Material Request" and _filter_contains(call["filters"], ["Material Request", "name", "=", "MAT-MR-001"]) for call in CAPTURED_GET_LIST_CALLS))
+        self.assertFalse(any(call["doctype"] == "Material Request Item" for call in CAPTURED_GET_ALL_CALLS))
 
     def test_purchase_order_pending_approval_is_visibility_only(self):
         payload = worklist.get_procurement_console_worklist_context("purchase_orders_pending_approval")
@@ -1439,11 +1517,11 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         payload = worklist.get_procurement_console_worklist_context("rfq_directory")
 
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
-        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_erp_form", "label": "Open ERP Form"}])
-        rfq_target = payload["action_targets"]["row:RFQ-001:open_erp_form"]
-        self.assertEqual(rfq_target["kind"], "form")
-        self.assertEqual(rfq_target["doctype"], "Request for Quotation")
-        self.assertEqual(rfq_target["native_chrome"]["parentLabel"], "RFQs")
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Review RFQ"}])
+        rfq_target = payload["action_targets"]["row:RFQ-001:open_record"]
+        self.assertEqual(rfq_target["kind"], "page")
+        self.assertEqual(rfq_target["route"], "procurement-console-rfq-review")
+        self.assertEqual(rfq_target["options"], {"return_queue": "rfq_directory"})
         self.assertIn("Supplier response visibility", payload["controls"]["scopeChips"])
         self.assertNotIn("send", str(payload.get("controls", {})).lower())
         self.assertNotIn("email", str(payload.get("controls", {})).lower())
@@ -1456,6 +1534,27 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertTrue(any(call["doctype"] == "Request for Quotation Supplier" and call["filters"].get("quote_status") == "Pending" for call in CAPTURED_GET_ALL_CALLS))
         filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
         self.assertTrue(_filter_contains(filters, ["Request for Quotation", "docstatus", "=", 1]))
+
+    def test_rfq_review_is_read_only_productized_context(self):
+        payload = document_reviews.get_rfq_review_context("RFQ-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["title"], "RFQ-001")
+        self.assertEqual(payload["detail"]["sections"][0]["table"]["rows"][0]["cells"]["supplier"]["value"], "Alpha Supplier")
+        self.assertEqual(payload["detail"]["sections"][1]["table"]["rows"][0]["cells"]["source"], "MAT-MR-001")
+        self.assertEqual(payload["action_targets"]["back_to_worklist"], {"kind": "worklist", "queue_key": "rfq_directory"})
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_rfq_review_requires_parent_visible_before_children(self):
+        HIDDEN_RFQ_LIST_NAMES.add("RFQ-001")
+        CAPTURED_GET_LIST_CALLS.clear()
+        CAPTURED_GET_ALL_CALLS.clear()
+
+        payload = document_reviews.get_rfq_review_context("RFQ-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["detail"]["state"]["title"], "RFQ not found")
+        self.assertFalse(any(call["doctype"] in {"Request for Quotation Item", "Request for Quotation Supplier"} for call in CAPTURED_GET_ALL_CALLS))
 
     def test_rfqs_awaiting_response_unavailable_without_quote_status_field(self):
         global HAS_QUOTE_STATUS
@@ -1481,11 +1580,11 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn("purchase_order", payload_text)
         self.assertNotIn("item_price", payload_text)
         self.assertNotIn("set_default_supplier", payload_text)
-        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_erp_form", "label": "Open ERP Form"}])
-        quotation_target = payload["action_targets"]["row:SUP-QTN-001:open_erp_form"]
-        self.assertEqual(quotation_target["kind"], "form")
-        self.assertEqual(quotation_target["doctype"], "Supplier Quotation")
-        self.assertEqual(quotation_target["native_chrome"]["parentLabel"], "Supplier Quotations")
+        self.assertEqual(payload["results"]["rows"][0]["actions"], [{"key": "open_record", "label": "Review Quote"}])
+        quotation_target = payload["action_targets"]["row:SUP-QTN-001:open_record"]
+        self.assertEqual(quotation_target["kind"], "page")
+        self.assertEqual(quotation_target["route"], "procurement-console-supplier-quotation-review")
+        self.assertEqual(quotation_target["options"], {"return_queue": "supplier_quotation_directory"})
 
     def test_supplier_quotations_to_compare_filters_submitted_visible_records(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_quotations_to_compare")
@@ -1494,6 +1593,39 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
         self.assertTrue(_filter_contains(filters, ["Supplier Quotation", "docstatus", "=", 1]))
         self.assertTrue(_filter_contains(filters, ["Supplier Quotation", "status", "not in", ["Cancelled", "Stopped"]]))
+
+    def test_supplier_quotation_review_is_read_only_productized_context(self):
+        payload = document_reviews.get_supplier_quotation_review_context("SUP-QTN-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["title"], "SUP-QTN-001")
+        self.assertEqual(payload["detail"]["sections"][0]["table"]["rows"][0]["cells"]["item"]["value"], "ITEM-001")
+        self.assertEqual(payload["detail"]["sections"][0]["table"]["rows"][0]["cells"]["references"], "RFQ-001, MAT-MR-001")
+        self.assertEqual(payload["action_targets"]["open_quote_comparison"], {"kind": "report_page", "report_key": "supplier_quotation_comparison", "filters": {"supplier_quotation": "SUP-QTN-001"}})
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_supplier_quotation_review_native_form_access_is_secondary_and_permission_based(self):
+        _set_writeable_doctypes("Supplier Quotation")
+
+        payload = document_reviews.get_supplier_quotation_review_context("SUP-QTN-001")
+
+        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["back_to_worklist", "refresh", "open_erp_form", "open_quote_comparison"])
+        native_target = payload["action_targets"]["open_erp_form"]
+        self.assertEqual(native_target["kind"], "form")
+        self.assertEqual(native_target["doctype"], "Supplier Quotation")
+        self.assertEqual(native_target["native_chrome"]["parentLabel"], "Supplier Quotations")
+        self.assertEqual(native_target["native_chrome"]["leafLabel"], "ERP Supplier Quotation Form")
+
+    def test_supplier_quotation_review_requires_parent_visible_before_children(self):
+        HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES.add("SUP-QTN-001")
+        CAPTURED_GET_LIST_CALLS.clear()
+        CAPTURED_GET_ALL_CALLS.clear()
+
+        payload = document_reviews.get_supplier_quotation_review_context("SUP-QTN-001")
+
+        self.assertEqual(payload["detail"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["detail"]["state"]["title"], "Supplier Quotation not found")
+        self.assertFalse(any(call["doctype"] == "Supplier Quotation Item" for call in CAPTURED_GET_ALL_CALLS))
 
     def test_supplier_quotations_expiring_filters_validity_window(self):
         payload = worklist.get_procurement_console_worklist_context("supplier_quotations_expiring")
