@@ -120,7 +120,24 @@ async function login(page, user) {
 }
 
 async function openDeskRoute(page, route) {
-  await page.goto(routeUrl(route), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  const targetUrl = routeUrl(route);
+  const targetPath = new URL(targetUrl).pathname;
+  const canUseDeskRouter = await page.evaluate(() => Boolean(window.frappe && typeof frappe.set_route === "function")).catch(() => false);
+  if (canUseDeskRouter && /^\/desk\//.test(targetPath)) {
+    const routeParts = targetPath.replace(/^\/desk\/?/, "").split("/").filter(Boolean).map((part) => {
+      try {
+        return decodeURIComponent(part);
+      } catch (error) {
+        return part;
+      }
+    });
+    await page.evaluate((parts) => {
+      frappe.set_route.apply(frappe, parts);
+    }, routeParts);
+    await page.waitForURL((url) => url.pathname === targetPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  } else {
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  }
   if (/\/login(?:[/?#]|$)/.test(page.url())) throw new Error(`Route ${route} redirected to login`);
   await page.waitForFunction(() => Boolean(window.frappe), null, { timeout: TIMEOUT });
   if (/\/desk\/procurement-console/.test(route)) {
