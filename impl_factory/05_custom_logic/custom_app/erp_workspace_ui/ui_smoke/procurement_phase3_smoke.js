@@ -282,6 +282,46 @@ async function checkOverviewStyling(page) {
   return styles;
 }
 
+async function checkOverviewDirectLoadStability(page) {
+  const states = [];
+  for (let index = 0; index < 10; index += 1) {
+    await page.goto(routeUrl("/desk/procurement-console"), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    let elapsed = 0;
+    const marks = [];
+    for (const mark of [500, 1500]) {
+      await page.waitForTimeout(Math.max(0, mark - elapsed));
+      elapsed = mark;
+      const snapshot = await page.evaluate((mark) => {
+        const visible = (node) => {
+          if (!node) return false;
+          const style = getComputedStyle(node);
+          const rect = node.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+        };
+        const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="procurement"]');
+        const text = (document.body.innerText || "").replace(/\s+/g, " ").trim();
+        return {
+          mark,
+          url: window.location.href,
+          shellVisible: visible(shell),
+          shellRuntime: shell ? shell.getAttribute("data-erpw-console-runtime") : "",
+          shellBootstrap: shell ? shell.getAttribute("data-erpw-console-bootstrap") : "",
+          hasTitle: /Procurement Console/i.test(text),
+          hasWorkbench: /Start Buying Work|Priority Work|Buying Pipeline/i.test(text),
+          textSample: text.slice(0, 500),
+        };
+      }, mark);
+      marks.push(snapshot);
+    }
+    const early = marks.find((mark) => mark.mark === 500) || {};
+    const ready = marks.find((mark) => mark.mark === 1500) || {};
+    assert(early.shellVisible && early.hasTitle, "Procurement Overview showed sidebar-only blank content at 500ms", { index: index + 1, marks });
+    assert(ready.shellVisible && ready.hasWorkbench, "Procurement Overview did not render buyer workbench content by 1500ms", { index: index + 1, marks });
+    states.push({ iteration: index + 1, marks });
+  }
+  return states;
+}
+
 
 async function visibleElementCount(page, selector) {
   return page.locator(selector).evaluateAll((nodes) => nodes.filter((node) => {
@@ -507,6 +547,7 @@ async function checkDetailActionStyling(page, selector, label) {
       display: style.display,
       height: rect.height,
       width: rect.width,
+      iconSvgCount: node.querySelectorAll(".erpw-child-toolbar-action-icon svg").length,
     };
   }));
   assert(largeCardActionCount === 0, `${label}: simple detail controls still use large action-card buttons`, { largeCardActionCount });
@@ -516,6 +557,7 @@ async function checkDetailActionStyling(page, selector, label) {
   assert(actions.every((action) => action.display === "inline-flex" || action.display === "flex"), `${label}: toolbar buttons are not using compact shared styling`, { actions });
   assert(actions.every((action) => action.height <= 44 && action.width < 260), `${label}: toolbar button still looks like a large card`, { actions });
   assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: toolbar button styling looks unstyled`, { actions });
+  assert(actions.every((action) => action.iconSvgCount > 0), `${label}: compact toolbar buttons are missing shared icons`, { actions });
   return actions;
 }
 
@@ -945,6 +987,40 @@ async function checkSupplierAutocomplete(page) {
   return { results };
 }
 
+async function assertDatePairSameRow(page, route, label) {
+  await openDeskRoute(page, route);
+  await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const pair = await page.evaluate(() => {
+    const start = document.querySelector('[data-erpw-list-field-shell-key="date_start"]');
+    const end = document.querySelector('[data-erpw-list-field-shell-key="date_end"]');
+    const startRect = start ? start.getBoundingClientRect() : null;
+    const endRect = end ? end.getBoundingClientRect() : null;
+    return {
+      hasStart: !!start,
+      hasEnd: !!end,
+      startTop: startRect ? Math.round(startRect.top) : null,
+      endTop: endRect ? Math.round(endRect.top) : null,
+      startLeft: startRect ? Math.round(startRect.left) : null,
+      endLeft: endRect ? Math.round(endRect.left) : null,
+      viewportWidth: window.innerWidth,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(pair.hasStart && pair.hasEnd, `${label}: date-window controls are missing`, pair);
+  assert(Math.abs(pair.startTop - pair.endTop) <= 4, `${label}: Date From and Date To are not aligned in the same row`, pair);
+  assert(pair.endLeft > pair.startLeft, `${label}: Date To is not positioned after Date From`, pair);
+  assert(pair.overflow <= 1, `${label}: date-pair layout introduced horizontal overflow`, pair);
+  return { label, route, pair };
+}
+
+async function checkDatePairLayout(page) {
+  return [
+    await assertDatePairSameRow(page, "/desk/procurement-console-worklist/purchase-request-directory", "Purchase Request Directory"),
+    await assertDatePairSameRow(page, "/desk/procurement-console-worklist/purchase-orders-overdue", "Overdue Purchase Orders"),
+  ];
+}
+
+
 async function exerciseFocusStability(page, scenario) {
   await openDeskRoute(page, scenario.route);
   await page.locator(scenario.shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1108,6 +1184,8 @@ async function checkSupplierDetail(page, user) {
     assert(purchaseOrderCell.route === "procurement-console-po-follow-up", "Supplier Detail purchase order cell must use Procurement PO Follow-up route", { purchaseOrderCell });
     const poButton = page.locator('.erpw-procurement-supplier-detail-shell [data-erpw-procurement-detail-route="procurement-console-po-follow-up"]').first();
     await poButton.waitFor({ state: "visible", timeout: TIMEOUT });
+    const poButtonClass = await poButton.getAttribute("class");
+    assert(!/erpw-procurement-table-link/.test(poButtonClass || ""), "Supplier Detail PO link still uses Procurement-specific pill styling", { poButtonClass });
     const poIconText = normalizeText(await poButton.locator(".erpw-list-inline-open-icon").first().innerText({ timeout: TIMEOUT }));
     assert(poIconText && poIconText !== "?", "Supplier Detail PO link must use shared row-action arrow affordance", { poIconText });
     await poButton.click();
@@ -1174,6 +1252,8 @@ async function checkItemDetail(page, user) {
     assert(purchaseOrderCell.route === "procurement-console-po-follow-up", "Item Detail purchase order cell must use Procurement PO Follow-up route", { purchaseOrderCell });
     const poButton = page.locator('.erpw-procurement-item-detail-shell [data-erpw-procurement-detail-route="procurement-console-po-follow-up"]').first();
     await poButton.waitFor({ state: "visible", timeout: TIMEOUT });
+    const poButtonClass = await poButton.getAttribute("class");
+    assert(!/erpw-procurement-table-link/.test(poButtonClass || ""), "Item Detail PO link still uses Procurement-specific pill styling", { poButtonClass });
     const poIconText = normalizeText(await poButton.locator(".erpw-list-inline-open-icon").first().innerText({ timeout: TIMEOUT }));
     assert(poIconText && poIconText !== "?", "Item Detail PO link must use shared row-action arrow affordance", { poIconText });
     await poButton.click();
@@ -1265,6 +1345,7 @@ async function runUser(browser, user) {
   const report = { user: user.key };
   try {
     await login(page, user);
+    report.overviewDirectLoadStability = await checkOverviewDirectLoadStability(page);
     report.defaultLandingUrl = await checkDefaultLanding(page, user);
     report.overviewStyles = await checkOverviewStyling(page);
     report.nativeChromeLifecycle = await checkProcurementNativeChromeLifecycle(page, user);
@@ -1283,6 +1364,7 @@ async function runUser(browser, user) {
       if (user.key === "manager") {
         report.topChrome = await checkTopChrome(page);
         report.focusStability = await checkFocusStability(page);
+        report.datePairLayout = await checkDatePairLayout(page);
       }
       report.createActions = await checkCreateActions(page, user, bootstrapPayload);
       report.worklists = {};

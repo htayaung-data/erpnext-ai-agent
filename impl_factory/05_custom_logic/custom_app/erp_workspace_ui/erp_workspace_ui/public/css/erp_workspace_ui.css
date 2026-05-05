@@ -7646,42 +7646,6 @@ html {
   max-width: 100%;
 }
 
-.erpw-procurement-table-link {
-  appearance: none;
-  cursor: pointer;
-}
-
-.erpw-procurement-table-link.erpw-list-inline-open {
-  width: auto;
-  min-width: min(180px, 100%);
-  max-width: 100%;
-  padding: 0.34rem 0.48rem;
-  border: 1px solid rgba(203, 213, 225, 0.86);
-  border-radius: 10px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  color: #1e293b;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 4px 10px rgba(15, 23, 42, 0.035);
-}
-
-.erpw-procurement-table-link.erpw-list-inline-open .erpw-list-inline-open-label {
-  color: #0f766e;
-  font-size: 0.84rem;
-  font-weight: 760;
-}
-
-.erpw-procurement-table-link.erpw-list-inline-open .erpw-list-inline-open-icon {
-  color: #94a3b8;
-}
-
-.erpw-procurement-table-link.erpw-list-inline-open:hover,
-.erpw-procurement-table-link.erpw-list-inline-open:focus-visible {
-  border-color: rgba(20, 184, 166, 0.44);
-  background: #ffffff;
-  color: #0f172a;
-  outline: none;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.07);
-}
-
 .erpw-list-shell .erpw-list-controls-strip,
 .erpw-report-shell .erpw-report-controls {
   border-color: rgba(220, 228, 238, 0.94) !important;

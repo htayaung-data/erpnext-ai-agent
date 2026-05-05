@@ -214,6 +214,7 @@ def _detail_payload(
 				"label": "Open ERP Item Form",
 				"variant": "secondary",
 				"category": "governed_native",
+				"icon": "external-link",
 				"note": "Uses ERPNext item master permissions.",
 			}
 		)
@@ -351,8 +352,8 @@ def _available_fields(doctype: str, fields: list[str]) -> list[str]:
 
 def _base_actions() -> list[dict[str, object]]:
 	return [
-		{"key": "back_to_items", "title": "Back to items", "label": "Back to items", "variant": "secondary", "category": "navigation"},
-		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
+		{"key": "back_to_items", "title": "Back to items", "label": "Back to items", "variant": "secondary", "category": "navigation", "icon": "arrow-left"},
+		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary", "icon": "refresh"},
 	]
 
 

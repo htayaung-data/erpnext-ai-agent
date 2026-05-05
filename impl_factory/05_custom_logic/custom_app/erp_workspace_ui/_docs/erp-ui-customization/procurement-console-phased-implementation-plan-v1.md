@@ -39,9 +39,21 @@ Current native-form exception boundary:
 - Native Purchase Request, RFQ, Supplier Quotation, and Purchase Order create/edit forms are accepted Phase 3 exceptions.
 - These forms retain Procurement sidebar/chrome where the workspace launches them, but the form body remains ERPNext native and continues to rely on ERPNext permission and workflow control.
 - They are not custom premium managed Procurement forms yet.
+- Start Buying Work therefore keeps native ERPNext create destinations in Phase 3. This matches the current Sales Console quick-action destination pattern for complex ERPNext documents while making the exception explicit.
+- Managed Procurement Forms is the future phase name for replacing these governed native create/edit exceptions with custom managed form wrappers, if owner-approved.
 - Supplier create/edit remains deferred to a later Supplier Master phase.
 - Item create/edit remains deferred to a later Item Governance phase because Item master changes affect buying, selling, stock, accounting, and reporting.
 - Warehouse receiving, Finance billing/payment, Item Price mutation, Default Supplier mutation, submit/cancel/amend/close, and approval/rejection actions remain outside the Phase 3 Procurement surface.
+
+Current shared UI contract decisions:
+
+- Procurement Overview direct route must not render as sidebar-only blank content. The route lifecycle must render a stable buyer workbench shell by first paint and must replace, not stack, on back/forward or repeated navigation.
+- Shared direct-route pruning must never remove a newer ready shell from an older detached loading shell. Delayed cleanup must verify the keep-node is still connected before pruning.
+- Worklist and report date windows must keep related Date From and Date To fields on the same row at desktop widths when space allows, with responsive stacking only on narrower widths.
+- Productized detail pages use the compact shared child/detail header and compact toolbar controls. Back, Refresh, and governed native form actions must not use large Overview action-card styling.
+- Productized detail and child tables use the universal shared row-link/table action affordance for document navigation. Procurement-specific colored PO link pills are not part of the accepted shared contract.
+- Supplier Detail and Buying Item Detail purchase order rows route to productized Procurement PO Follow-up Detail, not native Purchase Order forms.
+- Productized Procurement pages must not expose receive, bill, pay, approve, reject, submit, cancel, amend, close, Item Price update, or Default Supplier mutation actions.
 
 ## 1. Planning Context
 

@@ -10,7 +10,9 @@
   const REPORT_ROUTE = procurementRoutes.report || "procurement-console-report";
   const BOOTSTRAP_METHOD = procurementMethods.bootstrap || "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap";
   const CONSOLE_RUNTIME_URL = "/assets/erp_workspace_ui/js/runtime/console/workspace_console_runtime.js";
+  const BOOTSTRAP_RETRY_DELAYS = [350, 900, 1800];
   let consoleRuntimePromise = null;
+  let activeOverviewGuardBound = false;
   function consoleRuntime() {
     return window.erpWorkspaceConsoleRuntime || {};
   }
@@ -195,18 +197,69 @@
         </section>
       </div>
     `);
-    $(page.body).empty().append($root);
+    replacePageBody(page, $root);
+  }
+
+  function pageBodyElement(page) {
+    if (page && page.body) {
+      if (page.body.nodeType) return page.body;
+      if (page.body.jquery && page.body[0]) return page.body[0];
+    }
+    return document.querySelector(".erpw-direct-console-body");
+  }
+
+  function replacePageBody(page, $content) {
+    const body = pageBodyElement(page);
+    if (!body) return;
+    body.innerHTML = "";
+    $content.each((index, node) => {
+      body.appendChild(node);
+    });
+  }
+
+  function renderLoadingState(page) {
+    if (!isActiveProcurementRoute()) return;
+    const $root = $(`
+      <div class="sales-console-shell" data-erpw-workspace="procurement" data-erpw-console-runtime="loading" data-erpw-console-bootstrap="loading">
+        <section class="sales-console-card sales-console-header">
+          <div class="sales-console-header-row">
+            <div class="sales-console-header-copy">
+              <h1 class="sales-console-title">Procurement Console</h1>
+              <div class="sales-console-header-note">Loading the buyer workbench.</div>
+            </div>
+          </div>
+        </section>
+      </div>
+    `);
+    replacePageBody(page, $root);
+    pruneRouteShells($root.get(0));
+    cleanupOverviewPageHeads();
   }
 
   function makeFallbackPage(wrapper) {
     const $parent = $(wrapper);
+    if (wrapper && wrapper.id === "body") {
+      let $host = $parent.find('.erpw-direct-console-page[data-erpw-page-key="procurement-console"]').first();
+      if (!$host.length) {
+        $host = $('<div class="erpw-direct-console-page" data-erpw-page-key="procurement-console"></div>').appendTo($parent);
+      }
+      if (!$host.find(".erpw-direct-console-body").length) {
+        $host.append('<main class="layout-main-section erpw-direct-console-body"></main>');
+      }
+      return {
+        body: $host.find(".erpw-direct-console-body").first().get(0),
+        set_title(title) {
+          document.title = title || "Procurement Console";
+        },
+      };
+    }
     $parent.empty().append(`
       <div class="erpw-direct-console-page">
         <main class="layout-main-section erpw-direct-console-body"></main>
       </div>
     `);
     return {
-      body: $parent.find(".erpw-direct-console-body").first(),
+      body: $parent.find(".erpw-direct-console-body").first().get(0),
       set_title(title) {
         document.title = title || "Procurement Console";
       },
@@ -214,6 +267,7 @@
   }
 
   function makeConsolePage(wrapper) {
+    if (wrapper && wrapper.id === "body") return makeFallbackPage(wrapper);
     try {
       return frappe.ui.make_app_page({
         parent: wrapper,
@@ -274,6 +328,19 @@
         primaryColumns: primaryCount === 4 ? 2 : 0,
       });
     }
+  }
+
+  function fetchBootstrapWithRetry($root, attempt) {
+    return frappe.call({ method: BOOTSTRAP_METHOD }).catch((error) => {
+      const nextDelay = BOOTSTRAP_RETRY_DELAYS[attempt || 0];
+      if (!isActiveProcurementRoute() || nextDelay == null) throw error;
+      if ($root && $root.length) {
+        $root.attr("data-erpw-console-bootstrap", "retrying");
+      }
+      return new Promise((resolve) => {
+        setTimeout(resolve, nextDelay);
+      }).then(() => fetchBootstrapWithRetry($root, (attempt || 0) + 1));
+    });
   }
 
   function renderWorkbench(page) {
@@ -555,13 +622,14 @@
     );
 
     $root.append($header, $createActions, $priorityWork, $pipeline, $orderFollowUp, $sourcing, $directories);
-    $(page.body).empty().append($root);
+    replacePageBody(page, $root);
     pruneRouteShells($root.get(0));
     cleanupOverviewPageHeads();
     setTimeout(cleanupOverviewPageHeads, 0);
     setTimeout(cleanupOverviewPageHeads, 120);
 
-    frappe.call({ method: BOOTSTRAP_METHOD }).then((response) => {
+    fetchBootstrapWithRetry($root, 0).then((response) => {
+      if (!isActiveProcurementRoute()) return;
       const payload = response && response.message ? response.message : {};
       pageState.payload = payload;
       if (payload.state && payload.state.kind === "restricted") {
@@ -571,6 +639,7 @@
       applyPayload($root, payload);
       $root.attr("data-erpw-console-bootstrap", "ready");
     }).catch((error) => {
+      if (!isActiveProcurementRoute()) return;
       renderState(page, {
         kind: "error",
         title: "Procurement Console could not be loaded",
@@ -587,9 +656,13 @@
 
   function pruneRouteShells(keepNode) {
     if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.pruneProcurementRouteShells === "function") {
-      window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode);
-      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 0);
-      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 80);
+      const prune = () => {
+        if (!keepNode || !keepNode.isConnected) return;
+        window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode);
+      };
+      prune();
+      setTimeout(prune, 0);
+      setTimeout(prune, 80);
     }
   }
 
@@ -608,10 +681,18 @@
     });
   }
 
+  function hasReadyOverviewShell() {
+    const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="procurement"]');
+    return Boolean(shell && shell.getAttribute("data-erpw-console-runtime") === "ready" && document.querySelector(".sales-console-kpi-card"));
+  }
+
   function render(wrapper) {
+    if (!isActiveProcurementRoute()) return;
+    if (hasReadyOverviewShell()) return;
     cleanupRouteShells();
     cleanupOverviewPageHeads();
     const page = makeConsolePage(wrapper);
+    renderLoadingState(page);
     if (wrapper) {
       const route = frappe.get_route ? frappe.get_route() : [];
       wrapper.__erpwProcurementConsole = {
@@ -630,6 +711,42 @@
     });
   }
 
+  function directRenderWrapper() {
+    return document.getElementById("body") || (frappe.container && frappe.container.page && frappe.container.page.wrapper);
+  }
+
+  function shouldSelfRenderOverview() {
+    if (!isActiveProcurementRoute()) return false;
+    const shell = document.querySelector('.sales-console-shell[data-erpw-workspace="procurement"]');
+    if (!shell) return true;
+    if (shell.getAttribute("data-erpw-direct-first-paint") === "procurement-console") return true;
+    if (shell.getAttribute("data-erpw-console-runtime") === "loading") return true;
+    return !document.querySelector(".sales-console-kpi-card");
+  }
+
+  function renderActiveOverviewRoute() {
+    if (!shouldSelfRenderOverview()) return;
+    const wrapper = directRenderWrapper();
+    if (!wrapper) return;
+    render(wrapper);
+  }
+
+  function scheduleActiveOverviewRender() {
+    renderActiveOverviewRoute();
+    setTimeout(renderActiveOverviewRoute, 80);
+    setTimeout(renderActiveOverviewRoute, 220);
+    setTimeout(renderActiveOverviewRoute, 700);
+    setTimeout(renderActiveOverviewRoute, 1400);
+  }
+
+  function bindActiveOverviewGuard() {
+    if (activeOverviewGuardBound || !window || typeof window.setInterval !== "function") return;
+    activeOverviewGuardBound = true;
+    window.setInterval(() => {
+      if (shouldSelfRenderOverview()) renderActiveOverviewRoute();
+    }, 160);
+  }
+
   frappe.pages[PAGE_KEY] = frappe.pages[PAGE_KEY] || {};
   frappe.pages[PAGE_KEY].__erpwProcurementConsoleRenderer = true;
   frappe.pages[PAGE_KEY].on_page_load = function (wrapper) { render(wrapper); };
@@ -638,8 +755,13 @@
       window.erpWorkspaceConsoleSidebar.refresh();
     }
     const host = wrapper && wrapper.page && wrapper.page.body ? wrapper.page.body : wrapper;
-    const $existingShell = $(host || []).find(".sales-console-shell").first();
-    if ($existingShell.length) {
+    let $existingShell = $(host || []).find(".sales-console-shell").first();
+    if (!$existingShell.length) {
+      $existingShell = $('.sales-console-shell[data-erpw-workspace="procurement"]').first();
+    }
+    const isFirstPaintShell = $existingShell.attr("data-erpw-direct-first-paint") === "procurement-console";
+    const isLoadingShell = $existingShell.attr("data-erpw-console-runtime") === "loading";
+    if ($existingShell.length && !isFirstPaintShell && !isLoadingShell) {
       pruneRouteShells($existingShell.get(0));
       cleanupOverviewPageHeads();
       setTimeout(cleanupOverviewPageHeads, 0);
@@ -648,4 +770,6 @@
     }
     render(wrapper);
   };
+  scheduleActiveOverviewRender();
+  bindActiveOverviewGuard();
 })();

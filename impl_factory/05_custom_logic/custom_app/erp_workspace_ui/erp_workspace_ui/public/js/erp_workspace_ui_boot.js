@@ -2181,10 +2181,57 @@
     }
     const deskBody = document.getElementById("body");
     if (deskBody) return deskBody;
-    if (!window.frappe || !frappe.container) return null;
-    const page = frappe.container.page || null;
-    if (page && page.wrapper) return page.wrapper;
-    return page;
+    if (window.frappe && frappe.container) {
+      const page = frappe.container.page || null;
+      if (page && page.wrapper) return page.wrapper;
+    }
+    return null;
+  }
+
+  function renderProcurementOverviewFirstPaint(pageKey) {
+    if (pageKey !== "procurement-console" || !document || !document.querySelector) return false;
+    const existing = document.querySelector('.sales-console-shell[data-erpw-workspace="procurement"]');
+    if (existing) return true;
+    const deskBody = document.getElementById("body");
+    if (!deskBody) return false;
+    cleanupProcurementRouteShells(pageKey, { removeActive: true });
+    const shell = document.createElement("div");
+    shell.className = "sales-console-shell";
+    shell.setAttribute("data-erpw-workspace", "procurement");
+    shell.setAttribute("data-erpw-console-runtime", "loading");
+    shell.setAttribute("data-erpw-console-bootstrap", "loading");
+    shell.setAttribute("data-erpw-direct-first-paint", "procurement-console");
+    shell.setAttribute("aria-busy", "true");
+    shell.innerHTML = [
+      '<section class="sales-console-card sales-console-header">',
+      '  <div class="sales-console-header-row">',
+      '    <div class="sales-console-header-copy">',
+      '      <h1 class="sales-console-title">Procurement Console</h1>',
+      '      <div class="sales-console-header-note">Loading the buyer workbench.</div>',
+      '    </div>',
+      '  </div>',
+      '</section>',
+      '<section class="sales-console-card sales-console-section" data-section-key="create-actions">',
+      '  <div class="sales-console-section-head">',
+      '    <h2 class="sales-console-section-title">Start Buying Work</h2>',
+      '    <div class="sales-console-section-note">Preparing your available buying actions</div>',
+      '  </div>',
+      '</section>',
+      '<section class="sales-console-card sales-console-section" data-section-key="priority-work">',
+      '  <div class="sales-console-section-head">',
+      '    <h2 class="sales-console-section-title">Priority Work</h2>',
+      '    <div class="sales-console-section-note">Demand and supplier follow-up</div>',
+      '  </div>',
+      '</section>',
+      '<section class="sales-console-card sales-console-section" data-section-key="buying-pipeline">',
+      '  <div class="sales-console-section-head">',
+      '    <h2 class="sales-console-section-title">Buying Pipeline</h2>',
+      '    <div class="sales-console-section-note">Purchase Request to Billing Visibility</div>',
+      '  </div>',
+      '</section>',
+    ].join("");
+    deskBody.appendChild(shell);
+    return true;
   }
 
   function renderProcurementDirectPage(pageKey) {
@@ -2196,7 +2243,16 @@
     const routeSignature = route.join("|");
     const stateKey = PROCUREMENT_DIRECT_PAGE_STATE_KEYS[pageKey] || "";
     const existing = stateKey ? wrapper[stateKey] : null;
-    if (existing && existing.routeSignature === routeSignature && procurementRouteShellCount(pageKey) === 1) {
+    const activeShell = document.querySelector('.sales-console-shell[data-erpw-workspace="procurement"]');
+    const activeShellIsLoading = activeShell && (
+      activeShell.getAttribute("data-erpw-direct-first-paint") === "procurement-console"
+      || activeShell.getAttribute("data-erpw-console-runtime") === "loading"
+    );
+    if (activeShell && procurementRouteShellCount(pageKey) === 1 && !activeShellIsLoading) {
+      cleanupProcurementRouteShells(pageKey);
+      return true;
+    }
+    if (existing && existing.routeSignature === routeSignature && procurementRouteShellCount(pageKey) === 1 && !activeShellIsLoading) {
       cleanupProcurementRouteShells(pageKey);
       return true;
     }
@@ -2232,7 +2288,6 @@
   }
 
   function ensureProcurementDirectPage() {
-    if (!window.frappe || !frappe.pages) return false;
     const route = currentRouteParts();
     const pageKey = String(route[0] || "");
     const asset = PROCUREMENT_DIRECT_PAGE_ASSETS[pageKey];
@@ -2240,6 +2295,8 @@
       cleanupProcurementRouteShells(pageKey);
       return false;
     }
+    renderProcurementOverviewFirstPaint(pageKey);
+    if (!window.frappe || !frappe.pages) return false;
     if (renderProcurementDirectPage(pageKey)) return true;
     if (procurementDirectPageLoads[pageKey]) {
       setTimeout(() => {

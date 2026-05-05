@@ -187,6 +187,7 @@
 	      .erpw-list-command-grid.field-count-5 {
 	        grid-template-columns: minmax(210px, 250px) minmax(210px, 250px) minmax(250px, max-content);
 	      }
+	      .erpw-list-command-grid.field-count-4.has-date-window,
 	      .erpw-list-command-grid.field-count-5.has-date-window {
 	        grid-template-columns:
 	          minmax(220px, 1.1fr)
@@ -194,9 +195,16 @@
 	          minmax(190px, 0.95fr)
 	          minmax(190px, 0.95fr);
 	      }
+	      .erpw-list-command-grid.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="date_start"] {
+	        grid-column: 3;
+	      }
+	      .erpw-list-command-grid.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="date_end"] {
+	        grid-column: 4;
+	      }
 	      .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"] {
 	        grid-column: 1 / span 2;
 	      }
+	      .erpw-list-command-grid.field-count-4.has-date-window .erpw-list-command-action-cell,
 	      .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
 	        grid-column: 3 / span 2;
 	        justify-content: flex-end;
@@ -483,13 +491,19 @@
         .erpw-list-command-panel {
           width: 100%;
         }
-        .erpw-list-command-grid.field-count-5.has-date-window {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"],
-        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
-          grid-column: 1 / -1;
-        }
+	        .erpw-list-command-grid.field-count-4.has-date-window,
+	        .erpw-list-command-grid.field-count-5.has-date-window {
+	          grid-template-columns: repeat(2, minmax(0, 1fr));
+	        }
+	        .erpw-list-command-grid.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="date_start"],
+	        .erpw-list-command-grid.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="date_end"] {
+	          grid-column: auto;
+	        }
+	        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"],
+	        .erpw-list-command-grid.field-count-4.has-date-window .erpw-list-command-action-cell,
+	        .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
+	          grid-column: 1 / -1;
+	        }
       }
 	      @media (max-width: 760px) {
 	        .erpw-list-controls-strip {

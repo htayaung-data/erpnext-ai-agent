@@ -122,6 +122,18 @@
     `;
   }
 
+  function defaultActionIconMarkup(kind) {
+    const normalized = String(kind || '').replace(/[_\s]+/g, '-').toLowerCase();
+    const icons = {
+      back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>',
+      'arrow-left': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>',
+      refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M3 21v-5h5"></path><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M16 8h5V3"></path></svg>',
+      external: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>',
+      'external-link': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg>',
+    };
+    return icons[normalized] || '';
+  }
+
   function renderActionsBand(actionRows, actionIconMarkup, actionLayout) {
     if (!Array.isArray(actionRows) || !actionRows.length) return '';
     const actions = actionRows.flatMap((row) => (Array.isArray(row.actions) ? row.actions : []));
@@ -396,7 +408,7 @@
     }, options || {});
     const actionIconMarkup = typeof settings.actionIconMarkup === 'function'
       ? settings.actionIconMarkup
-      : function () { return ''; };
+      : defaultActionIconMarkup;
     const actions = normalizeActions(settings.actions);
     const documentActions = normalizeActions(settings.documentActions);
     const guidance = Object.assign({}, settings.guidance || {});

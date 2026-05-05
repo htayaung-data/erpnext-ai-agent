@@ -114,6 +114,7 @@ def _detail_payload(
 				"label": "Open ERP Supplier Form",
 				"variant": "secondary",
 				"category": "governed_native",
+				"icon": "external-link",
 				"note": "Uses ERPNext permissions for any master-data changes.",
 			}
 		)
@@ -267,8 +268,8 @@ def _get_all(doctype: str, filters: dict[str, object] | None = None, fields: lis
 
 def _base_actions() -> list[dict[str, object]]:
 	return [
-		{"key": "back_to_suppliers", "title": "Back to suppliers", "label": "Back to suppliers", "variant": "secondary", "category": "navigation"},
-		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary"},
+		{"key": "back_to_suppliers", "title": "Back to suppliers", "label": "Back to suppliers", "variant": "secondary", "category": "navigation", "icon": "arrow-left"},
+		{"key": "refresh", "title": "Refresh", "label": "Refresh", "variant": "secondary", "icon": "refresh"},
 	]
 
 

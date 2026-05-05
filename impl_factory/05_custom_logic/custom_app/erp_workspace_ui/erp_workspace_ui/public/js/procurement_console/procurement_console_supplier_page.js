@@ -211,7 +211,7 @@
                   const routeParts = cell && typeof cell === "object" && Array.isArray(cell.route_parts) ? cell.route_parts : [];
                   const routeName = routeParts.length ? routeParts[0] : value;
                   const valueMarkup = route
-                    ? `<button type="button" class="erpw-list-inline-open erpw-procurement-table-link" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">&rarr;</span></button>`
+                    ? `<button type="button" class="erpw-list-inline-open" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">&rarr;</span></button>`
                     : `<span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>`;
                   return `<td>${valueMarkup}${meta ? `<span class="erpw-list-cell-meta">${escapeHtml(meta)}</span>` : ""}</td>`;
                 }).join("")}
