@@ -125,7 +125,7 @@ def _item_directory_payload(
 			"actions": common.standard_actions(),
 			"scopeChips": ["Buying item visibility", "Read-only item detail"],
 		},
-		"metrics": [common.metric("Visible buying items", total, "Filtered purchase-enabled item records.")],
+		"metrics": [common.metric("Buying items in view", total, "Matching purchase-enabled items.")],
 		"results": {
 			"title": "Buying item records",
 			"meta": f"{total} shown",

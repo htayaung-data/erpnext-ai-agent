@@ -108,41 +108,72 @@
       }
       .erpw-list-metrics {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 220px));
+        grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 260px));
         justify-content: start;
-        gap: 0.72rem;
-        max-width: min(760px, 100%);
+        gap: 0.58rem;
+        max-width: min(980px, 100%);
+        margin: -2px 0 14px;
       }
-	      .erpw-list-controls-strip {
-	        --erpw-list-control-height: 40px;
-	        --erpw-list-control-label-offset: 23px;
-	        --erpw-list-action-rail-height: calc(var(--erpw-list-control-height) + var(--erpw-list-control-label-offset));
-	        display: grid;
-	        width: min(1120px, 100%);
-	        max-width: 100%;
-	        gap: 10px;
-	        margin: 2px 0 18px;
-	        padding: 14px;
-	        border: 1px solid rgba(226, 232, 240, 0.82);
-	        border-radius: 20px;
-	        background: #ffffff;
-	        box-shadow:
-	          inset 0 1px 0 rgba(255, 255, 255, 0.96),
-	          0 10px 24px rgba(15, 23, 42, 0.035);
-	      }
-	      .erpw-list-controls-strip.is-utility-only {
-	        display: flex;
-	        justify-content: flex-end;
-	        width: 100%;
-	        padding: 0;
-	        border: 0;
-	        border-radius: 0;
-	        background: transparent;
-	        box-shadow: none;
-	      }
-	      .erpw-list-controls-strip.is-form-panel {
-	        width: min(920px, 100%);
-	        padding: 14px;
+      .erpw-list-metrics[data-erpw-list-metric-count="1"] {
+        grid-template-columns: minmax(210px, 270px);
+      }
+      .erpw-list-metric {
+        min-height: 72px;
+        padding: 0.72rem 0.86rem;
+        border-radius: 16px;
+        display: grid;
+        align-content: center;
+        gap: 0.22rem;
+      }
+      .erpw-list-metric-label {
+        font-size: 10.5px;
+        font-weight: 800;
+        letter-spacing: 0.085em;
+        line-height: 1.2;
+        color: #64748b;
+        text-transform: uppercase;
+      }
+      .erpw-list-metric-value {
+        color: #0f172a;
+        font-size: 1.22rem;
+        line-height: 1;
+        font-weight: 820;
+      }
+      .erpw-list-metric-meta {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.38;
+      }
+      .erpw-list-controls-strip {
+        --erpw-list-control-height: 40px;
+        --erpw-list-control-label-offset: 23px;
+        --erpw-list-action-rail-height: calc(var(--erpw-list-control-height) + var(--erpw-list-control-label-offset));
+        display: grid;
+        width: min(1080px, 100%);
+        max-width: 100%;
+        gap: 10px;
+        margin: 2px 0 14px;
+        padding: 12px;
+        border: 1px solid rgba(226, 232, 240, 0.82);
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.96),
+          0 10px 24px rgba(15, 23, 42, 0.032);
+      }
+      .erpw-list-controls-strip.is-utility-only {
+        display: flex;
+        justify-content: flex-end;
+        width: 100%;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+      }
+      .erpw-list-controls-strip.is-form-panel {
+        width: min(920px, 100%);
+        padding: 14px;
         border-radius: 22px;
         background: #ffffff;
         justify-self: center;
@@ -157,70 +188,72 @@
       }
       .erpw-list-summary-card:has(+ .erpw-list-controls-strip.is-form-panel) .erpw-list-title {
         line-height: 1.25;
-	      }
-	      .erpw-list-filter-row {
-	        display: grid;
-	        gap: 10px;
-	      }
-	      .erpw-list-command-panel {
-	        display: block;
-	        max-width: 100%;
-	        width: 100%;
-	      }
-	      .erpw-list-command-grid {
-	        display: grid;
-	        gap: 10px;
-	        align-items: stretch;
-	        min-width: 0;
-	        max-width: 100%;
-	      }
-	      .erpw-list-command-grid.field-count-1 {
-	        grid-template-columns: minmax(220px, 280px) max-content;
-	      }
-	      .erpw-list-command-grid.field-count-2 {
-	        grid-template-columns: repeat(2, minmax(220px, 260px)) max-content;
-	      }
-	      .erpw-list-command-grid.field-count-3 {
-	        grid-template-columns: repeat(3, minmax(210px, 230px)) max-content;
-	      }
-	      .erpw-list-command-grid.field-count-4,
-	      .erpw-list-command-grid.field-count-5 {
-	        grid-template-columns: minmax(210px, 250px) minmax(210px, 250px) minmax(250px, max-content);
-	      }
-	      .erpw-list-command-grid.field-count-4.has-date-window,
-	      .erpw-list-command-grid.field-count-5.has-date-window {
-	        grid-template-columns:
-	          minmax(220px, 1.1fr)
-	          minmax(220px, 1.1fr)
-	          minmax(190px, 0.95fr)
-	          minmax(190px, 0.95fr);
-	      }
-	      .erpw-list-command-grid.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="date_start"] {
-	        grid-column: 3;
-	      }
-	      .erpw-list-command-grid.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="date_end"] {
-	        grid-column: 4;
-	      }
-	      .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-control-field[data-erpw-list-field-shell-key="keyword"] {
-	        grid-column: 1 / span 2;
-	      }
-	      .erpw-list-command-grid.field-count-4.has-date-window .erpw-list-command-action-cell,
-	      .erpw-list-command-grid.field-count-5.has-date-window .erpw-list-command-action-cell {
-	        grid-column: 3 / span 2;
-	        justify-content: flex-end;
-	      }
-	      .erpw-list-command-action-cell {
-	        display: inline-flex;
-	        align-items: flex-start;
-	        justify-content: flex-end;
-	        align-self: stretch;
-	        min-height: var(--erpw-list-action-rail-height);
-	        padding-top: var(--erpw-list-control-label-offset);
-	        box-sizing: border-box;
-	      }
-	      .erpw-list-command-grid.field-count-4 .erpw-list-command-action-cell {
-	        grid-column: 3;
-	      }
+      }
+      .erpw-list-filter-row {
+        display: grid;
+        gap: 10px;
+      }
+      .erpw-list-command-panel {
+        display: block;
+        max-width: 100%;
+        width: 100%;
+      }
+      .erpw-list-command-grid,
+      .erpw-list-filter-deck {
+        display: grid;
+        gap: 10px;
+        align-items: stretch;
+        min-width: 0;
+        max-width: 100%;
+      }
+      .erpw-list-filter-main-row {
+        display: grid;
+        gap: 10px;
+        align-items: end;
+        min-width: 0;
+      }
+      .erpw-list-filter-deck.has-actions.main-count-1 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(210px, 300px) max-content;
+      }
+      .erpw-list-filter-deck.has-actions.main-count-2 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(200px, 280px) minmax(240px, 1fr) max-content;
+      }
+      .erpw-list-filter-deck.has-actions.main-count-3 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(190px, 250px) minmax(250px, 1fr) minmax(150px, 200px) max-content;
+      }
+      .erpw-list-filter-deck.has-actions.main-count-4 .erpw-list-filter-main-row,
+      .erpw-list-filter-deck.has-actions.main-count-5 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(190px, 240px) minmax(240px, 1.15fr) minmax(180px, 230px) minmax(150px, 190px) max-content;
+      }
+      .erpw-list-filter-deck:not(.has-actions) .erpw-list-filter-main-row {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+      .erpw-list-filter-deck:not(.has-actions).main-count-1 .erpw-list-filter-main-row {
+        grid-template-columns: minmax(210px, 300px);
+      }
+      .erpw-list-filter-secondary-row {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+      }
+      .erpw-list-date-window-group {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(170px, 220px));
+        gap: 10px;
+        align-items: end;
+        max-width: min(450px, 100%);
+      }
+      .erpw-list-command-action-cell {
+        display: inline-flex;
+        align-items: flex-end;
+        justify-content: flex-end;
+        align-self: end;
+        min-height: var(--erpw-list-control-height);
+        padding-top: 0;
+        box-sizing: border-box;
+      }
       .erpw-list-unified-command {
         display: grid;
         gap: 8px;
@@ -680,16 +713,35 @@
     return '<input type="text" class="erpw-list-control-input' + (field.type === 'date' ? ' erpw-list-control-date' : '') + '"' + baseAttrs + ' autocomplete="off"' + (field.placeholder || field.type === 'date' ? ' placeholder="' + escapeHtml(field.placeholder || 'YYYY-MM-DD') + '"' : '') + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
   }
 
+  function fieldLayoutRole(field) {
+    const key = String(field && field.key || '').toLowerCase();
+    const explicitRole = String(field && (field.layoutRole || field.filterRole) || '').trim().toLowerCase();
+    if (explicitRole) return explicitRole.replace(/[^a-z0-9_-]/g, '-');
+    if (key === 'date_start' || key === 'date_end' || (field && field.type === 'date')) return 'date';
+    if (key === 'keyword' || (field && field.type === 'text')) return 'search';
+    if (/status|disabled|scope|mode|view/.test(key) || (field && field.type === 'select')) return 'status';
+    if (field && field.type === 'link') return 'identity';
+    return 'secondary';
+  }
+
+  function isDateWindowField(field) {
+    const key = String(field && field.key || '').toLowerCase();
+    return key === 'date_start' || key === 'date_end' || fieldLayoutRole(field) === 'date';
+  }
+
   function renderControlField(field) {
     if (!field || !field.key || !field.label) return '';
     const baseAttrs = controlBaseAttrs(field);
+    const role = fieldLayoutRole(field);
+    const group = String(field.filterGroup || field.group || (isDateWindowField(field) ? 'date-window' : role) || '').trim();
+    const pairKey = String(field.pairKey || (isDateWindowField(field) ? 'date-window' : '') || '').trim();
 
     if (field.type === 'hidden') {
       return '<input type="hidden"' + baseAttrs + ' value="' + escapeHtml(field.value == null ? '' : field.value) + '">';
     }
 
     return [
-      '<label class="erpw-list-control-field' + (field.type === 'date' ? ' is-date' : '') + (field.type === 'link' ? ' is-link' : '') + '" data-erpw-list-field-shell-key="' + escapeHtml(field.key) + '">',
+      '<label class="' + joinClassNames('erpw-list-control-field', field.type === 'date' ? 'is-date' : '', field.type === 'link' ? 'is-link' : '', 'is-' + role, field.layoutClass || '') + '" data-erpw-list-field-shell-key="' + escapeHtml(field.key) + '" data-erpw-list-field-role="' + escapeHtml(role) + '"' + (group ? ' data-erpw-list-field-group="' + escapeHtml(group) + '"' : '') + (pairKey ? ' data-erpw-list-field-pair="' + escapeHtml(pairKey) + '"' : '') + '>',
         '<span class="erpw-list-control-label">' + escapeHtml(field.label) + '</span>',
         renderControlInput(field, baseAttrs),
       '</label>'
@@ -726,23 +778,34 @@
 	    ].join('');
 	  }
 
+	  function renderCommandActionCell(operatingActions) {
+	    if (!operatingActions.length) return '';
+	    return [
+	      '<div class="erpw-list-command-action-cell">',
+	        '<div class="erpw-list-toolbar-actions">',
+	          operatingActions.map((action) => renderToolbarAction(action)).join(''),
+	        '</div>',
+	      '</div>',
+	    ].join('');
+	  }
+
 	  function renderCommandPanel(visibleFields, hiddenFieldsMarkup, operatingActions) {
 	    const normalizedFields = normalizeItems(visibleFields);
 	    const fieldCountClass = 'field-count-' + Math.min(normalizedFields.length, 5);
+	    const dateFields = normalizedFields.filter((field) => isDateWindowField(field));
+	    const mainFields = normalizedFields.filter((field) => !isDateWindowField(field));
 	    const fieldKeys = normalizedFields.map((field) => String(field && field.key || ''));
 	    const hasDateWindow = fieldKeys.includes('date_start') && fieldKeys.includes('date_end');
+	    const mainCountClass = 'main-count-' + Math.min(mainFields.length, 5);
 	    return [
 	      '<div class="erpw-list-command-panel">',
 	        hiddenFieldsMarkup,
-	        '<div class="' + joinClassNames('erpw-list-command-grid', fieldCountClass, hasDateWindow ? 'has-date-window' : '') + '">',
-	          normalizedFields.map((field) => renderControlField(field)).join(''),
-	          operatingActions.length ? [
-	            '<div class="erpw-list-command-action-cell">',
-	            '<div class="erpw-list-toolbar-actions">',
-	              operatingActions.map((action) => renderToolbarAction(action)).join(''),
-	            '</div>',
-	            '</div>',
-	          ].join('') : '',
+	        '<div class="' + joinClassNames('erpw-list-command-grid', 'erpw-list-filter-deck', fieldCountClass, mainCountClass, hasDateWindow ? 'has-date-window' : '', operatingActions.length ? 'has-actions' : '') + '">',
+	          '<div class="erpw-list-filter-main-row">',
+	            mainFields.map((field) => renderControlField(field)).join(''),
+	            renderCommandActionCell(operatingActions),
+	          '</div>',
+	          dateFields.length ? '<div class="erpw-list-filter-secondary-row"><div class="erpw-list-date-window-group">' + dateFields.map((field) => renderControlField(field)).join('') + '</div></div>' : '',
 	        '</div>',
 	      '</div>',
 	    ].join('');
@@ -817,7 +880,7 @@
     if (!items.length) return "";
 
     return [
-      '<section class="erpw-list-metrics">',
+      '<section class="erpw-list-metrics erpw-list-result-summary" data-erpw-list-metric-count="' + escapeHtml(items.length) + '">',
         items.map((item) => [
           '<article class="erpw-child-card erpw-list-metric ' + escapeHtml(item.tone || 'neutral') + '">',
             '<div class="erpw-list-metric-label">' + escapeHtml(item.label || '') + '</div>',

@@ -174,7 +174,7 @@ def _purchase_request_payload(
 			"scopeChips": ["Material Request", "Purchase only"],
 		},
 		"metrics": [
-			common.metric("Visible requests", len(rows), "Filtered purchase Material Requests."),
+			common.metric("Requests in view", len(rows), "Matching purchase requests."),
 		],
 		"results": {
 			"title": "Purchase request records",

@@ -286,7 +286,7 @@ def _rfq_payload(
 			"actions": common.standard_actions(),
 			"scopeChips": ["Request for Quotation", "No send/email action"],
 		},
-		"metrics": [common.metric("Visible RFQs", len(rows), "Filtered RFQ records.")],
+		"metrics": [common.metric("RFQs in view", len(rows), "Matching RFQs.")],
 		"results": {
 			"title": "RFQ records",
 			"meta": f"{len(rows)} shown",
@@ -385,7 +385,7 @@ def _supplier_quotation_payload(
 			"actions": common.standard_actions(),
 			"scopeChips": ["Supplier Quotation", "No purchase order action"],
 		},
-		"metrics": [common.metric("Visible quotations", len(rows), "Filtered supplier quotation records.")],
+		"metrics": [common.metric("Quotations in view", len(rows), "Matching supplier quotations.")],
 		"results": {
 			"title": "Supplier quotation records",
 			"meta": f"{len(rows)} shown",
@@ -479,8 +479,8 @@ def _rfq_control_fields(filters: dict[str, str]) -> list[dict[str, object]]:
 				{"label": "Cancelled", "value": "Cancelled"},
 			],
 		},
-		{"key": "date_start", "label": "Date From", "type": "date", "value": filters.get("date_start", "")},
-		{"key": "date_end", "label": "Date To", "type": "date", "value": filters.get("date_end", "")},
+		{"key": "date_start", "label": "RFQ Date From", "type": "date", "value": filters.get("date_start", "")},
+		{"key": "date_end", "label": "RFQ Date To", "type": "date", "value": filters.get("date_end", "")},
 	]
 
 
@@ -503,8 +503,8 @@ def _supplier_quotation_control_fields(filters: dict[str, str]) -> list[dict[str
 				{"label": "Cancelled", "value": "Cancelled"},
 			],
 		},
-		{"key": "date_start", "label": "Date From", "type": "date", "value": filters.get("date_start", "")},
-		{"key": "date_end", "label": "Date To", "type": "date", "value": filters.get("date_end", "")},
+		{"key": "date_start", "label": "Quotation Date From", "type": "date", "value": filters.get("date_start", "")},
+		{"key": "date_end", "label": "Quotation Date To", "type": "date", "value": filters.get("date_end", "")},
 	]
 
 

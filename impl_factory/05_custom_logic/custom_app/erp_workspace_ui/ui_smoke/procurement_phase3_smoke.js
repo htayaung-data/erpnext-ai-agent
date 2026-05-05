@@ -1020,6 +1020,83 @@ async function checkDatePairLayout(page) {
   ];
 }
 
+async function assertEnterpriseListFilterLayout(page, route, label) {
+  await openDeskRoute(page, route);
+  await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const layout = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const shell = document.querySelector(".erpw-list-shell");
+    const deck = shell && shell.querySelector(".erpw-list-filter-deck");
+    const main = deck && deck.querySelector(".erpw-list-filter-main-row");
+    const dateGroup = deck && deck.querySelector(".erpw-list-date-window-group");
+    const actionCell = deck && deck.querySelector(".erpw-list-command-action-cell");
+    const metrics = shell && shell.querySelector(".erpw-list-metrics");
+    const metric = metrics && metrics.querySelector(".erpw-list-metric");
+    const field = (key) => deck && deck.querySelector(`[data-erpw-list-field-shell-key="${key}"]`);
+    const firstIdentity = deck && deck.querySelector('[data-erpw-list-field-role="identity"]');
+    const search = field("keyword") || (deck && deck.querySelector('[data-erpw-list-field-role="search"]'));
+    const start = field("date_start");
+    const end = field("date_end");
+    const rect = (node) => {
+      if (!node) return null;
+      const box = node.getBoundingClientRect();
+      return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom), width: Math.round(box.width), height: Math.round(box.height) };
+    };
+    return {
+      hasDeck: visible(deck),
+      hasMain: visible(main),
+      hasDateGroup: visible(dateGroup),
+      hasActions: visible(actionCell),
+      filter: rect(shell && shell.querySelector(".erpw-list-controls-strip")),
+      main: rect(main),
+      firstIdentity: rect(firstIdentity),
+      search: rect(search),
+      actionCell: rect(actionCell),
+      start: rect(start),
+      end: rect(end),
+      metrics: rect(metrics),
+      metric: rect(metric),
+      metricCount: metrics ? metrics.getAttribute("data-erpw-list-metric-count") : "",
+      metricClass: metrics ? metrics.className : "",
+      metricLabel: metric ? String((metric.querySelector(".erpw-list-metric-label") && metric.querySelector(".erpw-list-metric-label").textContent) || "").replace(/\s+/g, " ").trim() : "",
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(layout.hasDeck && layout.hasMain, `${label}: shared filter deck is not rendered`, layout);
+  assert(layout.filter && layout.filter.height <= 210, `${label}: filter deck is too tall for enterprise worklist layout`, layout);
+  if (layout.firstIdentity && layout.search) {
+    assert(Math.abs(layout.firstIdentity.top - layout.search.top) <= 4, `${label}: primary record link and keyword search should share the main row`, layout);
+  }
+  if (layout.start && layout.end) {
+    assert(layout.hasDateGroup, `${label}: date fields should render inside the shared date-window group`, layout);
+    assert(Math.abs(layout.start.top - layout.end.top) <= 4, `${label}: date fields are not paired`, layout);
+    assert(layout.end.left > layout.start.left, `${label}: Date To should appear after Date From`, layout);
+  }
+  if (layout.actionCell && layout.search) {
+    assert(Math.abs(layout.actionCell.bottom - layout.search.bottom) <= 14, `${label}: filter actions should align with the main filter row`, layout);
+  }
+  assert(layout.metricClass.includes("erpw-list-result-summary"), `${label}: metrics should use the shared result-summary strip`, layout);
+  if (layout.metricCount === "1" && layout.metric) {
+    assert(layout.metric.width <= 310, `${label}: single metric card is too wide`, layout);
+    assert(layout.metric.height <= 96, `${label}: single metric card is too tall`, layout);
+  }
+  assert(layout.overflow <= 1, `${label}: enterprise filter layout introduced horizontal overflow`, layout);
+  return { label, route, layout };
+}
+
+async function checkEnterpriseListFilterLayouts(page) {
+  return [
+    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/rfq-directory", "RFQ Directory"),
+    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/purchase-order-directory", "Purchase Order Directory"),
+    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/supplier-directory", "Supplier Directory"),
+    await assertEnterpriseListFilterLayout(page, "/desk/procurement-console-worklist/buying-item-directory", "Buying Item Directory"),
+  ];
+}
 
 async function exerciseFocusStability(page, scenario) {
   await openDeskRoute(page, scenario.route);
@@ -1365,6 +1442,7 @@ async function runUser(browser, user) {
         report.topChrome = await checkTopChrome(page);
         report.focusStability = await checkFocusStability(page);
         report.datePairLayout = await checkDatePairLayout(page);
+        report.enterpriseListFilterLayouts = await checkEnterpriseListFilterLayouts(page);
       }
       report.createActions = await checkCreateActions(page, user, bootstrapPayload);
       report.worklists = {};

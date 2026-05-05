@@ -233,7 +233,7 @@ def _purchase_order_payload(
 			"scopeChips": ["Purchase Order", "Visibility only"],
 		},
 		"metrics": [
-			common.metric("Visible orders", len(rows), "Filtered purchase order records."),
+			common.metric("Orders in view", len(rows), "Matching purchase orders."),
 		],
 		"results": {
 			"title": "Purchase order records",

@@ -119,7 +119,7 @@ def _supplier_payload(
 			"actions": common.standard_actions(),
 			"scopeChips": ["Supplier read access", "Read-only supplier detail"],
 		},
-		"metrics": [common.metric("Visible suppliers", total, "Current filtered supplier records.")],
+		"metrics": [common.metric("Suppliers in view", total, "Matching suppliers.")],
 		"results": {
 			"title": "Supplier records",
 			"meta": f"{total} shown",

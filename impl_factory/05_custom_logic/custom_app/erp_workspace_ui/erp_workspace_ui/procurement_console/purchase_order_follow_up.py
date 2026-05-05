@@ -238,7 +238,7 @@ def _payload(
 			"actions": common.standard_actions(),
 			"scopeChips": ["Purchase Order", "Read-only follow-up"],
 		},
-		"metrics": [common.metric("Visible orders", len(rows), "Filtered purchase order records.")],
+		"metrics": [common.metric("Orders in view", len(rows), "Matching purchase orders.")],
 		"results": {
 			"title": "Purchase order follow-up",
 			"meta": f"{len(rows)} shown",
