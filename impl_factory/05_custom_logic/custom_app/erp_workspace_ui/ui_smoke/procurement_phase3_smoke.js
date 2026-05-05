@@ -203,6 +203,11 @@ async function checkWorklist(page, item, user) {
 
   await openDeskRoute(page, item.route);
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  if (state === "ready" || state === "empty") {
+    await page.locator('[data-erpw-list-action-key="apply_filters"]').first().waitFor({ state: "visible", timeout: TIMEOUT });
+    await page.locator('[data-erpw-list-action-key="reset_filters"]').first().waitFor({ state: "visible", timeout: TIMEOUT });
+    await page.locator('[data-erpw-list-action-key="refresh"]').first().waitFor({ state: "visible", timeout: TIMEOUT });
+  }
   const actionKeys = await page.locator("[data-erpw-list-action-key]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-erpw-list-action-key"))
   );
