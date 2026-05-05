@@ -7500,6 +7500,100 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   box-shadow: none;
 }
 
+
+.erpw-child-detail-shell .erpw-child-actions-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  padding: 0.46rem 0.58rem;
+  background: #ffffff;
+  border: 1px solid rgba(220, 228, 238, 0.94);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 6px 14px rgba(15, 23, 42, 0.03);
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  align-items: center;
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 0.42rem 0.68rem;
+  border-radius: 10px;
+  border: 1px solid rgba(203, 213, 225, 0.94);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #26354a;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 3px 8px rgba(15, 23, 42, 0.035);
+  font-size: 0.78rem;
+  font-weight: 720;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-align: center;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action:hover {
+  transform: translateY(-1px);
+  border-color: rgba(148, 163, 184, 0.94);
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.07);
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action:focus-visible {
+  outline: 2px solid rgba(20, 184, 166, 0.38);
+  outline-offset: 2px;
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action-icon:empty {
+  display: none;
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action.primary {
+  border-color: rgba(20, 184, 166, 0.42);
+  color: #0f766e;
+  background: linear-gradient(180deg, #f0fdfa 0%, #ffffff 100%);
+}
+
+.erpw-child-detail-shell .erpw-child-toolbar-action.is-disabled,
+.erpw-child-detail-shell .erpw-child-toolbar-action[disabled] {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+  box-shadow: none;
+}
+
+@media (max-width: 620px) {
+  .erpw-child-detail-shell .erpw-child-actions-toolbar {
+    padding: 0.52rem;
+  }
+
+  .erpw-child-detail-shell .erpw-child-toolbar-actions,
+  .erpw-child-detail-shell .erpw-child-toolbar-action {
+    width: 100%;
+  }
+}
+
 @media (max-width: 980px) {
   .erpw-child-detail-shell .erpw-child-action-row-primary,
   .erpw-child-detail-shell .erpw-child-action-row-secondary,
@@ -7549,28 +7643,38 @@ html {
 
 .erpw-procurement-table-link {
   appearance: none;
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #0f766e;
-  font: inherit;
-  font-weight: 750;
-  line-height: 1.25;
-  text-align: left;
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
   cursor: pointer;
 }
 
-.erpw-procurement-table-link:hover,
-.erpw-procurement-table-link:focus-visible {
-  color: #115e59;
+.erpw-procurement-table-link.erpw-list-inline-open {
+  width: auto;
+  min-width: min(180px, 100%);
+  max-width: 100%;
+  padding: 0.34rem 0.48rem;
+  border: 1px solid rgba(203, 213, 225, 0.86);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #1e293b;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 4px 10px rgba(15, 23, 42, 0.035);
+}
+
+.erpw-procurement-table-link.erpw-list-inline-open .erpw-list-inline-open-label {
+  color: #0f766e;
+  font-size: 0.84rem;
+  font-weight: 760;
+}
+
+.erpw-procurement-table-link.erpw-list-inline-open .erpw-list-inline-open-icon {
+  color: #94a3b8;
+}
+
+.erpw-procurement-table-link.erpw-list-inline-open:hover,
+.erpw-procurement-table-link.erpw-list-inline-open:focus-visible {
+  border-color: rgba(20, 184, 166, 0.44);
+  background: #ffffff;
+  color: #0f172a;
   outline: none;
-  text-decoration-thickness: 2px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.07);
 }
 
 .erpw-list-shell .erpw-list-controls-strip,

@@ -464,22 +464,44 @@ async function checkQuoteComparisonHeaderLifecycle(page) {
 async function checkDetailActionStyling(page, selector, label) {
   const shell = page.locator(selector).first();
   await shell.waitFor({ state: "visible", timeout: TIMEOUT });
-  const actions = await shell.locator(".erpw-child-action").evaluateAll((nodes) => nodes.map((node) => {
+  const largeCardActionCount = await visibleElementCount(page, `${selector} .erpw-child-action`);
+  const actions = await shell.locator(".erpw-child-toolbar-action").evaluateAll((nodes) => nodes.map((node) => {
     const style = getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
     return {
       text: (node.textContent || "").replace(/\s+/g, " ").trim(),
       padding: style.padding,
       borderRadius: style.borderRadius,
       border: style.border,
       display: style.display,
+      height: rect.height,
+      width: rect.width,
     };
   }));
-  assert(actions.length > 0, `${label}: no shared child action buttons rendered`, { actions });
+  assert(largeCardActionCount === 0, `${label}: simple detail controls still use large action-card buttons`, { largeCardActionCount });
+  assert(actions.length > 0, `${label}: no compact shared toolbar buttons rendered`, { actions });
   assert(actions[0].text.match(/Back/i), `${label}: Back action should be first`, { actions });
   assert(actions.some((action) => /Refresh/i.test(action.text)), `${label}: Refresh action missing`, { actions });
-  assert(actions.every((action) => action.display === "grid" || action.display === "inline-flex" || action.display === "flex"), `${label}: action buttons are not using shared styling`, { actions });
-  assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: action button styling looks unstyled`, { actions });
+  assert(actions.every((action) => action.display === "inline-flex" || action.display === "flex"), `${label}: toolbar buttons are not using compact shared styling`, { actions });
+  assert(actions.every((action) => action.height <= 44 && action.width < 260), `${label}: toolbar button still looks like a large card`, { actions });
+  assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: toolbar button styling looks unstyled`, { actions });
   return actions;
+}
+
+async function exerciseDetailRefresh(page, selector, shellKey, label) {
+  const refresh = page.locator(`${selector} .erpw-child-toolbar-action`, { hasText: "Refresh" }).first();
+  await refresh.waitFor({ state: "visible", timeout: TIMEOUT });
+  await refresh.click();
+  await page.waitForTimeout(900);
+  return assertSingleProcurementShell(page, shellKey, `${label}: after Refresh`);
+}
+
+async function exerciseDetailBack(page, selector, expectedPath, shellKey, label) {
+  const back = page.locator(`${selector} .erpw-child-toolbar-action`, { hasText: /Back/i }).first();
+  await back.waitFor({ state: "visible", timeout: TIMEOUT });
+  await back.click();
+  await page.waitForURL((url) => url.pathname === expectedPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  return assertSingleProcurementShell(page, shellKey, `${label}: after Back`);
 }
 
 
@@ -1002,7 +1024,13 @@ async function checkDetail(page, purchaseOrderName, options = {}) {
   const payload = detailResponse.data.message || {};
   assert(["ready", "restricted", "unavailable", "empty"].includes((payload.detail && payload.detail.state && payload.detail.state.kind) || "missing"), "Detail API invalid state", payload);
   assertNoForbiddenActions(payload, "po_follow_up_detail");
-  return { route, state: payload.detail && payload.detail.state ? payload.detail.state.kind : "missing", actionStyles, compactHeader };
+  let toolbarExercise = null;
+  if (options.exerciseToolbar) {
+    await exerciseDetailRefresh(page, ".erpw-procurement-po-follow-up-shell", "poDetail", "PO Follow-up Detail");
+    await exerciseDetailBack(page, ".erpw-procurement-po-follow-up-shell", "/desk/procurement-console-worklist/purchase-orders-supplier-follow-up", "worklist", "PO Follow-up Detail");
+    toolbarExercise = { refresh: true, back: true };
+  }
+  return { route, state: payload.detail && payload.detail.state ? payload.detail.state.kind : "missing", actionStyles, compactHeader, toolbarExercise };
 }
 
 async function checkSupplierDetail(page, user) {
@@ -1041,7 +1069,9 @@ async function checkSupplierDetail(page, user) {
   if (user.key !== "manager") {
     assert(!hasNativeFormAction, "Non-manager user should not see governed native Supplier form action", payload.action_targets || {});
   }
-  return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader };
+  await exerciseDetailRefresh(page, ".erpw-procurement-supplier-detail-shell", "supplierDetail", "Supplier Detail");
+  await exerciseDetailBack(page, ".erpw-procurement-supplier-detail-shell", "/desk/procurement-console-worklist/supplier-directory", "worklist", "Supplier Detail");
+  return { supplierName, state, hasNativeFormAction, actionStyles, compactHeader, toolbarExercise: { refresh: true, back: true } };
 }
 
 async function checkItemDetail(page, user) {
@@ -1094,11 +1124,14 @@ async function checkItemDetail(page, user) {
     await assertSingleProcurementShell(page, "poDetail", "Item Detail purchase order navigation");
     const poText = normalizeText(await page.locator(".erpw-procurement-po-follow-up-shell").first().innerText({ timeout: TIMEOUT }));
     assert(poText.includes(purchaseOrderName), "Item Detail PO navigation did not load the selected Procurement PO detail", { purchaseOrderName, poText });
+    assert(!/Buying Item Detail|Buying item profile/i.test(poText), "PO Detail retained stale Buying Item Detail context after Item row navigation", { purchaseOrderName, poText });
     await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
     await assertSingleProcurementShell(page, "itemDetail", "Item Detail after browser back from PO detail");
     purchaseOrderNavigation = { purchaseOrderName };
   }
-  return { itemCode, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation };
+  await exerciseDetailRefresh(page, ".erpw-procurement-item-detail-shell", "itemDetail", "Item Detail");
+  await exerciseDetailBack(page, ".erpw-procurement-item-detail-shell", "/desk/procurement-console-worklist/buying-item-directory", "worklist", "Item Detail");
+  return { itemCode, state, hasNativeFormAction, actionStyles, compactHeader, purchaseOrderNavigation, toolbarExercise: { refresh: true, back: true } };
 }
 
 async function checkCreateActions(page, user, bootstrapPayload) {
@@ -1207,7 +1240,7 @@ async function runUser(browser, user) {
         firstPoName = firstRowName(purchaseOrderPayload);
       }
       const directPoName = process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010";
-      report.directDetail = await checkDetail(page, directPoName, { requireReadyShell: true });
+      report.directDetail = await checkDetail(page, directPoName, { requireReadyShell: true, exerciseToolbar: true });
       report.supplierAutocomplete = await checkSupplierAutocomplete(page);
       report.supplierDetail = await checkSupplierDetail(page, user);
       report.itemDetail = await checkItemDetail(page, user);

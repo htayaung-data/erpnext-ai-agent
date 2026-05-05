@@ -236,7 +236,7 @@
       runtime.renderShellContent(viewState.$shell, {
         summary: payload.summary || {},
         actions: normalizeActions(payload, viewState),
-        actionLayout: { sparseSecondaryThreshold: 2 },
+        actionLayout: { mode: "toolbar", sparseSecondaryThreshold: 2 },
         extraSectionsHtml: extraSections(payload),
         guidance: {},
       });

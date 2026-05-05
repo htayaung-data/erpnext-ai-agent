@@ -692,23 +692,22 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn("new_supplier", payload["action_targets"])
         self.assertNotIn("new_item", payload["action_targets"])
 
-    def test_procurement_supplier_and_item_create_actions_are_more_restricted(self):
+    def test_procurement_supplier_and_item_create_actions_are_deferred(self):
         _set_user("manager@example.com", ["Purchase Manager"])
         _set_createable_doctypes("Supplier", "Item")
 
         manager_payload = service.get_procurement_console_bootstrap()
 
-        self.assertEqual([action["key"] for action in manager_payload["create_actions"]], ["new_supplier"])
-        self.assertEqual([action["variant"] for action in manager_payload["create_actions"]], ["secondary"])
-        self.assertEqual(manager_payload["action_targets"]["new_supplier"], {"kind": "new_doc", "doctype": "Supplier", "defaults": {}})
+        self.assertEqual(manager_payload["create_actions"], [])
+        self.assertNotIn("new_supplier", manager_payload["action_targets"])
         self.assertNotIn("new_item", manager_payload["action_targets"])
 
-        _set_user("master@example.com", ["Purchase Master Manager"])
+        _set_user("master@example.com", ["Purchase Master Manager", "Item Manager", "Stock Manager"])
         master_payload = service.get_procurement_console_bootstrap()
 
-        self.assertEqual([action["key"] for action in master_payload["create_actions"]], ["new_supplier", "new_item"])
-        self.assertEqual([action["variant"] for action in master_payload["create_actions"]], ["secondary", "secondary"])
-        self.assertEqual(master_payload["action_targets"]["new_item"], {"kind": "new_doc", "doctype": "Item", "defaults": {}})
+        self.assertEqual(master_payload["create_actions"], [])
+        self.assertNotIn("new_supplier", master_payload["action_targets"])
+        self.assertNotIn("new_item", master_payload["action_targets"])
 
     def test_procurement_overview_renders_create_actions_from_backend_payload(self):
         overview_public_path = Path(__file__).resolve().parents[1] / "public" / "js" / "procurement_console" / "procurement_console_page.js"

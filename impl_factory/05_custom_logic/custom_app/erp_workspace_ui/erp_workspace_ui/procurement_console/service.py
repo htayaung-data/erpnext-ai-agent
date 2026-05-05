@@ -522,7 +522,9 @@ def _build_phase1_overview() -> dict[str, object]:
 def _build_create_action_payload(context: dict[str, object]) -> dict[str, object]:
 	from . import common
 
-	roles = set(context.get("roles") or [])
+	# Supplier and Item master-data creation are deliberately deferred from
+	# Procurement Phase 3. Buyers keep governed native form access only where
+	# explicitly exposed on read-only detail pages.
 	plan = [
 		{
 			"key": "new_purchase_request",
@@ -553,27 +555,6 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 			"note": "Starts an ERPNext Purchase Order.",
 		},
 	]
-	if roles.intersection({"Purchase Manager", "Purchase Master Manager"}):
-		plan.append(
-			{
-				"key": "new_supplier",
-				"title": "New Supplier",
-				"doctype": "Supplier",
-				"defaults": {},
-				"note": "Uses ERPNext supplier master permissions.",
-			}
-		)
-	if roles.intersection({"Purchase Master Manager", "Item Manager", "Stock Manager", "System Manager"}):
-		plan.append(
-			{
-				"key": "new_item",
-				"title": "New Item",
-				"doctype": "Item",
-				"defaults": {},
-				"note": "Uses ERPNext item master permissions.",
-			}
-		)
-
 	actions: list[dict[str, object]] = []
 	targets: dict[str, object] = {}
 	for item in plan:

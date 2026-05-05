@@ -63,9 +63,19 @@
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "buying_item_directory").replace(/_/g, "-"));
   }
 
+  function cleanupBeforeProductizedRoute(nextPageKey) {
+    const boot = window.erpWorkspaceUiBoot || {};
+    if (typeof boot.cleanupProcurementRouteShells === "function") {
+      boot.cleanupProcurementRouteShells("", { removeActive: true });
+      setTimeout(() => boot.cleanupProcurementRouteShells(nextPageKey || "", { removeActive: false }), 0);
+      setTimeout(() => boot.cleanupProcurementRouteShells(nextPageKey || "", { removeActive: false }), 80);
+    }
+  }
+
   function routeToPurchaseOrderFollowUp(purchaseOrder) {
     const name = String(purchaseOrder || "").trim();
     if (!name) return;
+    cleanupBeforeProductizedRoute(PO_DETAIL_ROUTE);
     frappe.set_route(PO_DETAIL_ROUTE, name);
   }
 
@@ -186,7 +196,7 @@
                   const routeParts = cell && typeof cell === "object" && Array.isArray(cell.route_parts) ? cell.route_parts : [];
                   const routeName = routeParts.length ? routeParts[0] : value;
                   const valueMarkup = route
-                    ? `<button type="button" class="erpw-procurement-table-link" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}">${escapeHtml(value || "-")}</button>`
+                    ? `<button type="button" class="erpw-list-inline-open erpw-procurement-table-link" data-erpw-procurement-detail-route="${escapeHtml(route)}" data-erpw-procurement-detail-name="${escapeHtml(routeName || "")}"><span class="erpw-list-inline-open-label">${escapeHtml(value || "-")}</span><span class="erpw-list-inline-open-icon" aria-hidden="true">?</span></button>`
                     : `<span class="erpw-list-cell-value">${escapeHtml(value || "-")}</span>`;
                   return `<td>${valueMarkup}${meta ? `<span class="erpw-list-cell-meta">${escapeHtml(meta)}</span>` : ""}</td>`;
                 }).join("")}
@@ -244,7 +254,7 @@
       runtime.renderShellContent(viewState.$shell, {
         summary: payload.summary || {},
         actions: normalizeActions(payload, viewState),
-        actionLayout: { sparseSecondaryThreshold: 3 },
+        actionLayout: { mode: "toolbar", sparseSecondaryThreshold: 3 },
         extraSectionsHtml: extraSections(payload),
         guidance: {},
       });

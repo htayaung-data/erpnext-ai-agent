@@ -110,8 +110,31 @@
     `;
   }
 
-  function renderActionsBand(actionRows, actionIconMarkup) {
+  function renderToolbarActionButton(action, actionIconMarkup) {
+    const disabled = !!action.disabled;
+    const note = String(action.note || action.disabledReason || '').trim();
+    const titleAttr = note ? ` title="${escapeHtml(note)}"` : '';
+    return `
+      <button type="button" class="erpw-child-toolbar-action ${escapeHtml(action.variant || 'secondary')}${disabled ? ' is-disabled' : ''}" data-action-index="${action.idx}" ${disabled ? 'disabled aria-disabled="true"' : ''}${titleAttr}>
+        <span class="erpw-child-toolbar-action-icon" aria-hidden="true">${actionIconMarkup(action.icon)}</span>
+        <span class="erpw-child-toolbar-action-title">${escapeHtml(action.title || '')}</span>
+      </button>
+    `;
+  }
+
+  function renderActionsBand(actionRows, actionIconMarkup, actionLayout) {
     if (!Array.isArray(actionRows) || !actionRows.length) return '';
+    const actions = actionRows.flatMap((row) => (Array.isArray(row.actions) ? row.actions : []));
+    const layout = actionLayout && typeof actionLayout === 'object' ? actionLayout : {};
+    if (layout.mode === 'toolbar') {
+      return `
+        <section class="erpw-child-card erpw-child-actions erpw-child-actions-toolbar" aria-label="Detail actions">
+          <div class="erpw-child-toolbar-actions" data-count="${actions.length}">
+            ${actions.map((action) => renderToolbarActionButton(action, actionIconMarkup)).join('')}
+          </div>
+        </section>
+      `;
+    }
     const compact = actionRows.every((row) => Array.isArray(row.actions) && row.actions.length <= 2);
     return `
       <section class="erpw-child-card erpw-child-actions erpw-child-actions-band${compact ? ' erpw-child-actions-compact' : ''}">
@@ -312,7 +335,7 @@
     return `
       ${renderDraftLead(settings.summary, settings.draftReadiness, settings.draftReadinessPlacement, useExternalRail)}
       ${renderDocumentActions(settings.documentActions, actionIconMarkup)}
-      ${renderActionsBand(actionRows, actionIconMarkup)}
+      ${renderActionsBand(actionRows, actionIconMarkup, settings.actionLayout)}
       ${renderGuidanceSection(settings.guidance, actionIconMarkup)}
       ${settings.extraSectionsHtml || ''}
     `;

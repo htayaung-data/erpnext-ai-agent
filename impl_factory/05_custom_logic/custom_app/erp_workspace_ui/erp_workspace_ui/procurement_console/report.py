@@ -19,11 +19,12 @@ def _normalize_report_key(report_key: str | None) -> str:
 
 
 def _state_payload(report_key: str, state: dict[str, object]) -> dict[str, object]:
+	title = state.get("title") or "Procurement report unavailable"
 	return {
-		"page": {"title": "Procurement Console Report", "key": report_key},
+		"page": {"title": title, "key": report_key},
 		"summary": {
 			"kicker": "Procurement Console report",
-			"title": state["title"],
+			"title": title,
 			"subtitle": state["detail"],
 		},
 		"controls": {

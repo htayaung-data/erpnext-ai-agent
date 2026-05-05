@@ -10,12 +10,14 @@ def _normalize_queue_key(queue_key: str | None) -> str:
 
 
 def _state_payload(queue_key: str, state: dict[str, str]) -> dict[str, object]:
+	title = state.get("title") or "Procurement queue unavailable"
 	return {
-		"page": {"title": "Procurement Console Worklist", "key": queue_key},
+		"page": {"title": title, "key": queue_key},
 		"summary": {
-			"kicker": "Procurement Console worklist",
-			"title": state["title"],
+			"kicker": "Procurement Console queue",
+			"title": title,
 			"subtitle": state["detail"],
+			"chips": [{"label": state.get("kind") or "state"}],
 			"facts": [],
 		},
 		"controls": {
