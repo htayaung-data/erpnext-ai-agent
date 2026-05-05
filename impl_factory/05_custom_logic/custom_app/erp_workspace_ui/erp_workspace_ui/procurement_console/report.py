@@ -30,7 +30,6 @@ def _state_payload(report_key: str, state: dict[str, object]) -> dict[str, objec
 		"controls": {
 			"actions": [
 				{"key": "refresh", "label": "Refresh"},
-				{"key": "back_to_console", "label": "Back to Procurement Console"},
 			],
 			"fields": [],
 		},
@@ -217,7 +216,6 @@ def _comparison_controls(filters: dict[str, object]) -> dict[str, object]:
 		],
 		"actions": [
 			{"key": "refresh", "label": "Refresh"},
-			{"key": "back_to_console", "label": "Back to Procurement Console", "category": "navigation"},
 		],
 	}
 

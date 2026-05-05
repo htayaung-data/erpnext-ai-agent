@@ -175,7 +175,7 @@
       viewState.page.set_title(chromeTitle);
     }
     const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
-    $wrapper.find(".page-head").first().attr("data-erpw-procurement-managed-chrome", "1");
+    cleanupDuplicateReportChrome($wrapper, chromeTitle);
     $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(chromeTitle);
     const $breadcrumbs = $wrapper.find(".navbar-breadcrumbs").first();
     if ($breadcrumbs.length) {
@@ -188,22 +188,30 @@
       event.preventDefault();
       frappe.set_route(HOME_ROUTE);
     });
-    cleanupDuplicateReportChrome($wrapper);
-    setTimeout(() => cleanupDuplicateReportChrome($wrapper), 0);
-    setTimeout(() => cleanupDuplicateReportChrome($wrapper), 120);
+    cleanupDuplicateReportChrome($wrapper, chromeTitle);
+    setTimeout(() => cleanupDuplicateReportChrome($wrapper, chromeTitle), 0);
+    setTimeout(() => cleanupDuplicateReportChrome($wrapper, chromeTitle), 120);
   }
 
-  function cleanupDuplicateReportChrome($wrapper) {
+  function cleanupDuplicateReportChrome($wrapper, title) {
     const wrapper = $wrapper && $wrapper.jquery ? $wrapper : $($wrapper || []);
     const heads = wrapper.find(".page-head").toArray();
-    if (heads.length <= 1) return;
+    if (!heads.length) return null;
+    const expectedTitle = String(title || "").replace(/\s+/g, " ").trim();
     const keep = heads.find((head) => {
+      const text = String((head && head.textContent) || "").replace(/\s+/g, " ").trim();
+      return expectedTitle && text.indexOf(expectedTitle) !== -1;
+    }) || heads.find((head) => {
       const text = String((head && head.textContent) || "").replace(/\s+/g, " ").trim();
       return !/Procurement Console Report/i.test(text);
     }) || heads[0];
     heads.forEach((head) => {
       if (head !== keep && head.parentNode) head.parentNode.removeChild(head);
     });
+    const $keep = $(keep);
+    $keep.attr("data-erpw-procurement-managed-chrome", "1");
+    $keep.find(".page-icon, .indicator-pill, .title-area > .icon, .title-area > svg").remove();
+    return $keep;
   }
 
   function ensureReportRuntime() {
@@ -365,7 +373,7 @@
 
   function render(wrapper) {
     cleanupRouteShells();
-    cleanupDuplicateReportChrome($(wrapper));
+    cleanupDuplicateReportChrome($(wrapper), REPORT_CHROME_TITLE);
     const page = frappe.ui.make_app_page({
       parent: wrapper,
       title: "Procurement Console",
@@ -391,7 +399,7 @@
     if (existing && isAttached(existing.$host)) {
       pruneRouteShells(existing.$host.get(0));
       syncReportChromeTitle(existing);
-      cleanupDuplicateReportChrome($(wrapper));
+      cleanupDuplicateReportChrome($(wrapper), REPORT_CHROME_TITLE);
       loadRoute(existing);
       return;
     }

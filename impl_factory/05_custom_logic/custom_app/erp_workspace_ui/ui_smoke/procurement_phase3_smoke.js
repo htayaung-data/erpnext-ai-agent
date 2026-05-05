@@ -392,6 +392,9 @@ async function procurementChromeSnapshot(page, label) {
     }
     const pageHeads = Array.from(document.querySelectorAll(".page-head")).filter(visible);
     const managedChromeHeads = pageHeads.filter((node) => node.getAttribute("data-erpw-procurement-managed-chrome") === "1");
+    const visiblePageHeadIcons = pageHeads.flatMap((node) => {
+      return Array.from(node.querySelectorAll(".page-icon, .indicator-pill, .title-area > .icon, .title-area > svg")).filter(visible);
+    });
     const visibleManagedChromeIcons = managedChromeHeads.flatMap((node) => {
       return Array.from(node.querySelectorAll(".page-icon, .indicator-pill, .title-area > .icon, .title-area > svg")).filter(visible);
     });
@@ -427,6 +430,7 @@ async function procurementChromeSnapshot(page, label) {
       route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [],
       pageHeadCount: pageHeads.length,
       managedChromeHeadCount: managedChromeHeads.length,
+      visiblePageHeadIconCount: visiblePageHeadIcons.length,
       visibleManagedChromeIconCount: visibleManagedChromeIcons.length,
       breadcrumbRowCount: breadcrumbDetails.length,
       headerRows,
@@ -1074,6 +1078,7 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     const main = deck && deck.querySelector(".erpw-list-filter-main-row");
     const dateGroup = deck && deck.querySelector(".erpw-list-date-window-group");
     const actionCell = deck && deck.querySelector(".erpw-list-command-action-cell");
+    const actionToolbar = actionCell && actionCell.querySelector(".erpw-list-toolbar-actions");
     const summary = shell && shell.querySelector(".erpw-list-summary-card");
     const facts = summary && summary.querySelector(".erpw-list-summary-facts");
     const factItems = facts ? Array.from(facts.querySelectorAll(".erpw-list-summary-fact")) : [];
@@ -1086,6 +1091,10 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     const search = field("keyword") || (deck && deck.querySelector('[data-erpw-list-field-role="search"]'));
     const start = field("date_start");
     const end = field("date_end");
+    const firstIdentityInput = firstIdentity && firstIdentity.querySelector('[data-erpw-list-field-key]');
+    const searchInput = search && search.querySelector('[data-erpw-list-field-key]');
+    const startInput = start && start.querySelector('[data-erpw-list-field-key]');
+    const endInput = end && end.querySelector('[data-erpw-list-field-key]');
     const rect = (node) => {
       if (!node) return null;
       const box = node.getBoundingClientRect();
@@ -1100,10 +1109,15 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       deck: rect(deck),
       main: rect(main),
       firstIdentity: rect(firstIdentity),
+      firstIdentityInput: rect(firstIdentityInput),
       search: rect(search),
+      searchInput: rect(searchInput),
       actionCell: rect(actionCell),
+      actionToolbar: rect(actionToolbar),
       start: rect(start),
+      startInput: rect(startInput),
       end: rect(end),
+      endInput: rect(endInput),
       facts: rect(facts),
       factCount: factItems.length,
       factText: facts ? String(facts.textContent || "").replace(/\s+/g, " ").trim() : "",
@@ -1122,14 +1136,17 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     assert(Math.abs(layout.start.top - layout.end.top) <= 4, `${label}: date fields are not paired`, layout);
     assert(layout.end.left > layout.start.left, `${label}: Date To should appear after Date From`, layout);
   }
-  if (layout.actionCell && layout.start && layout.end) {
-    const dateCenter = (Math.min(layout.start.top, layout.end.top) + Math.max(layout.start.bottom, layout.end.bottom)) / 2;
-    const actionCenter = (layout.actionCell.top + layout.actionCell.bottom) / 2;
-    assert(Math.abs(actionCenter - dateCenter) <= 10, `${label}: filter actions should align to the center of the date-window row`, layout);
-  } else if (layout.actionCell && layout.main) {
-    const mainCenter = (layout.main.top + layout.main.bottom) / 2;
-    const actionCenter = (layout.actionCell.top + layout.actionCell.bottom) / 2;
-    assert(Math.abs(actionCenter - mainCenter) <= 10, `${label}: filter actions should align to the center of the active filter row`, layout);
+  if (layout.actionToolbar && layout.startInput && layout.endInput) {
+    const dateInputCenter = (Math.min(layout.startInput.top, layout.endInput.top) + Math.max(layout.startInput.bottom, layout.endInput.bottom)) / 2;
+    const actionCenter = (layout.actionToolbar.top + layout.actionToolbar.bottom) / 2;
+    assert(Math.abs(actionCenter - dateInputCenter) <= 8, `${label}: filter action buttons should align to the center of the date-window inputs`, layout);
+  } else if (layout.actionToolbar && layout.main) {
+    const visibleFields = [layout.firstIdentityInput, layout.searchInput].filter(Boolean);
+    const fieldCenter = visibleFields.length
+      ? (Math.min(...visibleFields.map((field) => field.top)) + Math.max(...visibleFields.map((field) => field.bottom))) / 2
+      : (layout.main.top + layout.main.bottom) / 2;
+    const actionCenter = (layout.actionToolbar.top + layout.actionToolbar.bottom) / 2;
+    assert(Math.abs(actionCenter - fieldCenter) <= 8, `${label}: filter action buttons should align to the center of the active filter inputs`, layout);
   }
   assert(layout.detachedMetricCount === 0, `${label}: detached one-card metric summaries should not render below filters`, layout);
   assert(layout.facts && layout.factCount >= 1, `${label}: header metrics should render as flat inline facts`, layout);
@@ -1176,6 +1193,7 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
       actionCell: rect(actionCell),
       lastRow: rect(lastRow),
       hasActionsOnlyRow: !!(actionCell && actionCell.closest(".erpw-report-command-row.actions-only")),
+      actionLabels: actionCell ? Array.from(actionCell.querySelectorAll("button")).map((button) => String(button.textContent || "").replace(/\s+/g, " ").trim()) : [],
       firstRowFields,
       secondRowFields,
       title,
@@ -1188,6 +1206,7 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
   assert(layout.controls && layout.controls.height <= 320, `${label}: report filter panel is too tall`, layout);
   assert(layout.rowCount >= 3, `${label}: report filters should use two field rows plus a command row`, layout);
   assert(layout.hasActionsOnlyRow, `${label}: report actions should sit in a separate command row`, layout);
+  assert(!layout.actionLabels.some((labelText) => /Back to Procurement Console/i.test(labelText)), `${label}: report should not carry a one-off Back to Procurement Console action`, layout);
   assert(layout.firstRowFields.every(Boolean), `${label}: first report filter row is missing a required field`, layout);
   assert(layout.secondRowFields.every(Boolean), `${label}: second report filter row is missing a required field`, layout);
   const firstTop = layout.firstRowFields[0].top;
@@ -1301,7 +1320,9 @@ async function checkTopChrome(page) {
     const headerText = normalizeText((snapshot.pageHeads || []).map((row) => row.text).join(" ") + " " + (snapshot.breadcrumbRows || []).map((row) => row.text).join(" "));
     assert(headerText.includes("Procurement Console") && headerText.includes(item.title), `${item.title}: top chrome did not show workspace and page context`, { headerText, snapshot });
     assert(!/Procurement Console Worklist|Procurement Console Report/i.test(headerText), `${item.title}: top chrome still exposes generic route title`, { headerText, snapshot });
+    assert(snapshot.pageHeadCount <= 1, `${item.title}: duplicate Procurement page-head rows are visible`, snapshot);
     assert(snapshot.managedChromeHeadCount >= 1, `${item.title}: Procurement page head was not marked as managed chrome`, snapshot);
+    assert(snapshot.visiblePageHeadIconCount === 0, `${item.title}: Procurement top chrome still shows orphan route icon`, snapshot);
     assert(snapshot.visibleManagedChromeIconCount === 0, `${item.title}: managed Procurement chrome still shows orphan route icon`, snapshot);
     const parent = page.locator('[data-erpw-procurement-home="1"]').first();
     await parent.waitFor({ state: "visible", timeout: TIMEOUT });

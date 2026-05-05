@@ -813,9 +813,11 @@
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
         align-self: stretch;
-        align-items: center;
+        align-items: flex-start;
         justify-content: flex-end;
-        min-height: var(--erpw-list-control-height);
+        box-sizing: border-box;
+        min-height: var(--erpw-list-action-rail-height);
+        padding-top: var(--erpw-list-control-label-offset);
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-toolbar-actions {
         min-height: 38px;
@@ -846,6 +848,8 @@
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
           justify-content: flex-start;
+          min-height: var(--erpw-list-control-height);
+          padding-top: 0;
         }
       }
       @media (max-width: 760px) {

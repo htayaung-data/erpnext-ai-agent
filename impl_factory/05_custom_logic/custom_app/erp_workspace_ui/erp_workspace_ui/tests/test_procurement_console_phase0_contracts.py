@@ -1533,7 +1533,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["report_name"], "Supplier Quotation Comparison")
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["supplier"], ["SUP-001"])
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["include_expired"], 1)
-        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["refresh", "back_to_console"])
+        self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["refresh"])
         payload_text = str(payload).lower()
         self.assertNotIn("set_default_supplier", payload_text)
         self.assertNotIn("default_supplier", payload_text)
@@ -1568,7 +1568,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotEqual(payload["results"]["state"]["kind"], "error")
         self.assertEqual(
             [action["key"] for action in payload["controls"]["actions"]],
-            ["refresh", "back_to_console"],
+            ["refresh"],
         )
 
     def test_later_phase_report_returns_unavailable_not_ready(self):

@@ -216,6 +216,24 @@
     runtime.setDataRefreshing(viewState && viewState.$host, enabled);
   }
 
+  function cleanupDuplicateWorklistChrome($wrapper, title) {
+    const wrapper = $wrapper && $wrapper.jquery ? $wrapper : $($wrapper || []);
+    const heads = wrapper.find(".page-head").toArray();
+    if (!heads.length) return null;
+    const expectedTitle = String(title || "").replace(/\s+/g, " ").trim();
+    const keep = heads.find((head) => {
+      const text = String((head && head.textContent) || "").replace(/\s+/g, " ").trim();
+      return expectedTitle && text.indexOf(expectedTitle) !== -1;
+    }) || heads[0];
+    heads.forEach((head) => {
+      if (head !== keep && head.parentNode) head.parentNode.removeChild(head);
+    });
+    const $keep = $(keep);
+    $keep.attr("data-erpw-procurement-managed-chrome", "1");
+    $keep.find(".page-icon, .indicator-pill, .title-area > .icon, .title-area > svg").remove();
+    return $keep;
+  }
+
   function syncWorklistChromeTitle(viewState, payload) {
     if (!viewState || !viewState.page) return;
     ensureProcurementChromeStyle();
@@ -224,7 +242,7 @@
     const title = payload && payload.page && payload.page.title ? payload.page.title : fallbackTitle;
     if (typeof viewState.page.set_title === "function") viewState.page.set_title(title);
     const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
-    $wrapper.find(".page-head").first().attr("data-erpw-procurement-managed-chrome", "1");
+    cleanupDuplicateWorklistChrome($wrapper, title);
     $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(title);
     const $breadcrumbs = $wrapper.find(".navbar-breadcrumbs").first();
     if ($breadcrumbs.length) {
@@ -233,6 +251,9 @@
         '<li><a class="title-text" aria-current="page">' + frappe.utils.escape_html(title) + '</a></li>',
       ].join(""));
     }
+    cleanupDuplicateWorklistChrome($wrapper, title);
+    setTimeout(() => cleanupDuplicateWorklistChrome($wrapper, title), 0);
+    setTimeout(() => cleanupDuplicateWorklistChrome($wrapper, title), 120);
     $wrapper.off("click.erpWProcurementWorklistChrome").on("click.erpWProcurementWorklistChrome", "[data-erpw-procurement-home]", function (event) {
       event.preventDefault();
       frappe.set_route(HOME_ROUTE);
