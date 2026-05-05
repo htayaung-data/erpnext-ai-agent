@@ -123,6 +123,16 @@ async function openDeskRoute(page, route) {
   await page.goto(routeUrl(route), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   if (/\/login(?:[/?#]|$)/.test(page.url())) throw new Error(`Route ${route} redirected to login`);
   await page.waitForFunction(() => Boolean(window.frappe), null, { timeout: TIMEOUT });
+  if (/\/desk\/procurement-console/.test(route)) {
+    await page.evaluate(() => {
+      const boot = window.erpWorkspaceUiBoot || {};
+      if (typeof boot.scheduleProcurementDirectPage === "function") {
+        boot.scheduleProcurementDirectPage();
+      } else if (typeof boot.ensureProcurementDirectPage === "function") {
+        boot.ensureProcurementDirectPage();
+      }
+    }).catch(() => {});
+  }
 }
 
 async function callMethod(page, method, args = {}) {
