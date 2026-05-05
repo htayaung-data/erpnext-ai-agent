@@ -900,6 +900,12 @@
       .erpw-report-shell.is-procurement-report .erpw-report-command-actions .erpw-report-control-button.navigation {
         border-radius: 999px;
       }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.actions-only {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.actions-only .erpw-report-command-actions {
+        justify-self: end;
+      }
       .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact {
         grid-template-columns: repeat(auto-fit, minmax(180px, 240px));
         justify-content: start;
@@ -914,7 +920,9 @@
         .erpw-report-shell.is-procurement-report .erpw-report-command-row {
           grid-template-columns: minmax(0, 1fr);
         }
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row.actions-only .erpw-report-command-actions,
         .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
+          justify-self: start;
           justify-content: flex-start;
         }
       }
@@ -1114,6 +1122,7 @@
         '</div>'
 	      ].join('') : '<div></div>';
 	      if (isAnalyticsCompact) {
+	        const separateActionRow = String((controls && controls.actionLayout) || '').toLowerCase() === 'separate_row';
 	        const compactMetaMarkup = meta.length ? [
 	          '<div class="erpw-report-command-meta">',
 	            meta.map((item) => [
@@ -1130,7 +1139,7 @@
 	        ].join('');
 	        const compactFieldRows = fieldRows.length ? fieldRows : [fields];
 	        const compactRowsMarkup = compactFieldRows.map((rowFields, rowIndex) => {
-	          const isLastRow = rowIndex === compactFieldRows.length - 1;
+	          const isLastRow = !separateActionRow && rowIndex === compactFieldRows.length - 1;
 	          const compactFieldsClass = 'erpw-report-command-fields field-count-' + Math.min(rowFields.length, 4);
 	          return [
 	            '<div class="erpw-report-command-row' + (isLastRow ? '' : ' without-actions') + '">',
@@ -1141,11 +1150,17 @@
 	            '</div>',
 	          ].join('');
 	        }).join('');
+	        const separateActionsMarkup = separateActionRow ? [
+	          '<div class="erpw-report-command-row actions-only">',
+	            compactActionsMarkup,
+	          '</div>',
+	        ].join('') : '';
 	        return [
 	          '<section class="erpw-report-card erpw-report-controls analytics-compact">',
 	            '<form class="erpw-report-command-panel">',
 	              compactMetaMarkup,
 	              compactRowsMarkup,
+	              separateActionsMarkup,
 	            '</form>',
 	          '</section>'
 	        ].join('');

@@ -719,6 +719,7 @@
         color: #475569;
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-summary-side {
+        align-self: center;
         min-width: max-content;
         gap: 10px;
       }
@@ -735,7 +736,7 @@
       }
       .erpw-list-summary-fact {
         display: inline-flex;
-        align-items: baseline;
+        align-items: center;
         gap: 4px;
         min-height: 24px;
       }
@@ -760,7 +761,10 @@
         font-weight: 650;
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-controls-strip {
-        width: min(1180px, 100%);
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        justify-self: stretch;
         margin: 0 0 14px;
         padding: 12px 14px;
         border-radius: 14px;
@@ -778,7 +782,7 @@
           "secondary actions";
         row-gap: 12px;
         column-gap: 14px;
-        align-items: end;
+        align-items: stretch;
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions:not(.has-date-window) {
         grid-template-areas: "main actions";
@@ -808,7 +812,8 @@
         max-width: min(460px, 100%);
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
-        align-self: end;
+        align-self: stretch;
+        align-items: center;
         justify-content: flex-end;
         min-height: var(--erpw-list-control-height);
       }

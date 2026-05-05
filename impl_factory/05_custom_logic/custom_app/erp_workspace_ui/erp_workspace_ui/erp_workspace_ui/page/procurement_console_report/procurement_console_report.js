@@ -16,6 +16,19 @@
   const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-05-02-report-link-suggest-v1";
   const REPORT_SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
 
+  function ensureProcurementChromeStyle() {
+    if (document.getElementById("erpw-procurement-managed-chrome-style")) return;
+    const style = document.createElement("style");
+    style.id = "erpw-procurement-managed-chrome-style";
+    style.textContent = [
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .page-icon,',
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .indicator-pill,',
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > .icon,',
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > svg { display: none !important; }',
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
   function routeToWorklist(queueKey, filters) {
     frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
@@ -154,6 +167,7 @@
 
   function syncReportChromeTitle(viewState, payload) {
     if (!viewState || !viewState.page) return;
+    ensureProcurementChromeStyle();
     const payloadTitle = payload && payload.page && payload.page.title ? payload.page.title : "";
     const reportKey = viewState.reportKey || payload && payload.page && payload.page.key || "";
     const chromeTitle = REPORT_CHROME_LABELS[reportKey] || payloadTitle || REPORT_CHROME_TITLE;
@@ -161,6 +175,7 @@
       viewState.page.set_title(chromeTitle);
     }
     const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
+    $wrapper.find(".page-head").first().attr("data-erpw-procurement-managed-chrome", "1");
     $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(chromeTitle);
     const $breadcrumbs = $wrapper.find(".navbar-breadcrumbs").first();
     if ($breadcrumbs.length) {
@@ -353,7 +368,7 @@
     cleanupDuplicateReportChrome($(wrapper));
     const page = frappe.ui.make_app_page({
       parent: wrapper,
-      title: REPORT_CHROME_TITLE,
+      title: "Procurement Console",
       single_column: true,
     });
     syncReportChromeTitle({ page });

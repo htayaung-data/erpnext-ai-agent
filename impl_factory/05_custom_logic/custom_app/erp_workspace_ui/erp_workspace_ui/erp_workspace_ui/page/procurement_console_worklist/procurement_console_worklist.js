@@ -10,6 +10,25 @@
   const CONTEXT_METHOD = procurementMethods.worklistContext || "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context";
   let activeViewState = null;
 
+  function ensureProcurementChromeStyle() {
+    if (document.getElementById("erpw-procurement-managed-chrome-style")) return;
+    const style = document.createElement("style");
+    style.id = "erpw-procurement-managed-chrome-style";
+    style.textContent = [
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .page-icon,',
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .indicator-pill,',
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > .icon,',
+      '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > svg { display: none !important; }',
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function titleFromQueueKey(queueKey) {
+    return String(queueKey || "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Procurement Queue";
+  }
+
   function routeToWorklist(queueKey, filters) {
     frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route(PAGE_KEY, String(queueKey || "").replace(/_/g, "-"));
@@ -199,9 +218,13 @@
 
   function syncWorklistChromeTitle(viewState, payload) {
     if (!viewState || !viewState.page) return;
-    const title = payload && payload.page && payload.page.title ? payload.page.title : "Procurement Queue";
+    ensureProcurementChromeStyle();
+    const route = frappe.get_route ? frappe.get_route() : [];
+    const fallbackTitle = titleFromQueueKey(resolveQueueKey(route));
+    const title = payload && payload.page && payload.page.title ? payload.page.title : fallbackTitle;
     if (typeof viewState.page.set_title === "function") viewState.page.set_title(title);
     const $wrapper = viewState.page.wrapper ? $(viewState.page.wrapper) : $();
+    $wrapper.find(".page-head").first().attr("data-erpw-procurement-managed-chrome", "1");
     $wrapper.find(".page-title .title-text, .title-area .title-text").first().text(title);
     const $breadcrumbs = $wrapper.find(".navbar-breadcrumbs").first();
     if ($breadcrumbs.length) {
@@ -320,7 +343,7 @@
     cleanupRouteShells();
     const page = frappe.ui.make_app_page({
       parent: wrapper,
-      title: "Procurement Queue",
+      title: "Procurement Console",
       single_column: true,
     });
     const viewState = {
@@ -331,6 +354,7 @@
     };
     wrapper.__erpwProcurementConsoleWorklist = viewState;
     activeViewState = viewState;
+    syncWorklistChromeTitle(viewState);
     pruneRouteShells(viewState.$host.get(0));
     loadRoute(viewState);
   }

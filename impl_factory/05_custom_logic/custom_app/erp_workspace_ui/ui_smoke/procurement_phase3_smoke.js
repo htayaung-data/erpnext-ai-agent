@@ -386,6 +386,10 @@ async function procurementChromeSnapshot(page, label) {
       return String((node && node.textContent) || "").replace(/\s+/g, " ").trim();
     }
     const pageHeads = Array.from(document.querySelectorAll(".page-head")).filter(visible);
+    const managedChromeHeads = pageHeads.filter((node) => node.getAttribute("data-erpw-procurement-managed-chrome") === "1");
+    const visibleManagedChromeIcons = managedChromeHeads.flatMap((node) => {
+      return Array.from(node.querySelectorAll(".page-icon, .indicator-pill, .title-area > .icon, .title-area > svg")).filter(visible);
+    });
     const breadcrumbRows = Array.from(document.querySelectorAll(".navbar-breadcrumbs, .breadcrumb, .breadcrumbs, .page-breadcrumbs, .breadcrumb-container, .page-title")).filter(visible);
     const headerRows = pageHeads.map((node) => ({
       text: textOf(node),
@@ -417,6 +421,8 @@ async function procurementChromeSnapshot(page, label) {
       url: window.location.href,
       route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [],
       pageHeadCount: pageHeads.length,
+      managedChromeHeadCount: managedChromeHeads.length,
+      visibleManagedChromeIconCount: visibleManagedChromeIcons.length,
       breadcrumbRowCount: breadcrumbDetails.length,
       headerRows,
       breadcrumbRows: breadcrumbDetails,
@@ -1112,10 +1118,13 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
     assert(layout.end.left > layout.start.left, `${label}: Date To should appear after Date From`, layout);
   }
   if (layout.actionCell && layout.start && layout.end) {
-    const dateBottom = Math.max(layout.start.bottom, layout.end.bottom);
-    assert(Math.abs(layout.actionCell.bottom - dateBottom) <= 10, `${label}: filter actions should align with the date-window command row`, layout);
+    const dateCenter = (Math.min(layout.start.top, layout.end.top) + Math.max(layout.start.bottom, layout.end.bottom)) / 2;
+    const actionCenter = (layout.actionCell.top + layout.actionCell.bottom) / 2;
+    assert(Math.abs(actionCenter - dateCenter) <= 10, `${label}: filter actions should align to the center of the date-window row`, layout);
   } else if (layout.actionCell && layout.main) {
-    assert(Math.abs(layout.actionCell.bottom - layout.main.bottom) <= 10, `${label}: filter actions should align with the active filter row`, layout);
+    const mainCenter = (layout.main.top + layout.main.bottom) / 2;
+    const actionCenter = (layout.actionCell.top + layout.actionCell.bottom) / 2;
+    assert(Math.abs(actionCenter - mainCenter) <= 10, `${label}: filter actions should align to the center of the active filter row`, layout);
   }
   assert(layout.detachedMetricCount === 0, `${label}: detached one-card metric summaries should not render below filters`, layout);
   assert(layout.facts && layout.factCount >= 1, `${label}: header metrics should render as flat inline facts`, layout);
@@ -1147,12 +1156,23 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
     const rows = controls ? Array.from(controls.querySelectorAll(".erpw-report-command-row")).filter(visible) : [];
     const lastRow = rows.length ? rows[rows.length - 1] : null;
     const title = summary ? String(summary.textContent || "").replace(/\s+/g, " ").trim() : "";
+    const fieldRect = (key) => {
+      const input = controls && controls.querySelector(`[data-erpw-control-key="${key}"]`);
+      const field = input && input.closest(".erpw-report-control-field");
+      const box = rect(field);
+      return box ? Object.assign(box, { key }) : null;
+    };
+    const firstRowFields = ["from_date", "to_date", "categorize_by", "include_expired"].map(fieldRect);
+    const secondRowFields = ["item_code", "supplier", "supplier_quotation", "request_for_quotation"].map(fieldRect);
     return {
       hasProcurementMode: !!(shell && shell.classList.contains("is-procurement-report")),
       summary: rect(summary),
       controls: rect(controls),
       actionCell: rect(actionCell),
       lastRow: rect(lastRow),
+      hasActionsOnlyRow: !!(actionCell && actionCell.closest(".erpw-report-command-row.actions-only")),
+      firstRowFields,
+      secondRowFields,
       title,
       rowCount: rows.length,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1161,10 +1181,21 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
   assert(layout.hasProcurementMode, `${label}: report shell did not opt into Procurement enterprise mode`, layout);
   assert(layout.summary && layout.summary.height <= 120, `${label}: report header is too tall`, layout);
   assert(layout.controls && layout.controls.height <= 320, `${label}: report filter panel is too tall`, layout);
-  assert(layout.rowCount >= 1, `${label}: report filter rows are missing`, layout);
-  if (layout.actionCell && layout.lastRow) {
-    assert(Math.abs(layout.actionCell.bottom - layout.lastRow.bottom) <= 10, `${label}: report actions should align with the active filter row`, layout);
-  }
+  assert(layout.rowCount >= 3, `${label}: report filters should use two field rows plus a command row`, layout);
+  assert(layout.hasActionsOnlyRow, `${label}: report actions should sit in a separate command row`, layout);
+  assert(layout.firstRowFields.every(Boolean), `${label}: first report filter row is missing a required field`, layout);
+  assert(layout.secondRowFields.every(Boolean), `${label}: second report filter row is missing a required field`, layout);
+  const firstTop = layout.firstRowFields[0].top;
+  const secondTop = layout.secondRowFields[0].top;
+  layout.firstRowFields.forEach((field) => {
+    assert(Math.abs(field.top - firstTop) <= 4, `${label}: first-row report filters are not aligned`, layout);
+    assert(Math.abs(field.width - layout.firstRowFields[0].width) <= 8, `${label}: first-row report filter widths are inconsistent`, layout);
+  });
+  layout.secondRowFields.forEach((field) => {
+    assert(Math.abs(field.top - secondTop) <= 4, `${label}: second-row report filters are not aligned`, layout);
+    assert(Math.abs(field.width - layout.secondRowFields[0].width) <= 8, `${label}: second-row report filter widths are inconsistent`, layout);
+  });
+  assert(layout.actionCell && layout.actionCell.top > Math.max(...layout.secondRowFields.map((field) => field.bottom)), `${label}: report actions should appear after filter rows`, layout);
   assert(/Quote Comparison/i.test(layout.title), `${label}: report header should use business-facing page title`, layout);
   assert(!/native report|mutation tools/i.test(layout.title), `${label}: report copy exposes implementation language`, layout);
   assert(layout.overflow <= 1, `${label}: report filter layout introduced horizontal overflow`, layout);
@@ -1264,6 +1295,9 @@ async function checkTopChrome(page) {
     const snapshot = await procurementChromeSnapshot(page, item.title);
     const headerText = normalizeText((snapshot.pageHeads || []).map((row) => row.text).join(" ") + " " + (snapshot.breadcrumbRows || []).map((row) => row.text).join(" "));
     assert(headerText.includes("Procurement Console") && headerText.includes(item.title), `${item.title}: top chrome did not show workspace and page context`, { headerText, snapshot });
+    assert(!/Procurement Console Worklist|Procurement Console Report/i.test(headerText), `${item.title}: top chrome still exposes generic route title`, { headerText, snapshot });
+    assert(snapshot.managedChromeHeadCount >= 1, `${item.title}: Procurement page head was not marked as managed chrome`, snapshot);
+    assert(snapshot.visibleManagedChromeIconCount === 0, `${item.title}: managed Procurement chrome still shows orphan route icon`, snapshot);
     const parent = page.locator('[data-erpw-procurement-home="1"]').first();
     await parent.waitFor({ state: "visible", timeout: TIMEOUT });
     await parent.click();

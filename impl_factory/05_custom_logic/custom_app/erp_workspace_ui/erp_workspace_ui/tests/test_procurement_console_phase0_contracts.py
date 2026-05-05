@@ -1308,6 +1308,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(_field_by_key(comparison_payload, "supplier_quotation")["placeholder"], "Select supplier quotation")
         self.assertEqual(_field_by_key(comparison_payload, "request_for_quotation")["linkDoctype"], "Request for Quotation")
         self.assertEqual(_field_by_key(comparison_payload, "request_for_quotation")["placeholder"], "Select RFQ")
+        self.assertEqual(comparison_payload["controls"]["actionLayout"], "separate_row")
+        self.assertEqual(_field_by_key(comparison_payload, "include_expired")["row"], 1)
+        self.assertEqual(_field_by_key(comparison_payload, "item_code")["row"], 2)
+        self.assertEqual(_field_by_key(comparison_payload, "supplier")["row"], 2)
 
     def test_requests_to_source_enforces_purchase_and_not_fully_ordered(self):
         worklist.get_procurement_console_worklist_context("requests_to_source")

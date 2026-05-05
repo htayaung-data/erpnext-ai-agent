@@ -178,6 +178,7 @@ def _native_comparison_filters(filters: dict[str, object]) -> dict[str, object]:
 def _comparison_controls(filters: dict[str, object]) -> dict[str, object]:
 	return {
 		"appearance": "analytics_compact",
+		"actionLayout": "separate_row",
 		"submitLabel": "Apply",
 		"resetLabel": "Reset",
 		"meta": [
@@ -198,21 +199,21 @@ def _comparison_controls(filters: dict[str, object]) -> dict[str, object]:
 					{"label": "By Item", "value": "Categorize by Item"},
 				],
 			},
-			{"key": "item_code", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item_code"), "placeholder": "Select item", "row": 2},
-			{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier"), "placeholder": "Select supplier", "row": 2},
-			{"key": "supplier_quotation", "label": "Quotation", "type": "link", "linkDoctype": "Supplier Quotation", "value": filters.get("supplier_quotation"), "placeholder": "Select supplier quotation", "row": 2},
-			{"key": "request_for_quotation", "label": "RFQ", "type": "link", "linkDoctype": "Request for Quotation", "value": filters.get("request_for_quotation"), "placeholder": "Select RFQ", "row": 2},
 			{
 				"key": "include_expired",
 				"label": "Expired",
 				"type": "select",
 				"value": "1" if filters.get("include_expired") else "0",
-				"row": 3,
+				"row": 1,
 				"options": [
 					{"label": "Exclude expired", "value": "0"},
 					{"label": "Include expired", "value": "1"},
 				],
 			},
+			{"key": "item_code", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item_code"), "placeholder": "Select item", "row": 2},
+			{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier"), "placeholder": "Select supplier", "row": 2},
+			{"key": "supplier_quotation", "label": "Quotation", "type": "link", "linkDoctype": "Supplier Quotation", "value": filters.get("supplier_quotation"), "placeholder": "Select supplier quotation", "row": 2},
+			{"key": "request_for_quotation", "label": "RFQ", "type": "link", "linkDoctype": "Request for Quotation", "value": filters.get("request_for_quotation"), "placeholder": "Select RFQ", "row": 2},
 		],
 		"actions": [
 			{"key": "refresh", "label": "Refresh"},
