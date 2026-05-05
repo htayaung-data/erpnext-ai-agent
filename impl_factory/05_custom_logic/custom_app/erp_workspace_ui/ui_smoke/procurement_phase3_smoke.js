@@ -120,6 +120,8 @@ async function login(page, user) {
 }
 
 async function openDeskRoute(page, route) {
+  await suppressUnsavedFormGuard(page);
+  await dismissFrappeModals(page);
   const targetUrl = routeUrl(route);
   const targetPath = new URL(targetUrl).pathname;
   const canUseDeskRouter = await page.evaluate(() => Boolean(window.frappe && typeof frappe.set_route === "function")).catch(() => false);
@@ -448,6 +450,29 @@ async function suppressUnsavedFormGuard(page) {
   }).catch(() => {});
 }
 
+async function dismissFrappeModals(page) {
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.evaluate(() => {
+    const modals = Array.from(document.querySelectorAll(".modal.show, .modal.fade.show"));
+    for (const modal of modals) {
+      try {
+        if (window.jQuery && typeof window.jQuery(modal).modal === "function") {
+          window.jQuery(modal).modal("hide");
+        }
+      } catch (error) {
+        // Smoke-only modal cleanup.
+      }
+      modal.classList.remove("show");
+      modal.setAttribute("aria-hidden", "true");
+      modal.style.display = "none";
+    }
+    document.querySelectorAll(".modal-backdrop").forEach((node) => node.remove());
+    document.body.classList.remove("modal-open");
+    document.body.style.removeProperty("padding-right");
+  }).catch(() => {});
+  await page.waitForFunction(() => !document.querySelector(".modal.show, .modal.fade.show"), null, { timeout: 3000 }).catch(() => {});
+}
+
 async function firstVisibleRowName(page, queueKey) {
   const response = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", { queue_key: queueKey });
   if (!response.ok) return "";
@@ -460,6 +485,7 @@ async function clickProcurementCreateAction(page, actionKey, expectedPathPattern
   await suppressUnsavedFormGuard(page);
   await openDeskRoute(page, "/desk/procurement-console");
   await page.locator('[data-erpw-console-bootstrap="ready"]').first().waitFor({ state: "attached", timeout: TIMEOUT });
+  await dismissFrappeModals(page);
   await page.locator(`[data-erpw-procurement-create-action="${actionKey}"]`).first().click();
   await page.waitForURL((url) => expectedPathPattern.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
 }
@@ -481,6 +507,7 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
     const parentCrumb = page.locator('[data-erpw-procurement-native-kind="parent"]').first();
     await parentCrumb.waitFor({ state: "visible", timeout: TIMEOUT });
     await suppressUnsavedFormGuard(page);
+    await dismissFrappeModals(page);
     await parentCrumb.click();
     await page.waitForURL(/\/desk\/procurement-console-worklist\//, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
     assert(!/\/desk\/(stock|buying|material-request|request-for-quotation|supplier-quotation|purchase-order)(?:[/?#]|$)/i.test(page.url()), `${item.label}: parent breadcrumb leaked to native ERP route`, { url: page.url() });
@@ -721,6 +748,7 @@ async function clickOverviewTarget(page, target) {
       : `${shellSelector} [data-queue-key="${target.queueKey}"]`;
   const card = page.locator(selector).first();
   await card.waitFor({ state: "visible", timeout: TIMEOUT });
+  await dismissFrappeModals(page);
   await card.click();
   await page.waitForURL((url) => url.pathname === target.expectedPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   return assertSingleProcurementShell(page, target.expectedShell, `${target.label}: after overview card click`);

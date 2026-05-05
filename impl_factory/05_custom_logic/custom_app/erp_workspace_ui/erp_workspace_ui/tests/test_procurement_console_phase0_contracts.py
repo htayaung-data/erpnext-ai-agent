@@ -919,6 +919,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("document.createElement(\"script\")", boot_source)
         self.assertIn("bindProcurementDirectRouteWatch", boot_source)
         self.assertIn("missingShell = procurementRouteShellCount(pageKey) === 0", boot_source)
+        self.assertIn("if (pathRouteParts.length && pathPageKey) return pathRouteParts;", boot_source)
         self.assertNotIn("?v=procurement", boot_source)
         self.assertNotIn("frappe.require(asset", boot_source)
         self.assertIn("procurement-console-po-follow-up", boot_source)

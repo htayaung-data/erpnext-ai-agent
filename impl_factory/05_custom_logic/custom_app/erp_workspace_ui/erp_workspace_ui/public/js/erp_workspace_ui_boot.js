@@ -2167,7 +2167,9 @@
 
   function currentRouteParts() {
     const pathRouteParts = routePartsFromLocationPath();
-    if (isProcurementConsoleRoute(String(pathRouteParts[0] || ""))) return pathRouteParts;
+    const pathPageKey = String(pathRouteParts[0] || "");
+    if (isProcurementConsoleRoute(pathPageKey)) return pathRouteParts;
+    if (pathRouteParts.length && pathPageKey) return pathRouteParts;
     if (window.frappe && typeof frappe.get_route === "function") {
       const route = frappe.get_route();
       if (Array.isArray(route) && route.length) return route;
