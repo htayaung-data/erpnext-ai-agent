@@ -2263,6 +2263,28 @@
     setTimeout(ensureProcurementDirectPage, 220);
   }
 
+  let procurementDirectRouteWatchBound = false;
+  let lastProcurementDirectRouteSignature = "";
+
+  function bindProcurementDirectRouteWatch() {
+    if (procurementDirectRouteWatchBound || !window || typeof window.setInterval !== "function") return;
+    procurementDirectRouteWatchBound = true;
+    window.setInterval(() => {
+      const route = currentRouteParts();
+      const pageKey = String(route[0] || "");
+      if (!isProcurementConsoleRoute(pageKey)) {
+        lastProcurementDirectRouteSignature = "";
+        return;
+      }
+      const routeSignature = route.join("|");
+      const missingShell = procurementRouteShellCount(pageKey) === 0;
+      if (routeSignature !== lastProcurementDirectRouteSignature || missingShell) {
+        lastProcurementDirectRouteSignature = routeSignature;
+        scheduleProcurementDirectPage();
+      }
+    }, 320);
+  }
+
   let roleHomeRedirectDone = false;
 
   function currentBootRoles() {
@@ -2332,6 +2354,7 @@
 
   scheduleRoleHomeRedirect();
   scheduleProcurementDirectPage();
+  bindProcurementDirectRouteWatch();
   patchFooter();
   patchSidebar();
   patchNativeDraftLinkLookup();
