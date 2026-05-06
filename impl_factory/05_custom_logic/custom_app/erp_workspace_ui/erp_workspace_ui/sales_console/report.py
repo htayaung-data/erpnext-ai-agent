@@ -159,12 +159,9 @@ def _build_sales_analytics_report(
 					"kind": "error",
 					"title": "Report unavailable",
 					"detail": message,
-					"action": {"key": "open_native_report", "label": "Open Standard Report"},
 				},
 			},
-			"action_targets": {
-				"open_native_report": {"kind": "report", "report_name": "Sales Analytics", "filters": filters},
-			},
+			"action_targets": {},
 		}
 
 def _build_sales_order_analysis_report(
@@ -662,7 +659,7 @@ def _route_unavailable_payload(report_key: str, scope: dict[str, object]) -> dic
 		"results": {
 			"title": "Report state",
 			"state": {
-				"kind": "error",
+				"kind": "unavailable",
 				"title": "Report link not supported",
 				"detail": "Open the report from a Sales Console report card.",
 			},
@@ -684,7 +681,7 @@ def _report_restricted_payload(report_key: str, scope: dict[str, object]) -> dic
 		"results": {
 			"title": "Report state",
 			"state": {
-				"kind": "error",
+				"kind": "restricted",
 				"title": "Report not available for this role",
 				"detail": "Open an allowed report from the Sales Console report cards.",
 			},
@@ -710,6 +707,8 @@ def _merge_report_actions(
 			continue
 		key = str(action.get("key") or "").strip()
 		if not key or key in seen_keys:
+			continue
+		if key == "open_native_report":
 			continue
 		seen_keys.add(key)
 		merged.append(dict(action))
@@ -755,12 +754,9 @@ def _report_error_payload(
 				"kind": "error",
 				"title": "Report unavailable",
 				"detail": message,
-				"action": {"key": "open_native_report", "label": "Open Standard Report"},
 			},
 		},
-		"action_targets": {
-			"open_native_report": {"kind": "report", "report_name": report_name, "filters": filters},
-		},
+		"action_targets": {},
 	}
 
 
@@ -910,7 +906,7 @@ def _scope_control_value(scope: dict[str, object]) -> str:
 		"executive_review_scope": "Executive scope",
 		"branch_and_owner_filtered": "Branch scope",
 	}
-	scope_label = scope_label_map.get(scope_mode, "Permission scope")
+	scope_label = scope_label_map.get(scope_mode, "Current access")
 	return f"{scope_label}: {branch_name}" if branch_name else scope_label
 
 
@@ -1960,7 +1956,7 @@ def _scope_filter_chip(scope: dict[str, object]) -> list[dict[str, object]]:
 		"executive_review_scope": "Executive scope",
 		"branch_and_owner_filtered": "Branch scope",
 	}
-	label = label_map.get(scope_mode, "Permission scope")
+	label = label_map.get(scope_mode, "Current access")
 	value = branch_name or label
 	if branch_name and label != branch_name:
 		value = f"{label} · {branch_name}"

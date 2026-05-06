@@ -1,7 +1,12 @@
 /* global frappe, $ */
 
 (function () {
-  const PAGE_KEY = "sales-console";
+  const workspaceRegistry = window.erpWorkspaceUiWorkspaceRegistry || {};
+  const salesWorkspace = typeof workspaceRegistry.sales === "function" ? workspaceRegistry.sales() : null;
+  const salesRoutes = salesWorkspace && salesWorkspace.routes ? salesWorkspace.routes : {};
+  const PAGE_KEY = salesRoutes.home || "sales-console";
+  const WORKLIST_ROUTE = salesRoutes.worklist || "sales-console-worklist";
+  const REPORT_ROUTE = salesRoutes.report || "sales-console-report";
   const BOOTSTRAP_METHOD = "erp_workspace_ui.sales_console.service.get_sales_console_bootstrap";
   const INQUIRY_METHOD = "erp_workspace_ui.sales_console.service.resolve_customer_inquiry";
   const INQUIRY_SUGGEST_METHOD = "erp_workspace_ui.sales_console.service.suggest_customer_inquiry";
@@ -1556,7 +1561,7 @@
 
   function routeToReportPage(reportKey) {
     try {
-      frappe.set_route("sales-console-report", String(reportKey || "").replace(/_/g, "-"));
+      frappe.set_route(REPORT_ROUTE, String(reportKey || "").replace(/_/g, "-"));
     } catch (error) {
       frappe.msgprint({
         title: __("Report unavailable"),
@@ -1568,7 +1573,7 @@
 
   function routeToWorklist(queueKey) {
     try {
-      frappe.set_route("sales-console-worklist", String(queueKey || "").replace(/_/g, "-"));
+      frappe.set_route(WORKLIST_ROUTE, String(queueKey || "").replace(/_/g, "-"));
     } catch (error) {
       frappe.msgprint({
         title: __("Worklist unavailable"),
@@ -1578,9 +1583,52 @@
     }
   }
 
-  function executeTarget(target, fallback) {
+  function newDocRouteName(doctype) {
+    return `new-${String(doctype || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
+  }
+
+  function openNewDoc(doctype) {
+    if (!doctype) return;
+    let routed = false;
+    if (typeof frappe.new_doc === "function") {
+      try {
+        frappe.new_doc(doctype);
+        routed = true;
+      } catch (error) {
+        routed = false;
+      }
+    }
+    window.setTimeout(() => {
+      const route = typeof frappe.get_route === "function" ? frappe.get_route() : [];
+      if (Array.isArray(route) && route[0] === "Form" && route[1] === doctype) return;
+      try {
+        frappe.set_route("Form", doctype, newDocRouteName(doctype));
+      } catch (error) {
+        if (!routed) {
+          frappe.msgprint({
+            title: __("Action unavailable"),
+            message: __("Could not open the requested Sales document form."),
+            indicator: "orange",
+          });
+        }
+      }
+    }, 250);
+  }
+
+  function showNavigationUnavailable(label) {
+    frappe.show_alert({
+      message: __("{0} is not available from this Sales workspace yet.", [String(label || "This action")]),
+      indicator: "orange",
+    });
+  }
+
+  function executeTarget(target, fallback, label) {
     if (!target) {
-      if (typeof fallback === "function") fallback();
+      if (typeof fallback === "function") {
+        fallback();
+        return;
+      }
+      showNavigationUnavailable(label);
       return;
     }
 
@@ -1601,7 +1649,7 @@
     }
 
     if (target.kind === "new_doc" && target.doctype) {
-      frappe.new_doc(target.doctype);
+      openNewDoc(target.doctype);
       return;
     }
 
@@ -1630,7 +1678,11 @@
       return;
     }
 
-    if (typeof fallback === "function") fallback();
+    if (typeof fallback === "function") {
+      fallback();
+      return;
+    }
+    showNavigationUnavailable(label || target.label || target.doctype || target.report_name || target.kind);
   }
 
   function runNavigation(pageState, group, key, fallback) {
@@ -1644,15 +1696,15 @@
     }
     const navigation = (pageState && pageState.payload && pageState.payload.navigation) || {};
     const groupTargets = navigation[group] || {};
-    executeTarget(groupTargets[key], fallback);
+    executeTarget(groupTargets[key], fallback, key);
   }
 
   function bindConsoleNavigationDelegates($root, pageState) {
     if (!$root || !$root.length) return;
 
     const actionFallbacks = {
-      new_quotation: () => frappe.new_doc("Quotation"),
-      new_sales_order: () => frappe.new_doc("Sales Order"),
+      new_quotation: () => openNewDoc("Quotation"),
+      new_sales_order: () => openNewDoc("Sales Order"),
       open_customer: () => routeToWorklist("customer_directory"),
       open_item: () => routeToWorklist("item_directory"),
     };
@@ -2449,7 +2501,7 @@
           <ul class="sales-console-guide-list">
             <li>Approval and finance-sensitive issues should remain explicit and controlled.</li>
             <li>AI should return here only when it provides real operational value.</li>
-            <li>Branch and permission scope should support the page silently, not dominate it.</li>
+            <li>Branch and access scope should support the page quietly, not dominate it.</li>
           </ul>
         </div>
         <div class="sales-console-guide-block">
@@ -2684,7 +2736,7 @@
           pageState,
           "actions",
           "new_quotation",
-          () => frappe.new_doc("Quotation")
+          () => openNewDoc("Quotation")
         ),
       }),
       makeAction({
@@ -2698,7 +2750,7 @@
           pageState,
           "actions",
           "new_sales_order",
-          () => frappe.new_doc("Sales Order")
+          () => openNewDoc("Sales Order")
         ),
       }),
     );
@@ -3008,7 +3060,18 @@
     $body.append($inquirySection, $workSection, $lifecycleSection, $approvalsSection, $reportsSection);
     $root.append($header, $actionsSection, $body);
     renderReportsSection($root, pageState, defaultReportCardsForCurrentRole());
-    $(page.body).empty().append($root);
+    const lifecycle = window.erpWorkspaceUiRouteLifecycle;
+    if (lifecycle && typeof lifecycle.replaceManagedContent === "function") {
+      lifecycle.replaceManagedContent({
+        page,
+        wrapper,
+        content: $root,
+        routeGroup: "sales",
+        routeKind: "overview",
+      });
+    } else {
+      $(page.body).empty().append($root);
+    }
     bindConsoleNavigationDelegates($root, pageState);
 
     scheduleSidebarGuide(openGuide);

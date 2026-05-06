@@ -39,10 +39,10 @@ Freeze and governance status:
 
 - Sales Console is frozen on 2026-05-03.
 - Freeze marker tag: `sales-console-freeze-v1`.
-- Sales remains the business reference, but future Sales Recovery must harden it against the Shared Core + Workspace Adapter v2 contract.
+- Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
-- Main Phase 1 adds shared-core governance only; it does not repair Sales, repair Procurement, start Procurement Phase 4, or start a new workspace.
+- Main Phase 1 added shared-core governance only; Main Phase 2 repairs Sales shared-core compliance only. Procurement repair, Procurement Phase 4, and new workspace work remain out of scope until owner-approved.
 
 Primary code paths:
 
@@ -109,6 +109,7 @@ Current freeze facts:
 Documents in this folder:
 
 - `shared-core-route-action-inventory-2026-05-06.md`
+- `sales-console-recovery-phase-2-2026-05-06.md`
 - `shared-core-workspace-adapter-contract-v2.md`
 - `native-exception-policy-v1.md`
 - `multi-workspace-foundation-contract-v1.md`

@@ -111,6 +111,60 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("sales-console-freeze-v1", sales["freeze_tag"])
         self.assertIn("sales-console", route_keys_by_workspace("sales"))
 
+    def test_sales_overview_quick_actions_are_manifest_declared(self):
+        source = (APP_ROOT / "erp_workspace_ui" / "page" / "sales_console" / "sales_console.js").read_text()
+        service_source = (APP_ROOT / "sales_console" / "service.py").read_text()
+        expected = {
+            "new_quotation": ("governed_native_action", "new_doc", "sales-managed-document-forms-v1"),
+            "new_sales_order": ("governed_native_action", "new_doc", "sales-managed-document-forms-v1"),
+            "open_customer": ("productized_navigation", "worklist", None),
+            "open_item": ("productized_navigation", "worklist", None),
+        }
+        actions = {
+            action["action_key"]: action
+            for action in ACTION_MANIFEST
+            if action["workspace_id"] == "sales" and action["source_route"] == "sales-console"
+        }
+
+        self.assertNotIn("new_opportunity", source)
+        self.assertNotIn("new_opportunity", service_source)
+        for action_key, (classification, target_kind, native_ref) in expected.items():
+            self.assertIn(f'key: "{action_key}"', source)
+            self.assertIn(action_key, service_source)
+            self.assertIn(action_key, actions)
+            self.assertEqual(classification, actions[action_key]["classification"])
+            self.assertEqual(target_kind, actions[action_key]["target_kind"])
+            if native_ref:
+                self.assertEqual(native_ref, actions[action_key]["native_exception_ref"])
+
+        self.assertEqual("/desk/sales-console-worklist/customer-directory", actions["open_customer"]["target_route_pattern"])
+        self.assertEqual("/desk/sales-console-worklist/item-directory", actions["open_item"]["target_route_pattern"])
+
+    def test_sales_customer_detail_activity_open_is_manifest_declared(self):
+        action = next(
+            item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] == "sales-customer-detail-managed-document-open"
+        )
+
+        self.assertEqual("sales-console-worklist/customer_detail/<customer>", action["source_route"])
+        self.assertEqual("row:*:open_record", action["action_key"])
+        self.assertEqual("productized_navigation", action["classification"])
+        self.assertEqual("managed_form", action["target_kind"])
+        self.assertEqual("sales-managed-document-forms-v1", action["native_exception_ref"])
+        self.assertNotIn("Open ERP Form", action.get("label") or "")
+
+    def test_sales_manifest_does_not_declare_unapproved_native_fallbacks(self):
+        for action in ACTION_MANIFEST:
+            if action["workspace_id"] != "sales":
+                continue
+            self.assertNotIn(action["action_key"], {"open_native_list", "open_native_report"}, action)
+            self.assertNotEqual("Open Standard List", action.get("label"), action)
+            self.assertNotEqual("Open Standard Report", action.get("label"), action)
+            if action["target_kind"] in {"form", "report", "list"}:
+                self.assertEqual("governed_native_action", action["classification"], action)
+                self.assertEqual("sales-managed-document-forms-v1", action.get("native_exception_ref"), action)
+
     def test_not_allowed_leakage_requires_repair_owner_and_status(self):
         for route in ROUTE_MANIFEST:
             if route["classification"] == "not_allowed_leakage":

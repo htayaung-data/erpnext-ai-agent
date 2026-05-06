@@ -100,7 +100,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
 
         self.assertEqual(
             action_keys,
-            ["refresh", "reset_filters", "apply_filters", "open_native_list"],
+            ["refresh", "reset_filters", "apply_filters"],
         )
         self.assertEqual(
             [action["key"] for action in result["controls"]["actions"]].count("refresh"),
@@ -108,7 +108,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
         )
         self.assertEqual(result["controls"]["actions"][2]["kind"], "primary")
 
-    def test_restricted_worklist_payload_exposes_native_fallback_action(self):
+    def test_restricted_worklist_payload_does_not_expose_native_fallback_action(self):
         payload = worklist._restricted_payload(
             "Items",
             "Restricted items queue",
@@ -117,8 +117,9 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             native_target={"kind": "list", "doctype": "Item"},
         )
 
-        self.assertEqual(payload["results"]["state"]["action"]["key"], "open_native_list")
-        self.assertEqual(payload["action_targets"]["open_native_list"]["doctype"], "Item")
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
+        self.assertNotIn("action", payload["results"]["state"])
+        self.assertNotIn("open_native_list", payload["action_targets"])
 
     def test_worklist_route_unavailable_payload_keeps_standard_top_actions(self):
         with patch.object(worklist.service, "_build_context", return_value={}), patch.object(
@@ -128,6 +129,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
         ):
             payload = worklist.get_sales_console_worklist_context("unknown_queue")
 
+        self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
         self.assertEqual(
             [action["key"] for action in payload["controls"]["actions"]],
             ["refresh"],
@@ -145,6 +147,32 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             payload["summary"]["subtitle"],
             "Sales items available for quotation and order entry, with current stock posture.",
         )
+
+    def test_customer_and_item_directories_declare_link_autocomplete_filters(self):
+        with patch.object(worklist.service, "_can_read", return_value=True), patch.object(
+            worklist.service,
+            "_customer_scope_filters",
+            return_value={},
+        ), patch.object(worklist, "_fetch_customer_worklist_rows", return_value=[]), patch.object(
+            worklist,
+            "_customer_profile_select_options",
+            return_value=([], []),
+        ), patch.object(worklist, "_can_manage_customer_profile", return_value=False):
+            customer_payload = worklist._build_customer_worklist({}, {"scope_mode": "permission_scope"}, {})
+
+        with patch.object(worklist.service, "_can_read", return_value=True), patch.object(
+            worklist,
+            "_fetch_item_worklist_rows",
+            return_value=[],
+        ), patch.object(worklist, "_item_group_options", return_value=[]):
+            item_payload = worklist._build_item_worklist({"scope_mode": "permission_scope"}, {})
+
+        customer_keyword = next(field for field in customer_payload["controls"]["fields"] if field["key"] == "keyword")
+        item_keyword = next(field for field in item_payload["controls"]["fields"] if field["key"] == "keyword")
+        self.assertEqual(customer_keyword["type"], "link")
+        self.assertEqual(customer_keyword["linkDoctype"], "Customer")
+        self.assertEqual(item_keyword["type"], "link")
+        self.assertEqual(item_keyword["linkDoctype"], "Item")
 
     def test_item_detail_price_prefers_active_standard_selling_price(self):
         fields = {
@@ -210,7 +238,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
 
         self.assertEqual(
             [action["key"] for action in result["controls"]["actions"]],
-            ["refresh", "back_to_console", "open_native_report"],
+            ["refresh", "back_to_console"],
         )
 
     def test_report_route_unavailable_payload_keeps_standard_top_actions(self):
@@ -221,6 +249,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
         ):
             payload = report.get_sales_console_report_context("unknown_report")
 
+        self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
         self.assertEqual(
             [action["key"] for action in payload["controls"]["actions"]],
             ["refresh", "back_to_console"],
@@ -243,11 +272,27 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             payload = report.get_sales_console_report_context("lost_quotations")
 
         self.assertEqual(payload["summary"]["title"], "Report restricted")
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
         self.assertEqual(payload["results"]["state"]["title"], "Report not available for this role")
         self.assertEqual(
             [action["key"] for action in payload["controls"]["actions"]],
             ["refresh", "back_to_console"],
         )
+
+    def test_sales_report_error_payload_does_not_expose_native_report_fallback(self):
+        payload = report._report_error_payload(
+            report_name="Sales Analytics",
+            page_title="Sales Analytics",
+            summary_subtitle="Report failed.",
+            scope={"scope_mode": "permission_scope"},
+            filters={"from_date": "2026-04-01", "to_date": "2026-04-30"},
+            filter_chip_builder=lambda filters, scope: [],
+            exc=Exception("boom"),
+        )
+
+        self.assertEqual(payload["results"]["state"]["kind"], "error")
+        self.assertNotIn("action", payload["results"]["state"])
+        self.assertEqual({}, payload["action_targets"])
 
     def test_sales_order_analysis_defaults_to_rolling_operating_window(self):
         def fake_getdate(value=None):

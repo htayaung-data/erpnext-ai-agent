@@ -130,7 +130,7 @@
         state: {
           kind: 'loading',
           title: 'Loading queue',
-          detail: 'Pulling live operational records and permission scope.',
+          detail: 'Pulling live operational records and access context.',
         },
       },
     };
@@ -161,6 +161,16 @@
   }
 
   function ensureHost(page, wrapper) {
+    const lifecycle = window.erpWorkspaceUiRouteLifecycle;
+    if (lifecycle && typeof lifecycle.ensureManagedHost === 'function') {
+      return lifecycle.ensureManagedHost({
+        page,
+        wrapper,
+        hostClass: 'erpw-sales-console-worklist-page',
+        routeGroup: 'sales',
+        routeKind: 'worklist',
+      });
+    }
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     let $host = $parent.children('.erpw-sales-console-worklist-page').first();
     if (!$host.length) {

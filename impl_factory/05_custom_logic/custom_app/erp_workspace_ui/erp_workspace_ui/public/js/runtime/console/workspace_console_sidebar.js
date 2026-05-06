@@ -1395,7 +1395,12 @@
     if (!wrapper) return false;
 
     const config = workspaceConfig(getRoute());
-    const sidebar = contextPayload && contextPayload.sidebar ? contextPayload.sidebar : fallbackContext(getRoute()).sidebar;
+    const fallbackPayload = fallbackContext(getRoute()) || {};
+    const sidebar = contextPayload && contextPayload.sidebar ? contextPayload.sidebar : fallbackPayload.sidebar;
+    if (!sidebar) {
+      removeSidebar();
+      return false;
+    }
     const workspaceTitle = sidebar.title || config.title;
     const sections = Array.isArray(sidebar.sections) ? sidebar.sections.filter(Boolean) : [];
     if (!sections.length) {

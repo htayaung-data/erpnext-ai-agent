@@ -81,7 +81,7 @@
         state: {
           kind: "loading",
           title: "Loading report",
-          detail: "Reading live report output and shaping the productized review surface.",
+          detail: "Reading live report output and shaping the business review surface.",
         },
       },
       action_targets: {},
@@ -116,6 +116,16 @@
   }
 
   function ensureHost(page, wrapper) {
+    const lifecycle = window.erpWorkspaceUiRouteLifecycle;
+    if (lifecycle && typeof lifecycle.ensureManagedHost === 'function') {
+      return lifecycle.ensureManagedHost({
+        page,
+        wrapper,
+        hostClass: 'erpw-sales-console-report-page',
+        routeGroup: 'sales',
+        routeKind: 'report',
+      });
+    }
     const $parent = page && page.body ? $(page.body) : $(wrapper);
     let $host = $parent.children(".erpw-sales-console-report-page").first();
     if (!$host.length) {

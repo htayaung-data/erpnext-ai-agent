@@ -85,9 +85,10 @@ Action classifications:
 | `new_sales_order` | Sales Order directory | `governed_native_action` | native new `Sales Order` managed form | ERPNext create workflow remains transaction truth. |
 | `create_customer` | Customer directory | `productized_primary_action` | `customer_editor` | Server-gated Customer create. |
 | `edit_customer` | Customer detail | `productized_secondary_action` | `customer_editor/<customer>` | Server-gated Customer edit. |
+| `open_record` recent activity pattern | Customer detail | `productized_navigation` | approved managed Sales document form | Quotation, Sales Order, and Sales Invoice activity opens only through the Sales managed-form boundary. |
 | `back_to_customers` | Customer detail/editor | `productized_navigation` | `customer_directory` | Productized navigation. |
 | `back_to_items` | Item detail | `productized_navigation` | `item_directory` | Productized navigation. |
-| Report cell drilldown action pattern | Sales reports | `productized_navigation` | productized worklist/report/native report fallback as declared | Must not silently leak to raw ERP pages when a productized route exists. |
+| Report cell drilldown action pattern | Sales reports | `productized_navigation` | productized worklist/report target where declared | Native report fallback is not approved for productized Sales reports. |
 | Native form Save/Submit/Print/Email/Assign/Share controls | Managed Sales document forms | `governed_native_action` | ERPNext form lifecycle | Allowed only because the form route is classified as managed create/edit. |
 
 ## Procurement Route Inventory

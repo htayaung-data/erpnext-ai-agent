@@ -30,6 +30,82 @@
     return (workspace && workspace.title) || "Sales Console";
   }
 
+  function resolveLifecycleElement(value) {
+    if (!value) return null;
+    if (value instanceof HTMLElement) return value;
+    if (value.jquery && value.length) return value.get(0);
+    if (value[0] instanceof HTMLElement) return value[0];
+    return null;
+  }
+
+  function lifecycleReturn(node) {
+    if (!node) return window.jQuery ? window.jQuery() : null;
+    return window.jQuery ? window.jQuery(node) : node;
+  }
+
+  function resolveManagedPageBody(page, wrapper) {
+    const pageBody = page && page.body ? resolveLifecycleElement(page.body) : null;
+    if (pageBody) return pageBody;
+    const wrapperNode = resolveLifecycleElement(wrapper);
+    if (!wrapperNode) return null;
+    return wrapperNode.querySelector(".layout-main-section, .page-body, .page-content") || wrapperNode;
+  }
+
+  function markManagedRouteNode(node, settings) {
+    if (!(node instanceof HTMLElement)) return;
+    node.setAttribute("data-erpw-managed-route-host", "true");
+    if (settings && settings.routeGroup) {
+      node.setAttribute("data-erpw-route-group", String(settings.routeGroup));
+    }
+    if (settings && settings.routeKind) {
+      node.setAttribute("data-erpw-route-kind", String(settings.routeKind));
+    }
+  }
+
+  function clearManagedPageBody(parent, keepNode) {
+    if (!(parent instanceof HTMLElement)) return;
+    Array.from(parent.children).forEach((child) => {
+      if (child !== keepNode && child.parentNode === parent) {
+        child.remove();
+      }
+    });
+  }
+
+  function ensureManagedHost(options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const parent = resolveManagedPageBody(settings.page, settings.wrapper);
+    if (!parent) return lifecycleReturn(null);
+    const hostClass = String(settings.hostClass || "").replace(/^\./, "").trim();
+    let host = null;
+    if (hostClass) {
+      host = Array.from(parent.children).find((child) => child.classList && child.classList.contains(hostClass)) || null;
+    }
+    if (!host) {
+      host = document.createElement(settings.tagName || "section");
+      if (hostClass) host.className = hostClass;
+    }
+    markManagedRouteNode(host, settings);
+    clearManagedPageBody(parent, host);
+    if (host.parentNode !== parent) parent.appendChild(host);
+    return lifecycleReturn(host);
+  }
+
+  function replaceManagedContent(options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const parent = resolveManagedPageBody(settings.page, settings.wrapper);
+    const content = resolveLifecycleElement(settings.content);
+    if (!parent || !content) return lifecycleReturn(null);
+    markManagedRouteNode(content, settings);
+    parent.textContent = "";
+    parent.appendChild(content);
+    return lifecycleReturn(content);
+  }
+
+  window.erpWorkspaceUiRouteLifecycle = Object.assign(window.erpWorkspaceUiRouteLifecycle || {}, {
+    ensureManagedHost,
+    replaceManagedContent,
+  });
+
   function escapeRegExp(value) {
     return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -248,9 +324,9 @@
 	      sales_order_directory: "Sales Orders",
 	      customer_directory: "Customers",
 	      item_directory: "Items",
-	      customer_detail: "Customer Details",
-	      customer_editor: "Customer Editor",
-	      item_detail: "Item Details",
+	      customer_detail: "Customer Detail",
+	      customer_editor: "Customer Profile",
+	      item_detail: "Item Detail",
 	      open_orders: "Open Sales Orders",
 	      sales_orders_pending_fulfillment: "Orders Pending Fulfillment",
 	      partially_delivered_orders: "Partially Delivered Orders",
@@ -289,12 +365,12 @@
 
 	    const detailParents = {
 	      customer_detail: {
-	        label: "Customer Details",
+	        label: "Customers",
 	        route: `${salesWorkspaceDeskPath("worklist", "sales-console-worklist")}/customer-directory`,
 	        queue_key: "customer_directory",
 	      },
 	      item_detail: {
-	        label: "Item Details",
+	        label: "Items",
 	        route: `${salesWorkspaceDeskPath("worklist", "sales-console-worklist")}/item-directory`,
 	        queue_key: "item_directory",
 	      },
@@ -408,6 +484,17 @@
 	          item.appendChild(link);
 	          list.appendChild(item);
 	        });
+	        synced = true;
+	      });
+
+	      const titleNodes = rootNode instanceof HTMLElement && rootNode.matches(".page-head")
+	        ? Array.from(rootNode.querySelectorAll(".page-title .title-text, .title-area .title-text"))
+	        : Array.from(rootNode.querySelectorAll(".page-head .page-title .title-text, .page-head .title-area .title-text"));
+	      titleNodes.forEach((node) => {
+	        if (!(node instanceof HTMLElement)) return;
+	        if (node.closest(".navbar-breadcrumbs")) return;
+	        node.textContent = context.documentTitle || salesWorkspaceTitle();
+	        node.setAttribute("data-erpw-sales-console-title", "1");
 	        synced = true;
 	      });
 	    });

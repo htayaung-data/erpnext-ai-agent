@@ -292,7 +292,7 @@ Unapproved page-local hacks are contract violations even when the page appears v
 
 Sales Console is frozen as the business reference and remains status `frozen` in the registry.
 
-Main Phase 1 does not repair Sales UI. Later Sales Recovery work must repair or harden Sales against this v2 Core + Adapter contract without silently changing the Sales freeze baseline.
+Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against this v2 Core + Adapter contract without renaming frozen routes or changing confirmed Sales business scope. Future Sales changes must continue to preserve the freeze baseline unless the owner explicitly approves a new recovery phase.
 
 Sales managed document forms for Quotation, Sales Order, Delivery Note, and Sales Invoice are classified as managed create/edit surfaces where ERPNext remains transaction truth.
 

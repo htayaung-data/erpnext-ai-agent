@@ -221,7 +221,7 @@ def _route_unavailable_payload(queue_key: str, scope: dict[str, object]) -> dict
 			"results": {
 				"title": "Queue state",
 				"state": {
-					"kind": "error",
+					"kind": "unavailable",
 					"title": "Queue link not supported",
 					"detail": "Open the Sales Console first, then launch the queue from a Sales Console card.",
 				},
@@ -254,6 +254,8 @@ def _merge_operating_actions(
 			continue
 		key = cstr(action.get("key")).strip()
 		if not key or key in seen_keys:
+			continue
+		if key == "open_native_list":
 			continue
 		seen_keys.add(key)
 		merged.append(dict(action))
@@ -714,10 +716,11 @@ def _build_customer_worklist(context: dict[str, object], scope: dict[str, object
 				},
 				{
 					"key": "keyword",
-					"label": "Keyword",
-					"type": "text",
+					"label": "Customer",
+					"type": "link",
+					"linkDoctype": "Customer",
 					"value": keyword,
-					"placeholder": "Search customer name or ID",
+					"placeholder": "Search or select customer",
 				},
 			],
 		},
@@ -789,7 +792,7 @@ def _build_customer_detail_worklist(context: dict[str, object], scope: dict[str,
 			"facts": [
 				{"label": "Customer ID", "value": customer.get("name") or "--", "meta": "ERP customer record"},
 				{"label": "Territory", "value": customer.get("territory") or "--", "meta": customer.get("customer_group") or "Customer group not set"},
-				{"label": "Scope", "value": cstr(scope.get("branch") or scope.get("team") or "Current permission"), "meta": "Visible account context"},
+				{"label": "Scope", "value": cstr(scope.get("branch") or scope.get("team") or "Current access"), "meta": "Visible account context"},
 			],
 		},
 		"controls": {
@@ -1539,10 +1542,11 @@ def _build_item_worklist(scope: dict[str, object], applied_filters: dict[str, st
 				},
 				{
 					"key": "keyword",
-					"label": "Keyword",
-					"type": "text",
+					"label": "Item",
+					"type": "link",
+					"linkDoctype": "Item",
 					"value": keyword,
-					"placeholder": "Search item code or item name",
+					"placeholder": "Search or select item",
 				},
 			],
 			"actions": [
@@ -1593,7 +1597,7 @@ def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[
 	if not item:
 		return _item_detail_state_payload(
 			title="Item not visible",
-			detail="This item is outside the current Sales Console permission scope or is no longer available for sales.",
+			detail="This item is outside the current Sales Console access scope or is no longer available for sales.",
 			scope=scope,
 		)
 
@@ -1623,7 +1627,7 @@ def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[
 			"facts": [
 				{"label": "Item Code", "value": item.get("item_code") or item.get("name") or "--", "meta": "ERP item record"},
 				{"label": "Item Group", "value": item.get("item_group") or "--", "meta": stock_uom or "Stock UOM not set"},
-				{"label": "Scope", "value": cstr(scope.get("branch") or scope.get("team") or "Current permission"), "meta": "Visible stock context"},
+				{"label": "Scope", "value": cstr(scope.get("branch") or scope.get("team") or "Current access"), "meta": "Visible stock context"},
 			],
 		},
 		"controls": {
@@ -1959,12 +1963,6 @@ def _restricted_payload(
 	scope: dict[str, object] | None,
 	native_target: dict[str, object] | None,
 ) -> dict[str, object]:
-	action_targets = {}
-	state_action = None
-	if native_target:
-		action_targets["open_native_list"] = native_target
-		state_action = {"key": "open_native_list", "label": "Open Standard List"}
-
 	return {
 		"page": {"title": page_title},
 		"summary": {
@@ -1980,13 +1978,12 @@ def _restricted_payload(
 		"results": {
 			"title": "Queue state",
 			"state": {
-				"kind": "error",
+				"kind": "restricted",
 				"title": "Queue unavailable",
 				"detail": scope_note,
-				"action": state_action,
 			},
 		},
-		"action_targets": action_targets,
+		"action_targets": {},
 	}
 
 
@@ -2004,8 +2001,8 @@ def _scope_label(scope: dict[str, object]) -> str:
 		"showroom_scope": "Showroom scope",
 		"executive_review_scope": "Executive scope",
 		"branch_and_owner_filtered": "User + branch scope",
-		"permission_scope": "Permission scope",
-	}.get(scope.get("scope_mode"), "Permission scope")
+		"permission_scope": "Current access",
+	}.get(scope.get("scope_mode"), "Current access")
 
 
 def _scope_chips(scope: dict[str, object]) -> list[dict[str, object]]:
