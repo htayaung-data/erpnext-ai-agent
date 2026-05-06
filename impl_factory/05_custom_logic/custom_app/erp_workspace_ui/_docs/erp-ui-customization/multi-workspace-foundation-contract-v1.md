@@ -55,7 +55,9 @@ Frontend registry:
 
 `erp_workspace_ui/public/js/runtime/console/workspace_registry.js`
 
-The registry currently exposes Sales Console as the only active workspace because it is the only frozen workspace.
+Original v1 foundation work exposed Sales Console as the only active workspace because it was the only frozen workspace.
+
+Current governance status as of 2026-05-06: the clean source registry exposes Sales Console and Procurement Console. Sales remains status `frozen`; Procurement is active status `phase_3`; Purchase-role routing to `procurement-console-home` is owner-approved. Procurement is still not the default app.
 
 The registry also records the future workspace roadmap so future agents and developers use the same foundation names.
 

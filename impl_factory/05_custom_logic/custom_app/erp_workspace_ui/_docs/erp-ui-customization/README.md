@@ -4,7 +4,9 @@ This folder records freeze decisions, deferred UI work, and implementation notes
 
 Current implementation focus:
 
+- Main Phase 1 Shared Core Platform governance
 - Sales Console
+- Procurement Console
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
 - workspace-wide shared UI component standard
@@ -29,12 +31,18 @@ Implementation source of truth currently lives in the ERP UI Design branch:
 - current confirmed UI baseline commit: `6dbd85c fix: forward socket origin through caddy`
 - current confirmed documentation alignment commit: `50cd6fa docs: align sales console freeze documentation`
 - current confirmed Golden Rule commit: `3b071b0 docs: define workspace UI golden rule standard`
+- current clean source baseline before Main Phase 1: `a05e4f8 fix: standardize procurement worklist filter widths`
+- live deployment repo remains a dirty deployment/integration working tree and is not the Main Phase 1 source of truth
 - previous UI polish commit: `d71592c style: polish item detail cards and breadcrumb`
 
-Freeze status:
+Freeze and governance status:
 
 - Sales Console is frozen on 2026-05-03.
-- Freeze marker tag: `sales-console-freeze-v1`
+- Freeze marker tag: `sales-console-freeze-v1`.
+- Sales remains the business reference, but future Sales Recovery must harden it against the Shared Core + Workspace Adapter v2 contract.
+- Procurement Console is active Phase 3 in the source registry.
+- Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
+- Main Phase 1 adds shared-core governance only; it does not repair Sales, repair Procurement, start Procurement Phase 4, or start a new workspace.
 
 Primary code paths:
 
@@ -50,12 +58,16 @@ Primary code paths:
 - `erp_workspace_ui/sales_console/service.py`
 - `erp_workspace_ui/sales_console/worklist.py`
 - `erp_workspace_ui/sales_console/report.py`
+- `erp_workspace_ui/procurement_console/*`
+- `erp_workspace_ui/workspace_governance_manifest.py`
+- `erp_workspace_ui/public/js/procurement_console/*`
 - `erp_workspace_ui/public/js/runtime/child_page/*`
 - `erp_workspace_ui/public/js/quotation_form.js`
 - `erp_workspace_ui/public/js/sales_order_form.js`
 
 Current routing truth:
 
+- The route/action manifest is the Main Phase 1 machine-readable governance authority.
 - Sales Console route names remain frozen and are now mapped through the workspace registry for future multi-workspace safety.
 - `/desk/sales-console` is the Sales Console home.
 - `/desk/sales-console-worklist/<queue-key>` is the shared worklist shell.
@@ -65,6 +77,10 @@ Current routing truth:
 - `/desk/sales-console-worklist/item-detail/<item>` is the productized Item Detail page.
 - bare `/desk/sales-console-worklist` intentionally shows a guard state because no queue key was supplied.
 - `/desk/sales-console-report/<report-key>` is the shared report shell.
+- Procurement Console route names are active Phase 3 registry entries: `procurement-console-home`, `procurement-console`, `procurement-console-worklist`, `procurement-console-report`, `procurement-console-po-follow-up`, `procurement-console-supplier`, `procurement-console-item`, `procurement-console-purchase-request-review`, `procurement-console-rfq-review`, and `procurement-console-supplier-quotation-review`.
+- `/desk/procurement-console-worklist/<queue-key>` uses the shared worklist shell.
+- `/desk/procurement-console-report/supplier-quotation-comparison` uses the shared report shell.
+- Procurement native create forms remain governed Phase 3 exceptions until a future owner-approved Managed Procurement Forms phase.
 
 Current visible report keys:
 
@@ -92,6 +108,9 @@ Current freeze facts:
 
 Documents in this folder:
 
+- `shared-core-route-action-inventory-2026-05-06.md`
+- `shared-core-workspace-adapter-contract-v2.md`
+- `native-exception-policy-v1.md`
 - `multi-workspace-foundation-contract-v1.md`
 - `shared-component-and-implementation-golden-rule-standard-v1.md`
 - `sales-console-final-freeze-2026-05-03.md`
@@ -119,6 +138,6 @@ Documents in this folder:
 - `sales-console-business-copy-contract-v1.md`
 - `sales-console-navigation-contract-v1.md`
 
-Future workspace implementation must start from `shared-component-and-implementation-golden-rule-standard-v1.md`.
+Future workspace implementation must start from `shared-core-workspace-adapter-contract-v2.md`, `native-exception-policy-v1.md`, `workspace_governance_manifest.py`, and `shared-component-and-implementation-golden-rule-standard-v1.md`.
 
-The Sales Console is the current reference implementation, not the naming scope of the shared component standard.
+Future workspaces must start from Core + Adapter, not by copying Sales Console or Procurement Console page files. The Sales Console is the current business reference implementation, not the naming scope of the shared component standard.

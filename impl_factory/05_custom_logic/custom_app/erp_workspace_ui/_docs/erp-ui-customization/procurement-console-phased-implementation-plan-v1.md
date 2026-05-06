@@ -10,6 +10,8 @@ Custom app: `/home/deploy/erp-projects/erpai_project1_erpnext_ui_design/impl_fac
 
 Status: implementation plan with accepted Phase 0-3 build decisions. Later phases still require owner approval.
 
+Current governance alignment note, 2026-05-06: older Phase 0 and Phase 1 language that says Purchase-role default/home routing is disabled is historical phase gating. The owner has approved Purchase-role routing to `procurement-console-home` in the clean source repo. Procurement remains Phase 3, Procurement is not the default app, and Phase 4 or Managed Procurement Forms must still wait for separate owner approval.
+
 ## 0. Current Phase 3 Completion Decisions
 
 Updated: 2026-05-04
