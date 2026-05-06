@@ -160,30 +160,39 @@ async function openDeskRoute(page, route) {
 
 async function callMethod(page, method, args = {}) {
   return page.evaluate(
-    async ({ method, args }) => {
+    async ({ method, args, timeout }) => {
       const body = new URLSearchParams();
       for (const [key, value] of Object.entries(args || {})) {
         body.set(key, typeof value === "string" ? value : JSON.stringify(value));
       }
-      const response = await fetch(`/api/method/${method}`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-          "X-Frappe-CSRF-Token": (window.frappe && window.frappe.csrf_token) || "",
-        },
-        body,
-      });
-      const raw = await response.text();
-      let data = null;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
       try {
-        data = raw ? JSON.parse(raw) : null;
+        const response = await fetch(`/api/method/${method}`, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Frappe-CSRF-Token": (window.frappe && window.frappe.csrf_token) || "",
+          },
+          body,
+          signal: controller.signal,
+        });
+        const raw = await response.text();
+        let data = null;
+        try {
+          data = raw ? JSON.parse(raw) : null;
+        } catch (error) {
+          data = { raw };
+        }
+        return { ok: response.ok, status: response.status, data };
       } catch (error) {
-        data = { raw };
+        return { ok: false, status: 0, data: { error: error && error.name === "AbortError" ? `Timed out calling ${method}` : String((error && error.message) || error), method } };
+      } finally {
+        clearTimeout(timer);
       }
-      return { ok: response.ok, status: response.status, data };
     },
-    { method, args }
+    { method, args, timeout: TIMEOUT }
   );
 }
 
@@ -799,7 +808,7 @@ async function clickOverviewTarget(page, target) {
   const card = page.locator(selector).first();
   await card.waitFor({ state: "visible", timeout: TIMEOUT });
   await dismissFrappeModals(page);
-  await card.click();
+  await card.click({ noWaitAfter: true });
   await page.waitForURL((url) => url.pathname === target.expectedPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   return assertSingleProcurementShell(page, target.expectedShell, `${target.label}: after overview card click`);
 }
@@ -1135,6 +1144,15 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       const box = node.getBoundingClientRect();
       return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom), width: Math.round(box.width), height: Math.round(box.height) };
     };
+    const controlFields = deck
+      ? Array.from(deck.querySelectorAll("[data-erpw-list-field-role]"))
+          .filter(visible)
+          .map((node) => Object.assign(rect(node), {
+            key: node.getAttribute("data-erpw-list-field-shell-key") || "",
+            role: node.getAttribute("data-erpw-list-field-role") || "",
+            row: node.closest(".erpw-list-filter-secondary-row") ? "secondary" : "main",
+          }))
+      : [];
     return {
       hasDeck: visible(deck),
       hasMain: visible(main),
@@ -1158,6 +1176,7 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       factText: facts ? String(facts.textContent || "").replace(/\s+/g, " ").trim() : "",
       hasSummaryMetricCards: !!summaryMetrics,
       detachedMetricCount,
+      controlFields,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
@@ -1182,6 +1201,19 @@ async function assertEnterpriseListFilterLayout(page, route, label) {
       : (layout.main.top + layout.main.bottom) / 2;
     const actionCenter = (layout.actionToolbar.top + layout.actionToolbar.bottom) / 2;
     assert(Math.abs(actionCenter - fieldCenter) <= 8, `${label}: filter action buttons should align to the center of the active filter inputs`, layout);
+  }
+  const fixedFields = (layout.controlFields || []).filter((field) => field && field.role !== "search");
+  const searchFields = (layout.controlFields || []).filter((field) => field && field.role === "search");
+  if (fixedFields.length >= 2) {
+    const fixedWidths = fixedFields.map((field) => field.width);
+    const fixedWidthSpread = Math.max(...fixedWidths) - Math.min(...fixedWidths);
+    assert(fixedWidthSpread <= 12, `${label}: non-search filter controls should use one shared fixed width`, { layout, fixedFields, fixedWidthSpread });
+  }
+  if (fixedFields.length && searchFields.length) {
+    const widestFixed = Math.max(...fixedFields.map((field) => field.width));
+    searchFields.forEach((field) => {
+      assert(field.width >= widestFixed - 8, `${label}: keyword search should receive remaining width without becoming narrower than fixed filters`, { layout, field, widestFixed });
+    });
   }
   assert(layout.detachedMetricCount === 0, `${label}: detached one-card metric summaries should not render below filters`, layout);
   assert(layout.facts && layout.factCount >= 1, `${label}: header metrics should render as flat inline facts`, layout);
