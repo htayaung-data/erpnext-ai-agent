@@ -1,6 +1,7 @@
 (function () {
   let footerPatched = false;
   let sidebarPatched = false;
+  let formRenderSidebarGuardPatched = false;
   let routeChromeBound = false;
   let gridActionLabelsBound = false;
   let gridActionLabelsObserver = null;
@@ -2212,6 +2213,45 @@
 
 
 
+  function noopSidebarHost() {
+    if (window.jQuery) return window.jQuery();
+    const noop = {
+      addClass() { return noop; },
+      empty() { return noop; },
+      hide() { return noop; },
+      removeClass() { return noop; },
+    };
+    return noop;
+  }
+
+  function patchFormRenderSidebarGuard() {
+    if (
+      formRenderSidebarGuardPatched ||
+      !window.frappe ||
+      !frappe.ui ||
+      !frappe.ui.form ||
+      !frappe.ui.form.Form
+    ) {
+      return;
+    }
+
+    const proto = frappe.ui.form.Form.prototype;
+    if (!proto || typeof proto.render_form !== "function") return;
+
+    const originalRenderForm = proto.render_form;
+    proto.render_form = function () {
+      if (!this || !this.page) {
+        return undefined;
+      }
+      if (!this.page.sidebar) {
+        this.page.sidebar = noopSidebarHost();
+      }
+      return originalRenderForm.apply(this, arguments);
+    };
+
+    formRenderSidebarGuardPatched = true;
+  }
+
   const PROCUREMENT_DIRECT_PAGE_ASSETS = {
     "procurement-console": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_page.js",
     "procurement-console-po-follow-up": "/assets/erp_workspace_ui/js/procurement_console/procurement_console_po_follow_up_page.js",
@@ -2533,6 +2573,7 @@
   bindProcurementDirectRouteWatch();
   patchFooter();
   patchSidebar();
+  patchFormRenderSidebarGuard();
   patchNativeDraftLinkLookup();
   bindRouteChrome();
   scheduleProcurementDirectPage();
@@ -2544,6 +2585,9 @@
   setTimeout(patchSidebar, 0);
   setTimeout(patchSidebar, 80);
   setTimeout(patchSidebar, 220);
+  setTimeout(patchFormRenderSidebarGuard, 0);
+  setTimeout(patchFormRenderSidebarGuard, 80);
+  setTimeout(patchFormRenderSidebarGuard, 220);
   setTimeout(patchNativeDraftLinkLookup, 0);
   setTimeout(patchNativeDraftLinkLookup, 120);
   setTimeout(patchNativeDraftLinkLookup, 320);
