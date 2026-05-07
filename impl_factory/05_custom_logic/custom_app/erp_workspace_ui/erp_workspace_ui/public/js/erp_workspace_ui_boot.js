@@ -126,6 +126,30 @@
     return new RegExp(`^/(?:desk|app)/${escapeRegExp(route)}(?:/|$)`).test(String(path || ""));
   }
 
+  function isSalesWorkspaceLauncherPath(path) {
+    return isSalesWorkspacePath(path, "launcher", "sales-console-home");
+  }
+
+  function routeSalesLauncherToOverview() {
+    const path = window.location && window.location.pathname ? window.location.pathname : "";
+    if (!isSalesWorkspaceLauncherPath(path)) return false;
+    if (!window.frappe || typeof frappe.set_route !== "function") return false;
+    const targetRoute = salesWorkspaceRoute("home", "sales-console");
+    if (!targetRoute) return false;
+    const currentRoute = frappe.get_route_str ? frappe.get_route_str() : "";
+    if (currentRoute === targetRoute) return true;
+    frappe.set_route(targetRoute);
+    return true;
+  }
+
+  function scheduleSalesLauncherHandoff() {
+    routeSalesLauncherToOverview();
+    window.setTimeout(routeSalesLauncherToOverview, 0);
+    window.setTimeout(routeSalesLauncherToOverview, 80);
+    window.setTimeout(routeSalesLauncherToOverview, 240);
+    window.setTimeout(routeSalesLauncherToOverview, 700);
+  }
+
   function matchesChildExecutionPath(slug) {
     const path = window.location.pathname || "";
     return new RegExp(`^/(?:desk|app)/${slug}/[^/]+(?:/|$)`).test(path);
@@ -221,6 +245,7 @@
 	  function isManagedSalesConsoleRoute() {
 	    const path = window.location.pathname || "";
 	    return isChildExecutionRoute()
+	      || isSalesWorkspaceLauncherPath(path)
 	      || isSalesWorkspacePath(path, "home", "sales-console")
 	      || isSalesWorkspacePath(path, "worklist", "sales-console-worklist")
 	      || isSalesWorkspacePath(path, "report", "sales-console-report");
@@ -286,7 +311,8 @@
 	  function isSalesConsoleCustomChromeRoute() {
 	    if (isChildExecutionRoute()) return false;
 	    const path = window.location.pathname || "";
-	    return isSalesWorkspacePath(path, "home", "sales-console")
+	    return isSalesWorkspaceLauncherPath(path)
+	      || isSalesWorkspacePath(path, "home", "sales-console")
 	      || isSalesWorkspacePath(path, "worklist", "sales-console-worklist")
 	      || isSalesWorkspacePath(path, "report", "sales-console-report");
 	  }
@@ -2498,6 +2524,7 @@
     },
   });
 
+  scheduleSalesLauncherHandoff();
   scheduleRoleHomeRedirect();
   scheduleProcurementDirectPage();
   bindProcurementDirectRouteWatch();
@@ -2524,12 +2551,15 @@
   setTimeout(scheduleProcurementDirectPage, 700);
   setTimeout(scheduleProcurementDirectPage, 1400);
   setTimeout(scheduleProcurementDirectPage, 2600);
+  setTimeout(scheduleSalesLauncherHandoff, 80);
+  setTimeout(scheduleSalesLauncherHandoff, 400);
   setTimeout(scheduleRoleHomeRedirect, 80);
   setTimeout(scheduleRoleHomeRedirect, 400);
   setTimeout(ensureChildGridActionLabels, 0);
   setTimeout(ensureChildGridActionLabels, 140);
   setTimeout(ensureChildGridActionLabels, 360);
   if (window.frappe && frappe.router && typeof frappe.router.on === "function" && !frappe.router.erpwProcurementDirectPageRouteBound) {
+    frappe.router.on("change", scheduleSalesLauncherHandoff);
     frappe.router.on("change", scheduleProcurementDirectPage);
     frappe.router.on("change", scheduleRoleHomeRedirect);
     frappe.router.erpwProcurementDirectPageRouteBound = true;

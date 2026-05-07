@@ -195,6 +195,65 @@ async function openFirstDetailFromDirectory(page, directoryRoute, routePattern, 
   report.details[label] = { sourceText, route, url: page.url(), counts, toolbar, screenshot };
 }
 
+async function assertItemDetailPremiumLayout(page, label, report) {
+  await waitForListShell(page, "/sales-console-worklist/item-detail/");
+  const state = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+    };
+    const shell = document.querySelector(".erpw-list-shell");
+    const summary = document.querySelector(".erpw-list-summary-card");
+    const metricNodes = Array.from(document.querySelectorAll(".erpw-list-summary-card .erpw-list-summary-metric")).filter(visible);
+    const metricRects = metricNodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        label: (node.querySelector(".erpw-list-metric-label") || {}).textContent || "",
+        value: (node.querySelector(".erpw-list-metric-value") || {}).textContent || "",
+        left: Math.round(rect.left),
+        top: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    });
+    const toolbarActions = Array.from(document.querySelectorAll(".erpw-list-summary-toolbar [data-erpw-list-action-key]")).filter(visible).map((node) => ({
+      key: node.getAttribute("data-erpw-list-action-key"),
+      text: node.textContent.replace(/\s+/g, " ").trim(),
+      className: node.className,
+    }));
+    return {
+      hasDetailHeader: Boolean(summary && summary.classList.contains("is-detail-header")),
+      title: (document.querySelector(".erpw-list-title") || {}).textContent || "",
+      subtitle: (document.querySelector(".erpw-list-subtitle") || {}).textContent || "",
+      toolbarActions,
+      metricRects,
+      metricRows: Array.from(new Set(metricRects.map((rect) => rect.top))).length,
+      shellOverflow: shell ? Math.round(shell.scrollWidth - shell.clientWidth) : 0,
+      duplicateHeaders: Array.from(document.querySelectorAll(".page-head")).filter(visible).length,
+    };
+  });
+  assert(state.hasDetailHeader, `${label}: item detail header is not using the shared detail variant`, state);
+  assert(state.toolbarActions.some((action) => action.key === "back_to_items"), `${label}: Back to Items is missing from compact toolbar`, state);
+  assert(state.toolbarActions.some((action) => action.key === "refresh"), `${label}: Refresh is missing from compact toolbar`, state);
+  assert(state.metricRects.length >= 4, `${label}: item KPI cards missing`, state);
+  assert(state.metricRows === 1, `${label}: item KPI cards wrapped awkwardly at desktop width`, state);
+  assert(state.shellOverflow <= 2, `${label}: item detail has horizontal overflow`, state);
+  assert(state.duplicateHeaders <= 1, `${label}: duplicate header/chrome visible`, state);
+  const screenshot = path.join(OUT_DIR, `${safeFileKey(label)}-premium-layout.png`);
+  await page.screenshot({ path: screenshot, fullPage: true });
+  report.itemDetailPremium = report.itemDetailPremium || {};
+  report.itemDetailPremium[safeFileKey(label)] = Object.assign({ screenshot }, state);
+}
+
+async function openSpecificItemDetail(page, itemCode, report) {
+  const responsePromise = waitForWorklistApi(page).catch(() => null);
+  await page.goto(routeUrl(`/desk/sales-console-worklist/item-detail/${encodeURIComponent(itemCode)}`), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await responsePromise;
+  await assertItemDetailPremiumLayout(page, `Item Detail ${itemCode}`, report);
+}
+
 async function openCustomerEditorIfAvailable(page, report) {
   const editButton = page.locator('[data-erpw-list-action-key="edit_customer"]:visible').first();
   if ((await editButton.count()) === 0) {
@@ -212,6 +271,60 @@ async function openCustomerEditorIfAvailable(page, report) {
   const screenshot = path.join(OUT_DIR, "customer-editor.png");
   await page.screenshot({ path: screenshot, fullPage: true });
   report.customerEditor = { status: "checked", route, url: page.url(), screenshot };
+}
+
+async function openManagedSalesOrderForm(page, route, label, report) {
+  await page.goto(routeUrl(route), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  if (/\/login(?:[/?#]|$)/.test(page.url())) throw new Error(`${label}: redirected to login`);
+  await page.waitForFunction(() => {
+    const route = window.frappe && typeof window.frappe.get_route === "function" ? window.frappe.get_route() : [];
+    return Array.isArray(route) && route[0] === "Form" && route[1] === "Sales Order";
+  }, null, { timeout: TIMEOUT });
+  await page.locator(".erpw-child-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.waitForFunction(() => {
+    const shell = document.querySelector(".erpw-child-shell");
+    const skeleton = document.querySelector(".erpw-so-shell-skeleton");
+    if (!shell) return false;
+    const rect = shell.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && !skeleton;
+  }, null, { timeout: TIMEOUT });
+  const state = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+    };
+    const route = window.frappe && typeof window.frappe.get_route === "function" ? window.frappe.get_route() : [];
+    return {
+      route,
+      url: window.location.href,
+      childShellCount: Array.from(document.querySelectorAll(".erpw-child-shell")).filter(visible).length,
+      skeletonCount: Array.from(document.querySelectorAll(".erpw-so-shell-skeleton")).filter(visible).length,
+      actionRects: Array.from(document.querySelectorAll(".erpw-child-action")).filter(visible).map((node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) };
+      }),
+      shellOverflow: (() => {
+        const shell = document.querySelector(".erpw-child-shell");
+        return shell ? Math.round(shell.scrollWidth - shell.clientWidth) : 0;
+      })(),
+      title: (document.querySelector(".page-title .title-text, .title-area .title-text") || {}).textContent || "",
+    };
+  });
+  state.actionCardCount = state.actionRects.length;
+  state.actionColumns = Array.from(new Set(state.actionRects.map((rect) => rect.left))).length;
+  assert(state.childShellCount === 1, `${label}: managed Sales Order shell missing or duplicated`, state);
+  assert(state.skeletonCount === 0, `${label}: persistent Sales Order skeleton visible`, state);
+  if (state.actionCardCount >= 4) {
+    assert(state.actionColumns >= 2, `${label}: Sales Order action cards collapsed into one desktop column`, state);
+  }
+  assert(state.shellOverflow <= 2, `${label}: managed Sales Order shell has horizontal overflow`, state);
+  const counts = await assertNoDuplicateShellOrHeader(page, label);
+  const screenshot = path.join(OUT_DIR, `${safeFileKey(label)}.png`);
+  await page.screenshot({ path: screenshot, fullPage: true });
+  report.salesOrders = report.salesOrders || {};
+  report.salesOrders[safeFileKey(label)] = Object.assign({ counts, screenshot }, state);
 }
 
 async function openManagedDocumentForm(page, report) {
@@ -271,9 +384,11 @@ async function openManagedDocumentForm(page, report) {
   });
   const page = await context.newPage();
   const consoleMessages = [];
+  const pageErrors = [];
   page.on("console", (message) => {
     if (["error", "warning"].includes(message.type())) consoleMessages.push({ type: message.type(), text: message.text() });
   });
+  page.on("pageerror", (error) => pageErrors.push(error.message || String(error)));
 
   const report = {
     role: USER.label,
@@ -281,7 +396,10 @@ async function openManagedDocumentForm(page, report) {
     details: {},
     customerEditor: null,
     managedForm: null,
+    salesOrders: {},
+    itemDetailPremium: {},
     consoleMessages,
+    pageErrors,
   };
 
   try {
@@ -289,9 +407,14 @@ async function openManagedDocumentForm(page, report) {
     await openFirstDetailFromDirectory(page, "/desk/sales-console-worklist/customer-directory", "/sales-console-worklist/customer-detail/", "Customer", report);
     await openCustomerEditorIfAvailable(page, report);
     await openFirstDetailFromDirectory(page, "/desk/sales-console-worklist/item-directory", "/sales-console-worklist/item-detail/", "Item", report);
+    await assertItemDetailPremiumLayout(page, "Item Detail", report);
+    await openSpecificItemDetail(page, "CCTV-NVR-4CH", report);
     await openManagedDocumentForm(page, report);
+    await openManagedSalesOrderForm(page, "/desk/sales-order/SAL-ORD-2026-00037", "Existing Sales Order", report);
+    await openManagedSalesOrderForm(page, "/desk/sales-order/new-sales-order", "New Sales Order", report);
     const hardErrors = consoleMessages.filter((message) => message.type === "error");
     assert(hardErrors.length === 0, "Console errors detected during Sales detail/form boundary smoke", { hardErrors });
+    assert(pageErrors.length === 0, "Page errors detected during Sales detail/form boundary smoke", { pageErrors });
     report.status = "passed";
     console.log("[pass] Sales detail and managed form boundary");
   } catch (error) {

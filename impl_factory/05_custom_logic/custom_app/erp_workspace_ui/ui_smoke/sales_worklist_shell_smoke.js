@@ -173,6 +173,34 @@ async function setFilters(page, values) {
   }
 }
 
+async function assertActionAlignment(page, item, report) {
+  const layout = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+    };
+    const actionGroup = Array.from(document.querySelectorAll(".erpw-list-command-action-cell .erpw-list-toolbar-actions, .erpw-list-action-field .erpw-list-toolbar-actions"))
+      .find(visible);
+    const targetInput = document.querySelector('[data-erpw-list-field-key="date_start"]')
+      || Array.from(document.querySelectorAll("[data-erpw-list-field-key]")).find((node) => visible(node) && node.getAttribute("data-erpw-list-field-type") !== "hidden");
+    if (!actionGroup || !targetInput) return null;
+    const actionRect = actionGroup.getBoundingClientRect();
+    const inputRect = targetInput.getBoundingClientRect();
+    const actionCenter = actionRect.top + actionRect.height / 2;
+    const inputCenter = inputRect.top + inputRect.height / 2;
+    return {
+      action: { top: actionRect.top, height: actionRect.height, center: actionCenter },
+      target: { key: targetInput.getAttribute("data-erpw-list-field-key"), top: inputRect.top, height: inputRect.height, center: inputCenter },
+      centerDelta: Math.abs(actionCenter - inputCenter),
+    };
+  });
+  assert(layout, `${item.key}: action toolbar or target filter field missing for alignment check`);
+  assert(layout.centerDelta <= 12, `${item.key}: action toolbar is not vertically aligned with filter row`, layout);
+  report.actionAlignment[item.key] = layout;
+}
+
 async function assertDatePairLayout(page, item, report) {
   const layout = await page.evaluate(() => {
     const startInput = document.querySelector('[data-erpw-list-field-key="date_start"]');
@@ -216,9 +244,8 @@ async function firstInlineOpenText(page) {
 async function assertLinkAutocomplete(page, item, report) {
   const input = page.locator(`[data-erpw-list-link-doctype="${item.linkDoctype}"]:visible`).first();
   await input.waitFor({ state: "visible", timeout: TIMEOUT });
-  const seedText = await firstInlineOpenText(page);
-  const seed = normalizeText(seedText).split(/\s+/).find(Boolean) || (item.linkDoctype === "Customer" ? "a" : "item");
-  await input.fill(seed.slice(0, Math.max(1, Math.min(seed.length, 8))));
+  const seed = item.linkDoctype === "Customer" ? "Aung" : "USB";
+  await input.fill(seed);
   await page.waitForFunction((doctype) => {
     const inputNode = document.querySelector(`[data-erpw-list-link-doctype="${doctype}"]`);
     const field = inputNode && inputNode.closest(".erpw-list-control-field");
@@ -269,6 +296,7 @@ async function exerciseApplyResetRefresh(page, item, report) {
 async function runWorklist(page, item, report) {
   await openWorklist(page, item);
   await assertFocusStability(page, item, report);
+  await assertActionAlignment(page, item, report);
   if (item.datePair) await assertDatePairLayout(page, item, report);
   if (item.linkDoctype) await assertLinkAutocomplete(page, item, report);
   await exerciseApplyResetRefresh(page, item, report);
@@ -301,6 +329,7 @@ async function runWorklist(page, item, report) {
     username: USER.username,
     actions: {},
     autocomplete: {},
+    actionAlignment: {},
     datePairLayouts: {},
     focusStability: {},
     screenshots: [],

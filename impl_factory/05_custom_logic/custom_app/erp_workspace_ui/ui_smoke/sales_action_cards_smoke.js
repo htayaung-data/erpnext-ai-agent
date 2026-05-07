@@ -131,6 +131,35 @@ async function assertShellCounts(page, label) {
   return counts;
 }
 
+async function assertInquiryAutocomplete(page, report) {
+  await openOverview(page);
+  const shellBefore = await page.locator(".sales-console-shell").first().boundingBox();
+  const input = page.locator("[data-inquiry-input]:visible").first();
+  await input.waitFor({ state: "visible", timeout: TIMEOUT });
+  await input.fill("Aung");
+  await page.waitForFunction(() => {
+    const panel = document.querySelector("[data-inquiry-suggestions]");
+    return panel && panel.hidden === false && panel.querySelectorAll(".sales-console-inquiry-suggestion").length > 0;
+  }, null, { timeout: TIMEOUT });
+  await page.waitForTimeout(180);
+  const shellAfter = await page.locator(".sales-console-shell").first().boundingBox();
+  const state = await page.evaluate(() => {
+    const panel = document.querySelector("[data-inquiry-suggestions]");
+    return {
+      optionCount: panel ? panel.querySelectorAll(".sales-console-inquiry-suggestion").length : 0,
+      text: panel ? panel.textContent.replace(/\s+/g, " ").trim() : "",
+      hidden: panel ? panel.hidden : true,
+    };
+  });
+  const widthDelta = shellBefore && shellAfter ? Math.abs(shellAfter.width - shellBefore.width) : 0;
+  assert(state.optionCount > 0, "Sales overview inquiry autocomplete returned no suggestions", state);
+  assert(widthDelta <= 6, "Sales overview shell width changed on inquiry focus", { shellBefore, shellAfter, widthDelta, state });
+  const screenshot = path.join(OUT_DIR, "overview-inquiry-autocomplete.png");
+  await page.screenshot({ path: screenshot, fullPage: true });
+  report.inquiryAutocomplete = Object.assign({ screenshot, widthDelta }, state);
+  await page.keyboard.press("Escape").catch(() => {});
+}
+
 async function checkAction(page, action, report) {
   const contract = ACTION_CONTRACT[action.key];
   assert(contract, `Visible Sales overview action is not classified: ${action.key}`, { action });
@@ -192,6 +221,7 @@ async function checkAction(page, action, report) {
     actions: [],
     unknownActions: [],
     noOpActions: [],
+    inquiryAutocomplete: null,
     consoleMessages,
   };
 
@@ -205,6 +235,7 @@ async function checkAction(page, action, report) {
     assert(report.unknownActions.length === 0, "Visible Sales overview actions are not manifest-classified", {
       unknownActions: report.unknownActions,
     });
+    await assertInquiryAutocomplete(page, report);
 
     for (const action of actions) {
       const beforeUrl = page.url();

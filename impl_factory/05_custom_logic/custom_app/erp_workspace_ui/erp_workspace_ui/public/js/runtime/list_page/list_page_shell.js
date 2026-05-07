@@ -189,6 +189,48 @@
       .erpw-list-summary-card:has(+ .erpw-list-controls-strip.is-form-panel) .erpw-list-title {
         line-height: 1.25;
       }
+      .erpw-list-summary-card.is-detail-header {
+        padding: 1rem 1.05rem;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: start;
+        gap: 0.8rem 1rem;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-toolbar {
+        display: flex;
+        justify-content: flex-end;
+        align-items: flex-start;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-toolbar .erpw-list-navigation-actions {
+        margin-left: 0;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-detail-row {
+        display: grid;
+        gap: 0.68rem;
+        margin-top: 0.82rem;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+        justify-content: stretch;
+        width: 100%;
+        max-width: none;
+        gap: 0.52rem;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-metrics[data-erpw-list-metric-count="5"] {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-metric {
+        min-width: 0;
+        max-width: none;
+        min-height: 66px;
+      }
+      .erpw-list-summary-card.is-detail-header .erpw-list-summary-metric .erpw-list-metric-value {
+        white-space: nowrap;
+        font-size: 1rem;
+      }
       .erpw-list-filter-row {
         display: grid;
         gap: 10px;
@@ -215,9 +257,10 @@
       .erpw-list-filter-deck.has-actions {
         grid-template-columns: minmax(0, 1fr) max-content;
         grid-template-areas:
-          "main actions"
+          "main main"
           "secondary actions";
         column-gap: 12px;
+        row-gap: 10px;
         align-items: stretch;
       }
       .erpw-list-filter-deck.has-actions:not(.has-date-window) {
@@ -263,11 +306,11 @@
       .erpw-list-command-action-cell {
         grid-area: actions;
         display: inline-flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: flex-end;
-        align-self: center;
-        min-height: var(--erpw-list-control-height);
-        padding-top: 0;
+        align-self: stretch;
+        min-height: var(--erpw-list-action-rail-height);
+        padding-top: var(--erpw-list-control-label-offset);
         box-sizing: border-box;
       }
       .erpw-list-summary-side {
@@ -647,6 +690,16 @@
         .erpw-list-navigation-actions {
           justify-content: flex-start;
         }
+        .erpw-list-summary-card.is-detail-header .erpw-list-summary-head {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-list-summary-card.is-detail-header .erpw-list-summary-toolbar {
+          justify-content: flex-start;
+        }
+        .erpw-list-summary-card.is-detail-header .erpw-list-summary-metrics,
+        .erpw-list-summary-card.is-detail-header .erpw-list-summary-metrics[data-erpw-list-metric-count="5"] {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
       @media (max-width: 980px) {
         .erpw-list-command-grid.erpw-list-filter-deck.has-actions {
@@ -973,13 +1026,34 @@
     if (!summary || !summary.title) return "";
     const chips = normalizeItems(summary.chips);
     const compactFacts = isProcurementWorklist(pageConfig);
+    const layout = String(summary.layout || (pageConfig && pageConfig.summaryLayout) || "").trim();
+    const isDetailHeader = layout === "detail_header";
     const metricMarkup = compactFacts ? renderSummaryFacts(metrics, chips) : renderSummaryMetrics(metrics);
-    const navigationActions = normalizeItems(controls && controls.actions)
-      .filter((action) => action && action.key !== 'open_native')
-      .filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
+    const actions = normalizeItems(controls && controls.actions).filter((action) => action && action.key !== 'open_native');
+    const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
+    const toolbarActions = controls && controls.summaryToolbar ? actions : navigationActions;
+    const chipMarkup = !compactFacts && chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '';
+
+    if (isDetailHeader) {
+      const toolbarMarkup = toolbarActions.length ? '<div class="erpw-list-summary-toolbar"><div class="erpw-list-navigation-actions">' + toolbarActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div></div>' : '';
+      const detailMarkup = [metricMarkup, chipMarkup].filter(Boolean).join('');
+      return [
+        '<section class="erpw-child-card erpw-list-summary-card is-detail-header">',
+          '<div class="erpw-list-summary-head">',
+            '<div class="erpw-list-summary-copy">',
+              summary.title ? '<h2 class="erpw-list-title">' + escapeHtml(summary.title) + '</h2>' : '',
+              summary.subtitle ? '<div class="erpw-list-subtitle">' + escapeHtml(summary.subtitle) + '</div>' : '',
+            '</div>',
+            toolbarMarkup,
+          '</div>',
+          detailMarkup ? '<div class="erpw-list-summary-detail-row">' + detailMarkup + '</div>' : '',
+        '</section>'
+      ].join('');
+    }
+
     const sideMarkup = [
       metricMarkup,
-      !compactFacts && chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '',
+      chipMarkup,
       navigationActions.length ? '<div class="erpw-list-navigation-actions">' + navigationActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div>' : '',
     ].filter(Boolean).join('');
 
@@ -1172,7 +1246,8 @@
 
 	    const actions = normalizeItems(controls.actions).filter((action) => action.key !== 'open_native');
 	    const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
-	    const operatingActions = sortOperatingActions(actions.filter((action) => !navigationActions.includes(action)));
+	    const summaryToolbar = Boolean(controls.summaryToolbar);
+	    const operatingActions = summaryToolbar ? [] : sortOperatingActions(actions.filter((action) => !navigationActions.includes(action)));
 	    const fields = normalizeItems(controls.fields);
 	    const isFormPanel = controls.layout === 'form_panel';
 	    const visibleFields = fields.filter((field) => field && field.type !== 'hidden');

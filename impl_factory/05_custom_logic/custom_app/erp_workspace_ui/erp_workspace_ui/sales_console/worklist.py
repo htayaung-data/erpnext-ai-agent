@@ -1621,6 +1621,7 @@ def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[
 	return {
 		"page": {"title": item_label},
 		"summary": {
+			"layout": "detail_header",
 			"kicker": "Item Detail",
 			"title": item_label,
 			"subtitle": header_meta or "Sales item stock posture",
@@ -1631,6 +1632,7 @@ def _build_item_detail_worklist(scope: dict[str, object], applied_filters: dict[
 			],
 		},
 		"controls": {
+			"summaryToolbar": True,
 			"scopeChips": _scope_chips(scope),
 			"actions": [{"key": "back_to_items", "label": "Back to Items", "category": "navigation"}],
 		},
@@ -1673,12 +1675,14 @@ def _item_detail_state_payload(*, title: str, detail: str, scope: dict[str, obje
 	return {
 		"page": {"title": "Item Detail"},
 		"summary": {
+			"layout": "detail_header",
 			"kicker": "Item Detail",
 			"title": title,
 			"subtitle": detail,
 			"facts": _summary_facts(0, scope, "Item detail requires a visible sales item."),
 		},
 		"controls": {
+			"summaryToolbar": True,
 			"scopeChips": _scope_chips(scope),
 			"actions": [{"key": "back_to_items", "label": "Back to Items", "category": "navigation"}],
 		},

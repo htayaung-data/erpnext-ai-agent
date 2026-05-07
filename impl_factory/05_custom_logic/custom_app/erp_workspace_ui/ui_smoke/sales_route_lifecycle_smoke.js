@@ -207,6 +207,38 @@ async function openRoute(page, route, kind, label, report) {
   return assertNoStack(page, kind, label, report);
 }
 
+async function captureHomeLanding(page, report) {
+  await page.goto(routeUrl("/desk/sales-console-home"), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  if (/\/login(?:[/?#]|$)/.test(page.url())) throw new Error("Sales home first landing: redirected to login");
+
+  const captures = [];
+  let elapsed = 0;
+  for (const point of [
+    { label: "0.3s", wait: 300 },
+    { label: "1.7s", wait: 1400 },
+    { label: "5.7s", wait: 4000 },
+  ]) {
+    await page.waitForTimeout(point.wait);
+    elapsed += point.wait;
+    const snap = await snapshot(page);
+    const screenshot = path.join(OUT_DIR, `sales-home-first-landing-${point.label.replace(/[^0-9a-z]+/gi, "-")}.png`);
+    await page.screenshot({ path: screenshot, fullPage: true });
+    captures.push({ label: point.label, elapsedMs: elapsed, snapshot: snap, screenshot });
+    report.screenshots.push(screenshot);
+  }
+
+  const final = captures[captures.length - 1].snapshot;
+  const bodyText = normalizeText(await page.locator("body").innerText({ timeout: 5000 }).catch(() => ""));
+  assert(final.counts.overviewShell === 1, "Sales home first landing: overview shell not visible at 5.7s", { final, bodyText });
+  assert(final.counts.listShell === 0 && final.counts.reportShell === 0, "Sales home first landing: stale non-overview shell visible", final);
+  assert(/Sales Console/i.test(bodyText), "Sales home first landing: overview content missing", { final, bodyText });
+
+  await waitForKind(page, "overview");
+  const stackSnapshot = await assertNoStack(page, "overview", "Sales home first landing", report);
+  report.homeLanding = { captures, stackSnapshot };
+  return stackSnapshot;
+}
+
 async function clickSidebar(page, label, kind, expectedPath, report) {
   const link = page.locator(".erpw-sales-console-sidebar-link").filter({ hasText: label }).first();
   await link.waitFor({ state: "visible", timeout: TIMEOUT });
@@ -240,6 +272,7 @@ async function main() {
 
   try {
     await login(page);
+    await captureHomeLanding(page, report);
     const customer = await getCustomerSeed(page);
     const customerRoute = `/desk/sales-console-worklist/customer-detail/${encodeURIComponent(customer)}`;
 

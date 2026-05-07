@@ -19,6 +19,7 @@ const REPORTS = [
   { key: "sales_analytics", title: "Sales Analytics", route: "/desk/sales-console-report/sales-analytics" },
   { key: "sales_order_analysis", title: "Sales Order Analysis", route: "/desk/sales-console-report/sales-order-analysis", changeDates: true },
   { key: "trend_analysis", title: "Trend Analysis", route: "/desk/sales-console-report/trend-analysis" },
+  { key: "lost_quotations", title: "Lost Quotations", route: "/desk/sales-console-report/lost-quotations" },
   { key: "collections_status", title: "Collections Status", route: "/desk/sales-console-report/collections-status" },
   { key: "item_wise_sales_history", title: "Item-wise Sales History", route: "/desk/sales-console-report/item-wise-sales-history" },
 ];
