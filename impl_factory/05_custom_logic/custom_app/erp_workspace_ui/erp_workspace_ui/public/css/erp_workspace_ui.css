@@ -7680,6 +7680,28 @@ html {
   min-width: 0 !important;
 }
 
+.erpw-list-shell .erpw-list-summary-card.is-detail-header .erpw-list-summary-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  justify-content: stretch !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.erpw-list-shell .erpw-list-summary-card.is-detail-header .erpw-list-summary-metric {
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
+.erpw-list-shell .erpw-list-summary-card.is-detail-header .erpw-list-summary-metric .erpw-list-metric-value {
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .erpw-list-shell .erpw-list-summary-card.is-detail-header .erpw-list-summary-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+  }
+}
+
 @media (max-width: 720px) {
   .erpw-list-shell .erpw-list-metrics,
   .erpw-report-shell .erpw-report-metrics {
