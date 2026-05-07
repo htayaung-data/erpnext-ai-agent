@@ -136,7 +136,7 @@
     if (!window.frappe || typeof frappe.set_route !== "function") return false;
     const targetRoute = salesWorkspaceRoute("home", "sales-console");
     if (!targetRoute) return false;
-    const currentRoute = frappe.get_route_str ? frappe.get_route_str() : "";
+    const currentRoute = safeCurrentRouteString();
     if (currentRoute === targetRoute) return true;
     frappe.set_route(targetRoute);
     return true;
