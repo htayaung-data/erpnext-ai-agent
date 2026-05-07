@@ -170,6 +170,14 @@ class ReasoningActivationInterpretation(BaseModel):
 	reasoning_type: str = ""
 	detail_level: str = ""
 	presentation_style: str = ""
+	response_mode: str = ""
+	evidence_policy: str = ""
+	answer_obligation: str = ""
+	answer_goal: str = ""
+	evidence_depth: str = ""
+	business_role: str = ""
+	target_reference: str = ""
+	risk_level: str = ""
 	confidence: float = 0.0
 	reason: str = ""
 

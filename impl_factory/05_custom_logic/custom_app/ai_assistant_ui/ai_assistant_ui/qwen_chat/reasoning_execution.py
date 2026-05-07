@@ -15,6 +15,9 @@ from ai_assistant_ui.qwen_chat.business_language_guards import (
 from ai_assistant_ui.qwen_chat.contracts import (
 	build_erp_business_reasoning_contract,
 )
+from ai_assistant_ui.qwen_chat.consultant_drilldown_playbook_registry import (
+	build_consultant_drilldown_playbook_plan,
+)
 from ai_assistant_ui.qwen_chat.evidence_expansion_support import (
 	build_evidence_expansion_plan,
 	evidence_expansion_user_guidance,
@@ -315,6 +318,11 @@ def _build_reasoning_context(
 		or "current_result_only",
 		"answer_obligation": str(intent.get("answer_obligation") or "explain_grounded_meaning").strip()
 		or "explain_grounded_meaning",
+		"answer_goal": str(intent.get("answer_goal") or "explain").strip() or "explain",
+		"evidence_depth": str(intent.get("evidence_depth") or "current_result_only").strip() or "current_result_only",
+		"business_role": str(intent.get("business_role") or "business_consultant").strip() or "business_consultant",
+		"target_reference": str(intent.get("target_reference") or "current_result").strip() or "current_result",
+		"risk_level": str(intent.get("risk_level") or "factual_only").strip() or "factual_only",
 		"bounded_domain": "erp_business_reasoning",
 		"recommendation_allowed": bool(activation_contract.get("recommendation_allowed")),
 		"recommendation_policy_basis": [
@@ -1834,51 +1842,34 @@ def _current_result_has_ranked_parties(context: Dict[str, Any]) -> bool:
 
 
 def _contextual_next_step_action(context: Dict[str, Any]) -> Dict[str, Any]:
-	capability_ids = _grounded_capability_ids(context)
 	report_count = _grounded_source_report_count(context)
 	source = context.get("grounded_source") if isinstance(context.get("grounded_source"), dict) else {}
 	family_id = str(source.get("family_id") or "").strip()
 	composite_grounding = bool(source.get("composite_grounding")) or report_count >= 2
 	sections = context.get("artifact_sections") if isinstance(context.get("artifact_sections"), dict) else {}
 	summary_metrics = _artifact_summary_metric_map(sections)
+	capability_id = str(source.get("capability_id") or "").strip()
+	features: List[str] = []
 	if (
 		_metric_entry(summary_metrics, "accounts_receivable_outstanding")
 		and _metric_entry(summary_metrics, "accounts_payable_outstanding")
-		and (
-			composite_grounding
-			or family_id == "working_capital"
-			or capability_ids.intersection({"working_capital_health_read", "ar_ap_analysis_read"})
-		)
 	):
-		return {
-			"action_id": "compare_ar_ap_pressure_side_by_side",
-			"user_prompt": (
-				"Would you like me to compare the customer collection pressure and supplier payment pressure "
-				"side by side next, using the same AR/AP evidence?"
-			),
-			"source_family_id": family_id,
-			"source_report_count": report_count,
-			"execution_mode": "current_governed_artifact",
-		}
+		features.append("working_capital_summary")
 	if _current_result_has_ranked_parties(context):
-		if str(source.get("capability_id") or "").strip() == "accounts_receivable_read":
-			entity_scope = "customers"
-			prompt = "Would you like me to compare the listed customers by overdue amount and overdue intensity next?"
-		if str(source.get("capability_id") or "").strip() == "accounts_payable_read":
-			entity_scope = "suppliers"
-			prompt = "Would you like me to compare the listed suppliers by overdue amount and overdue intensity next?"
-		if str(source.get("capability_id") or "").strip() not in {"accounts_receivable_read", "accounts_payable_read"}:
-			entity_scope = "parties"
-			prompt = "Would you like me to compare the listed parties by overdue amount and overdue intensity next?"
-		return {
-			"action_id": "compare_listed_parties_by_overdue_and_intensity",
-			"user_prompt": prompt,
-			"entity_scope": entity_scope,
-			"source_family_id": family_id,
+		features.append("ranked_parties")
+	if not features:
+		return {}
+	playbook_plan = build_consultant_drilldown_playbook_plan(
+		source_signature={
+			"family_id": family_id,
+			"capability_id": capability_id,
 			"source_report_count": report_count,
-			"execution_mode": "current_governed_artifact",
-			"comparison_metrics": ["overdue_amount", "overdue_intensity"],
-		}
+			"composite_grounding": composite_grounding,
+		},
+		evidence_features={"features": features},
+	)
+	if bool(playbook_plan.get("can_execute")) and isinstance(playbook_plan.get("next_action"), dict):
+		return dict(playbook_plan.get("next_action") or {})
 	return {}
 
 

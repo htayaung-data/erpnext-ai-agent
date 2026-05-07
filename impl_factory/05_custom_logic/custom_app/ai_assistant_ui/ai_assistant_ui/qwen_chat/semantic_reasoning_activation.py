@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
+from ai_assistant_ui.qwen_chat.consultant_role_registry import consultant_business_role_for_context
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_reasoning_activation_interpretation,
@@ -14,11 +15,90 @@ except Exception:  # pragma: no cover
 	frappe = None
 
 
+_ALLOWED_CONSULTANT_RESPONSE_MODES = {
+	"factual_grounded_answer",
+	"consultant_interpretation",
+	"consultant_detail",
+	"consultant_recommendation",
+	"boundary_guidance",
+}
+
+_ALLOWED_EVIDENCE_POLICIES = {
+	"current_result_only",
+	"evidence_expansion_preferred",
+	"evidence_expansion_required",
+	"policy_required",
+}
+
+_ALLOWED_ANSWER_OBLIGATIONS = {
+	"explain_grounded_meaning",
+	"explain_grounded_basis",
+	"expand_grounded_detail",
+	"advise_with_approved_policy",
+	"state_boundary_and_next_step",
+}
+
+_ALLOWED_ANSWER_GOALS = {
+	"explain",
+	"expand_detail",
+	"compare",
+	"recommend",
+	"diagnose",
+	"define",
+	"calculate",
+	"clarify_boundary",
+}
+
+_ALLOWED_EVIDENCE_DEPTHS = {
+	"current_result_only",
+	"drilldown_preferred",
+	"drilldown_required",
+	"policy_required",
+}
+
+_ALLOWED_BUSINESS_ROLES = {
+	"business_consultant",
+	"controller",
+	"collector",
+	"buyer",
+	"sales_manager",
+	"inventory_manager",
+	"analyst",
+}
+
+_ALLOWED_TARGET_REFERENCES = {
+	"current_result",
+	"current_metric",
+	"current_row",
+	"entity",
+	"document",
+	"line_item",
+	"offered_next_action",
+	"family_summary",
+	"unknown",
+}
+
+_ALLOWED_RISK_LEVELS = {
+	"factual_only",
+	"bounded_consultation",
+	"policy_required",
+	"unsupported",
+}
+
+
 @dataclass(frozen=True)
 class SemanticReasoningActivationIntent:
 	reasoning_type: str
 	detail_level: str = "default"
 	presentation_style: str = "default"
+	response_mode: str = "factual_grounded_answer"
+	evidence_policy: str = "current_result_only"
+	answer_obligation: str = "explain_grounded_meaning"
+	answer_goal: str = "explain"
+	evidence_depth: str = "current_result_only"
+	business_role: str = "business_consultant"
+	target_reference: str = "current_result"
+	risk_level: str = "factual_only"
 	confidence: float = 0.0
 	reason: str = ""
 
@@ -39,6 +119,14 @@ class SemanticReasoningActivationResult:
 				"reasoning_type": self.intent.reasoning_type,
 				"detail_level": self.intent.detail_level,
 				"presentation_style": self.intent.presentation_style,
+				"response_mode": self.intent.response_mode,
+				"evidence_policy": self.intent.evidence_policy,
+				"answer_obligation": self.intent.answer_obligation,
+				"answer_goal": self.intent.answer_goal,
+				"evidence_depth": self.intent.evidence_depth,
+				"business_role": self.intent.business_role,
+				"target_reference": self.intent.target_reference,
+				"risk_level": self.intent.risk_level,
 				"confidence": self.intent.confidence,
 				"reason": self.intent.reason,
 			}
@@ -71,6 +159,11 @@ def _build_activation_context(
 	prior_reasoning_contract: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	prior_contract = dict(prior_reasoning_contract or {})
+	prior_offered_next_actions = [
+		dict(item)
+		for item in (prior_contract.get("offered_next_actions") or [])
+		if isinstance(item, dict)
+	]
 	source_reports = [
 		str(value or "").strip()
 		for value in (activation_contract.get("grounded_source_reports") or [])
@@ -107,6 +200,8 @@ def _build_activation_context(
 		],
 		"prior_reasoning_available": bool(prior_contract),
 		"prior_reasoning_type": str(prior_contract.get("reasoning_type") or "").strip(),
+		"prior_offered_next_action_count": int(len(prior_offered_next_actions)),
+		"prior_offered_next_actions": prior_offered_next_actions,
 		"activation_state": str(activation_contract.get("activation_state") or "").strip(),
 		"route_target": str(activation_contract.get("route_target") or "").strip(),
 	}
@@ -127,6 +222,139 @@ def _normalize_presentation_style(
 	}:
 		return "bullet"
 	return "default"
+
+
+def _default_business_role(context: Dict[str, Any]) -> str:
+	return consultant_business_role_for_context(
+		family_id=str(context.get("grounded_family_id") or "").strip(),
+		capability_id=str(context.get("grounded_capability_id") or "").strip(),
+		semantic_tags=[
+			str(value or "").strip()
+			for value in (context.get("grounded_semantic_tags") or [])
+			if str(value or "").strip()
+		],
+	)
+
+
+def _evidence_depth_from_policy(evidence_policy: str) -> str:
+	policy = str(evidence_policy or "").strip()
+	if policy == "evidence_expansion_required":
+		return "drilldown_required"
+	if policy == "evidence_expansion_preferred":
+		return "drilldown_preferred"
+	if policy == "policy_required":
+		return "policy_required"
+	return "current_result_only"
+
+
+def _default_semantic_detail_intent_fields(
+	*,
+	reasoning_type: str,
+	detail_level: str,
+	response_mode: str,
+	evidence_policy: str,
+	answer_obligation: str,
+	context: Dict[str, Any],
+) -> Dict[str, str]:
+	reasoning = str(reasoning_type or "").strip()
+	obligation = str(answer_obligation or "").strip()
+	mode = str(response_mode or "").strip()
+	if obligation == "state_boundary_and_next_step":
+		answer_goal = "clarify_boundary"
+	elif reasoning == "recommendation" or obligation == "advise_with_approved_policy":
+		answer_goal = "recommend"
+	elif reasoning == "continuation_detail" or obligation == "expand_grounded_detail":
+		answer_goal = "expand_detail"
+	elif reasoning == "explanation" or obligation == "explain_grounded_basis":
+		answer_goal = "explain"
+	else:
+		answer_goal = "explain"
+	if mode == "boundary_guidance" or evidence_policy == "policy_required":
+		risk_level = "policy_required"
+	elif mode in {"consultant_interpretation", "consultant_detail", "consultant_recommendation"}:
+		risk_level = "bounded_consultation"
+	else:
+		risk_level = "factual_only"
+	target_reference = "offered_next_action" if int(context.get("prior_offered_next_action_count") or 0) > 0 else "current_result"
+	return {
+		"answer_goal": answer_goal,
+		"evidence_depth": _evidence_depth_from_policy(evidence_policy),
+		"business_role": _default_business_role(context),
+		"target_reference": target_reference,
+		"risk_level": risk_level,
+	}
+
+
+def _default_consultant_contract_fields(
+	*,
+	reasoning_type: str,
+	detail_level: str,
+	context: Dict[str, Any],
+) -> Dict[str, str]:
+	reasoning = str(reasoning_type or "").strip()
+	level = str(detail_level or "default").strip().lower() or "default"
+	if reasoning == "recommendation":
+		if not bool(context.get("recommendation_allowed")):
+			return {
+				"response_mode": "boundary_guidance",
+				"evidence_policy": "policy_required",
+				"answer_obligation": "state_boundary_and_next_step",
+			}
+		return {
+			"response_mode": "consultant_recommendation",
+			"evidence_policy": "evidence_expansion_preferred",
+			"answer_obligation": "advise_with_approved_policy",
+		}
+	if reasoning == "continuation_detail":
+		return {
+			"response_mode": "consultant_detail",
+			"evidence_policy": "evidence_expansion_required" if level == "comprehensive" else "evidence_expansion_preferred",
+			"answer_obligation": "expand_grounded_detail",
+		}
+	if reasoning == "explanation":
+		return {
+			"response_mode": "consultant_interpretation",
+			"evidence_policy": "current_result_only",
+			"answer_obligation": "explain_grounded_basis",
+		}
+	return {
+		"response_mode": "consultant_interpretation",
+		"evidence_policy": "current_result_only",
+		"answer_obligation": "explain_grounded_meaning",
+	}
+
+
+def _normalize_consultant_contract_field(
+	*,
+	payload: Dict[str, Any],
+	context: Dict[str, Any],
+	reasoning_type: str,
+	detail_level: str,
+	field_name: str,
+	allowed_values: set[str],
+) -> str:
+	defaults = _default_consultant_contract_fields(
+		reasoning_type=reasoning_type,
+		detail_level=detail_level,
+		context=context,
+	)
+	value = str(payload.get(field_name) or "").strip()
+	if value in allowed_values:
+		return value
+	return defaults[field_name]
+
+
+def _normalize_semantic_detail_intent_field(
+	*,
+	payload: Dict[str, Any],
+	defaults: Dict[str, str],
+	field_name: str,
+	allowed_values: set[str],
+) -> str:
+	value = str(payload.get(field_name) or "").strip()
+	if value in allowed_values:
+		return value
+	return str(defaults.get(field_name) or "").strip()
 
 
 def _validate_semantic_payload(
@@ -155,6 +383,68 @@ def _validate_semantic_payload(
 		detail_level=detail_level,
 		presentation_style=presentation_style,
 	)
+	response_mode = _normalize_consultant_contract_field(
+		payload=payload,
+		context=context,
+		reasoning_type=reasoning_type,
+		detail_level=detail_level,
+		field_name="response_mode",
+		allowed_values=_ALLOWED_CONSULTANT_RESPONSE_MODES,
+	)
+	evidence_policy = _normalize_consultant_contract_field(
+		payload=payload,
+		context=context,
+		reasoning_type=reasoning_type,
+		detail_level=detail_level,
+		field_name="evidence_policy",
+		allowed_values=_ALLOWED_EVIDENCE_POLICIES,
+	)
+	answer_obligation = _normalize_consultant_contract_field(
+		payload=payload,
+		context=context,
+		reasoning_type=reasoning_type,
+		detail_level=detail_level,
+		field_name="answer_obligation",
+		allowed_values=_ALLOWED_ANSWER_OBLIGATIONS,
+	)
+	detail_intent_defaults = _default_semantic_detail_intent_fields(
+		reasoning_type=reasoning_type,
+		detail_level=detail_level,
+		response_mode=response_mode,
+		evidence_policy=evidence_policy,
+		answer_obligation=answer_obligation,
+		context=context,
+	)
+	answer_goal = _normalize_semantic_detail_intent_field(
+		payload=payload,
+		defaults=detail_intent_defaults,
+		field_name="answer_goal",
+		allowed_values=_ALLOWED_ANSWER_GOALS,
+	)
+	evidence_depth = _normalize_semantic_detail_intent_field(
+		payload=payload,
+		defaults=detail_intent_defaults,
+		field_name="evidence_depth",
+		allowed_values=_ALLOWED_EVIDENCE_DEPTHS,
+	)
+	business_role = _normalize_semantic_detail_intent_field(
+		payload=payload,
+		defaults=detail_intent_defaults,
+		field_name="business_role",
+		allowed_values=_ALLOWED_BUSINESS_ROLES,
+	)
+	target_reference = _normalize_semantic_detail_intent_field(
+		payload=payload,
+		defaults=detail_intent_defaults,
+		field_name="target_reference",
+		allowed_values=_ALLOWED_TARGET_REFERENCES,
+	)
+	risk_level = _normalize_semantic_detail_intent_field(
+		payload=payload,
+		defaults=detail_intent_defaults,
+		field_name="risk_level",
+		allowed_values=_ALLOWED_RISK_LEVELS,
+	)
 	try:
 		confidence = float(payload.get("confidence") or 0.0)
 	except Exception:
@@ -164,6 +454,14 @@ def _validate_semantic_payload(
 		reasoning_type=reasoning_type,
 		detail_level=detail_level,
 		presentation_style=presentation_style,
+		response_mode=response_mode,
+		evidence_policy=evidence_policy,
+		answer_obligation=answer_obligation,
+		answer_goal=answer_goal,
+		evidence_depth=evidence_depth,
+		business_role=business_role,
+		target_reference=target_reference,
+		risk_level=risk_level,
 		confidence=confidence,
 		reason=str(payload.get("reason") or "").strip(),
 	)
@@ -324,6 +622,22 @@ def run_phase6b_reasoning_activation_smoke() -> Dict[str, Any]:
 		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid detail level.")
 	if str(eligible.intent.presentation_style or "").strip() not in {"default", "bullet", "table"}:
 		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid presentation style.")
+	if str(eligible.intent.response_mode or "").strip() not in _ALLOWED_CONSULTANT_RESPONSE_MODES:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid consultant response mode.")
+	if str(eligible.intent.evidence_policy or "").strip() not in _ALLOWED_EVIDENCE_POLICIES:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid evidence policy.")
+	if str(eligible.intent.answer_obligation or "").strip() not in _ALLOWED_ANSWER_OBLIGATIONS:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid answer obligation.")
+	if str(eligible.intent.answer_goal or "").strip() not in _ALLOWED_ANSWER_GOALS:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid answer goal.")
+	if str(eligible.intent.evidence_depth or "").strip() not in _ALLOWED_EVIDENCE_DEPTHS:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid evidence depth.")
+	if str(eligible.intent.business_role or "").strip() not in _ALLOWED_BUSINESS_ROLES:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid business role.")
+	if str(eligible.intent.target_reference or "").strip() not in _ALLOWED_TARGET_REFERENCES:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid target reference.")
+	if str(eligible.intent.risk_level or "").strip() not in _ALLOWED_RISK_LEVELS:
+		raise RuntimeError("Phase 6B reasoning activation smoke failed: eligible activation returned invalid risk level.")
 	return {
 		"ok": True,
 		"not_applicable": not_applicable.to_payload(),
@@ -372,10 +686,26 @@ def run_phase6_detail_presentation_policy_probe() -> Dict[str, Any]:
 			"reasoning_type": normalized.reasoning_type,
 			"detail_level": normalized.detail_level,
 			"presentation_style": normalized.presentation_style,
+			"response_mode": normalized.response_mode,
+			"evidence_policy": normalized.evidence_policy,
+			"answer_obligation": normalized.answer_obligation,
+			"answer_goal": normalized.answer_goal,
+			"evidence_depth": normalized.evidence_depth,
+			"business_role": normalized.business_role,
+			"target_reference": normalized.target_reference,
+			"risk_level": normalized.risk_level,
 		},
 		"default_recommendation": {
 			"reasoning_type": explicit_default.reasoning_type,
 			"detail_level": explicit_default.detail_level,
 			"presentation_style": explicit_default.presentation_style,
+			"response_mode": explicit_default.response_mode,
+			"evidence_policy": explicit_default.evidence_policy,
+			"answer_obligation": explicit_default.answer_obligation,
+			"answer_goal": explicit_default.answer_goal,
+			"evidence_depth": explicit_default.evidence_depth,
+			"business_role": explicit_default.business_role,
+			"target_reference": explicit_default.target_reference,
+			"risk_level": explicit_default.risk_level,
 		},
 	}

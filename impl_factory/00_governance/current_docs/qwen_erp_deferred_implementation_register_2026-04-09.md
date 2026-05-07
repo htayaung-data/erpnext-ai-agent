@@ -279,6 +279,72 @@ Recommended future home:
 
 1. closed for KPI activation; threshold presentation remains deferred under user-facing policy control
 
+### 3.10 Metadata-Owned Consultant Detail Intent Role Mapping
+
+Origin:
+
+1. UX-S5A Semantic Detail Intent Contract
+2. NBU stabilization freeze consultant-response hardening
+
+Current state:
+
+1. closed by UX-S5D Lexical Debt Audit And Removal
+2. semantic detail intent now carries typed slots such as `answer_goal`, `evidence_depth`, `business_role`, `target_reference`, and `risk_level`
+3. `business_role` defaults are now resolved from the metadata-owned `consultant_role_registry.json`
+4. protected runtime code no longer owns the family/capability-to-role selection table
+
+Resolution note:
+
+1. UX-S5D moved consultant role selection into `consultant_role_registry.json`
+2. the Python runtime now only calls the registry lookup using governed source metadata and semantic tags
+3. focused registry tests and semantic activation tests prove the role comes from metadata/contract fields, not user wording
+
+Reopen trigger:
+
+1. any new family-specific consultant role is requested beyond the current registry
+2. a future audit finds role selection reintroduced as code-owned branching in protected paths
+
+Required closure condition:
+
+1. satisfied in UX-S5D
+
+Recommended future home:
+
+1. keep closed unless new family role ownership is added outside the registry
+
+### 3.11 Metadata-Owned Entity Drilldown Capability Binding
+
+Origin:
+
+1. UX-S5B Governed Evidence Drilldown Registry
+2. prior entity detail request support bridge
+
+Current state:
+
+1. closed by UX-S5D Lexical Debt Audit And Removal
+2. the governed drilldown registry uses typed semantic intent and active scope metadata to decide whether a row can be expanded
+3. entity grain to capability binding is now resolved from `entity_detail_capability_bindings.json`
+4. the existing `entity_detail_capability_id` function remains only as a compatibility wrapper over the metadata registry
+
+Resolution note:
+
+1. UX-S5D moved entity-grain-to-capability bindings into a metadata-owned registry file
+2. unsupported entity grains still fail closed
+3. focused registry tests prove entity drilldown capability availability is selected from metadata, not user wording
+
+Reopen trigger:
+
+1. a new entity grain or family drilldown is added outside `entity_detail_capability_bindings.json`
+2. a future audit finds code-owned entity/capability branching reintroduced in protected paths
+
+Required closure condition:
+
+1. satisfied in UX-S5D
+
+Recommended future home:
+
+1. keep closed unless new entity detail binding ownership is added outside the registry
+
 ## 4. How Future Work Should Use This Register
 
 Before starting a new phase:

@@ -14,6 +14,7 @@ from ai_assistant_ui.qwen_chat.document_event_basis import (
 	document_event_question_shape_and_value_mode,
 	resolve_document_event_question_type,
 )
+from ai_assistant_ui.qwen_chat.entity_detail_capability_registry import capability_id_for_entity_detail
 
 
 def _ordered_unique_values(values: List[str] | None) -> List[str]:
@@ -26,17 +27,7 @@ def _ordered_unique_values(values: List[str] | None) -> List[str]:
 
 
 def entity_detail_capability_id(entity_type: str) -> str:
-	entity_key = str(entity_type or "").strip().lower()
-	capability_by_entity_type = {
-		"customer": "accounts_receivable_read",
-		"supplier": "accounts_payable_read",
-		"item": "stock_read",
-		"product": "stock_read",
-		"purchase_order": "purchase_order_read",
-		"sales_order": "sales_order_read",
-		"sales_invoice": "sales_read",
-	}
-	return str(capability_by_entity_type.get(entity_key) or "").strip()
+	return capability_id_for_entity_detail(entity_type)
 
 
 def _artifact_has_stock_position_sections(artifact_payload: Dict[str, Any]) -> bool:
