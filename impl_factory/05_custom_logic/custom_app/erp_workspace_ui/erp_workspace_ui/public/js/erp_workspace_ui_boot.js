@@ -2196,6 +2196,9 @@
 
     const originalMake = proto.make;
     proto.make = function () {
+      if (!this || !this.page || !this.page.sidebar) {
+        return this;
+      }
       const result = originalMake.apply(this, arguments);
       if (this.frm && isChildExecutionDocType(this.frm.doctype) && this.sidebar) {
         this.sidebar.addClass("erpw-so-sidebar-shell");
