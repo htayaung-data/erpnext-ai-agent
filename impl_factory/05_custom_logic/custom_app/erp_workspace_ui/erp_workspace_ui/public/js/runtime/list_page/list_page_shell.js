@@ -1022,6 +1022,19 @@
     return facts.length ? '<div class="erpw-list-summary-facts">' + facts.join('') + '</div>' : '';
   }
 
+  function visibleControlFields(controls) {
+    return normalizeItems(controls && controls.fields).filter((field) => field && field.type !== 'hidden');
+  }
+
+  function shouldPromoteUtilityActionsToSummary(controls, pageConfig) {
+    if (!controls || controls.summaryToolbar || controls.layout === 'form_panel' || isProcurementWorklist(pageConfig)) return false;
+    const summaryLayout = String(pageConfig && pageConfig.summary && pageConfig.summary.layout || pageConfig && pageConfig.summaryLayout || '').trim();
+    if (summaryLayout === 'detail_header') return false;
+    const actions = normalizeItems(controls.actions).filter((action) => action && action.key !== 'open_native');
+    if (!actions.length || visibleControlFields(controls).length || controls.searchHint) return false;
+    return actions.every((action) => action.key === 'refresh' || action.category === 'navigation' || /^back_/.test(String(action.key || '')));
+  }
+
   function renderSummary(summary, controls, metrics, pageConfig) {
     if (!summary || !summary.title) return "";
     const chips = normalizeItems(summary.chips);
@@ -1031,7 +1044,8 @@
     const metricMarkup = compactFacts ? renderSummaryFacts(metrics, chips) : renderSummaryMetrics(metrics);
     const actions = normalizeItems(controls && controls.actions).filter((action) => action && action.key !== 'open_native');
     const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
-    const toolbarActions = controls && controls.summaryToolbar ? actions : navigationActions;
+    const promoteUtilityActions = shouldPromoteUtilityActionsToSummary(controls, pageConfig);
+    const toolbarActions = controls && (controls.summaryToolbar || promoteUtilityActions) ? actions : navigationActions;
     const chipMarkup = !compactFacts && chips.length ? '<div class="erpw-list-chip-row">' + chips.map((chip) => renderBadge(chip)).join('') + '</div>' : '';
 
     if (isDetailHeader) {
@@ -1054,7 +1068,7 @@
     const sideMarkup = [
       metricMarkup,
       chipMarkup,
-      navigationActions.length ? '<div class="erpw-list-navigation-actions">' + navigationActions.map((action) => renderToolbarAction(action, 'navigation')).join('') + '</div>' : '',
+      toolbarActions.length ? '<div class="erpw-list-navigation-actions">' + toolbarActions.map((action) => renderToolbarAction(action, action.category === 'navigation' || /^back_/.test(String(action.key || '')) ? 'navigation' : '')).join('') + '</div>' : '',
     ].filter(Boolean).join('');
 
     return [
@@ -1241,7 +1255,7 @@
 	    ].join('');
 	  }
 
-	  function renderControls(controls) {
+	  function renderControls(controls, pageConfig) {
 	    if (!controls) return "";
 
 	    const actions = normalizeItems(controls.actions).filter((action) => action.key !== 'open_native');
@@ -1250,10 +1264,11 @@
 	    const operatingActions = summaryToolbar ? [] : sortOperatingActions(actions.filter((action) => !navigationActions.includes(action)));
 	    const fields = normalizeItems(controls.fields);
 	    const isFormPanel = controls.layout === 'form_panel';
-	    const visibleFields = fields.filter((field) => field && field.type !== 'hidden');
+	    const visibleFields = visibleControlFields(controls);
 	    const hiddenFields = fields.filter((field) => field && field.type === 'hidden');
 	    const visibleFieldCount = visibleFields.length;
-	    const hasContent = operatingActions.length || controls.searchHint || fields.length;
+	    const promoteUtilityActions = shouldPromoteUtilityActionsToSummary(controls, pageConfig);
+	    const hasContent = !promoteUtilityActions && (operatingActions.length || controls.searchHint || fields.length);
 	    if (!hasContent) return "";
 
     const hiddenFieldsMarkup = hiddenFields.map((field) => renderControlField(field)).join('');
@@ -1379,13 +1394,21 @@
 
   function renderResultsState(state) {
     if (!state) return '';
+    const kind = state.kind || 'neutral';
+    const contextLabel = state.contextLabel || state.context || (kind === 'empty' ? 'Empty queue' : 'Workspace state');
     return [
-      '<div class="erpw-list-state ' + escapeHtml(state.kind || 'neutral') + '">',
-        '<div class="erpw-list-state-title">' + escapeHtml(state.title || 'Workspace state') + '</div>',
-        state.detail ? '<div class="erpw-list-state-detail">' + escapeHtml(state.detail) + '</div>' : '',
-        state.action && state.action.key && state.action.label
-          ? '<button type="button" class="erpw-list-action-button" data-erpw-list-action-key="' + escapeHtml(state.action.key) + '" data-erpw-list-action-scope="state">' + escapeHtml(state.action.label) + '</button>'
-          : '',
+      '<div class="erpw-list-state ' + escapeHtml(kind) + '" data-erpw-state-kind="' + escapeHtml(kind) + '">',
+        '<div class="erpw-list-state-inner">',
+          '<div class="erpw-list-state-mark" aria-hidden="true"><span></span></div>',
+          '<div class="erpw-list-state-copy">',
+            contextLabel ? '<div class="erpw-list-state-context">' + escapeHtml(contextLabel) + '</div>' : '',
+            '<div class="erpw-list-state-title">' + escapeHtml(state.title || 'Workspace state') + '</div>',
+            state.detail ? '<div class="erpw-list-state-detail">' + escapeHtml(state.detail) + '</div>' : '',
+          '</div>',
+          state.action && state.action.key && state.action.label
+            ? '<div class="erpw-list-state-action-row"><button type="button" class="erpw-list-action-button" data-erpw-list-action-key="' + escapeHtml(state.action.key) + '" data-erpw-list-action-scope="state">' + escapeHtml(state.action.label) + '</button></div>'
+            : '',
+        '</div>',
       '</div>'
     ].join('');
   }
@@ -1445,7 +1468,7 @@
                                 : '',
                             '</tr>'
                           ].join('')).join('')
-                        : '<tr><td colspan="' + escapeHtml(columns.length + (config.rowActions && !showInlinePrimaryAction ? 1 : 0)) + '"><div class="erpw-list-empty-inline">No records match the current view.</div></td></tr>',
+                        : '<tr><td colspan="' + escapeHtml(columns.length + (config.rowActions && !showInlinePrimaryAction ? 1 : 0)) + '"><div class="erpw-list-empty-inline"><div class="erpw-list-empty-inline-title">No records match this view</div><div class="erpw-list-empty-inline-note">Adjust the filters or refresh to check for newly visible work.</div></div></td></tr>',
                     '</tbody>',
                   '</table>',
                 '</div>'
@@ -1463,7 +1486,7 @@
     const page = config || {};
     return [
       renderSummary(page.summary, page.controls, page.metrics, page),
-      renderControls(page.controls),
+      renderControls(page.controls, page),
       renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) }),
       renderResults(page.results, page.controls),
     ].filter(Boolean).join('');

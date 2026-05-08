@@ -173,12 +173,39 @@
         color: #9eb0c7;
       }
       .sales-console-kpi-value {
+        position: relative;
         margin: 0;
+        min-height: 31px;
         font-size: 32px;
         line-height: 0.95;
         font-weight: 700;
         color: #f8fafc;
-        letter-spacing: -0.03em;
+        letter-spacing: 0;
+      }
+      .sales-console-kpi-card.is-loading .sales-console-kpi-value {
+        color: transparent;
+      }
+      .sales-console-kpi-card.is-loading .sales-console-kpi-value::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: min(82px, 72%);
+        height: 24px;
+        border-radius: 8px;
+        background: linear-gradient(90deg, rgba(226, 232, 240, 0.16), rgba(248, 250, 252, 0.34), rgba(226, 232, 240, 0.16));
+        background-size: 180% 100%;
+        transform: translateY(-50%);
+        animation: erpw-kpi-loading-sheen 1.15s ease-in-out infinite;
+      }
+      @keyframes erpw-kpi-loading-sheen {
+        0% { background-position: 110% 0; }
+        100% { background-position: -70% 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .sales-console-kpi-card.is-loading .sales-console-kpi-value::after {
+          animation: none;
+        }
       }
       .sales-console-kpi-meta {
         font-size: 12px;

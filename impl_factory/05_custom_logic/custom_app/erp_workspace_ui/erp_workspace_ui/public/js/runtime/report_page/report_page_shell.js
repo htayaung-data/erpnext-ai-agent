@@ -268,6 +268,10 @@
 	        background: rgba(255, 255, 255, 0.9);
 	        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
 	      }
+	      .erpw-report-command-row.actions-only .erpw-report-command-actions {
+	        justify-content: flex-start;
+	        margin-top: 0;
+	      }
 	      .erpw-report-control-grid {
 	        display: grid;
 	        grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -705,13 +709,17 @@
         white-space: nowrap;
       }
       .erpw-report-table-wrap {
+        max-width: 100%;
         overflow-x: auto;
         border: 1px solid rgba(220, 230, 241, 0.88);
         border-radius: 16px;
+        background: #ffffff;
+        scrollbar-gutter: stable;
       }
       .erpw-report-table {
         width: 100%;
         min-width: 840px;
+        table-layout: auto;
         border-collapse: separate;
         border-spacing: 0;
       }
@@ -730,8 +738,17 @@
       .erpw-report-table tbody td.right {
         text-align: right;
       }
+      .erpw-report-table thead th.numeric,
+      .erpw-report-table tbody td.numeric,
+      .erpw-report-table thead th.right,
+      .erpw-report-table tbody td.right {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1, "lnum" 1;
+      }
       .erpw-report-table thead th.nowrap,
-      .erpw-report-table tbody td.nowrap {
+      .erpw-report-table tbody td.nowrap,
+      .erpw-report-table thead th.numeric,
+      .erpw-report-table tbody td.numeric {
         white-space: nowrap;
       }
       .erpw-report-table tbody td {
@@ -749,6 +766,20 @@
       }
       .erpw-report-table tbody tr:last-child td {
         border-bottom: none;
+      }
+      .erpw-report-table thead th:first-child,
+      .erpw-report-table tbody td:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+        min-width: 170px;
+        max-width: 280px;
+        background: #ffffff;
+        box-shadow: 10px 0 18px -18px rgba(15, 23, 42, 0.34);
+      }
+      .erpw-report-table thead th:first-child {
+        z-index: 3;
+        background: linear-gradient(180deg, #f8fbff 0%, #f2f7fc 100%);
       }
       .erpw-report-cell-link {
         display: flex;
@@ -1291,11 +1322,37 @@
     ].join("");
   }
 
+    function isNumericColumn(column) {
+      const fieldType = String(column && column.fieldtype || column && column.type || '').toLowerCase();
+      const key = String(column && column.key || '').toLowerCase();
+      const label = String(column && column.label || '').toLowerCase();
+      return String(column && column.align || '').toLowerCase() === 'right'
+        || ['currency', 'float', 'int', 'percent', 'number'].includes(fieldType)
+        || /amount|billed|collected|outstanding|total|value|qty|quantity|count|percent|rate|orders_count|order_count/.test(key)
+        || /amount|billed|collected|outstanding|total|value|qty|quantity|count|percent|rate|orders/.test(label);
+    }
+
+    function reportColumnClass(column) {
+      const classes = [];
+      const align = String(column && column.align || '').trim();
+      if (align) classes.push(align);
+      if (column && column.nowrap) classes.push('nowrap');
+      if (isNumericColumn(column)) classes.push('numeric', 'nowrap');
+      return Array.from(new Set(classes)).join(' ');
+    }
+
+    function effectiveTableMinWidth(config, columns) {
+      const explicit = Number(config && config.tableMinWidth || 0);
+      if (explicit > 0) return explicit;
+      if (!columns || columns.length <= 6) return 840;
+      return Math.max(980, 220 + ((columns.length - 1) * 132));
+    }
+
     function renderCell(row, column) {
       const cells = row && row.cells && typeof row.cells === "object" ? row.cells : {};
       const cell = cells[column.key] || {};
       const value = cell.value == null ? "--" : cell.value;
-      const labelClass = column && column.nowrap ? 'erpw-report-cell-link-label nowrap' : 'erpw-report-cell-link-label';
+      const labelClass = column && (column.nowrap || isNumericColumn(column)) ? 'erpw-report-cell-link-label nowrap' : 'erpw-report-cell-link-label';
       if (cell.actionKey) {
         return '<button type="button" class="erpw-report-cell-link" data-erpw-report-action-key="' + escapeHtml(cell.actionKey) + '"><span class="' + labelClass + '">' + escapeHtml(value) + '</span></button>';
       }
@@ -1307,7 +1364,7 @@
       const config = results || {};
       const columns = normalizeItems(config.columns);
       const rows = normalizeItems(config.rows);
-      const tableMinWidth = Number(config.tableMinWidth || 0);
+      const tableMinWidth = effectiveTableMinWidth(config, columns);
       const tableStyle = tableMinWidth > 0 ? ' style="min-width:' + tableMinWidth + 'px"' : '';
       return [
         '<section class="erpw-report-card erpw-report-results">',
@@ -1325,13 +1382,13 @@
                  '<div class="erpw-report-table-wrap">',
                    '<table class="erpw-report-table"' + tableStyle + '>',
                       '<thead><tr>',
-                        columns.map((column) => '<th class="' + escapeHtml(((column.align || '') + ' ' + (column.nowrap ? 'nowrap' : '')).trim()) + '">' + escapeHtml(column.label || '') + '</th>').join(""),
+                        columns.map((column) => '<th class="' + escapeHtml(reportColumnClass(column)) + '">' + escapeHtml(column.label || '') + '</th>').join(""),
                       '</tr></thead>',
                       '<tbody>',
                         rows.length
                           ? rows.map((row) => [
                               '<tr>',
-                               columns.map((column) => '<td class="' + escapeHtml(((column.align || '') + ' ' + (column.nowrap ? 'nowrap' : '')).trim()) + '">' + renderCell(row, column) + '</td>').join(""),
+                               columns.map((column) => '<td class="' + escapeHtml(reportColumnClass(column)) + '">' + renderCell(row, column) + '</td>').join(""),
                               '</tr>'
                             ].join("")).join("")
                         : '<tr><td colspan="' + escapeHtml(columns.length) + '"><div class="erpw-report-empty">No visible rows match the current report window.</div></td></tr>',

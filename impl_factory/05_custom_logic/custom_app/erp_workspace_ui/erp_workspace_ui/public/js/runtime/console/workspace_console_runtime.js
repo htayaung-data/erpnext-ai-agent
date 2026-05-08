@@ -286,7 +286,7 @@
 
   function makeInsightCard(config) {
     return $(`
-      <button class="sales-console-kpi-card" data-insight-key="${escapeHtml(config.key)}" type="button">
+      <button class="sales-console-kpi-card is-loading" data-insight-key="${escapeHtml(config.key)}" data-erpw-kpi-state="loading" aria-busy="true" type="button">
         <div class="sales-console-kpi-label">${escapeHtml(config.label)}</div>
         <div class="sales-console-kpi-value" data-role="value">--</div>
         <div class="sales-console-kpi-meta" data-role="meta">${escapeHtml(config.meta)}</div>
@@ -392,6 +392,10 @@
     const $card = $root.find(`[data-insight-key="${key}"]`);
     if (!$card.length) return;
 
+    $card
+      .removeClass("is-loading")
+      .attr("data-erpw-kpi-state", "ready")
+      .removeAttr("aria-busy");
     $card.find('[data-role="value"]').text(metricValueText(metric));
     if (metric && metric.state !== "live" && metric.note) {
       $card.find('[data-role="meta"]').text(metric.note);
@@ -421,7 +425,7 @@
       open_orders: (payload.insights || {}).open_orders,
     };
     Object.entries(insightSources).forEach(([key, metric]) => {
-      if (metric) applyInsightMetric($root, key, metric);
+      applyInsightMetric($root, key, metric || null);
     });
   }
 
