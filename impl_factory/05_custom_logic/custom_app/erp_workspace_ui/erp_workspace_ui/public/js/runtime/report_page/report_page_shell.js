@@ -47,6 +47,38 @@
       .map((entry) => entry[1]);
   }
 
+  function reportFieldRole(field) {
+    const explicit = String(field && (field.layoutRole || field.filterRole) || '').trim().toLowerCase();
+    if (explicit) return explicit;
+    const key = String(field && field.key || '').toLowerCase();
+    const type = String(field && field.type || '').toLowerCase();
+    if (type === 'date' || /(^|_)(date|from|to|start|end)($|_)/.test(key)) return 'date';
+    if (type === 'link' || type === 'text') return 'search';
+    if (!type && /keyword|search|customer|item|supplier/.test(key)) return 'search';
+    return 'standard';
+  }
+
+  function reportFieldAttrs(field) {
+    const key = String(field && field.key || '');
+    const role = reportFieldRole(field);
+    return ' data-erpw-report-field-key="' + escapeHtml(key) + '" data-erpw-report-field-role="' + escapeHtml(role) + '"';
+  }
+
+  function reportFieldTrack(field, pageConfig) {
+    if (isProcurementReport(pageConfig)) return '';
+    const role = reportFieldRole(field);
+    if (role === 'search') return 'minmax(240px, 1fr)';
+    if (role === 'date') return 'minmax(164px, 198px)';
+    if (role === 'compact') return 'minmax(144px, 176px)';
+    return 'minmax(170px, 208px)';
+  }
+
+  function reportCommandFieldsStyle(rowFields, pageConfig) {
+    if (isProcurementReport(pageConfig)) return '';
+    const tracks = normalizeFields(rowFields).map((field) => reportFieldTrack(field, pageConfig)).filter(Boolean);
+    return tracks.length ? ' style="grid-template-columns:' + escapeHtml(tracks.join(' ')) + '"' : '';
+  }
+
   function ensureStyle() {
     if (document.getElementById("erpw-report-shell-style")) return;
 
@@ -709,12 +741,36 @@
         white-space: nowrap;
       }
       .erpw-report-table-wrap {
+        position: relative;
         max-width: 100%;
         overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
         border: 1px solid rgba(220, 230, 241, 0.88);
         border-radius: 16px;
         background: #ffffff;
         scrollbar-gutter: stable;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(100, 116, 139, 0.42) rgba(241, 245, 249, 0.86);
+      }
+      .erpw-report-table-wrap.is-wide {
+        box-shadow: inset -24px 0 24px -30px rgba(15, 23, 42, 0.62);
+      }
+      .erpw-report-table-wrap.is-wide:focus {
+        outline: 2px solid rgba(37, 99, 235, 0.18);
+        outline-offset: 3px;
+      }
+      .erpw-report-table-wrap::-webkit-scrollbar {
+        height: 10px;
+      }
+      .erpw-report-table-wrap::-webkit-scrollbar-track {
+        background: rgba(241, 245, 249, 0.86);
+        border-radius: 999px;
+      }
+      .erpw-report-table-wrap::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.42);
+        border: 2px solid rgba(241, 245, 249, 0.86);
+        border-radius: 999px;
       }
       .erpw-report-table {
         width: 100%;
@@ -1064,7 +1120,7 @@
     const span = normalizeControlSpan(field);
     const spanAttr = span > 1 ? ' data-erpw-control-span="' + span + '"' : "";
     return [
-      '<label class="erpw-report-control-field"' + spanAttr + '>',
+      '<label class="erpw-report-control-field"' + spanAttr + reportFieldAttrs(field) + '>',
         '<span class="erpw-report-control-label">' + label + '</span>',
         renderControlInput(field),
       '</label>'
@@ -1074,7 +1130,7 @@
 	  function renderAnalyticsControlField(field) {
 	    const label = escapeHtml(field.label || "");
 	    return [
-	      '<label class="erpw-report-control-field">',
+	      '<label class="erpw-report-control-field"' + reportFieldAttrs(field) + '>',
 	        '<span class="erpw-report-control-label">' + label + '</span>',
 	        renderControlInput(field),
 	      '</label>'
@@ -1115,7 +1171,7 @@
 	    });
 	  }
 
-  function renderControls(controls) {
+  function renderControls(controls, pageConfig) {
     const fields = normalizeFields(controls && controls.fields);
     const actions = normalizeItems(controls && controls.actions);
     const toolbarMarkup = actions.length
@@ -1171,10 +1227,12 @@
 	        const compactFieldRows = fieldRows.length ? fieldRows : [fields];
 	        const compactRowsMarkup = compactFieldRows.map((rowFields, rowIndex) => {
 	          const isLastRow = !separateActionRow && rowIndex === compactFieldRows.length - 1;
-	          const compactFieldsClass = 'erpw-report-command-fields field-count-' + Math.min(rowFields.length, 4);
+	          const searchIndex = rowFields.findIndex((field) => reportFieldRole(field) === 'search');
+	          const searchClass = searchIndex >= 0 ? ' has-search search-index-' + Math.min(searchIndex + 1, 4) : ' no-search';
+	          const compactFieldsClass = 'erpw-report-command-fields field-count-' + Math.min(rowFields.length, 4) + searchClass;
 	          return [
 	            '<div class="erpw-report-command-row' + (isLastRow ? '' : ' without-actions') + '">',
-	              '<div class="' + compactFieldsClass + '">',
+	              '<div class="' + compactFieldsClass + '"' + reportCommandFieldsStyle(rowFields, pageConfig) + '>',
 	                rowFields.map(renderAnalyticsControlField).join(''),
 	              '</div>',
 	              isLastRow ? compactActionsMarkup : '',
@@ -1345,7 +1403,9 @@
       const explicit = Number(config && config.tableMinWidth || 0);
       if (explicit > 0) return explicit;
       if (!columns || columns.length <= 6) return 840;
-      return Math.max(980, 220 + ((columns.length - 1) * 132));
+      const numericCount = columns.filter((column) => isNumericColumn(column)).length;
+      const baseWidth = 240 + ((columns.length - 1) * 140) + (numericCount * 18);
+      return Math.max(1040, baseWidth);
     }
 
     function renderCell(row, column) {
@@ -1366,6 +1426,11 @@
       const rows = normalizeItems(config.rows);
       const tableMinWidth = effectiveTableMinWidth(config, columns);
       const tableStyle = tableMinWidth > 0 ? ' style="min-width:' + tableMinWidth + 'px"' : '';
+      const isWideTable = tableMinWidth > 980 || columns.length > 6;
+      const tableWrapClass = 'erpw-report-table-wrap' + (isWideTable ? ' is-wide' : '');
+      const tableWrapAttrs = isWideTable
+        ? ' tabindex="0" aria-label="Scrollable report table"'
+        : '';
       return [
         '<section class="erpw-report-card erpw-report-results">',
         '<div class="erpw-report-results-head">',
@@ -1379,7 +1444,7 @@
           ? renderState(config.state)
           : columns.length
               ? [
-                 '<div class="erpw-report-table-wrap">',
+                 '<div class="' + tableWrapClass + '"' + tableWrapAttrs + '>',
                    '<table class="erpw-report-table"' + tableStyle + '>',
                       '<thead><tr>',
                         columns.map((column) => '<th class="' + escapeHtml(reportColumnClass(column)) + '">' + escapeHtml(column.label || '') + '</th>').join(""),
@@ -1678,7 +1743,7 @@
     applyWorkspaceMode($shell, page);
 
     if (settings.refreshControls) {
-      replaceShellSection($shell, '.erpw-report-controls', renderControls(page.controls), '.erpw-report-metrics, .erpw-report-secondary, .erpw-report-results');
+      replaceShellSection($shell, '.erpw-report-controls', renderControls(page.controls, page), '.erpw-report-metrics, .erpw-report-secondary, .erpw-report-results');
     }
     replaceShellSection($shell, '.erpw-report-metrics', renderMetrics(page.metrics), '.erpw-report-secondary, .erpw-report-results');
     replaceShellSection($shell, '.erpw-report-secondary', renderSecondary(page.secondary), '.erpw-report-results');
@@ -1697,7 +1762,7 @@
     applyWorkspaceMode($shell, config || {});
     $shell.html([
       renderSummary(config && config.summary),
-      renderControls(config && config.controls),
+      renderControls(config && config.controls, config || {}),
       renderMetrics(config && config.metrics),
       renderSecondary(config && config.secondary),
       renderResults(config && config.results),

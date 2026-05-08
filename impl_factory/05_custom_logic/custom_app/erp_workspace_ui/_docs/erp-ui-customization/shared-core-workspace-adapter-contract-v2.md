@@ -116,11 +116,28 @@ Core owns worklist/list shell rendering:
 
 Adapters own queue keys, filters, columns, rows, row target mapping, permissions, and state payloads.
 
+Directory and worklist headers that expose metrics must use the Core-owned premium header structure:
+
+1. title and description render first as the clear header copy row
+2. KPI or metric cards render below that copy as a full-width grid inside the same header component
+3. metric cards use equal height, consistent gaps, and responsive grid tracks
+4. three-card, four-card, and five-card sets must look intentional, with no cramped right-rail layout or accidental orphan card when desktop space is available
+
+Adapters own the metric labels, values, tone, and business meaning, but not the metric-card layout.
+
 ### 3.8 Filter Panel
 
 Core owns filter field spacing, label placement, link-field display, autocomplete behavior, command alignment, and keyboard/focus posture.
 
 Adapters own filter definitions, field names, DocType targets for link fields, defaults, and safe filter coercion.
+
+The shared filter width contract is:
+
+1. standard fields use controlled equal-width tracks
+2. date-window fields use date-width tracks and stay paired when space allows
+3. keyword, search, text, and link lookup fields may use the flexible track
+4. Apply, Reset, Refresh, Back, and contextual create actions render as one compact command group centered to the active input row
+5. focus, autocomplete, and refresh states must not resize the page or shift the command group
 
 No workspace may use a page-local filter layout to bypass the shared shell unless the Core gains a named variant first.
 
@@ -184,6 +201,8 @@ Core owns report shell layout:
 7. in-place Apply/Reset/Refresh behavior
 
 Adapters own report keys, report builder methods, native report wrappers, filters, columns, rows, metrics, and business copy.
+
+Report filters follow the same shared width and action alignment contract as list/worklist filters. Wide report tables must remain contained inside the report card: horizontal overflow belongs to the table wrapper, not the page viewport. Numeric columns should be right-aligned with tabular numerals and should not wrap awkwardly. Wide financial or month-based tables may use an intentional horizontal scroll region, with the first important column kept readable when the Core renderer supports it.
 
 ### 3.15 State Kinds
 

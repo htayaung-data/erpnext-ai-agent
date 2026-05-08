@@ -285,6 +285,50 @@
       .erpw-list-filter-deck:not(.has-actions).main-count-1 .erpw-list-filter-main-row {
         grid-template-columns: minmax(210px, 300px);
       }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck {
+        --erpw-list-filter-standard-width: clamp(184px, 16vw, 224px);
+        --erpw-list-filter-search-width: minmax(280px, 1fr);
+        --erpw-list-filter-date-width: clamp(168px, 14vw, 208px);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-2.has-search.search-index-1 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-2.has-search.search-index-2 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-3.has-search.search-index-1 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-3.has-search.search-index-2 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-3.has-search.search-index-3 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-4.has-search.search-index-1 .erpw-list-filter-main-row,
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-5.has-search.search-index-1 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-4.has-search.search-index-2 .erpw-list-filter-main-row,
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-5.has-search.search-index-2 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-4.has-search.search-index-3 .erpw-list-filter-main-row,
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-5.has-search.search-index-3 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-4.has-search.search-index-4 .erpw-list-filter-main-row,
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-5.has-search.search-index-4 .erpw-list-filter-main-row {
+        grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width);
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-date-window-group {
+        grid-template-columns: repeat(2, var(--erpw-list-filter-date-width));
+        max-width: none;
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions .erpw-list-toolbar-actions {
+        min-height: var(--erpw-list-control-height);
+        align-items: center;
+      }
       .erpw-list-filter-main-row {
         grid-area: main;
       }
@@ -1041,7 +1085,9 @@
     const compactFacts = isProcurementWorklist(pageConfig);
     const layout = String(summary.layout || (pageConfig && pageConfig.summaryLayout) || "").trim();
     const isDetailHeader = layout === "detail_header";
-    const metricMarkup = compactFacts ? renderSummaryFacts(metrics, chips) : renderSummaryMetrics(metrics);
+    const metricItems = normalizeItems(metrics);
+    const metricMarkup = compactFacts ? renderSummaryFacts(metricItems, chips) : renderSummaryMetrics(metricItems);
+    const hasSummaryMetrics = !compactFacts && metricItems.length > 0;
     const actions = normalizeItems(controls && controls.actions).filter((action) => action && action.key !== 'open_native');
     const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
     const promoteUtilityActions = shouldPromoteUtilityActionsToSummary(controls, pageConfig);
@@ -1072,7 +1118,7 @@
     ].filter(Boolean).join('');
 
     return [
-      '<section class="erpw-child-card erpw-list-summary-card">',
+      '<section class="' + joinClassNames('erpw-child-card erpw-list-summary-card', hasSummaryMetrics ? 'has-summary-metrics' : '') + '">',
         '<div class="erpw-list-summary-head">',
           '<div class="erpw-list-summary-copy">',
             summary.title ? '<h2 class="erpw-list-title">' + escapeHtml(summary.title) + '</h2>' : '',
