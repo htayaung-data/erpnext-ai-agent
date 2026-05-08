@@ -321,6 +321,21 @@
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-5.has-search.search-index-4 .erpw-list-filter-main-row {
         grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width);
       }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-3:not(.has-date-window),
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-4:not(.has-date-window),
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-5:not(.has-date-window) {
+        grid-template-columns: minmax(0, 1fr) max-content;
+        grid-template-areas:
+          "main main"
+          ". actions";
+      }
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-3:not(.has-date-window) .erpw-list-command-action-cell,
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-4:not(.has-date-window) .erpw-list-command-action-cell,
+      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-5:not(.has-date-window) .erpw-list-command-action-cell {
+        align-self: start;
+        min-height: var(--erpw-list-control-height);
+        padding-top: 0;
+      }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-date-window-group {
         grid-template-columns: repeat(2, var(--erpw-list-filter-date-width));
         max-width: none;
@@ -328,6 +343,11 @@
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions .erpw-list-toolbar-actions {
         min-height: var(--erpw-list-control-height);
         align-items: center;
+      }
+      .erpw-list-shell .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) {
+        --erpw-directory-kpi-card-min: 218px;
+        --erpw-directory-kpi-card-max: 262px;
+        --erpw-directory-kpi-min-height: 78px;
       }
       .erpw-list-filter-main-row {
         grid-area: main;
@@ -373,6 +393,26 @@
         max-width: 100%;
         margin: 0;
       }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-metrics {
+        display: grid !important;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+        justify-content: stretch !important;
+        justify-items: stretch !important;
+        align-items: stretch !important;
+        width: 100% !important;
+        max-width: none !important;
+        gap: 0.6rem !important;
+      }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="3"] {
+        grid-template-columns: repeat(3, minmax(var(--erpw-directory-kpi-card-min), var(--erpw-directory-kpi-card-max))) !important;
+        justify-content: center !important;
+      }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="4"] {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+      }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="5"] {
+        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+      }
       .erpw-list-summary-metric {
         min-width: 132px;
         max-width: 220px;
@@ -382,6 +422,14 @@
         border: 1px solid rgba(226, 232, 240, 0.9);
         background: #ffffff;
         box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 8px 18px rgba(15, 23, 42, 0.025);
+      }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-metric {
+        display: grid;
+        align-content: start;
+        height: 100%;
+        min-width: 0 !important;
+        max-width: none !important;
+        min-height: var(--erpw-directory-kpi-min-height);
       }
       .erpw-list-summary-metric .erpw-list-metric-label {
         font-size: 10px;
@@ -1035,8 +1083,9 @@
   function renderSummaryMetrics(metrics) {
     const items = normalizeItems(metrics);
     if (!items.length) return "";
+    const metricCount = Math.min(items.length, 5);
     return [
-      '<div class="erpw-list-summary-metrics erpw-list-metrics erpw-list-result-summary" data-erpw-list-metric-count="' + escapeHtml(items.length) + '">',
+      '<div class="' + joinClassNames('erpw-list-summary-metrics erpw-list-metrics erpw-list-result-summary', 'erpw-kpi-grid--count-' + metricCount) + '" data-erpw-list-metric-count="' + escapeHtml(items.length) + '">',
         items.map((item) => [
           '<article class="erpw-list-summary-metric erpw-list-metric ' + escapeHtml(item.tone || 'neutral') + '">',
             '<div class="erpw-list-metric-label">' + escapeHtml(item.label || '') + '</div>',
@@ -1088,6 +1137,7 @@
     const metricItems = normalizeItems(metrics);
     const metricMarkup = compactFacts ? renderSummaryFacts(metricItems, chips) : renderSummaryMetrics(metricItems);
     const hasSummaryMetrics = !compactFacts && metricItems.length > 0;
+    const summaryMetricClass = hasSummaryMetrics ? 'has-summary-metrics metric-count-' + Math.min(metricItems.length, 5) : '';
     const actions = normalizeItems(controls && controls.actions).filter((action) => action && action.key !== 'open_native');
     const navigationActions = actions.filter((action) => action.category === 'navigation' || /^back_/.test(String(action.key || '')));
     const promoteUtilityActions = shouldPromoteUtilityActionsToSummary(controls, pageConfig);
@@ -1118,7 +1168,7 @@
     ].filter(Boolean).join('');
 
     return [
-      '<section class="' + joinClassNames('erpw-child-card erpw-list-summary-card', hasSummaryMetrics ? 'has-summary-metrics' : '') + '">',
+      '<section class="' + joinClassNames('erpw-child-card erpw-list-summary-card', summaryMetricClass) + '">',
         '<div class="erpw-list-summary-head">',
           '<div class="erpw-list-summary-copy">',
             summary.title ? '<h2 class="erpw-list-title">' + escapeHtml(summary.title) + '</h2>' : '',

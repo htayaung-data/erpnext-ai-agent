@@ -7830,6 +7830,23 @@ html {
   grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width) !important;
 }
 
+.erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-3:not(.has-date-window),
+.erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-4:not(.has-date-window),
+.erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-5:not(.has-date-window) {
+  grid-template-columns: minmax(0, 1fr) max-content !important;
+  grid-template-areas:
+    "main main"
+    ". actions" !important;
+}
+
+.erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-3:not(.has-date-window) .erpw-list-command-action-cell,
+.erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-4:not(.has-date-window) .erpw-list-command-action-cell,
+.erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-5:not(.has-date-window) .erpw-list-command-action-cell {
+  align-self: start !important;
+  min-height: var(--erpw-list-control-height) !important;
+  padding-top: 0 !important;
+}
+
 .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-date-window-group {
   grid-template-columns: repeat(2, var(--erpw-list-filter-date-width)) !important;
   max-width: none !important;
@@ -7846,6 +7863,15 @@ html {
   min-height: var(--erpw-report-control-height) !important;
   margin-top: var(--erpw-report-control-label-offset) !important;
   padding-top: 2px !important;
+}
+
+.erpw-report-shell:not(.is-procurement-report) .erpw-report-command-row.field-count-4:not(.without-actions) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.erpw-report-shell:not(.is-procurement-report) .erpw-report-command-row.field-count-4:not(.without-actions) .erpw-report-command-actions {
+  justify-self: end !important;
+  margin-top: 0 !important;
 }
 
 .erpw-report-shell .erpw-report-command-row.actions-only .erpw-report-command-actions {
@@ -7877,6 +7903,12 @@ html {
   gap: 0.75rem 1rem;
 }
 
+.erpw-list-shell .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) {
+  --erpw-directory-kpi-card-min: 218px;
+  --erpw-directory-kpi-card-max: 262px;
+  --erpw-directory-kpi-min-height: 78px;
+}
+
 .erpw-list-shell .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-head {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
@@ -7906,6 +7938,7 @@ html {
   display: grid !important;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
   justify-content: stretch !important;
+  justify-items: stretch !important;
   align-items: stretch !important;
   width: 100% !important;
   max-width: none !important;
@@ -7913,7 +7946,8 @@ html {
 }
 
 .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="3"] {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  grid-template-columns: repeat(3, minmax(var(--erpw-directory-kpi-card-min), var(--erpw-directory-kpi-card-max))) !important;
+  justify-content: center !important;
 }
 
 .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="4"] {
@@ -7930,6 +7964,7 @@ html {
   height: 100%;
   min-width: 0 !important;
   max-width: none !important;
+  min-height: var(--erpw-directory-kpi-min-height);
 }
 
 .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metric .erpw-list-metric-label,

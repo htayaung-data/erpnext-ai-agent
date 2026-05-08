@@ -262,6 +262,9 @@
 	        align-items: stretch;
 	        gap: 10px;
 	      }
+	      .erpw-report-shell:not(.is-procurement-report) .erpw-report-command-row.field-count-4:not(.without-actions) {
+	        grid-template-columns: minmax(0, 1fr);
+	      }
 	      .erpw-report-command-row.without-actions {
 	        grid-template-columns: minmax(0, 1fr);
 	      }
@@ -299,6 +302,10 @@
 	        border-radius: 15px;
 	        background: rgba(255, 255, 255, 0.9);
 	        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96);
+	      }
+	      .erpw-report-shell:not(.is-procurement-report) .erpw-report-command-row.field-count-4:not(.without-actions) .erpw-report-command-actions {
+	        justify-self: end;
+	        margin-top: 0;
 	      }
 	      .erpw-report-command-row.actions-only .erpw-report-command-actions {
 	        justify-content: flex-start;
@@ -1229,9 +1236,10 @@
 	          const isLastRow = !separateActionRow && rowIndex === compactFieldRows.length - 1;
 	          const searchIndex = rowFields.findIndex((field) => reportFieldRole(field) === 'search');
 	          const searchClass = searchIndex >= 0 ? ' has-search search-index-' + Math.min(searchIndex + 1, 4) : ' no-search';
-	          const compactFieldsClass = 'erpw-report-command-fields field-count-' + Math.min(rowFields.length, 4) + searchClass;
+	          const rowCountClass = 'field-count-' + Math.min(rowFields.length, 4);
+	          const compactFieldsClass = 'erpw-report-command-fields ' + rowCountClass + searchClass;
 	          return [
-	            '<div class="erpw-report-command-row' + (isLastRow ? '' : ' without-actions') + '">',
+	            '<div class="erpw-report-command-row ' + rowCountClass + searchClass + (isLastRow ? '' : ' without-actions') + '">',
 	              '<div class="' + compactFieldsClass + '"' + reportCommandFieldsStyle(rowFields, pageConfig) + '>',
 	                rowFields.map(renderAnalyticsControlField).join(''),
 	              '</div>',

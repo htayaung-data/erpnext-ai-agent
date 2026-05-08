@@ -120,8 +120,11 @@ Directory and worklist headers that expose metrics must use the Core-owned premi
 
 1. title and description render first as the clear header copy row
 2. KPI or metric cards render below that copy as a full-width grid inside the same header component
-3. metric cards use equal height, consistent gaps, and responsive grid tracks
-4. three-card, four-card, and five-card sets must look intentional, with no cramped right-rail layout or accidental orphan card when desktop space is available
+3. metric cards use shared min/max sizing, shared minimum height, consistent gaps, border treatment, accent treatment, typography, and internal padding
+4. three-card sets use the approved centered fixed-width grid so sparse metric sets do not appear right-aligned or accidental
+5. four-card sets use equal-width four-column tracks across the available header width
+6. five-card sets use equal-width five-column tracks across the available header width
+7. all count variants must avoid clipped text, cramped labels, and accidental wrapping at desktop widths
 
 Adapters own the metric labels, values, tone, and business meaning, but not the metric-card layout.
 
@@ -134,10 +137,12 @@ Adapters own filter definitions, field names, DocType targets for link fields, d
 The shared filter width contract is:
 
 1. standard fields use controlled equal-width tracks
-2. date-window fields use date-width tracks and stay paired when space allows
-3. keyword, search, text, and link lookup fields may use the flexible track
-4. Apply, Reset, Refresh, Back, and contextual create actions render as one compact command group centered to the active input row
-5. focus, autocomplete, and refresh states must not resize the page or shift the command group
+2. date-window fields use the shared date-width track and stay paired when space allows
+3. keyword, search, text, and link lookup fields use the flexible track after standard/date fields are governed
+4. flexible search fields must keep the Core-defined minimum width and must not be squeezed by contextual create actions
+5. Apply, Reset, Refresh, Back, and contextual create actions render as one compact command group
+6. when the filter row cannot keep a premium gap before the action group, the action group moves to a clean right-aligned action row instead of crowding the last field
+7. focus, autocomplete, and refresh states must not resize the page, shift the command group, or overlap controls
 
 No workspace may use a page-local filter layout to bypass the shared shell unless the Core gains a named variant first.
 
@@ -202,7 +207,11 @@ Core owns report shell layout:
 
 Adapters own report keys, report builder methods, native report wrappers, filters, columns, rows, metrics, and business copy.
 
-Report filters follow the same shared width and action alignment contract as list/worklist filters. Wide report tables must remain contained inside the report card: horizontal overflow belongs to the table wrapper, not the page viewport. Numeric columns should be right-aligned with tabular numerals and should not wrap awkwardly. Wide financial or month-based tables may use an intentional horizontal scroll region, with the first important column kept readable when the Core renderer supports it.
+Report filters follow the same shared width and action alignment contract as list/worklist filters. The last report filter field must keep a clear visual gap before Apply. If a report row has too many standard filters for a premium single-line layout, the action group moves to a clean right-aligned action row instead of touching, covering, or crowding the final field.
+
+Wide report tables must remain contained inside the report card: horizontal overflow belongs to the table wrapper, not the page viewport. Numeric columns should be right-aligned with tabular numerals and should not wrap awkwardly. Wide financial or month-based tables may use an intentional horizontal scroll region, with the first important column kept readable when the Core renderer supports it.
+
+These directory metric, filter width, report spacing, and wide-table containment rules apply to Sales, Procurement, and all future Core + Adapter workspaces.
 
 ### 3.15 State Kinds
 
