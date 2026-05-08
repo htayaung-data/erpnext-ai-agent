@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.consultant_role_registry import consultant_business_role_for_context
+from ai_assistant_ui.qwen_chat.metadata import (
+	get_followup_class_spec,
+	ontology_detect_followup_modes,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_reasoning_activation_interpretation,
@@ -467,6 +471,60 @@ def _validate_semantic_payload(
 	)
 
 
+def _metadata_reasoning_activation_result(
+	*,
+	message: str,
+	context: Dict[str, Any],
+	threshold: float,
+) -> SemanticReasoningActivationResult | None:
+	if not bool(context.get("grounded_context_available")):
+		return None
+	try:
+		modes = [
+			str(mode or "").strip()
+			for mode in ontology_detect_followup_modes(message)
+			if str(mode or "").strip()
+		]
+	except Exception:
+		modes = []
+	if not modes:
+		return None
+	family_id = str(context.get("grounded_family_id") or "").strip()
+	for mode in modes:
+		spec = get_followup_class_spec(mode)
+		if not isinstance(spec, dict):
+			continue
+		supported_families = [
+			str(value or "").strip()
+			for value in (spec.get("supported_families") or [])
+			if str(value or "").strip()
+		]
+		if supported_families and family_id and family_id not in supported_families:
+			continue
+		activation = spec.get("reasoning_activation")
+		if not isinstance(activation, dict):
+			continue
+		intent = _validate_semantic_payload(
+			payload=dict(activation),
+			context=context,
+		)
+		if intent is None:
+			continue
+		if float(intent.confidence or 0.0) < threshold:
+			continue
+		return SemanticReasoningActivationResult(
+			status="accepted",
+			intent=intent,
+			confidence_threshold=threshold,
+			agent_meta={
+				"activation_source": "governed_followup_metadata",
+				"followup_mode": mode,
+				"detected_followup_modes": list(dict.fromkeys(modes)),
+			},
+		)
+	return None
+
+
 def interpret_reasoning_activation_semantically(
 	*,
 	request_id: str,
@@ -491,6 +549,13 @@ def interpret_reasoning_activation_semantically(
 		activation_contract=activation_contract,
 		prior_reasoning_contract=prior_reasoning_contract,
 	)
+	metadata_activation = _metadata_reasoning_activation_result(
+		message=message,
+		context=context,
+		threshold=threshold,
+	)
+	if metadata_activation is not None:
+		return metadata_activation
 	try:
 		data = call_qwen_runtime_reasoning_activation_interpretation(
 			request_id=request_id,

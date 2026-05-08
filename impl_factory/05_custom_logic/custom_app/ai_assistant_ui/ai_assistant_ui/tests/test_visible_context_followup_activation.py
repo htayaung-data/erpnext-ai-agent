@@ -37,6 +37,43 @@ Top Customers
 """
 
 
+def _ar_comparison_text():
+	return """Here is the comparison from Accounts Receivable Summary.
+
+Comparison table
+
+| Party | Outstanding | Overdue | Overdue intensity |
+| --- | ---: | ---: | ---: |
+| 35th Street Mobile Wholesale | 84.8 MMK Million | 58.2 MMK Million | 68.6% |
+| Ko Nay Lin Mobile Center | 63.1 MMK Million | 37.3 MMK Million | 59.1% |
+| Taunggyi City Mobile | 37 MMK Million | 37 MMK Million | 100% |
+"""
+
+
+def _customer_revenue_ranking_text():
+	return """Top 7 Customers by Revenue Last Year
+
+| Rank | Customer | Revenue (MMK) |
+| ---: | --- | ---: |
+| 1 | Capital Telecom (NPT) | 182,486,500 |
+| 2 | Bayint Naung Wholesale Mobile | 177,612,500 |
+| 3 | 35th Street Mobile Wholesale | 146,669,000 |
+"""
+
+
+def _product_million_ranking_text():
+	return """Top 7 Products by Revenue (2025-04-01 to 2026-03-31)
+
+Top Ranked Rows
+
+| Rank | Product | Revenue (MMK Million) |
+| ---: | --- | ---: |
+| 1 | Samsung Galaxy A15 (6GB 128GB) | 341.21 |
+| 2 | Xiaomi Redmi Note 13 (8GB 256GB) | 281.77 |
+| 3 | Power Bank 20000mAh | 174.19 |
+"""
+
+
 def _ar_artifact():
 	return {
 		"type": "qwen_normalized_family_artifact_contract",
@@ -504,6 +541,125 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Rank 2 is 35th Street Mobile Wholesale", answer)
 		self.assertNotIn("Aung Aung Telecom", answer)
 
+	def test_latest_assistant_comparison_table_has_context_authority_over_prior_report(self):
+		session_doc = {"messages": [_tool_message(_ar_artifact()), _assistant_message(_ar_comparison_text())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Ko Nay Lin Mobile Center", answer)
+		self.assertNotIn("Bayint Naung Wholesale Mobile", answer)
+
+	def test_selected_comparison_row_with_million_values_gets_consultant_risk_signal(self):
+		session_doc = {"messages": [_tool_message(_ar_artifact()), _assistant_message(_ar_comparison_text())]}
+		handled, _payload, _messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="why is this customer risky?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Ko Nay Lin Mobile Center", answer)
+		self.assertIn("Why this stands out from the visible row", answer)
+		self.assertIn("37.3 MMK Million is overdue", answer)
+		self.assertIn("59.1% of the outstanding balance", answer)
+		self.assertIn("Consultant takeaway", answer)
+
+	def test_latest_top_ranked_rows_table_has_context_authority_over_stale_supplier_selection(self):
+		stale_supplier_selection = {
+			"type": "qwen_nbu_current_artifact_answer_activation_contract",
+			"activation_mode": "visible_context_answer",
+			"resolved_rank": 2,
+			"resolved_entity": {
+				"entity_type": "supplier",
+				"entity_label": "Sunflower Accessories Co.",
+				"entity_key": "Sunflower Accessories Co.",
+				"row": {
+					"rank": 2,
+					"supplier": "Sunflower Accessories Co.",
+					"outstanding_amount": 228576500,
+				},
+			},
+		}
+		session_doc = {
+			"messages": [
+				_tool_message(_ap_artifact()),
+				_tool_message(stale_supplier_selection),
+				_assistant_message(_product_million_ranking_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ap_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Xiaomi Redmi Note 13", answer)
+		self.assertNotIn("Sunflower Accessories Co.", answer)
+
+	def test_artifact_set_field_question_does_not_use_stale_selected_entity(self):
+		stale_supplier_selection = {
+			"type": "qwen_nbu_current_artifact_answer_activation_contract",
+			"activation_mode": "visible_context_answer",
+			"resolved_rank": 2,
+			"resolved_entity": {
+				"entity_type": "supplier",
+				"entity_label": "Sunflower Accessories Co.",
+				"entity_key": "Sunflower Accessories Co.",
+				"row": {
+					"rank": 2,
+					"supplier": "Sunflower Accessories Co.",
+					"outstanding_amount": 228576500,
+					"overdue_amount": 192031500,
+				},
+			},
+		}
+		session_doc = {
+			"messages": [
+				_tool_message(stale_supplier_selection),
+				_assistant_message(_customer_revenue_ranking_text()),
+			]
+		}
+		self.assertEqual(visible_context_target_reference("All above 7 customers are from Yangon Region?"), "current_artifact")
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="All above 7 customers are from Yangon Region?",
+			current_artifact=_ap_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_boundary")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("I can't verify that from the table above.", answer)
+		self.assertIn("Territory", answer)
+		self.assertNotIn("Sunflower Accessories Co.", answer)
+
+	def test_prediction_boundary_uses_visible_row_facts_without_nbu_authority_trace(self):
+		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="will the first customer default next month?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_boundary")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("can't safely predict", answer)
+		self.assertIn("Capital Telecom (NPT)", answer)
+		self.assertNotIn("Rank 1 is Capital Telecom", answer)
+
 	def test_ambiguous_deictic_question_asks_business_row_clarification(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
 		self.assertEqual(visible_context_target_reference("why is this customer risky?"), "selected_entity")
@@ -593,6 +749,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("rank 2", answer.lower())
 		self.assertIn("Why this stands out from the visible row", answer)
 		self.assertIn("68.6% of the outstanding balance", answer)
+		self.assertIn("Consultant takeaway", answer)
 		self.assertIn("Facts from that row", answer)
 		self.assertIn("This is based only on the table above.", answer)
 
@@ -616,8 +773,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("Sunflower Accessories Co.", answer)
 		self.assertIn("Why this stands out from the visible row", answer)
-		self.assertIn("136,661,500 MMK is overdue", answer)
+		self.assertIn("136.7 MMK Million is overdue", answer)
 		self.assertIn("61.4% of the outstanding balance", answer)
+		self.assertIn("Consultant takeaway", answer)
 		self.assertIn("Facts from that row", answer)
 
 	def test_reasoning_explanation_overrides_detail_shadow_for_visible_row_signal(self):
@@ -651,7 +809,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("35th Street Mobile Wholesale", answer)
 		self.assertIn("Why this stands out from the visible row", answer)
-		self.assertIn("58,212,000 MMK is overdue", answer)
+		self.assertIn("58.2 MMK Million is overdue", answer)
 
 	def test_selected_entity_composite_context_uses_visible_row_explanation(self):
 		session_doc = {"messages": [_tool_message(_ar_artifact())]}
@@ -675,7 +833,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("35th Street Mobile Wholesale", answer)
 		self.assertIn("Why this stands out from the visible row", answer)
-		self.assertIn("58,212,000 MMK is overdue", answer)
+		self.assertIn("58.2 MMK Million is overdue", answer)
 
 	def test_prediction_question_returns_boundary_not_visible_fact_answer(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}

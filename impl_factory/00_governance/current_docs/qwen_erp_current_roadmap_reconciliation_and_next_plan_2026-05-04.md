@@ -1,8 +1,9 @@
 # Qwen ERP Current Roadmap Reconciliation And Next Implementation Plan
 
 Date: 2026-05-04
+Last updated: 2026-05-07
 Status: active roadmap reconciliation plan
-Scope: AI Assistant roadmap alignment after Phase 3.6, NBU stabilization, zero-keyword cleanup, and Qwen runtime contract work
+Scope: AI Assistant roadmap alignment after Phase 3.6, NBU stabilization, zero-keyword cleanup, UX-S5 consultant contract work, and Qwen runtime contract work
 Branch: `feature/ai-assistant`
 
 ## 1. Purpose
@@ -29,9 +30,10 @@ The main roadmap answer is:
 5. Phase 3.5 reasoning and recommendation authority boundaries are complete for blocked-authority safety.
 6. Phase 3.6 Release Readiness is the active bridge before Phase 4.
 7. NBU-S0 through NBU-S7 are automated-green.
-8. NBU-S8 Manual Browser UAT is the active next product-quality gate.
-9. NBU-S9 service and duplicate-lane consolidation remains pending as structural hardening before or alongside Phase 4 preflight.
-10. Phase 4 has not started and should not start until S8 is green and S9 risk is either reduced or explicitly accepted.
+8. UX-S5 consultant reasoning contracts are implemented and pushed, but manual browser UAT exposed context-authority blockers that must be fixed before declaring S8 green.
+9. NBU-S8 Manual Browser UAT remains the active product-quality gate.
+10. NBU-S9 service and duplicate-lane consolidation remains pending as structural hardening before or alongside Phase 4 preflight.
+11. Phase 4 has not started and should not start until S8 is green and S9 risk is either reduced or explicitly accepted.
 
 Current repository state checked on 2026-05-04:
 
@@ -118,6 +120,152 @@ Current state:
 3. this is foundation work, not permission to activate full Phase 4 routing yet;
 4. deeper activation belongs to later NBU front-controller slices such as governed requery and fresh query routing.
 
+### 3.6 Active UX Roadmap Inside NBU-S8
+
+Manual browser UAT exposed that NBU-S8 is not only a checklist. It now contains a dedicated UX hardening roadmap.
+
+This UX roadmap is the active quality gate before Phase 4. It must stay inside NBU-S8 / Phase 3.6, not become a disconnected roadmap and not be postponed until after S8.
+
+Current UX roadmap state:
+
+1. `UX-S0` Baseline Current Failures: mostly complete.
+   - Current bad behaviors are recorded through browser testing: unrelated fallback, non-executable options, poor typo recovery, shallow "more" answers, context drift, and mechanical consultant responses.
+2. `UX-S1` Unified Recovery Contract: partially complete.
+   - Several typed contracts exist, but recovery decisions are not yet consistently unified across clarification, fallback, challenge recovery, and evidence expansion.
+3. `UX-S2` Executable Clarification Gate: partially complete.
+   - Some non-executable options were fixed, but every clarification option still needs executable proof before it is offered to the user.
+4. `UX-S3` Typo And Misspelling Handling: partially complete.
+   - Common spelling recovery exists in places, but it is not yet consistently validated through governed metadata and browser UAT.
+5. `UX-S4` Professional Fallback Renderer: partially complete.
+   - Some fallback wording improved, but robotic fallback and weak challenge recovery still appear.
+6. `UX-S5` Evidence Expansion / Consultant Mode: active and not complete.
+   - This is the current main work.
+   - The assistant must not merely repeat visible reports when the user asks for meaning, deeper detail, implications, consultant-style interpretation, or advice.
+   - The assistant must first decide whether the current artifact is sufficient, whether deeper governed ERP evidence is needed, or whether a governed formula/definition is needed.
+7. `UX-S6` Context Authority Stabilization: active next implementation slice.
+   - Browser UAT after UX-S5 showed that latest visible table authority, generic follow-up anchoring, professional fallback wording, and focused line-item continuation are still not stable enough.
+8. `UX-S7` Cross-Family Regression And Browser UAT: not complete.
+   - Finance, AR/AP, customer, supplier, product, inventory, invoices, unsupported questions, typo questions, and user challenge questions still need cross-family proof after UX-S6.
+
+#### 3.6.1 UX-S5 Checkpoint Truth
+
+`UX-S5` produced a useful checkpoint:
+
+1. semantic detail intent slots were added;
+2. governed evidence drilldown registry was added;
+3. metadata-backed consultant playbooks were added;
+4. consultant role and entity-detail capability bindings were moved into metadata registries;
+5. focused tests and guardrail were green at the pushed checkpoint `d5e639d`.
+
+However, browser UAT showed that consultant depth alone is not enough. The next blocker is not wording polish. It is context authority.
+
+Current UX-S6 blockers:
+
+1. latest visible table authority is wrong in some flows;
+2. generic follow-ups such as "more insight" can drift to an unrelated family;
+3. unsupported prediction fallback can still expose technical language;
+4. line-item continuation can lose the active line, such as COGS, and fall back to broad statement interpretation;
+5. filter follow-ups can drift to stale artifacts instead of answering from proven context or saying the filter was not proven.
+
+UX-S6 must fix items 1 through 4 directly and add only minimal filter-follow-up safety. Full filtering is deferred to the governed filtering phase.
+
+### 3.7 Roadmap Sequence After UX-S6
+
+The active sequence as of 2026-05-07 is:
+
+1. `UX-S6`: Context Authority Stabilization.
+2. `UX-S7`: Cross-Family Regression And Browser UAT.
+3. `FILTER-S0+`: Governed Filtering Expansion across families.
+4. `MI-S0+`: Management Intelligence core with formula, ratio, and analytics viewpoints.
+5. `MI-ADV-S0+`: advanced consultant drilldown, root-cause, scenario, and sensitivity work.
+6. `STAB-S0+`: stabilization, release gates, lane consolidation, remaining lexical-debt cleanup, and repeatable UAT harness.
+7. `FAM-S0+`: Family Onboarding Standard and new-family test harness.
+
+This order is intentional:
+
+1. context authority must be reliable before any deeper analysis can be trusted;
+2. filtering must be governed before MI calculates filtered ratios, filtered trends, or filtered consultant advice;
+3. MI should introduce the reusable analysis viewpoints, not one-off family answers;
+4. family onboarding should be finalized after context, filtering, and MI contracts are mature enough to become onboarding requirements.
+
+#### UX-S5 Detailed Mini-Slices
+
+`UX-S5` is the correct home for consultant-grade business behavior. It should not be implemented as prompt-specific keyword logic.
+
+`UX-S5A`: Consultant intent and response contract
+
+1. classify requests for interpretation, deeper explanation, business meaning, implications, risk, guidance, or advice through semantic intent and typed contracts;
+2. do not add phrase-specific branches for individual prompts;
+3. prove that consultant intent can supersede shallow presentation-only transforms.
+
+Exit gate:
+
+1. consultant-intent tests pass for at least AR/AP, financial statements, products, and document rows;
+2. ordinary presentation requests still use presentation transforms;
+3. enterprise guardrail remains green.
+
+`UX-S5B`: Evidence expansion planner
+
+1. decide whether the current visible artifact is enough;
+2. if shallow, plan related governed ERP evidence before answering;
+3. if deeper evidence is unavailable, answer professionally with the current evidence and state the missing evidence in business language.
+
+Exit gate:
+
+1. no repeated-table answer is treated as a consultant answer;
+2. no unsupported data is invented;
+3. expansion decisions are observable through typed contracts.
+
+`UX-S5C`: Consultant interpretation renderer
+
+1. convert governed facts into business interpretation;
+2. separate facts, interpretation, risk/impact, and possible next steps;
+3. use visible table sections such as summary, distribution, ranked rows, and line-item sections as evidence;
+4. avoid hidden unrelated rows when the user is asking about the visible result.
+
+Exit gate:
+
+1. AR Aging consultant explanation interprets overdue ratio, aging bucket distribution, chronic aging exposure, and customer concentration;
+2. AP Aging consultant explanation interprets payable pressure, supplier concentration, and aging distribution;
+3. P&L / Balance Sheet / Cash Flow explanations interpret business meaning instead of restating rows;
+4. answers remain grounded and numeric validation rejects unsupported derived totals.
+
+`UX-S5D`: Governed formula and MI handoff
+
+1. when the user asks for company health, ratios, or formula-based meaning, use the existing business-definition / formula registry where available;
+2. calculate ratios only from governed ERP evidence and approved formulas;
+3. if the formula or data is missing, explain the missing piece professionally and offer the nearest executable evidence path.
+
+Exit gate:
+
+1. current ratio, debt-to-equity, gross margin, net margin, AR overdue ratio, AP overdue ratio, and working-capital indicators use governed definitions when available;
+2. formula output includes formula, inputs, result, and interpretation;
+3. no unsupported management recommendation is produced without policy.
+
+`UX-S5E`: Consultant challenge recovery
+
+1. when the user challenges a shallow or wrong answer, the assistant should acknowledge the issue and recover through the correct contract path;
+2. challenge recovery must not route to unrelated reports;
+3. recovery must preserve the active business context unless the user clearly switches context.
+
+Exit gate:
+
+1. user challenge after AR explanation recovers into AR consultant interpretation;
+2. user challenge after financial statement explanation recovers into the active statement context;
+3. user challenge after unsupported request does not invent capability and does not blame the user.
+
+#### UX-S5 Definition Of Done
+
+`UX-S5` is done only when:
+
+1. consultant requests produce interpretation, not table repetition;
+2. evidence expansion is attempted when current evidence is shallow and a governed related path exists;
+3. missing evidence is explained in professional business language;
+4. formulas and ratios use MI/business-definition contracts, not ad hoc arithmetic;
+5. no lexical / keyword / hardcoded single-case routing is introduced;
+6. targeted automated tests and exact browser-flow probes pass;
+7. enterprise guardrail remains green.
+
 ## 4. Current Blockers Before Phase 4
 
 The remaining blockers are quality gates, not missing feature ambition.
@@ -180,7 +328,7 @@ Exit gate:
 1. branch remains clean after commit/push;
 2. no governance doc deletion is bundled into this step.
 
-### Step 2: Resume NBU-S8 Manual Browser UAT
+### Step 2: Resume NBU-S8 / UX Manual Browser UAT
 
 Goal:
 
@@ -196,19 +344,23 @@ Process:
 
 Immediate first group to revisit:
 
-1. Group 4: Financial Statement Clarification And Section Follow-Up.
-2. Group 6: Natural Confusion Recovery.
+1. `UX-S5A`: consultant intent and response contract.
+2. `UX-S5B`: evidence expansion planner.
+3. `UX-S5C`: consultant interpretation renderer.
+4. `UX-S5D`: governed formula and MI handoff.
+5. `UX-S5E`: consultant challenge recovery.
 
 Reason:
 
-Recent browser results showed the most serious remaining product-quality risk here: non-executable options and fallback recovery.
+Recent browser results showed the most serious remaining product-quality risk: the assistant can retrieve governed reports, but it still repeats data instead of interpreting the business meaning when the user asks for consultant-style explanation, deeper detail, or guidance.
 
 Exit gate:
 
-1. all S8 groups pass or have approved documented exceptions;
-2. no internal technical language leaks to users;
-3. no unsupported option is offered as executable;
-4. guardrail remains green.
+1. `UX-S5` passes its detailed definition of done;
+2. all remaining S8 groups pass or have approved documented exceptions;
+3. no internal technical language leaks to users;
+4. no unsupported option is offered as executable;
+5. guardrail remains green.
 
 ### Step 3: Run Post-S8 Automated Regression
 

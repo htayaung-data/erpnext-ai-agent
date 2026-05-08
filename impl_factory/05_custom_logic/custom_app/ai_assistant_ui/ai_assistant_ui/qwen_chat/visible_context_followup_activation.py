@@ -9,6 +9,7 @@ from .entity_detail_request_support import (
 	entity_detail_capability_id,
 	resolve_entity_detail_request_interpretation,
 )
+from .business_language_guards import looks_like_predictive_guarantee_claim
 from .metadata import ontology_detect_concepts
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
 from .natural_business_understanding_context_resolution import (
@@ -209,10 +210,10 @@ def _context_artifacts(
 			seen.add(identity)
 		artifacts.append(clean_payload)
 
+	for payload in session_visible_rendered_artifacts(session_doc, limit=limit):
+		append(payload)
 	primary_tool_artifacts, secondary_tool_artifacts, fallback_tool_artifacts = _session_tool_artifact_groups(session_doc, limit=limit)
 	for payload in primary_tool_artifacts:
-		append(payload)
-	for payload in session_visible_rendered_artifacts(session_doc, limit=limit):
 		append(payload)
 	for payload in secondary_tool_artifacts:
 		append(payload)
@@ -263,6 +264,68 @@ def _selected_focus(session_doc: Any) -> Dict[str, Any]:
 	}
 
 
+def _selected_focus_allowed_for_message(raw_message: str) -> bool:
+	tokens = _tokens(raw_message)
+	return any(term in tokens for term in DEICTIC_ENTITY_TERMS)
+
+
+def _normalize_field_key(value: Any) -> str:
+	text = re.sub(r"\([^)]*\)", "", _clean_text(value).lower())
+	text = re.sub(r"[^a-z0-9]+", "_", text)
+	return re.sub(r"_+", "_", text).strip("_")
+
+
+def _artifact_requested_dimension_keys(raw_message: str) -> List[str]:
+	requested: List[str] = []
+	for key in detect_canonical_keys(text=raw_message, dimension_or_metric="dimension"):
+		normalized = _normalize_field_key(key)
+		if normalized and normalized not in requested:
+			requested.append(normalized)
+	return requested
+
+
+def _visible_row_field_keys(rows: List[Dict[str, Any]]) -> List[str]:
+	keys: List[str] = []
+	for row in rows[:10]:
+		for key in _clean_dict(row).keys():
+			normalized = _normalize_field_key(key)
+			if normalized and normalized not in keys:
+				keys.append(normalized)
+	return keys
+
+
+def _field_label(key: str) -> str:
+	return _humanize(key).title()
+
+
+def _artifact_field_boundary_answer(
+	*,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+) -> str:
+	requested_keys = _artifact_requested_dimension_keys(raw_message)
+	if not requested_keys:
+		return ""
+	rows, _source = nbu_artifact_rows(_clean_dict(artifact_payload))
+	if not rows:
+		return ""
+	visible_keys = _visible_row_field_keys(rows)
+	if not visible_keys:
+		return ""
+	missing_keys = [key for key in requested_keys if key not in visible_keys]
+	if not missing_keys:
+		return ""
+	lines = [
+		"I can't verify that from the table above.",
+		"",
+		f"The visible rows show: {', '.join(_field_label(key) for key in visible_keys[:8])}.",
+		f"The table does not show: {', '.join(_field_label(key) for key in missing_keys[:6])}.",
+		"",
+		"To answer this safely, we need a governed result that includes those fields or a filtered view that proves the condition.",
+	]
+	return "\n".join(lines).strip()
+
+
 def _resolve_visible_context(
 	*,
 	session_doc: Any,
@@ -270,7 +333,7 @@ def _resolve_visible_context(
 	current_artifact: Dict[str, Any],
 ) -> Dict[str, Any]:
 	target = _target_reference(raw_message)
-	if target == "selected_entity":
+	if target == "selected_entity" and _selected_focus_allowed_for_message(raw_message):
 		selected = _latest_selected_entity(session_doc)
 		if _clean_dict(selected).get("row"):
 			return {
@@ -396,9 +459,14 @@ def _number_value(value: Any) -> float | None:
 	text = _clean_text(value)
 	if not text:
 		return None
-	text = text.replace(",", "").replace("MMK", "").replace("%", "").strip()
+	multiplier = 1.0
+	if re.search(r"\b(?:million|mn|m)\b", text, flags=re.IGNORECASE):
+		multiplier = 1_000_000.0
+	text = re.sub(r"\bMMK\b", "", text, flags=re.IGNORECASE)
+	text = re.sub(r"\b(?:million|mn|m)\b", "", text, flags=re.IGNORECASE)
+	text = text.replace(",", "").replace("%", "").strip()
 	try:
-		return float(text)
+		return float(text) * multiplier
 	except (TypeError, ValueError):
 		return None
 
@@ -413,6 +481,9 @@ def _first_numeric(row: Dict[str, Any], keys: Tuple[str, ...]) -> float | None:
 
 
 def _money_text(value: float) -> str:
+	if abs(value) >= 1_000_000:
+		million_text = f"{value / 1_000_000:,.1f}".rstrip("0").rstrip(".")
+		return f"{million_text} MMK Million"
 	return f"{value:,.0f} MMK"
 
 
@@ -602,9 +673,12 @@ def _should_explain_row_signal(
 
 def _visible_followup_authority_intent(
 	*,
+	raw_message: str = "",
 	nbu_trace_payload: Dict[str, Any] | None,
 	reasoning_semantic_result: Any = None,
 ) -> str:
+	if looks_like_predictive_guarantee_claim(raw_message):
+		return "prediction_boundary"
 	authority_class = _nbu_authority_class(nbu_trace_payload)
 	if authority_class == "prediction":
 		return "prediction_boundary"
@@ -659,6 +733,8 @@ def _resolved_answer_text(
 		nbu_trace_payload=nbu_trace_payload,
 		reasoning_semantic_result=reasoning_semantic_result,
 	)
+	if not explain_row_signal and _clean_text(resolution.get("target_reference")).lower() == "selected_entity":
+		explain_row_signal = bool(_risk_signal_lines(row))
 	if explain_row_signal:
 		lines = [
 			f"{label} is the {rank_text.lower()} entry in the table above.",
@@ -668,6 +744,10 @@ def _resolved_answer_text(
 		risk_lines = _risk_signal_lines(row)
 		if risk_lines:
 			lines.extend(risk_lines)
+			lines.append("")
+			lines.append(
+				"Consultant takeaway: this row combines cash impact with timing or exposure intensity, so it deserves focused follow-up before lower-risk rows."
+			)
 			lines.append("")
 			lines.append("Facts from that row:")
 	else:
@@ -842,7 +922,55 @@ def try_activate_visible_context_followup_response(
 		and _clean_text(resolution.get("target_reference")).lower() == "current_artifact"
 		and artifact_level_visible_context_requested(raw_message)
 	):
-		return False, None
+		artifacts = _context_artifacts(session_doc, current_artifact=_clean_dict(current_artifact), limit=1)
+		answer_text = _artifact_field_boundary_answer(
+			raw_message=raw_message,
+			artifact_payload=artifacts[0] if artifacts else _clean_dict(current_artifact),
+		)
+		if not answer_text:
+			return False, None
+		answer_mode = "visible_context_boundary"
+		authority_intent = "safe_visible_fact"
+		if not user_message_already_appended:
+			append_message(session_doc, "user", raw_message)
+		for payload in additional_tool_payloads or []:
+			if isinstance(payload, dict) and payload:
+				append_tool_payload(session_doc, payload)
+		trace = _trace_payload(
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			raw_message=raw_message,
+			resolution={**resolution, "authority_intent": authority_intent},
+		)
+		append_tool_payload(session_doc, trace)
+		activation_contract = _activation_contract(
+			request_id=request_id,
+			resolution=resolution,
+			answer_mode=answer_mode,
+		)
+		append_tool_payload(session_doc, activation_contract)
+		execution_path_payload = {
+			"type": "qwen_execution_path",
+			"contract_version": CONTRACT_VERSION,
+			"request_id": _clean_text(request_id),
+			"path": answer_mode,
+			"reason": _clean_text(activation_contract.get("reason")),
+			"requires_runtime": False,
+			"grounded_required": False,
+		}
+		append_tool_payload(session_doc, execution_path_payload)
+		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+		if clear_pending_clarification_signal is not None:
+			clear_pending_clarification_signal(session_doc)
+		save_session(session_doc, ignore_permissions=False)
+		return True, {
+			"ok": True,
+			"request_id": request_id,
+			"mode": answer_mode,
+			"agent_meta": {"engine": "visible_context_followup", "status": status},
+		}
 
 	nbu_trace_payload = _latest_nbu_trace_payload(additional_tool_payloads)
 	if _should_defer_visible_context_to_governed_detail(
@@ -852,6 +980,7 @@ def try_activate_visible_context_followup_response(
 	):
 		return False, None
 	authority_intent = _visible_followup_authority_intent(
+		raw_message=raw_message,
 		nbu_trace_payload=nbu_trace_payload,
 		reasoning_semantic_result=reasoning_semantic_result,
 	)

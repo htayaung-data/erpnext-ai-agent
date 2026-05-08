@@ -11,6 +11,10 @@ _WHO_WILL_PAYMENT_PATTERN = re.compile(
 	r"\b(?:who|which|what)\b.{0,60}\bwill\b.{0,40}\b(?:pay|settle|repay|default)\b",
 	re.IGNORECASE,
 )
+_WILL_PAYMENT_OUTCOME_PATTERN = re.compile(
+	r"\bwill\b.{0,80}\b(?:pay|settle|repay|default)\b",
+	re.IGNORECASE,
+)
 _SPECULATIVE_CAUSAL_PATTERN = re.compile(
 	r"\b(?:probably|likely|maybe|might|seems?|appears?|suspect|infer|inferred|because|caused?|due\s+to|reason\s+for|why)\b",
 	re.IGNORECASE,
@@ -35,7 +39,7 @@ def looks_like_predictive_guarantee_claim(message: str) -> bool:
 		return False
 	if _PREDICTIVE_GUARANTEE_PATTERN.search(text):
 		return True
-	return bool(_WHO_WILL_PAYMENT_PATTERN.search(text))
+	return bool(_WHO_WILL_PAYMENT_PATTERN.search(text) or _WILL_PAYMENT_OUTCOME_PATTERN.search(text))
 
 
 def looks_like_unsupported_operational_inference_claim(message: str) -> bool:

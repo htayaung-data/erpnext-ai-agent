@@ -1,8 +1,10 @@
 import unittest
+from unittest.mock import patch
 
 from ai_assistant_ui.qwen_chat.semantic_reasoning_activation import (
 	SemanticReasoningActivationResult,
 	_build_activation_context,
+	interpret_reasoning_activation_semantically,
 	_validate_semantic_payload,
 )
 
@@ -201,6 +203,59 @@ class TestSemanticReasoningActivationContract(unittest.TestCase):
 			context["prior_offered_next_actions"][0]["execution_mode"],
 			"current_governed_artifact",
 		)
+
+	def test_governed_metadata_continuation_routes_generic_detail_followup_to_reasoning(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.semantic_reasoning_activation.call_qwen_runtime_reasoning_activation_interpretation"
+		) as runtime_call:
+			result = interpret_reasoning_activation_semantically(
+				request_id="ux-s6-generic-continuation",
+				session_id="ux-s6",
+				user_id="Administrator",
+				site_name="test.local",
+				message="Give me more insight",
+				recent_messages=[],
+				latest_grounded_turn={
+					"grounded": True,
+					"source_kind": "report",
+					"source_name": "AR/AP Working Capital Health",
+					"artifact_family_id": "working_capital_health",
+					"artifact_type": "normalized_family_artifact",
+					"artifact_source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+					"row_count": 5,
+				},
+				latest_family_artifact={
+					"family_id": "working_capital_health",
+					"artifact_type": "normalized_family_artifact",
+					"source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+					"capability_id": "working_capital_health_read",
+				},
+				latest_assistant_payload={"title": "AR/AP Working Capital Health"},
+				activation_contract={
+					"activation_state": "eligible",
+					"grounded_context_available": True,
+					"grounded_source_kind": "report",
+					"grounded_source_name": "AR/AP Working Capital Health",
+					"grounded_family_id": "working_capital_health",
+					"grounded_artifact_type": "normalized_family_artifact",
+					"grounded_source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+					"grounded_capability_id": "working_capital_health_read",
+					"allowed_reasoning_types": [
+						"interpretation",
+						"explanation",
+						"recommendation",
+						"continuation_detail",
+					],
+					"route_target": "reasoning_lane",
+				},
+			)
+		self.assertEqual(result.status, "accepted")
+		self.assertIsNotNone(result.intent)
+		self.assertEqual(result.intent.reasoning_type, "continuation_detail")
+		self.assertEqual(result.intent.answer_goal, "expand_detail")
+		self.assertEqual(result.intent.evidence_depth, "drilldown_preferred")
+		self.assertEqual(result.agent_meta.get("activation_source"), "governed_followup_metadata")
+		runtime_call.assert_not_called()
 
 
 if __name__ == "__main__":

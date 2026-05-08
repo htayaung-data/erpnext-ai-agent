@@ -345,6 +345,116 @@ Recommended future home:
 
 1. keep closed unless new entity detail binding ownership is added outside the registry
 
+### 3.12 Universal Governed Filtering Expansion
+
+Origin:
+
+1. browser UAT after UX-S5 consultant reasoning checkpoint
+2. filtered ranking and filter follow-up discussion on 2026-05-07
+
+Current state:
+
+1. deferred as a dedicated post-UX-S7 mini-phase
+2. current system has partial filter support through report metadata, direct query fields, and semantic aliases
+3. current system does not yet have a universal filter contract across all families
+4. filter follow-ups currently require minimal safety so they do not drift to stale artifacts
+
+Deferred scope:
+
+1. territory, region, country, warehouse, item group, brand, product category, customer group, supplier group, document status, aging type, aging buckets, payment terms, company, period, and future family dimensions where appropriate
+2. pre-aggregation filter versus post-aggregation filter
+3. group-by versus filter-by distinction
+4. value validation and join path declaration
+5. applied-filter provenance in normalized artifacts
+
+Reopen trigger:
+
+1. UX-S6 context authority is green
+2. UX-S7 cross-family regression and browser UAT are green
+3. the team is ready to start `FILTER-S0`
+
+Recommended future home:
+
+1. `FILTER-S0` Governed Filter Inventory
+2. `FILTER-S1` Filter Contract And Provenance
+3. `FILTER-S2` Filtered Requery Execution
+
+### 3.13 Management Intelligence Analysis Viewpoints
+
+Origin:
+
+1. UX-S5 consultant depth discussion
+2. management intelligence roadmap discussion on 2026-05-07
+
+Current state:
+
+1. deferred until context authority and governed filtering are stable
+2. existing business-definition and formula foundations should be reused
+3. current consultant renderer is improving, but does not yet provide the full reusable MI viewpoint layer
+
+Deferred scope:
+
+1. trend
+2. variance
+3. contribution
+4. concentration
+5. aging and time quality
+6. margin quality
+7. cash conversion
+8. risk priority
+9. action plan
+10. later root-cause drilldown, scenario, sensitivity, and guarded prediction
+
+Reopen trigger:
+
+1. `FILTER-S2` is green or the MI slice explicitly does not require filtered scope
+2. formula inputs and data provenance are available for the selected MI viewpoint
+
+Recommended future home:
+
+1. `MI-S0` Management Intelligence Contract Baseline
+2. `MI-S1` Core Analysis Viewpoints
+3. `MI-S2` Business Consultant Renderer
+4. `MI-ADV-S0` Advanced Consultant Drilldown
+
+### 3.14 Family Onboarding Standard And Test Harness
+
+Origin:
+
+1. future HR, CRM, and Manufacturing expansion discussion on 2026-05-07
+2. concern that new families must not require start-from-scratch implementation
+
+Current state:
+
+1. deferred until context authority, filtering, and MI contracts are mature enough to become onboarding requirements
+2. an NBU onboarding guide exists, but it should not be treated as final family onboarding standard yet
+
+Deferred scope:
+
+1. family identity
+2. capability declarations
+3. data sources
+4. dimensions
+5. metrics
+6. filters
+7. supported intents
+8. follow-up modes
+9. renderers
+10. policy boundaries
+11. consultant playbooks
+12. automated tests
+13. browser UAT examples
+
+Reopen trigger:
+
+1. `MI-S2` is green
+2. the team is ready to onboard a new family or pilot family without breaking existing families
+
+Recommended future home:
+
+1. `FAM-S0` Family Onboarding Standard
+2. new-family test harness and pilot onboarding slice
+
 ## 4. How Future Work Should Use This Register
 
 Before starting a new phase:
@@ -366,4 +476,6 @@ The current decision is:
 1. keep the remaining deferred items visible
 2. treat overdue severity as the remaining Phase `2` blocked item pending explicit finance policy
 3. use the overdue-severity policy pack as the central approval and future-adjustment note for label or band changes
-4. move next into governed KPI execution or the next approved phase using the now-activated registry foundations
+4. do not start universal filtering until UX-S6 and UX-S7 are green
+5. do not start MI viewpoints until governed scope and filter provenance are stable enough for safe calculation
+6. do not finalize new-family onboarding until filtering and MI contracts are mature enough to become required onboarding gates

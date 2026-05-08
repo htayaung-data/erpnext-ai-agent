@@ -22,6 +22,9 @@ from ai_assistant_ui.qwen_chat.evidence_expansion_support import (
 	build_evidence_expansion_plan,
 	evidence_expansion_user_guidance,
 )
+from ai_assistant_ui.qwen_chat.natural_business_understanding_request_classification import (
+	visible_context_reference_requested,
+)
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_reasoning_render,
@@ -920,6 +923,8 @@ def _candidate_text_values(row: Dict[str, Any]) -> List[str]:
 		text = str(value if value is not None else "").strip()
 		if not text or not re.search(r"[A-Za-z]", text):
 			continue
+		if text.lower() in {"mmk", "usd", "eur", "sgd", "thb", "currency"}:
+			continue
 		for candidate in (text, text.split(" - ", 1)[0].strip()):
 			if not candidate or candidate in seen:
 				continue
@@ -942,6 +947,7 @@ def _row_focus_score(row: Dict[str, Any], focus_text: str) -> int:
 	focus_tokens = _text_tokens(focus)
 	if not focus_tokens:
 		return 0
+	leading_focus = (focus.split(".", 1)[0] or focus)[:180]
 	best = 0
 	for candidate in _candidate_text_values(row):
 		candidate_norm = re.sub(r"\s+", " ", candidate.lower()).strip()
@@ -950,6 +956,8 @@ def _row_focus_score(row: Dict[str, Any], focus_text: str) -> int:
 		candidate_tokens = _text_tokens(candidate_norm)
 		if not candidate_tokens:
 			continue
+		if candidate_norm in leading_focus:
+			best = max(best, 180 + min(len(candidate_norm), 40))
 		if candidate_norm in focus:
 			best = max(best, 120 + min(len(candidate_norm), 40))
 		acronym = _candidate_acronym(candidate_norm)
@@ -994,10 +1002,20 @@ def _context_candidate_rows(context: Dict[str, Any]) -> List[Dict[str, Any]]:
 def _prior_grounded_focus_text(context: Dict[str, Any]) -> str:
 	prior_reasoning = context.get("prior_reasoning") if isinstance(context.get("prior_reasoning"), dict) else {}
 	prior_grounded = context.get("prior_grounded_answer") if isinstance(context.get("prior_grounded_answer"), dict) else {}
-	return (
-		str(prior_reasoning.get("answer_text") or "").strip()
-		or str(prior_grounded.get("answer_text") or "").strip()
-	)
+	claim_values: List[str] = []
+	for claim in prior_reasoning.get("supported_claims") or []:
+		if not isinstance(claim, dict):
+			continue
+		claim_values.append(str(claim.get("claim") or "").strip())
+		claim_values.append(str(claim.get("support") or "").strip())
+	if _prior_reasoning_was_row_detail(context) and any(claim_values):
+		return "\n".join(value for value in claim_values if value).strip()
+	values = [
+		str(prior_reasoning.get("answer_text") or "").strip(),
+		str(prior_grounded.get("answer_text") or "").strip(),
+		*claim_values,
+	]
+	return "\n".join(value for value in values if value).strip()
 
 
 def _row_focus_identity(row: Dict[str, Any]) -> str:
@@ -1340,14 +1358,47 @@ def _artifact_summary_metric_map(sections: Dict[str, Any]) -> Dict[str, tuple[st
 	return metrics
 
 
+_METRIC_ENTRY_ALIASES: Dict[str, tuple[str, ...]] = {
+	"accounts_receivable_outstanding": ("accounts_receivable_outstanding_total",),
+	"accounts_payable_outstanding": ("accounts_payable_outstanding_total",),
+	"net_ar_minus_ap": ("net_receivable_minus_payable",),
+	"ar_overdue_ratio": ("accounts_receivable_overdue_ratio",),
+	"ap_overdue_ratio": ("accounts_payable_overdue_ratio",),
+}
+
+
+def _artifact_metrics_metric_map(context: Dict[str, Any]) -> Dict[str, tuple[str, Decimal, Any]]:
+	metrics = context.get("artifact_metrics") if isinstance(context.get("artifact_metrics"), dict) else {}
+	mapped: Dict[str, tuple[str, Decimal, Any]] = {}
+	for key, value in metrics.items():
+		label = str(key or "").strip()
+		if not label:
+			continue
+		number = _artifact_numeric_decimal(value)
+		if number is None:
+			continue
+		mapped[_canonical_metric_key(label)] = (label, number, value)
+	return mapped
+
+
+def _artifact_context_summary_metric_map(context: Dict[str, Any]) -> Dict[str, tuple[str, Decimal, Any]]:
+	sections = context.get("artifact_sections") if isinstance(context.get("artifact_sections"), dict) else {}
+	metrics = _artifact_summary_metric_map(sections)
+	for key, value in _artifact_metrics_metric_map(context).items():
+		metrics.setdefault(key, value)
+	return metrics
+
+
 def _metric_entry(
 	metrics: Dict[str, tuple[str, Decimal, Any]],
 	*keys: str,
 ) -> tuple[str, Decimal, Any] | None:
 	for key in keys:
-		entry = metrics.get(_canonical_metric_key(key))
-		if entry:
-			return entry
+		canonical_key = _canonical_metric_key(key)
+		for candidate in (canonical_key, *_METRIC_ENTRY_ALIASES.get(canonical_key, ())):
+			entry = metrics.get(candidate)
+			if entry:
+				return entry
 	return None
 
 
@@ -2487,6 +2538,8 @@ def _artifact_party_bucket_insight_items(rows: List[Dict[str, Any]]) -> List[tup
 def _artifact_sections_verified_numeric_values(context: Dict[str, Any]) -> List[str]:
 	sections = context.get("artifact_sections") if isinstance(context.get("artifact_sections"), dict) else {}
 	values: List[str] = []
+	for _label, number, _raw_value in _artifact_metrics_metric_map(context).values():
+		values.append(format(number, "f"))
 	for section in sections.values():
 		for _label, number, _raw_value in _artifact_section_numeric_items(section):
 			values.append(format(number, "f"))
@@ -2508,9 +2561,9 @@ def _artifact_sections_verified_numeric_values(context: Dict[str, Any]) -> List[
 
 def _artifact_sections_insight_items(context: Dict[str, Any]) -> List[tuple[str, str]]:
 	sections = context.get("artifact_sections") if isinstance(context.get("artifact_sections"), dict) else {}
-	if not sections:
+	if not sections and not isinstance(context.get("artifact_metrics"), dict):
 		return []
-	summary_metrics = _artifact_summary_metric_map(sections)
+	summary_metrics = _artifact_context_summary_metric_map(context)
 	if _metric_entry(summary_metrics, "accounts_receivable_outstanding") and _metric_entry(summary_metrics, "accounts_payable_outstanding"):
 		working_capital_insights = _working_capital_consultant_insights_from_metrics(summary_metrics)
 		if working_capital_insights:
@@ -2582,9 +2635,9 @@ def _artifact_sections_insight_items(context: Dict[str, Any]) -> List[tuple[str,
 
 def _artifact_sections_diagnosis_items(context: Dict[str, Any]) -> List[tuple[str, str]]:
 	sections = context.get("artifact_sections") if isinstance(context.get("artifact_sections"), dict) else {}
-	if not sections:
+	if not sections and not isinstance(context.get("artifact_metrics"), dict):
 		return []
-	summary_metrics = _artifact_summary_metric_map(sections)
+	summary_metrics = _artifact_context_summary_metric_map(context)
 	if _metric_entry(summary_metrics, "accounts_receivable_outstanding") and _metric_entry(summary_metrics, "accounts_payable_outstanding"):
 		return _working_capital_diagnosis_from_metrics(summary_metrics)
 	if _metric_entry(summary_metrics, "outstanding_total") and _metric_entry(summary_metrics, "overdue_total_31", "overdue_total"):
@@ -2600,9 +2653,9 @@ def _artifact_sections_diagnosis_items(context: Dict[str, Any]) -> List[tuple[st
 
 def _artifact_sections_action_guidance_items(context: Dict[str, Any]) -> List[tuple[str, str]]:
 	sections = context.get("artifact_sections") if isinstance(context.get("artifact_sections"), dict) else {}
-	if not sections:
+	if not sections and not isinstance(context.get("artifact_metrics"), dict):
 		return []
-	summary_metrics = _artifact_summary_metric_map(sections)
+	summary_metrics = _artifact_context_summary_metric_map(context)
 	if _metric_entry(summary_metrics, "accounts_receivable_outstanding") and _metric_entry(summary_metrics, "accounts_payable_outstanding"):
 		return _working_capital_action_guidance_from_metrics(summary_metrics)
 	if _metric_entry(summary_metrics, "outstanding_total") and _metric_entry(summary_metrics, "overdue_total_31", "overdue_total"):
@@ -3340,6 +3393,67 @@ def _build_prior_grounded_row_detail_payload(
 	}
 
 
+def _prior_reasoning_was_row_detail(context: Dict[str, Any]) -> bool:
+	prior_reasoning = context.get("prior_reasoning") if isinstance(context.get("prior_reasoning"), dict) else {}
+	return any(
+		str(flag or "").strip() == "runtime_repaired_to_prior_grounded_row_detail"
+		for flag in (prior_reasoning.get("speculation_flags") or [])
+	)
+
+
+def _prior_context_resolves_single_row_detail(context: Dict[str, Any]) -> bool:
+	focus_text = _prior_grounded_focus_text(context)
+	if not focus_text:
+		return False
+	scored_rows = [
+		(_row_focus_score(row, focus_text), row)
+		for row in _context_candidate_rows(context)
+	]
+	scored_rows = [(score, row) for score, row in scored_rows if score >= 70]
+	if not scored_rows:
+		return False
+	scored_rows.sort(key=lambda item: item[0], reverse=True)
+	close_identities = {
+		_row_focus_identity(row)
+		for score, row in scored_rows
+		if score >= max(70, scored_rows[0][0] - 10) and _row_focus_identity(row)
+	}
+	return len(close_identities) == 1
+
+
+def _build_contextual_row_detail_continuation_payload(
+	*,
+	message: str,
+	reasoning_type: str,
+	grounding_context: Dict[str, Any],
+	presentation_preferences: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	if str(reasoning_type or "").strip() not in {"interpretation", "explanation", "continuation_detail"}:
+		return {}
+	context = dict(grounding_context or {})
+	if not (
+		_prior_reasoning_was_row_detail(context)
+		or _prior_context_resolves_single_row_detail(context)
+	):
+		return {}
+	if not visible_context_reference_requested(message):
+		return {}
+	continuation_context = {
+		**context,
+		"consultant_response_mode": "consultant_detail",
+		"evidence_policy": "evidence_expansion_preferred",
+		"answer_obligation": "expand_grounded_detail",
+		"answer_goal": "expand_detail",
+		"evidence_depth": "drilldown_preferred",
+		"target_reference": "current_row",
+	}
+	return _build_prior_grounded_row_detail_payload(
+		reasoning_type="continuation_detail",
+		grounding_context=continuation_context,
+		presentation_preferences=presentation_preferences,
+	)
+
+
 def _build_visible_table_fallback_payload(
 	*,
 	reasoning_type: str,
@@ -3742,6 +3856,34 @@ def execute_erp_business_reasoning(
 				activation_contract=activation_contract,
 				payload=offered_next_action_payload,
 				agent_meta={"executed_prior_offered_next_action": True},
+			)
+	contextual_row_detail_payload = _build_contextual_row_detail_continuation_payload(
+		message=message,
+		reasoning_type=reasoning_type,
+		grounding_context=context,
+		presentation_preferences=presentation_preferences,
+	)
+	if contextual_row_detail_payload:
+		row_detail_ok, _row_detail_error = _validate_runtime_payload(
+			payload=contextual_row_detail_payload,
+			reasoning_type="continuation_detail",
+			activation_contract=activation_contract,
+			presentation_preferences=presentation_preferences,
+			grounding_context=context,
+			verified_numeric_values=[
+				str(item or "").strip()
+				for item in (contextual_row_detail_payload.get("_verified_numeric_values") or [])
+				if str(item or "").strip()
+			],
+		)
+		if row_detail_ok:
+			return _answered_execution_result_from_payload(
+				request_id=request_id,
+				session_id=session_id,
+				reasoning_type=reasoning_type,
+				activation_contract=activation_contract,
+				payload=contextual_row_detail_payload,
+				agent_meta={"deterministic_contextual_row_detail_continuation": True},
 			)
 	if reasoning_type == "recommendation":
 		deterministic_recommendation_payload = _build_financial_statement_consultant_payload(

@@ -42,6 +42,8 @@ def _normalize_key(value: Any) -> str:
 
 def _section_key(value: Any) -> str:
 	text = _normalize_key(value)
+	if text in {"ranked_rows", "ranked_row", "top_ranked_rows", "top_ranked_row", "top_rows", "top_row"}:
+		return "ranked_rows"
 	if text in {"top_customer", "top_customers"}:
 		return "top_customers"
 	if text in {"customer_name", "customer_names"}:

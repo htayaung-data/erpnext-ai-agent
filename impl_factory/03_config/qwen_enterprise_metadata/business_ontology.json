@@ -110,11 +110,27 @@
     {
       "concept_id": "working_capital",
       "aliases": {
-        "en": ["working capital", "liquidity"],
+        "en": [
+          "working capital",
+          "liquidity",
+          "cross-domain health",
+          "cross domain health",
+          "cross-domain health summary",
+          "combined cross-domain health",
+          "combined cross-domain health summary"
+        ],
         "my": []
       },
       "extended_aliases": {
-        "en": ["company health", "financial health", "business health", "ar/ap", "ar ap", "ap/ar", "ap ar"],
+        "en": [
+          "company health",
+          "financial health",
+          "business health",
+          "ar/ap",
+          "ar ap",
+          "ap/ar",
+          "ap ar"
+        ],
         "my": []
       }
     },
@@ -276,6 +292,38 @@
         "my": []
       },
       "supported_families": ["aging", "ranking_analytics", "trend_analytics", "inventory_snapshot", "product_profitability"]
+    },
+    {
+      "mode": "consultant_detail",
+      "label": "Consultant-depth continuation over the current governed result",
+      "requires_grounded_turn": true,
+      "slot_keys": ["reasoning_depth"],
+      "aliases": {
+        "en": [
+          "more insight",
+          "more insights",
+          "more detail",
+          "more details",
+          "more information",
+          "tell me more",
+          "explain more",
+          "go deeper",
+          "deeper view",
+          "consultant view",
+          "business consultant view",
+          "break down details",
+          "break it down"
+        ],
+        "my": []
+      },
+      "reasoning_activation": {
+        "reasoning_type": "continuation_detail",
+        "detail_level": "expanded",
+        "presentation_style": "default",
+        "confidence": 0.94,
+        "reason": "Governed follow-up metadata classifies the turn as a request for deeper continuation on the current ERP result."
+      },
+      "supported_families": ["aging", "working_capital_health", "ranking_analytics", "trend_analytics", "financial_statement", "inventory_snapshot", "product_profitability", "transaction_listing"]
     },
     {
       "mode": "sort_or_limit",

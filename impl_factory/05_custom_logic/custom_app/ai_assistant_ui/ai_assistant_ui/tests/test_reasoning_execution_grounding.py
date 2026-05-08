@@ -557,6 +557,11 @@ class ReasoningExecutionGroundingTests(unittest.TestCase):
 		self.assertEqual(context.get("consultant_response_mode"), "consultant_interpretation")
 		self.assertEqual(context.get("evidence_policy"), "current_result_only")
 		self.assertEqual(context.get("answer_obligation"), "explain_grounded_meaning")
+		self.assertEqual(context.get("answer_goal"), "explain")
+		self.assertEqual(context.get("evidence_depth"), "current_result_only")
+		self.assertEqual(context.get("business_role"), "business_consultant")
+		self.assertEqual(context.get("target_reference"), "current_result")
+		self.assertEqual(context.get("risk_level"), "factual_only")
 
 	def test_reasoning_context_uses_latest_visible_assistant_message_as_evidence(self):
 		context = subject._build_reasoning_context(
@@ -1412,6 +1417,60 @@ class ReasoningExecutionGroundingTests(unittest.TestCase):
 		self.assertTrue(any("Pair AR recovery with AP settlement planning" in str(item.get("claim") or "") for item in supported_claims))
 		self.assertTrue(any("Run a two-track weekly control" in str(item.get("claim") or "") for item in supported_claims))
 
+	def test_working_capital_consultant_interpretation_uses_artifact_metrics_when_visible_table_is_not_latest(self):
+		artifact = {
+			"family_id": "composite_working_capital_health",
+			"artifact_type": "normalized_composite_family_artifact",
+			"source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+			"capability_id": "composite::working_capital_health",
+			"metrics": {
+				"accounts_receivable_outstanding_total": 803681000.0,
+				"accounts_payable_outstanding_total": 929916600.0,
+				"net_receivable_minus_payable": -126235600.0,
+				"accounts_receivable_overdue_ratio": 72.9,
+				"accounts_payable_overdue_ratio": 68.8,
+			},
+			"sections": {
+				"summary": [],
+			},
+		}
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call:
+			result = subject.execute_erp_business_reasoning(
+				request_id="reasoning-working-capital-artifact-metrics-continuation",
+				session_id="reasoning-grounding",
+				user_id="Administrator",
+				message="Evaluate above data as Business Consultant",
+				recent_messages=[],
+				activation_contract=_activation_contract_ar_ap_working_capital(),
+				semantic_activation_result=_semantic_activation_result(),
+				latest_grounded_turn={
+					"grounded": True,
+					"source_name": "AR / AP Working Capital Health",
+					"returned_schema": ["Party", "Outstanding Amount", "Total Amount Due"],
+					"row_count": 7,
+					"table_rows": [
+						{
+							"Party": "Myanmar Tech Import Services",
+							"Outstanding Amount": 268298000.0,
+							"Total Amount Due": 250568000.0,
+						},
+					],
+				},
+				latest_family_artifact=artifact,
+				latest_assistant_payload=_latest_assistant_payload_ar_ap_working_capital_title_only(),
+				presentation_preferences={"bullet": True},
+				prior_answer_text="Here is the business reading from AR/AP Working Capital Health.",
+			)
+
+		runtime_call.assert_not_called()
+		self.assertEqual(result.status, "answered")
+		self.assertTrue(result.agent_meta.get("deterministic_consultant_interpretation"))
+		self.assertIn("working-capital squeeze", result.answer_text)
+		self.assertIn("Supplier obligations exceed customer receivables", result.answer_text)
+		self.assertIn("two-sided working-capital stress", result.answer_text)
+		self.assertIn("Management priorities", result.answer_text)
+		self.assertNotIn("This answer is limited", result.answer_text)
+
 	def test_consultant_continuation_keeps_all_key_findings_as_bullets_without_explicit_bullet_preference(self):
 		prior_answer = (
 			"AR/AP Working Capital Health as of 2026-05-06. "
@@ -1474,6 +1533,186 @@ class ReasoningExecutionGroundingTests(unittest.TestCase):
 		self.assertIn("Cost of Goods Sold", result.answer_text)
 		self.assertIn("51,764,064.95", result.answer_text)
 		self.assertNotIn("Direct Income - MMOB", result.answer_text)
+
+	def test_contextual_followup_preserves_prior_line_item_even_when_semantic_type_is_broad(self):
+		prior_contract = {
+			"type": "qwen_erp_business_reasoning_contract",
+			"reasoning_type": "continuation_detail",
+			"grounding_source_request_id": "grounded-pnl-1",
+			"grounding_source_kind": "report",
+			"grounding_family_id": "financial_statement",
+			"grounding_artifact_type": "normalized_family_artifact",
+			"grounding_source_reports": ["Profit and Loss Statement"],
+			"grounding_sufficient": True,
+			"grounding_gaps": [],
+			"allowed_to_answer": True,
+			"supported_claims": [],
+			"recommendations": [],
+			"offered_next_actions": [],
+			"speculation_flags": ["runtime_repaired_to_prior_grounded_row_detail"],
+		}
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call:
+			result = subject.execute_erp_business_reasoning(
+				request_id="reasoning-grounded-line-item-relaxed-continuation",
+				session_id="reasoning-grounding",
+				user_id="Administrator",
+				message="give me more detail about that, by breaking down details",
+				recent_messages=[],
+				activation_contract=_activation_contract_profit_and_loss(),
+				semantic_activation_result=_semantic_activation_result(),
+				latest_grounded_turn=_latest_grounded_turn_profit_and_loss(),
+				latest_family_artifact=_latest_family_artifact_profit_and_loss(),
+				latest_assistant_payload=_latest_assistant_payload_profit_and_loss_title_only(),
+				presentation_preferences={"bullet": True},
+				prior_reasoning_contract=prior_contract,
+				prior_answer_text=(
+					"Cost of Goods Sold is shown under Expense in the current Profit And Loss. "
+					"Amount: 51,764,064.95 MMK. Account: Cost of Goods Sold - MMOB."
+				),
+			)
+
+		runtime_call.assert_not_called()
+		self.assertEqual(result.status, "answered")
+		self.assertTrue(result.agent_meta.get("deterministic_contextual_row_detail_continuation"))
+		self.assertIn("Cost of Goods Sold", result.answer_text)
+		self.assertIn("51,764,064.95", result.answer_text)
+		self.assertNotIn("profit-recovery target", result.answer_text)
+
+	def test_contextual_followup_uses_prior_reasoning_claims_when_latest_grounded_answer_is_broad(self):
+		prior_contract = {
+			"type": "qwen_erp_business_reasoning_contract",
+			"reasoning_type": "continuation_detail",
+			"grounding_source_request_id": "grounded-pnl-1",
+			"grounding_source_kind": "report",
+			"grounding_family_id": "financial_statement",
+			"grounding_artifact_type": "normalized_family_artifact",
+			"grounding_source_reports": ["Profit and Loss Statement"],
+			"grounding_sufficient": True,
+			"grounding_gaps": [],
+			"allowed_to_answer": True,
+			"supported_claims": [
+				{
+					"claim": "The follow-up is about Cost of Goods Sold from Profit and Loss Statement.",
+					"support": "The prior grounded answer and a current result row refer to Cost of Goods Sold.",
+				}
+			],
+			"recommendations": [],
+			"offered_next_actions": [],
+			"speculation_flags": ["runtime_repaired_to_prior_grounded_row_detail"],
+		}
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call:
+			result = subject.execute_erp_business_reasoning(
+				request_id="reasoning-grounded-line-item-claim-continuation",
+				session_id="reasoning-grounding",
+				user_id="Administrator",
+				message="give me more detail about that, by breaking down details",
+				recent_messages=[],
+				activation_contract=_activation_contract_profit_and_loss(),
+				semantic_activation_result=_semantic_activation_result(),
+				latest_grounded_turn=_latest_grounded_turn_profit_and_loss(),
+				latest_family_artifact=_latest_family_artifact_profit_and_loss(),
+				latest_assistant_payload=_latest_assistant_payload_profit_and_loss_title_only(),
+				presentation_preferences={"bullet": True},
+				prior_reasoning_contract=prior_contract,
+				prior_answer_text=(
+					"Profit and Loss Statement shows total income, total expenses, and net profit."
+				),
+			)
+
+		runtime_call.assert_not_called()
+		self.assertEqual(result.status, "answered")
+		self.assertTrue(result.agent_meta.get("deterministic_contextual_row_detail_continuation"))
+		self.assertIn("Cost of Goods Sold", result.answer_text)
+		self.assertIn("51,764,064.95", result.answer_text)
+		self.assertNotIn("profit-recovery target", result.answer_text)
+
+	def test_contextual_followup_can_use_unambiguous_prior_row_answer_without_repair_flag(self):
+		prior_contract = {
+			"type": "qwen_erp_business_reasoning_contract",
+			"reasoning_type": "continuation_detail",
+			"grounding_source_request_id": "grounded-pnl-1",
+			"grounding_source_kind": "report",
+			"grounding_family_id": "financial_statement",
+			"grounding_artifact_type": "normalized_family_artifact",
+			"grounding_source_reports": ["Profit and Loss Statement"],
+			"grounding_sufficient": True,
+			"grounding_gaps": [],
+			"allowed_to_answer": True,
+			"supported_claims": [],
+			"recommendations": [],
+			"speculation_flags": [],
+		}
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call:
+			result = subject.execute_erp_business_reasoning(
+				request_id="reasoning-grounded-line-item-unflagged-continuation",
+				session_id="reasoning-grounding",
+				user_id="Administrator",
+				message="give me more detail about that, by breaking down details",
+				recent_messages=[],
+				activation_contract=_activation_contract_profit_and_loss(),
+				semantic_activation_result=_semantic_activation_result(),
+				latest_grounded_turn=_latest_grounded_turn_profit_and_loss(),
+				latest_family_artifact=_latest_family_artifact_profit_and_loss(),
+				latest_assistant_payload=_latest_assistant_payload_profit_and_loss_title_only(),
+				presentation_preferences={"bullet": True},
+				prior_reasoning_contract=prior_contract,
+				prior_answer_text=(
+					"Cost of Goods Sold is shown under Expense in the current Profit And Loss. "
+					"Amount: 51,764,064.95 MMK. Share of income: 65.9%."
+				),
+			)
+
+		runtime_call.assert_not_called()
+		self.assertEqual(result.status, "answered")
+		self.assertTrue(result.agent_meta.get("deterministic_contextual_row_detail_continuation"))
+		self.assertIn("Cost of Goods Sold", result.answer_text)
+		self.assertIn("51,764,064.95", result.answer_text)
+		self.assertNotIn("profit-recovery target", result.answer_text)
+
+	def test_contextual_followup_prefers_prior_answer_subject_over_later_category_mentions(self):
+		prior_contract = {
+			"type": "qwen_erp_business_reasoning_contract",
+			"reasoning_type": "continuation_detail",
+			"grounding_source_request_id": "grounded-pnl-1",
+			"grounding_source_kind": "report",
+			"grounding_family_id": "financial_statement",
+			"grounding_artifact_type": "normalized_family_artifact",
+			"grounding_source_reports": ["Profit and Loss Statement"],
+			"grounding_sufficient": True,
+			"grounding_gaps": [],
+			"allowed_to_answer": True,
+			"supported_claims": [],
+			"recommendations": [],
+			"speculation_flags": [],
+		}
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call:
+			result = subject.execute_erp_business_reasoning(
+				request_id="reasoning-grounded-line-item-subject-priority",
+				session_id="reasoning-grounding",
+				user_id="Administrator",
+				message="give me more detail about that, by breaking down details",
+				recent_messages=[],
+				activation_contract=_activation_contract_profit_and_loss(),
+				semantic_activation_result=_semantic_activation_result(),
+				latest_grounded_turn=_latest_grounded_turn_profit_and_loss(),
+				latest_family_artifact=_latest_family_artifact_profit_and_loss(),
+				latest_assistant_payload=_latest_assistant_payload_profit_and_loss_title_only(),
+				presentation_preferences={"bullet": True},
+				prior_reasoning_contract=prior_contract,
+				prior_answer_text=(
+					"Cost of Goods Sold is shown under Expense in the current Profit And Loss. "
+					"Amount: 51,764,064.95 MMK. Share of income: 65.9%. "
+					"Business category: Stock Expenses. This line is a material driver."
+				),
+			)
+
+		runtime_call.assert_not_called()
+		self.assertEqual(result.status, "answered")
+		self.assertTrue(result.agent_meta.get("deterministic_contextual_row_detail_continuation"))
+		self.assertIn("Cost of Goods Sold", result.answer_text)
+		self.assertIn("51,764,064.95", result.answer_text)
+		self.assertNotIn("Stock Expenses from Profit and Loss", result.answer_text)
+		self.assertNotIn("profit-recovery target", result.answer_text)
 
 	def test_evidence_expansion_continuation_without_prior_answer_still_fails_closed(self):
 		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call:

@@ -684,6 +684,16 @@ def _message_should_override_stale_context_as_fresh_query(
 	)
 
 
+def _fresh_query_should_skip_pre_frontdoor_reasoning(
+	*,
+	fresh_governed_query_override_requested: bool,
+	prior_offered_next_action_available: bool = False,
+) -> bool:
+	"""Fresh governed queries must not be swallowed by prior-artifact reasoning."""
+
+	return bool(fresh_governed_query_override_requested and not prior_offered_next_action_available)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -744,6 +754,38 @@ def _reasoning_activation_has_execution_authority(reasoning_semantic_result: Any
 		return False
 	intent = getattr(reasoning_semantic_result, "intent", None)
 	return bool(str(getattr(intent, "reasoning_type", "") or "").strip())
+
+
+def _reasoning_contract_has_executable_offered_next_action(reasoning_contract: Dict[str, Any] | None) -> bool:
+	contract = dict(reasoning_contract or {})
+	if not contract:
+		return False
+	for action in contract.get("offered_next_actions") or []:
+		if not isinstance(action, dict):
+			continue
+		if str(action.get("execution_mode") or "").strip() == "current_governed_artifact" and str(
+			action.get("action_id") or ""
+		).strip():
+			return True
+	return False
+
+
+def _context_isolation_should_yield_to_prior_reasoning_action(
+	*,
+	context_isolation,
+	reasoning_semantic_result: Any,
+	latest_reasoning_contract: Dict[str, Any] | None,
+) -> bool:
+	if not bool(getattr(context_isolation, "force_new_query", False)):
+		return False
+	if bool(getattr(context_isolation, "out_of_scope", False)):
+		return False
+	if not _reasoning_contract_has_executable_offered_next_action(latest_reasoning_contract):
+		return False
+	if str(getattr(reasoning_semantic_result, "status", "") or "").strip() != "accepted":
+		return False
+	intent = getattr(reasoning_semantic_result, "intent", None)
+	return str(getattr(intent, "reasoning_type", "") or "").strip() == "continuation_detail"
 
 
 def _frontdoor_should_yield_to_reasoning_activation(
@@ -3641,7 +3683,22 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		grounded_turn=latest_grounded_turn,
 		limit=10,
 	)
-	if bool(reasoning_rollout.get("enabled")) and latest_grounded_turn_available and not pending_clarification_signal:
+	prior_offered_next_action_available = _reasoning_contract_has_executable_offered_next_action(
+		latest_reasoning_contract
+	)
+	fresh_governed_query_override_requested = _message_should_override_stale_context_as_fresh_query(
+		message=msg,
+		language=interaction_contract.detected_language,
+	)
+	if (
+		bool(reasoning_rollout.get("enabled"))
+		and latest_grounded_turn_available
+		and (not pending_clarification_signal or prior_offered_next_action_available)
+		and not _fresh_query_should_skip_pre_frontdoor_reasoning(
+			fresh_governed_query_override_requested=fresh_governed_query_override_requested,
+			prior_offered_next_action_available=prior_offered_next_action_available,
+		)
+	):
 		pre_frontdoor_reasoning_activation_contract = build_reasoning_activation_contract(
 			request_id=request_id,
 			session_id=session_name,
@@ -3710,10 +3767,6 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	artifact_boundary_clarification_continuation_active = False
 	frontdoor_clarification_continuation_active = False
 	artifact_local_projection_followup_requested = False
-	fresh_governed_query_override_requested = _message_should_override_stale_context_as_fresh_query(
-		message=msg,
-		language=interaction_contract.detected_language,
-	)
 	runtime_frontdoor_is_composite_candidate = bool(governed_composite_frontdoor_candidate_available(message=msg))
 	runtime_frontdoor_is_kpi_value_candidate = bool(
 		governed_kpi_value_frontdoor_candidate_available(
@@ -4154,6 +4207,12 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 	):
 		context_isolation = build_scope_decision_input()
+	if _context_isolation_should_yield_to_prior_reasoning_action(
+		context_isolation=context_isolation,
+		reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+		latest_reasoning_contract=latest_reasoning_contract,
+	):
+		context_isolation = build_scope_decision_input()
 	if _current_artifact_evidence_should_preserve_context(
 		request_id=request_id,
 		message=msg,
@@ -4284,6 +4343,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			or bool(context_isolation.force_new_query)
 		)
 		and not runtime_frontdoor_candidate_available
+		and not _reasoning_activation_has_execution_authority(pre_frontdoor_reasoning_semantic_result)
 		and not (
 			_frontdoor_contract_handle_in_front_door(frontdoor_contract)
 			and _frontdoor_contract_intent_class(frontdoor_contract)
@@ -4400,7 +4460,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		latest_grounded_turn_available=latest_grounded_turn_available,
 		context_force_new_query=bool(context_isolation.force_new_query),
 		entity_drilldown=entity_drilldown,
-	) and not frontdoor_direct_handling_authority
+	)
 	if (
 		entity_drilldown is None
 		and not frontdoor_should_yield_to_reasoning
