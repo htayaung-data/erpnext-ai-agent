@@ -286,8 +286,8 @@
         grid-template-columns: minmax(210px, 300px);
       }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck {
-        --erpw-list-filter-standard-width: minmax(152px, 224px);
-        --erpw-list-filter-search-width: minmax(220px, 1fr);
+        --erpw-list-filter-standard-width: minmax(168px, 204px);
+        --erpw-list-filter-search-width: minmax(260px, 1fr);
         --erpw-list-filter-date-width: minmax(154px, 198px);
       }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-2.has-search.search-index-1 .erpw-list-filter-main-row {
@@ -320,21 +320,6 @@
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-4.has-search.search-index-4 .erpw-list-filter-main-row,
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-5.has-search.search-index-4 .erpw-list-filter-main-row {
         grid-template-columns: var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-standard-width) var(--erpw-list-filter-search-width);
-      }
-      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-3:not(.has-date-window),
-      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-4:not(.has-date-window),
-      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-5:not(.has-date-window) {
-        grid-template-columns: minmax(0, 1fr) max-content;
-        grid-template-areas:
-          "main main"
-          ". actions";
-      }
-      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-3:not(.has-date-window) .erpw-list-command-action-cell,
-      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-4:not(.has-date-window) .erpw-list-command-action-cell,
-      .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.has-search.main-count-5:not(.has-date-window) .erpw-list-command-action-cell {
-        align-self: start;
-        min-height: var(--erpw-list-control-height);
-        padding-top: 0;
       }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-date-window-group {
         grid-template-columns: repeat(2, var(--erpw-list-filter-date-width));
