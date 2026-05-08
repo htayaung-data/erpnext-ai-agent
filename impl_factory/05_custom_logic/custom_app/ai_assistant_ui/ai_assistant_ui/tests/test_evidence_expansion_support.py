@@ -18,6 +18,30 @@ def _expansion_context():
 	}
 
 
+def _financial_expansion_context():
+	return {
+		"evidence_policy": "evidence_expansion_preferred",
+		"answer_obligation": "expand_grounded_detail",
+		"answer_goal": "expand_detail",
+		"evidence_depth": "drilldown_preferred",
+		"grounded_source": {
+			"family_id": "financial_statement",
+			"capability_id": "financial_statement_read",
+			"source_name": "Profit and Loss Statement",
+		},
+		"artifact_metrics": {
+			"statement_type": "profit_and_loss",
+		},
+		"artifact_filters": {
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+		},
+		"artifact_period": {
+			"from_date": "2026-04-01",
+			"to_date": "2026-05-08",
+		},
+	}
+
+
 def _entity_activation(entity_grain: str):
 	return {
 		"scope_id": f"{entity_grain}_scope",
@@ -95,6 +119,27 @@ class EvidenceExpansionSupportTests(unittest.TestCase):
 		self.assertIn("approved ERP detail view", guidance)
 		self.assertNotIn("runtime", guidance.lower())
 		self.assertNotIn("contract", guidance.lower())
+
+	@patch("ai_assistant_ui.qwen_chat.evidence_expansion_support.list_active_entity_detail_scope_activations")
+	def test_financial_cogs_line_maps_to_executable_source_detail_report(self, activations):
+		activations.return_value = [_entity_activation("customer"), _entity_activation("supplier")]
+
+		plan = build_evidence_expansion_plan(
+			grounding_context=_financial_expansion_context(),
+			focused_row={
+				"Account": "Cost of Goods Sold - MMOB",
+				"Account Name": "Cost of Goods Sold",
+				"2026": "65,360,820.70",
+				"Currency": "MMK",
+			},
+		)
+
+		self.assertEqual(plan["status"], "source_detail_available")
+		self.assertTrue(plan["can_execute_expansion"])
+		self.assertEqual(plan["expansion_mode"], "source_detail")
+		self.assertEqual(plan["target_report"]["report_name"], "GL Entry Account Detail")
+		guidance = evidence_expansion_user_guidance(plan)
+		self.assertIn("source-detail report", guidance)
 
 	@patch("ai_assistant_ui.qwen_chat.evidence_expansion_support.list_active_entity_detail_scope_activations")
 	def test_inactive_or_unsupported_entity_grain_is_not_treated_as_executable(self, activations):

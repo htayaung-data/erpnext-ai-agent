@@ -17,12 +17,22 @@ def _drilldown_context(**overrides):
 		"risk_level": "bounded_consultation",
 		"evidence_policy": "evidence_expansion_preferred",
 		"answer_obligation": "expand_grounded_detail",
-		"grounded_source": {
-			"family_id": "accounts_receivable",
-			"capability_id": "accounts_receivable_read",
-			"source_name": "Accounts Receivable Aging",
-		},
-	}
+			"grounded_source": {
+				"family_id": "accounts_receivable",
+				"capability_id": "accounts_receivable_read",
+				"source_name": "Accounts Receivable Aging",
+			},
+			"artifact_metrics": {
+				"statement_type": "profit_and_loss",
+			},
+			"artifact_filters": {
+				"company": "Mingalar Mobile Distribution Co., Ltd.",
+			},
+			"artifact_period": {
+				"from_date": "2026-04-01",
+				"to_date": "2026-05-08",
+			},
+		}
 	context.update(overrides)
 	return context
 
@@ -77,7 +87,7 @@ class EvidenceDrilldownRegistryTests(unittest.TestCase):
 		activations.assert_not_called()
 
 	@patch("ai_assistant_ui.qwen_chat.evidence_drilldown_registry.list_active_entity_detail_scope_activations")
-	def test_summary_financial_row_requires_registered_source_detail(self, activations):
+	def test_financial_cogs_row_maps_to_registered_source_detail_report(self, activations):
 		activations.return_value = [_entity_activation("customer"), _entity_activation("supplier")]
 
 		plan = build_governed_drilldown_plan(
@@ -97,9 +107,12 @@ class EvidenceDrilldownRegistryTests(unittest.TestCase):
 			},
 		)
 
-		self.assertEqual(plan["status"], "source_detail_required")
-		self.assertFalse(plan["can_execute"])
-		self.assertEqual(plan["drilldown_mode"], "source_detail_required")
+		self.assertEqual(plan["status"], "source_detail_available")
+		self.assertTrue(plan["can_execute"])
+		self.assertEqual(plan["execution_mode"], "source_detail_report")
+		self.assertEqual(plan["drilldown_mode"], "source_detail")
+		self.assertEqual(plan["target_report"]["report_name"], "GL Entry Account Detail")
+		self.assertEqual(plan["target_report"]["filters"]["account"], "Cost of Goods Sold - MMOB")
 		self.assertNotIn("target_entity", plan)
 
 	@patch("ai_assistant_ui.qwen_chat.evidence_drilldown_registry.list_active_entity_detail_scope_activations")

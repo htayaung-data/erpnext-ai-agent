@@ -65,6 +65,8 @@ def _adapt_governed_drilldown_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
 	}
 	if status == "entity_detail_available" and isinstance(clean_plan.get("target_entity"), dict):
 		adapted["target_entity"] = dict(clean_plan.get("target_entity") or {})
+	if status == "source_detail_available" and isinstance(clean_plan.get("target_report"), dict):
+		adapted["target_report"] = dict(clean_plan.get("target_report") or {})
 	return adapted
 
 
@@ -104,6 +106,12 @@ def evidence_expansion_user_guidance(plan: Dict[str, Any]) -> str:
 		if label:
 			return f"A deeper approved ERP detail source is available for {label}."
 		return "A deeper approved ERP detail source is available for this row."
+	if status == "source_detail_available":
+		target = _clean_dict(clean_plan.get("target_report"))
+		report_name = _clean_text(target.get("report_name"))
+		if report_name:
+			return f"A deeper approved ERP source-detail report is available: {report_name}."
+		return "A deeper approved ERP source-detail report is available for this row."
 	if status == "summary_row_only":
 		return (
 			"The current result supports impact analysis and business interpretation for this row, "

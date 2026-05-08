@@ -388,6 +388,13 @@ def _latest_family_artifact_profit_and_loss():
 		"artifact_type": "normalized_family_artifact",
 		"source_reports": ["Profit and Loss Statement"],
 		"capability_id": "financial_statement_read",
+		"filters": {
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+		},
+		"period": {
+			"from_date": "2026-04-01",
+			"to_date": "2026-05-08",
+		},
 		"metrics": {
 			"statement_type": "profit_and_loss",
 			"total_income": 91480000.0,
@@ -1533,6 +1540,68 @@ class ReasoningExecutionGroundingTests(unittest.TestCase):
 		self.assertIn("Cost of Goods Sold", result.answer_text)
 		self.assertIn("51,764,064.95", result.answer_text)
 		self.assertNotIn("Direct Income - MMOB", result.answer_text)
+
+	def test_evidence_expansion_continuation_executes_registered_cogs_source_detail(self):
+		source_detail_payload = {
+			"ok": True,
+			"tool_trace": [
+				{
+					"output_obj": {
+						"success": True,
+						"result": {
+							"success": True,
+							"data": [
+								{
+									"posting_date": "2026-05-01",
+									"voucher_type": "Delivery Note",
+									"voucher_no": "MAT-DN-2026-00339",
+									"debit": 30000000.0,
+									"credit": 0.0,
+								},
+								{
+									"posting_date": "2026-05-02",
+									"voucher_type": "Sales Invoice",
+									"voucher_no": "ACC-SINV-2026-00776",
+									"debit": 21764064.95,
+									"credit": 0.0,
+								},
+							],
+						},
+					}
+				}
+			],
+		}
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call, patch.object(
+			subject,
+			"execute_governed_report",
+			return_value=source_detail_payload,
+		) as report_call:
+			result = subject.execute_erp_business_reasoning(
+				request_id="reasoning-grounded-line-item-source-detail",
+				session_id="reasoning-grounding",
+				user_id="Administrator",
+				message="give me more detail by breaking down the result",
+				recent_messages=[],
+				activation_contract=_activation_contract_profit_and_loss(),
+				semantic_activation_result=_semantic_activation_result_evidence_expansion_continuation(),
+				latest_grounded_turn=_latest_grounded_turn_profit_and_loss(),
+				latest_family_artifact=_latest_family_artifact_profit_and_loss(),
+				latest_assistant_payload=_latest_assistant_payload_profit_and_loss_title_only(),
+				presentation_preferences={"bullet": True},
+				prior_answer_text=(
+					"Cost of Goods Sold is shown under Expense in the current Profit And Loss. "
+					"Amount: 51,764,064.95 MMK. Account: Cost of Goods Sold - MMOB."
+				),
+			)
+
+		runtime_call.assert_not_called()
+		report_call.assert_called_once()
+		self.assertEqual(result.status, "answered")
+		self.assertIn("source-detail breakdown", result.answer_text)
+		self.assertIn("GL Entry Account Detail", result.answer_text)
+		self.assertIn("MAT-DN-2026-00339", result.answer_text)
+		self.assertIn("Breakdown by source document", result.answer_text)
+		self.assertIn("source_detail_drilldown_executed", result.reasoning_contract.get("speculation_flags") or [])
 
 	def test_contextual_followup_preserves_prior_line_item_even_when_semantic_type_is_broad(self):
 		prior_contract = {

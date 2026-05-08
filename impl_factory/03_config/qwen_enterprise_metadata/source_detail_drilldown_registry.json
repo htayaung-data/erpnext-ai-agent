@@ -1,0 +1,56 @@
+{
+  "contract_version": "1.0",
+  "source_detail_rules": [
+    {
+      "rule_id": "financial_statement_cogs_to_gl_entry_account_detail",
+      "source_family_ids": [
+        "financial_statement"
+      ],
+      "source_names": [
+        "Profit and Loss Statement"
+      ],
+      "row_identity_match": {
+        "any": [
+          {
+            "fields": [
+              "account",
+              "account_name",
+              "label"
+            ],
+            "normalized_values": [
+              "cost_of_goods_sold",
+              "cogs"
+            ]
+          }
+        ]
+      },
+      "target_report": {
+        "report_name": "GL Entry Account Detail",
+        "capability_id": "financial_statement_read",
+        "family_id": "general_ledger_entry_list",
+        "target_limit": 100,
+        "filter_templates": {
+          "company": "artifact_filters.company",
+          "from_date": "artifact_period.from_date",
+          "to_date": "artifact_period.to_date",
+          "account": "row.account"
+        }
+      },
+      "rendering": {
+        "source_label": "ledger entries",
+        "amount_mode": "net_debit_credit",
+        "group_fields": [
+          "voucher_type",
+          "voucher_no"
+        ],
+        "date_field": "posting_date",
+        "currency_field": "currency",
+        "line_amount_fields": [
+          "amount",
+          "2026",
+          "value"
+        ]
+      }
+    }
+  ]
+}

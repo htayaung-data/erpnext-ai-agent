@@ -845,6 +845,70 @@
       "chartable_fields": []
     },
     {
+      "report_name": "GL Entry Account Detail",
+      "module": "Accounts",
+      "family": "general_ledger_entry_list",
+      "capability_ids": [
+        "financial_statement_read"
+      ],
+      "grounding_mode": "direct_query",
+      "direct_query": {
+        "doctype": "GL Entry",
+        "fields": [
+          "posting_date",
+          "account",
+          "voucher_type",
+          "voucher_no",
+          "company",
+          "debit",
+          "credit",
+          "debit_in_account_currency",
+          "credit_in_account_currency",
+          "against",
+          "remarks",
+          "is_cancelled"
+        ],
+        "order_by": "posting_date desc, creation desc",
+        "fixed_filters": {
+          "is_cancelled": 0
+        },
+        "date_field": "posting_date",
+        "default_limit": 100
+      },
+      "validation_profile": "report_grounded_read",
+      "required_filters": [
+        "company",
+        "account"
+      ],
+      "defaultable_filters": [
+        {
+          "fieldname": "company",
+          "strategy": "single_company_invariant"
+        }
+      ],
+      "supported_intent_classes": [],
+      "semantic_tags": [
+        "finance",
+        "ledger",
+        "account",
+        "source_detail"
+      ],
+      "supported_dimensions": [
+        "Account",
+        "Voucher",
+        "Posting Date"
+      ],
+      "supported_metrics": [
+        "Debit",
+        "Credit",
+        "Net Amount"
+      ],
+      "approved_follow_up_modes": [
+        "source_detail_drilldown"
+      ],
+      "chartable_fields": []
+    },
+    {
       "report_name": "Purchase Order List",
       "module": "Buying",
       "family": "purchase_order_list",

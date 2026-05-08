@@ -71,6 +71,10 @@ def load_report_surface_evidence_registry() -> Dict[str, Any]:
 	return _load_json_copy("report_surface_evidence_registry.json")
 
 
+def load_source_detail_drilldown_registry() -> Dict[str, Any]:
+	return _load_json_copy("source_detail_drilldown_registry.json")
+
+
 def load_validation_rules() -> Dict[str, Any]:
 	return _load_json_copy("validation_rules.json")
 
