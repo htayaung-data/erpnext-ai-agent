@@ -286,9 +286,9 @@
         grid-template-columns: minmax(210px, 300px);
       }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck {
-        --erpw-list-filter-standard-width: clamp(184px, 16vw, 224px);
-        --erpw-list-filter-search-width: minmax(280px, 1fr);
-        --erpw-list-filter-date-width: clamp(168px, 14vw, 208px);
+        --erpw-list-filter-standard-width: minmax(152px, 224px);
+        --erpw-list-filter-search-width: minmax(220px, 1fr);
+        --erpw-list-filter-date-width: minmax(154px, 198px);
       }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-2.has-search.search-index-1 .erpw-list-filter-main-row {
         grid-template-columns: var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width);
