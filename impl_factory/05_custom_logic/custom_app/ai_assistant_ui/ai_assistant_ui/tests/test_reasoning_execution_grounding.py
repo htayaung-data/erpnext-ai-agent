@@ -1571,9 +1571,8 @@ class ReasoningExecutionGroundingTests(unittest.TestCase):
 				}
 			],
 		}
-		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call, patch.object(
-			subject,
-			"execute_governed_report",
+		with patch.object(subject, "call_qwen_runtime_reasoning_render") as runtime_call, patch(
+			"ai_assistant_ui.qwen_chat.source_detail_drilldown_execution.execute_governed_report",
 			return_value=source_detail_payload,
 		) as report_call:
 			result = subject.execute_erp_business_reasoning(

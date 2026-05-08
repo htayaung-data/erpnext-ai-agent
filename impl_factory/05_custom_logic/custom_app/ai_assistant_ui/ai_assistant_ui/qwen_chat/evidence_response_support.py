@@ -17,6 +17,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_followup_resolution_contract,
 )
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
+from ai_assistant_ui.qwen_chat.source_detail_drilldown_execution import (
+	build_source_detail_drilldown_payload_from_artifact_line,
+	source_detail_artifact_line_from_message,
+)
 
 
 def entity_detail_evidence_request_payload(
@@ -185,6 +189,46 @@ def _direct_evidence_response_should_use_deterministic_rendering(
 	return False
 
 
+def _source_detail_direct_evidence_response(
+	*,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+	interaction_contract,
+	clarification_signal_payload: Dict[str, Any] | None = None,
+	evidence_request_contract_payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	_section_key, focused_row = source_detail_artifact_line_from_message(raw_message, artifact_payload)
+	if not focused_row:
+		return {}
+	source_detail_payload = build_source_detail_drilldown_payload_from_artifact_line(
+		artifact_payload=artifact_payload,
+		focused_row=focused_row,
+		user_id=str(getattr(interaction_contract, "user_id", "") or "").strip(),
+	)
+	answer_text = str(source_detail_payload.get("answer_text") or "").strip()
+	if not answer_text:
+		return {}
+	rendered_response_payload = {
+		"type": "qwen_rendered_family_response_contract",
+		"contract_version": "1.0",
+		"renderer_id": "governed_source_detail_drilldown",
+		"rendering_policy": "deterministic",
+		"answer_text": answer_text,
+		"source_detail_drilldown": True,
+	}
+	return _direct_evidence_response_payload(
+		answer_text=answer_text,
+		rendered_response_payload=rendered_response_payload,
+		narrative_payload=source_detail_payload,
+		narrative_contract_payload={
+			"narrative_engine": "governed_source_detail_drilldown",
+			"reason": str(source_detail_payload.get("reason") or "").strip(),
+		},
+		clarification_signal_payload=clarification_signal_payload,
+		evidence_request_contract_payload=evidence_request_contract_payload,
+	)
+
+
 def grounded_artifact_direct_evidence_response(
 	*,
 	request_id: str,
@@ -217,6 +261,16 @@ def grounded_artifact_direct_evidence_response(
 		artifact_payload=artifact_payload,
 		evidence_request_contract=evidence_request_contract,
 	)
+	if not clarification_signal_payload:
+		source_detail_response = _source_detail_direct_evidence_response(
+			raw_message=raw_message,
+			artifact_payload=artifact_payload,
+			interaction_contract=interaction_contract,
+			clarification_signal_payload=clarification_signal_payload,
+			evidence_request_contract_payload=evidence_request_contract,
+		)
+		if source_detail_response:
+			return source_detail_response
 	requested_dimensions = {
 		str(value or "").strip()
 		for value in detect_canonical_keys(raw_message, dimension_or_metric="dimension")
