@@ -407,7 +407,7 @@ def _artifact_match_score(raw_message: str, artifact_node: Dict[str, Any]) -> in
 	score = 0
 	for alias in _clean_list(artifact_node.get("aliases")):
 		normalized_alias = _normalize(alias)
-		if _is_generic_context_alias(normalized_alias):
+		if len(normalized_alias) <= 2 or _is_generic_context_alias(normalized_alias):
 			continue
 		if normalized_alias in message_parts:
 			score += 5 if len(normalized_alias) <= 3 else 7
