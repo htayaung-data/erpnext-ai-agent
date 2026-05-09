@@ -7915,6 +7915,9 @@ html {
   justify-items: stretch;
   align-items: stretch;
   align-self: stretch;
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
 }
 
 .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics {

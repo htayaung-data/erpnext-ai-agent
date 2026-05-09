@@ -370,11 +370,18 @@
         gap: 0.58rem;
         margin-left: auto;
       }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-head {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        gap: 0.75rem 1rem;
+      }
       .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-side {
         display: grid;
         justify-items: stretch;
         align-items: stretch;
         align-self: stretch;
+        grid-column: 1 / -1;
         width: 100%;
         min-width: 0;
         margin-left: 0;
