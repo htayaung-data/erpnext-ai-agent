@@ -89,6 +89,13 @@ def _clean_list(value: Any) -> List[Any]:
 	return list(value) if isinstance(value, list) else []
 
 
+def _positive_int(value: Any) -> int:
+	try:
+		return max(0, int(value or 0))
+	except (TypeError, ValueError):
+		return 0
+
+
 def _ordered_unique_texts(values: List[Any] | None) -> List[str]:
 	ordered: List[str] = []
 	for value in values or []:
@@ -921,6 +928,26 @@ def _clarification_text(resolution: Dict[str, Any]) -> str:
 	return "\n".join(lines).strip()
 
 
+def _out_of_range_text(resolution: Dict[str, Any]) -> str:
+	options = _ambiguity_options_from_resolution(resolution)
+	requested_rank = _positive_int(resolution.get("requested_rank"))
+	available_count = _positive_int(resolution.get("available_row_count")) or len(options)
+	target_reference = _clean_text(resolution.get("target_reference")).lower()
+	row_label = "option" if target_reference == "candidate_list" else "row"
+	requested_text = f"rank {requested_rank}" if requested_rank else "that rank"
+	lines = [
+		f"The current result has only {available_count} visible {row_label}{'' if available_count == 1 else 's'}, so there is no {requested_text}.",
+	]
+	if options:
+		lines.append("")
+		lines.append("Available rows:")
+		for index, option in enumerate(options[:10], start=1):
+			lines.append(f"- Rank {index}: {option}")
+	lines.append("")
+	lines.append("Please choose one of the visible rows, or ask for a broader result if you need more rows.")
+	return "\n".join(lines).strip()
+
+
 def _activation_contract(
 	*,
 	request_id: str,
@@ -1081,20 +1108,23 @@ def try_activate_visible_context_followup_response(
 		answer_mode = "visible_context_boundary"
 		answer_text = _boundary_answer_text(raw_message, resolution, authority_intent=authority_intent)
 	else:
-		answer_mode = "visible_context_answer" if status == "resolved" else "visible_context_clarification"
-		answer_text = (
-				_resolved_answer_text(
-					raw_message,
-					resolution,
-					session_doc=session_doc,
-					current_artifact=_clean_dict(current_artifact),
-					user_id=user_id,
-					nbu_trace_payload=nbu_trace_payload,
-					reasoning_semantic_result=reasoning_semantic_result,
-				)
-			if status == "resolved"
-			else _clarification_text(resolution)
-		)
+		if status == "resolved":
+			answer_mode = "visible_context_answer"
+			answer_text = _resolved_answer_text(
+				raw_message,
+				resolution,
+				session_doc=session_doc,
+				current_artifact=_clean_dict(current_artifact),
+				user_id=user_id,
+				nbu_trace_payload=nbu_trace_payload,
+				reasoning_semantic_result=reasoning_semantic_result,
+			)
+		elif status == "out_of_range":
+			answer_mode = "visible_context_out_of_range"
+			answer_text = _out_of_range_text(resolution)
+		else:
+			answer_mode = "visible_context_clarification"
+			answer_text = _clarification_text(resolution)
 	if not answer_text:
 		return False, None
 

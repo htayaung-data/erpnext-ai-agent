@@ -6,6 +6,7 @@ from ai_assistant_ui.qwen_chat.service import (
 	_context_isolation_should_yield_to_prior_reasoning_action,
 	_fresh_query_should_skip_pre_frontdoor_reasoning,
 	_message_should_override_stale_context_as_fresh_query,
+	_visible_context_followup_should_preempt_clarification,
 )
 
 
@@ -83,6 +84,23 @@ class ServiceReasoningActionArbitrationTests(unittest.TestCase):
 				context_isolation=context_isolation,
 				reasoning_semantic_result=reasoning_semantic_result,
 				latest_reasoning_contract=latest_reasoning_contract,
+			)
+		)
+
+	def test_visible_rank_reference_preempts_generic_clarification(self):
+		self.assertTrue(
+			_visible_context_followup_should_preempt_clarification(
+				"Tell me more about Eleventh Customer from the above table"
+			)
+		)
+		self.assertTrue(
+			_visible_context_followup_should_preempt_clarification(
+				"Tell me Rank 11 Customer from the above table"
+			)
+		)
+		self.assertFalse(
+			_visible_context_followup_should_preempt_clarification(
+				"Top 7 customers by revenue last year"
 			)
 		)
 

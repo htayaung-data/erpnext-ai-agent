@@ -794,7 +794,10 @@ def _aging_overdue_31_plus(item: Dict[str, Any]) -> float:
 	)
 
 
-def _aging_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List[Dict[str, Any]]]:
+def _aging_blocks(
+	artifact: NormalizedFamilyArtifactContract,
+	response_overrides: Dict[str, Any] | None = None,
+) -> tuple[str, List[Dict[str, Any]]]:
 	dimensions = artifact.dimensions if isinstance(artifact.dimensions, dict) else {}
 	sections = artifact.sections if isinstance(artifact.sections, dict) else {}
 	currency = _clean_text(dimensions.get("currency"))
@@ -824,12 +827,14 @@ def _aging_blocks(artifact: NormalizedFamilyArtifactContract) -> tuple[str, List
 			"rows": [[_clean_text(item.get("label")), _amount_text(item.get("amount"), _clean_text(item.get("currency") or currency))] for item in bucket_totals],
 		},
 	]
-	top_parties = parties[:10]
+	top_n = _requested_top_n(dimensions, response_overrides, default=10)
+	top_parties = parties[:top_n]
 	if top_parties:
+		display_count = _display_row_count(top_n, top_parties)
 		blocks.append(
 			{
 				"block_type": "data_table",
-				"title": f"Top {party_label}s",
+				"title": f"Top {display_count} {party_label}s",
 				"columns": [party_label, "Outstanding", "Total Due", "Overdue (31+)"],
 				"rows": [
 					[
@@ -1435,7 +1440,7 @@ def render_normalized_family_response(
 	if family_id == "financial_statement":
 		title, blocks = _financial_statement_blocks(artifact_contract)
 	elif family_id == "aging":
-		title, blocks = _aging_blocks(artifact_contract)
+		title, blocks = _aging_blocks(artifact_contract, response_overrides=response_overrides)
 	elif family_id == "ranking_analytics":
 		title, blocks = _ranking_blocks(artifact_contract, response_overrides=response_overrides)
 	elif family_id == "trend_analytics":

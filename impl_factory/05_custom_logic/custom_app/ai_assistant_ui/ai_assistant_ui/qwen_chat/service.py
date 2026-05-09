@@ -694,6 +694,10 @@ def _fresh_query_should_skip_pre_frontdoor_reasoning(
 	return bool(fresh_governed_query_override_requested and not prior_offered_next_action_available)
 
 
+def _visible_context_followup_should_preempt_clarification(message: str) -> bool:
+	return _visible_context_followup_requested(message)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -4261,17 +4265,19 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if prior_branch_direct_handled and prior_branch_direct_payload is not None:
 		return True, prior_branch_direct_payload
 	repair_recent_messages = _recent_messages(session_doc, limit=8)
+	visible_context_followup_has_authority = _visible_context_followup_should_preempt_clarification(raw_msg)
 	pending_clarification_response_preempts_runtime = bool(
 		pending_clarification_signal
 		and _pending_clarification_response_should_preempt_runtime(clarification_response_contract)
+		and not visible_context_followup_has_authority
 	)
 	frontdoor_direct_handling_authority = _frontdoor_contract_has_direct_handling_authority(frontdoor_contract)
 	nbu_requery_activation_may_continue_context = bool(
 		entity_drilldown is None
 		and not pending_clarification_response_preempts_runtime
-		and not fresh_governed_query_override_requested
-		and not bool(getattr(context_isolation, "force_new_query", False))
-		and not frontdoor_direct_handling_authority
+		and (not fresh_governed_query_override_requested or visible_context_followup_has_authority)
+		and (not bool(getattr(context_isolation, "force_new_query", False)) or visible_context_followup_has_authority)
+		and (not frontdoor_direct_handling_authority or visible_context_followup_has_authority)
 	)
 	if nbu_requery_activation_may_continue_context:
 		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(

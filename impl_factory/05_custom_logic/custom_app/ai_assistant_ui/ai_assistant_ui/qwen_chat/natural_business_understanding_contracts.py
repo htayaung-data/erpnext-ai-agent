@@ -21,6 +21,7 @@ ALLOWED_REQUESTED_ACTIONS = {
     "show",
     "explain",
     "detail",
+    "format",
     "compare",
     "requery",
     "recommend",
@@ -49,6 +50,7 @@ ALLOWED_CANDIDATE_ROUTES = {
     "fresh_query",
     "local_followup",
     "entity_detail",
+    "presentation_transform",
     "boundary",
     "clarification",
     "recovery",
@@ -59,6 +61,7 @@ ALLOWED_CANDIDATE_ROUTES = {
 ALLOWED_EVIDENCE_NEEDS = {
     "current_artifact_ok",
     "needs_governed_requery",
+    "presentation_only",
     "unsupported_policy",
     "needs_clarification",
     "out_of_scope",
@@ -81,6 +84,7 @@ ALLOWED_AUTHORITY_CLASSES = {
 
 ALLOWED_ACTION_DECISIONS = {
     "answer_from_current_artifact",
+    "reformat_previous_answer",
     "execute_fresh_governed_query",
     "execute_governed_requery",
     "ask_clarification",
@@ -95,6 +99,7 @@ ALLOWED_ACTION_DECISIONS = {
 
 ALLOWED_RESPONSE_MODES = {
     "direct_answer",
+    "presentation_transform",
     "governed_query",
     "clarification",
     "boundary",
@@ -142,6 +147,15 @@ def _allowed_or_unknown(value: Any, allowed: set[str]) -> str:
     return clean if clean in allowed else "unknown"
 
 
+def _candidate_evidence_need(*, requested_action: Any, candidate_route: Any, evidence_need: Any) -> str:
+    requested = _clean_text(requested_action).lower()
+    route = _clean_text(candidate_route).lower()
+    evidence = _clean_text(evidence_need).lower()
+    if requested == "format" or route == "presentation_transform" or evidence == "presentation_only":
+        return "presentation_only"
+    return _allowed_or_unknown(evidence, ALLOWED_EVIDENCE_NEEDS)
+
+
 @dataclass(frozen=True)
 class NBUCandidateInterpretationContract:
     candidate_id: str
@@ -179,7 +193,11 @@ class NBUCandidateInterpretationContract:
             "requested_metrics": _clean_list(self.requested_metrics),
             "requested_dimensions": _clean_list(self.requested_dimensions),
             "requested_time_scope": _clean_text(self.requested_time_scope),
-            "evidence_need": _allowed_or_unknown(self.evidence_need, ALLOWED_EVIDENCE_NEEDS),
+            "evidence_need": _candidate_evidence_need(
+                requested_action=self.requested_action,
+                candidate_route=self.candidate_route,
+                evidence_need=self.evidence_need,
+            ),
             "authority_class": _allowed_or_unknown(self.authority_class, ALLOWED_AUTHORITY_CLASSES),
             "model_confidence": _clamp_confidence(self.model_confidence),
             "model_reason": _clean_text(self.model_reason),
@@ -313,6 +331,8 @@ class NBUContextResolutionContract:
     resolved_artifact_id: str = ""
     resolved_row_index: int = -1
     resolved_rank: int = 0
+    requested_rank: int = 0
+    available_row_count: int = 0
     resolved_entity: Dict[str, Any] = field(default_factory=dict)
     ambiguity_options: List[str] = field(default_factory=list)
     reason: str = ""
@@ -326,6 +346,8 @@ class NBUContextResolutionContract:
             "resolved_artifact_id": _clean_text(self.resolved_artifact_id),
             "resolved_row_index": int(self.resolved_row_index),
             "resolved_rank": int(max(0, self.resolved_rank or 0)),
+            "requested_rank": int(max(0, self.requested_rank or 0)),
+            "available_row_count": int(max(0, self.available_row_count or 0)),
             "resolved_entity": _clean_dict(self.resolved_entity),
             "ambiguity_options": _clean_list(self.ambiguity_options),
             "reason": _clean_text(self.reason),

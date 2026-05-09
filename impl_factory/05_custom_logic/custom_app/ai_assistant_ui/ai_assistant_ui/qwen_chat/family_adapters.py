@@ -2520,6 +2520,17 @@ def _build_aging_artifact(
 		currency = str(row.get("currency") or "").strip()
 		if currency:
 			break
+	requested_top_n = _requested_top_n_from_contract(compiler_contract)
+	dimensions = {
+		"aging_type": aging_type,
+		"currency": currency,
+		"party_dimension_label": _aging_party_dimension_label(aging_type),
+		"source_grain": "summary" if "summary" in _normalize_key(report_name) else "detail",
+		"bucket_labels": [label for _, label, _ in _aging_bucket_specs()],
+		"filter_mode": filter_mode,
+	}
+	if requested_top_n > 0:
+		dimensions["requested_top_n"] = requested_top_n
 	artifact = build_normalized_family_artifact_contract(
 		request_id=request_id,
 		family_id="aging",
@@ -2529,14 +2540,7 @@ def _build_aging_artifact(
 		dimensions=_analytical_dimensions(
 			family_id="aging",
 			report_name=report_name,
-			dimensions={
-				"aging_type": aging_type,
-				"currency": currency,
-				"party_dimension_label": _aging_party_dimension_label(aging_type),
-				"source_grain": "summary" if "summary" in _normalize_key(report_name) else "detail",
-				"bucket_labels": [label for _, label, _ in _aging_bucket_specs()],
-				"filter_mode": filter_mode,
-			},
+			dimensions=dimensions,
 		),
 		metrics=_aging_metrics(rows, aging_type),
 		sections=_aging_sections(rows, aging_type, currency),

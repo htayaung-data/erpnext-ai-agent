@@ -34,7 +34,7 @@ Current active bridge milestone:
 
 Current decision:
 
-1. Current roadmap truth is reconciled as of 2026-05-07: UX-S6 Context Authority Stabilization is the immediate implementation slice, followed by UX-S7 regression/UAT, Governed Filtering, Management Intelligence, stabilization, and Family Onboarding Standard work.
+1. Current roadmap truth is reconciled as of 2026-05-09: UX-S6 Context Authority Stabilization is the immediate implementation slice, and it must start with UX-S6A Orchestration Foundation Enforcement before any remaining UX-S6 cleanup, UX-S7 regression/UAT, Governed Filtering, Management Intelligence, stabilization, or Family Onboarding Standard work.
 2. Phase 3.6 / NBU-S8 remains the active next gate, NBU-S9 remains pending structural hardening, and Phase 4 must not start until the Phase 3.6 exit decision is green.
 1. Phase 3.4 Customer Risk is complete for the current delivery chapter.
 2. Phase 3.5 reasoning/recommendation boundary is complete for the blocked-authority safety chapter.

@@ -132,6 +132,10 @@ def _message_alias_set(raw_message: str) -> set[str]:
 	return parts
 
 
+def _message_token_set(raw_message: str) -> set[str]:
+	return set(_tokens(raw_message))
+
+
 def _contains_term(raw_message: str, terms: set[str]) -> bool:
 	return bool(set(_tokens(raw_message)).intersection(terms))
 
@@ -404,10 +408,13 @@ def validate_nbu_context_graph_contract() -> Dict[str, Any]:
 def _artifact_match_score(raw_message: str, artifact_node: Dict[str, Any]) -> int:
 	message = _normalize(raw_message)
 	message_parts = _message_alias_set(raw_message)
+	message_tokens = _message_token_set(raw_message)
 	score = 0
 	for alias in _clean_list(artifact_node.get("aliases")):
 		normalized_alias = _normalize(alias)
-		if len(normalized_alias) <= 2 or _is_generic_context_alias(normalized_alias):
+		if _is_generic_context_alias(normalized_alias):
+			continue
+		if len(normalized_alias) <= 3 and normalized_alias not in message_tokens:
 			continue
 		if normalized_alias in message_parts:
 			score += 5 if len(normalized_alias) <= 3 else 7
@@ -437,6 +444,7 @@ def _artifact_row_context_score(
 	if not artifact_id:
 		return 0
 	message_parts = _message_alias_set(raw_message)
+	message_tokens = _message_token_set(raw_message)
 	score = 0
 	for row_node in _clean_dict(context_graph).get("row_nodes", []):
 		row = _clean_dict(row_node)
@@ -450,20 +458,78 @@ def _artifact_row_context_score(
 				score += 8
 		for alias in _clean_list(row.get("aliases")):
 			normalized_alias = _normalize(alias)
-			if len(normalized_alias) >= 3 and normalized_alias in message_parts:
+			if (
+				len(normalized_alias) >= 3
+				and normalized_alias in message_parts
+				and (len(normalized_alias) > 3 or normalized_alias in message_tokens)
+			):
 				score += 3
 	return score
 
 
-def select_nbu_context_graph_artifact(
+def _rank_reference_requested(raw_message: str, target_reference: str = "") -> bool:
+	return _clean_text(target_reference).lower() == "rank_n" or nbu_ordinal_reference_index(raw_message) != -1
+
+
+def _current_artifact_node(artifacts: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for artifact in artifacts:
+		clean = _clean_dict(artifact)
+		if clean.get("role") == "current":
+			return clean
+	return _clean_dict(artifacts[0]) if artifacts else {}
+
+
+def _previous_artifact_nodes(artifacts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+	return [_clean_dict(artifact) for artifact in artifacts if _clean_dict(artifact).get("role") == "previous"]
+
+
+def _is_visible_rendered_artifact_node(artifact: Dict[str, Any]) -> bool:
+	payload = _clean_dict(_clean_dict(artifact).get("payload"))
+	return (
+		_clean_text(payload.get("type")).lower() == "qwen_visible_rendered_artifact"
+		or _clean_text(payload.get("source")).lower() == "assistant_visible_markdown"
+	)
+
+
+def _best_visible_artifact_for_rank_reference(
 	*,
 	raw_message: str,
 	context_graph: Dict[str, Any],
-	prefer_previous: bool = False,
+	artifacts: List[Dict[str, Any]],
+	prefer_previous: bool,
 ) -> Dict[str, Any]:
-	artifacts = [_clean_dict(node) for node in _clean_dict(context_graph).get("artifact_nodes", []) if isinstance(node, dict)]
-	if not artifacts:
+	visible_artifacts = [_clean_dict(artifact) for artifact in artifacts if _is_visible_rendered_artifact_node(artifact)]
+	if not visible_artifacts:
 		return {}
+	if prefer_previous:
+		previous_visible = _previous_artifact_nodes(visible_artifacts)
+		if previous_visible:
+			scored_previous = _scored_artifacts(
+				raw_message=raw_message,
+				context_graph=context_graph,
+				artifacts=previous_visible,
+				prefer_previous=True,
+			)
+			return scored_previous[0][2] if scored_previous else previous_visible[0]
+	scored_visible = _scored_artifacts(
+		raw_message=raw_message,
+		context_graph=context_graph,
+		artifacts=visible_artifacts,
+		prefer_previous=False,
+	)
+	if scored_visible and scored_visible[0][0] > 0:
+		return scored_visible[0][2]
+	current_visible = _current_artifact_node(visible_artifacts)
+	return current_visible or visible_artifacts[0]
+
+
+def _scored_artifacts(
+	*,
+	raw_message: str,
+	context_graph: Dict[str, Any],
+	artifacts: List[Dict[str, Any]],
+	prefer_previous: bool,
+) -> List[Tuple[int, int, Dict[str, Any]]]:
 	scored: List[Tuple[int, int, Dict[str, Any]]] = []
 	for artifact in artifacts:
 		score = _artifact_match_score(raw_message, artifact)
@@ -479,6 +545,73 @@ def select_nbu_context_graph_artifact(
 		recency_penalty = int(artifact.get("recency_index") or 0)
 		scored.append((score, -recency_penalty, artifact))
 	scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+	return scored
+
+
+def _latest_compatible_artifact_for_rank_reference(
+	*,
+	raw_message: str,
+	context_graph: Dict[str, Any],
+	artifacts: List[Dict[str, Any]],
+	prefer_previous: bool,
+) -> Dict[str, Any]:
+	if not artifacts:
+		return {}
+	visible_artifact = _best_visible_artifact_for_rank_reference(
+		raw_message=raw_message,
+		context_graph=context_graph,
+		artifacts=artifacts,
+		prefer_previous=prefer_previous,
+	)
+	if visible_artifact:
+		return visible_artifact
+	current = _current_artifact_node(artifacts)
+	current_terms = set(DISCOURSE_CURRENT_TERMS)
+	if nbu_ordinal_reference_index(raw_message) == -2:
+		current_terms.discard("last")
+	if not prefer_previous and _contains_term(raw_message, current_terms):
+		return current
+	scored = _scored_artifacts(
+		raw_message=raw_message,
+		context_graph=context_graph,
+		artifacts=artifacts,
+		prefer_previous=prefer_previous,
+	)
+	if prefer_previous:
+		previous = _previous_artifact_nodes(artifacts)
+		if previous:
+			previous_scores = [
+				row for row in scored if _clean_dict(row[2]).get("role") == "previous"
+			]
+			return previous_scores[0][2] if previous_scores else previous[0]
+	if scored and scored[0][0] > 0:
+		return scored[0][2]
+	return current
+
+
+def select_nbu_context_graph_artifact(
+	*,
+	raw_message: str,
+	context_graph: Dict[str, Any],
+	prefer_previous: bool = False,
+	target_reference: str = "",
+) -> Dict[str, Any]:
+	artifacts = [_clean_dict(node) for node in _clean_dict(context_graph).get("artifact_nodes", []) if isinstance(node, dict)]
+	if not artifacts:
+		return {}
+	if _rank_reference_requested(raw_message, target_reference):
+		return _latest_compatible_artifact_for_rank_reference(
+			raw_message=raw_message,
+			context_graph=context_graph,
+			artifacts=artifacts,
+			prefer_previous=prefer_previous,
+		)
+	scored = _scored_artifacts(
+		raw_message=raw_message,
+		context_graph=context_graph,
+		artifacts=artifacts,
+		prefer_previous=prefer_previous,
+	)
 	if scored and scored[0][0] > 0:
 		return scored[0][2]
 	for artifact in artifacts:
@@ -545,7 +678,7 @@ def resolve_nbu_context_graph_reference(
 	)
 	candidate = _clean_dict(candidate_payload)
 	target_reference = _clean_text(candidate.get("target_reference")).lower() or "none"
-	if target_reference == "none" and nbu_ordinal_reference_index(raw_message) >= 0:
+	if target_reference == "none" and nbu_ordinal_reference_index(raw_message) != -1:
 		target_reference = "rank_n"
 	if target_reference == "none" and _contains_term(raw_message, DEICTIC_ENTITY_TERMS):
 		target_reference = "selected_entity"
@@ -563,6 +696,7 @@ def resolve_nbu_context_graph_reference(
 		raw_message=raw_message,
 		context_graph=graph,
 		prefer_previous=prefer_previous,
+		target_reference=target_reference,
 	)
 	selected_payload = _artifact_payload_from_node(selected_artifact)
 

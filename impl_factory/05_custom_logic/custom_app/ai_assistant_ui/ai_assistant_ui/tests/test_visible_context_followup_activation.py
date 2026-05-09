@@ -38,6 +38,42 @@ Top Customers
 """
 
 
+def _ar_visible_top_10_text():
+	return """Accounts Receivable Aging as of 2026-05-09
+
+Top 10 Customers
+
+| Customer | Outstanding (MMK) | Total Due (MMK) | Overdue (31+) (MMK) |
+| --- | ---: | ---: | ---: |
+| Capital Telecom (NPT) | 97,309,500 | 63,654,500 | 35,274,500 |
+| Bayint Naung Wholesale Mobile | 95,513,000 | 69,287,000 | 31,249,000 |
+| 35th Street Mobile Wholesale | 84,837,000 | 82,527,000 | 58,212,000 |
+| Ko Nay Lin Mobile Center | 63,125,000 | 60,525,000 | 37,335,000 |
+| Latha Mobile Wholesale | 49,352,000 | 49,352,000 | 33,372,000 |
+| Mandalay Accessories Wholesale | 38,320,000 | 33,090,000 | 29,430,000 |
+| Mandalay Mobile Hub | 38,100,000 | 38,100,000 | 28,280,000 |
+| Taunggyi City Mobile | 37,010,000 | 37,010,000 | 37,010,000 |
+| Shwe Li Road Mobile Wholesale | 36,850,000 | 36,850,000 | 36,850,000 |
+| Hlaing Tharyar Mobile Corner | 34,648,000 | 34,648,000 | 34,648,000 |
+"""
+
+
+def _ar_full_source_artifact_with_hidden_rows():
+	return {
+		"type": "qwen_normalized_family_artifact_contract",
+		"artifact_id": "ar-full-hidden-source",
+		"title": "Accounts Receivable Aging",
+		"family_id": "aging",
+		"dimensions": {"entity_dimension": "customer"},
+		"sections": {
+			"parties": [
+				{"rank": index, "party": f"Hidden Customer {index}", "party_type": "Customer", "outstanding": 1000000 - index}
+				for index in range(1, 13)
+			]
+		},
+	}
+
+
 def _ar_comparison_text():
 	return """Here is the comparison from Accounts Receivable Summary.
 
@@ -97,6 +133,43 @@ Breakdown by invoice
 | --- | --- | --- | --- | --- | ---: | ---: |
 | ACC-SINV-2026-00699 | 2026-03-13 | 2026-04-12 | Overdue | 24,500,000 | 21.5 MMK Million | 49.9% |
 | ACC-SINV-2026-00689 | 2026-02-19 | 2026-03-21 | Overdue | 12,340,000 | 7.3 MMK Million | 17% |
+"""
+
+
+def _supplier_invoice_breakdown_answer_text():
+	return """Sunflower Accessories Co. is the rank 2 entry in the table above.
+
+Deeper approved ERP detail:
+
+Breakdown by invoice
+
+| Invoice | Posting Date | Due Date | Status | Invoice Total | Outstanding amount | Share of selected balance |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| ACC-PINV-2026-00306 | 2026-03-07 | 2026-04-06 | Overdue | 44,730,000 | 40.7 MMK Million | 17.8% |
+| ACC-PINV-2026-00053 | 2026-01-13 | 2026-02-15 | Overdue | 37,000,000 | 33.5 MMK Million | 14.7% |
+| ACC-PINV-2026-00058 | 2026-01-31 | 2026-02-15 | Overdue | 28,150,000 | 22.2 MMK Million | 9.7% |
+"""
+
+
+def _wide_product_ranking_text():
+	return """Top 12 Products by Revenue Last Year
+
+Top Ranked Rows
+
+| Rank | Product | Revenue (MMK) |
+| ---: | --- | ---: |
+| 1 | Product 01 | 120,000 |
+| 2 | Product 02 | 110,000 |
+| 3 | Product 03 | 100,000 |
+| 4 | Product 04 | 90,000 |
+| 5 | Product 05 | 80,000 |
+| 6 | Product 06 | 70,000 |
+| 7 | Product 07 | 60,000 |
+| 8 | Product 08 | 50,000 |
+| 9 | Product 09 | 40,000 |
+| 10 | Product 10 | 30,000 |
+| 11 | Product 11 | 20,000 |
+| 12 | Product 12 | 10,000 |
 """
 
 
@@ -709,6 +782,111 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Rank 2 is Xiaomi Redmi Note 13", answer)
 		self.assertNotIn("ACC-SINV-2026-00689", answer)
 		self.assertNotIn("Ko Nay Lin Mobile Center", answer)
+
+	def test_latest_visible_table_wins_over_prior_supplier_invoice_breakdown_for_rank_reference(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+				_assistant_message(_ar_visible_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is in third row in the above table?",
+			current_artifact=_ap_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 3 is Bayint Naung Wholesale Mobile", answer)
+		self.assertNotIn("ACC-PINV-2026-00058", answer)
+		self.assertNotIn("Sunflower Accessories Co.", answer)
+
+	def test_generic_ordinal_row_references_are_not_limited_to_first_three(self):
+		session_doc = {"messages": [_assistant_message(_wide_product_ranking_text())]}
+		for raw_message, expected in (
+			("who is fourth in the above table?", "Rank 4 is Product 04"),
+			("who is eleventh in the above table?", "Rank 11 is Product 11"),
+			("who is in 12th row in the above table?", "Rank 12 is Product 12"),
+			("who is last in the above table?", "Rank 12 is Product 12"),
+		):
+			handled, payload, messages, _payloads = self._activate(
+				session_doc={"messages": list(session_doc["messages"])},
+				raw_message=raw_message,
+				current_artifact={},
+			)
+			self.assertTrue(handled, raw_message)
+			self.assertEqual(payload["mode"], "visible_context_answer")
+			answer = "\n".join(message[1] for message in messages)
+			self.assertIn(expected, answer)
+
+	def test_out_of_range_rank_reference_returns_visible_row_boundary(self):
+		session_doc = {"messages": [_assistant_message(_supplier_invoice_breakdown_answer_text())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is eleventh in the above table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_out_of_range")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("only 3 visible rows", answer)
+		self.assertIn("no rank 11", answer)
+		self.assertIn("Rank 1: ACC-PINV-2026-00306", answer)
+		self.assertNotIn("need which row you mean", answer)
+
+	def test_visible_table_scope_wins_over_hidden_source_rows_for_out_of_range_rank(self):
+		hidden_source = _ar_full_source_artifact_with_hidden_rows()
+		session_doc = {
+			"messages": [
+				_tool_message(hidden_source),
+				_assistant_message(_ar_visible_top_10_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="tell me about Rank 12 customer",
+			current_artifact=hidden_source,
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_out_of_range")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("only 10 visible rows", answer)
+		self.assertIn("no rank 12", answer)
+		self.assertNotIn("Hidden Customer 12", answer)
+
+	def test_visible_table_scope_wins_over_hidden_source_rows_for_rank_one(self):
+		hidden_source = _ar_full_source_artifact_with_hidden_rows()
+		session_doc = {
+			"messages": [
+				_tool_message(hidden_source),
+				_assistant_message(_ar_visible_top_10_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="why Rank 1 Customer is so risky?",
+			current_artifact=hidden_source,
+			authority_class="safe_explanation",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Capital Telecom (NPT)", answer)
+		self.assertNotIn("Hidden Customer 1", answer)
+
+	def test_rank_reference_after_comparison_table_blocks_fake_entity_lookup(self):
+		session_doc = {"messages": [_assistant_message(_ar_comparison_text())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="give me more about Rank 11 customer",
+			current_artifact=_ar_full_source_artifact_with_hidden_rows(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_out_of_range")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("only 3 visible rows", answer)
+		self.assertIn("no rank 11", answer)
+		self.assertNotIn("Rank 11 Customer Details", answer)
 
 	def test_artifact_set_field_question_does_not_use_stale_selected_entity(self):
 		stale_supplier_selection = {

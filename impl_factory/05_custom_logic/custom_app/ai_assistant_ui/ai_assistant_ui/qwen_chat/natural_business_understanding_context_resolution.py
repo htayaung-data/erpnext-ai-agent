@@ -13,6 +13,8 @@ from .natural_business_understanding_contracts import NBUContextResolutionContra
 
 
 ROW_LIST_KEYS = (
+	"comparison_table",
+	"comparison_rows",
 	"ranked_rows",
 	"top_rows",
 	"top_customers",
@@ -210,6 +212,109 @@ def nbu_row_identity_alias_values(row: Dict[str, Any]) -> List[str]:
 	return list(dict.fromkeys(_clean_text(source.get(key)) for key in ROW_IDENTITY_LABEL_KEYS + ROW_IDENTITY_KEY_FIELDS if _clean_text(source.get(key))))
 
 
+_ORDINAL_WORD_VALUES = {
+	"first": 1,
+	"second": 2,
+	"third": 3,
+	"fourth": 4,
+	"fifth": 5,
+	"sixth": 6,
+	"seventh": 7,
+	"eighth": 8,
+	"ninth": 9,
+	"tenth": 10,
+	"eleventh": 11,
+	"twelfth": 12,
+	"thirteenth": 13,
+	"fourteenth": 14,
+	"fifteenth": 15,
+	"sixteenth": 16,
+	"seventeenth": 17,
+	"eighteenth": 18,
+	"nineteenth": 19,
+	"twentieth": 20,
+	"thirtieth": 30,
+	"fortieth": 40,
+	"fiftieth": 50,
+	"sixtieth": 60,
+	"seventieth": 70,
+	"eightieth": 80,
+	"ninetieth": 90,
+}
+_ORDINAL_COMPOUND_WORDS = {
+	"twenty first": 21,
+	"twenty second": 22,
+	"twenty third": 23,
+	"twenty fourth": 24,
+	"twenty fifth": 25,
+	"twenty sixth": 26,
+	"twenty seventh": 27,
+	"twenty eighth": 28,
+	"twenty ninth": 29,
+	"thirty first": 31,
+	"thirty second": 32,
+	"thirty third": 33,
+	"thirty fourth": 34,
+	"thirty fifth": 35,
+	"thirty sixth": 36,
+	"thirty seventh": 37,
+	"thirty eighth": 38,
+	"thirty ninth": 39,
+	"forty first": 41,
+	"forty second": 42,
+	"forty third": 43,
+	"forty fourth": 44,
+	"forty fifth": 45,
+	"forty sixth": 46,
+	"forty seventh": 47,
+	"forty eighth": 48,
+	"forty ninth": 49,
+}
+_ORDINAL_TENS_VALUES = {
+	"twenty": 20,
+	"thirty": 30,
+	"forty": 40,
+	"fifty": 50,
+	"sixty": 60,
+	"seventy": 70,
+	"eighty": 80,
+	"ninety": 90,
+}
+_ORDINAL_ONES_VALUES = {
+	"first": 1,
+	"second": 2,
+	"third": 3,
+	"fourth": 4,
+	"fifth": 5,
+	"sixth": 6,
+	"seventh": 7,
+	"eighth": 8,
+	"ninth": 9,
+}
+
+
+def _ordinal_words_index(normalized: str) -> int:
+	word_text = re.sub(r"[^a-z0-9]+", " ", normalized)
+	words = [word for word in word_text.split() if word]
+	if not words:
+		return -1
+	for word in words:
+		if word == "last":
+			return -2
+	for index, word in enumerate(words):
+		next_word = words[index + 1] if index + 1 < len(words) else ""
+		if word in _ORDINAL_TENS_VALUES and next_word in _ORDINAL_ONES_VALUES:
+			return _ORDINAL_TENS_VALUES[word] + _ORDINAL_ONES_VALUES[next_word] - 1
+		compound = f"{word} {next_word}".strip()
+		if compound in _ORDINAL_COMPOUND_WORDS:
+			return _ORDINAL_COMPOUND_WORDS[compound] - 1
+	for word in words:
+		value = _ORDINAL_WORD_VALUES.get(word)
+		if value:
+			return value - 1
+	return -1
+
+
 def _ordinal_reference_index(message: str) -> int:
 	normalized = _normalize_text(message)
 	if not normalized:
@@ -220,24 +325,14 @@ def _ordinal_reference_index(message: str) -> int:
 			normalized,
 		)
 	)
-	ordinal_words = {
-		"first": 1,
-		"second": 2,
-		"third": 3,
-		"fourth": 4,
-		"fifth": 5,
-		"sixth": 6,
-		"seventh": 7,
-		"eighth": 8,
-		"ninth": 9,
-		"tenth": 10,
-		"last": -1,
-	}
-	for word, value in ordinal_words.items():
-		if word == "last" and last_temporal_scope:
-			continue
-		if re.search(rf"\b{re.escape(word)}\b", normalized):
-			return value - 1 if value > 0 else -2
+	if not last_temporal_scope:
+		word_index = _ordinal_words_index(normalized)
+		if word_index != -1:
+			return word_index
+	else:
+		word_index = _ordinal_words_index(re.sub(r"\blast\b", "", normalized))
+		if word_index != -1:
+			return word_index
 	for pattern in (
 		r"\b(?:rank|row|number|no|no\.|#)\s*(\d{1,2})\b",
 		r"\b(\d{1,2})(?:st|nd|rd|th)\b",
@@ -545,6 +640,8 @@ def _resolve_from_rows(
 		return NBUContextResolutionContract(
 			status="out_of_range",
 			target_reference=target_reference,
+			requested_rank=ordinal_index + 1,
+			available_row_count=len(rows),
 			ambiguity_options=[_clean_text(_row_entity_payload(row, current_artifact, candidate_payload).get("entity_label")) for row in rows[:10]],
 			reason=f"Requested row/rank {ordinal_index + 1}, but only {len(rows)} row(s) are available.",
 		)
@@ -613,6 +710,8 @@ def _resolve_from_candidate_options(
 		return NBUContextResolutionContract(
 			status="out_of_range",
 			target_reference="candidate_list",
+			requested_rank=ordinal_index + 1,
+			available_row_count=len(options),
 			ambiguity_options=[_clean_text(_row_entity_payload(row, current_artifact, candidate_payload).get("entity_label")) for row in options[:10]],
 			reason=f"Requested option {ordinal_index + 1}, but only {len(options)} option(s) are available.",
 		)

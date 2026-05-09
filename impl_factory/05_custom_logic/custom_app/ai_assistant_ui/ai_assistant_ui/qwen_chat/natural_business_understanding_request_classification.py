@@ -23,6 +23,21 @@ DISCOURSE_CONTEXT_MARKERS = {
 	"same",
 	"selected",
 }
+ARTIFACT_SET_CONTEXT_MARKERS = {
+	"above",
+	"current",
+	"latest",
+	"last",
+	"shown",
+	"table",
+}
+DEICTIC_ENTITY_MARKERS = {
+	"that",
+	"this",
+	"it",
+	"same",
+	"selected",
+}
 TEMPORAL_CONTEXT_TERMS = {"last", "current", "this"}
 ARTIFACT_CONTEXT_FOLLOWUP_MODES = {
 	"aging_bucket_view",
@@ -121,7 +136,7 @@ def temporal_scope_phrase_present(message: str) -> bool:
 
 
 def presentation_only_transform_requested(message: str) -> bool:
-	if nbu_ordinal_reference_index(message) >= 0:
+	if nbu_ordinal_reference_index(message) != -1:
 		return False
 	modes = _followup_modes(message)
 	return any(mode in PRESENTATION_ONLY_FOLLOWUP_MODES for mode in modes)
@@ -140,10 +155,19 @@ def _context_tokens(message: str) -> set[str]:
 	return tokens
 
 
+def _artifact_set_reference_signal(message: str) -> bool:
+	tokens = _context_tokens(message)
+	if not tokens:
+		return False
+	if _contains_any_token(tokens, DEICTIC_ENTITY_MARKERS):
+		return False
+	return bool(_contains_any_token(tokens, ARTIFACT_SET_CONTEXT_MARKERS) and _entity_reference_signal(message))
+
+
 def visible_context_reference_requested(message: str) -> bool:
 	if presentation_only_transform_requested(message):
 		return False
-	if nbu_ordinal_reference_index(message) >= 0:
+	if nbu_ordinal_reference_index(message) != -1:
 		return True
 	if fresh_business_query_requested(message):
 		return False
@@ -154,8 +178,10 @@ def artifact_level_visible_context_requested(message: str) -> bool:
 	tokens = _context_tokens(message)
 	if not tokens:
 		return False
-	if nbu_ordinal_reference_index(message) >= 0:
+	if nbu_ordinal_reference_index(message) != -1:
 		return False
+	if _artifact_set_reference_signal(message):
+		return True
 	if _entity_reference_signal(message):
 		return False
 	modes = _followup_modes(message)
@@ -166,8 +192,10 @@ def artifact_level_visible_context_requested(message: str) -> bool:
 
 
 def visible_context_target_reference(message: str) -> str:
-	if nbu_ordinal_reference_index(message) >= 0:
+	if nbu_ordinal_reference_index(message) != -1:
 		return "rank_n"
+	if _artifact_set_reference_signal(message):
+		return "current_artifact"
 	if artifact_level_visible_context_requested(message):
 		return "current_artifact"
 	if _contains_any_token(_context_tokens(message), DISCOURSE_CONTEXT_MARKERS):

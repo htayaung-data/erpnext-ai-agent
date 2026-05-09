@@ -1,6 +1,7 @@
 # Qwen ERP AI Assistant Enterprise Context, Filtering, MI, And Onboarding Roadmap
 
 Date: 2026-05-07
+Last Updated: 2026-05-09
 Status: active next-sequence implementation roadmap
 Branch: `feature/ai-assistant`
 Owner: AI Assistant stabilization and enterprise architecture track
@@ -18,6 +19,8 @@ It exists because browser UAT proved that the assistant is improving, but still 
 5. filter follow-ups can be misunderstood or answered from an unrelated context.
 
 The goal is not to add more isolated features. The goal is to make the assistant reliable enough that future filtering, MI, HR, CRM, and Manufacturing expansion can be added through shared contracts and metadata rather than one-off family patches.
+
+After browser UAT on 2026-05-09, this roadmap now treats `UX-S6A Orchestration Foundation Enforcement` as the mandatory first gate inside `UX-S6`. This gate exists because row, entity, table, and drilldown follow-ups must be solved as a generic conversation-orchestration problem, not as individual fixes for phrases such as "second row", "third row", or "above table".
 
 ## 2. Current Position
 
@@ -55,6 +58,17 @@ Every slice must follow these rules:
 
 Family-specific adapters are allowed when raw ERP shapes differ, but they must sit behind shared contracts and must not own user-language behavior.
 
+Every proposed roadmap change, design, and implementation plan must pass the Enterprise Gate before coding starts:
+
+1. Problem class: state the general system failure being solved, not the individual UAT sentence.
+2. Rejected MVP approach: explicitly name the shortcut that must not be used.
+3. Enterprise design: describe the shared, governed, reusable mechanism.
+4. Metadata / contract dependency: identify what must come from artifacts, registries, contracts, adapters, or family metadata rather than code assumptions.
+5. Cross-family tests: define the proof across finance, AR/AP, product, customer, supplier, transaction, unsupported, typo, and challenge flows where applicable.
+6. Definition of done: define objective exit conditions before the slice can be called complete.
+
+If any of these six items is missing, the work is not authorized as enterprise-grade implementation.
+
 ## 4. Implementation Sequence
 
 ### UX-S6: Context Authority Stabilization
@@ -62,6 +76,62 @@ Family-specific adapters are allowed when raw ERP shapes differ, but they must s
 Goal:
 
 Make the assistant reliably understand the current conversation object before expanding capability.
+
+`UX-S6` is no longer allowed to proceed as a collection of independent browser-failure fixes. It starts with `UX-S6A`, an enforced orchestration foundation gate. Only after `UX-S6A` passes may the remaining UX-S6 cleanup work continue.
+
+#### UX-S6A: Orchestration Foundation Enforcement
+
+Problem class:
+
+The failure class is conversation orchestration instability. The assistant can have valid ERP data and still answer wrongly if it binds a follow-up to a stale table, stale drilldown, old family, or rendered prose instead of the current structured ERP artifact.
+
+Rejected MVP approach:
+
+Do not add phrase fixes for ordinal words, table-reference words, family labels, or known UAT sentences. Do not parse rendered assistant text as the primary source of truth. Do not add `if AR`, `if AP`, `if product`, or `if customer` behavior in user-language paths. Do not treat each browser failure as a new isolated branch.
+
+Enterprise design:
+
+Create an enforceable orchestration foundation that resolves follow-ups through structured artifacts and typed contracts before any renderer or family handler answers. The foundation must:
+
+1. maintain a conversation evidence ledger of visible ERP artifacts, tables, sections, rows, columns, source family, source report, evidence scope, and supported follow-up actions;
+2. normalize user follow-ups into typed reference and intent objects without deciding family behavior from user keywords;
+3. resolve the target artifact by structured authority signals such as visibility, recency, explicit reference, entity continuity, selected row, evidence scope, and capability compatibility;
+4. allow family-specific ERP shape adapters only behind shared contracts;
+5. pass the selected artifact, row, entity, and evidence scope to consultant, detail, comparison, or safe-fallback renderers.
+
+Metadata / contract dependency:
+
+`UX-S6A` requires these contracts or their equivalent runtime structures:
+
+1. `VisibleArtifactContract`: report id, family id, capability id, table id, section id, row id, column ids, display labels, semantic measure roles, entity roles, rank, and evidence scope.
+2. `ReferenceIntentContract`: abstract follow-up intent such as selected row, selected entity, latest visible table, previous visible table, line-item continuation, explanation, comparison, detail expansion, unsupported prediction, or clarification.
+3. `ContextAuthorityContract`: rules for choosing among candidate artifacts using structured authority signals instead of rendered text similarity.
+4. `FamilyCapabilityContract`: metadata-owned declarations for what each family can answer, drill into, compare, filter, refuse, or hand off.
+5. `EvidenceScopeContract`: summary-level, row-level, source-detail, calculated, unsupported-prediction, or clarification-required evidence state.
+
+Cross-family tests:
+
+Before `UX-S6A` can pass, automated and browser UAT coverage must prove the behavior across:
+
+1. AR aging: latest table row selection, risk explanation, source invoice detail, unsupported default prediction.
+2. AP aging: latest supplier table row selection, supplier concern explanation, source purchase invoice detail.
+3. Product rankings: row selection after formatting transformations such as showing values in millions.
+4. Finance statements: P&L explanation, COGS continuation, Cash Flow insight, Balance Sheet conclusion.
+5. Mixed-family switching: AR to AP to product to AR must answer from the latest intended artifact, not stale context.
+6. Drilldown interruption: after invoice detail, a new visible ranking or aging table must regain context authority.
+7. Ambiguous references: ask clarification only when structured context is genuinely ambiguous.
+
+Definition of done:
+
+`UX-S6A` is complete only when:
+
+1. the runtime can resolve visible-context follow-ups from structured artifacts rather than old rendered prose;
+2. ordinal and entity references work generically for all row positions supported by the visible artifact, not only `first`, `second`, or `third`;
+3. current artifact authority beats older drilldown artifacts unless the user explicitly refers to the older artifact;
+4. unsupported predictions produce business-friendly fallback language with useful next evidence suggestions;
+5. focused tests and guardrails pass;
+6. browser UAT passes the mixed-family conversation checklist;
+7. any remaining limitation is documented in the deferred register instead of hidden inside runtime behavior.
 
 Scope:
 
@@ -84,7 +154,8 @@ Exit gate:
 1. focused automated tests pass;
 2. enterprise guardrail passes;
 3. browser UAT passes for latest table, more insight, fallback, COGS continuation, and filter-follow-up safety;
-4. no lexical or keyword routing is introduced.
+4. `UX-S6A` definition of done is satisfied;
+5. no lexical or keyword routing is introduced.
 
 ### UX-S7: Cross-Family Regression And Browser UAT
 
@@ -330,14 +401,16 @@ Do not start write actions, forecasting, or broad automation until context autho
 
 ## 6. Immediate Next Step
 
-The immediate implementation task is `UX-S6`.
+The immediate implementation task is `UX-S6A Orchestration Foundation Enforcement`, inside `UX-S6`.
 
 Start with:
 
-1. latest visible table authority;
-2. follow-up intent anchoring;
-3. professional fallback wording;
-4. focused line-item continuation;
-5. minimal filter-follow-up safety.
+1. structured visible artifact authority;
+2. generic reference and intent contracts;
+3. context authority resolution that does not depend on rendered prose;
+4. cross-family regression for AR, AP, product rankings, and finance statements;
+5. professional unsupported fallback wording;
+6. focused line-item continuation;
+7. minimal filter-follow-up safety only where needed to prevent context drift.
 
-Do not begin universal filtering or MI implementation until UX-S6 and UX-S7 are green.
+Do not begin universal filtering or MI implementation until UX-S6A, the remaining UX-S6 cleanup, and UX-S7 are green.

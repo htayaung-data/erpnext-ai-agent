@@ -1,7 +1,7 @@
 # Qwen ERP Current Roadmap Reconciliation And Next Implementation Plan
 
 Date: 2026-05-04
-Last updated: 2026-05-07
+Last updated: 2026-05-09
 Status: active roadmap reconciliation plan
 Scope: AI Assistant roadmap alignment after Phase 3.6, NBU stabilization, zero-keyword cleanup, UX-S5 consultant contract work, and Qwen runtime contract work
 Branch: `feature/ai-assistant`
@@ -18,6 +18,10 @@ The current goal is to make the next path clear:
 2. do not jump into Phase 4 too early;
 3. finish the remaining Phase 3.6 / NBU stabilization gates;
 4. then enter Phase 4 with a stable assistant foundation.
+
+2026-05-09 update:
+
+The active roadmap sequence now requires `UX-S6A Orchestration Foundation Enforcement` as the first gate inside `UX-S6`. This does not replace the roadmap. It tightens the existing context-authority slice so browser failures are solved as shared conversation-orchestration problems, not as phrase-by-phrase or family-by-family patches.
 
 ## 2. Current Executive Truth
 
@@ -144,6 +148,7 @@ Current UX roadmap state:
    - The assistant must first decide whether the current artifact is sufficient, whether deeper governed ERP evidence is needed, or whether a governed formula/definition is needed.
 7. `UX-S6` Context Authority Stabilization: active next implementation slice.
    - Browser UAT after UX-S5 showed that latest visible table authority, generic follow-up anchoring, professional fallback wording, and focused line-item continuation are still not stable enough.
+   - As of 2026-05-09, `UX-S6` must start with `UX-S6A Orchestration Foundation Enforcement` before any narrow cleanup continues.
 8. `UX-S7` Cross-Family Regression And Browser UAT: not complete.
    - Finance, AR/AP, customer, supplier, product, inventory, invoices, unsupported questions, typo questions, and user challenge questions still need cross-family proof after UX-S6.
 
@@ -169,17 +174,20 @@ Current UX-S6 blockers:
 
 UX-S6 must fix items 1 through 4 directly and add only minimal filter-follow-up safety. Full filtering is deferred to the governed filtering phase.
 
+`UX-S6A` is the first required sub-slice. It must prove that follow-up resolution uses structured visible artifacts, typed reference intent, context authority, family capability, and evidence-scope contracts. It must not solve failures through isolated keyword, ordinal, or family-specific branches.
+
 ### 3.7 Roadmap Sequence After UX-S6
 
-The active sequence as of 2026-05-07 is:
+The active sequence as of 2026-05-09 is:
 
-1. `UX-S6`: Context Authority Stabilization.
-2. `UX-S7`: Cross-Family Regression And Browser UAT.
-3. `FILTER-S0+`: Governed Filtering Expansion across families.
-4. `MI-S0+`: Management Intelligence core with formula, ratio, and analytics viewpoints.
-5. `MI-ADV-S0+`: advanced consultant drilldown, root-cause, scenario, and sensitivity work.
-6. `STAB-S0+`: stabilization, release gates, lane consolidation, remaining lexical-debt cleanup, and repeatable UAT harness.
-7. `FAM-S0+`: Family Onboarding Standard and new-family test harness.
+1. `UX-S6A`: Orchestration Foundation Enforcement inside UX-S6.
+2. Remaining `UX-S6`: Context Authority Stabilization cleanup after UX-S6A is green.
+3. `UX-S7`: Cross-Family Regression And Browser UAT.
+4. `FILTER-S0+`: Governed Filtering Expansion across families.
+5. `MI-S0+`: Management Intelligence core with formula, ratio, and analytics viewpoints.
+6. `MI-ADV-S0+`: advanced consultant drilldown, root-cause, scenario, and sensitivity work.
+7. `STAB-S0+`: stabilization, release gates, lane consolidation, remaining lexical-debt cleanup, and repeatable UAT harness.
+8. `FAM-S0+`: Family Onboarding Standard and new-family test harness.
 
 This order is intentional:
 
@@ -461,11 +469,11 @@ Do not:
 
 The next implementation action should be:
 
-1. commit this roadmap reconciliation doc;
-2. run NBU-S8 Group 4 and Group 6 carefully in browser;
-3. fix any failure through shared NBU/clarification/option-contract seams;
-4. rerun S7 and guardrail after the fixes;
-5. only then continue through the remaining S8 groups.
+1. follow the `UX-S6A` Enterprise Gate from the active context/filter/MI roadmap;
+2. implement structured visible-artifact authority and typed reference resolution before adding more browser-failure fixes;
+3. prove AR, AP, product ranking, finance, drilldown interruption, unsupported prediction, typo, and challenge flows with cross-family tests;
+4. run focused tests, enterprise guardrail, and browser UAT after the fixes;
+5. only then continue remaining UX-S6 cleanup, UX-S7, filtering, MI, stabilization, and family-onboarding work.
 
 ## 8. Phase 4 Entry Statement
 
