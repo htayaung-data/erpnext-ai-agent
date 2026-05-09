@@ -6250,6 +6250,7 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   width: 100%;
   min-width: 760px;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 .erpw-list-table thead th {
@@ -6287,7 +6288,22 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
   white-space: nowrap;
 }
 
-.erpw-list-cell-primary {
+.erpw-list-table tbody td:first-child {
+  min-width: 150px;
+}
+
+.erpw-list-table tbody td:first-child .erpw-list-cell-primary,
+.erpw-list-table tbody td:first-child .erpw-list-cell-value,
+.erpw-list-table tbody td:first-child .erpw-list-cell-link,
+.erpw-list-table tbody td:first-child .erpw-list-inline-open-label {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: manual;
+}
+
+.erpw-list-cell-primary,
+.erpw-list-cell-value {
   color: #172033;
   font-size: 0.82rem;
   font-weight: 680;
@@ -6328,6 +6344,9 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 
 .erpw-list-inline-open-label {
   min-width: 0;
+  word-break: normal;
+  overflow-wrap: normal;
+  hyphens: manual;
 }
 
 .erpw-list-inline-open-icon {

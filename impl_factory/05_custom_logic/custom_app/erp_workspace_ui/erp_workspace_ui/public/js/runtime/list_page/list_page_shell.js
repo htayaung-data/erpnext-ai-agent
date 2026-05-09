@@ -10,7 +10,10 @@
     style.textContent = `
       .erpw-list-table {
         width: 100%;
-        table-layout: fixed;
+        table-layout: auto;
+      }
+      .erpw-list-table-wrap {
+        overflow-x: auto;
       }
       .erpw-list-table th {
         font-size: 11px;
@@ -23,16 +26,31 @@
         color: #0f172a;
         vertical-align: top;
       }
+      .erpw-list-table tbody td:first-child {
+        min-width: 150px;
+      }
+      .erpw-list-table tbody td:first-child .erpw-list-cell-primary,
+      .erpw-list-table tbody td:first-child .erpw-list-cell-value,
+      .erpw-list-table tbody td:first-child .erpw-list-cell-link,
+      .erpw-list-table tbody td:first-child .erpw-list-inline-open-label {
+        white-space: nowrap;
+        word-break: normal;
+        overflow-wrap: normal;
+        hyphens: manual;
+      }
       .erpw-list-cell-primary,
+      .erpw-list-cell-value,
       .erpw-list-cell-link,
       .erpw-list-inline-open,
       .erpw-list-inline-open-label,
       .erpw-list-inline-open-icon,
       .erpw-list-inline-open *,
-      .erpw-list-cell-link * {
+      .erpw-list-cell-link *,
+      .erpw-list-cell-value * {
         text-decoration: none !important;
       }
-      .erpw-list-cell-primary {
+      .erpw-list-cell-primary,
+      .erpw-list-cell-value {
         font-weight: 500;
         line-height: 1.45;
         color: #334155;
@@ -72,6 +90,9 @@
         font-weight: 600;
         line-height: 1.4;
         color: inherit;
+        word-break: normal;
+        overflow-wrap: normal;
+        hyphens: manual;
       }
       .erpw-list-inline-open-icon {
         font-size: 14px;
@@ -94,6 +115,7 @@
         transform: translateX(2px) scale(1.08);
       }
       .erpw-list-cell-meta {
+        display: block;
         margin-top: 3px;
         font-size: 12px;
         font-weight: 400;

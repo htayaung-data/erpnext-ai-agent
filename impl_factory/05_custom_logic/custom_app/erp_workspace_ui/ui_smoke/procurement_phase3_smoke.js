@@ -1107,6 +1107,85 @@ async function checkDatePairLayout(page) {
   ];
 }
 
+async function assertPrimaryCodeTokensDoNotWrap(page, route, shellSelector, label) {
+  await openDeskRoute(page, route);
+  await page.locator(shellSelector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const result = await page.evaluate((shellSelector) => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const shell = document.querySelector(shellSelector);
+    const codePattern = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+(?:\/[A-Z0-9.-]+)?\b/;
+    const nodes = shell
+      ? Array.from(shell.querySelectorAll([
+          ".erpw-list-table tbody td:first-child .erpw-list-inline-open-label",
+          ".erpw-list-table tbody td:first-child .erpw-list-cell-primary",
+          ".erpw-list-table tbody td:first-child .erpw-list-cell-value",
+          ".erpw-report-table tbody td.nowrap .erpw-report-cell-link-label",
+        ].join(","))).filter(visible)
+      : [];
+    const candidates = nodes
+      .map((node) => {
+        const text = String(node.textContent || "").replace(/\s+/g, " ").trim();
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const lineHeight = Number.parseFloat(style.lineHeight) || (Number.parseFloat(style.fontSize) * 1.35) || 18;
+        const rects = Array.from(node.getClientRects()).filter((item) => item.width > 0 && item.height > 0);
+        return {
+          text,
+          whiteSpace: style.whiteSpace,
+          wordBreak: style.wordBreak,
+          overflowWrap: style.overflowWrap,
+          rectCount: rects.length,
+          height: rect.height,
+          lineHeight,
+          topValues: rects.map((item) => Math.round(item.top)),
+        };
+      })
+      .filter((item) => codePattern.test(item.text));
+    const offenders = candidates.filter((item) => {
+      const visuallyWrapped = item.rectCount > 1 || item.height > item.lineHeight * 1.65;
+      const allowsMidTokenBreaks = !/nowrap/i.test(item.whiteSpace) && /break|anywhere/i.test(`${item.wordBreak} ${item.overflowWrap}`);
+      return visuallyWrapped || allowsMidTokenBreaks;
+    });
+    return {
+      url: window.location.href,
+      candidateCount: candidates.length,
+      candidates,
+      offenders,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  }, shellSelector);
+  if (result.candidateCount === 0) return { label, route, skipped: "no visible document/code tokens", result };
+  assert(result.offenders.length === 0, `${label}: document/code tokens wrap or allow ugly mid-token breaks`, result);
+  return { label, route, result };
+}
+
+async function checkDocumentCodeWrapping(page, purchaseOrderName) {
+  const checks = [
+    ["/desk/procurement-console-worklist/purchase-order-directory", ".erpw-list-shell", "Purchase Order Directory"],
+    ["/desk/procurement-console-worklist/rfq-directory", ".erpw-list-shell", "RFQ Directory"],
+    ["/desk/procurement-console-worklist/supplier-quotation-directory", ".erpw-list-shell", "Supplier Quotation Directory"],
+    ["/desk/procurement-console-worklist/purchase-request-directory", ".erpw-list-shell", "Purchase Request Directory"],
+  ];
+  const results = [];
+  for (const [route, shellSelector, label] of checks) {
+    results.push(await assertPrimaryCodeTokensDoNotWrap(page, route, shellSelector, label));
+  }
+  if (purchaseOrderName) {
+    results.push(await assertPrimaryCodeTokensDoNotWrap(
+      page,
+      `/desk/procurement-console-po-follow-up/${encodeURIComponent(purchaseOrderName)}`,
+      ".erpw-procurement-po-follow-up-shell",
+      "PO Follow-up Detail item lines"
+    ));
+  }
+  return results;
+}
+
 async function assertEnterpriseListFilterLayout(page, route, label) {
   await openDeskRoute(page, route);
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1684,6 +1763,7 @@ async function runUser(browser, user) {
         firstPoName = firstRowName(purchaseOrderPayload);
       }
       const directPoName = process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010";
+      report.documentCodeWrapping = await checkDocumentCodeWrapping(page, directPoName);
       report.directDetail = await checkDetail(page, directPoName, { requireReadyShell: true, exerciseToolbar: true });
       report.supplierAutocomplete = await checkSupplierAutocomplete(page);
       report.supplierDetail = await checkSupplierDetail(page, user);

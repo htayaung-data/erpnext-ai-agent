@@ -917,8 +917,17 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("erpw-list-summary-side", source)
         self.assertIn("erpw-list-summary-facts", source)
         self.assertIn("is-procurement-worklist", source)
+        self.assertIn("table-layout: auto", source)
+        self.assertIn(".erpw-list-table tbody td:first-child .erpw-list-inline-open-label", source)
+        self.assertIn("overflow-wrap: normal", source)
+        self.assertIn(".erpw-list-cell-value", source)
+        self.assertIn("display: block", source)
         self.assertIn("renderSummary(page.summary, page.controls, page.metrics, page)", source)
         self.assertIn("renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) })", source)
+
+        css_source = (Path(__file__).resolve().parents[1] / "public" / "css" / "erp_workspace_ui.css").read_text()
+        self.assertIn(".erpw-list-table tbody td:first-child .erpw-list-cell-value", css_source)
+        self.assertIn("hyphens: manual", css_source)
 
         page_source = (Path(__file__).resolve().parents[1] / "erp_workspace_ui" / "page" / "procurement_console_worklist" / "procurement_console_worklist.js").read_text()
         self.assertIn('workspace: "procurement"', page_source)
