@@ -281,6 +281,34 @@ def _selected_focus_allowed_for_message(raw_message: str) -> bool:
 	return any(term in tokens for term in DEICTIC_ENTITY_TERMS)
 
 
+def _selected_focus_has_continuation_authority(raw_message: str, target_reference: str) -> bool:
+	if not _selected_focus_allowed_for_message(raw_message):
+		return False
+	target = _clean_text(target_reference).lower()
+	if target == "selected_entity":
+		return True
+	return target == "current_artifact"
+
+
+def _selected_entity_rank(entity: Dict[str, Any]) -> int:
+	source = _clean_dict(entity)
+	row = _clean_dict(source.get("row"))
+	for value in (
+		source.get("rank"),
+		source.get("resolved_rank"),
+		row.get("rank"),
+		row.get("row_rank"),
+		row.get("position"),
+	):
+		try:
+			rank = int(value or 0)
+		except (TypeError, ValueError):
+			rank = 0
+		if rank > 0:
+			return rank
+	return 0
+
+
 def _normalize_field_key(value: Any) -> str:
 	text = re.sub(r"\([^)]*\)", "", _clean_text(value).lower())
 	text = re.sub(r"[^a-z0-9]+", "_", text)
@@ -345,13 +373,13 @@ def _resolve_visible_context(
 	current_artifact: Dict[str, Any],
 ) -> Dict[str, Any]:
 	target = _target_reference(raw_message)
-	if target == "selected_entity" and _selected_focus_allowed_for_message(raw_message):
+	if _selected_focus_has_continuation_authority(raw_message, target):
 		selected = _latest_selected_entity(session_doc)
 		if _clean_dict(selected).get("row"):
 			return {
 				"status": "resolved",
-				"target_reference": target,
-				"resolved_rank": _row_rank(_clean_dict(selected.get("row")), 0),
+				"target_reference": "selected_entity",
+				"resolved_rank": _selected_entity_rank(selected),
 				"resolved_entity": selected,
 				"reason": "Resolved from the last selected visible row.",
 			}
@@ -392,7 +420,14 @@ def _source_detail_artifact_for_visible_row(
 	resolution: Dict[str, Any],
 	row: Dict[str, Any],
 ) -> Dict[str, Any]:
-	artifacts = _context_artifacts(session_doc, current_artifact=_clean_dict(current_artifact), limit=10)
+	artifacts: List[Dict[str, Any]] = []
+	current_payload = _clean_dict(current_artifact)
+	if current_payload:
+		artifacts.append(current_payload)
+	for artifact in _context_artifacts(session_doc, current_artifact=current_payload, limit=10):
+		clean_artifact = _clean_dict(artifact)
+		if clean_artifact and _payload_identity(clean_artifact) not in {_payload_identity(existing) for existing in artifacts}:
+			artifacts.append(clean_artifact)
 	if not artifacts:
 		return {}
 	resolved_artifact_id = _clean_text(resolution.get("resolved_artifact_id"))
@@ -748,6 +783,21 @@ def _should_explain_row_signal(
 	)
 
 
+def _should_attempt_selected_row_drilldown(
+	resolution: Dict[str, Any],
+	*,
+	nbu_trace_payload: Dict[str, Any] | None,
+	reasoning_semantic_result: Any = None,
+) -> bool:
+	if _clean_text(_clean_dict(resolution).get("status")).lower() != "resolved":
+		return False
+	if _clean_text(_clean_dict(resolution).get("target_reference")).lower() != "selected_entity":
+		return False
+	if _nbu_selected_requested_action(nbu_trace_payload) == "detail":
+		return True
+	return _reasoning_type(reasoning_semantic_result) in {"continuation_detail"}
+
+
 def _visible_followup_authority_intent(
 	*,
 	raw_message: str = "",
@@ -806,8 +856,14 @@ def _resolved_answer_text(
 	entity = _clean_dict(resolution.get("resolved_entity"))
 	row = _clean_dict(entity.get("row"))
 	label = _entity_label(entity)
-	rank = int(resolution.get("resolved_rank") or _row_rank(row, 0) or 0)
+	try:
+		rank = int(resolution.get("resolved_rank") or 0)
+	except (TypeError, ValueError):
+		rank = 0
+	if rank <= 0 and _clean_text(resolution.get("target_reference")).lower() != "selected_entity":
+		rank = _row_rank(row, 0)
 	rank_text = f"Rank {rank}" if rank > 0 else "The selected row"
+	entry_rank_text = f"rank {rank}" if rank > 0 else "selected row"
 	explain_row_signal = _should_explain_row_signal(
 		row,
 		nbu_trace_payload=nbu_trace_payload,
@@ -815,7 +871,12 @@ def _resolved_answer_text(
 	)
 	if not explain_row_signal and _clean_text(resolution.get("target_reference")).lower() == "selected_entity":
 		explain_row_signal = bool(_risk_signal_lines(row))
-	if explain_row_signal:
+	drilldown_requested = _should_attempt_selected_row_drilldown(
+		resolution,
+		nbu_trace_payload=nbu_trace_payload,
+		reasoning_semantic_result=reasoning_semantic_result,
+	)
+	if explain_row_signal or drilldown_requested:
 		source_detail_answer = _source_detail_answer_for_visible_row(
 			session_doc=session_doc,
 			current_artifact=_clean_dict(current_artifact),
@@ -825,19 +886,21 @@ def _resolved_answer_text(
 		)
 		if source_detail_answer:
 			visible_lines = [
-				f"{label} is the {rank_text.lower()} entry in the table above.",
+				f"{label} is the {entry_rank_text} entry in the table above.",
 				"",
-				"Visible row signal:",
-				*_risk_signal_lines(row),
-				"",
+			]
+			risk_lines = _risk_signal_lines(row)
+			if risk_lines:
+				visible_lines.extend(["Visible row signal:", *risk_lines, ""])
+			visible_lines.extend([
 				"Deeper approved ERP detail:",
 				"",
 				source_detail_answer,
-			]
+			])
 			return "\n".join(line for line in visible_lines if line is not None).strip()
 	if explain_row_signal:
 		lines = [
-			f"{label} is the {rank_text.lower()} entry in the table above.",
+			f"{label} is the {entry_rank_text} entry in the table above.",
 			"",
 			"Why this stands out from the visible row:",
 		]

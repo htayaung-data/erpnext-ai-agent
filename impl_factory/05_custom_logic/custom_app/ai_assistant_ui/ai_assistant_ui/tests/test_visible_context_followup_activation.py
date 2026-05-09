@@ -400,6 +400,81 @@ def _balance_sheet_lines_artifact():
 	}
 
 
+def _profit_and_loss_artifact():
+	return {
+		"type": "qwen_normalized_family_artifact_contract",
+		"artifact_id": "profit-and-loss-1",
+		"title": "Profit and Loss Statement",
+		"family_id": "financial_statement",
+		"capability_id": "financial_statement_read",
+		"source_reports": ["Profit and Loss Statement"],
+		"filters": {"company": "Mingalar Mobile Distribution Co., Ltd."},
+		"period": {"from_date": "2026-04-01", "to_date": "2026-05-09"},
+		"metrics": {"total_income": "91,480,000", "total_expense": "102,894,942.84"},
+		"dimensions": {"currency": "MMK"},
+		"sections": {
+			"expense": [
+				{
+					"account": "Cost of Goods Sold - MMOB",
+					"label": "Cost of Goods Sold",
+					"amount": "65,360,820.70",
+					"parent_account": "Stock Expenses - MMOB",
+					"currency": "MMK",
+				}
+			]
+		},
+	}
+
+
+def _selected_cogs_contract():
+	row = dict(_profit_and_loss_artifact()["sections"]["expense"][0])
+	return {
+		"type": "qwen_nbu_current_artifact_answer_activation_contract",
+		"contract_version": "1.0",
+		"request_id": "req-cogs-selection",
+		"activation_state": "activated",
+		"activation_mode": "direct_evidence_selected_row",
+		"resolved_artifact_id": "profit-and-loss-1",
+		"resolved_rank": 0,
+		"resolved_entity": {
+			"entity_type": "account",
+			"entity_key": "Cost of Goods Sold - MMOB",
+			"entity_label": "Cost of Goods Sold - MMOB",
+			"row": row,
+		},
+	}
+
+
+def _gl_entry_detail_payload():
+	return {
+		"ok": True,
+		"tool_trace": [
+			{
+				"output_obj": {
+					"result": {
+						"data": [
+							{
+								"posting_date": "2026-05-08",
+								"voucher_type": "Delivery Note",
+								"voucher_no": "MAT-DN-2026-00339",
+								"debit": "40,000,000.00",
+								"credit": "0",
+							},
+							{
+								"posting_date": "2026-05-08",
+								"voucher_type": "Delivery Note",
+								"voucher_no": "MAT-DN-2026-00340",
+								"debit": "25,360,820.70",
+								"credit": "0",
+							},
+						]
+					}
+				}
+			}
+		],
+	}
+
+
 def _stock_rows_artifact():
 	return {
 		"type": "qwen_normalized_family_artifact_contract",
@@ -1294,6 +1369,29 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("Rank 2 is Bank Overdraft Account", answer)
 		self.assertIn("Amount: 118,000,000 MMK", answer)
+
+	def test_deictic_statement_line_followup_stays_on_selected_line_and_drills_down(self):
+		artifact = _profit_and_loss_artifact()
+		session_doc = {"messages": [_tool_message(artifact), _tool_message(_selected_cogs_contract())]}
+		with patch(
+			"ai_assistant_ui.qwen_chat.source_detail_drilldown_execution.execute_governed_report",
+			return_value=_gl_entry_detail_payload(),
+		) as execute:
+			handled, payload, messages, _payloads = self._activate(
+				session_doc=session_doc,
+				raw_message="give me more detail about that, by breaking down details",
+				current_artifact=artifact,
+				reasoning_type="continuation_detail",
+			)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Cost of Goods Sold - MMOB is the selected row", answer)
+		self.assertIn("Deeper approved ERP detail", answer)
+		self.assertIn("GL Entry Account Detail", answer)
+		self.assertIn("MAT-DN-2026-00339", answer)
+		self.assertNotIn("The company is loss-making", answer)
+		execute.assert_called_once()
 
 	def test_stock_rows_use_warehouse_identity(self):
 		session_doc = {"messages": [_tool_message(_stock_rows_artifact())]}

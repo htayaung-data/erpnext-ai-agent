@@ -88,10 +88,17 @@ def handle_artifact_boundary_turn(
 			if isinstance(evidence_response.get("clarification_signal_payload"), dict)
 			else {}
 		)
+		selected_entity_activation_payload = (
+			evidence_response.get("selected_entity_activation_payload")
+			if isinstance(evidence_response.get("selected_entity_activation_payload"), dict)
+			else {}
+		)
 		if evidence_request_contract_payload:
 			append_tool_payload(session_doc, evidence_request_contract_payload)
 		if narrative_contract_payload:
 			append_tool_payload(session_doc, narrative_contract_payload)
+		if selected_entity_activation_payload:
+			append_tool_payload(session_doc, selected_entity_activation_payload)
 		if clarification_signal_payload:
 			append_tool_payload(session_doc, clarification_signal_payload)
 			store_pending_clarification_signal(session_doc, clarification_signal_payload)

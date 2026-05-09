@@ -168,6 +168,10 @@ class SourceDetailDrilldownExecutionTests(unittest.TestCase):
 		self.assertIn("Breakdown by source document", response["answer_text"])
 		self.assertIn("MAT-DN-2026-00339", response["answer_text"])
 		self.assertTrue(response["rendered_response_payload"]["source_detail_drilldown"])
+		selection = response["selected_entity_activation_payload"]
+		self.assertEqual(selection["type"], "qwen_nbu_current_artifact_answer_activation_contract")
+		self.assertEqual(selection["activation_mode"], "source_detail_selected_row")
+		self.assertEqual(selection["resolved_entity"]["entity_label"], "Cost of Goods Sold - MMOB")
 		execute.assert_called_once()
 
 	def test_ar_party_drilldown_executes_sales_invoice_source_detail(self):
