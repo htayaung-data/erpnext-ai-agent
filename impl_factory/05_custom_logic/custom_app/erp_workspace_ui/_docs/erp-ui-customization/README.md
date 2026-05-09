@@ -9,6 +9,7 @@ Current implementation focus:
 - Procurement Console
 - Multi-Workspace Foundation
 - Shared Component and Implementation Golden Rule Standard
+- Frozen Workspace Protection Package Standard
 - workspace-wide shared UI component standard
 - workspace-wide shared UI implementation contract
 - Sales Console enterprise readiness audit
@@ -39,10 +40,13 @@ Freeze and governance status:
 
 - Sales Console is frozen on 2026-05-03.
 - Freeze marker tag: `sales-console-freeze-v1`.
+- Sales Console v2 freeze/protection package is accepted on 2026-05-09 after owner manual Premium UI confirmation.
+- Current freeze marker tag: `sales-console-freeze-v2`.
 - Main Phase 2 Sales Recovery on 2026-05-06 hardens Sales against the Shared Core + Workspace Adapter v2 contract while preserving frozen route names and business scope.
 - Procurement Console is active Phase 3 in the source registry.
 - Purchase-role routing to `procurement-console-home` is owner-approved; Procurement is not the default app.
 - Main Phase 1 added shared-core governance only; Main Phase 2 repairs Sales shared-core compliance only. Procurement repair, Procurement Phase 4, and new workspace work remain out of scope until owner-approved.
+- Every frozen workspace must receive a Frozen Workspace Protection Package before future workspace work can safely proceed.
 
 Primary code paths:
 
@@ -108,6 +112,8 @@ Current freeze facts:
 
 Documents in this folder:
 
+- `frozen-workspace-protection-package-standard-v1.md`
+- `sales-console-frozen-protection-package-2026-05-09.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
 - `sales-console-recovery-phase-2-2026-05-06.md`
 - `shared-core-workspace-adapter-contract-v2.md`
@@ -139,6 +145,6 @@ Documents in this folder:
 - `sales-console-business-copy-contract-v1.md`
 - `sales-console-navigation-contract-v1.md`
 
-Future workspace implementation must start from `shared-core-workspace-adapter-contract-v2.md`, `native-exception-policy-v1.md`, `workspace_governance_manifest.py`, and `shared-component-and-implementation-golden-rule-standard-v1.md`.
+Future workspace implementation must start from `frozen-workspace-protection-package-standard-v1.md`, `shared-core-workspace-adapter-contract-v2.md`, `native-exception-policy-v1.md`, `workspace_governance_manifest.py`, and `shared-component-and-implementation-golden-rule-standard-v1.md`.
 
 Future workspaces must start from Core + Adapter, not by copying Sales Console or Procurement Console page files. The Sales Console is the current business reference implementation, not the naming scope of the shared component standard.
