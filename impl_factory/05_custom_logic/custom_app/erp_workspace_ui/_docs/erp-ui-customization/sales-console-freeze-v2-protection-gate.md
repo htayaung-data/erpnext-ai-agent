@@ -88,6 +88,24 @@ sales-freeze-protection-summary.json
 
 The summary includes timestamp, git branch, git commit, command list, pass/fail status, artifact paths, and the failed command if any.
 
+The summary also records the exact source state that was validated:
+
+- HEAD commit
+- branch
+- `git status --short --branch`
+- whether the working tree was dirty
+- changed tracked files from `git diff --name-status HEAD`
+- untracked files from `git ls-files --others --exclude-standard`
+
+The gate can validate uncommitted work. When it does, the summary must make that explicit through `working_tree_dirty`, `changed_files_name_status`, and `untracked_files`. This is intentional evidence, not a clean-release claim.
+
+Recommended final practice for a major freeze or protection baseline:
+
+1. Run the gate before commit to prove the candidate diff.
+2. Commit only the approved files.
+3. Run the gate again after commit to prove the committed source state.
+4. Push only after the post-commit gate passes.
+
 ## What The Gate Runs
 
 Source checks:
@@ -95,7 +113,14 @@ Source checks:
 - `python3 -m compileall erp_workspace_ui`
 - `PYTHONPATH=. python3 -m unittest discover -s erp_workspace_ui/tests -p 'test_*.py'`
 - `node --check` for Sales and shared JS files that can affect Sales
-- `git diff --check`
+- `git diff --check HEAD`
+
+The source checks write real logs into the artifact root:
+
+- `python-compileall.log`
+- `python-unit-discovery.log`
+- `node-check.log`
+- `git-diff-check.log`
 
 Browser smoke checks:
 

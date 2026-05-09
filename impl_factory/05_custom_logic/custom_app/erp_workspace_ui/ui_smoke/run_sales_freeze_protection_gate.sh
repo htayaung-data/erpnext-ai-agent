@@ -18,6 +18,7 @@ fi
 SUMMARY_FILE="$ARTIFACT_ROOT/sales-freeze-protection-summary.json"
 RESULTS_TSV="$ARTIFACT_ROOT/.sales-freeze-protection-results.tsv"
 NODE_CHECK_LIST="$ARTIFACT_ROOT/node-check-files.txt"
+NODE_CHECK_LOG="$ARTIFACT_ROOT/node-check.log"
 
 case "$ARTIFACT_ROOT" in
 	"$SCRIPT_DIR"/*)
@@ -59,13 +60,14 @@ record_result() {
 write_summary() {
 	local overall_status="$1"
 	local failed_command="${2:-}"
-	python3 - "$SUMMARY_FILE" "$RESULTS_TSV" "$TIMESTAMP" "$(git_commit)" "$(git_branch)" "$overall_status" "$failed_command" "$ARTIFACT_ROOT" <<'PY'
+	python3 - "$SUMMARY_FILE" "$RESULTS_TSV" "$TIMESTAMP" "$(git_commit)" "$(git_branch)" "$overall_status" "$failed_command" "$ARTIFACT_ROOT" "$APP_ROOT" <<'PY'
 import base64
 import json
+import subprocess
 import sys
 from pathlib import Path
 
-summary_file, results_file, timestamp, commit, branch, overall_status, failed_command, artifact_root = sys.argv[1:9]
+summary_file, results_file, timestamp, commit, branch, overall_status, failed_command, artifact_root, app_root = sys.argv[1:10]
 commands = []
 path = Path(results_file)
 if path.exists():
@@ -80,13 +82,33 @@ if path.exists():
                 "status": status,
                 "exit_code": int(exit_code),
                 "artifact_path": artifact_path or None,
+                "artifact_exists": bool(artifact_path and Path(artifact_path).exists()),
             }
         )
 
+def git_lines(*args):
+    result = subprocess.run(
+        ["git", "-C", app_root, *args],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+git_status_short_branch = git_lines("status", "--short", "--branch")
+git_status_short = git_lines("status", "--short")
+changed_files_name_status = git_lines("diff", "--name-status", "HEAD")
+untracked_files = git_lines("ls-files", "--others", "--exclude-standard")
+
 payload = {
     "timestamp": timestamp,
+    "head_commit": commit,
     "git_commit": commit,
     "branch": branch,
+    "git_status_short_branch": git_status_short_branch,
+    "working_tree_dirty": bool(git_status_short),
+    "changed_files_name_status": changed_files_name_status,
+    "untracked_files": untracked_files,
     "overall_status": overall_status,
     "artifact_root": artifact_root,
     "failed_command": failed_command or None,
@@ -126,8 +148,15 @@ run_step() {
 	local exit_code
 
 	echo "==> $name"
-	(cd "$APP_ROOT" && bash -lc "$command")
-	exit_code=$?
+	if [[ "$artifact_path" == *.log ]]; then
+		mkdir -p "$(dirname "$artifact_path")"
+		(cd "$APP_ROOT" && bash -lc "$command") > "$artifact_path" 2>&1
+		exit_code=$?
+		cat "$artifact_path"
+	else
+		(cd "$APP_ROOT" && bash -lc "$command")
+		exit_code=$?
+	fi
 	if [ "$exit_code" -eq 0 ]; then
 		record_result "$name" "$command" "pass" "$exit_code" "$artifact_path"
 		return 0
@@ -162,13 +191,14 @@ run_node_checks() {
 	local exit_code
 
 	echo "==> $name"
-	(cd "$APP_ROOT" && while IFS= read -r file; do node --check "$file"; done < "$NODE_CHECK_LIST")
+	(cd "$APP_ROOT" && while IFS= read -r file; do node --check "$file"; done < "$NODE_CHECK_LIST") > "$NODE_CHECK_LOG" 2>&1
 	exit_code=$?
+	cat "$NODE_CHECK_LOG"
 	if [ "$exit_code" -eq 0 ]; then
-		record_result "$name" "$command" "pass" "$exit_code" "$NODE_CHECK_LIST"
+		record_result "$name" "$command" "pass" "$exit_code" "$NODE_CHECK_LOG"
 		return 0
 	fi
-	record_result "$name" "$command" "fail" "$exit_code" "$NODE_CHECK_LIST"
+	record_result "$name" "$command" "fail" "$exit_code" "$NODE_CHECK_LOG"
 	write_summary "fail" "$name"
 	echo "Sales freeze protection failed at: $name" >&2
 	echo "Sales freeze protection summary: $SUMMARY_FILE" >&2
@@ -191,7 +221,7 @@ collect_node_check_files
 run_step "python-compileall" "$ARTIFACT_ROOT/python-compileall.log" "python3 -m compileall erp_workspace_ui"
 run_step "python-unit-discovery" "$ARTIFACT_ROOT/python-unit-discovery.log" "PYTHONPATH=. python3 -m unittest discover -s erp_workspace_ui/tests -p 'test_*.py'"
 run_node_checks
-run_step "git-diff-check" "$ARTIFACT_ROOT/git-diff-check.log" "git diff --check"
+run_step "git-diff-check" "$ARTIFACT_ROOT/git-diff-check.log" "git diff --check HEAD"
 
 run_smoke "sales-route-lifecycle" "ERPW_CAPTURE_ROOT" "test:sales-route-lifecycle"
 run_smoke "sales-action-cards" "ERPW_SALES_ACTIONS_OUT" "test:sales-actions"
