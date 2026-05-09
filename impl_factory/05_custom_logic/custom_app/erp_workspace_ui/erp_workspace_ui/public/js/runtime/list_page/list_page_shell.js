@@ -370,6 +370,15 @@
         gap: 0.58rem;
         margin-left: auto;
       }
+      .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-side {
+        display: grid;
+        justify-items: stretch;
+        align-items: stretch;
+        align-self: stretch;
+        width: 100%;
+        min-width: 0;
+        margin-left: 0;
+      }
       .erpw-list-summary-metrics {
         display: flex;
         flex-wrap: wrap;
@@ -802,6 +811,11 @@
         .erpw-list-filter-deck.has-actions .erpw-list-filter-main-row,
         .erpw-list-filter-deck.has-actions .erpw-list-date-window-group {
           grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="3"] {
+          grid-template-columns: minmax(0, 1fr) !important;
+          width: 100% !important;
+          max-width: none !important;
         }
         .erpw-list-filter-deck.has-actions .erpw-list-command-action-cell {
           grid-column: auto;

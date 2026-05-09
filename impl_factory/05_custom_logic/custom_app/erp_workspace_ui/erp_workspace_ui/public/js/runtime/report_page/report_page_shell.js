@@ -68,7 +68,7 @@
     if (isProcurementReport(pageConfig)) return '';
     const role = reportFieldRole(field);
     if (role === 'search') return 'minmax(240px, 1fr)';
-    if (role === 'date') return 'minmax(164px, 198px)';
+    if (role === 'date') return 'minmax(170px, 208px)';
     if (role === 'compact') return 'minmax(144px, 176px)';
     return 'minmax(170px, 208px)';
   }

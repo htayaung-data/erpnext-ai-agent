@@ -7967,10 +7967,17 @@ html {
   }
 
   .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics,
-  .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="3"],
   .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="4"],
   .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="5"] {
     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)) !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="3"] {
+    grid-template-columns: repeat(3, minmax(var(--erpw-directory-kpi-card-min), var(--erpw-directory-kpi-card-max))) !important;
+    justify-content: center !important;
+    justify-items: stretch !important;
     width: 100% !important;
     max-width: none !important;
   }
@@ -8000,6 +8007,7 @@ html {
 
 @media (max-width: 720px) {
   .erpw-list-shell .erpw-list-metrics,
+  .erpw-list-shell .erpw-list-summary-card:not(.is-detail-header) .erpw-list-summary-metrics[data-erpw-list-metric-count="3"],
   .erpw-report-shell .erpw-report-metrics {
     grid-template-columns: minmax(0, 1fr) !important;
   }

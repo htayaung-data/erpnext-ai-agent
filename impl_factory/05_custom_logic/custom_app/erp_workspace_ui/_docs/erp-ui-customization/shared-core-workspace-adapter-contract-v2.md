@@ -136,8 +136,8 @@ Adapters own filter definitions, field names, DocType targets for link fields, d
 
 The shared filter width contract is:
 
-1. standard fields use controlled equal-width tracks
-2. date-window fields use the shared date-width track and stay paired when space allows
+1. standard and date-window fields use the same controlled base-width track unless Core declares a named compact variant
+2. date-window fields stay paired when space allows
 3. keyword, search, text, and link lookup fields use the flexible track after standard/date fields are governed
 4. flexible search fields must keep the Core-defined minimum width and must not be squeezed by contextual create actions
 5. Apply, Reset, Refresh, Back, and contextual create actions render as one compact command group
