@@ -151,6 +151,21 @@ Breakdown by invoice
 """
 
 
+def _ap_visible_top_5_text():
+	return """Accounts Payable Aging as of 2026-05-09
+
+Top 5 Suppliers
+
+| Supplier | Outstanding (MMK) | Total Due (MMK) | Overdue (31+) (MMK) |
+| --- | ---: | ---: | ---: |
+| Myanmar Tech Import Services | 268,298,000 | 250,568,000 | 193,478,000 |
+| Sunflower Accessories Co. | 228,576,500 | 222,526,500 | 192,031,500 |
+| Golden Dragon Trading Co. Ltd. | 224,780,600 | 197,040,600 | 118,060,600 |
+| Mandalay Device Wholesale | 75,408,500 | 75,408,500 | 51,088,500 |
+| Shwe Taung Electronics Supply | 57,710,000 | 57,710,000 | 29,810,000 |
+"""
+
+
 def _wide_product_ranking_text():
 	return """Top 12 Products by Revenue Last Year
 
@@ -596,6 +611,12 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		)
 		return handled, payload, messages, payloads
 
+	def _latest_visible_context_trace(self, payloads):
+		for payload in reversed(payloads):
+			if payload.get("type") == "qwen_visible_context_followup_trace_contract":
+				return payload
+		return {}
+
 	def test_fresh_business_query_is_not_intercepted(self):
 		self.assertFalse(visible_context_followup_requested("show customer risk"))
 		handled, payload, _messages, _payloads = self._activate(
@@ -786,6 +807,34 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("59.1% of the outstanding balance", answer)
 		self.assertIn("Consultant takeaway", answer)
 
+	def test_deictic_selected_row_followup_registers_selection_frame(self):
+		session_doc = {"messages": [_tool_message(_ar_artifact()), _assistant_message(_ar_comparison_text())]}
+		handled, _payload, _messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="why is this customer risky?",
+			current_artifact=_ar_artifact(),
+			reasoning_type="explanation",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Ko Nay Lin Mobile Center", answer)
+		trace = self._latest_visible_context_trace(payloads)
+		stack = trace.get("context_frame_stack")
+		self.assertTrue(
+			any(
+				frame.get("frame_kind") == "selection"
+				and frame.get("rows", [{}])[0].get("label") == "Ko Nay Lin Mobile Center"
+				for frame in stack.get("frames", [])
+			)
+		)
+
 	def test_latest_top_ranked_rows_table_has_context_authority_over_stale_supplier_selection(self):
 		stale_supplier_selection = {
 			"type": "qwen_nbu_current_artifact_answer_activation_contract",
@@ -819,6 +868,50 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("Rank 2 is Xiaomi Redmi Note 13", answer)
 		self.assertNotIn("Sunflower Accessories Co.", answer)
+
+	def test_trace_registers_visible_context_frame_stack_for_latest_table(self):
+		session_doc = {"messages": [_assistant_message(_product_million_ranking_text())]}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		self.assertIn("Xiaomi Redmi Note 13", messages[-1][1])
+		trace = self._latest_visible_context_trace(payloads)
+		stack = trace.get("context_frame_stack")
+		self.assertEqual(stack.get("type"), "qwen_visible_context_frame_stack_contract")
+		table_frames = [frame for frame in stack.get("frames", []) if frame.get("frame_kind") == "table"]
+		self.assertGreaterEqual(len(table_frames), 1)
+		self.assertEqual(table_frames[0].get("business_object_type"), "item")
+		self.assertEqual(table_frames[0].get("visible_row_count"), 3)
+		self.assertEqual(table_frames[0]["rows"][1].get("label"), "Xiaomi Redmi Note 13 (8GB 256GB)")
+
+	def test_business_object_reference_selects_parent_supplier_frame_after_invoice_drilldown(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second supplier in the above context?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Sunflower Accessories Co.", answer)
+		self.assertNotIn("ACC-PINV-2026-00053", answer)
+		trace = self._latest_visible_context_trace(payloads)
+		stack = trace.get("context_frame_stack")
+		self.assertTrue(
+			any(
+				frame.get("business_object_type") == "supplier"
+				and frame.get("visible_row_count") == 5
+				for frame in stack.get("frames", [])
+			)
+		)
 
 	def test_latest_plain_product_table_has_context_authority_over_prior_comparison_table(self):
 		session_doc = {

@@ -22,7 +22,11 @@ from .natural_business_understanding_request_classification import (
 	visible_context_reference_requested,
 	visible_context_target_reference,
 )
-from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
+from .visible_context_frame_stack import (
+	build_visible_context_frame_stack,
+	visible_context_artifacts,
+	visible_context_payload_identity,
+)
 from .semantic_aliases import detect_canonical_keys
 from .evidence_drilldown_registry import build_governed_drilldown_plan
 from .source_detail_drilldown_execution import (
@@ -67,15 +71,6 @@ MONEY_FIELD_HINTS = (
 	"payable",
 	"receivable",
 )
-
-ARTIFACT_PAYLOAD_TYPES = {
-	"qwen_normalized_family_artifact_contract",
-	"qwen_composite_family_artifact",
-	"qwen_entity_detail_artifact",
-	"qwen_visible_rendered_artifact",
-}
-LOW_PRIORITY_ROW_SOURCES = {"sections.parties", "sections.party_rows"}
-
 
 def _clean_text(value: Any) -> str:
 	return str(value or "").strip()
@@ -151,53 +146,7 @@ def _message_content(message: Any) -> Any:
 
 
 def _payload_identity(payload: Dict[str, Any]) -> str:
-	payload = _clean_dict(payload)
-	for key in ("artifact_id", "request_id", "trace_id", "source_artifact_id", "source_request_id"):
-		value = _clean_text(payload.get(key))
-		if value:
-			return value
-	return _clean_text(payload.get("title") or payload.get("report_name") or payload.get("family_id"))
-
-
-def _has_rows(payload: Dict[str, Any]) -> bool:
-	rows, _source = nbu_artifact_rows(_clean_dict(payload))
-	return bool(rows)
-
-
-def _row_source(payload: Dict[str, Any]) -> str:
-	_rows, source = nbu_artifact_rows(_clean_dict(payload))
-	return _clean_text(source)
-
-
-def _session_tool_artifact_groups(session_doc: Any, *, limit: int = 8) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-	primary_typed_artifacts: List[Dict[str, Any]] = []
-	secondary_typed_artifacts: List[Dict[str, Any]] = []
-	fallback_artifacts: List[Dict[str, Any]] = []
-	scanned = 0
-	for message in reversed(_session_messages(session_doc)):
-		if _message_role(message) != "tool":
-			continue
-		scanned += 1
-		payload = _safe_json_loads(_message_content(message))
-		payload_type = _clean_text(payload.get("type")).lower()
-		if not _has_rows(payload):
-			continue
-		if payload_type in ARTIFACT_PAYLOAD_TYPES:
-			if _row_source(payload) in LOW_PRIORITY_ROW_SOURCES:
-				secondary_typed_artifacts.append(payload)
-			else:
-				primary_typed_artifacts.append(payload)
-		else:
-			fallback_artifacts.append(payload)
-		if len(primary_typed_artifacts) >= limit:
-			break
-		if scanned >= limit * 4 and (primary_typed_artifacts or secondary_typed_artifacts):
-			break
-	return (
-		primary_typed_artifacts[:limit],
-		secondary_typed_artifacts[:limit],
-		fallback_artifacts[:limit],
-	)
+	return visible_context_payload_identity(_clean_dict(payload))
 
 
 def _context_artifacts(
@@ -206,33 +155,26 @@ def _context_artifacts(
 	current_artifact: Dict[str, Any],
 	limit: int = 8,
 ) -> List[Dict[str, Any]]:
-	artifacts: List[Dict[str, Any]] = []
-	seen: set[str] = set()
+	return visible_context_artifacts(
+		session_doc,
+		current_artifact=_clean_dict(current_artifact),
+		limit=limit,
+	)
 
-	def append(payload: Dict[str, Any]) -> None:
-		if len(artifacts) >= limit:
-			return
-		clean_payload = _clean_dict(payload)
-		if not clean_payload or not _has_rows(clean_payload):
-			return
-		identity = _payload_identity(clean_payload)
-		if identity and identity in seen:
-			return
-		if identity:
-			seen.add(identity)
-		artifacts.append(clean_payload)
 
-	for payload in session_visible_rendered_artifacts(session_doc, limit=limit):
-		append(payload)
-	primary_tool_artifacts, secondary_tool_artifacts, fallback_tool_artifacts = _session_tool_artifact_groups(session_doc, limit=limit)
-	for payload in primary_tool_artifacts:
-		append(payload)
-	for payload in secondary_tool_artifacts:
-		append(payload)
-	for payload in fallback_tool_artifacts:
-		append(payload)
-	append(_clean_dict(current_artifact))
-	return artifacts
+def _context_frame_stack(
+	session_doc: Any,
+	*,
+	current_artifact: Dict[str, Any],
+	selected_entity: Dict[str, Any] | None = None,
+	limit: int = 8,
+) -> Dict[str, Any]:
+	return build_visible_context_frame_stack(
+		session_doc,
+		current_artifact=_clean_dict(current_artifact),
+		selected_entity=_clean_dict(selected_entity),
+		limit=limit,
+	)
 
 
 def _latest_selected_entity(session_doc: Any) -> Dict[str, Any]:
@@ -258,6 +200,9 @@ def _latest_selected_entity(session_doc: Any) -> Dict[str, Any]:
 				if row and not row.get("rank"):
 					row["rank"] = rank
 					entity["row"] = row
+			resolved_artifact_id = _clean_text(payload.get("resolved_artifact_id"))
+			if resolved_artifact_id and not _clean_text(entity.get("resolved_artifact_id")):
+				entity["resolved_artifact_id"] = resolved_artifact_id
 			return entity
 	return {}
 
@@ -373,8 +318,14 @@ def _resolve_visible_context(
 	current_artifact: Dict[str, Any],
 ) -> Dict[str, Any]:
 	target = _target_reference(raw_message)
+	selected_entity = _latest_selected_entity(session_doc)
+	frame_stack = _context_frame_stack(
+		session_doc,
+		current_artifact=current_artifact,
+		selected_entity=selected_entity,
+	)
 	if _selected_focus_has_continuation_authority(raw_message, target):
-		selected = _latest_selected_entity(session_doc)
+		selected = selected_entity
 		if _clean_dict(selected).get("row"):
 			return {
 				"status": "resolved",
@@ -382,6 +333,7 @@ def _resolve_visible_context(
 				"resolved_rank": _selected_entity_rank(selected),
 				"resolved_entity": selected,
 				"reason": "Resolved from the last selected visible row.",
+				"context_frame_stack": frame_stack,
 			}
 
 	artifacts = _context_artifacts(session_doc, current_artifact=current_artifact)
@@ -390,6 +342,7 @@ def _resolve_visible_context(
 			"status": "not_supported",
 			"target_reference": target,
 			"reason": "No visible ERP table with rows is available in this conversation.",
+			"context_frame_stack": frame_stack,
 		}
 	resolution = resolve_nbu_context_graph_reference(
 		raw_message=raw_message,
@@ -403,7 +356,9 @@ def _resolve_visible_context(
 		previous_artifacts=artifacts[1:],
 		recent_focus=_selected_focus(session_doc),
 	).to_payload()
-	return _clean_dict(resolution)
+	resolution_payload = _clean_dict(resolution)
+	resolution_payload["context_frame_stack"] = frame_stack
+	return resolution_payload
 
 
 def _artifact_identity_matches(payload: Dict[str, Any], artifact_id: str) -> bool:
@@ -1054,6 +1009,8 @@ def _trace_payload(
 	raw_message: str,
 	resolution: Dict[str, Any],
 ) -> Dict[str, Any]:
+	resolution_payload = _clean_dict(resolution)
+	frame_stack = _clean_dict(resolution_payload.pop("context_frame_stack", {}))
 	return {
 		"type": "qwen_visible_context_followup_trace_contract",
 		"contract_version": CONTRACT_VERSION,
@@ -1062,7 +1019,8 @@ def _trace_payload(
 		"user_id": _clean_text(user_id),
 		"site_name": _clean_text(site_name),
 		"raw_message": _clean_text(raw_message),
-		"resolution": resolution,
+		"resolution": resolution_payload,
+		"context_frame_stack": frame_stack,
 		"created_at_unix": time.time(),
 	}
 
