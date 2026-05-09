@@ -925,6 +925,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("@media (max-width: 1366px)", source)
         self.assertIn("grid-template-columns: minmax(0, 1fr) max-content", source)
         self.assertIn('"main main"', source)
+        self.assertIn('"main actions"', source)
+        self.assertIn("has-actions:not(.has-date-window)", source)
         self.assertIn("justify-content: flex-end", source)
         self.assertIn("align-items: flex-end", source)
         self.assertIn("min-height: 0", source)

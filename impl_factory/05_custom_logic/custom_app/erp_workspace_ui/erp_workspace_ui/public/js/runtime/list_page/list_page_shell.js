@@ -1053,10 +1053,9 @@
           row-gap: 8px;
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions:not(.has-date-window) {
-          grid-template-columns: minmax(0, 1fr);
+          grid-template-columns: minmax(0, 1fr) max-content;
           grid-template-areas:
-            "main"
-            "actions";
+            "main actions";
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-4 .erpw-list-filter-main-row,
         .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-5 .erpw-list-filter-main-row {

@@ -1455,6 +1455,13 @@ async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
     const dateTop = dateFields.length ? Math.min(...dateFields.map((field) => field.top)) : 0;
     const dateBottom = dateFields.length ? Math.max(...dateFields.map((field) => field.bottom)) : 0;
     const dateCenter = dateFields.length ? Math.round((dateTop + dateBottom) / 2) : 0;
+    const primaryFields = fields
+      .filter((field) => !(/date/i.test(field.key || "") || /date/i.test(field.label || "")))
+      .map((field) => field.input || field.rect)
+      .filter(Boolean);
+    const primaryTop = primaryFields.length ? Math.min(...primaryFields.map((field) => field.top)) : 0;
+    const primaryBottom = primaryFields.length ? Math.max(...primaryFields.map((field) => field.bottom)) : 0;
+    const primaryCenter = primaryFields.length ? Math.round((primaryTop + primaryBottom) / 2) : 0;
     const toolbarCenter = toolbarRect ? Math.round((toolbarRect.top + toolbarRect.bottom) / 2) : 0;
     return {
       deck: rect(deck),
@@ -1465,6 +1472,7 @@ async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
       overlaps,
       actionStartsAfterFields: toolbarRect ? toolbarRect.top >= fieldBottom - 2 : false,
       actionAlignedWithDateWindow: dateFields.length ? Math.abs(toolbarCenter - dateCenter) <= 8 : false,
+      actionAlignedWithPrimaryRow: primaryFields.length ? Math.abs(toolbarCenter - primaryCenter) <= 8 : false,
       hasDateWindow: dateFields.length >= 2,
       fixedSpread,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -1474,10 +1482,11 @@ async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
   if (layout.hasDateWindow) {
     assert(layout.actionAlignedWithDateWindow, `${label}: date-window filter actions should align with the date row`, layout);
   } else {
-    assert(layout.actionStartsAfterFields, `${label}: narrow filter actions should move to a clean command row`, layout);
+    assert(!layout.actionStartsAfterFields, `${label}: single-row filter actions should stay inline instead of creating an extra command band`, layout);
+    assert(layout.actionAlignedWithPrimaryRow, `${label}: single-row filter actions should align with the visible filter controls`, layout);
   }
   assert(layout.fields.every((field) => !field.input || field.input.right <= layout.deck.right + 1), `${label}: filter controls should stay inside the shared deck at laptop width`, layout);
-  assert(layout.deck.height <= (layout.hasDateWindow ? 180 : 145), `${label}: filter deck command area is taller than the shared compact standard`, layout);
+  assert(layout.deck.height <= (layout.hasDateWindow ? 180 : 115), `${label}: filter deck command area is taller than the shared compact standard`, layout);
   assert(layout.fixedSpread <= 12, `${label}: fixed filter widths should remain consistent at laptop width`, layout);
   assert(layout.fields.every((field) => field.inputFontSize === "14px" && field.labelFontSize === "11px"), `${label}: Procurement filter typography drifted from shared worklist scale`, layout);
   assert(layout.overflow <= 1, `${label}: narrow filter layout introduced horizontal overflow`, layout);
