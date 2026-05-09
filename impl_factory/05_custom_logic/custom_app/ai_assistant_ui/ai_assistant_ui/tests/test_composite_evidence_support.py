@@ -94,6 +94,31 @@ def _risk_artifact():
 	}
 
 
+def _sales_invoice_detail_payload():
+	return {
+		"ok": True,
+		"tool_trace": [
+			{
+				"output_obj": {
+					"result": {
+						"data": [
+							{
+								"name": "SINV-2026-00042",
+								"posting_date": "2026-05-01",
+								"due_date": "2026-05-31",
+								"customer": "Ko Nay Lin Mobile Center",
+								"grand_total": "40,000,000",
+								"outstanding_amount": "37,335,000",
+								"status": "Overdue",
+							}
+						]
+					}
+				}
+			}
+		],
+	}
+
+
 class CompositeEvidenceSupportTests(unittest.TestCase):
 	def test_composite_ranked_row_evidence_explains_selected_risk_row(self):
 		answer = composite_ranked_row_direct_evidence_answer(
@@ -113,6 +138,32 @@ class CompositeEvidenceSupportTests(unittest.TestCase):
 		self.assertIn("37,335,000 MMK", answer)
 		self.assertIn("84.2%", answer)
 		self.assertIn("not a prediction", answer)
+
+	def test_composite_ranked_row_uses_registered_invoice_detail_when_filters_are_proven(self):
+		artifact = _risk_artifact()
+		artifact["filters"]["company"] = "Mingalar Mobile Distribution Co., Ltd."
+		with patch(
+			"ai_assistant_ui.qwen_chat.source_detail_drilldown_execution.execute_governed_report",
+			return_value=_sales_invoice_detail_payload(),
+		) as execute:
+			answer = composite_ranked_row_direct_evidence_answer(
+				raw_message="why is the first customer risky?",
+				artifact_payload=artifact,
+				grounded_turn={
+					"known_entities": [
+						{"entity_type": "customer", "name": "Ko Nay Lin Mobile Center", "rank": 1},
+						{"entity_type": "customer", "name": "Aung Aung Telecom", "rank": 2},
+					]
+				},
+			)
+
+		self.assertIn("source-detail breakdown", answer)
+		self.assertIn("Sales Invoice List", answer)
+		self.assertIn("SINV-2026-00042", answer)
+		self.assertIn("Due Date", answer)
+		execute.assert_called_once()
+		self.assertEqual(execute.call_args.kwargs["filters"]["customer"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(execute.call_args.kwargs["filters"]["to_date"], "2026-04-25")
 
 	def test_composite_ranked_row_evidence_does_not_guess_ambiguous_multi_row_deictic(self):
 		answer = composite_ranked_row_direct_evidence_answer(

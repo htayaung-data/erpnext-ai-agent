@@ -17,22 +17,22 @@ def _drilldown_context(**overrides):
 		"risk_level": "bounded_consultation",
 		"evidence_policy": "evidence_expansion_preferred",
 		"answer_obligation": "expand_grounded_detail",
-			"grounded_source": {
-				"family_id": "accounts_receivable",
-				"capability_id": "accounts_receivable_read",
-				"source_name": "Accounts Receivable Aging",
-			},
-			"artifact_metrics": {
-				"statement_type": "profit_and_loss",
-			},
-			"artifact_filters": {
-				"company": "Mingalar Mobile Distribution Co., Ltd.",
-			},
-			"artifact_period": {
-				"from_date": "2026-04-01",
-				"to_date": "2026-05-08",
-			},
-		}
+		"grounded_source": {
+			"family_id": "accounts_receivable",
+			"capability_id": "accounts_receivable_read",
+			"source_name": "Accounts Receivable Aging",
+		},
+		"artifact_metrics": {
+			"statement_type": "profit_and_loss",
+		},
+		"artifact_filters": {
+			"company": "Mingalar Mobile Distribution Co., Ltd.",
+		},
+		"artifact_period": {
+			"from_date": "2026-04-01",
+			"to_date": "2026-05-08",
+		},
+	}
 	context.update(overrides)
 	return context
 
@@ -55,7 +55,14 @@ class EvidenceDrilldownRegistryTests(unittest.TestCase):
 		activations.return_value = [_entity_activation("customer")]
 
 		plan = build_governed_drilldown_plan(
-			grounding_context=_drilldown_context(),
+			grounding_context=_drilldown_context(
+				grounded_source={
+					"family_id": "customer_entity_detail",
+					"capability_id": "customer_read",
+					"source_name": "Customer Master",
+				},
+				artifact_metrics={},
+			),
 			focused_row={
 				"Customer": "35th Street Mobile Wholesale",
 				"Outstanding Amount": "84,837,000",
@@ -120,7 +127,14 @@ class EvidenceDrilldownRegistryTests(unittest.TestCase):
 		activations.return_value = [_entity_activation("customer", can_execute=False)]
 
 		plan = build_governed_drilldown_plan(
-			grounding_context=_drilldown_context(),
+			grounding_context=_drilldown_context(
+				grounded_source={
+					"family_id": "customer_entity_detail",
+					"capability_id": "customer_read",
+					"source_name": "Customer Master",
+				},
+				artifact_metrics={},
+			),
 			focused_row={"Customer": "35th Street Mobile Wholesale", "Amount": "84,837,000"},
 		)
 
@@ -136,10 +150,11 @@ class EvidenceDrilldownRegistryTests(unittest.TestCase):
 			grounding_context=_drilldown_context(
 				business_role="buyer",
 				grounded_source={
-					"family_id": "accounts_payable",
-					"capability_id": "accounts_payable_read",
-					"source_name": "Accounts Payable Aging",
+					"family_id": "supplier_entity_detail",
+					"capability_id": "supplier_read",
+					"source_name": "Supplier Master",
 				},
+				artifact_metrics={},
 			),
 			focused_row={"Supplier": "Sunflower Accessories Co.", "Outstanding Amount": "222,526,500"},
 		)
@@ -166,6 +181,60 @@ class EvidenceDrilldownRegistryTests(unittest.TestCase):
 		self.assertIn("approved ERP detail view", guidance)
 		self.assertNotIn("runtime", guidance.lower())
 		self.assertNotIn("contract", guidance.lower())
+
+	@patch("ai_assistant_ui.qwen_chat.evidence_drilldown_registry.list_active_entity_detail_scope_activations")
+	def test_ar_party_row_maps_to_registered_sales_invoice_source_detail(self, activations):
+		activations.return_value = [_entity_activation("customer")]
+
+		plan = build_governed_drilldown_plan(
+			grounding_context=_drilldown_context(
+				grounded_source={
+					"family_id": "accounts_receivable",
+					"capability_id": "accounts_receivable_read",
+					"source_name": "Accounts Receivable Aging",
+				},
+				artifact_metrics={},
+				artifact_period={"as_of_date": "2026-05-08"},
+			),
+			focused_row={
+				"party": "Ko Nay Lin Mobile Center",
+				"customer": "Ko Nay Lin Mobile Center",
+				"outstanding_amount": "63,125,000",
+			},
+		)
+
+		self.assertEqual(plan["status"], "source_detail_available")
+		self.assertEqual(plan["target_report"]["report_name"], "Sales Invoice List")
+		self.assertEqual(plan["target_report"]["filters"]["customer"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(plan["target_report"]["filters"]["to_date"], "2026-05-08")
+		self.assertNotIn("account", plan["target_report"]["filters"])
+
+	@patch("ai_assistant_ui.qwen_chat.evidence_drilldown_registry.list_active_entity_detail_scope_activations")
+	def test_ap_party_row_maps_to_registered_purchase_invoice_source_detail(self, activations):
+		activations.return_value = [_entity_activation("supplier")]
+
+		plan = build_governed_drilldown_plan(
+			grounding_context=_drilldown_context(
+				business_role="buyer",
+				grounded_source={
+					"family_id": "accounts_payable",
+					"capability_id": "accounts_payable_read",
+					"source_name": "Accounts Payable Aging",
+				},
+				artifact_metrics={},
+				artifact_period={"as_of_date": "2026-05-08"},
+			),
+			focused_row={
+				"party": "Sunflower Accessories Co.",
+				"supplier": "Sunflower Accessories Co.",
+				"outstanding_amount": "228,576,500",
+			},
+		)
+
+		self.assertEqual(plan["status"], "source_detail_available")
+		self.assertEqual(plan["target_report"]["report_name"], "Purchase Invoice List")
+		self.assertEqual(plan["target_report"]["filters"]["supplier"], "Sunflower Accessories Co.")
+		self.assertEqual(plan["target_report"]["filters"]["to_date"], "2026-05-08")
 
 
 if __name__ == "__main__":

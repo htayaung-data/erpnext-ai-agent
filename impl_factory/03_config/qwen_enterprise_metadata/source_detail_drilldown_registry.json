@@ -29,6 +29,10 @@
         "capability_id": "financial_statement_read",
         "family_id": "general_ledger_entry_list",
         "target_limit": 100,
+        "required_filters": [
+          "company",
+          "account"
+        ],
         "filter_templates": {
           "company": "artifact_filters.company",
           "from_date": "artifact_period.from_date",
@@ -49,6 +53,211 @@
           "amount",
           "2026",
           "value"
+        ],
+        "consultant_takeaway": "The right management lens is source-document concentration: investigate the largest documents first, then confirm whether the postings reflect expected deliveries, costing, returns, or adjustments."
+      }
+    },
+    {
+      "rule_id": "accounts_receivable_party_to_sales_invoice_list",
+      "source_family_ids": [
+        "accounts_receivable",
+        "accounts_receivable_aging",
+        "accounts_receivable_summary",
+        "customer_risk_as_of",
+        "customer_entity_detail",
+        "ranking_analytics"
+      ],
+      "source_names": [
+        "Accounts Receivable Aging",
+        "Accounts Receivable Summary",
+        "Customer Risk As-Of"
+      ],
+      "row_identity_match": {
+        "any": [
+          {
+            "fields": [
+              "customer",
+              "party",
+              "entity",
+              "entity_name"
+            ],
+            "match": "present"
+          }
+        ]
+      },
+      "target_report": {
+        "report_name": "Sales Invoice List",
+        "capability_id": "sales_read",
+        "family_id": "sales_invoice_list",
+        "target_limit": 100,
+        "required_filters": [
+          "company",
+          "customer"
+        ],
+        "filter_templates": {
+          "company": "artifact_filters.company",
+          "to_date": [
+            "artifact_period.as_of_date",
+            "artifact_filters.as_of_date",
+            "artifact_filters.report_date",
+            "artifact_period.to_date",
+            "artifact_filters.to_date"
+          ],
+          "customer": [
+            "row.customer",
+            "row.party",
+            "row.entity",
+            "row.entity_name"
+          ]
+        }
+      },
+      "rendering": {
+        "source_label": "sales invoice rows",
+        "source_document_label": "invoice",
+        "amount_mode": "field_sum",
+        "amount_field": "outstanding_amount",
+        "amount_label": "Outstanding amount",
+        "amount_support_label": "Computed from Sales Invoice List rows using outstanding amount.",
+        "grouping_support_label": "Source-detail rows were grouped by governed invoice identity.",
+        "group_fields": [
+          "name"
+        ],
+        "date_field": "posting_date",
+        "line_amount_fields": [
+          "outstanding_amount",
+          "outstanding_total",
+          "outstanding",
+          "total_due",
+          "overdue_amount"
+        ],
+        "document_label": "Invoice",
+        "share_label": "Share of selected balance",
+        "share_context_label": "selected balance",
+        "breakdown_title": "Breakdown by invoice",
+        "extra_fields": [
+          {
+            "field": "posting_date",
+            "label": "Posting Date"
+          },
+          {
+            "field": "due_date",
+            "label": "Due Date"
+          },
+          {
+            "field": "status",
+            "label": "Status"
+          },
+          {
+            "field": "grand_total",
+            "label": "Invoice Total"
+          }
+        ],
+        "consultant_takeaway": "The right management lens is invoice concentration: separate the largest open invoices from smaller balances, then decide whether follow-up should be collection, dispute resolution, or credit-control review.",
+        "management_priority_notes": [
+          "Start with the largest open invoice because it carries the highest cash-recovery impact.",
+          "Review due dates and status before escalating; an overdue open invoice and a submitted-but-not-yet-due invoice require different follow-up intensity."
+        ]
+      }
+    },
+    {
+      "rule_id": "accounts_payable_party_to_purchase_invoice_list",
+      "source_family_ids": [
+        "accounts_payable",
+        "accounts_payable_aging",
+        "accounts_payable_summary",
+        "supplier_risk_as_of",
+        "supplier_entity_detail",
+        "ranking_analytics"
+      ],
+      "source_names": [
+        "Accounts Payable Aging",
+        "Accounts Payable Summary",
+        "Supplier Risk As-Of"
+      ],
+      "row_identity_match": {
+        "any": [
+          {
+            "fields": [
+              "supplier",
+              "party",
+              "entity",
+              "entity_name"
+            ],
+            "match": "present"
+          }
+        ]
+      },
+      "target_report": {
+        "report_name": "Purchase Invoice List",
+        "capability_id": "purchase_invoice_read",
+        "family_id": "purchase_invoice_list",
+        "target_limit": 100,
+        "required_filters": [
+          "company",
+          "supplier"
+        ],
+        "filter_templates": {
+          "company": "artifact_filters.company",
+          "to_date": [
+            "artifact_period.as_of_date",
+            "artifact_filters.as_of_date",
+            "artifact_filters.report_date",
+            "artifact_period.to_date",
+            "artifact_filters.to_date"
+          ],
+          "supplier": [
+            "row.supplier",
+            "row.party",
+            "row.entity",
+            "row.entity_name"
+          ]
+        }
+      },
+      "rendering": {
+        "source_label": "purchase invoice rows",
+        "source_document_label": "invoice",
+        "amount_mode": "field_sum",
+        "amount_field": "outstanding_amount",
+        "amount_label": "Outstanding amount",
+        "amount_support_label": "Computed from Purchase Invoice List rows using outstanding amount.",
+        "grouping_support_label": "Source-detail rows were grouped by governed invoice identity.",
+        "group_fields": [
+          "name"
+        ],
+        "date_field": "posting_date",
+        "line_amount_fields": [
+          "outstanding_amount",
+          "outstanding_total",
+          "outstanding",
+          "total_due",
+          "overdue_amount"
+        ],
+        "document_label": "Invoice",
+        "share_label": "Share of selected balance",
+        "share_context_label": "selected balance",
+        "breakdown_title": "Breakdown by invoice",
+        "extra_fields": [
+          {
+            "field": "posting_date",
+            "label": "Posting Date"
+          },
+          {
+            "field": "due_date",
+            "label": "Due Date"
+          },
+          {
+            "field": "status",
+            "label": "Status"
+          },
+          {
+            "field": "grand_total",
+            "label": "Invoice Total"
+          }
+        ],
+        "consultant_takeaway": "The right management lens is supplier invoice concentration: separate invoices that need immediate settlement discussion from balances that can be scheduled without damaging supplier continuity.",
+        "management_priority_notes": [
+          "Start with the largest open purchase invoice because it has the highest supplier-settlement impact.",
+          "Review due dates and status before negotiating; old unpaid invoices may require a different supplier conversation than current open balances."
         ]
       }
     }

@@ -61,6 +61,47 @@ def _section_key(value: Any) -> str:
 	return text or "rows"
 
 
+_KNOWN_TABLE_SECTION_KEYS = {
+	"comparison_table",
+	"comparison_rows",
+	"ranked_rows",
+	"top_customers",
+	"top_suppliers",
+	"top_items",
+	"customer_rows",
+	"supplier_rows",
+	"item_rows",
+	"documents",
+	"document_rows",
+	"transaction_rows",
+	"stock_rows",
+	"party_rows",
+	"parties",
+	"rows",
+	"records",
+	"data",
+}
+
+
+def _table_section_key(heading: Any, headers: List[str]) -> str:
+	heading_key = _section_key(heading)
+	if heading_key in _KNOWN_TABLE_SECTION_KEYS:
+		return heading_key
+
+	header_set = {header for header in headers if header}
+	if "customer" in header_set:
+		return "top_customers"
+	if "supplier" in header_set:
+		return "top_suppliers"
+	if {"item", "rank"}.issubset(header_set) or {"item_name", "rank"}.issubset(header_set):
+		return "top_items"
+	if "document" in header_set or "invoice" in header_set:
+		return "documents"
+	if "rank" in header_set:
+		return "ranked_rows"
+	return heading_key
+
+
 def _list_row_key(section_key: str) -> str:
 	if section_key in {"customer_rows", "top_customers"}:
 		return "customer"
@@ -159,7 +200,7 @@ def visible_artifacts_from_assistant_text(text: str, *, artifact_id: str = "") -
 				rows.append(row)
 			index += 1
 		if rows:
-			sections[_section_key(heading)] = rows
+			sections[_table_section_key(heading, headers)] = rows
 		continue
 	index = 0
 	while index < len(lines):

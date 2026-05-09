@@ -101,6 +101,7 @@
       "fields": [
         "name",
         "posting_date",
+        "due_date",
         "customer",
         "grand_total",
         "total_qty",
@@ -152,7 +153,8 @@
       "supported_dimensions": [
         "Invoice",
         "Customer",
-        "Posting Date"
+        "Posting Date",
+        "Due Date"
       ],
     "supported_metrics": [
       "Grand Total",
@@ -181,6 +183,7 @@
         "fields": [
           "name",
           "posting_date",
+          "due_date",
           "supplier",
           "status",
           "company",
@@ -235,6 +238,7 @@
         "Purchase Invoice",
         "Supplier",
         "Posting Date",
+        "Due Date",
         "Status"
       ],
       "supported_metrics": [

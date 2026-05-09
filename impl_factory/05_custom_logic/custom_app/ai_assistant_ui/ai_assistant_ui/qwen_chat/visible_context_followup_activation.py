@@ -24,6 +24,11 @@ from .natural_business_understanding_request_classification import (
 )
 from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
 from .semantic_aliases import detect_canonical_keys
+from .evidence_drilldown_registry import build_governed_drilldown_plan
+from .source_detail_drilldown_execution import (
+	build_source_detail_drilldown_payload_from_artifact_line,
+	source_detail_grounding_context_from_artifact,
+)
 
 
 AppendMessage = Callable[[Any, str, str], None]
@@ -364,6 +369,71 @@ def _resolve_visible_context(
 		recent_focus=_selected_focus(session_doc),
 	).to_payload()
 	return _clean_dict(resolution)
+
+
+def _artifact_identity_matches(payload: Dict[str, Any], artifact_id: str) -> bool:
+	target = _clean_text(artifact_id)
+	if not target:
+		return False
+	return _payload_identity(payload) == target
+
+
+def _source_detail_artifact_for_visible_row(
+	*,
+	session_doc: Any,
+	current_artifact: Dict[str, Any],
+	resolution: Dict[str, Any],
+	row: Dict[str, Any],
+) -> Dict[str, Any]:
+	artifacts = _context_artifacts(session_doc, current_artifact=_clean_dict(current_artifact), limit=10)
+	if not artifacts:
+		return {}
+	resolved_artifact_id = _clean_text(resolution.get("resolved_artifact_id"))
+	ordered_artifacts = sorted(
+		artifacts,
+		key=lambda artifact: 0 if _artifact_identity_matches(_clean_dict(artifact), resolved_artifact_id) else 1,
+	)
+	for artifact in ordered_artifacts:
+		artifact_payload = _clean_dict(artifact)
+		if not artifact_payload:
+			continue
+		context = source_detail_grounding_context_from_artifact(artifact_payload)
+		plan = build_governed_drilldown_plan(
+			grounding_context=context,
+			focused_row=row,
+		)
+		if _clean_text(plan.get("status")) == "source_detail_available":
+			return artifact_payload
+	return {}
+
+
+def _source_detail_answer_for_visible_row(
+	*,
+	session_doc: Any,
+	current_artifact: Dict[str, Any],
+	resolution: Dict[str, Any],
+	row: Dict[str, Any],
+	user_id: str,
+) -> str:
+	artifact = _source_detail_artifact_for_visible_row(
+		session_doc=session_doc,
+		current_artifact=current_artifact,
+		resolution=resolution,
+		row=row,
+	)
+	if not artifact:
+		return ""
+	try:
+		payload = build_source_detail_drilldown_payload_from_artifact_line(
+			artifact_payload=artifact,
+			focused_row=row,
+			user_id=user_id,
+		)
+	except Exception:
+		return ""
+	if not isinstance(payload, dict):
+		return ""
+	return _clean_text(payload.get("answer_text"))
 
 
 def _current_entity_detail_evidence_followup_requested(raw_message: str, current_artifact: Dict[str, Any]) -> bool:
@@ -720,6 +790,9 @@ def _resolved_answer_text(
 	raw_message: str,
 	resolution: Dict[str, Any],
 	*,
+	session_doc: Any = None,
+	current_artifact: Dict[str, Any] | None = None,
+	user_id: str = "",
 	nbu_trace_payload: Dict[str, Any] | None = None,
 	reasoning_semantic_result: Any = None,
 ) -> str:
@@ -735,6 +808,26 @@ def _resolved_answer_text(
 	)
 	if not explain_row_signal and _clean_text(resolution.get("target_reference")).lower() == "selected_entity":
 		explain_row_signal = bool(_risk_signal_lines(row))
+	if explain_row_signal:
+		source_detail_answer = _source_detail_answer_for_visible_row(
+			session_doc=session_doc,
+			current_artifact=_clean_dict(current_artifact),
+			resolution=resolution,
+			row=row,
+			user_id=user_id or "Administrator",
+		)
+		if source_detail_answer:
+			visible_lines = [
+				f"{label} is the {rank_text.lower()} entry in the table above.",
+				"",
+				"Visible row signal:",
+				*_risk_signal_lines(row),
+				"",
+				"Deeper approved ERP detail:",
+				"",
+				source_detail_answer,
+			]
+			return "\n".join(line for line in visible_lines if line is not None).strip()
 	if explain_row_signal:
 		lines = [
 			f"{label} is the {rank_text.lower()} entry in the table above.",
@@ -990,12 +1083,15 @@ def try_activate_visible_context_followup_response(
 	else:
 		answer_mode = "visible_context_answer" if status == "resolved" else "visible_context_clarification"
 		answer_text = (
-			_resolved_answer_text(
-				raw_message,
-				resolution,
-				nbu_trace_payload=nbu_trace_payload,
-				reasoning_semantic_result=reasoning_semantic_result,
-			)
+				_resolved_answer_text(
+					raw_message,
+					resolution,
+					session_doc=session_doc,
+					current_artifact=_clean_dict(current_artifact),
+					user_id=user_id,
+					nbu_trace_payload=nbu_trace_payload,
+					reasoning_semantic_result=reasoning_semantic_result,
+				)
 			if status == "resolved"
 			else _clarification_text(resolution)
 		)

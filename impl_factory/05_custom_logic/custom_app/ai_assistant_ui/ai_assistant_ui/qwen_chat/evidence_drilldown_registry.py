@@ -193,7 +193,18 @@ def _row_identity_matches_rule(row: Dict[str, Any], rule: Dict[str, Any]) -> boo
 			continue
 		fields = [_normalize_key(value) for value in (condition.get("fields") or []) if _normalize_key(value)]
 		values = [value for value in (condition.get("normalized_values") or []) if _clean_text(value)]
-		if not fields or not values:
+		match_mode = _normalize_key(condition.get("match") or "value")
+		if not fields:
+			continue
+		if match_mode in {"present", "field_present", "any_present"}:
+			if any(_clean_text(row_values.get(field)) for field in fields):
+				return True
+			continue
+		if match_mode in {"all_present", "fields_present"}:
+			if all(_clean_text(row_values.get(field)) for field in fields):
+				return True
+			continue
+		if not values:
 			continue
 		for field in fields:
 			row_value = row_values.get(field)
@@ -203,6 +214,12 @@ def _row_identity_matches_rule(row: Dict[str, Any], rule: Dict[str, Any]) -> boo
 
 
 def _template_value(template: Any, *, context: Dict[str, Any], row: Dict[str, Any]) -> Any:
+	if isinstance(template, list):
+		for candidate in template:
+			value = _template_value(candidate, context=context, row=row)
+			if _clean_text(value):
+				return value
+		return ""
 	text = _clean_text(template)
 	if not text:
 		return ""
@@ -267,7 +284,13 @@ def _registered_source_detail_plan(context: Dict[str, Any], row: Dict[str, Any])
 		target_report = _clean_dict(rule.get("target_report"))
 		report_name = _clean_text(target_report.get("report_name"))
 		target_filters = _target_filters_for_rule(rule=rule, context=context, row=row)
-		if not report_name or not target_filters.get("company") or not target_filters.get("account"):
+		required_filters = [
+			_clean_text(value)
+			for value in (target_report.get("required_filters") or ["company"])
+			if _clean_text(value)
+		]
+		missing_filters = [field for field in required_filters if not _clean_text(target_filters.get(field))]
+		if not report_name or missing_filters:
 			return {
 				"status": "source_detail_required",
 				"can_execute": False,
@@ -275,6 +298,7 @@ def _registered_source_detail_plan(context: Dict[str, Any], row: Dict[str, Any])
 				"drilldown_mode": "source_detail_required",
 				"required_evidence_grain": "supporting_source_detail",
 				"source_detail_rule_id": _clean_text(rule.get("rule_id")),
+				"missing_filters": missing_filters,
 				"reason": "A governed source-detail rule matched, but required execution filters were not proven.",
 			}
 		return {
@@ -357,7 +381,7 @@ def build_governed_drilldown_plan(
 			"reason": "No focused result row was proven for the drilldown request.",
 		}
 	source_detail_plan = _registered_source_detail_plan(context, row)
-	if source_detail_plan:
+	if source_detail_plan and _clean_text(source_detail_plan.get("status")) == "source_detail_available":
 		return {
 			**plan,
 			**source_detail_plan,
@@ -375,6 +399,11 @@ def build_governed_drilldown_plan(
 			"drilldown_mode": "entity_detail",
 			"target_entity": entity_reference,
 			"reason": "The focused row maps to an active executable governed entity-detail source.",
+		}
+	if source_detail_plan:
+		return {
+			**plan,
+			**source_detail_plan,
 		}
 	if _row_has_numeric_measure(row):
 		return {

@@ -1,6 +1,7 @@
 import json
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
 	try_activate_visible_context_followup_response,
@@ -74,6 +75,31 @@ Top Ranked Rows
 """
 
 
+def _product_plain_ranking_text():
+	return """For 2025-04-01 to 2026-03-31, here are the top 7 products by revenue based on sales invoices.
+
+| Rank | Product | Revenue (MMK) |
+| --- | --- | --- |
+| 1 | Samsung Galaxy A15 (6GB 128GB) | 341,209,000 |
+| 2 | Xiaomi Redmi Note 13 (8GB 256GB) | 281,770,000 |
+| 3 | Power Bank 20000mAh | 174,195,000 |
+"""
+
+
+def _invoice_breakdown_answer_text():
+	return """Ko Nay Lin Mobile Center is the rank 2 entry in the table above.
+
+Deeper approved ERP detail:
+
+Breakdown by invoice
+
+| Invoice | Posting Date | Due Date | Status | Invoice Total | Outstanding amount | Share of selected balance |
+| --- | --- | --- | --- | --- | ---: | ---: |
+| ACC-SINV-2026-00699 | 2026-03-13 | 2026-04-12 | Overdue | 24,500,000 | 21.5 MMK Million | 49.9% |
+| ACC-SINV-2026-00689 | 2026-02-19 | 2026-03-21 | Overdue | 12,340,000 | 7.3 MMK Million | 17% |
+"""
+
+
 def _ar_artifact():
 	return {
 		"type": "qwen_normalized_family_artifact_contract",
@@ -98,6 +124,42 @@ def _ar_artifact():
 				},
 			]
 		},
+	}
+
+
+def _ar_artifact_with_source_detail_filters():
+	artifact = _ar_artifact()
+	artifact["filters"] = {
+		"company": "Mingalar Mobile Distribution Co., Ltd.",
+		"as_of_date": "2026-05-08",
+	}
+	artifact["period"] = {"as_of_date": "2026-05-08"}
+	artifact["source_reports"] = ["Accounts Receivable Aging"]
+	return artifact
+
+
+def _sales_invoice_detail_payload():
+	return {
+		"ok": True,
+		"tool_trace": [
+			{
+				"output_obj": {
+					"result": {
+						"data": [
+							{
+								"name": "SINV-2026-00042",
+								"posting_date": "2026-05-01",
+								"due_date": "2026-05-31",
+								"customer": "35th Street Mobile Wholesale",
+								"grand_total": "84,837,000",
+								"outstanding_amount": "58,212,000",
+								"status": "Overdue",
+							}
+						]
+					}
+				}
+			}
+		],
 	}
 
 
@@ -610,6 +672,44 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Rank 2 is Xiaomi Redmi Note 13", answer)
 		self.assertNotIn("Sunflower Accessories Co.", answer)
 
+	def test_latest_plain_product_table_has_context_authority_over_prior_comparison_table(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ar_comparison_text()),
+				_assistant_message(_product_plain_ranking_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Xiaomi Redmi Note 13", answer)
+		self.assertNotIn("Ko Nay Lin Mobile Center", answer)
+
+	def test_latest_plain_product_table_wins_over_prior_invoice_breakdown_answer(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ar_comparison_text()),
+				_assistant_message(_invoice_breakdown_answer_text()),
+				_assistant_message(_product_plain_ranking_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=_ar_artifact(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Xiaomi Redmi Note 13", answer)
+		self.assertNotIn("ACC-SINV-2026-00689", answer)
+		self.assertNotIn("Ko Nay Lin Mobile Center", answer)
+
 	def test_artifact_set_field_question_does_not_use_stale_selected_entity(self):
 		stale_supplier_selection = {
 			"type": "qwen_nbu_current_artifact_answer_activation_contract",
@@ -752,6 +852,39 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Consultant takeaway", answer)
 		self.assertIn("Facts from that row", answer)
 		self.assertIn("This is based only on the table above.", answer)
+
+	def test_selected_row_reason_question_uses_invoice_drilldown_when_source_filters_are_proven(self):
+		artifact = _ar_artifact_with_source_detail_filters()
+		session_doc = {"messages": [_tool_message(artifact)]}
+		handled, _payload, _messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+			current_artifact=artifact,
+		)
+		self.assertTrue(handled)
+		with patch(
+			"ai_assistant_ui.qwen_chat.source_detail_drilldown_execution.execute_governed_report",
+			return_value=_sales_invoice_detail_payload(),
+		) as execute:
+			handled, payload, messages, _payloads = self._activate(
+				session_doc=session_doc,
+				raw_message="why is this customer risky?",
+				current_artifact=artifact,
+				authority_class="safe_explanation",
+				requested_action="explain",
+			)
+
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Visible row signal", answer)
+		self.assertIn("Deeper approved ERP detail", answer)
+		self.assertIn("Sales Invoice List", answer)
+		self.assertIn("SINV-2026-00042", answer)
+		self.assertIn("Due Date", answer)
+		execute.assert_called_once()
+		self.assertEqual(execute.call_args.kwargs["filters"]["customer"], "35th Street Mobile Wholesale")
+		self.assertEqual(execute.call_args.kwargs["filters"]["to_date"], "2026-05-08")
 
 	def test_reason_style_supplier_question_uses_visible_payable_signals(self):
 		session_doc = {"messages": [_tool_message(_ap_artifact())]}

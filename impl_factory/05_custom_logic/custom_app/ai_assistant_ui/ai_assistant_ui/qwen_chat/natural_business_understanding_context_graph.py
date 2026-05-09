@@ -27,6 +27,47 @@ DISCOURSE_PREVIOUS_TERMS = {"above", "previous", "prior", "earlier", "back"}
 DISCOURSE_EXPLICIT_PREVIOUS_TERMS = {"previous", "prior", "earlier", "back"}
 DISCOURSE_CURRENT_TERMS = {"current", "latest", "last", "this", "shown", "above"}
 DEICTIC_ENTITY_TERMS = {"that", "this", "it", "selected", "same"}
+GENERIC_CONTEXT_ALIAS_TERMS = (
+	DISCOURSE_PREVIOUS_TERMS
+	| DISCOURSE_CURRENT_TERMS
+	| DEICTIC_ENTITY_TERMS
+	| {
+		"a",
+		"an",
+		"and",
+		"answer",
+		"are",
+		"as",
+		"at",
+		"based",
+		"by",
+		"entry",
+		"for",
+		"from",
+		"give",
+		"here",
+		"in",
+		"is",
+		"me",
+		"of",
+		"on",
+		"or",
+		"please",
+		"position",
+		"rank",
+		"row",
+		"rows",
+		"table",
+		"tell",
+		"the",
+		"to",
+		"visible",
+		"what",
+		"which",
+		"who",
+		"with",
+	}
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -93,6 +134,11 @@ def _message_alias_set(raw_message: str) -> set[str]:
 
 def _contains_term(raw_message: str, terms: set[str]) -> bool:
 	return bool(set(_tokens(raw_message)).intersection(terms))
+
+
+def _is_generic_context_alias(value: Any) -> bool:
+	normalized = _normalize(value)
+	return not normalized or normalized.isdigit() or normalized in GENERIC_CONTEXT_ALIAS_TERMS
 
 
 def _artifact_id(artifact_payload: Dict[str, Any], fallback: str) -> str:
@@ -361,7 +407,7 @@ def _artifact_match_score(raw_message: str, artifact_node: Dict[str, Any]) -> in
 	score = 0
 	for alias in _clean_list(artifact_node.get("aliases")):
 		normalized_alias = _normalize(alias)
-		if not normalized_alias:
+		if _is_generic_context_alias(normalized_alias):
 			continue
 		if normalized_alias in message_parts:
 			score += 5 if len(normalized_alias) <= 3 else 7

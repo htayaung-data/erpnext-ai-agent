@@ -68,6 +68,63 @@ def _source_detail_report_payload():
 	}
 
 
+def _accounts_receivable_artifact():
+	return {
+		"family_id": "accounts_receivable",
+		"capability_id": "accounts_receivable_read",
+		"title": "Accounts Receivable Aging as of 2026-05-08",
+		"source_reports": ["Accounts Receivable Aging"],
+		"filters": {"company": "Mingalar Mobile Distribution Co., Ltd.", "as_of_date": "2026-05-08"},
+		"period": {"as_of_date": "2026-05-08"},
+		"sections": {
+			"ranked_rows": [
+				{
+					"rank": 2,
+					"party": "Ko Nay Lin Mobile Center",
+					"customer": "Ko Nay Lin Mobile Center",
+					"outstanding_amount": "63,125,000",
+					"overdue_amount": "37,335,000",
+					"overdue_intensity": "59.1%",
+				}
+			]
+		},
+	}
+
+
+def _sales_invoice_detail_payload():
+	return {
+		"ok": True,
+		"tool_trace": [
+			{
+				"output_obj": {
+					"result": {
+						"data": [
+							{
+								"name": "SINV-2026-00042",
+								"posting_date": "2026-05-01",
+								"due_date": "2026-05-31",
+								"customer": "Ko Nay Lin Mobile Center",
+								"grand_total": "40,000,000",
+								"outstanding_amount": "33,125,000",
+								"status": "Overdue",
+							},
+							{
+								"name": "SINV-2026-00018",
+								"posting_date": "2026-04-15",
+								"due_date": "2026-05-15",
+								"customer": "Ko Nay Lin Mobile Center",
+								"grand_total": "30,000,000",
+								"outstanding_amount": "30,000,000",
+								"status": "Overdue",
+							},
+						]
+					}
+				}
+			}
+		],
+	}
+
+
 class SourceDetailDrilldownExecutionTests(unittest.TestCase):
 	def test_artifact_line_drilldown_executes_registered_source_detail_report(self):
 		artifact = _profit_and_loss_artifact()
@@ -112,6 +169,29 @@ class SourceDetailDrilldownExecutionTests(unittest.TestCase):
 		self.assertIn("MAT-DN-2026-00339", response["answer_text"])
 		self.assertTrue(response["rendered_response_payload"]["source_detail_drilldown"])
 		execute.assert_called_once()
+
+	def test_ar_party_drilldown_executes_sales_invoice_source_detail(self):
+		artifact = _accounts_receivable_artifact()
+		row = dict(artifact["sections"]["ranked_rows"][0])
+		with patch(
+			"ai_assistant_ui.qwen_chat.source_detail_drilldown_execution.execute_governed_report",
+			return_value=_sales_invoice_detail_payload(),
+		) as execute:
+			payload = build_source_detail_drilldown_payload_from_artifact_line(
+				artifact_payload=artifact,
+				focused_row=row,
+				user_id="Administrator",
+			)
+
+		self.assertIn("source-detail breakdown", payload["answer_text"])
+		self.assertIn("Sales Invoice List", payload["answer_text"])
+		self.assertIn("SINV-2026-00042", payload["answer_text"])
+		self.assertIn("Due Date", payload["answer_text"])
+		self.assertIn("Outstanding amount", payload["answer_text"])
+		self.assertIn("63.1 MMK million", payload["answer_text"])
+		execute.assert_called_once()
+		self.assertEqual(execute.call_args.kwargs["filters"]["customer"], "Ko Nay Lin Mobile Center")
+		self.assertEqual(execute.call_args.kwargs["filters"]["to_date"], "2026-05-08")
 
 
 if __name__ == "__main__":

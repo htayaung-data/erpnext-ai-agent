@@ -11,6 +11,9 @@ from ai_assistant_ui.qwen_chat.business_reasoning_policy import (
 )
 from ai_assistant_ui.qwen_chat.metadata import get_composite_family_spec
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_metric_label
+from ai_assistant_ui.qwen_chat.source_detail_drilldown_execution import (
+	build_source_detail_drilldown_payload_from_artifact_line,
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -348,8 +351,27 @@ def _bucket_breakdown_answer(
 		+ "\n\nSummary:\n"
 		+ "\n".join(summary_lines)
 		+ "\n\n"
-		"This is based only on the selected row above."
+		"This is based only on the selected row from the current result above."
 	)
+
+
+def _source_detail_answer_for_ranked_row(
+	*,
+	artifact_payload: Dict[str, Any],
+	row: Dict[str, Any],
+	grounded_turn: Dict[str, Any],
+) -> str:
+	try:
+		payload = build_source_detail_drilldown_payload_from_artifact_line(
+			artifact_payload=artifact_payload,
+			focused_row=row,
+			user_id=_clean_text((grounded_turn or {}).get("user_id") or "Administrator"),
+		)
+	except Exception:
+		return ""
+	if not isinstance(payload, dict):
+		return ""
+	return _clean_text(payload.get("answer_text"))
 
 
 def composite_ranked_row_direct_evidence_answer(
@@ -398,6 +420,13 @@ def composite_ranked_row_direct_evidence_answer(
 	)
 	if bucket_answer:
 		return bucket_answer
+	source_detail_answer = _source_detail_answer_for_ranked_row(
+		artifact_payload=artifact,
+		row=row,
+		grounded_turn=grounded_turn,
+	)
+	if source_detail_answer:
+		return source_detail_answer
 	metric_rows = _metric_rows(row=row, family_spec=family_spec, artifact_payload=artifact)
 	if not metric_rows:
 		return ""
