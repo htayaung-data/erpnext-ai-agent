@@ -922,6 +922,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("overflow-wrap: normal", source)
         self.assertIn(".erpw-list-cell-value", source)
         self.assertIn("display: block", source)
+        self.assertIn("@media (max-width: 1366px)", source)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) max-content", source)
+        self.assertIn('"main main"', source)
+        self.assertIn("justify-content: flex-end", source)
+        self.assertIn("align-items: flex-end", source)
+        self.assertIn("min-height: 0", source)
         self.assertIn("renderSummary(page.summary, page.controls, page.metrics, page)", source)
         self.assertIn("renderMetrics(page.metrics, { integrated: Boolean(page.summary && page.summary.title) })", source)
 

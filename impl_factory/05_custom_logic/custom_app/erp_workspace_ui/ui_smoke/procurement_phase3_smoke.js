@@ -1399,6 +1399,101 @@ async function checkEnterpriseListFilterLayouts(page) {
   return results;
 }
 
+async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
+  await page.setViewportSize({ width: 1138, height: 768 });
+  await openDeskRoute(page, route);
+  await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const layout = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const rect = (node) => {
+      if (!node) return null;
+      const box = node.getBoundingClientRect();
+      return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom), width: Math.round(box.width), height: Math.round(box.height) };
+    };
+    const shell = document.querySelector(".erpw-list-shell");
+    const deck = shell && shell.querySelector(".erpw-list-filter-deck");
+    const fields = deck
+      ? Array.from(deck.querySelectorAll(".erpw-list-control-field"))
+          .filter(visible)
+          .map((node) => {
+            const input = node.querySelector("[data-erpw-list-field-key]");
+            const labelNode = node.querySelector(".erpw-list-control-label");
+            return {
+              key: node.getAttribute("data-erpw-list-field-shell-key") || "",
+              role: node.getAttribute("data-erpw-list-field-role") || "",
+              label: String((labelNode && labelNode.textContent) || "").replace(/\s+/g, " ").trim(),
+              rect: rect(node),
+              input: rect(input),
+              inputFontSize: input ? getComputedStyle(input).fontSize : "",
+              labelFontSize: labelNode ? getComputedStyle(labelNode).fontSize : "",
+            };
+          })
+      : [];
+    const actionCell = deck && deck.querySelector(".erpw-list-command-action-cell");
+    const toolbar = actionCell && actionCell.querySelector(".erpw-list-toolbar-actions");
+    const actionRect = rect(actionCell);
+    const toolbarRect = rect(toolbar);
+    const overlaps = [];
+    fields.forEach((field) => {
+      const box = field.input || field.rect;
+      if (!box || !actionRect) return;
+      const overlap = !(actionRect.left >= box.right || actionRect.right <= box.left || actionRect.top >= box.bottom || actionRect.bottom <= box.top);
+      if (overlap) overlaps.push({ field, actionRect });
+    });
+    const fieldBottom = fields.length ? Math.max(...fields.map((field) => field.input ? field.input.bottom : field.rect.bottom)) : 0;
+    const fixedFields = fields.filter((field) => field.role !== "search").map((field) => field.input || field.rect).filter(Boolean);
+    const fixedSpread = fixedFields.length > 1 ? Math.max(...fixedFields.map((field) => field.width)) - Math.min(...fixedFields.map((field) => field.width)) : 0;
+    const dateFields = fields
+      .filter((field) => /date/i.test(field.key || "") || /date/i.test(field.label || ""))
+      .map((field) => field.input || field.rect)
+      .filter(Boolean);
+    const dateTop = dateFields.length ? Math.min(...dateFields.map((field) => field.top)) : 0;
+    const dateBottom = dateFields.length ? Math.max(...dateFields.map((field) => field.bottom)) : 0;
+    const dateCenter = dateFields.length ? Math.round((dateTop + dateBottom) / 2) : 0;
+    const toolbarCenter = toolbarRect ? Math.round((toolbarRect.top + toolbarRect.bottom) / 2) : 0;
+    return {
+      deck: rect(deck),
+      deckColumns: deck ? getComputedStyle(deck).gridTemplateColumns : "",
+      fields,
+      actionRect,
+      toolbarRect,
+      overlaps,
+      actionStartsAfterFields: toolbarRect ? toolbarRect.top >= fieldBottom - 2 : false,
+      actionAlignedWithDateWindow: dateFields.length ? Math.abs(toolbarCenter - dateCenter) <= 8 : false,
+      hasDateWindow: dateFields.length >= 2,
+      fixedSpread,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(layout.overlaps.length === 0, `${label}: filter actions overlap visible controls at laptop width`, layout);
+  if (layout.hasDateWindow) {
+    assert(layout.actionAlignedWithDateWindow, `${label}: date-window filter actions should align with the date row`, layout);
+  } else {
+    assert(layout.actionStartsAfterFields, `${label}: narrow filter actions should move to a clean command row`, layout);
+  }
+  assert(layout.fields.every((field) => !field.input || field.input.right <= layout.deck.right + 1), `${label}: filter controls should stay inside the shared deck at laptop width`, layout);
+  assert(layout.deck.height <= (layout.hasDateWindow ? 180 : 145), `${label}: filter deck command area is taller than the shared compact standard`, layout);
+  assert(layout.fixedSpread <= 12, `${label}: fixed filter widths should remain consistent at laptop width`, layout);
+  assert(layout.fields.every((field) => field.inputFontSize === "14px" && field.labelFontSize === "11px"), `${label}: Procurement filter typography drifted from shared worklist scale`, layout);
+  assert(layout.overflow <= 1, `${label}: narrow filter layout introduced horizontal overflow`, layout);
+  return { label, route, layout };
+}
+
+async function checkNarrowProcurementFilterLayout(page) {
+  const results = [
+    await assertNarrowFilterActionsDoNotOverlap(page, "/desk/procurement-console-worklist/supplier-directory", "Supplier Directory"),
+    await assertNarrowFilterActionsDoNotOverlap(page, "/desk/procurement-console-worklist/buying-item-directory", "Buying Item Directory"),
+    await assertNarrowFilterActionsDoNotOverlap(page, "/desk/procurement-console-worklist/supplier-quotation-directory", "Supplier Quotation Directory"),
+  ];
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  return results;
+}
+
 async function exerciseFocusStability(page, scenario) {
   await openDeskRoute(page, scenario.route);
   await page.locator(scenario.shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1749,6 +1844,7 @@ async function runUser(browser, user) {
         report.focusStability = await checkFocusStability(page);
         report.datePairLayout = await checkDatePairLayout(page);
         report.enterpriseListFilterLayouts = await checkEnterpriseListFilterLayouts(page);
+        report.narrowProcurementFilterLayout = await checkNarrowProcurementFilterLayout(page);
       }
       report.createActions = await checkCreateActions(page, user, bootstrapPayload);
       report.worklists = {};

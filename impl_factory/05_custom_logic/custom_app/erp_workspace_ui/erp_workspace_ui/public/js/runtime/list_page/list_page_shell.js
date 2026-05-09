@@ -1044,7 +1044,37 @@
         border-radius: 10px;
         font-size: 12px;
       }
-      @media (max-width: 1080px) {
+      @media (max-width: 1366px) {
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions {
+          grid-template-columns: minmax(0, 1fr) max-content;
+          grid-template-areas:
+            "main main"
+            "secondary actions";
+          row-gap: 8px;
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions:not(.has-date-window) {
+          grid-template-columns: minmax(0, 1fr);
+          grid-template-areas:
+            "main"
+            "actions";
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-4 .erpw-list-filter-main-row,
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.main-count-5 .erpw-list-filter-main-row {
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.has-date-window .erpw-list-date-window-group {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          width: min(100%, calc((250px * 2) + var(--erpw-procurement-filter-gap)));
+        }
+        .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
+          align-self: end;
+          align-items: flex-end;
+          justify-content: flex-end;
+          min-height: 0;
+          padding-top: 0;
+        }
+      }
+      @media (max-width: 760px) {
         .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions {
           grid-template-columns: minmax(0, 1fr);
           grid-template-areas:
@@ -1057,13 +1087,6 @@
             "main"
             "actions";
         }
-        .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
-          justify-content: flex-start;
-          min-height: var(--erpw-list-control-height);
-          padding-top: 0;
-        }
-      }
-      @media (max-width: 760px) {
         .erpw-list-shell.is-procurement-worklist .erpw-list-summary-head {
           grid-template-columns: minmax(0, 1fr);
           align-items: start;
