@@ -378,6 +378,8 @@
       }
       .erpw-list-summary-card.has-summary-metrics:not(.is-detail-header) .erpw-list-summary-side {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        justify-content: stretch;
         justify-items: stretch;
         align-items: stretch;
         align-self: stretch;
