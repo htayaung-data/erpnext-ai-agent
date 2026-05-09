@@ -29,7 +29,9 @@
     "test:sales-native-leakage": "node sales_native_leakage_smoke.js",
     "test:sales-native-leakage:docker": "bash ./run_playwright_docker.sh npm run test:sales-native-leakage",
     "test:sales-visual-stability": "node sales_visual_stability_smoke.js",
-    "test:sales-visual-stability:docker": "bash ./run_playwright_docker.sh npm run test:sales-visual-stability"
+    "test:sales-visual-stability:docker": "bash ./run_playwright_docker.sh npm run test:sales-visual-stability",
+    "test:sales-freeze-watchlist": "bash ./check_sales_freeze_watchlist.sh",
+    "test:sales-freeze-protection": "bash ./run_sales_freeze_protection_gate.sh"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

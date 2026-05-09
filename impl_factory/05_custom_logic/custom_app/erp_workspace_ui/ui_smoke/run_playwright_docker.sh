@@ -16,11 +16,18 @@ else
 	SMOKE_COMMAND="npm run test:roles && npm run test:sales-order-analysis"
 fi
 
+EXTRA_DOCKER_ARGS=()
+if [ -n "${ERPW_PLAYWRIGHT_ARTIFACT_ROOT:-}" ]; then
+	mkdir -p "$ERPW_PLAYWRIGHT_ARTIFACT_ROOT"
+	EXTRA_DOCKER_ARGS+=(-v "$ERPW_PLAYWRIGHT_ARTIFACT_ROOT:/freeze-artifacts")
+fi
+
 mkdir -p "$SCRIPT_DIR/artifacts" "$SCRIPT_DIR/test-results"
 
 docker run --rm \
 	--network "$NETWORK" \
 	-v "$SCRIPT_DIR:/work" \
+	"${EXTRA_DOCKER_ARGS[@]}" \
 	-w /work \
 	-e CI="${CI:-1}" \
 	-e ERPW_BASE_URL \
@@ -34,6 +41,12 @@ docker run --rm \
 	-e ERPW_HEADLESS \
 	-e ERPW_REPORT_SHELL_VERSION \
 	-e ERPW_ROLE_SMOKE_OUT \
+	-e ERPW_SALES_ACTIONS_OUT \
+	-e ERPW_SALES_WORKLISTS_OUT \
+	-e ERPW_SALES_DETAIL_OUT \
+	-e ERPW_SALES_REPORTS_OUT \
+	-e ERPW_SALES_LEAKAGE_OUT \
+	-e ERPW_SALES_VISUAL_OUT \
 	-e ERPW_SALES_ORDER_ANALYSIS_OUT \
 	-e ERPW_SALES_ORDER_ANALYSIS_FROM \
 	-e ERPW_SALES_ORDER_ANALYSIS_TO \

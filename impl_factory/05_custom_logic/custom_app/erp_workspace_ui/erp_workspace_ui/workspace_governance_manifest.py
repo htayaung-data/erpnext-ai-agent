@@ -264,6 +264,8 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("sales-worklist-refresh", "sales", "sales-console-worklist/*", "refresh", "productized_secondary_action", "current_shell", label="Refresh", notes="Shared worklist command."),
 	_action("sales-worklist-reset", "sales", "sales-console-worklist/*", "reset_filters", "productized_secondary_action", "current_shell", label="Reset", notes="Shared worklist command."),
 	_action("sales-worklist-apply", "sales", "sales-console-worklist/*", "apply_filters", "productized_primary_action", "current_shell", label="Apply", notes="Shared worklist command."),
+	_action("sales-report-apply", "sales", "sales-console-report/*", "apply_filters", "productized_primary_action", "current_shell", label="Apply", notes="Shared report command."),
+	_action("sales-report-reset", "sales", "sales-console-report/*", "reset_filters", "productized_secondary_action", "current_shell", label="Reset", notes="Shared report command."),
 	_action("sales-report-refresh", "sales", "sales-console-report/*", "refresh", "productized_secondary_action", "current_shell", label="Refresh", notes="Shared report command."),
 	_action("sales-report-back", "sales", "sales-console-report/*", "back_to_console", "productized_navigation", "page", label="Back to Sales Console", target_route_pattern="/desk/sales-console"),
 	_action("sales-report-row-drilldown", "sales", "sales-console-report/*", "report_cell_drilldown", "productized_navigation", "declared_target", label_pattern="report cell link", notes="Report targets must follow productized route first."),
