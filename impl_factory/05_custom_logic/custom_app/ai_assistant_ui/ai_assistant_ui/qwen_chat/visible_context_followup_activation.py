@@ -15,6 +15,7 @@ from .natural_business_understanding_context_graph import resolve_nbu_context_gr
 from .natural_business_understanding_context_resolution import (
 	nbu_artifact_rows,
 	nbu_row_identity_label,
+	resolve_nbu_context_reference,
 )
 from .natural_business_understanding_contracts import CONTRACT_VERSION
 from .natural_business_understanding_request_classification import (
@@ -24,6 +25,7 @@ from .natural_business_understanding_request_classification import (
 )
 from .visible_context_frame_stack import (
 	build_visible_context_frame_stack,
+	resolve_visible_context_frame_arbitration,
 	visible_context_artifacts,
 	visible_context_payload_identity,
 )
@@ -177,6 +179,37 @@ def _context_frame_stack(
 	)
 
 
+def _artifact_by_identity(artifacts: List[Dict[str, Any]], artifact_id: str) -> Dict[str, Any]:
+	target = _clean_text(artifact_id)
+	if not target:
+		return {}
+	for artifact in artifacts:
+		clean_artifact = _clean_dict(artifact)
+		if _payload_identity(clean_artifact) == target:
+			return clean_artifact
+	return {}
+
+
+def _should_use_frame_arbitration(
+	*,
+	frame_arbitration: Dict[str, Any],
+	selected_artifact_id: str,
+	current_artifact_id: str,
+) -> bool:
+	if _clean_text(frame_arbitration.get("status")).lower() != "resolved":
+		return False
+	relation = _clean_text(frame_arbitration.get("relation")).lower()
+	if relation in {"previous_table", "same_table", "parent_table", "detail_table"}:
+		return True
+	if _clean_text(frame_arbitration.get("selected_evidence_scope")).lower() != "visible_rendered_table":
+		return False
+	return bool(
+		_clean_text(selected_artifact_id)
+		and _clean_text(current_artifact_id)
+		and _clean_text(selected_artifact_id) != _clean_text(current_artifact_id)
+	)
+
+
 def _latest_selected_entity(session_doc: Any) -> Dict[str, Any]:
 	for message in reversed(_session_messages(session_doc)):
 		if _message_role(message) != "tool":
@@ -324,6 +357,10 @@ def _resolve_visible_context(
 		current_artifact=current_artifact,
 		selected_entity=selected_entity,
 	)
+	frame_arbitration = resolve_visible_context_frame_arbitration(
+		raw_message=raw_message,
+		frame_stack=frame_stack,
+	)
 	if _selected_focus_has_continuation_authority(raw_message, target):
 		selected = selected_entity
 		if _clean_dict(selected).get("row"):
@@ -334,6 +371,7 @@ def _resolve_visible_context(
 				"resolved_entity": selected,
 				"reason": "Resolved from the last selected visible row.",
 				"context_frame_stack": frame_stack,
+				"frame_arbitration": frame_arbitration,
 			}
 
 	artifacts = _context_artifacts(session_doc, current_artifact=current_artifact)
@@ -343,7 +381,33 @@ def _resolve_visible_context(
 			"target_reference": target,
 			"reason": "No visible ERP table with rows is available in this conversation.",
 			"context_frame_stack": frame_stack,
+			"frame_arbitration": frame_arbitration,
 		}
+	selected_artifact_id = _clean_text(frame_arbitration.get("selected_artifact_id"))
+	current_artifact_id = _payload_identity(_clean_dict(artifacts[0])) if artifacts else ""
+	if _should_use_frame_arbitration(
+		frame_arbitration=frame_arbitration,
+		selected_artifact_id=selected_artifact_id,
+		current_artifact_id=current_artifact_id,
+	):
+		selected_artifact = _artifact_by_identity(artifacts, selected_artifact_id)
+		if selected_artifact:
+			resolution = resolve_nbu_context_reference(
+				raw_message=raw_message,
+				candidate_payload={
+					"candidate_id": "visible-context-followup",
+					"target_reference": target,
+					"intent_scope": "visible_context_followup",
+					"authority_class": "safe_read",
+				},
+				current_artifact=selected_artifact,
+				recent_focus=_selected_focus(session_doc),
+			).to_payload()
+			resolution_payload = _clean_dict(resolution)
+			resolution_payload["context_frame_stack"] = frame_stack
+			resolution_payload["frame_arbitration"] = frame_arbitration
+			if _clean_text(resolution_payload.get("status")).lower() in {"resolved", "ambiguous", "out_of_range"}:
+				return resolution_payload
 	resolution = resolve_nbu_context_graph_reference(
 		raw_message=raw_message,
 		candidate_payload={
@@ -358,6 +422,7 @@ def _resolve_visible_context(
 	).to_payload()
 	resolution_payload = _clean_dict(resolution)
 	resolution_payload["context_frame_stack"] = frame_stack
+	resolution_payload["frame_arbitration"] = frame_arbitration
 	return resolution_payload
 
 
@@ -1011,6 +1076,7 @@ def _trace_payload(
 ) -> Dict[str, Any]:
 	resolution_payload = _clean_dict(resolution)
 	frame_stack = _clean_dict(resolution_payload.pop("context_frame_stack", {}))
+	frame_arbitration = _clean_dict(resolution_payload.pop("frame_arbitration", {}))
 	return {
 		"type": "qwen_visible_context_followup_trace_contract",
 		"contract_version": CONTRACT_VERSION,
@@ -1021,6 +1087,7 @@ def _trace_payload(
 		"raw_message": _clean_text(raw_message),
 		"resolution": resolution_payload,
 		"context_frame_stack": frame_stack,
+		"frame_arbitration": frame_arbitration,
 		"created_at_unix": time.time(),
 	}
 

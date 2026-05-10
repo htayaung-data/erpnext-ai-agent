@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Tuple
 
 from .natural_business_understanding_context_resolution import (
@@ -20,6 +21,20 @@ ARTIFACT_PAYLOAD_TYPES = {
 	"qwen_visible_rendered_artifact",
 }
 LOW_PRIORITY_ROW_SOURCES = {"sections.parties", "sections.party_rows"}
+FRAME_RELATION_PREVIOUS_TERMS = {"previous", "prior", "earlier", "back"}
+FRAME_RELATION_SAME_TERMS = {"same"}
+FRAME_RELATION_PARENT_TERMS = {"parent", "origin"}
+FRAME_RELATION_DETAIL_TERMS = {"detail", "details", "breakdown", "invoice", "document", "source"}
+DOCUMENT_OBJECT_TYPES = {
+	"document",
+	"invoice",
+	"sales_invoice",
+	"purchase_invoice",
+	"delivery_note",
+	"voucher",
+	"stock_entry",
+	"payment_entry",
+}
 
 
 def _clean_text(value: Any) -> str:
@@ -32,6 +47,27 @@ def _clean_dict(value: Any) -> Dict[str, Any]:
 
 def _clean_list(value: Any) -> List[Any]:
 	return list(value) if isinstance(value, list) else []
+
+
+def _normalize(value: Any) -> str:
+	text = _clean_text(value).lower().replace("_", " ")
+	text = re.sub(r"[^a-z0-9]+", " ", text)
+	return re.sub(r"\s+", " ", text).strip()
+
+
+def _tokens(value: Any) -> set[str]:
+	return {token for token in _normalize(value).split() if token}
+
+
+def _plural(value: str) -> str:
+	clean = _normalize(value)
+	if not clean:
+		return ""
+	if clean.endswith("y"):
+		return f"{clean[:-1]}ies"
+	if clean.endswith("s"):
+		return clean
+	return f"{clean}s"
 
 
 def _positive_int(value: Any) -> int:
@@ -236,6 +272,15 @@ def _frame_rows(rows: List[Dict[str, Any]], artifact: Dict[str, Any]) -> List[Di
 	return frame_rows
 
 
+def _row_business_object_types(frame_rows: List[Dict[str, Any]]) -> List[str]:
+	values: List[str] = []
+	for row in frame_rows:
+		value = _clean_text(_clean_dict(row).get("business_object_type")).lower()
+		if value and value not in values:
+			values.append(value)
+	return values
+
+
 def _artifact_frame(
 	*,
 	artifact: Dict[str, Any],
@@ -244,6 +289,9 @@ def _artifact_frame(
 ) -> Dict[str, Any]:
 	rows, row_source = nbu_artifact_rows(artifact)
 	identity = visible_context_payload_identity(artifact)
+	frame_rows = _frame_rows(rows, artifact)
+	object_type = _business_object_type(artifact, rows)
+	row_object_types = _row_business_object_types(frame_rows)
 	return {
 		"frame_id": f"{identity or 'artifact'}:table:{authority_rank}",
 		"frame_kind": "table" if rows else "artifact",
@@ -253,12 +301,13 @@ def _artifact_frame(
 		"family_id": _clean_text(artifact.get("family_id") or artifact.get("family") or artifact.get("composite_family_id")),
 		"capability_id": _clean_text(artifact.get("capability_id") or artifact.get("source_capability_id")),
 		"artifact_title": _artifact_title(artifact),
-		"business_object_type": _business_object_type(artifact, rows),
+		"business_object_type": object_type,
+		"row_business_object_types": row_object_types,
 		"row_source": _clean_text(row_source),
 		"visible_row_count": len(rows),
 		"requested_limit": _requested_limit(artifact, rows),
 		"columns": _columns(rows),
-		"rows": _frame_rows(rows, artifact),
+		"rows": frame_rows,
 		"parent_artifact_id": _clean_text(artifact.get("parent_artifact_id") or artifact.get("source_artifact_id")),
 		"evidence_scope": _evidence_scope(artifact),
 	}
@@ -281,6 +330,7 @@ def _selection_frame(selected_entity: Dict[str, Any] | None) -> Dict[str, Any]:
 		"role": "recent_selection",
 		"artifact_id": _clean_text(entity.get("artifact_id") or entity.get("resolved_artifact_id")),
 		"business_object_type": _clean_text(entity.get("entity_type")).lower(),
+		"row_business_object_types": [_clean_text(entity.get("entity_type")).lower()] if _clean_text(entity.get("entity_type")) else [],
 		"visible_row_count": 1,
 		"requested_limit": 1,
 		"rows": [
@@ -293,6 +343,128 @@ def _selection_frame(selected_entity: Dict[str, Any] | None) -> Dict[str, Any]:
 			}
 		],
 		"evidence_scope": "selected_visible_row",
+	}
+
+
+def _table_frames(frame_stack: Dict[str, Any]) -> List[Dict[str, Any]]:
+	return [
+		_clean_dict(frame)
+		for frame in _clean_list(_clean_dict(frame_stack).get("frames"))
+		if _clean_text(_clean_dict(frame).get("frame_kind")) == "table"
+	]
+
+
+def _frame_object_aliases(frame: Dict[str, Any]) -> set[str]:
+	values = {
+		_clean_text(frame.get("business_object_type")).lower(),
+		*[
+			_clean_text(value).lower()
+			for value in _clean_list(frame.get("row_business_object_types"))
+			if _clean_text(value)
+		],
+	}
+	aliases: set[str] = set()
+	for value in values:
+		normalized = _normalize(value)
+		if not normalized:
+			continue
+		aliases.add(normalized)
+		aliases.add(_plural(normalized))
+		aliases.update(token for token in normalized.split() if token)
+	return {alias for alias in aliases if alias}
+
+
+def _frame_matches_message_object(raw_message: str, frame: Dict[str, Any]) -> bool:
+	tokens = _tokens(raw_message)
+	parts = set(tokens)
+	token_list = [token for token in _normalize(raw_message).split() if token]
+	for size in range(2, min(4, len(token_list)) + 1):
+		for index in range(0, len(token_list) - size + 1):
+			parts.add(" ".join(token_list[index : index + size]))
+	return bool(parts.intersection(_frame_object_aliases(frame)))
+
+
+def _is_detail_frame(frame: Dict[str, Any]) -> bool:
+	evidence_scope = _clean_text(frame.get("evidence_scope")).lower()
+	object_types = {
+		_clean_text(frame.get("business_object_type")).lower(),
+		*[
+			_clean_text(value).lower()
+			for value in _clean_list(frame.get("row_business_object_types"))
+			if _clean_text(value)
+		],
+	}
+	return (
+		evidence_scope in {"approved_source_detail", "approved_detail"}
+		or bool(object_types.intersection(DOCUMENT_OBJECT_TYPES))
+	)
+
+
+def resolve_visible_context_frame_arbitration(
+	*,
+	raw_message: str,
+	frame_stack: Dict[str, Any],
+) -> Dict[str, Any]:
+	"""Select the authoritative table frame for a contextual follow-up.
+
+	This is intentionally family-neutral: it uses the frame relation requested
+	by the user plus object types emitted by governed artifacts.
+	"""
+
+	frames = _table_frames(frame_stack)
+	if not frames:
+		return {"status": "not_evaluated", "reason": "No table frames are available."}
+	tokens = _tokens(raw_message)
+	matching_object_frames = [frame for frame in frames if _frame_matches_message_object(raw_message, frame)]
+	relation = "current_table"
+	if tokens.intersection(FRAME_RELATION_PARENT_TERMS):
+		relation = "parent_table"
+	elif tokens.intersection(FRAME_RELATION_PREVIOUS_TERMS):
+		relation = "previous_table"
+	elif tokens.intersection(FRAME_RELATION_SAME_TERMS):
+		relation = "same_table"
+	elif tokens.intersection(FRAME_RELATION_DETAIL_TERMS):
+		relation = "detail_table"
+
+	selected_frame: Dict[str, Any] = {}
+	if relation == "parent_table":
+		candidates = matching_object_frames or [frame for frame in frames[1:] if not _is_detail_frame(frame)]
+		if not candidates:
+			candidates = frames[1:]
+		selected_frame = candidates[0] if candidates else {}
+	elif relation == "previous_table":
+		previous_frames = frames[1:]
+		candidates = [frame for frame in previous_frames if _frame_matches_message_object(raw_message, frame)]
+		selected_frame = (candidates or previous_frames or frames)[0]
+	elif relation == "same_table":
+		if matching_object_frames and matching_object_frames[0].get("artifact_id") != frames[0].get("artifact_id"):
+			selected_frame = matching_object_frames[0]
+		else:
+			selected_frame = frames[0]
+	elif relation == "detail_table":
+		detail_frames = [frame for frame in frames if _is_detail_frame(frame)]
+		candidates = [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
+		selected_frame = (candidates or detail_frames or matching_object_frames or frames)[0]
+	elif matching_object_frames:
+		selected_frame = matching_object_frames[0]
+	else:
+		selected_frame = frames[0]
+
+	if not selected_frame:
+		return {
+			"status": "not_evaluated",
+			"relation": relation,
+			"reason": "No compatible context frame was selected.",
+		}
+	return {
+		"status": "resolved",
+		"relation": relation,
+		"selected_frame_id": _clean_text(selected_frame.get("frame_id")),
+		"selected_artifact_id": _clean_text(selected_frame.get("artifact_id")),
+		"selected_business_object_type": _clean_text(selected_frame.get("business_object_type")),
+		"selected_evidence_scope": _clean_text(selected_frame.get("evidence_scope")),
+		"selected_visible_row_count": _positive_int(selected_frame.get("visible_row_count")),
+		"reason": "Resolved the authoritative visible table frame from the shared frame stack.",
 	}
 
 

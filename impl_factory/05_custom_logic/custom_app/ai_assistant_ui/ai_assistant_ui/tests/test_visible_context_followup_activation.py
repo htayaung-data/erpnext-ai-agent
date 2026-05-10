@@ -880,6 +880,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("Xiaomi Redmi Note 13", messages[-1][1])
 		trace = self._latest_visible_context_trace(payloads)
 		stack = trace.get("context_frame_stack")
+		arbitration = trace.get("frame_arbitration")
+		self.assertEqual(arbitration.get("status"), "resolved")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "item")
 		self.assertEqual(stack.get("type"), "qwen_visible_context_frame_stack_contract")
 		table_frames = [frame for frame in stack.get("frames", []) if frame.get("frame_kind") == "table"]
 		self.assertGreaterEqual(len(table_frames), 1)
@@ -905,6 +908,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertNotIn("ACC-PINV-2026-00053", answer)
 		trace = self._latest_visible_context_trace(payloads)
 		stack = trace.get("context_frame_stack")
+		arbitration = trace.get("frame_arbitration")
+		self.assertEqual(arbitration.get("status"), "resolved")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "supplier")
 		self.assertTrue(
 			any(
 				frame.get("business_object_type") == "supplier"
@@ -912,6 +918,84 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 				for frame in stack.get("frames", [])
 			)
 		)
+
+	def test_previous_table_reference_uses_parent_supplier_table_after_detail(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in previous table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Sunflower Accessories Co.", answer)
+		self.assertNotIn("ACC-PINV-2026-00053", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("relation"), "previous_table")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "supplier")
+
+	def test_same_table_reference_stays_on_latest_invoice_detail_table(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in same table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("ACC-PINV-2026-00053", answer)
+		self.assertNotIn("Sunflower Accessories Co. in the table above", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("relation"), "same_table")
+
+	def test_parent_supplier_relation_uses_parent_business_frame(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second parent supplier?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Sunflower Accessories Co.", answer)
+		self.assertNotIn("ACC-PINV-2026-00053", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("relation"), "parent_table")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "supplier")
+
+	def test_detail_invoice_relation_uses_latest_detail_frame(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second invoice in the above context?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("ACC-PINV-2026-00053", answer)
+		self.assertNotIn("Rank 2 is Sunflower Accessories Co.", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("relation"), "detail_table")
 
 	def test_latest_plain_product_table_has_context_authority_over_prior_comparison_table(self):
 		session_doc = {
