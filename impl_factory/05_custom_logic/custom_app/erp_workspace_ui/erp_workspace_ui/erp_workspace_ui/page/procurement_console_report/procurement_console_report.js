@@ -110,6 +110,11 @@
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
     if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
     if (target.kind === "report_page") return routeToReportPage(target.report_key || REPORT_INDEX_KEY, target.filters || null);
+    if (target.kind === "page" && target.route) {
+      frappe.route_options = target.options || {};
+      const parts = [target.route].concat(Array.isArray(target.route_parts) ? target.route_parts : []);
+      return frappe.set_route.apply(frappe, parts);
+    }
   }
 
   function pathRouteSignature() {

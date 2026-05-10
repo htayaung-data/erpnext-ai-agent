@@ -14,6 +14,7 @@ ROW_LIMIT = 80
 REPORT_INDEX_KEY = "procurement_reports_index"
 REPORT_INDEX_ALIASES = {"", "index", REPORT_INDEX_KEY}
 NATIVE_COMPARISON_REPORT = "Supplier Quotation Comparison"
+NATIVE_PO_ANALYSIS_REPORT = "Purchase Order Analysis"
 
 
 def _normalize_report_key(report_key: str | None) -> str:
@@ -73,6 +74,8 @@ def get_procurement_console_report_context(
 		return _build_report_index()
 	if normalized_key == "supplier_quotation_comparison":
 		return _build_supplier_quotation_comparison(overrides)
+	if normalized_key == "purchase_order_analysis":
+		return _build_purchase_order_analysis(overrides)
 	return _state_payload(normalized_key, service.unavailable_state())
 
 
@@ -113,6 +116,10 @@ def _build_report_index() -> dict[str, object]:
 				"kind": "report_page",
 				"report_key": "supplier_quotation_comparison",
 			},
+			"open_purchase_order_analysis": {
+				"kind": "report_page",
+				"report_key": "purchase_order_analysis",
+			},
 		},
 	}
 
@@ -146,10 +153,12 @@ def _report_index_sections() -> list[dict[str, object]]:
 					"key": "purchase_order_analysis",
 					"title": "Purchase Order Analysis",
 					"purpose": "Review ordered value, open receiving posture, billing posture, suppliers, items, and status.",
-					"status": "planned",
-					"status_label": "Planned",
+					"status": "ready",
+					"status_label": "Ready",
 					"boundary": "Buyer visibility only. Receiving and billing execution remain outside Procurement.",
 					"icon": "order",
+					"action_key": "open_purchase_order_analysis",
+					"target_route": "/desk/procurement-console-report/purchase-order-analysis",
 				},
 			],
 		},
@@ -186,6 +195,271 @@ def _report_index_sections() -> list[dict[str, object]]:
 			],
 		},
 	]
+
+
+def _build_purchase_order_analysis(overrides: dict[str, object]) -> dict[str, object]:
+	filters = _po_analysis_filters(overrides)
+	if not common.can_read("Purchase Order"):
+		return _po_analysis_payload(
+			filters,
+			rows=[],
+			state=common.restricted_state("Purchase Order Analysis restricted", "Purchase Order"),
+			metrics=[],
+			action_targets={},
+		)
+	if not _native_report_available(NATIVE_PO_ANALYSIS_REPORT):
+		return _po_analysis_payload(
+			filters,
+			rows=[],
+			state=common.unavailable_state(
+				"Purchase Order Analysis unavailable",
+				"The installed ERPNext Purchase Order Analysis report is not available on this site.",
+			),
+			metrics=[],
+			action_targets={},
+		)
+	try:
+		payload = run_query_report(NATIVE_PO_ANALYSIS_REPORT, filters=_native_po_analysis_filters(filters), ignore_prepared_report=True)
+		columns = _comparison_columns(payload.get("columns") or [])
+		raw_rows = _normalize_rows(payload.get("result") or payload.get("data") or [], columns)
+		filtered_rows = _filter_po_analysis_rows(raw_rows, filters)
+		visible_rows, po_details = _permission_visible_po_analysis_rows(filtered_rows)
+		rows, action_targets = _po_analysis_rows(visible_rows, po_details)
+		state = common.ready_state() if rows else common.empty_state(
+			"No purchase orders in view",
+			"The selected filters did not return visible purchase orders for analysis.",
+		)
+		return _po_analysis_payload(filters, rows=rows, state=state, metrics=_po_analysis_metrics(visible_rows), action_targets=action_targets)
+	except Exception as exc:  # pragma: no cover - exercised against live ERP runtime
+		message = getattr(exc, "message", None) or str(exc) or "Unknown report error."
+		if "not found" in message.lower() or "does not exist" in message.lower():
+			state = common.unavailable_state("Purchase Order Analysis unavailable", message)
+		else:
+			state = common.state("error", "Purchase Order Analysis failed", message)
+		return _po_analysis_payload(filters, rows=[], state=state, metrics=[], action_targets={})
+
+
+def _po_analysis_payload(
+	filters: dict[str, object],
+	rows: list[dict[str, object]],
+	state: dict[str, object],
+	metrics: list[dict[str, object]],
+	action_targets: dict[str, object],
+) -> dict[str, object]:
+	return {
+		"page": {"title": "Purchase Order Analysis", "key": "purchase_order_analysis"},
+		"summary": {
+			"kicker": "Order review",
+			"title": "Purchase Order Analysis",
+			"subtitle": "Review ordered value, receipt posture, billing posture, suppliers, items, and status for buyer follow-up.",
+		},
+		"controls": _po_analysis_controls(filters),
+		"metrics": {"appearance": "analytics_compact", "items": metrics},
+		"results": {
+			"title": "Purchase order lines",
+			"subtitle": "Read-only purchase order analysis with productized drilldowns for buyer review.",
+			"meta": f"{len(rows)} shown",
+			"columns": _po_analysis_display_columns(),
+			"rows": rows[:ROW_LIMIT],
+			"state": state,
+			"tableMinWidth": 1720,
+		},
+		"action_targets": action_targets,
+	}
+
+
+def _po_analysis_filters(overrides: dict[str, object]) -> dict[str, object]:
+	company = cstr(overrides.get("company")).strip() or _default_company()
+	return {
+		"company": company,
+		"from_date": cstr(overrides.get("from_date")).strip() or common.date_days_ago(30),
+		"to_date": cstr(overrides.get("to_date")).strip() or common.today_string(),
+		"purchase_order": cstr(overrides.get("purchase_order") or overrides.get("name")).strip(),
+		"supplier": cstr(overrides.get("supplier")).strip(),
+		"item_code": cstr(overrides.get("item_code") or overrides.get("item")).strip(),
+		"status": cstr(overrides.get("status")).strip(),
+	}
+
+
+def _native_po_analysis_filters(filters: dict[str, object]) -> dict[str, object]:
+	payload: dict[str, object] = {
+		"company": filters.get("company"),
+		"from_date": filters.get("from_date"),
+		"to_date": filters.get("to_date"),
+		"group_by_po": 0,
+	}
+	if filters.get("purchase_order"):
+		payload["name"] = [filters.get("purchase_order")]
+	if filters.get("status"):
+		payload["status"] = [filters.get("status")]
+	return payload
+
+
+def _po_analysis_controls(filters: dict[str, object]) -> dict[str, object]:
+	status_options = ["", "To Pay", "To Bill", "To Receive", "To Receive and Bill", "Completed", "Closed"]
+	return {
+		"appearance": "analytics_compact",
+		"actionLayout": "separate_row",
+		"submitLabel": "Apply",
+		"resetLabel": "Reset",
+		"meta": [
+			{"label": "Mode", "value": "Read-only"},
+			{"label": "Scope", "value": "Buyer order review"},
+		],
+		"fields": [
+			{"key": "from_date", "label": "From", "type": "date", "value": filters.get("from_date"), "row": 1},
+			{"key": "to_date", "label": "To", "type": "date", "value": filters.get("to_date"), "row": 1},
+			{"key": "purchase_order", "label": "Purchase Order", "type": "link", "linkDoctype": "Purchase Order", "value": filters.get("purchase_order"), "placeholder": "Select purchase order", "row": 1},
+			{
+				"key": "status",
+				"label": "Status",
+				"type": "select",
+				"value": filters.get("status"),
+				"row": 1,
+				"options": [{"label": option or "All", "value": option} for option in status_options],
+			},
+			{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier"), "placeholder": "Select supplier", "row": 2},
+			{"key": "item_code", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item_code"), "placeholder": "Select item", "row": 2},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+		],
+	}
+
+
+def _po_analysis_display_columns() -> list[dict[str, object]]:
+	return [
+		{"key": "purchase_order", "label": "Purchase Order", "nowrap": True},
+		{"key": "supplier", "label": "Supplier", "nowrap": True},
+		{"key": "item_code", "label": "Item", "nowrap": True},
+		{"key": "required_date", "label": "Required By", "nowrap": True},
+		{"key": "status", "label": "Status / Workflow", "nowrap": True},
+		{"key": "received_percent", "label": "Received %", "align": "right"},
+		{"key": "billed_percent", "label": "Billed %", "align": "right"},
+		{"key": "ordered_value", "label": "Ordered Value", "align": "right"},
+		{"key": "open_receiving", "label": "Open Receiving", "align": "right"},
+		{"key": "open_billing", "label": "Open Billing", "align": "right"},
+	]
+
+
+def _filter_po_analysis_rows(rows: list[dict[str, object]], filters: dict[str, object]) -> list[dict[str, object]]:
+	filtered = list(rows)
+	if filters.get("supplier"):
+		filtered = [row for row in filtered if cstr(row.get("supplier")).strip() == filters.get("supplier")]
+	if filters.get("item_code"):
+		filtered = [row for row in filtered if cstr(row.get("item_code")).strip() == filters.get("item_code")]
+	return filtered
+
+
+def _permission_visible_po_analysis_rows(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, dict[str, object]]]:
+	po_names = sorted({cstr(row.get("purchase_order")).strip() for row in rows if cstr(row.get("purchase_order")).strip()})
+	if not po_names:
+		return [], {}
+	fields = ["name", "status", "supplier", "supplier_name", "per_received", "per_billed", "grand_total", "currency"]
+	if common.has_field("Purchase Order", "workflow_state"):
+		fields.append("workflow_state")
+	visible = common.get_list(
+		"Purchase Order",
+		fields=fields,
+		filters=[["Purchase Order", "name", "in", po_names]],
+		limit=max(len(po_names), 1),
+	)
+	visible_map = {cstr(row.get("name")).strip(): row for row in visible if cstr(row.get("name")).strip()}
+	return [row for row in rows if cstr(row.get("purchase_order")).strip() in visible_map], visible_map
+
+
+def _po_analysis_rows(rows: list[dict[str, object]], po_details: dict[str, dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, object]]:
+	formatted_rows: list[dict[str, object]] = []
+	action_targets: dict[str, object] = {}
+	currency = _company_currency(cstr(rows[0].get("company")).strip() if rows else "")
+	for index, row in enumerate(rows[:ROW_LIMIT]):
+		po_name = cstr(row.get("purchase_order")).strip()
+		details = po_details.get(po_name) or {}
+		supplier = cstr(row.get("supplier") or details.get("supplier")).strip()
+		item_code = cstr(row.get("item_code")).strip()
+		qty = flt(row.get("qty"))
+		received_qty = flt(row.get("received_qty"))
+		billed_qty = flt(row.get("billed_qty"))
+		pending_qty = flt(row.get("pending_qty"))
+		qty_to_bill = flt(row.get("qty_to_bill"))
+		status = cstr(row.get("status") or details.get("status")).strip()
+		workflow_state = cstr(details.get("workflow_state")).strip()
+		status_value = status if not workflow_state or workflow_state == status else f"{status} / {workflow_state}"
+		po_action = f"po_analysis:po:{po_name}"
+		supplier_action = f"po_analysis:supplier:{supplier}"
+		item_action = f"po_analysis:item:{item_code}"
+		if po_name:
+			action_targets[po_action] = {"kind": "page", "route": "procurement-console-po-follow-up", "route_parts": [po_name]}
+		if supplier:
+			action_targets[supplier_action] = {"kind": "page", "route": "procurement-console-supplier", "route_parts": [supplier]}
+		if item_code:
+			action_targets[item_action] = {"kind": "page", "route": "procurement-console-item", "route_parts": [item_code]}
+		formatted_rows.append(
+			{
+				"key": cstr(row.get("name") or f"{po_name}-{index}"),
+				"cells": {
+					"purchase_order": {"value": po_name, "actionKey": po_action} if po_name else {"value": "-"},
+					"supplier": {"value": supplier or "-", "actionKey": supplier_action} if supplier else {"value": "-"},
+					"item_code": {"value": item_code or "-", "actionKey": item_action} if item_code else {"value": "-"},
+					"required_date": {"value": cstr(row.get("required_date") or row.get("date") or "-")},
+					"status": {"value": status_value or "-"},
+					"received_percent": {"value": _percent(received_qty, qty)},
+					"billed_percent": {"value": _percent(billed_qty, qty)},
+					"ordered_value": {"value": _money(row.get("amount"), currency)},
+					"open_receiving": {"value": _quantity(pending_qty)},
+					"open_billing": {"value": _quantity(qty_to_bill)},
+				},
+			}
+		)
+	return formatted_rows, action_targets
+
+
+def _po_analysis_metrics(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+	po_names = {cstr(row.get("purchase_order")).strip() for row in rows if cstr(row.get("purchase_order")).strip()}
+	currency = _company_currency(cstr(rows[0].get("company")).strip() if rows else "")
+	ordered_value = sum(flt(row.get("amount")) for row in rows)
+	open_receiving = sum(max(flt(row.get("pending_qty")), 0) for row in rows)
+	open_billing = sum(max(flt(row.get("qty_to_bill")), 0) for row in rows)
+	today = common.today_string()
+	overdue_pos = {
+		cstr(row.get("purchase_order")).strip()
+		for row in rows
+		if cstr(row.get("purchase_order")).strip()
+		and flt(row.get("pending_qty")) > 0
+		and cstr(row.get("required_date")).strip()
+		and cstr(row.get("required_date")).strip() < today
+	}
+	return [
+		common.metric("Visible orders", len(po_names), "Purchase orders matching the current report filters.", "slate"),
+		common.metric("Ordered value", _money(ordered_value, currency), "Base ordered value in view.", "teal"),
+		common.metric("Open receiving", _quantity(open_receiving), "Quantity still not received. Warehouse owns receipt execution.", "amber"),
+		common.metric("Open billing", _quantity(open_billing), "Quantity not fully billed. Finance owns invoice and payment work.", "indigo"),
+		common.metric("Overdue open", len(overdue_pos), "Open purchase orders past required date.", "red"),
+	]
+
+
+def _native_report_available(report_name: str) -> bool:
+	try:
+		return bool(frappe.db.exists("Report", report_name))
+	except Exception:
+		return True
+
+
+def _company_currency(company: str) -> str:
+	try:
+		return cstr(frappe.db.get_value("Company", company, "default_currency")).strip()
+	except Exception:
+		return ""
+
+
+def _percent(part: object, total: object) -> str:
+	total_value = flt(total)
+	if total_value <= 0:
+		return "0%"
+	value = max(0, min(100, (flt(part) / total_value) * 100))
+	if float(value).is_integer():
+		return f"{int(value)}%"
+	return f"{value:.1f}%"
 
 
 def _build_supplier_quotation_comparison(overrides: dict[str, object]) -> dict[str, object]:

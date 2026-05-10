@@ -194,6 +194,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             "procurement-console-worklist/supplier_quotation_directory",
             "procurement-console-report",
             "procurement-console-report/supplier_quotation_comparison",
+            "procurement-console-report/purchase_order_analysis",
             "procurement-console-po-follow-up",
             "procurement-console-purchase-request-review",
             "Form/Material Request/new-purchase",
@@ -201,21 +202,49 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             self.assertIn(expected, procurement_keys)
 
     def test_procurement_reports_index_card_action_is_productized_navigation(self):
+        actions = {
+            item["manifest_key"]: item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] in {
+                "procurement-report-index-open-quote-comparison",
+                "procurement-report-index-open-purchase-order-analysis",
+            }
+        }
+
+        quote_action = actions["procurement-report-index-open-quote-comparison"]
+        self.assertEqual("procurement", quote_action["workspace_id"])
+        self.assertEqual("procurement-console-report", quote_action["source_route"])
+        self.assertEqual("open_supplier_quotation_comparison", quote_action["action_key"])
+        self.assertEqual("productized_navigation", quote_action["classification"])
+        self.assertEqual("report_page", quote_action["target_kind"])
+        self.assertEqual(
+            "/desk/procurement-console-report/supplier-quotation-comparison",
+            quote_action["target_route_pattern"],
+        )
+        self.assertIsNone(quote_action.get("native_exception_ref"))
+
+        po_action = actions["procurement-report-index-open-purchase-order-analysis"]
+        self.assertEqual("open_purchase_order_analysis", po_action["action_key"])
+        self.assertEqual("productized_navigation", po_action["classification"])
+        self.assertEqual("report_page", po_action["target_kind"])
+        self.assertEqual(
+            "/desk/procurement-console-report/purchase-order-analysis",
+            po_action["target_route_pattern"],
+        )
+        self.assertIsNone(po_action.get("native_exception_ref"))
+
+    def test_procurement_purchase_order_analysis_drilldowns_are_productized(self):
         action = next(
             item
             for item in ACTION_MANIFEST
-            if item["manifest_key"] == "procurement-report-index-open-quote-comparison"
+            if item["manifest_key"] == "procurement-report-purchase-order-analysis-drilldown"
         )
 
         self.assertEqual("procurement", action["workspace_id"])
-        self.assertEqual("procurement-console-report", action["source_route"])
-        self.assertEqual("open_supplier_quotation_comparison", action["action_key"])
+        self.assertEqual("procurement-console-report/purchase_order_analysis", action["source_route"])
         self.assertEqual("productized_navigation", action["classification"])
-        self.assertEqual("report_page", action["target_kind"])
-        self.assertEqual(
-            "/desk/procurement-console-report/supplier-quotation-comparison",
-            action["target_route_pattern"],
-        )
+        self.assertEqual("page", action["target_kind"])
+        self.assertEqual("/desk/procurement-console-*", action["target_route_pattern"])
         self.assertIsNone(action.get("native_exception_ref"))
 
 

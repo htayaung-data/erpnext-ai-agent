@@ -27,6 +27,7 @@ HIDDEN_PURCHASE_ORDER_LIST_NAMES = set()
 HIDDEN_MATERIAL_REQUEST_LIST_NAMES = set()
 HIDDEN_RFQ_LIST_NAMES = set()
 HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES = set()
+MISSING_NATIVE_REPORTS = set()
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -488,6 +489,74 @@ def _run_query_report(report_name, filters=None, ignore_prepared_report=None, **
             "ignore_prepared_report": ignore_prepared_report,
         }
     )
+    if report_name == "Purchase Order Analysis":
+        return {
+            "columns": [
+                {"fieldname": "date", "label": "Date"},
+                {"fieldname": "required_date", "label": "Required By"},
+                {"fieldname": "purchase_order", "label": "Purchase Order"},
+                {"fieldname": "status", "label": "Status"},
+                {"fieldname": "supplier", "label": "Supplier"},
+                {"fieldname": "project", "label": "Project"},
+                {"fieldname": "item_code", "label": "Item Code"},
+                {"fieldname": "qty", "label": "Qty"},
+                {"fieldname": "received_qty", "label": "Received Qty"},
+                {"fieldname": "pending_qty", "label": "Pending Qty"},
+                {"fieldname": "billed_qty", "label": "Billed Qty"},
+                {"fieldname": "qty_to_bill", "label": "Qty to Bill"},
+                {"fieldname": "amount", "label": "Amount"},
+                {"fieldname": "billed_amount", "label": "Billed Amount"},
+                {"fieldname": "pending_amount", "label": "Pending Amount"},
+                {"fieldname": "received_qty_amount", "label": "Received Qty Amount"},
+                {"fieldname": "warehouse", "label": "Warehouse"},
+                {"fieldname": "company", "label": "Company"},
+                {"fieldname": "name", "label": "PO Item"},
+            ],
+            "result": [
+                {
+                    "date": "2026-04-20",
+                    "required_date": "2026-04-30",
+                    "purchase_order": "PUR-OVERDUE-001",
+                    "status": "To Receive and Bill",
+                    "supplier": "SUP-001",
+                    "project": None,
+                    "item_code": "ITEM-002",
+                    "qty": 5,
+                    "received_qty": 0,
+                    "pending_qty": 5,
+                    "billed_qty": 0,
+                    "qty_to_bill": 5,
+                    "amount": 2200,
+                    "billed_amount": 0,
+                    "pending_amount": 2200,
+                    "received_qty_amount": 0,
+                    "warehouse": "Stores - DC",
+                    "company": "Demo Company",
+                    "name": "POI-OVERDUE-001",
+                },
+                {
+                    "date": "2026-05-01",
+                    "required_date": "2026-05-20",
+                    "purchase_order": "PUR-PARTIAL-001",
+                    "status": "To Receive and Bill",
+                    "supplier": "SUP-002",
+                    "project": None,
+                    "item_code": "ITEM-003",
+                    "qty": 8,
+                    "received_qty": 4,
+                    "pending_qty": 4,
+                    "billed_qty": 2,
+                    "qty_to_bill": 6,
+                    "amount": 3000,
+                    "billed_amount": 750,
+                    "pending_amount": 2250,
+                    "received_qty_amount": 1500,
+                    "warehouse": "Stores - DC",
+                    "company": "Demo Company",
+                    "name": "POI-PARTIAL-001",
+                },
+            ],
+        }
     return {
         "columns": [
             {"fieldname": "supplier_name", "label": "Supplier"},
@@ -525,9 +594,15 @@ fake_frappe.PermissionError = _FakePermissionError
 fake_frappe.ValidationError = Exception
 fake_frappe.throw = _throw
 fake_frappe.session = types.SimpleNamespace(user="purchase@example.com")
+def _db_exists(doctype, name=None, **kwargs):
+    if doctype == "Report":
+        return name in {"Supplier Quotation Comparison", "Purchase Order Analysis"} and name not in MISSING_NATIVE_REPORTS
+    return False
+
+
 fake_frappe.db = types.SimpleNamespace(
     get_value=_db_get_value,
-    exists=lambda *args, **kwargs: False,
+    exists=_db_exists,
     get_single_value=lambda doctype, fieldname: "Demo Company" if doctype == "Global Defaults" else None,
     count=_count,
 )
@@ -692,6 +767,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         HIDDEN_MATERIAL_REQUEST_LIST_NAMES.clear()
         HIDDEN_RFQ_LIST_NAMES.clear()
         HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES.clear()
+        MISSING_NATIVE_REPORTS.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -1687,15 +1763,19 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         card_by_key = {card["key"]: card for card in cards}
         self.assertEqual(card_by_key["supplier_quotation_comparison"]["status"], "ready")
         self.assertEqual(card_by_key["supplier_quotation_comparison"]["target_route"], "/desk/procurement-console-report/supplier-quotation-comparison")
-        self.assertEqual(card_by_key["purchase_order_analysis"]["status"], "planned")
-        self.assertNotIn("target_route", card_by_key["purchase_order_analysis"])
+        self.assertEqual(card_by_key["purchase_order_analysis"]["status"], "ready")
+        self.assertEqual(card_by_key["purchase_order_analysis"]["target_route"], "/desk/procurement-console-report/purchase-order-analysis")
         self.assertEqual(
             [card["status"] for card in cards],
-            ["ready", "planned", "planned", "planned"],
+            ["ready", "ready", "planned", "planned"],
         )
         self.assertEqual(
             payload["action_targets"]["open_supplier_quotation_comparison"],
             {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
+        )
+        self.assertEqual(
+            payload["action_targets"]["open_purchase_order_analysis"],
+            {"kind": "report_page", "report_key": "purchase_order_analysis"},
         )
         payload_text = str(payload).lower()
         self.assertNotIn("query-report", payload_text)
@@ -1762,8 +1842,62 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             ["refresh"],
         )
 
-    def test_later_phase_report_returns_unavailable_not_ready(self):
+    def test_purchase_order_analysis_wraps_native_report_with_productized_drilldowns(self):
+        payload = report.get_procurement_console_report_context(
+            "purchase_order_analysis",
+            {"company": "Demo Company", "purchase_order": "PUR-OVERDUE-001", "supplier": "SUP-001", "item_code": "ITEM-002", "status": "To Receive and Bill"},
+        )
+
+        self.assertEqual(payload["page"], {"title": "Purchase Order Analysis", "key": "purchase_order_analysis"})
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(CAPTURED_REPORT_CALLS[-1]["report_name"], "Purchase Order Analysis")
+        self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["name"], ["PUR-OVERDUE-001"])
+        self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["status"], ["To Receive and Bill"])
+        self.assertIsNone(_field_by_key(payload, "company"))
+        self.assertEqual(_field_by_key(payload, "purchase_order")["linkDoctype"], "Purchase Order")
+        self.assertEqual(_field_by_key(payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertEqual(_field_by_key(payload, "item_code")["linkDoctype"], "Item")
+        self.assertGreaterEqual(payload["results"].get("tableMinWidth", 0), 1700)
+        column_by_key = {column["key"]: column for column in payload["results"]["columns"]}
+        self.assertTrue(column_by_key["purchase_order"].get("nowrap"))
+        self.assertTrue(column_by_key["required_date"].get("nowrap"))
+        self.assertEqual(len(payload["results"]["rows"]), 1)
+        row = payload["results"]["rows"][0]
+        self.assertEqual(row["cells"]["purchase_order"]["value"], "PUR-OVERDUE-001")
+        self.assertEqual(row["cells"]["purchase_order"]["actionKey"], "po_analysis:po:PUR-OVERDUE-001")
+        self.assertEqual(row["cells"]["supplier"]["actionKey"], "po_analysis:supplier:SUP-001")
+        self.assertEqual(row["cells"]["item_code"]["actionKey"], "po_analysis:item:ITEM-002")
+        self.assertEqual(payload["action_targets"]["po_analysis:po:PUR-OVERDUE-001"], {"kind": "page", "route": "procurement-console-po-follow-up", "route_parts": ["PUR-OVERDUE-001"]})
+        self.assertEqual(payload["action_targets"]["po_analysis:supplier:SUP-001"], {"kind": "page", "route": "procurement-console-supplier", "route_parts": ["SUP-001"]})
+        self.assertEqual(payload["action_targets"]["po_analysis:item:ITEM-002"], {"kind": "page", "route": "procurement-console-item", "route_parts": ["ITEM-002"]})
+        _assert_no_forbidden_mutation_actions(self, payload)
+        payload_text = str(payload).lower()
+        self.assertNotIn("query-report", payload_text)
+        self.assertNotIn("form", payload_text)
+
+    def test_purchase_order_analysis_empty_after_supplier_or_item_filter(self):
+        payload = report.get_procurement_console_report_context("purchase_order_analysis", {"supplier": "SUP-NOPE"})
+
+        self.assertEqual(payload["results"]["state"]["kind"], "empty")
+        self.assertEqual(payload["results"]["rows"], [])
+
+    def test_purchase_order_analysis_restricted_without_purchase_order_read(self):
+        _set_readable_doctypes("Supplier", "Item", "Material Request", "Supplier Quotation")
+
         payload = report.get_procurement_console_report_context("purchase_order_analysis")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
+
+    def test_purchase_order_analysis_unavailable_when_native_report_missing(self):
+        MISSING_NATIVE_REPORTS.add("Purchase Order Analysis")
+
+        payload = report.get_procurement_console_report_context("purchase_order_analysis")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["results"]["rows"], [])
+
+    def test_later_phase_report_returns_unavailable_not_ready(self):
+        payload = report.get_procurement_console_report_context("demand_to_order_coverage")
 
         self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
         self.assertEqual(payload["results"]["rows"], [])
