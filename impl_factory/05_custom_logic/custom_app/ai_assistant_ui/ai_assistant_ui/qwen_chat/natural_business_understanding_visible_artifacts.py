@@ -28,6 +28,8 @@ def _normalize_key(value: Any) -> str:
 	text = re.sub(r"\([^)]*\)", "", text)
 	text = re.sub(r"[^a-z0-9]+", "_", text)
 	text = re.sub(r"_+", "_", text).strip("_")
+	if text == "source_document" or text.endswith("_document"):
+		return "document"
 	if text == "customer":
 		return "customer"
 	if text == "supplier":

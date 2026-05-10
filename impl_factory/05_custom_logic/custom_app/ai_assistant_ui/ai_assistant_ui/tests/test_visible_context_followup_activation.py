@@ -151,6 +151,23 @@ Breakdown by invoice
 """
 
 
+def _cogs_source_detail_breakdown_text():
+	return """Here is the source-detail breakdown for Cost of Goods Sold - MMOB from Profit and Loss Statement.
+
+Executive diagnosis
+
+The approved GL Entry Account Detail rows reconcile to the Cost of Goods Sold - MMOB line.
+
+Breakdown by source document
+
+| Source document | Net line impact (MMK Million) | Share of line |
+| --- | ---: | ---: |
+| Delivery Note MAT-DN-2026-00339 | 13.5 MMK Million | 20.6% |
+| Delivery Note MAT-DN-2026-00336 | 11.3 MMK Million | 17.3% |
+| Delivery Note MAT-DN-2026-00337 | 11.2 MMK Million | 17.1% |
+"""
+
+
 def _ap_visible_top_5_text():
 	return """Accounts Payable Aging as of 2026-05-09
 
@@ -996,6 +1013,20 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertNotIn("Rank 2 is Sunflower Accessories Co.", answer)
 		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
 		self.assertEqual(arbitration.get("relation"), "detail_table")
+
+	def test_source_document_breakdown_table_supports_rank_followup(self):
+		session_doc = {"messages": [_assistant_message(_cogs_source_detail_breakdown_text())]}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Delivery Note MAT-DN-2026-00336", answer)
+		self.assertIn("Net Line Impact: 11.3 MMK Million", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "document")
 
 	def test_collection_recommendation_after_invoice_detail_uses_customer_context_not_invoice_rows(self):
 		session_doc = {

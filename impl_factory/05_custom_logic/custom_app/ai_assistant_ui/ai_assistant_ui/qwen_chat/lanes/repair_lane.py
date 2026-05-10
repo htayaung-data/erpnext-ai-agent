@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Tuple
 
 from ai_assistant_ui.qwen_chat.contracts import (
 	ExecutionPath,
+	_message_looks_like_self_contained_governed_business_query,
 	build_followup_resolution_contract,
 	build_governed_scope_decision_contract,
 	build_scope_decision_input,
@@ -40,6 +41,8 @@ def handle_repair_turn(
 	build_recovery_governed_query_message: Callable[[Dict[str, Any]], str],
 	handle_compiled_first_turn_result: Callable[..., Tuple[bool, Dict[str, Any]]],
 ) -> Tuple[bool, Dict[str, Any] | None]:
+	if _message_looks_like_self_contained_governed_business_query(message=message):
+		return False, None
 	semantic_repair_result = interpret_repair_intent_semantically(
 		request_id=request_id,
 		session_id=session_id,
