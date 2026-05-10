@@ -719,6 +719,12 @@ def _compiled_fresh_query_should_yield_to_visible_context(message: str) -> bool:
 	return _visible_context_followup_should_preempt_clarification(message)
 
 
+def _runtime_gate_should_yield_to_visible_context(message: str) -> bool:
+	"""Runtime and clarification gates must not bypass explicit visible-table references."""
+
+	return _visible_context_followup_should_preempt_clarification(message)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -5362,6 +5368,29 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		_save_session(session_doc, ignore_permissions=False)
 		return local_transform
+
+	if _runtime_gate_should_yield_to_visible_context(raw_msg):
+		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			current_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			user_message_already_appended=True,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+			additional_tool_payloads=[],
+		)
+		if visible_context_handled and visible_context_payload is not None:
+			return True, visible_context_payload
 
 	if entity_drilldown is None and not skip_artifact_boundary and not artifact_boundary_evaluated:
 		artifact_boundary_handled, artifact_boundary_payload = handle_artifact_boundary_turn(

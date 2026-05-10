@@ -8,6 +8,7 @@ from ai_assistant_ui.qwen_chat.service import (
 	_context_isolation_should_yield_to_prior_reasoning_action,
 	_fresh_query_should_skip_pre_frontdoor_reasoning,
 	_message_should_override_stale_context_as_fresh_query,
+	_runtime_gate_should_yield_to_visible_context,
 	_visible_context_followup_should_preempt_clarification,
 )
 
@@ -142,6 +143,21 @@ class ServiceReasoningActionArbitrationTests(unittest.TestCase):
 		)
 		self.assertFalse(
 			_compiled_fresh_query_should_yield_to_visible_context(
+				"Top 7 Products by Revenue Last Year"
+			)
+		)
+
+	def test_runtime_gate_yields_to_repeated_visible_table_reference(self):
+		self.assertTrue(
+			_runtime_gate_should_yield_to_visible_context("who is second in same table?")
+		)
+		self.assertTrue(
+			_runtime_gate_should_yield_to_visible_context(
+				"who is second invoice in the above context?"
+			)
+		)
+		self.assertFalse(
+			_runtime_gate_should_yield_to_visible_context(
 				"Top 7 Products by Revenue Last Year"
 			)
 		)
