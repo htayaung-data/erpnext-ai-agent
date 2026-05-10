@@ -956,6 +956,31 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 			)
 		)
 
+	def test_supplier_identity_reference_after_detail_context_stays_concise(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second supplier in the above context?",
+			requested_action="detail",
+			target_reference="selected_entity",
+			candidate_composite_family_ids=["accounts_payable_invoice_detail"],
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Sunflower Accessories Co.", answer)
+		self.assertIn("Current row facts", answer)
+		self.assertIn("Outstanding Amount: 228,576,500 MMK", answer)
+		self.assertNotIn("Visible row signal", answer)
+		self.assertNotIn("Why this stands out", answer)
+		self.assertNotIn("Deeper approved ERP detail", answer)
+		self.assertNotIn("ACC-PINV-2026-00053", answer)
+
 	def test_previous_table_reference_uses_parent_supplier_table_after_detail(self):
 		session_doc = {
 			"messages": [

@@ -824,6 +824,25 @@ def _should_attempt_selected_row_drilldown(
 	return _reasoning_type(reasoning_semantic_result) in {"continuation_detail"}
 
 
+def _visible_identity_lookup_requested(raw_message: str) -> bool:
+	text = " ".join(_clean_text(raw_message).lower().split())
+	if not text:
+		return False
+	if re.search(
+		r"\b(why|explain|interpret|insight|detail|details|breakdown|break\s+down|concerning|risky|risk|cause|caused|driver|recommend|should)\b",
+		text,
+	):
+		return False
+	return bool(
+		re.search(
+			r"\b(who|which|what)\s+(?:is|are|was|were)\b"
+			r"|\b(rank|row|position)\s*\d+\b"
+			r"|\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last)\b",
+			text,
+		)
+	)
+
+
 def _visible_followup_authority_intent(
 	*,
 	raw_message: str = "",
@@ -892,18 +911,27 @@ def _resolved_answer_text(
 		rank = _row_rank(row, 0)
 	rank_text = f"Rank {rank}" if rank > 0 else "The selected row"
 	entry_rank_text = f"rank {rank}" if rank > 0 else "selected row"
+	identity_lookup_requested = _visible_identity_lookup_requested(raw_message)
 	explain_row_signal = _should_explain_row_signal(
 		row,
 		nbu_trace_payload=nbu_trace_payload,
 		reasoning_semantic_result=reasoning_semantic_result,
 	)
-	if not explain_row_signal and _clean_text(resolution.get("target_reference")).lower() == "selected_entity":
+	if identity_lookup_requested:
+		explain_row_signal = False
+	if (
+		not identity_lookup_requested
+		and not explain_row_signal
+		and _clean_text(resolution.get("target_reference")).lower() == "selected_entity"
+	):
 		explain_row_signal = bool(_risk_signal_lines(row))
-	drilldown_requested = _should_attempt_selected_row_drilldown(
-		resolution,
-		nbu_trace_payload=nbu_trace_payload,
-		reasoning_semantic_result=reasoning_semantic_result,
-	)
+	drilldown_requested = False
+	if not identity_lookup_requested:
+		drilldown_requested = _should_attempt_selected_row_drilldown(
+			resolution,
+			nbu_trace_payload=nbu_trace_payload,
+			reasoning_semantic_result=reasoning_semantic_result,
+		)
 	if explain_row_signal or drilldown_requested:
 		source_detail_answer = _source_detail_answer_for_visible_row(
 			session_doc=session_doc,
