@@ -4,6 +4,7 @@ import unittest
 from ai_assistant_ui.qwen_chat.service import (
 	_artifact_boundary_should_yield_to_visible_context,
 	build_scope_decision_input,
+	_compiled_fresh_query_should_yield_to_visible_context,
 	_context_isolation_should_yield_to_prior_reasoning_action,
 	_fresh_query_should_skip_pre_frontdoor_reasoning,
 	_message_should_override_stale_context_as_fresh_query,
@@ -125,6 +126,23 @@ class ServiceReasoningActionArbitrationTests(unittest.TestCase):
 				message="Top 7 Products by Revenue Last Year",
 				entity_drilldown=None,
 				skip_artifact_boundary=False,
+			)
+		)
+
+	def test_compiled_fresh_query_yields_to_repeated_visible_table_reference(self):
+		self.assertTrue(
+			_compiled_fresh_query_should_yield_to_visible_context(
+				"who is second in same table?"
+			)
+		)
+		self.assertTrue(
+			_compiled_fresh_query_should_yield_to_visible_context(
+				"who is second in the above table?"
+			)
+		)
+		self.assertFalse(
+			_compiled_fresh_query_should_yield_to_visible_context(
+				"Top 7 Products by Revenue Last Year"
 			)
 		)
 

@@ -713,6 +713,12 @@ def _artifact_boundary_should_yield_to_visible_context(
 	)
 
 
+def _compiled_fresh_query_should_yield_to_visible_context(message: str) -> bool:
+	"""Compiled fresh-query execution must not steal explicit visible-table references."""
+
+	return _visible_context_followup_should_preempt_clarification(message)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -4349,6 +4355,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	context_anchored_message = bool(latest_grounded_turn_available and _message_has_grounded_context_anchor(msg))
 	compiled_fresh_query_breakout = bool(
 		bool(compiled_rollout.get("enabled"))
+		and not _compiled_fresh_query_should_yield_to_visible_context(raw_msg)
 		and not context_anchored_message
 		and not pending_clarification_response_preempts_runtime
 		and entity_drilldown is None
