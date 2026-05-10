@@ -995,6 +995,46 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
 		self.assertEqual(arbitration.get("relation"), "same_table")
 
+	def test_same_table_relation_beats_conflicting_business_object_hint(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second supplier in same table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("ACC-PINV-2026-00053", answer)
+		self.assertNotIn("Rank 2 is Sunflower Accessories Co.", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("relation"), "same_table")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "invoice")
+
+	def test_previous_table_relation_beats_conflicting_detail_object_hint(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ap_visible_top_5_text()),
+				_assistant_message(_supplier_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second invoice in previous table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Sunflower Accessories Co.", answer)
+		self.assertNotIn("ACC-PINV-2026-00053", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("relation"), "previous_table")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "supplier")
+
 	def test_parent_supplier_relation_uses_parent_business_frame(self):
 		session_doc = {
 			"messages": [

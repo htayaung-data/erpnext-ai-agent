@@ -514,10 +514,7 @@ def resolve_visible_context_frame_arbitration(
 		candidates = [frame for frame in previous_frames if _frame_matches_message_object(raw_message, frame)]
 		selected_frame = (candidates or previous_frames or frames)[0]
 	elif relation == "same_table":
-		if matching_business_frames and matching_business_frames[0].get("artifact_id") != frames[0].get("artifact_id"):
-			selected_frame = matching_business_frames[0]
-		else:
-			selected_frame = frames[0]
+		selected_frame = frames[0]
 	elif relation == "detail_table":
 		detail_frames = [frame for frame in frames if _is_detail_frame(frame)]
 		candidates = [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
