@@ -623,8 +623,10 @@ async function checkDetailActionStyling(page, selector, label) {
       paddingLeft: Number.parseFloat(style.paddingLeft) || 0,
       height: rect.height,
       width: rect.width,
+      className: node.className,
     };
   });
+  assert(!/erpw-child-card/.test(toolbar.className || ''), `${label}: compact detail toolbar still uses the generic card container class`, { toolbar, actions });
   assert(toolbar.borderTopWidth === 0, `${label}: compact detail toolbar still sits in a bordered action card`, { toolbar, actions });
   assert(toolbar.boxShadow === 'none', `${label}: compact detail toolbar still carries heavy card elevation`, { toolbar, actions });
   assert(toolbar.paddingTop <= 2 && toolbar.paddingLeft <= 2, `${label}: compact detail toolbar has unnecessary container padding`, { toolbar, actions });
@@ -958,6 +960,12 @@ async function checkProcurementReportsIndex(page) {
   assert(cardGrid.rects.length === 4, "Reports Index card grid did not render four cards", cardGrid);
   assert(cardGrid.rects.filter((rect) => Math.abs(rect.top - cardGrid.rects[0].top) <= 4).length >= 2, "Reports Index cards are still vertically stacked at desktop width", cardGrid);
   assert(Math.min(...cardGrid.rects.map((rect) => rect.width)) >= 220, "Reports Index cards are too narrow for premium desktop layout", cardGrid);
+  const cardDensity = await reportCards.evaluateAll((cards) => cards.map((card) => ({
+    text: (card.textContent || '').replace(/\s+/g, ' ').trim(),
+    height: Math.round(card.getBoundingClientRect().height),
+  })));
+  assert(cardDensity.every((card) => card.height <= 170), "Reports Index cards are too tall or text-heavy for the compact catalog", { cardDensity });
+  assert(cardDensity.every((card) => !/not exposed here|execution remain outside|will not create|stay disabled/i.test(card.text)), "Reports Index card copy should be concise, not documentation-style governance text", { cardDensity });
   const readyCards = ["Quote Comparison", "Purchase Order Analysis"];
   for (const label of readyCards) {
     const card = page.locator(".erpw-procurement-report-card", { hasText: label }).first();

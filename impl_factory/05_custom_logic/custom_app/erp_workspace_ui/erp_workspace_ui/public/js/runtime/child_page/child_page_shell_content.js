@@ -140,7 +140,7 @@
     const layout = actionLayout && typeof actionLayout === 'object' ? actionLayout : {};
     if (layout.mode === 'toolbar') {
       return `
-        <section class="erpw-child-card erpw-child-actions erpw-child-actions-toolbar" aria-label="Detail actions">
+        <section class="erpw-child-actions erpw-child-actions-toolbar" aria-label="Detail actions">
           <div class="erpw-child-toolbar-actions" data-count="${actions.length}">
             ${actions.map((action) => renderToolbarActionButton(action, actionIconMarkup)).join('')}
           </div>
