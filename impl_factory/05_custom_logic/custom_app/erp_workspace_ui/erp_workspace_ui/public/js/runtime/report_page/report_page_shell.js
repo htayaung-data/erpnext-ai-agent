@@ -1013,7 +1013,7 @@
         gap: 10px;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact.layout-five-up {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
         justify-content: stretch;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-metric.analytics-compact {
@@ -1038,7 +1038,7 @@
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact.layout-five-up {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
         }
       }
       @media (max-width: 720px) {
@@ -1058,7 +1058,7 @@
           grid-template-columns: minmax(0, 1fr);
         }
         .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact.layout-five-up {
-          grid-template-columns: minmax(0, 1fr);
+          grid-template-columns: minmax(0, 1fr) !important;
         }
         .erpw-report-results-head {
           display: grid;
