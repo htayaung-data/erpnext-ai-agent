@@ -31,6 +31,11 @@ _DELAY_REASON_PATTERN = re.compile(
 	r"\bdelay(?:ed)?\b.{0,80}\b(?:because|due\s+to|reason)\b",
 	re.IGNORECASE,
 )
+_CAUSAL_CHANGE_PATTERN = re.compile(
+	r"\b(?:caus(?:e|ed|ing)|root\s+cause|driver|drove)\b|"
+	r"\b(?:what|why|how)\b.{0,80}\b(?:increase|increased|decrease|decreased|change|changed|deteriorat(?:e|ed)|improv(?:e|ed))\b",
+	re.IGNORECASE,
+)
 
 
 def looks_like_predictive_guarantee_claim(message: str) -> bool:
@@ -51,3 +56,10 @@ def looks_like_unsupported_operational_inference_claim(message: str) -> bool:
 	if _SUBJECTIVE_OPERATIONAL_PATTERN.search(text) and _SPECULATIVE_CAUSAL_PATTERN.search(text):
 		return True
 	return False
+
+
+def looks_like_causal_change_claim(message: str) -> bool:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return False
+	return bool(_CAUSAL_CHANGE_PATTERN.search(text))

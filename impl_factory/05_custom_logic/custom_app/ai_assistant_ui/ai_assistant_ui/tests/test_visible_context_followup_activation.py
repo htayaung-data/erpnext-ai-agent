@@ -997,6 +997,49 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
 		self.assertEqual(arbitration.get("relation"), "detail_table")
 
+	def test_collection_recommendation_after_invoice_detail_uses_customer_context_not_invoice_rows(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ar_visible_top_10_text()),
+				_assistant_message(_ar_comparison_text()),
+				_assistant_message(_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who should we collect from first?",
+			authority_class="recommendation",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_boundary")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("35th Street Mobile Wholesale", answer)
+		self.assertNotIn("ACC-SINV-2026-00699", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("selected_evidence_scope"), "visible_rendered_table")
+		self.assertEqual(arbitration.get("selected_visible_row_count"), 3)
+
+	def test_customer_field_question_after_invoice_detail_uses_customer_context_not_invoice_rows(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ar_visible_top_10_text()),
+				_assistant_message(_ar_comparison_text()),
+				_assistant_message(_invoice_breakdown_answer_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="All above customers are from Yangon Region?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_boundary")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Visible evidence covers: Party", answer)
+		self.assertIn("Fields needed: Customer, Territory", answer)
+		self.assertNotIn("Invoice, Posting Date, Due Date", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("selected_visible_row_count"), 3)
+
 	def test_latest_plain_product_table_has_context_authority_over_prior_comparison_table(self):
 		session_doc = {
 			"messages": [
@@ -1466,6 +1509,19 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("can't attribute cause from this single displayed result", answer)
 		self.assertIn("trend, payment-behavior, or transaction-history", answer)
+
+	def test_causal_change_language_returns_boundary_even_without_nbu_authority_class(self):
+		session_doc = {"messages": [_assistant_message(_ar_visible_top_10_text())]}
+		handled, payload, messages, _payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="what caused the first customer's risk to increase?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_boundary")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("can't attribute cause from this single displayed result", answer)
+		self.assertIn("Capital Telecom (NPT)", answer)
+		self.assertNotIn("Deeper approved ERP detail", answer)
 
 	def test_answers_second_supplier_from_plain_visible_name_list(self):
 		session_doc = {"messages": [_assistant_message(_supplier_list_text())]}

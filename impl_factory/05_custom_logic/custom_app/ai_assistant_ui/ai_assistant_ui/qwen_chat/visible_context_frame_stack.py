@@ -10,6 +10,7 @@ from .natural_business_understanding_context_resolution import (
 )
 from .natural_business_understanding_contracts import CONTRACT_VERSION
 from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
+from .metadata import ontology_detect_concepts
 
 
 VISIBLE_CONTEXT_FRAME_STACK_VERSION = "1.0"
@@ -57,6 +58,19 @@ def _normalize(value: Any) -> str:
 
 def _tokens(value: Any) -> set[str]:
 	return {token for token in _normalize(value).split() if token}
+
+
+def _terms(value: Any) -> set[str]:
+	normalized = _normalize(value)
+	if not normalized:
+		return set()
+	token_list = [token for token in normalized.split() if token]
+	terms = set(token_list)
+	for size in range(2, min(4, len(token_list)) + 1):
+		for index in range(0, len(token_list) - size + 1):
+			terms.add(" ".join(token_list[index : index + size]))
+	terms.add(normalized)
+	return terms
 
 
 def _plural(value: str) -> str:
@@ -213,6 +227,11 @@ def _business_object_type(artifact: Dict[str, Any], rows: List[Dict[str, Any]]) 
 		value = _clean_text(entity.get("entity_type"))
 		if value:
 			return value.lower()
+	for row in rows[:5]:
+		clean_row = _clean_dict(row)
+		for key in ("customer", "supplier", "party", "item", "product", "warehouse", "invoice"):
+			if _clean_text(clean_row.get(key)):
+				return key
 	return ""
 
 
@@ -260,12 +279,18 @@ def _frame_rows(rows: List[Dict[str, Any]], artifact: Dict[str, Any]) -> List[Di
 	for index, row in enumerate(rows):
 		clean_row = _clean_dict(row)
 		entity = nbu_row_entity_payload(clean_row, artifact, {})
+		object_type = _clean_text(entity.get("entity_type")).lower()
+		if not object_type:
+			for key in ("customer", "supplier", "party", "item", "product", "warehouse", "invoice"):
+				if _clean_text(clean_row.get(key)):
+					object_type = key
+					break
 		frame_rows.append(
 			{
 				"row_index": index,
 				"rank": _row_rank(clean_row, index),
 				"label": _clean_text(entity.get("entity_label") or entity.get("entity_key")),
-				"business_object_type": _clean_text(entity.get("entity_type")).lower(),
+				"business_object_type": object_type,
 				"values": clean_row,
 			}
 		)
@@ -371,17 +396,61 @@ def _frame_object_aliases(frame: Dict[str, Any]) -> set[str]:
 		aliases.add(normalized)
 		aliases.add(_plural(normalized))
 		aliases.update(token for token in normalized.split() if token)
+	aliases.update(_frame_contextual_object_aliases(frame, aliases))
 	return {alias for alias in aliases if alias}
 
 
-def _frame_matches_message_object(raw_message: str, frame: Dict[str, Any]) -> bool:
-	tokens = _tokens(raw_message)
-	parts = set(tokens)
+def _frame_contract_terms(frame: Dict[str, Any]) -> set[str]:
+	terms: set[str] = set()
+	for key in ("family_id", "capability_id", "artifact_title", "row_source"):
+		terms.update(_terms(frame.get(key)))
+	return terms
+
+
+def _frame_contextual_object_aliases(frame: Dict[str, Any], base_aliases: set[str]) -> set[str]:
+	"""Infer object labels from governed frame context, not from user wording.
+
+	Some rendered consultant tables intentionally show a neutral Party column.
+	The table frame still carries family/capability/title context, so the
+	resolver can expose customer/supplier aliases without hardcoding a single
+	report path.
+	"""
+
+	contract_terms = _frame_contract_terms(frame)
+	if not {"party", "parties"}.intersection(base_aliases):
+		return set()
+	if {"receivable", "accounts receivable"}.intersection(contract_terms):
+		return {"customer", "customers"}
+	if {"payable", "accounts payable"}.intersection(contract_terms):
+		return {"supplier", "suppliers"}
+	return set()
+
+
+def _message_parts(raw_message: str) -> set[str]:
+	parts = set(_tokens(raw_message))
 	token_list = [token for token in _normalize(raw_message).split() if token]
 	for size in range(2, min(4, len(token_list)) + 1):
 		for index in range(0, len(token_list) - size + 1):
 			parts.add(" ".join(token_list[index : index + size]))
-	return bool(parts.intersection(_frame_object_aliases(frame)))
+	return parts
+
+
+def _frame_matches_message_object(raw_message: str, frame: Dict[str, Any]) -> bool:
+	return bool(_message_parts(raw_message).intersection(_frame_object_aliases(frame)))
+
+
+def _semantic_concept_terms(raw_message: str) -> set[str]:
+	terms: set[str] = set()
+	for concept in ontology_detect_concepts(raw_message):
+		terms.update(_terms(concept))
+	return terms
+
+
+def _frame_matches_semantic_concepts(raw_message: str, frame: Dict[str, Any]) -> bool:
+	concept_terms = _semantic_concept_terms(raw_message)
+	if not concept_terms:
+		return False
+	return bool(concept_terms.intersection(_frame_contract_terms(frame)))
 
 
 def _is_detail_frame(frame: Dict[str, Any]) -> bool:
@@ -416,6 +485,14 @@ def resolve_visible_context_frame_arbitration(
 		return {"status": "not_evaluated", "reason": "No table frames are available."}
 	tokens = _tokens(raw_message)
 	matching_object_frames = [frame for frame in frames if _frame_matches_message_object(raw_message, frame)]
+	semantic_context_frames = [
+		frame
+		for frame in frames
+		if not _is_detail_frame(frame)
+		and _frame_matches_semantic_concepts(raw_message, frame)
+		and frame not in matching_object_frames
+	]
+	matching_business_frames = matching_object_frames or semantic_context_frames
 	relation = "current_table"
 	if tokens.intersection(FRAME_RELATION_PARENT_TERMS):
 		relation = "parent_table"
@@ -428,7 +505,7 @@ def resolve_visible_context_frame_arbitration(
 
 	selected_frame: Dict[str, Any] = {}
 	if relation == "parent_table":
-		candidates = matching_object_frames or [frame for frame in frames[1:] if not _is_detail_frame(frame)]
+		candidates = matching_business_frames or [frame for frame in frames[1:] if not _is_detail_frame(frame)]
 		if not candidates:
 			candidates = frames[1:]
 		selected_frame = candidates[0] if candidates else {}
@@ -437,18 +514,18 @@ def resolve_visible_context_frame_arbitration(
 		candidates = [frame for frame in previous_frames if _frame_matches_message_object(raw_message, frame)]
 		selected_frame = (candidates or previous_frames or frames)[0]
 	elif relation == "same_table":
-		if matching_object_frames and matching_object_frames[0].get("artifact_id") != frames[0].get("artifact_id"):
-			selected_frame = matching_object_frames[0]
+		if matching_business_frames and matching_business_frames[0].get("artifact_id") != frames[0].get("artifact_id"):
+			selected_frame = matching_business_frames[0]
 		else:
 			selected_frame = frames[0]
 	elif relation == "detail_table":
 		detail_frames = [frame for frame in frames if _is_detail_frame(frame)]
 		candidates = [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
-		selected_frame = (candidates or detail_frames or matching_object_frames or frames)[0]
+		selected_frame = (candidates or detail_frames or matching_business_frames or frames)[0]
 	else:
 		current_frame = frames[0]
-		if _is_detail_frame(current_frame) and matching_object_frames:
-			selected_frame = matching_object_frames[0]
+		if _is_detail_frame(current_frame) and matching_business_frames:
+			selected_frame = matching_business_frames[0]
 		else:
 			selected_frame = current_frame
 

@@ -9,7 +9,10 @@ from .entity_detail_request_support import (
 	entity_detail_capability_id,
 	resolve_entity_detail_request_interpretation,
 )
-from .business_language_guards import looks_like_predictive_guarantee_claim
+from .business_language_guards import (
+	looks_like_causal_change_claim,
+	looks_like_predictive_guarantee_claim,
+)
 from .metadata import ontology_detect_concepts
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
 from .natural_business_understanding_context_resolution import (
@@ -829,6 +832,8 @@ def _visible_followup_authority_intent(
 ) -> str:
 	if looks_like_predictive_guarantee_claim(raw_message):
 		return "prediction_boundary"
+	if looks_like_causal_change_claim(raw_message):
+		return "causal_boundary"
 	authority_class = _nbu_authority_class(nbu_trace_payload)
 	if authority_class == "prediction":
 		return "prediction_boundary"
@@ -1103,10 +1108,13 @@ def try_activate_visible_context_followup_response(
 		and _clean_text(resolution.get("target_reference")).lower() == "current_artifact"
 		and artifact_level_visible_context_requested(raw_message)
 	):
-		artifacts = _context_artifacts(session_doc, current_artifact=_clean_dict(current_artifact), limit=1)
+		artifacts = _context_artifacts(session_doc, current_artifact=_clean_dict(current_artifact), limit=8)
+		frame_arbitration = _clean_dict(resolution.get("frame_arbitration"))
+		selected_artifact_id = _clean_text(resolution.get("resolved_artifact_id")) or _clean_text(frame_arbitration.get("selected_artifact_id"))
+		selected_artifact = _artifact_by_identity(artifacts, selected_artifact_id)
 		answer_text = _artifact_field_boundary_answer(
 			raw_message=raw_message,
-			artifact_payload=artifacts[0] if artifacts else _clean_dict(current_artifact),
+			artifact_payload=selected_artifact or (artifacts[0] if artifacts else _clean_dict(current_artifact)),
 		)
 		if not answer_text:
 			return False, None
