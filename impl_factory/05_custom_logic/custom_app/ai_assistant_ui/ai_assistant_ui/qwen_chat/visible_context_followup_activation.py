@@ -77,6 +77,40 @@ VISIBLE_CONTEXT_TERMS = {
 }
 
 DEICTIC_ENTITY_TERMS = {"that", "this", "it", "same", "selected"}
+ARTIFACT_SCOPE_TERMS = {
+	"analysis",
+	"aging",
+	"ap",
+	"ar",
+	"balance",
+	"cash",
+	"capital",
+	"context",
+	"flow",
+	"payable",
+	"payables",
+	"profit",
+	"receivable",
+	"receivables",
+	"report",
+	"statement",
+	"summary",
+	"table",
+	"working",
+}
+ORDINAL_REFERENCE_TERMS = {
+	"first",
+	"second",
+	"third",
+	"fourth",
+	"fifth",
+	"sixth",
+	"seventh",
+	"eighth",
+	"ninth",
+	"tenth",
+	"last",
+}
 
 MONEY_FIELD_HINTS = (
 	"amount",
@@ -275,12 +309,19 @@ def _selected_focus_allowed_for_message(raw_message: str) -> bool:
 	return any(term in tokens for term in DEICTIC_ENTITY_TERMS)
 
 
+def _artifact_scope_requested(raw_message: str) -> bool:
+	tokens = _tokens(raw_message)
+	return bool(tokens.intersection(ARTIFACT_SCOPE_TERMS))
+
+
 def _selected_focus_has_continuation_authority(raw_message: str, target_reference: str) -> bool:
 	if not _selected_focus_allowed_for_message(raw_message):
 		return False
 	target = _clean_text(target_reference).lower()
 	if target == "selected_entity":
 		return True
+	if target == "current_artifact" and _artifact_scope_requested(raw_message):
+		return False
 	return target == "current_artifact"
 
 
@@ -503,6 +544,8 @@ def _current_entity_detail_evidence_followup_requested(raw_message: str, current
 	artifact = _clean_dict(current_artifact)
 	if _clean_text(artifact.get("family_id")).lower() != "entity_detail":
 		return False
+	if _visible_ordinal_or_rank_lookup_requested(raw_message):
+		return False
 	dimensions = _clean_dict(artifact.get("dimensions"))
 	entity_type = _clean_text(dimensions.get("entity_type")).lower()
 	if not entity_type:
@@ -542,6 +585,17 @@ def _current_entity_detail_evidence_followup_requested(raw_message: str, current
 		or entity_question_type
 		or requested_metrics
 		or requested_dimensions
+	)
+
+
+def _visible_ordinal_or_rank_lookup_requested(raw_message: str) -> bool:
+	tokens = _tokens(raw_message)
+	if tokens.intersection(ORDINAL_REFERENCE_TERMS):
+		return True
+	text = " ".join(_clean_text(raw_message).lower().split())
+	return bool(
+		re.search(r"\b(?:rank|row|position|number|no|#)\s*\d{1,2}\b", text)
+		or re.search(r"\b\d{1,2}(?:st|nd|rd|th)\b", text)
 	)
 
 

@@ -78,6 +78,7 @@ class VisibleConversationHarness:
 		self,
 		raw_message: str,
 		*,
+		current_artifact: Dict[str, Any] | None = None,
 		authority_class: str = "",
 		requested_action: str = "",
 		target_reference: str = "",
@@ -112,7 +113,7 @@ class VisibleConversationHarness:
 			user_id="user@example.com",
 			site_name="erpai_prj1",
 			raw_message=raw_message,
-			current_artifact={},
+			current_artifact=current_artifact or {},
 			reasoning_semantic_result=reasoning_semantic_result,
 			append_message=append_message,
 			append_tool_payload=append_payload,
@@ -213,6 +214,37 @@ ACC-PINV-2026-00306	2026-03-07	2026-04-06	Overdue	44,730,000	40.7 MMK Million	17
 ACC-PINV-2026-00053	2026-01-13	2026-02-15	Overdue	37,000,000	33.5 MMK Million	14.7%
 ACC-PINV-2026-00058	2026-01-31	2026-02-15	Overdue	28,150,000	22.2 MMK Million	9.7%
 """
+
+
+def _supplier_entity_detail_text() -> str:
+	return """Sunflower Accessories Co. Details
+
+Profile
+
+Field	Value
+Name	Sunflower Accessories Co.
+Code	Sunflower Accessories Co.
+Group	Accessories Supplier
+
+Recent Purchase Invoices
+
+Invoice	Posting Date	Amount (MMK)	Outstanding (MMK)	Status
+ACC-PINV-2026-00339	2026-05-19	6,430,000	6,430,000	Unpaid
+ACC-PINV-2026-00340	2026-05-05	6,050,000	2,050,000	Partly Paid
+ACC-PINV-2026-00336	2026-04-15	10,420,000	7,420,000	Partly Paid
+"""
+
+
+def _supplier_entity_detail_artifact() -> Dict[str, Any]:
+	return {
+		"type": "qwen_entity_detail_artifact",
+		"family_id": "entity_detail",
+		"dimensions": {
+			"entity_type": "supplier",
+			"entity_key": "Sunflower Accessories Co.",
+			"entity_label": "Sunflower Accessories Co.",
+		},
+	}
 
 
 def _product_revenue_text() -> str:
@@ -339,6 +371,23 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 			relation="detail_table",
 		)
 
+	def test_entity_detail_current_artifact_does_not_block_visible_invoice_rank_lookup(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_supplier_entity_detail_text())
+
+		detail_invoice = chat.ask(
+			"who is second invoice in the above context?",
+			current_artifact=_supplier_entity_detail_artifact(),
+		)
+
+		_assert_visible_answer(
+			self,
+			detail_invoice,
+			answer_contains="ACC-PINV-2026-00340",
+			business_object_type="invoice",
+			relation="detail_table",
+		)
+
 	def test_cross_context_switching_keeps_previous_and_typed_tables_distinct(self):
 		chat = VisibleConversationHarness()
 		chat.assistant(_ar_top_10_text())
@@ -412,6 +461,27 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 		self.assertEqual(filter_contract["missing_visible_field_keys"], ["customer", "territory"])
 		self.assertEqual(filter_contract["unsupported_filter_keys"], ["territory"])
 		self.assertFalse(filter_check.execution_path.get("requires_runtime"))
+
+	def test_artifact_level_reasoning_after_old_selection_does_not_use_stale_row(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_cogs_source_detail_text())
+		selected_cogs_row = chat.ask("who is second in the above table?")
+		_assert_visible_answer(
+			self,
+			selected_cogs_row,
+			answer_contains="Delivery Note MAT-DN-2026-00336",
+			business_object_type="document",
+		)
+		chat.assistant(_ar_top_10_text())
+		chat.assistant(_ar_overdue_comparison_text())
+
+		explanation = chat.ask(
+			"Explain the overdue risk in this accounts receivable summary.",
+			reasoning_type="explanation",
+		)
+
+		self.assertFalse(explanation.handled)
+		self.assertNotIn("Delivery Note MAT-DN-2026-00336", explanation.answer)
 
 	def test_generic_more_insight_anchors_to_working_capital_metadata(self):
 		with patch(
