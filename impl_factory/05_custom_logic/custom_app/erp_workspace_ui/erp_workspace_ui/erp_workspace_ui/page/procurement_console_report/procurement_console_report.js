@@ -27,6 +27,15 @@
       '.page-head[data-erpw-procurement-managed-chrome="1"] .indicator-pill,',
       '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > .icon,',
       '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > svg { display: none !important; }',
+    ].join("\n");
+    document.head.appendChild(style);
+  }
+
+  function ensureProcurementReportCatalogStyle() {
+    if (document.getElementById("erpw-procurement-report-catalog-style")) return;
+    const style = document.createElement("style");
+    style.id = "erpw-procurement-report-catalog-style";
+    style.textContent = [
       '.erpw-procurement-report-catalog { display:grid; gap:16px; }',
       '.erpw-procurement-report-catalog .erpw-report-section-head { max-width:760px; }',
       '.erpw-procurement-report-catalog-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; align-items:stretch; }',
@@ -332,6 +341,7 @@
   }
 
   function renderReportCatalog(catalog) {
+    ensureProcurementReportCatalogStyle();
     const sections = Array.isArray(catalog && catalog.sections) ? catalog.sections : [];
     const entries = [];
     sections.forEach((section) => {
