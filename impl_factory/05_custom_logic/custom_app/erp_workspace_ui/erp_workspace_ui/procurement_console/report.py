@@ -254,7 +254,7 @@ def _po_analysis_payload(
 			"subtitle": "Review ordered value, receipt posture, billing posture, suppliers, items, and status for buyer follow-up.",
 		},
 		"controls": _po_analysis_controls(filters),
-		"metrics": {"appearance": "analytics_compact", "items": metrics},
+		"metrics": {"appearance": "analytics_compact", "layout": "five_up", "items": metrics},
 		"results": {
 			"title": "Purchase order lines",
 			"subtitle": "Read-only purchase order analysis with productized drilldowns for buyer review.",
@@ -351,13 +351,18 @@ def _filter_po_analysis_rows(rows: list[dict[str, object]], filters: dict[str, o
 	return filtered
 
 
+def _po_visibility_fields() -> list[str]:
+	fields = ["name", "status", "supplier", "supplier_name", "per_received", "per_billed", "grand_total", "currency"]
+	if common.has_field("Purchase Order", "workflow_state"):
+		fields.append("workflow_state")
+	return list(dict.fromkeys(fields))
+
+
 def _permission_visible_po_analysis_rows(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, dict[str, object]]]:
 	po_names = sorted({cstr(row.get("purchase_order")).strip() for row in rows if cstr(row.get("purchase_order")).strip()})
 	if not po_names:
 		return [], {}
-	fields = ["name", "status", "supplier", "supplier_name", "per_received", "per_billed", "grand_total", "currency"]
-	if common.has_field("Purchase Order", "workflow_state"):
-		fields.append("workflow_state")
+	fields = _po_visibility_fields()
 	visible = common.get_list(
 		"Purchase Order",
 		fields=fields,

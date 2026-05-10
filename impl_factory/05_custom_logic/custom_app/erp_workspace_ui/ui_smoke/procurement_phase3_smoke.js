@@ -1028,6 +1028,24 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
   assert(tableCheck.cells.every((cell) => cell.whiteSpace === "nowrap"), "PO Analysis nowrap cells are allowed to wrap", tableCheck);
   assert(tableCheck.actionKeys.every((key) => /^po_analysis:(po|supplier|item):/.test(key)), "PO Analysis has non-productized report action keys", tableCheck);
 
+  const metricLayout = await page.locator(".erpw-report-metrics").first().evaluate((node) => {
+    const cards = Array.from(node.querySelectorAll(".erpw-report-metric"));
+    const rows = new Map();
+    cards.forEach((card) => {
+      const top = Math.round(card.getBoundingClientRect().top);
+      rows.set(top, (rows.get(top) || 0) + 1);
+    });
+    return {
+      className: node.className,
+      rowCounts: Array.from(rows.values()),
+      cardCount: cards.length,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(metricLayout.cardCount === 5, "PO Analysis should render five KPI metrics", metricLayout);
+  assert(metricLayout.className.includes("layout-five-up"), "PO Analysis metrics should use the balanced five-up layout", metricLayout);
+  assert(!metricLayout.rowCounts.includes(1), "PO Analysis KPI metrics create a lonely single-card row", metricLayout);
+  assert(metricLayout.overflow <= 2, "PO Analysis KPI metrics introduced horizontal overflow", metricLayout);
   const screenshot = await captureSmokeScreenshot(page, "procurement-purchase-order-analysis");
   if (options.exerciseControls) {
     const urlBefore = page.url();

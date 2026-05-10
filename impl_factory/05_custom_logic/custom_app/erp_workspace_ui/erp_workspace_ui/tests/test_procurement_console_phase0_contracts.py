@@ -1849,10 +1849,14 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         )
 
         self.assertEqual(payload["page"], {"title": "Purchase Order Analysis", "key": "purchase_order_analysis"})
+        self.assertEqual(payload["metrics"].get("layout"), "five_up")
         self.assertEqual(payload["results"]["state"]["kind"], "ready")
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["report_name"], "Purchase Order Analysis")
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["name"], ["PUR-OVERDUE-001"])
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["status"], ["To Receive and Bill"])
+        po_get_list = [call for call in CAPTURED_GET_LIST_CALLS if call["doctype"] == "Purchase Order"][-1]
+        self.assertEqual(po_get_list["fields"].count("workflow_state"), 1)
+        self.assertEqual(len(po_get_list["fields"]), len(set(po_get_list["fields"])))
         self.assertIsNone(_field_by_key(payload, "company"))
         self.assertEqual(_field_by_key(payload, "purchase_order")["linkDoctype"], "Purchase Order")
         self.assertEqual(_field_by_key(payload, "supplier")["linkDoctype"], "Supplier")

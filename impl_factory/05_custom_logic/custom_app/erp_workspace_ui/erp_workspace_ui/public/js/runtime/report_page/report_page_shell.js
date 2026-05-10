@@ -13,6 +13,13 @@
     return Array.isArray(items) ? items.filter(Boolean) : [];
   }
 
+  function cssToken(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
   function isProcurementReport(config) {
     return String(config && (config.workspace || (config.page && config.page.workspace)) || '').toLowerCase() === 'procurement';
   }
@@ -1005,6 +1012,10 @@
         justify-content: start;
         gap: 10px;
       }
+      .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact.layout-five-up {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        justify-content: stretch;
+      }
       .erpw-report-shell.is-procurement-report .erpw-report-metric.analytics-compact {
         min-height: 84px;
         padding: 12px 13px;
@@ -1026,6 +1037,9 @@
         .erpw-report-insight-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+        .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact.layout-five-up {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
       }
       @media (max-width: 720px) {
         .erpw-report-shell {
@@ -1041,6 +1055,9 @@
         .erpw-report-control-grid,
         .erpw-report-metrics,
         .erpw-report-insight-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-report-shell.is-procurement-report .erpw-report-metrics.analytics-compact.layout-five-up {
           grid-template-columns: minmax(0, 1fr);
         }
         .erpw-report-results-head {
@@ -1309,8 +1326,10 @@
     if (!items.length) return "";
     const appearance = config.appearance || '';
     const isAnalyticsCompact = appearance === 'analytics_compact';
+    const layout = cssToken(config.layout || '');
+    const layoutClass = layout ? ' layout-' + layout : '';
     return [
-      '<section class="erpw-report-metrics' + (isAnalyticsCompact ? ' analytics-compact' : '') + '">',
+      '<section class="erpw-report-metrics' + (isAnalyticsCompact ? ' analytics-compact' : '') + layoutClass + '">',
         items.map((item) => [
           '<article class="erpw-report-card erpw-report-metric tone-' + escapeHtml(item.tone || 'slate') + (isAnalyticsCompact ? ' analytics-compact' : '') + '">',
             '<div class="erpw-report-metric-label">' + escapeHtml(item.label || '') + '</div>',
