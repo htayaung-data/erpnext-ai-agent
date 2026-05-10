@@ -4732,6 +4732,28 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			if str(mode or "").strip()
 		],
 	)
+	if _visible_context_followup_should_preempt_clarification(raw_msg):
+		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			current_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			user_message_already_appended=False,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+			additional_tool_payloads=[*nbu_shadow_tool_payloads, *sequence_cleanup_tool_payloads],
+		)
+		if visible_context_handled and visible_context_payload is not None:
+			return True, visible_context_payload
 	if (
 		bool(reasoning_rollout.get("enabled"))
 		and latest_grounded_turn_available

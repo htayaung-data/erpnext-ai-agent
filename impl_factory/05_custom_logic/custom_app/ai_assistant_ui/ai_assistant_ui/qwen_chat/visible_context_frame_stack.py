@@ -36,6 +36,19 @@ DOCUMENT_OBJECT_TYPES = {
 	"stock_entry",
 	"payment_entry",
 }
+REQUEST_OBJECT_ALIAS_GROUPS: List[Tuple[str, set[str]]] = [
+	("purchase_invoice", {"purchase invoice", "purchase invoices", "pinv", "purchase bill", "purchase bills"}),
+	("sales_invoice", {"sales invoice", "sales invoices", "sinv"}),
+	("invoice", {"invoice", "invoices", "bill", "bills"}),
+	("delivery_note", {"delivery note", "delivery notes", "dn"}),
+	("stock_entry", {"stock entry", "stock entries"}),
+	("payment_entry", {"payment entry", "payment entries", "payment", "payments"}),
+	("document", {"document", "documents", "source document", "source documents", "voucher", "vouchers"}),
+	("supplier", {"supplier", "suppliers", "vendor", "vendors"}),
+	("customer", {"customer", "customers", "party", "parties"}),
+	("item", {"item", "items", "product", "products"}),
+	("account", {"account", "accounts", "line", "lines"}),
+]
 
 
 def _clean_text(value: Any) -> str:
@@ -439,6 +452,61 @@ def _frame_matches_message_object(raw_message: str, frame: Dict[str, Any]) -> bo
 	return bool(_message_parts(raw_message).intersection(_frame_object_aliases(frame)))
 
 
+def _requested_object_aliases(raw_message: str) -> set[str]:
+	parts = _message_parts(raw_message)
+	for canonical, aliases in REQUEST_OBJECT_ALIAS_GROUPS:
+		normalized_aliases = {_normalize(alias) for alias in aliases if _normalize(alias)}
+		if parts.intersection(normalized_aliases):
+			return {
+				_normalize(canonical),
+				_plural(_normalize(canonical)),
+				*normalized_aliases,
+			}
+	return set()
+
+
+def _requested_object_label(raw_message: str) -> str:
+	parts = _message_parts(raw_message)
+	for canonical, aliases in REQUEST_OBJECT_ALIAS_GROUPS:
+		normalized_aliases = {_normalize(alias) for alias in aliases if _normalize(alias)}
+		if parts.intersection(normalized_aliases):
+			return _normalize(canonical).replace("_", " ")
+	return ""
+
+
+def _frame_matches_requested_object(frame: Dict[str, Any], requested_aliases: set[str]) -> bool:
+	if not requested_aliases:
+		return False
+	return bool(requested_aliases.intersection(_frame_object_aliases(frame)))
+
+
+def _missing_requested_object_result(
+	*,
+	relation: str,
+	requested_aliases: set[str],
+	requested_label: str,
+	frames: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+	available_types: List[str] = []
+	available_labels: List[str] = []
+	for frame in frames:
+		object_type = _clean_text(frame.get("business_object_type"))
+		if object_type and object_type not in available_types:
+			available_types.append(object_type)
+		label = _clean_text(frame.get("artifact_title") or frame.get("family_id") or frame.get("artifact_id"))
+		if label and label not in available_labels:
+			available_labels.append(label)
+	return {
+		"status": "missing_requested_object",
+		"relation": relation,
+		"requested_object_label": _clean_text(requested_label),
+		"requested_object_aliases": sorted(requested_aliases),
+		"available_business_object_types": available_types[:8],
+		"available_table_labels": available_labels[:8],
+		"reason": "The requested object type is not present in the authoritative visible table frames.",
+	}
+
+
 def _semantic_concept_terms(raw_message: str) -> set[str]:
 	terms: set[str] = set()
 	for concept in ontology_detect_concepts(raw_message):
@@ -484,7 +552,13 @@ def resolve_visible_context_frame_arbitration(
 	if not frames:
 		return {"status": "not_evaluated", "reason": "No table frames are available."}
 	tokens = _tokens(raw_message)
-	matching_object_frames = [frame for frame in frames if _frame_matches_message_object(raw_message, frame)]
+	requested_object_aliases = _requested_object_aliases(raw_message)
+	requested_object_label = _requested_object_label(raw_message)
+	matching_object_frames = (
+		[frame for frame in frames if _frame_matches_requested_object(frame, requested_object_aliases)]
+		if requested_object_aliases
+		else [frame for frame in frames if _frame_matches_message_object(raw_message, frame)]
+	)
 	semantic_context_frames = [
 		frame
 		for frame in frames
@@ -517,11 +591,32 @@ def resolve_visible_context_frame_arbitration(
 		selected_frame = frames[0]
 	elif relation == "detail_table":
 		detail_frames = [frame for frame in frames if _is_detail_frame(frame)]
-		candidates = [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
+		candidates = (
+			[frame for frame in detail_frames if _frame_matches_requested_object(frame, requested_object_aliases)]
+			if requested_object_aliases
+			else [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
+		)
+		if requested_object_aliases and not candidates:
+			return _missing_requested_object_result(
+				relation=relation,
+				requested_aliases=requested_object_aliases,
+				requested_label=requested_object_label,
+				frames=detail_frames or frames,
+			)
 		selected_frame = (candidates or detail_frames or matching_business_frames or frames)[0]
 	else:
 		current_frame = frames[0]
-		if _is_detail_frame(current_frame) and matching_business_frames:
+		if requested_object_aliases and not _frame_matches_requested_object(current_frame, requested_object_aliases):
+			if matching_business_frames:
+				selected_frame = matching_business_frames[0]
+			else:
+				return _missing_requested_object_result(
+					relation=relation,
+					requested_aliases=requested_object_aliases,
+					requested_label=requested_object_label,
+					frames=frames,
+				)
+		elif _is_detail_frame(current_frame) and matching_business_frames:
 			selected_frame = matching_business_frames[0]
 		else:
 			selected_frame = current_frame

@@ -307,6 +307,39 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 			relation="same_table",
 		)
 
+	def test_missing_typed_detail_does_not_fall_back_to_stale_source_table(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_cogs_source_detail_text())
+		cogs_lookup = chat.ask("who is second in the above table?")
+		_assert_visible_answer(
+			self,
+			cogs_lookup,
+			answer_contains="Delivery Note MAT-DN-2026-00336",
+			business_object_type="document",
+		)
+
+		chat.assistant(_ap_top_5_text())
+		supplier_lookup = chat.ask("who is second in the above table?")
+		_assert_visible_answer(
+			self,
+			supplier_lookup,
+			answer_contains="Sunflower Accessories Co.",
+			business_object_type="supplier",
+		)
+
+		missing_invoice = chat.ask("who is second invoice in the above context?")
+
+		self.assertTrue(missing_invoice.handled)
+		self.assertEqual(missing_invoice.payload["mode"], "visible_context_boundary")
+		self.assertIn("no visible invoice table", missing_invoice.answer)
+		self.assertIn("should not reuse an older table", missing_invoice.answer)
+		self.assertNotIn("Delivery Note MAT-DN-2026-00336", missing_invoice.answer)
+		self.assertNotIn("Rank 2 is Sunflower Accessories Co.", missing_invoice.answer)
+		arbitration = missing_invoice.trace.get("frame_arbitration") or {}
+		self.assertEqual(arbitration.get("status"), "missing_requested_object")
+		self.assertEqual(arbitration.get("relation"), "detail_table")
+		self.assertFalse(missing_invoice.execution_path.get("requires_runtime"))
+
 	def test_ar_comparison_out_of_range_stays_on_latest_visible_table(self):
 		chat = VisibleConversationHarness()
 		chat.assistant(_ar_top_10_text())

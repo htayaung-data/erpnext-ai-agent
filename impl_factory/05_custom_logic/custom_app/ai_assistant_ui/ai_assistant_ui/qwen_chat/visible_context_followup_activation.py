@@ -18,6 +18,7 @@ from .metadata import ontology_detect_concepts
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
 from .natural_business_understanding_context_resolution import (
 	nbu_artifact_rows,
+	nbu_ordinal_reference_index,
 	nbu_row_identity_label,
 	resolve_nbu_context_reference,
 )
@@ -344,6 +345,16 @@ def _selected_entity_rank(entity: Dict[str, Any]) -> int:
 	return 0
 
 
+def _selected_entity_artifact_id(entity: Dict[str, Any]) -> str:
+	source = _clean_dict(entity)
+	return _clean_text(
+		source.get("resolved_artifact_id")
+		or source.get("artifact_id")
+		or source.get("source_artifact_id")
+		or source.get("source_request_id")
+	)
+
+
 def _normalize_field_key(value: Any) -> str:
 	text = re.sub(r"\([^)]*\)", "", _clean_text(value).lower())
 	text = re.sub(r"[^a-z0-9]+", "_", text)
@@ -384,6 +395,32 @@ def _artifact_field_boundary_answer(
 			artifact_payload=_clean_dict(artifact_payload),
 		)
 	)
+
+
+def _resolve_against_artifact(
+	*,
+	raw_message: str,
+	target: str,
+	artifact: Dict[str, Any],
+	frame_stack: Dict[str, Any],
+	frame_arbitration: Dict[str, Any],
+	session_doc: Any,
+) -> Dict[str, Any]:
+	resolution = resolve_nbu_context_reference(
+		raw_message=raw_message,
+		candidate_payload={
+			"candidate_id": "visible-context-followup",
+			"target_reference": target,
+			"intent_scope": "visible_context_followup",
+			"authority_class": "safe_read",
+		},
+		current_artifact=artifact,
+		recent_focus=_selected_focus(session_doc),
+	).to_payload()
+	resolution_payload = _clean_dict(resolution)
+	resolution_payload["context_frame_stack"] = frame_stack
+	resolution_payload["frame_arbitration"] = frame_arbitration
+	return resolution_payload
 
 
 def _resolve_visible_context(
@@ -427,6 +464,31 @@ def _resolve_visible_context(
 		}
 	selected_artifact_id = _clean_text(frame_arbitration.get("selected_artifact_id"))
 	current_artifact_id = _payload_identity(_clean_dict(artifacts[0])) if artifacts else ""
+	if _clean_text(frame_arbitration.get("status")).lower() == "missing_requested_object":
+		return {
+			"status": "missing_requested_object",
+			"target_reference": target,
+			"requested_rank": nbu_ordinal_reference_index(raw_message) + 1,
+			"reason": _clean_text(frame_arbitration.get("reason")),
+			"context_frame_stack": frame_stack,
+			"frame_arbitration": frame_arbitration,
+		}
+	if _clean_text(frame_arbitration.get("relation")).lower() == "same_table":
+		same_table_artifact = _artifact_by_identity(
+			artifacts,
+			_selected_entity_artifact_id(selected_entity),
+		)
+		if same_table_artifact:
+			resolution_payload = _resolve_against_artifact(
+				raw_message=raw_message,
+				target=target,
+				artifact=same_table_artifact,
+				frame_stack=frame_stack,
+				frame_arbitration=frame_arbitration,
+				session_doc=session_doc,
+			)
+			if _clean_text(resolution_payload.get("status")).lower() in {"resolved", "ambiguous", "out_of_range"}:
+				return resolution_payload
 	if _should_use_frame_arbitration(
 		frame_arbitration=frame_arbitration,
 		selected_artifact_id=selected_artifact_id,
@@ -434,20 +496,14 @@ def _resolve_visible_context(
 	):
 		selected_artifact = _artifact_by_identity(artifacts, selected_artifact_id)
 		if selected_artifact:
-			resolution = resolve_nbu_context_reference(
+			resolution_payload = _resolve_against_artifact(
 				raw_message=raw_message,
-				candidate_payload={
-					"candidate_id": "visible-context-followup",
-					"target_reference": target,
-					"intent_scope": "visible_context_followup",
-					"authority_class": "safe_read",
-				},
-				current_artifact=selected_artifact,
-				recent_focus=_selected_focus(session_doc),
-			).to_payload()
-			resolution_payload = _clean_dict(resolution)
-			resolution_payload["context_frame_stack"] = frame_stack
-			resolution_payload["frame_arbitration"] = frame_arbitration
+				target=target,
+				artifact=selected_artifact,
+				frame_stack=frame_stack,
+				frame_arbitration=frame_arbitration,
+				session_doc=session_doc,
+			)
 			if _clean_text(resolution_payload.get("status")).lower() in {"resolved", "ambiguous", "out_of_range"}:
 				return resolution_payload
 	resolution = resolve_nbu_context_graph_reference(
@@ -1088,6 +1144,43 @@ def _out_of_range_text(resolution: Dict[str, Any]) -> str:
 	)
 
 
+def _missing_requested_object_text(resolution: Dict[str, Any]) -> str:
+	frame_arbitration = _clean_dict(resolution.get("frame_arbitration"))
+	requested_label = _clean_text(frame_arbitration.get("requested_object_label"))
+	requested_aliases = [
+		_clean_text(value).replace("_", " ")
+		for value in _clean_list(frame_arbitration.get("requested_object_aliases"))
+		if _clean_text(value)
+	]
+	if not requested_label:
+		requested_label = requested_aliases[0] if requested_aliases else "the requested row type"
+	available_types = [
+		_humanize(value).title()
+		for value in _clean_list(frame_arbitration.get("available_business_object_types"))
+		if _clean_text(value)
+	]
+	available_labels = [
+		_clean_text(value)
+		for value in _clean_list(frame_arbitration.get("available_table_labels"))
+		if _clean_text(value)
+	]
+	lines = [
+		f"I can't answer that from the visible context because there is no visible {requested_label} table in scope.",
+		"I should not reuse an older table from another business family to answer this.",
+	]
+	if available_types:
+		lines.extend(["", f"Visible table types available: {', '.join(available_types[:6])}."])
+	if available_labels:
+		lines.append(f"Visible tables checked: {', '.join(available_labels[:4])}.")
+	lines.extend(
+		[
+			"",
+			"Please ask for the relevant detail/breakdown first, or refer to a visible table that contains that row type.",
+		]
+	)
+	return "\n".join(lines).strip()
+
+
 def _activation_contract(
 	*,
 	request_id: str,
@@ -1180,7 +1273,7 @@ def try_activate_visible_context_followup_response(
 		current_artifact=_clean_dict(current_artifact),
 	)
 	status = _clean_text(resolution.get("status")).lower()
-	if status not in {"resolved", "ambiguous", "out_of_range"}:
+	if status not in {"resolved", "ambiguous", "out_of_range", "missing_requested_object"}:
 		return False, None
 	if (
 		status == "ambiguous"
@@ -1272,6 +1365,9 @@ def try_activate_visible_context_followup_response(
 		elif status == "out_of_range":
 			answer_mode = "visible_context_out_of_range"
 			answer_text = _out_of_range_text(resolution)
+		elif status == "missing_requested_object":
+			answer_mode = "visible_context_boundary"
+			answer_text = _missing_requested_object_text(resolution)
 		else:
 			answer_mode = "visible_context_clarification"
 			answer_text = _clarification_text(resolution)
