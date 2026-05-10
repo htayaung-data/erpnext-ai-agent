@@ -445,10 +445,12 @@ def resolve_visible_context_frame_arbitration(
 		detail_frames = [frame for frame in frames if _is_detail_frame(frame)]
 		candidates = [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
 		selected_frame = (candidates or detail_frames or matching_object_frames or frames)[0]
-	elif matching_object_frames:
-		selected_frame = matching_object_frames[0]
 	else:
-		selected_frame = frames[0]
+		current_frame = frames[0]
+		if _is_detail_frame(current_frame) and matching_object_frames:
+			selected_frame = matching_object_frames[0]
+		else:
+			selected_frame = current_frame
 
 	if not selected_frame:
 		return {

@@ -1140,6 +1140,28 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("no rank 11", answer)
 		self.assertNotIn("Rank 11 Customer Details", answer)
 
+	def test_rank_reference_after_top_10_then_comparison_uses_latest_visible_table_scope(self):
+		session_doc = {
+			"messages": [
+				_assistant_message(_ar_visible_top_10_text()),
+				_assistant_message(_ar_comparison_text()),
+			]
+		}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="give me more about Rank 11 customer",
+			current_artifact=_ar_full_source_artifact_with_hidden_rows(),
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_out_of_range")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("only 3 visible rows", answer)
+		self.assertIn("no rank 11", answer)
+		self.assertNotIn("Capital Telecom (NPT)", answer)
+		self.assertNotIn("Hidden Customer 11", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("selected_visible_row_count"), 3)
+
 	def test_artifact_set_field_question_does_not_use_stale_selected_entity(self):
 		stale_supplier_selection = {
 			"type": "qwen_nbu_current_artifact_answer_activation_contract",

@@ -201,8 +201,8 @@ def _should_use_frame_arbitration(
 	relation = _clean_text(frame_arbitration.get("relation")).lower()
 	if relation in {"previous_table", "same_table", "parent_table", "detail_table"}:
 		return True
-	if _clean_text(frame_arbitration.get("selected_evidence_scope")).lower() != "visible_rendered_table":
-		return False
+	if _clean_text(frame_arbitration.get("selected_evidence_scope")).lower() == "visible_rendered_table":
+		return True
 	return bool(
 		_clean_text(selected_artifact_id)
 		and _clean_text(current_artifact_id)
