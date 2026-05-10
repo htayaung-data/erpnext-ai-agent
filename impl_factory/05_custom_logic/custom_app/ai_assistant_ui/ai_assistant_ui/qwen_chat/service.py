@@ -698,6 +698,21 @@ def _visible_context_followup_should_preempt_clarification(message: str) -> bool
 	return _visible_context_followup_requested(message)
 
 
+def _artifact_boundary_should_yield_to_visible_context(
+	*,
+	message: str,
+	entity_drilldown: Dict[str, Any] | None = None,
+	skip_artifact_boundary: bool = False,
+) -> bool:
+	"""Visible table references must get final authority before generic artifact boundaries."""
+
+	return bool(
+		entity_drilldown is None
+		and not skip_artifact_boundary
+		and _visible_context_followup_should_preempt_clarification(message)
+	)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -5188,6 +5203,32 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		latest_grounded_turn=latest_grounded_turn,
 		latest_family_artifact=latest_family_artifact,
 	)
+	if _artifact_boundary_should_yield_to_visible_context(
+		message=raw_msg,
+		entity_drilldown=entity_drilldown,
+		skip_artifact_boundary=skip_artifact_boundary,
+	):
+		visible_context_handled, visible_context_payload = _try_activate_visible_context_followup_response(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_name,
+			user_id=user,
+			site_name=site_name,
+			raw_message=raw_msg,
+			current_artifact=latest_family_artifact,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			reasoning_semantic_result=pre_frontdoor_reasoning_semantic_result,
+			user_message_already_appended=True,
+			append_message=_append_message,
+			append_tool_payload=_append_tool_payload,
+			assistant_text_payload=_assistant_text_payload,
+			save_session=_save_session,
+			clear_pending_clarification_signal=clear_pending_clarification_signal,
+			additional_tool_payloads=[],
+		)
+		if visible_context_handled and visible_context_payload is not None:
+			return True, visible_context_payload
 	artifact_boundary_evaluated = False
 	if entity_drilldown is None and not skip_artifact_boundary:
 		artifact_boundary_evaluated = True

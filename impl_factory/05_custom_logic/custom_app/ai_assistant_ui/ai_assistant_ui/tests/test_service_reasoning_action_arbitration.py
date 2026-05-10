@@ -2,6 +2,7 @@ import types
 import unittest
 
 from ai_assistant_ui.qwen_chat.service import (
+	_artifact_boundary_should_yield_to_visible_context,
 	build_scope_decision_input,
 	_context_isolation_should_yield_to_prior_reasoning_action,
 	_fresh_query_should_skip_pre_frontdoor_reasoning,
@@ -101,6 +102,29 @@ class ServiceReasoningActionArbitrationTests(unittest.TestCase):
 		self.assertFalse(
 			_visible_context_followup_should_preempt_clarification(
 				"Top 7 customers by revenue last year"
+			)
+		)
+
+	def test_artifact_boundary_yields_to_visible_rank_references(self):
+		self.assertTrue(
+			_artifact_boundary_should_yield_to_visible_context(
+				message="who is second in the above table?",
+				entity_drilldown=None,
+				skip_artifact_boundary=False,
+			)
+		)
+		self.assertFalse(
+			_artifact_boundary_should_yield_to_visible_context(
+				message="who is second in the above table?",
+				entity_drilldown={"entity_type": "purchase_invoice"},
+				skip_artifact_boundary=False,
+			)
+		)
+		self.assertFalse(
+			_artifact_boundary_should_yield_to_visible_context(
+				message="Top 7 Products by Revenue Last Year",
+				entity_drilldown=None,
+				skip_artifact_boundary=False,
 			)
 		)
 
