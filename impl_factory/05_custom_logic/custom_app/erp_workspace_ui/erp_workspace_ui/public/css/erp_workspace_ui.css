@@ -7641,10 +7641,10 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 .erpw-child-detail-shell .erpw-child-actions-toolbar {
   display: flex;
   justify-content: flex-start;
-  padding: 0.46rem 0.58rem;
-  background: #ffffff;
-  border: 1px solid rgba(220, 228, 238, 0.94);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset, 0 6px 14px rgba(15, 23, 42, 0.03);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .erpw-child-detail-shell .erpw-child-toolbar-actions {
@@ -7721,10 +7721,6 @@ body.erpw-route-sales-order-ready .erpw-child-page-host:empty {
 }
 
 @media (max-width: 620px) {
-  .erpw-child-detail-shell .erpw-child-actions-toolbar {
-    padding: 0.52rem;
-  }
-
   .erpw-child-detail-shell .erpw-child-toolbar-actions,
   .erpw-child-detail-shell .erpw-child-toolbar-action {
     width: 100%;

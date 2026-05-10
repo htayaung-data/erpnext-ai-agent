@@ -299,7 +299,6 @@ def _po_analysis_controls(filters: dict[str, object]) -> dict[str, object]:
 	status_options = ["", "To Pay", "To Bill", "To Receive", "To Receive and Bill", "Completed", "Closed"]
 	return {
 		"appearance": "analytics_compact",
-		"actionLayout": "separate_row",
 		"submitLabel": "Apply",
 		"resetLabel": "Reset",
 		"meta": [

@@ -612,7 +612,23 @@ async function checkDetailActionStyling(page, selector, label) {
   assert(actions.every((action) => action.height <= 44 && action.width < 260), `${label}: toolbar button still looks like a large card`, { actions });
   assert(actions.every((action) => !/^0px/.test(action.borderRadius) && !/ 0px /.test(action.padding)), `${label}: toolbar button styling looks unstyled`, { actions });
   assert(actions.every((action) => action.iconSvgCount > 0), `${label}: compact toolbar buttons are missing shared icons`, { actions });
-  return actions;
+  const toolbar = await shell.locator('.erpw-child-actions-toolbar').first().evaluate((node) => {
+    const style = getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    return {
+      backgroundColor: style.backgroundColor,
+      borderTopWidth: Number.parseFloat(style.borderTopWidth) || 0,
+      boxShadow: style.boxShadow,
+      paddingTop: Number.parseFloat(style.paddingTop) || 0,
+      paddingLeft: Number.parseFloat(style.paddingLeft) || 0,
+      height: rect.height,
+      width: rect.width,
+    };
+  });
+  assert(toolbar.borderTopWidth === 0, `${label}: compact detail toolbar still sits in a bordered action card`, { toolbar, actions });
+  assert(toolbar.boxShadow === 'none', `${label}: compact detail toolbar still carries heavy card elevation`, { toolbar, actions });
+  assert(toolbar.paddingTop <= 2 && toolbar.paddingLeft <= 2, `${label}: compact detail toolbar has unnecessary container padding`, { toolbar, actions });
+  return { actions, toolbar };
 }
 
 async function exerciseDetailRefresh(page, selector, shellKey, label) {
@@ -923,6 +939,10 @@ async function checkProcurementReportsIndex(page) {
   assert(/Procurement Reports/i.test(shellText), "Reports Index title missing", { shellText });
   assert(/Sourcing review/i.test(shellText) && /Order review/i.test(shellText) && /Demand coverage/i.test(shellText) && /Item and price review/i.test(shellText), "Reports Index grouping missing", { shellText });
   assert(!/query-report|Set Default Supplier|Update Item Price/i.test(shellText), "Reports Index exposes forbidden report wording or native route", { shellText });
+  const detachedControls = await visibleElementCount(page, ".erpw-report-shell > .erpw-report-controls");
+  assert(detachedControls === 0, "Reports Index should not render a standalone full-width Refresh strip", { detachedControls });
+  const catalogRefreshCount = await visibleElementCount(page, ".erpw-procurement-report-catalog-head [data-erpw-report-action-key=\"refresh\"]");
+  assert(catalogRefreshCount === 1, "Reports Index Refresh should be compact inside the catalog header", { catalogRefreshCount });
   const reportCards = page.locator(".erpw-procurement-report-card");
   await reportCards.first().waitFor({ state: "visible", timeout: TIMEOUT });
   const cardCount = await reportCards.count();
@@ -1014,6 +1034,42 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
   assert(fieldByKey.supplier.doctype === "Supplier", "PO Analysis supplier filter is not a Link control", { fields });
   assert(fieldByKey.item_code.doctype === "Item", "PO Analysis item filter is not a Link control", { fields });
   assert(!fieldByKey.company, "PO Analysis should not expose company filter in single-company mode", { fields });
+
+  const filterActionLayout = await page.locator(".erpw-report-controls").first().evaluate((controls) => {
+    const rows = Array.from(controls.querySelectorAll(".erpw-report-command-row"));
+    const actionCell = controls.querySelector(".erpw-report-command-actions");
+    const secondRowFields = ["supplier", "item_code"].map((key) => {
+      const input = controls.querySelector(`[data-erpw-control-key="${key}"]`);
+      const field = input && input.closest(".erpw-report-control-field");
+      if (!field) return null;
+      const rect = field.getBoundingClientRect();
+      const inputRect = input.getBoundingClientRect();
+      return { key, top: Math.round(rect.top), bottom: Math.round(rect.bottom), inputTop: Math.round(inputRect.top), inputBottom: Math.round(inputRect.bottom) };
+    }).filter(Boolean);
+    const actionRow = actionCell && actionCell.closest(".erpw-report-command-row");
+    const actionRect = actionCell ? actionCell.getBoundingClientRect() : null;
+    const actionCenter = actionRect ? Math.round((actionRect.top + actionRect.bottom) / 2) : 0;
+    const fieldCenter = secondRowFields.length
+      ? Math.round((Math.min(...secondRowFields.map((field) => field.inputTop)) + Math.max(...secondRowFields.map((field) => field.inputBottom))) / 2)
+      : 0;
+    return {
+      rowCount: rows.length,
+      hasActionsOnlyRow: rows.some((row) => row.classList.contains("actions-only")),
+      actionRowClass: actionRow ? actionRow.className : "",
+      secondRowFields,
+      actionRect: actionRect ? { top: Math.round(actionRect.top), bottom: Math.round(actionRect.bottom), height: Math.round(actionRect.height) } : null,
+      actionCenter,
+      fieldCenter,
+      controlsHeight: Math.round(controls.getBoundingClientRect().height),
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(filterActionLayout.rowCount === 2, "PO Analysis filters should use two active field rows without a detached command row", filterActionLayout);
+  assert(!filterActionLayout.hasActionsOnlyRow, "PO Analysis Apply/Reset/Refresh should not sit in a detached action-only row", filterActionLayout);
+  assert(filterActionLayout.actionRowClass.includes("field-count-2"), "PO Analysis actions should share the second filter row", filterActionLayout);
+  assert(Math.abs(filterActionLayout.actionCenter - filterActionLayout.fieldCenter) <= 8, "PO Analysis actions should align with the second-row filter inputs", filterActionLayout);
+  assert(filterActionLayout.controlsHeight <= 250, "PO Analysis filter panel still has oversized empty action area", filterActionLayout);
+  assert(filterActionLayout.overflow <= 1, "PO Analysis filter action layout introduced horizontal overflow", filterActionLayout);
 
   const tableCheck = await page.locator(".erpw-report-table").first().evaluate((table) => {
     const headers = Array.from(table.querySelectorAll("thead th")).map((node) => node.textContent.trim());

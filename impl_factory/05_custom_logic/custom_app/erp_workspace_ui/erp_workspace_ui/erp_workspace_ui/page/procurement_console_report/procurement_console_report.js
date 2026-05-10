@@ -36,23 +36,27 @@
     const style = document.createElement("style");
     style.id = "erpw-procurement-report-catalog-style";
     style.textContent = [
-      '.erpw-procurement-report-catalog { display:grid; gap:16px; }',
-      '.erpw-procurement-report-catalog .erpw-report-section-head { max-width:760px; }',
-      '.erpw-procurement-report-catalog-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; align-items:stretch; }',
-      '.erpw-procurement-report-card { min-height:188px; padding:16px; border-radius:16px; border:1px solid #dbe6f2; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); display:flex; flex-direction:column; gap:10px; text-align:left; color:#0f172a; box-shadow:0 10px 24px rgba(15,23,42,0.045); transition:border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }',
-      '.erpw-procurement-report-card.is-ready { cursor:pointer; border-color:#b8cbe2; }',
-      '.erpw-procurement-report-card.is-ready:hover { border-color:#8fb0d3; box-shadow:0 14px 30px rgba(15,23,42,0.075); transform:translateY(-1px); }',
-      '.erpw-procurement-report-card.is-planned { cursor:not-allowed; opacity:0.74; background:#f8fafc; }',
-      '.erpw-procurement-report-card-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }',
-      '.erpw-procurement-report-card-category { font-size:10.5px; font-weight:750; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }',
-      '.erpw-procurement-report-card-status { display:inline-flex; align-items:center; justify-content:center; min-height:22px; padding:0 9px; border-radius:999px; border:1px solid #d8e3ef; background:#f8fbff; color:#475569; font-size:10.5px; font-weight:750; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; }',
+      '.erpw-procurement-report-catalog { display:grid; gap:16px; padding:18px 20px; }',
+      '.erpw-procurement-report-catalog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }',
+      '.erpw-procurement-report-catalog-head .erpw-report-section-head { max-width:760px; }',
+      '.erpw-procurement-report-catalog-actions { display:flex; align-items:center; justify-content:flex-end; flex:0 0 auto; }',
+      '.erpw-procurement-report-catalog-refresh { min-height:32px; padding:0 13px; }',
+      '.erpw-procurement-report-catalog-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; align-items:stretch; }',
+      '.erpw-procurement-report-card { position:relative; min-height:156px; padding:15px 16px 14px; border-radius:15px; border:1px solid #dbe6f2; background:#ffffff; display:flex; flex-direction:column; gap:9px; text-align:left; color:#0f172a; box-shadow:0 8px 20px rgba(15,23,42,0.034); transition:border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }',
+      '.erpw-procurement-report-card::before { content:""; position:absolute; top:0; left:16px; width:38px; height:3px; border-radius:999px; background:#94a3b8; }',
+      '.erpw-procurement-report-card.is-ready { cursor:pointer; border-color:#b8cbe2; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); }',
+      '.erpw-procurement-report-card.is-ready::before { background:#2ec5a7; }',
+      '.erpw-procurement-report-card.is-ready:hover { border-color:#8fb0d3; box-shadow:0 12px 26px rgba(15,23,42,0.07); transform:translateY(-1px); }',
+      '.erpw-procurement-report-card.is-planned { cursor:not-allowed; opacity:0.78; background:#f8fafc; }',
+      '.erpw-procurement-report-card-top { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-top:2px; }',
+      '.erpw-procurement-report-card-category { font-size:10px; font-weight:760; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }',
+      '.erpw-procurement-report-card-status { display:inline-flex; align-items:center; justify-content:center; min-height:22px; padding:0 9px; border-radius:999px; border:1px solid #d8e3ef; background:#f8fbff; color:#475569; font-size:10px; font-weight:760; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; }',
       '.erpw-procurement-report-card.is-ready .erpw-procurement-report-card-status { border-color:#9fc4d8; background:#eef9fb; color:#0f5f6d; }',
-      '.erpw-procurement-report-card-title { font-size:16px; line-height:1.25; font-weight:760; color:#0f172a; }',
-      '.erpw-procurement-report-card-purpose { font-size:12.5px; line-height:1.48; color:#475569; }',
-      '.erpw-procurement-report-card-boundary { margin-top:auto; padding-top:10px; border-top:1px solid rgba(219,230,242,0.82); font-size:11.5px; line-height:1.45; color:#64748b; }',
-      '.erpw-procurement-report-card-action { margin-top:2px; font-size:12px; font-weight:750; color:#12365f; }',
-      '@media (max-width:1180px) { .erpw-procurement-report-catalog-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }',
-      '@media (max-width:720px) { .erpw-procurement-report-catalog-grid { grid-template-columns:1fr; } .erpw-procurement-report-card { min-height:0; } }',
+      '.erpw-procurement-report-card-title { font-size:15.5px; line-height:1.23; font-weight:760; color:#0f172a; }',
+      '.erpw-procurement-report-card-purpose { font-size:12.4px; line-height:1.43; color:#475569; }',
+      '.erpw-procurement-report-card-boundary { margin-top:auto; padding-top:9px; border-top:1px solid rgba(219,230,242,0.82); font-size:11.3px; line-height:1.38; color:#64748b; }',
+      '.erpw-procurement-report-card-action { margin-top:0; font-size:12px; font-weight:760; color:#12365f; }',
+      '@media (max-width:820px) { .erpw-procurement-report-catalog-grid { grid-template-columns:1fr; } .erpw-procurement-report-card { min-height:0; } .erpw-procurement-report-catalog-head { display:grid; } .erpw-procurement-report-catalog-actions { justify-content:flex-start; } }',
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -356,9 +360,14 @@
     if (!entries.length) return '';
     return [
       '<section class="erpw-report-card erpw-report-secondary erpw-procurement-report-catalog">',
-        '<div class="erpw-report-section-head">',
-          '<div class="erpw-report-section-title">Approved report surfaces</div>',
-          '<div class="erpw-report-section-subtitle">Use ready reports for buyer review. Planned reports remain visible as roadmap markers but are not active yet.</div>',
+        '<div class="erpw-procurement-report-catalog-head">',
+          '<div class="erpw-report-section-head">',
+            '<div class="erpw-report-section-title">Approved report surfaces</div>',
+            '<div class="erpw-report-section-subtitle">Use ready reports for buyer review. Planned reports remain visible as roadmap markers but are not active yet.</div>',
+          '</div>',
+          '<div class="erpw-procurement-report-catalog-actions">',
+            '<button type="button" class="erpw-report-control-button is-refresh erpw-procurement-report-catalog-refresh" data-erpw-report-action-key="refresh">Refresh</button>',
+          '</div>',
         '</div>',
         '<div class="erpw-procurement-report-catalog-grid">',
           entries.map(renderCatalogCard).join(''),
@@ -368,7 +377,7 @@
   }
 
   function mountReportIndex(viewState, runtime, config, payload) {
-    const indexConfig = Object.assign({}, config, { metrics: [], secondary: null, results: null });
+    const indexConfig = Object.assign({}, config, { controls: null, metrics: [], secondary: null, results: null });
     runtime.mountReport(viewState.$host, indexConfig);
     const $shell = viewState.$host.children('.erpw-report-shell').first();
     $shell.append(renderReportCatalog(payload && payload.catalog));
