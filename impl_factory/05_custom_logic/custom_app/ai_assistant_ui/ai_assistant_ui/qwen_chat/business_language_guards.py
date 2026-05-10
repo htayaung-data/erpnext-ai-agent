@@ -36,6 +36,13 @@ _CAUSAL_CHANGE_PATTERN = re.compile(
 	r"\b(?:what|why|how)\b.{0,80}\b(?:increase|increased|decrease|decreased|change|changed|deteriorat(?:e|ed)|improv(?:e|ed))\b",
 	re.IGNORECASE,
 )
+_RECOMMENDATION_DECISION_PATTERN = re.compile(
+	r"\b(?:recommend|recommendation|prioriti[sz]e|decide|decision|approve|approval|action\s+plan|next\s+step)\b|"
+	r"\bshould\s+(?:we|i|management|the\s+company|company)\b|"
+	r"\b(?:who|which|what)\b.{0,80}\bshould\b|"
+	r"\bcollect\s+from\s+first\b",
+	re.IGNORECASE,
+)
 
 
 def looks_like_predictive_guarantee_claim(message: str) -> bool:
@@ -63,3 +70,10 @@ def looks_like_causal_change_claim(message: str) -> bool:
 	if not text:
 		return False
 	return bool(_CAUSAL_CHANGE_PATTERN.search(text))
+
+
+def looks_like_recommendation_or_decision_claim(message: str) -> bool:
+	text = " ".join(str(message or "").strip().lower().split())
+	if not text:
+		return False
+	return bool(_RECOMMENDATION_DECISION_PATTERN.search(text))

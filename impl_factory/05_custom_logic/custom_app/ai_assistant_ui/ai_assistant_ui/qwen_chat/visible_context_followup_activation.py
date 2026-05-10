@@ -12,6 +12,7 @@ from .entity_detail_request_support import (
 from .business_language_guards import (
 	looks_like_causal_change_claim,
 	looks_like_predictive_guarantee_claim,
+	looks_like_recommendation_or_decision_claim,
 )
 from .metadata import ontology_detect_concepts
 from .natural_business_understanding_context_graph import resolve_nbu_context_graph_reference
@@ -853,6 +854,8 @@ def _visible_followup_authority_intent(
 		return "prediction_boundary"
 	if looks_like_causal_change_claim(raw_message):
 		return "causal_boundary"
+	if looks_like_recommendation_or_decision_claim(raw_message):
+		return "recommendation_boundary"
 	authority_class = _nbu_authority_class(nbu_trace_payload)
 	if authority_class == "prediction":
 		return "prediction_boundary"

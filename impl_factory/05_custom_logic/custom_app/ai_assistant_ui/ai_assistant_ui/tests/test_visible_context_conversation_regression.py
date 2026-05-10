@@ -3,7 +3,11 @@ import unittest
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Dict, List
+from unittest.mock import patch
 
+from ai_assistant_ui.qwen_chat.semantic_reasoning_activation import (
+	interpret_reasoning_activation_semantically,
+)
 from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
 	try_activate_visible_context_followup_response,
 )
@@ -373,6 +377,89 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 			answer_contains="Xiaomi Redmi Note 13",
 			business_object_type="item",
 		)
+
+	def test_business_intent_boundaries_are_enforced_from_visible_evidence(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_ar_top_10_text())
+		chat.assistant(_ar_overdue_comparison_text())
+
+		recommendation = chat.ask("who should we collect from first?")
+		self.assertTrue(recommendation.handled)
+		self.assertEqual(recommendation.payload["mode"], "visible_context_boundary")
+		self.assertIn("can't turn it into a recommended action", recommendation.answer)
+		self.assertIn("Visible facts for Rank 1 (35th Street Mobile Wholesale)", recommendation.answer)
+		self.assertEqual((recommendation.trace.get("resolution") or {}).get("authority_intent"), "recommendation_boundary")
+		self.assertFalse(recommendation.execution_path.get("requires_runtime"))
+
+		causal = chat.ask("what caused the first customer's risk to increase?")
+		self.assertTrue(causal.handled)
+		self.assertEqual(causal.payload["mode"], "visible_context_boundary")
+		self.assertIn("can't attribute cause from this single displayed result", causal.answer)
+		self.assertIn("trend, event trail, or transaction history", causal.answer)
+		self.assertEqual((causal.trace.get("resolution") or {}).get("authority_intent"), "causal_boundary")
+		self.assertFalse(causal.execution_path.get("requires_runtime"))
+
+		filter_check = chat.ask("All above customers are from Yangon Region?")
+		self.assertTrue(filter_check.handled)
+		self.assertEqual(filter_check.payload["mode"], "visible_context_boundary")
+		self.assertIn("does not include the requested fields", filter_check.answer)
+		self.assertIn("Visible evidence covers: Party, Outstanding Amount, Overdue Amount, Overdue Intensity.", filter_check.answer)
+		self.assertIn("Fields needed: Customer, Territory.", filter_check.answer)
+		self.assertNotIn("Asia Connect Logistics", filter_check.answer)
+		self.assertFalse(filter_check.execution_path.get("requires_runtime"))
+
+	def test_generic_more_insight_anchors_to_working_capital_metadata(self):
+		with patch(
+			"ai_assistant_ui.qwen_chat.semantic_reasoning_activation.call_qwen_runtime_reasoning_activation_interpretation"
+		) as runtime_call:
+			result = interpret_reasoning_activation_semantically(
+				request_id="ux-s6e-more-insight-anchor",
+				session_id="ux-s6e",
+				user_id="Administrator",
+				site_name="test.local",
+				message="Give me more insight",
+				recent_messages=[],
+				latest_grounded_turn={
+					"grounded": True,
+					"source_kind": "report",
+					"source_name": "AR/AP Working Capital Health",
+					"artifact_family_id": "working_capital_health",
+					"artifact_type": "normalized_family_artifact",
+					"artifact_source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+					"row_count": 5,
+				},
+				latest_family_artifact={
+					"family_id": "working_capital_health",
+					"artifact_type": "normalized_family_artifact",
+					"source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+					"capability_id": "working_capital_health_read",
+				},
+				latest_assistant_payload={"title": "AR/AP Working Capital Health"},
+				activation_contract={
+					"activation_state": "eligible",
+					"grounded_context_available": True,
+					"grounded_source_kind": "report",
+					"grounded_source_name": "AR/AP Working Capital Health",
+					"grounded_family_id": "working_capital_health",
+					"grounded_artifact_type": "normalized_family_artifact",
+					"grounded_source_reports": ["Accounts Receivable Summary", "Accounts Payable Summary"],
+					"grounded_capability_id": "working_capital_health_read",
+					"allowed_reasoning_types": [
+						"interpretation",
+						"explanation",
+						"recommendation",
+						"continuation_detail",
+					],
+					"route_target": "reasoning_lane",
+				},
+			)
+		self.assertEqual(result.status, "accepted")
+		self.assertIsNotNone(result.intent)
+		self.assertEqual(result.intent.reasoning_type, "continuation_detail")
+		self.assertEqual(result.intent.answer_goal, "expand_detail")
+		self.assertEqual(result.intent.target_reference, "current_result")
+		self.assertEqual(result.agent_meta.get("activation_source"), "governed_followup_metadata")
+		runtime_call.assert_not_called()
 
 
 if __name__ == "__main__":
