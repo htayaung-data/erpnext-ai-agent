@@ -192,6 +192,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             "procurement-console-worklist/purchase_request_directory",
             "procurement-console-worklist/rfq_directory",
             "procurement-console-worklist/supplier_quotation_directory",
+            "procurement-console-report",
             "procurement-console-report/supplier_quotation_comparison",
             "procurement-console-po-follow-up",
             "procurement-console-purchase-request-review",

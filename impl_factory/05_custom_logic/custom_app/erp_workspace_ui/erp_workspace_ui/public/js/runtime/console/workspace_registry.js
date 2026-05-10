@@ -126,6 +126,7 @@
       { key: "rfq_directory", label: "RFQs", icon: "quotation", target: { kind: "worklist", queue_key: "rfq_directory" } },
       { key: "supplier_quotation_directory", label: "Supplier Quotations", icon: "quotation", target: { kind: "worklist", queue_key: "supplier_quotation_directory" } },
       { key: "buying_item_directory", label: "Buying Items", icon: "item", target: { kind: "worklist", queue_key: "buying_item_directory" } },
+      { key: "procurement_reports", label: "Reports", icon: "report", target: { kind: "page", route: "procurement-console-report" } },
       { key: "supplier_quotation_comparison", label: "Quote Comparison", icon: "report", target: { kind: "report_page", report_key: "supplier_quotation_comparison" } },
     ],
   };

@@ -702,7 +702,12 @@
       if (["supplier_quotations_to_compare", "supplier_quotations_expiring"].includes(worklistKey)) return "supplier_quotation_directory";
       return worklistKey;
     }
-    if (pageKey === config.reportRoute && config.workspaceId === "procurement") return "supplier_quotation_comparison";
+    if (pageKey === config.reportRoute && config.workspaceId === "procurement") {
+      const reportKey = String(route[1] || "").replace(/-/g, "_");
+      if (!reportKey || reportKey === "index" || reportKey === "procurement_reports_index") return "procurement_reports";
+      if (reportKey === "supplier_quotation_comparison") return "supplier_quotation_comparison";
+      return "procurement_reports";
+    }
     if (config.workspaceId === "procurement" && config.routes && pageKey === config.routes.poFollowUp) return "purchase_order_directory";
     if (pageKey === config.reportRoute) return "";
     return "";

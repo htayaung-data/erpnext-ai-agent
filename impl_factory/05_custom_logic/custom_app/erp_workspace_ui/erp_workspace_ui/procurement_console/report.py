@@ -11,6 +11,8 @@ from . import common, service
 
 
 ROW_LIMIT = 80
+REPORT_INDEX_KEY = "procurement_reports_index"
+REPORT_INDEX_ALIASES = {"", "index", REPORT_INDEX_KEY}
 NATIVE_COMPARISON_REPORT = "Supplier Quotation Comparison"
 
 
@@ -67,9 +69,123 @@ def get_procurement_console_report_context(
 	overrides = _coerce_filter_overrides(filter_overrides)
 	if not service.has_procurement_access(context):
 		return _state_payload(normalized_key, service.restricted_state())
+	if normalized_key in REPORT_INDEX_ALIASES:
+		return _build_report_index()
 	if normalized_key == "supplier_quotation_comparison":
 		return _build_supplier_quotation_comparison(overrides)
 	return _state_payload(normalized_key, service.unavailable_state())
+
+
+def _build_report_index() -> dict[str, object]:
+	sections = _report_index_sections()
+	cards = [card for section in sections for card in section.get("cards", [])]
+	state = common.ready_state() if cards else common.empty_state(
+		"No Procurement reports available",
+		"No Procurement report surfaces are available for the current role.",
+	)
+	return {
+		"page": {"title": "Procurement Reports", "key": REPORT_INDEX_KEY},
+		"summary": {
+			"kicker": "Buyer decision review",
+			"title": "Procurement Reports",
+			"subtitle": "Review sourcing, demand, orders, and item buying history from approved Procurement report surfaces.",
+		},
+		"controls": {
+			"actions": [
+				{"key": "refresh", "label": "Refresh"},
+			],
+			"fields": [],
+		},
+		"metrics": [],
+		"catalog": {
+			"title": "Report catalog",
+			"subtitle": "Active reports open inside Procurement. Planned reports are listed for Phase 4A sequence only.",
+			"sections": sections,
+		},
+		"results": {
+			"title": "Report catalog state",
+			"columns": [],
+			"rows": [],
+			"state": state,
+		},
+		"action_targets": {
+			"open_supplier_quotation_comparison": {
+				"kind": "report_page",
+				"report_key": "supplier_quotation_comparison",
+			},
+		},
+	}
+
+
+def _report_index_sections() -> list[dict[str, object]]:
+	return [
+		{
+			"key": "sourcing_review",
+			"title": "Sourcing review",
+			"subtitle": "Compare supplier offers and quotation posture before buying decisions.",
+			"cards": [
+				{
+					"key": "supplier_quotation_comparison",
+					"title": "Quote Comparison",
+					"purpose": "Compare supplier offers by price, validity, item, supplier, and RFQ reference.",
+					"status": "ready",
+					"status_label": "Ready",
+					"boundary": "Read-only sourcing comparison. Supplier selection and item price updates are not exposed here.",
+					"icon": "report",
+					"action_key": "open_supplier_quotation_comparison",
+					"target_route": "/desk/procurement-console-report/supplier-quotation-comparison",
+				},
+			],
+		},
+		{
+			"key": "order_review",
+			"title": "Order review",
+			"subtitle": "Understand ordered value and follow-up posture without changing Purchase Orders.",
+			"cards": [
+				{
+					"key": "purchase_order_analysis",
+					"title": "Purchase Order Analysis",
+					"purpose": "Review ordered value, open receiving posture, billing posture, suppliers, items, and status.",
+					"status": "planned",
+					"status_label": "Planned",
+					"boundary": "Buyer visibility only. Receiving and billing execution remain outside Procurement.",
+					"icon": "order",
+				},
+			],
+		},
+		{
+			"key": "demand_coverage",
+			"title": "Demand coverage",
+			"subtitle": "Review purchase demand coverage before building new order reports.",
+			"cards": [
+				{
+					"key": "demand_to_order_coverage",
+					"title": "Demand-to-Order Coverage",
+					"purpose": "Show which purchase request lines are ordered, partially ordered, or still need sourcing action.",
+					"status": "planned",
+					"status_label": "Planned",
+					"boundary": "Demand review only. It will not create Purchase Orders or receive stock.",
+					"icon": "quotation",
+				},
+			],
+		},
+		{
+			"key": "item_price_review",
+			"title": "Item and price review",
+			"subtitle": "Prepare read-only item buying history before any price governance work.",
+			"cards": [
+				{
+					"key": "item_purchase_history",
+					"title": "Item Purchase History",
+					"purpose": "Review bought items, suppliers, historical buying rates, and order references.",
+					"status": "planned",
+					"status_label": "Planned",
+					"boundary": "Read-only history. Item Price and default supplier changes stay disabled.",
+					"icon": "item",
+				},
+			],
+		},
+	]
 
 
 def _build_supplier_quotation_comparison(overrides: dict[str, object]) -> dict[str, object]:

@@ -717,6 +717,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 "rfq_directory",
                 "supplier_quotation_directory",
                 "buying_item_directory",
+                "procurement_reports",
                 "supplier_quotation_comparison",
             ],
         )
@@ -871,8 +872,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["sidebar"]["mode_label"], "Procurement Workspace")
         self.assertEqual(
             [item["label"] for item in payload["sidebar"]["items"]],
-            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Quote Comparison"],
+            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports", "Quote Comparison"],
         )
+        self.assertEqual(payload["sidebar"]["items"][-2]["target"], {"kind": "page", "route": "procurement-console-report"})
         self.assertEqual(payload["sidebar"]["items"][-1]["target"]["kind"], "report_page")
 
     def test_procurement_workspace_search_is_permission_aware_and_productized(self):
@@ -1671,6 +1673,40 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
         self.assertNotEqual(payload["results"]["state"]["kind"], "error")
         self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["refresh"])
+
+    def test_report_index_returns_ready_catalog_for_procurement_user(self):
+        payload = report.get_procurement_console_report_context()
+
+        self.assertEqual(payload["page"], {"title": "Procurement Reports", "key": "procurement_reports_index"})
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        sections = payload["catalog"]["sections"]
+        self.assertEqual(
+            [section["key"] for section in sections],
+            ["sourcing_review", "order_review", "demand_coverage", "item_price_review"],
+        )
+        cards = [card for section in sections for card in section["cards"]]
+        card_by_key = {card["key"]: card for card in cards}
+        self.assertEqual(card_by_key["supplier_quotation_comparison"]["status"], "ready")
+        self.assertEqual(card_by_key["supplier_quotation_comparison"]["target_route"], "/desk/procurement-console-report/supplier-quotation-comparison")
+        self.assertEqual(card_by_key["purchase_order_analysis"]["status"], "planned")
+        self.assertNotIn("target_route", card_by_key["purchase_order_analysis"])
+        self.assertEqual(
+            payload["action_targets"]["open_supplier_quotation_comparison"],
+            {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
+        )
+        payload_text = str(payload).lower()
+        self.assertNotIn("query-report", payload_text)
+        self.assertNotIn("set_default_supplier", payload_text)
+        self.assertNotIn("default supplier mutation", payload_text)
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_report_index_restricted_for_non_procurement_user(self):
+        _set_user("sales@example.com", ["Sales User"])
+
+        payload = report.get_procurement_console_report_context()
+
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
+
 
     def test_supplier_quotation_comparison_wraps_native_report_without_mutation_tools(self):
         payload = report.get_procurement_console_report_context(

@@ -9,8 +9,10 @@
   const HOME_ROUTE = procurementRoutes.home || "procurement-console";
   const WORKLIST_ROUTE = procurementRoutes.worklist || "procurement-console-worklist";
   const CONTEXT_METHOD = procurementMethods.reportContext || "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context";
+  const REPORT_INDEX_KEY = "procurement_reports_index";
   const REPORT_CHROME_TITLE = "Procurement Report";
   const REPORT_CHROME_LABELS = {
+    procurement_reports_index: "Procurement Reports",
     supplier_quotation_comparison: "Quote Comparison",
   };
   const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-05-02-report-link-suggest-v1";
@@ -37,6 +39,15 @@
   function routeToReport(reportName, filters) {
     frappe.route_options = filters && Object.keys(filters).length ? filters : {};
     frappe.set_route("query-report", reportName);
+  }
+
+  function routeToReportPage(reportKey, filters) {
+    frappe.route_options = filters && Object.keys(filters).length ? filters : {};
+    const slug = String(reportKey || "").replace(/_/g, "-");
+    if (slug && slug !== REPORT_INDEX_KEY.replace(/_/g, "-")) {
+      return frappe.set_route(PAGE_KEY, slug);
+    }
+    return frappe.set_route(PAGE_KEY);
   }
 
   function cleanupForNativeRoute() {
@@ -72,6 +83,7 @@
     }
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
     if (target.kind === "report" && target.report_name) return routeToReport(target.report_name, target.filters || null);
+    if (target.kind === "report_page") return routeToReportPage(target.report_key || REPORT_INDEX_KEY, target.filters || null);
   }
 
   function pathRouteSignature() {
@@ -95,11 +107,12 @@
   }
 
   function resolveReportKey(route) {
-    return Array.isArray(route) && route.length > 1 ? String(route[1] || "").replace(/-/g, "_") : "";
+    return Array.isArray(route) && route.length > 1 ? String(route[1] || "").replace(/-/g, "_") : REPORT_INDEX_KEY;
   }
 
   function loadingConfig(reportKey) {
     const labelMap = {
+      procurement_reports_index: "Procurement Reports",
       supplier_quotation_comparison: "Supplier Quotation Comparison",
     };
     const label = labelMap[reportKey] || REPORT_CHROME_TITLE;
@@ -273,6 +286,58 @@
     });
   }
 
+
+  function escapeHtml(value) {
+    return frappe.utils.escape_html(String(value == null ? "" : value));
+  }
+
+  function renderCatalogCard(card) {
+    const status = String(card && card.status || "planned").toLowerCase();
+    const isReady = status === "ready" && card && card.action_key;
+    const attrs = isReady
+      ? ' data-erpw-report-action-key="' + escapeHtml(card.action_key) + '"'
+      : ' disabled aria-disabled="true"';
+    const statusLabel = card && card.status_label ? card.status_label : (isReady ? "Ready" : "Planned");
+    return [
+      '<button type="button" class="erpw-report-insight"', attrs, '>',
+        '<div class="erpw-report-insight-label">' + escapeHtml(statusLabel) + '</div>',
+        '<div class="erpw-report-insight-value">' + escapeHtml(card && card.title) + '</div>',
+        '<div class="erpw-report-insight-meta">' + escapeHtml(card && card.purpose) + '</div>',
+        card && card.boundary ? '<div class="erpw-report-insight-meta">' + escapeHtml(card.boundary) + '</div>' : '',
+      '</button>'
+    ].join("");
+  }
+
+  function renderReportCatalog(catalog) {
+    const sections = Array.isArray(catalog && catalog.sections) ? catalog.sections : [];
+    if (!sections.length) return '';
+    return sections.map((section) => {
+      const cards = Array.isArray(section && section.cards) ? section.cards : [];
+      if (!cards.length) return '';
+      return [
+        '<section class="erpw-report-card erpw-report-secondary">',
+          '<div class="erpw-report-section-head">',
+            section.title ? '<div class="erpw-report-section-title">' + escapeHtml(section.title) + '</div>' : '',
+            section.subtitle ? '<div class="erpw-report-section-subtitle">' + escapeHtml(section.subtitle) + '</div>' : '',
+          '</div>',
+          '<div class="erpw-report-insight-grid">',
+            cards.map(renderCatalogCard).join(''),
+          '</div>',
+        '</section>'
+      ].join('');
+    }).join('');
+  }
+
+  function mountReportIndex(viewState, runtime, config, payload) {
+    const indexConfig = Object.assign({}, config, { metrics: [], secondary: null, results: null });
+    runtime.mountReport(viewState.$host, indexConfig);
+    const $shell = viewState.$host.children('.erpw-report-shell').first();
+    $shell.append(renderReportCatalog(payload && payload.catalog));
+    if (typeof runtime.setDataRefreshing === "function") {
+      runtime.setDataRefreshing(viewState.$host, false);
+    }
+  }
+
   function mountPayload(viewState, payload, options) {
     if (viewState && viewState.routeSignature && !isCurrentReportRoute(viewState.routeSignature)) return;
     syncReportChromeTitle(viewState, payload);
@@ -285,6 +350,7 @@
           if (!details) return;
           if (details.key === "refresh") return loadRoute(viewState, { partialDataRefresh: true });
           if (details.key === "back_to_console") return frappe.set_route(HOME_ROUTE);
+          if (details.key === "back_to_reports") return frappe.set_route(PAGE_KEY);
           executeTarget(((payload && payload.action_targets) || {})[details.key] || null);
         },
         onControlSubmit(details) {
@@ -300,6 +366,10 @@
         },
       });
 
+      if (payload && payload.catalog) {
+        mountReportIndex(viewState, runtime, config, payload);
+        return;
+      }
       if (options && options.partialDataRefresh && typeof runtime.refreshReportData === "function") {
         runtime.refreshReportData(viewState.$host, config, { refreshControls: Boolean(options.refreshControls) });
         if (options.refreshControls) {
@@ -327,11 +397,6 @@
     }
     viewState.reportKey = reportKey;
     viewState.routeSignature = routeSignature;
-
-    if (!reportKey) {
-      mountPayload(viewState, errorConfig("Open this page from a Procurement Console report card so the report key is passed through."));
-      return;
-    }
 
     const partialDataRefresh = Boolean(settings.partialDataRefresh && viewState.$host && viewState.$host.find(".erpw-report-shell").length);
     if (partialDataRefresh) {

@@ -164,6 +164,12 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 			"target": {"kind": "worklist", "queue_key": "buying_item_directory"},
 		},
 		{
+			"key": "procurement_reports",
+			"label": "Reports",
+			"icon": "report",
+			"target": {"kind": "page", "route": "procurement-console-report"},
+		},
+		{
 			"key": "supplier_quotation_comparison",
 			"label": "Quote Comparison",
 			"icon": "report",

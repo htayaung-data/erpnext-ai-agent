@@ -872,7 +872,7 @@ async function checkProcurementBackForwardLifecycle(page) {
 
 async function checkProcurementSidebar(page) {
   await openDeskRoute(page, "/desk/procurement-console");
-  const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Quote Comparison"];
+  const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports", "Quote Comparison"];
   const sidebarText = page.locator(".erpw-sales-console-sidebar-text");
   await sidebarText.first().waitFor({ state: "visible", timeout: TIMEOUT });
   const labels = (await sidebarText.evaluateAll((nodes) => nodes.map((node) => (node.textContent || "").trim()).filter(Boolean))).slice(0, expected.length);
@@ -899,6 +899,15 @@ async function checkProcurementSidebar(page) {
     clickedRoutes.push(page.url());
   }
 
+  const reportsLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Reports" }).first();
+  await reportsLink.waitFor({ state: "visible", timeout: TIMEOUT });
+  await reportsLink.click();
+  await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Reports Index: after sidebar click");
+  const reportsTitle = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Procurement Reports/i.test(reportsTitle), "Reports sidebar link did not open Procurement Reports index", { reportsTitle });
+  clickedRoutes.push(page.url());
+
   const quoteLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).first();
   await quoteLink.waitFor({ state: "visible", timeout: TIMEOUT });
   await quoteLink.click();
@@ -907,6 +916,33 @@ async function checkProcurementSidebar(page) {
   clickedRoutes.push(page.url());
 
   return { labels, clickedRoutes };
+}
+
+async function checkProcurementReportsIndex(page) {
+  await openDeskRoute(page, "/desk/procurement-console-report");
+  await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Reports Index direct route");
+  const shellText = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Procurement Reports/i.test(shellText), "Reports Index title missing", { shellText });
+  assert(/Sourcing review/i.test(shellText) && /Order review/i.test(shellText) && /Demand coverage/i.test(shellText) && /Item and price review/i.test(shellText), "Reports Index grouping missing", { shellText });
+  assert(!/query-report|Set Default Supplier|Update Item Price/i.test(shellText), "Reports Index exposes forbidden report wording or native route", { shellText });
+  const plannedCards = ["Purchase Order Analysis", "Demand-to-Order Coverage", "Item Purchase History"];
+  for (const label of plannedCards) {
+    const card = page.locator(".erpw-report-insight", { hasText: label }).first();
+    await card.waitFor({ state: "visible", timeout: TIMEOUT });
+    assert(await card.isDisabled(), `${label}: planned report card should be disabled`);
+  }
+  const screenshot = await captureSmokeScreenshot(page, "procurement-reports-index");
+  const quoteCard = page.locator(".erpw-report-insight", { hasText: "Quote Comparison" }).first();
+  await quoteCard.waitFor({ state: "visible", timeout: TIMEOUT });
+  assert(!(await quoteCard.isDisabled()), "Quote Comparison report card should be active");
+  await quoteCard.click();
+  await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report/supplier-quotation-comparison", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Quote Comparison from Reports Index");
+  const quoteText = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Quote Comparison/i.test(quoteText), "Quote Comparison card did not open productized report", { quoteText });
+  assert(!/Set Default Supplier|Update Item Price/i.test(quoteText), "Quote Comparison exposes forbidden mutation label", { quoteText });
+  return { screenshot, quoteUrl: page.url() };
 }
 
 function fieldByKey(payload, key) {
@@ -1841,6 +1877,7 @@ async function runUser(browser, user) {
     report.overviewNavigationLifecycle = await checkProcurementOverviewNavigationLifecycle(page);
     report.backForwardLifecycle = await checkProcurementBackForwardLifecycle(page);
     report.sidebarLabels = await checkProcurementSidebar(page);
+    report.reportsIndex = await checkProcurementReportsIndex(page);
     await openDeskRoute(page, "/desk/procurement-console");
     const bootstrap = await callMethod(page, "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap");
     assert(bootstrap.ok, `${user.label}: bootstrap failed`, bootstrap);

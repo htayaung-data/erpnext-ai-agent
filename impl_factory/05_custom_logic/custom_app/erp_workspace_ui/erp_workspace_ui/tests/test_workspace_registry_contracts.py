@@ -171,6 +171,12 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "target": {"kind": "worklist", "queue_key": "buying_item_directory"},
                 },
                 {
+                    "key": "procurement_reports",
+                    "label": "Reports",
+                    "icon": "report",
+                    "target": {"kind": "page", "route": "procurement-console-report"},
+                },
+                {
                     "key": "supplier_quotation_comparison",
                     "label": "Quote Comparison",
                     "icon": "report",
@@ -179,6 +185,15 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             ],
         )
 
+
+
+    def test_procurement_reports_sidebar_target_uses_report_index_route(self):
+        workspace = get_procurement_workspace_definition()
+        target = next(
+            item["target"] for item in workspace["fallback_items"] if item["key"] == "procurement_reports"
+        )
+
+        self.assertEqual(target, {"kind": "page", "route": "procurement-console-report"})
 
     def test_procurement_quote_comparison_sidebar_target_uses_productized_report_page(self):
         workspace = get_procurement_workspace_definition()

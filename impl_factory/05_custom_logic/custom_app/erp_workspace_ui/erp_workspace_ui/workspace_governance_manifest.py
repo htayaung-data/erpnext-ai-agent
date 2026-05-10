@@ -239,7 +239,7 @@ ROUTE_MANIFEST: tuple[dict[str, Any], ...] = (
 		)
 		for queue_key, label in PROCUREMENT_WORKLIST_ROUTES
 	),
-	_route("procurement", "procurement-console-report", "report_guard", "productized_report", "/desk/procurement-console-report", "report_page_shell", required_smoke_category="procurement_report_contract", notes="Bare route renders guarded state."),
+	_route("procurement", "procurement-console-report", "report_index", "productized_report", "/desk/procurement-console-report", "report_page_shell", required_smoke_category="procurement_phase4_smoke", notes="Procurement Reports Index catalog."),
 	_route("procurement", "procurement-console-report/supplier_quotation_comparison", "report", "productized_report", "/desk/procurement-console-report/supplier-quotation-comparison", "report_page_shell", required_smoke_category="procurement_phase3_smoke", notes="Read-only wrapper around ERPNext Supplier Quotation Comparison."),
 	_route("procurement", "procurement-console-po-follow-up", "detail", "productized_detail", "/desk/procurement-console-po-follow-up/<purchase-order>", "compact_child_detail_shell", required_smoke_category="procurement_phase3_smoke", notes="Read-only PO follow-up detail."),
 	_route("procurement", "procurement-console-supplier", "detail", "productized_detail", "/desk/procurement-console-supplier/<supplier>", "compact_child_detail_shell", required_smoke_category="procurement_phase3_smoke", notes="Read-only supplier profile."),
@@ -283,6 +283,8 @@ ACTION_MANIFEST: tuple[dict[str, Any], ...] = (
 	_action("procurement-worklist-reset", "procurement", "procurement-console-worklist/*", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
 	_action("procurement-worklist-apply", "procurement", "procurement-console-worklist/*", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
 	_action("procurement-report-refresh", "procurement", "procurement-console-report/*", "refresh", "productized_secondary_action", "current_shell", label="Refresh"),
+	_action("procurement-report-index-card-navigation", "procurement", "procurement-console-report", "report_card_navigation", "productized_navigation", "report_page", label_pattern="report card", target_route_pattern="/desk/procurement-console-report/<report>"),
+	_action("procurement-report-planned-card", "procurement", "procurement-console-report", "planned_report_card", "productized_secondary_action", "disabled", label_pattern="Planned", notes="Planned Phase 4A report cards are disabled until their report payloads are implemented."),
 	_action("procurement-report-reset", "procurement", "procurement-console-report/*", "reset_filters", "productized_secondary_action", "current_shell", label="Reset"),
 	_action("procurement-report-apply", "procurement", "procurement-console-report/*", "apply_filters", "productized_primary_action", "current_shell", label="Apply"),
 	_action("procurement-overview-navigation", "procurement", "procurement-console", "overview_card_navigation", "productized_navigation", "page_or_worklist_or_report", label_pattern="overview card", target_route_pattern="/desk/procurement-console*"),
