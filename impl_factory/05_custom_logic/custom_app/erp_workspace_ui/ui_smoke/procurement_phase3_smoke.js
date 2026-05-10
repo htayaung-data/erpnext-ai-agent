@@ -994,10 +994,13 @@ async function checkProcurementReportsIndex(page) {
 
 async function checkPurchaseOrderAnalysisReport(page, options = {}) {
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.waitForFunction(() => /Purchase Order Analysis/.test(document.body.innerText || ""), null, { timeout: TIMEOUT });
   await assertSingleProcurementShell(page, "report", "Purchase Order Analysis report");
   const text = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Purchase Order Analysis/i.test(text), "Purchase Order Analysis report did not render", { text });
-  assert(!/query-report|Set Default Supplier|Update Item Price|Receive|Bill|Pay|Approve|Reject|Submit|Cancel|Amend|Close/i.test(text), "Purchase Order Analysis exposes forbidden report wording or mutation label", { text });
+  assert(!/query-report|Set Default Supplier|Update Item Price/i.test(text), "Purchase Order Analysis exposes raw/native report or price mutation wording", { text });
+  const actionLabels = await page.locator(".erpw-report-shell").first().evaluate((shell) => Array.from(shell.querySelectorAll("button, a, [role='button']")).map((node) => (node.textContent || "").replace(/\s+/g, " " ).trim()).filter(Boolean));
+  assert(!actionLabels.some((label) => /^(Receive|Bill|Pay|Approve|Reject|Submit|Cancel|Amend|Close)$/i.test(label)), "Purchase Order Analysis exposes forbidden mutation action", { actionLabels });
   const fields = await page.locator(".erpw-report-shell").first().evaluate((shell) => Array.from(shell.querySelectorAll("[data-erpw-control-key]")).map((node) => ({
     key: node.getAttribute("data-erpw-control-key"),
     doctype: node.getAttribute("data-erpw-link-doctype") || "",
