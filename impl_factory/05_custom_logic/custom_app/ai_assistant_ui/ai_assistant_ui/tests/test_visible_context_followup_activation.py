@@ -1084,7 +1084,8 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertIn("only 3 visible rows", answer)
 		self.assertIn("no rank 11", answer)
 		self.assertIn("Rank 1: ACC-PINV-2026-00306", answer)
-		self.assertNotIn("need which row you mean", answer)
+		self.assertIn("ask for a broader result with more rows", answer)
+		self.assertNotIn("no row is selected", answer)
 
 	def test_visible_table_scope_wins_over_hidden_source_rows_for_out_of_range_rank(self):
 		hidden_source = _ar_full_source_artifact_with_hidden_rows()
@@ -1194,8 +1195,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("I can't verify that from the table above.", answer)
-		self.assertIn("Territory", answer)
+		self.assertIn("I can't verify that from this displayed result", answer)
+		self.assertIn("Visible evidence covers", answer)
+		self.assertIn("Field needed: Territory", answer)
 		self.assertNotIn("Sunflower Accessories Co.", answer)
 
 	def test_prediction_boundary_uses_visible_row_facts_without_nbu_authority_trace(self):
@@ -1208,7 +1210,8 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't safely predict", answer)
+		self.assertIn("would not call this a default prediction", answer)
+		self.assertIn("payment-history trend", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
 		self.assertNotIn("Rank 1 is Capital Telecom", answer)
 
@@ -1222,9 +1225,10 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_clarification")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("I need which row you mean", answer)
+		self.assertIn("multiple visible rows and no row is selected", answer)
 		self.assertIn("Rank 1: Capital Telecom (NPT)", answer)
 		self.assertIn("Rank 2: 35th Street Mobile Wholesale", answer)
+		self.assertNotIn("customer/item/supplier", answer)
 		self.assertNotIn("accounts_receivable_read", answer)
 
 	def test_artifact_level_summary_question_yields_to_reasoning_lane(self):
@@ -1430,9 +1434,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't safely predict", answer)
+		self.assertIn("would not call this a default prediction", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
-		self.assertIn("approved prediction model or policy", answer)
+		self.assertIn("governed prediction authority", answer)
 		self.assertNotIn("Rank 1 is Capital Telecom", answer)
 
 	def test_recommendation_question_returns_policy_boundary_with_current_evidence(self):
@@ -1445,10 +1449,10 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't choose who you should collect from first", answer)
-		self.assertIn("Facts from the table above for Rank 1", answer)
+		self.assertIn("can't turn it into a recommended action", answer)
+		self.assertIn("Visible facts for Rank 1", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
-		self.assertIn("collection-priority policy", answer)
+		self.assertIn("approved decision policy", answer)
 
 	def test_causal_question_returns_boundary_not_unsupported_cause_claim(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
@@ -1460,7 +1464,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't prove what caused the change", answer)
+		self.assertIn("can't attribute cause from this single displayed result", answer)
 		self.assertIn("trend, payment-behavior, or transaction-history", answer)
 
 	def test_answers_second_supplier_from_plain_visible_name_list(self):
@@ -1617,9 +1621,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't make an action recommendation", answer)
+		self.assertIn("can't turn it into a recommended action", answer)
 		self.assertIn("Type-C Cable 2m Fast Charge", answer)
-		self.assertIn("relevant decision policy", answer)
+		self.assertIn("approved decision policy", answer)
 
 
 if __name__ == "__main__":

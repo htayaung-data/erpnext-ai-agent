@@ -29,6 +29,14 @@ from .visible_context_frame_stack import (
 	visible_context_artifacts,
 	visible_context_payload_identity,
 )
+from .visible_context_boundary_language import (
+	render_causal_boundary,
+	render_missing_field_boundary,
+	render_out_of_range_rank,
+	render_prediction_boundary,
+	render_recommendation_boundary,
+	render_row_clarification,
+)
 from .semantic_aliases import detect_canonical_keys
 from .evidence_drilldown_registry import build_governed_drilldown_plan
 from .source_detail_drilldown_execution import (
@@ -333,15 +341,10 @@ def _artifact_field_boundary_answer(
 	missing_keys = [key for key in requested_keys if key not in visible_keys]
 	if not missing_keys:
 		return ""
-	lines = [
-		"I can't verify that from the table above.",
-		"",
-		f"The visible rows show: {', '.join(_field_label(key) for key in visible_keys[:8])}.",
-		f"The table does not show: {', '.join(_field_label(key) for key in missing_keys[:6])}.",
-		"",
-		"To answer this safely, we need a governed result that includes those fields or a filtered view that proves the condition.",
-	]
-	return "\n".join(lines).strip()
+	return render_missing_field_boundary(
+		visible_field_labels=[_field_label(key) for key in visible_keys],
+		missing_field_labels=[_field_label(key) for key in missing_keys],
+	)
 
 
 def _resolve_visible_context(
@@ -955,43 +958,27 @@ def _boundary_answer_text(raw_message: str, resolution: Dict[str, Any], *, autho
 	except (TypeError, ValueError):
 		rank = 0
 	rank_text = f"Rank {rank}" if rank > 0 else "the selected row"
+	metric_lines = _row_metric_lines(row, identity_label=label)
 	if authority_intent == "prediction_boundary":
-		lines = [
-			f"I can show the facts for {rank_text}, but I can't safely predict whether {label} will default from this table alone.",
-			"",
-			f"Facts from the table above for {label}:",
-		]
-		next_step = "To answer that as a prediction, we would need an approved prediction model or policy plus payment-history and trend evidence."
+		return render_prediction_boundary(
+			rank_text=rank_text,
+			entity_label=label,
+			metric_lines=metric_lines,
+		)
 	elif authority_intent == "recommendation_boundary":
-		if _tokens(raw_message).intersection({"collect", "collection", "chase", "call"}):
-			lines = [
-				"I can show the facts from the table above, but I can't choose who you should collect from first without an approved business rule for that decision.",
-				"",
-				f"Facts from the table above for {rank_text} ({label}):",
-			]
-			next_step = "If you approve a collection-priority policy, I can use it to turn this evidence into a recommendation."
-		else:
-			lines = [
-				"I can show the facts from the table above, but I can't make an action recommendation without an approved business rule for that decision.",
-				"",
-				f"Facts from the table above for {rank_text} ({label}):",
-			]
-			next_step = "If you approve the relevant decision policy, I can use it to turn this evidence into a recommendation."
+		return render_recommendation_boundary(
+			rank_text=rank_text,
+			entity_label=label,
+			metric_lines=metric_lines,
+		)
 	elif authority_intent == "causal_boundary":
-		lines = [
-			f"I can show the facts for {rank_text}, but I can't prove what caused the change from this single displayed result.",
-			"",
-			f"Facts from the table above for {label}:",
-		]
-		next_step = "To explain cause or change, we would need a trend, payment-behavior, or transaction-history view."
+		return render_causal_boundary(
+			rank_text=rank_text,
+			entity_label=label,
+			metric_lines=metric_lines,
+		)
 	else:
 		return _resolved_answer_text(raw_message, resolution)
-	metric_lines = _row_metric_lines(row, identity_label=label)
-	if metric_lines:
-		lines.extend(metric_lines)
-	lines.append("")
-	lines.append(next_step)
-	return "\n".join(line for line in lines if line is not None).strip()
 
 
 def _ambiguity_options_from_resolution(resolution: Dict[str, Any]) -> List[str]:
@@ -1000,15 +987,7 @@ def _ambiguity_options_from_resolution(resolution: Dict[str, Any]) -> List[str]:
 
 def _clarification_text(resolution: Dict[str, Any]) -> str:
 	options = _ambiguity_options_from_resolution(resolution)
-	lines = ["I can help, but I need which row you mean from the current result."]
-	if options:
-		lines.append("")
-		lines.append("Current options:")
-		for index, option in enumerate(options[:10], start=1):
-			lines.append(f"- Rank {index}: {option}")
-	lines.append("")
-	lines.append('For example, ask "explain rank 2" or name the customer/item/supplier.')
-	return "\n".join(lines).strip()
+	return render_row_clarification(options=options)
 
 
 def _out_of_range_text(resolution: Dict[str, Any]) -> str:
@@ -1017,18 +996,12 @@ def _out_of_range_text(resolution: Dict[str, Any]) -> str:
 	available_count = _positive_int(resolution.get("available_row_count")) or len(options)
 	target_reference = _clean_text(resolution.get("target_reference")).lower()
 	row_label = "option" if target_reference == "candidate_list" else "row"
-	requested_text = f"rank {requested_rank}" if requested_rank else "that rank"
-	lines = [
-		f"The current result has only {available_count} visible {row_label}{'' if available_count == 1 else 's'}, so there is no {requested_text}.",
-	]
-	if options:
-		lines.append("")
-		lines.append("Available rows:")
-		for index, option in enumerate(options[:10], start=1):
-			lines.append(f"- Rank {index}: {option}")
-	lines.append("")
-	lines.append("Please choose one of the visible rows, or ask for a broader result if you need more rows.")
-	return "\n".join(lines).strip()
+	return render_out_of_range_rank(
+		options=options,
+		requested_rank=requested_rank,
+		available_count=available_count,
+		row_label=row_label,
+	)
 
 
 def _activation_contract(
