@@ -406,6 +406,11 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 		self.assertIn("Visible evidence covers: Party, Outstanding Amount, Overdue Amount, Overdue Intensity.", filter_check.answer)
 		self.assertIn("Fields needed: Customer, Territory.", filter_check.answer)
 		self.assertNotIn("Asia Connect Logistics", filter_check.answer)
+		filter_contract = filter_check.latest_payload("qwen_filter_readiness_contract")
+		self.assertEqual(filter_contract["status"], "missing_filter_evidence")
+		self.assertEqual(filter_contract["requested_filter_keys"], ["customer", "territory"])
+		self.assertEqual(filter_contract["missing_visible_field_keys"], ["customer", "territory"])
+		self.assertEqual(filter_contract["unsupported_filter_keys"], ["territory"])
 		self.assertFalse(filter_check.execution_path.get("requires_runtime"))
 
 	def test_generic_more_insight_anchors_to_working_capital_metadata(self):

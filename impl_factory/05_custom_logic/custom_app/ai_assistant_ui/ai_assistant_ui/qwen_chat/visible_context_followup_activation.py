@@ -43,6 +43,10 @@ from .visible_context_boundary_language import (
 )
 from .semantic_aliases import detect_canonical_keys
 from .evidence_drilldown_registry import build_governed_drilldown_plan
+from .filter_readiness_contract import (
+	build_filter_readiness_contract,
+	render_filter_readiness_boundary,
+)
 from .source_detail_drilldown_execution import (
 	build_source_detail_drilldown_payload_from_artifact_line,
 	source_detail_grounding_context_from_artifact,
@@ -333,21 +337,11 @@ def _artifact_field_boundary_answer(
 	raw_message: str,
 	artifact_payload: Dict[str, Any],
 ) -> str:
-	requested_keys = _artifact_requested_dimension_keys(raw_message)
-	if not requested_keys:
-		return ""
-	rows, _source = nbu_artifact_rows(_clean_dict(artifact_payload))
-	if not rows:
-		return ""
-	visible_keys = _visible_row_field_keys(rows)
-	if not visible_keys:
-		return ""
-	missing_keys = [key for key in requested_keys if key not in visible_keys]
-	if not missing_keys:
-		return ""
-	return render_missing_field_boundary(
-		visible_field_labels=[_field_label(key) for key in visible_keys],
-		missing_field_labels=[_field_label(key) for key in missing_keys],
+	return render_filter_readiness_boundary(
+		build_filter_readiness_contract(
+			raw_message=raw_message,
+			artifact_payload=_clean_dict(artifact_payload),
+		)
 	)
 
 
@@ -1143,10 +1137,11 @@ def try_activate_visible_context_followup_response(
 		frame_arbitration = _clean_dict(resolution.get("frame_arbitration"))
 		selected_artifact_id = _clean_text(resolution.get("resolved_artifact_id")) or _clean_text(frame_arbitration.get("selected_artifact_id"))
 		selected_artifact = _artifact_by_identity(artifacts, selected_artifact_id)
-		answer_text = _artifact_field_boundary_answer(
+		filter_readiness_contract = build_filter_readiness_contract(
 			raw_message=raw_message,
 			artifact_payload=selected_artifact or (artifacts[0] if artifacts else _clean_dict(current_artifact)),
 		)
+		answer_text = render_filter_readiness_boundary(filter_readiness_contract)
 		if not answer_text:
 			return False, None
 		answer_mode = "visible_context_boundary"
@@ -1156,6 +1151,7 @@ def try_activate_visible_context_followup_response(
 		for payload in additional_tool_payloads or []:
 			if isinstance(payload, dict) and payload:
 				append_tool_payload(session_doc, payload)
+		append_tool_payload(session_doc, filter_readiness_contract)
 		trace = _trace_payload(
 			request_id=request_id,
 			session_id=session_id,
