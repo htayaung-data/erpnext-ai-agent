@@ -16,7 +16,7 @@
   function cssToken(value) {
     return String(value || "")
       .toLowerCase()
-      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^-+|-+$/g, "");
   }
 
