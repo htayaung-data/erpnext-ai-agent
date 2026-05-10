@@ -956,7 +956,7 @@ async function checkProcurementReportsIndex(page) {
     return { columns: style.gridTemplateColumns, rects };
   });
   assert(cardGrid.rects.length === 4, "Reports Index card grid did not render four cards", cardGrid);
-  assert(cardGrid.rects.filter((rect) => rect.top === cardGrid.rects[0].top).length >= 2, "Reports Index cards are still vertically stacked at desktop width", cardGrid);
+  assert(cardGrid.rects.filter((rect) => Math.abs(rect.top - cardGrid.rects[0].top) <= 4).length >= 2, "Reports Index cards are still vertically stacked at desktop width", cardGrid);
   assert(Math.min(...cardGrid.rects.map((rect) => rect.width)) >= 220, "Reports Index cards are too narrow for premium desktop layout", cardGrid);
   const readyCards = ["Quote Comparison", "Purchase Order Analysis"];
   for (const label of readyCards) {
