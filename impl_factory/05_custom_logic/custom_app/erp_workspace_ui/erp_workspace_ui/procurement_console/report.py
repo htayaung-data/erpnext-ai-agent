@@ -249,7 +249,7 @@ def _comparison_payload(
 			"columns": _comparison_display_columns(),
 			"rows": rows[:ROW_LIMIT],
 			"state": state,
-			"tableMinWidth": 1040,
+			"tableMinWidth": 1820,
 		},
 		"action_targets": {},
 	}
@@ -345,7 +345,7 @@ def _comparison_display_columns() -> list[dict[str, object]]:
 		{"key": "price", "label": "Price", "align": "right"},
 		{"key": "price_per_unit", "label": "Unit Price", "align": "right"},
 		{"key": "quotation", "label": "Quotation", "nowrap": True},
-		{"key": "valid_till", "label": "Valid Till"},
+		{"key": "valid_till", "label": "Valid Till", "nowrap": True},
 		{"key": "lead_time_days", "label": "Lead Time", "align": "right"},
 		{"key": "request_for_quotation", "label": "RFQ", "nowrap": True},
 	]

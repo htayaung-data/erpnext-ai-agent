@@ -926,14 +926,29 @@ async function checkProcurementReportsIndex(page) {
   assert(/Procurement Reports/i.test(shellText), "Reports Index title missing", { shellText });
   assert(/Sourcing review/i.test(shellText) && /Order review/i.test(shellText) && /Demand coverage/i.test(shellText) && /Item and price review/i.test(shellText), "Reports Index grouping missing", { shellText });
   assert(!/query-report|Set Default Supplier|Update Item Price/i.test(shellText), "Reports Index exposes forbidden report wording or native route", { shellText });
+  const reportCards = page.locator(".erpw-procurement-report-card");
+  await reportCards.first().waitFor({ state: "visible", timeout: TIMEOUT });
+  const cardCount = await reportCards.count();
+  assert(cardCount === 4, "Reports Index should render exactly four Phase 4A report cards", { cardCount });
+  const cardGrid = await page.locator(".erpw-procurement-report-catalog-grid").first().evaluate((node) => {
+    const style = getComputedStyle(node);
+    const rects = Array.from(node.querySelectorAll(".erpw-procurement-report-card")).map((card) => {
+      const rect = card.getBoundingClientRect();
+      return { width: Math.round(rect.width), left: Math.round(rect.left), top: Math.round(rect.top) };
+    });
+    return { columns: style.gridTemplateColumns, rects };
+  });
+  assert(cardGrid.rects.length === 4, "Reports Index card grid did not render four cards", cardGrid);
+  assert(cardGrid.rects.filter((rect) => rect.top === cardGrid.rects[0].top).length >= 2, "Reports Index cards are still vertically stacked at desktop width", cardGrid);
+  assert(Math.min(...cardGrid.rects.map((rect) => rect.width)) >= 220, "Reports Index cards are too narrow for premium desktop layout", cardGrid);
   const plannedCards = ["Purchase Order Analysis", "Demand-to-Order Coverage", "Item Purchase History"];
   for (const label of plannedCards) {
-    const card = page.locator(".erpw-report-insight", { hasText: label }).first();
+    const card = page.locator(".erpw-procurement-report-card", { hasText: label }).first();
     await card.waitFor({ state: "visible", timeout: TIMEOUT });
     assert(await card.isDisabled(), `${label}: planned report card should be disabled`);
   }
   const screenshot = await captureSmokeScreenshot(page, "procurement-reports-index");
-  const quoteCard = page.locator(".erpw-report-insight", { hasText: "Quote Comparison" }).first();
+  const quoteCard = page.locator(".erpw-procurement-report-card", { hasText: "Quote Comparison" }).first();
   await quoteCard.waitFor({ state: "visible", timeout: TIMEOUT });
   assert(!(await quoteCard.isDisabled()), "Quote Comparison report card should be active");
   await quoteCard.click();
@@ -942,7 +957,29 @@ async function checkProcurementReportsIndex(page) {
   const quoteText = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
   assert(/Quote Comparison/i.test(quoteText), "Quote Comparison card did not open productized report", { quoteText });
   assert(!/Set Default Supplier|Update Item Price/i.test(quoteText), "Quote Comparison exposes forbidden mutation label", { quoteText });
-  return { screenshot, quoteUrl: page.url() };
+  const nowrapCheck = await page.locator(".erpw-report-table").first().evaluate((table) => {
+    const headers = Array.from(table.querySelectorAll("thead th")).map((node) => node.textContent.trim());
+    const index = headers.findIndex((label) => /Valid Till/i.test(label));
+    const cells = index >= 0 ? Array.from(table.querySelectorAll(`tbody tr td:nth-child(${index + 1})`)) : [];
+    return {
+      index,
+      cells: cells.map((cell) => {
+        const style = getComputedStyle(cell);
+        const rect = cell.getBoundingClientRect();
+        return {
+          text: cell.textContent.replace(/\s+/g, " ").trim(),
+          className: cell.className,
+          whiteSpace: style.whiteSpace,
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          rectCount: cell.getClientRects().length,
+        };
+      }),
+    };
+  });
+  assert(nowrapCheck.index >= 0, "Quote Comparison Valid Till column is missing", nowrapCheck);
+  assert(nowrapCheck.cells.every((cell) => cell.whiteSpace === "nowrap"), "Quote Comparison Valid Till cells are allowed to wrap", nowrapCheck);
+  return { screenshot, quoteUrl: page.url(), cardGrid, nowrapCheck };
 }
 
 function fieldByKey(payload, key) {

@@ -1691,6 +1691,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(card_by_key["purchase_order_analysis"]["status"], "planned")
         self.assertNotIn("target_route", card_by_key["purchase_order_analysis"])
         self.assertEqual(
+            [card["status"] for card in cards],
+            ["ready", "planned", "planned", "planned"],
+        )
+        self.assertEqual(
             payload["action_targets"]["open_supplier_quotation_comparison"],
             {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
         )
@@ -1719,6 +1723,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["supplier"], ["SUP-001"])
         self.assertEqual(CAPTURED_REPORT_CALLS[-1]["filters"]["include_expired"], 1)
         self.assertEqual([action["key"] for action in payload["controls"]["actions"]], ["refresh"])
+        column_by_key = {column["key"]: column for column in payload["results"]["columns"]}
+        self.assertTrue(column_by_key["valid_till"].get("nowrap"))
+        self.assertGreaterEqual(payload["results"].get("tableMinWidth", 0), 1800)
         payload_text = str(payload).lower()
         self.assertNotIn("set_default_supplier", payload_text)
         self.assertNotIn("default_supplier", payload_text)

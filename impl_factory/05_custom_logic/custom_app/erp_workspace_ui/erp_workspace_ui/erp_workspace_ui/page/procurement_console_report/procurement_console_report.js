@@ -27,6 +27,23 @@
       '.page-head[data-erpw-procurement-managed-chrome="1"] .indicator-pill,',
       '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > .icon,',
       '.page-head[data-erpw-procurement-managed-chrome="1"] .title-area > svg { display: none !important; }',
+      '.erpw-procurement-report-catalog { display:grid; gap:16px; }',
+      '.erpw-procurement-report-catalog .erpw-report-section-head { max-width:760px; }',
+      '.erpw-procurement-report-catalog-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; align-items:stretch; }',
+      '.erpw-procurement-report-card { min-height:188px; padding:16px; border-radius:16px; border:1px solid #dbe6f2; background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%); display:flex; flex-direction:column; gap:10px; text-align:left; color:#0f172a; box-shadow:0 10px 24px rgba(15,23,42,0.045); transition:border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; }',
+      '.erpw-procurement-report-card.is-ready { cursor:pointer; border-color:#b8cbe2; }',
+      '.erpw-procurement-report-card.is-ready:hover { border-color:#8fb0d3; box-shadow:0 14px 30px rgba(15,23,42,0.075); transform:translateY(-1px); }',
+      '.erpw-procurement-report-card.is-planned { cursor:not-allowed; opacity:0.74; background:#f8fafc; }',
+      '.erpw-procurement-report-card-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }',
+      '.erpw-procurement-report-card-category { font-size:10.5px; font-weight:750; letter-spacing:0.08em; text-transform:uppercase; color:#64748b; }',
+      '.erpw-procurement-report-card-status { display:inline-flex; align-items:center; justify-content:center; min-height:22px; padding:0 9px; border-radius:999px; border:1px solid #d8e3ef; background:#f8fbff; color:#475569; font-size:10.5px; font-weight:750; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; }',
+      '.erpw-procurement-report-card.is-ready .erpw-procurement-report-card-status { border-color:#9fc4d8; background:#eef9fb; color:#0f5f6d; }',
+      '.erpw-procurement-report-card-title { font-size:16px; line-height:1.25; font-weight:760; color:#0f172a; }',
+      '.erpw-procurement-report-card-purpose { font-size:12.5px; line-height:1.48; color:#475569; }',
+      '.erpw-procurement-report-card-boundary { margin-top:auto; padding-top:10px; border-top:1px solid rgba(219,230,242,0.82); font-size:11.5px; line-height:1.45; color:#64748b; }',
+      '.erpw-procurement-report-card-action { margin-top:2px; font-size:12px; font-weight:750; color:#12365f; }',
+      '@media (max-width:1180px) { .erpw-procurement-report-catalog-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }',
+      '@media (max-width:720px) { .erpw-procurement-report-catalog-grid { grid-template-columns:1fr; } .erpw-procurement-report-card { min-height:0; } }',
     ].join("\n");
     document.head.appendChild(style);
   }
@@ -291,41 +308,48 @@
     return frappe.utils.escape_html(String(value == null ? "" : value));
   }
 
-  function renderCatalogCard(card) {
-    const status = String(card && card.status || "planned").toLowerCase();
-    const isReady = status === "ready" && card && card.action_key;
+  function renderCatalogCard(entry) {
+    const card = entry && entry.card ? entry.card : {};
+    const section = entry && entry.section ? entry.section : {};
+    const status = String(card.status || "planned").toLowerCase();
+    const isReady = status === "ready" && card.action_key;
     const attrs = isReady
       ? ' data-erpw-report-action-key="' + escapeHtml(card.action_key) + '"'
       : ' disabled aria-disabled="true"';
-    const statusLabel = card && card.status_label ? card.status_label : (isReady ? "Ready" : "Planned");
+    const statusLabel = card.status_label ? card.status_label : (isReady ? "Ready" : "Planned");
     return [
-      '<button type="button" class="erpw-report-insight"', attrs, '>',
-        '<div class="erpw-report-insight-label">' + escapeHtml(statusLabel) + '</div>',
-        '<div class="erpw-report-insight-value">' + escapeHtml(card && card.title) + '</div>',
-        '<div class="erpw-report-insight-meta">' + escapeHtml(card && card.purpose) + '</div>',
-        card && card.boundary ? '<div class="erpw-report-insight-meta">' + escapeHtml(card.boundary) + '</div>' : '',
+      '<button type="button" class="erpw-procurement-report-card ', isReady ? 'is-ready' : 'is-planned', '"', attrs, ' data-erpw-procurement-report-card="', escapeHtml(card.key || ''), '">',
+        '<div class="erpw-procurement-report-card-top">',
+          '<div class="erpw-procurement-report-card-category">' + escapeHtml(section.title || '') + '</div>',
+          '<div class="erpw-procurement-report-card-status">' + escapeHtml(statusLabel) + '</div>',
+        '</div>',
+        '<div class="erpw-procurement-report-card-title">' + escapeHtml(card.title || '') + '</div>',
+        '<div class="erpw-procurement-report-card-purpose">' + escapeHtml(card.purpose || '') + '</div>',
+        card.boundary ? '<div class="erpw-procurement-report-card-boundary">' + escapeHtml(card.boundary) + '</div>' : '',
+        isReady ? '<div class="erpw-procurement-report-card-action">Open report</div>' : '',
       '</button>'
     ].join("");
   }
 
   function renderReportCatalog(catalog) {
     const sections = Array.isArray(catalog && catalog.sections) ? catalog.sections : [];
-    if (!sections.length) return '';
-    return sections.map((section) => {
+    const entries = [];
+    sections.forEach((section) => {
       const cards = Array.isArray(section && section.cards) ? section.cards : [];
-      if (!cards.length) return '';
-      return [
-        '<section class="erpw-report-card erpw-report-secondary">',
-          '<div class="erpw-report-section-head">',
-            section.title ? '<div class="erpw-report-section-title">' + escapeHtml(section.title) + '</div>' : '',
-            section.subtitle ? '<div class="erpw-report-section-subtitle">' + escapeHtml(section.subtitle) + '</div>' : '',
-          '</div>',
-          '<div class="erpw-report-insight-grid">',
-            cards.map(renderCatalogCard).join(''),
-          '</div>',
-        '</section>'
-      ].join('');
-    }).join('');
+      cards.forEach((card) => entries.push({ section, card }));
+    });
+    if (!entries.length) return '';
+    return [
+      '<section class="erpw-report-card erpw-report-secondary erpw-procurement-report-catalog">',
+        '<div class="erpw-report-section-head">',
+          '<div class="erpw-report-section-title">Approved report surfaces</div>',
+          '<div class="erpw-report-section-subtitle">Use ready reports for buyer review. Planned reports remain visible as roadmap markers but are not active yet.</div>',
+        '</div>',
+        '<div class="erpw-procurement-report-catalog-grid">',
+          entries.map(renderCatalogCard).join(''),
+        '</div>',
+      '</section>'
+    ].join('');
   }
 
   function mountReportIndex(viewState, runtime, config, payload) {
