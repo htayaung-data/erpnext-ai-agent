@@ -168,6 +168,26 @@ Breakdown by source document
 """
 
 
+def _cogs_rendered_source_detail_breakdown_text():
+	return """Here is the source-detail breakdown for Cost of Goods Sold - MMOB from Profit and Loss Statement.
+
+Executive diagnosis
+
+The approved GL Entry Account Detail rows reconcile to the Cost of Goods Sold - MMOB line: 65.4 MMK Million across 18 ledger entries.
+The largest source document is Delivery Note MAT-DN-2026-00339 at 13.5 MMK Million, or 20.6% of the line.
+Breakdown by source document
+
+Source document	Net line impact (MMK Million)	Share of line
+Delivery Note MAT-DN-2026-00339	13.5 MMK Million	20.6%
+Delivery Note MAT-DN-2026-00336	11.3 MMK Million	17.3%
+Delivery Note MAT-DN-2026-00337	11.2 MMK Million	17.1%
+
+Consultant takeaway
+
+The right management lens is source-document concentration.
+"""
+
+
 def _ap_visible_top_5_text():
 	return """Accounts Payable Aging as of 2026-05-09
 
@@ -1025,6 +1045,21 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		answer = "\n".join(message[1] for message in messages)
 		self.assertIn("Rank 2 is Delivery Note MAT-DN-2026-00336", answer)
 		self.assertIn("Net Line Impact: 11.3 MMK Million", answer)
+		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
+		self.assertEqual(arbitration.get("selected_business_object_type"), "document")
+
+	def test_rendered_source_document_breakdown_table_supports_rank_followup(self):
+		session_doc = {"messages": [_assistant_message(_cogs_rendered_source_detail_breakdown_text())]}
+		handled, payload, messages, payloads = self._activate(
+			session_doc=session_doc,
+			raw_message="who is second in the above table?",
+		)
+		self.assertTrue(handled)
+		self.assertEqual(payload["mode"], "visible_context_answer")
+		answer = "\n".join(message[1] for message in messages)
+		self.assertIn("Rank 2 is Delivery Note MAT-DN-2026-00336", answer)
+		self.assertIn("Net Line Impact: 11.3 MMK Million", answer)
+		self.assertNotIn("supporting detail needed", answer)
 		arbitration = self._latest_visible_context_trace(payloads).get("frame_arbitration")
 		self.assertEqual(arbitration.get("selected_business_object_type"), "document")
 

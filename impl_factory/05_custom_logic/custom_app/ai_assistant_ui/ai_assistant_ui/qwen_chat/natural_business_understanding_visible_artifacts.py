@@ -164,6 +164,61 @@ def _split_table_row(line: str) -> List[str]:
 	return [_clean_text(part) for part in _clean_text(line).strip("|").split("|")]
 
 
+_PLAIN_TABLE_HEADER_KEYS = {
+	"account",
+	"amount",
+	"customer",
+	"document",
+	"due_date",
+	"invoice",
+	"invoice_total",
+	"item",
+	"metric",
+	"net_line_impact",
+	"outstanding_amount",
+	"overdue_amount",
+	"party",
+	"posting_date",
+	"product",
+	"rank",
+	"revenue",
+	"share",
+	"share_of_line",
+	"share_of_selected_balance",
+	"status",
+	"supplier",
+	"total_due",
+	"value",
+	"warehouse",
+}
+
+
+def _split_plain_table_row(line: str) -> List[str]:
+	row_text = _clean_text(line)
+	if not row_text or _is_table_line(row_text):
+		return []
+	if "\t" in row_text:
+		return [_clean_text(part) for part in row_text.split("\t") if _clean_text(part)]
+	return [_clean_text(part) for part in re.split(r"\s{2,}", row_text) if _clean_text(part)]
+
+
+def _looks_like_plain_table_header(cells: List[str]) -> bool:
+	if len(cells) < 2:
+		return False
+	header_keys = {_normalize_key(cell) for cell in cells if _clean_text(cell)}
+	return bool(header_keys.intersection(_PLAIN_TABLE_HEADER_KEYS))
+
+
+def _looks_like_plain_table_data(cells: List[str], headers: List[str]) -> bool:
+	if len(cells) < 2 or not headers:
+		return False
+	header_keys = {header for header in headers if header}
+	cell_keys = {_normalize_key(cell) for cell in cells if _clean_text(cell)}
+	if cell_keys and cell_keys.issubset(header_keys):
+		return False
+	return True
+
+
 def _heading_before(lines: List[str], table_index: int) -> str:
 	for index in range(table_index - 1, -1, -1):
 		line = _clean_text(lines[index])
@@ -203,6 +258,40 @@ def visible_artifacts_from_assistant_text(text: str, *, artifact_id: str = "") -
 			index += 1
 		if rows:
 			sections[_table_section_key(heading, headers)] = rows
+		continue
+	index = 0
+	while index < len(lines):
+		cells = _split_plain_table_row(lines[index])
+		if not _looks_like_plain_table_header(cells):
+			index += 1
+			continue
+		if index + 1 >= len(lines):
+			index += 1
+			continue
+		headers = [_normalize_key(value) for value in cells]
+		next_cells = _split_plain_table_row(lines[index + 1])
+		if not _looks_like_plain_table_data(next_cells, headers):
+			index += 1
+			continue
+		heading = _heading_before(lines, index)
+		rows: List[Dict[str, Any]] = []
+		index += 1
+		while index < len(lines):
+			values = _split_plain_table_row(lines[index])
+			if not _looks_like_plain_table_data(values, headers):
+				break
+			row = {
+				headers[col_index]: values[col_index]
+				for col_index in range(min(len(headers), len(values)))
+				if headers[col_index]
+			}
+			if row:
+				rows.append(row)
+			index += 1
+		if rows:
+			section_key = _table_section_key(heading, headers)
+			if section_key not in sections:
+				sections[section_key] = rows
 		continue
 	index = 0
 	while index < len(lines):
