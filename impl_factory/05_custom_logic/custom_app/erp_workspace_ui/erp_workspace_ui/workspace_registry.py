@@ -169,12 +169,6 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 			"icon": "report",
 			"target": {"kind": "page", "route": "procurement-console-report"},
 		},
-		{
-			"key": "supplier_quotation_comparison",
-			"label": "Quote Comparison",
-			"icon": "report",
-			"target": {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
-		},
 	],
 }
 

@@ -200,6 +200,24 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         }:
             self.assertIn(expected, procurement_keys)
 
+    def test_procurement_reports_index_card_action_is_productized_navigation(self):
+        action = next(
+            item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] == "procurement-report-index-open-quote-comparison"
+        )
+
+        self.assertEqual("procurement", action["workspace_id"])
+        self.assertEqual("procurement-console-report", action["source_route"])
+        self.assertEqual("open_supplier_quotation_comparison", action["action_key"])
+        self.assertEqual("productized_navigation", action["classification"])
+        self.assertEqual("report_page", action["target_kind"])
+        self.assertEqual(
+            "/desk/procurement-console-report/supplier-quotation-comparison",
+            action["target_route_pattern"],
+        )
+        self.assertIsNone(action.get("native_exception_ref"))
+
 
 if __name__ == "__main__":
     unittest.main()

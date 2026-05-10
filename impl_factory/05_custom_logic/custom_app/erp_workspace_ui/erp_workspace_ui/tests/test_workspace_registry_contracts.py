@@ -176,12 +176,6 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                     "icon": "report",
                     "target": {"kind": "page", "route": "procurement-console-report"},
                 },
-                {
-                    "key": "supplier_quotation_comparison",
-                    "label": "Quote Comparison",
-                    "icon": "report",
-                    "target": {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
-                }
             ],
         )
 
@@ -195,13 +189,17 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
 
         self.assertEqual(target, {"kind": "page", "route": "procurement-console-report"})
 
-    def test_procurement_quote_comparison_sidebar_target_uses_productized_report_page(self):
+    def test_procurement_quote_comparison_is_not_a_standalone_sidebar_item(self):
         workspace = get_procurement_workspace_definition()
-        target = next(
-            item["target"] for item in workspace["fallback_items"] if item["key"] == "supplier_quotation_comparison"
-        )
+        labels = [item["label"] for item in workspace["fallback_items"]]
+        keys = [item["key"] for item in workspace["fallback_items"]]
 
-        self.assertEqual(target, {"kind": "report_page", "report_key": "supplier_quotation_comparison"})
+        self.assertEqual(
+            labels,
+            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports"],
+        )
+        self.assertNotIn("Quote Comparison", labels)
+        self.assertNotIn("supplier_quotation_comparison", keys)
 
     def test_procurement_console_routes_resolve_to_registry_definition(self):
         for route_key in [

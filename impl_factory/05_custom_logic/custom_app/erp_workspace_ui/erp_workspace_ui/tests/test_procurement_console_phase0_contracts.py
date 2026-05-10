@@ -718,7 +718,6 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
                 "supplier_quotation_directory",
                 "buying_item_directory",
                 "procurement_reports",
-                "supplier_quotation_comparison",
             ],
         )
         self.assertIn("rfqs_awaiting_supplier_response", payload["work"])
@@ -872,10 +871,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["sidebar"]["mode_label"], "Procurement Workspace")
         self.assertEqual(
             [item["label"] for item in payload["sidebar"]["items"]],
-            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports", "Quote Comparison"],
+            ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports"],
         )
-        self.assertEqual(payload["sidebar"]["items"][-2]["target"], {"kind": "page", "route": "procurement-console-report"})
-        self.assertEqual(payload["sidebar"]["items"][-1]["target"]["kind"], "report_page")
+        self.assertEqual(payload["sidebar"]["items"][-1]["target"], {"kind": "page", "route": "procurement-console-report"})
+        self.assertNotIn("Quote Comparison", [item["label"] for item in payload["sidebar"]["items"]])
 
     def test_procurement_workspace_search_is_permission_aware_and_productized(self):
         payload = service.search_procurement_console_workspace("Alpha")

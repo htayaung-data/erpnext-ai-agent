@@ -872,11 +872,12 @@ async function checkProcurementBackForwardLifecycle(page) {
 
 async function checkProcurementSidebar(page) {
   await openDeskRoute(page, "/desk/procurement-console");
-  const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports", "Quote Comparison"];
+  const expected = ["Overview", "Suppliers", "Purchase Requests", "Purchase Orders", "RFQs", "Supplier Quotations", "Buying Items", "Reports"];
   const sidebarText = page.locator(".erpw-sales-console-sidebar-text");
   await sidebarText.first().waitFor({ state: "visible", timeout: TIMEOUT });
-  const labels = (await sidebarText.evaluateAll((nodes) => nodes.map((node) => (node.textContent || "").trim()).filter(Boolean))).slice(0, expected.length);
+  const labels = await sidebarText.evaluateAll((nodes) => nodes.map((node) => (node.textContent || "").trim()).filter(Boolean));
   assert(expected.every((label, index) => labels[index] === label), "Procurement sidebar labels/order mismatch", { labels, expected });
+  assert(!labels.includes("Quote Comparison"), "Quote Comparison must live inside Reports Index, not the Procurement sidebar", { labels });
   const headerSubtitle = await page.locator(".body-sidebar .header-subtitle").first().textContent({ timeout: TIMEOUT }).catch(() => "");
   assert(/Procurement Console/i.test(headerSubtitle || ""), "Procurement sidebar header did not use Procurement Console", { headerSubtitle });
 
@@ -908,12 +909,8 @@ async function checkProcurementSidebar(page) {
   assert(/Procurement Reports/i.test(reportsTitle), "Reports sidebar link did not open Procurement Reports index", { reportsTitle });
   clickedRoutes.push(page.url());
 
-  const quoteLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).first();
-  await quoteLink.waitFor({ state: "visible", timeout: TIMEOUT });
-  await quoteLink.click();
-  await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report/supplier-quotation-comparison", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-  await assertSingleProcurementShell(page, "report", "Quote Comparison: after sidebar click");
-  clickedRoutes.push(page.url());
+  const quoteSidebarLinks = await page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).count();
+  assert(quoteSidebarLinks === 0, "Quote Comparison sidebar shortcut is still present", { quoteSidebarLinks });
 
   return { labels, clickedRoutes };
 }
@@ -1657,11 +1654,8 @@ async function checkTopChrome(page) {
   return results;
 }
 
-async function checkQuoteComparisonFromSidebar(page) {
-  await openDeskRoute(page, "/desk/procurement-console");
-  const quoteLink = page.locator(".erpw-sales-console-sidebar-link", { hasText: "Quote Comparison" }).first();
-  await quoteLink.waitFor({ state: "visible", timeout: TIMEOUT });
-  await quoteLink.click();
+async function checkQuoteComparisonDirectRoute(page) {
+  await openDeskRoute(page, "/desk/procurement-console-report/supplier-quotation-comparison");
   await page.waitForURL(/\/desk\/procurement-console-report\/supplier-quotation-comparison(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   await page.locator(".erpw-report-shell, .erpw-report-results, .erpw-report-summary").first().waitFor({ state: "visible", timeout: TIMEOUT });
   await assertSingleProcurementShell(page, "report", "Quote Comparison direct route");
@@ -1947,7 +1941,7 @@ async function runUser(browser, user) {
       report.supplierAutocomplete = await checkSupplierAutocomplete(page);
       report.supplierDetail = await checkSupplierDetail(page, user);
       report.itemDetail = await checkItemDetail(page, user);
-      report.quoteComparisonUrl = await checkQuoteComparisonFromSidebar(page);
+      report.quoteComparisonUrl = await checkQuoteComparisonDirectRoute(page);
       report.detail = await checkDetail(page, firstPoName);
     } else {
       assert(state === "restricted", `${user.label}: unexpected bootstrap state`, { state });
