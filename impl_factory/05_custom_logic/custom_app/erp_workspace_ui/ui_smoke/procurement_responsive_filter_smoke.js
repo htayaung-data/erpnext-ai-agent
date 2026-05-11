@@ -1,4 +1,4 @@
-﻿const { chromium } = require("playwright");
+const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
@@ -103,6 +103,47 @@ async function measure(page, type) {
     return { url: location.href, viewport, shell: rect(document.querySelector(shellSelector)), controls: controlsRect, action: actionRect, fields, buttons, actionClipped: clipped(actionRect), clippedButtons: buttons.filter(clipped), clippedFields: fields.filter(clipped), shellCount: Array.from(document.querySelectorAll(".erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell")).filter(visible).length, horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
   }, type);
 }
+function fieldCenter(field) { return Math.round((field.top + field.bottom) / 2); }
+function groupRowsByCenter(fields) {
+  const sorted = fields.slice().sort((a, b) => (fieldCenter(a) - fieldCenter(b)) || (a.left - b.left));
+  const rows = [];
+  for (const field of sorted) {
+    const center = fieldCenter(field);
+    let row = rows.find((candidate) => Math.abs(candidate.center - center) <= 8);
+    if (!row) { row = { center, fields: [] }; rows.push(row); }
+    row.fields.push(field);
+    row.center = Math.round(row.fields.reduce((total, item) => total + fieldCenter(item), 0) / row.fields.length);
+  }
+  rows.forEach((row) => row.fields.sort((a, b) => a.left - b.left));
+  return rows.sort((a, b) => a.center - b.center);
+}
+function expectedReportPattern(fieldCount) {
+  const patterns = { 4: [2, 2], 5: [3, 2], 6: [3, 3], 8: [2, 2, 2, 2] };
+  return patterns[fieldCount] || null;
+}
+function assertPremiumReportComposition(label, viewport, data) {
+  const fields = data.fields || [];
+  if (!fields.length) return;
+  const rows = groupRowsByCenter(fields);
+  const counts = rows.map((row) => row.fields.length);
+  const expected = expectedReportPattern(fields.length);
+  assert(Boolean(data.action), `${label}: missing report action group at ${viewport.key}`, { rows, data });
+  if (expected) {
+    assert(counts.join(',') === expected.join(','), `${label}: non-premium filter row pattern at ${viewport.key}`, { expected, actual: counts, data });
+  }
+  const finalRow = rows[rows.length - 1];
+  assert(finalRow && finalRow.fields.length !== 1, `${label}: orphan final filter field at ${viewport.key}`, { rows, data });
+  const actionCenter = Math.round((data.action.top + data.action.bottom) / 2);
+  assert(Math.abs(actionCenter - finalRow.center) <= 28, `${label}: report actions should align with the final filter row at ${viewport.key}`, { actionCenter, finalRowCenter: finalRow.center, rows, data });
+  const containerRight = (data.controls && data.controls.right) || (data.shell && data.shell.right) || data.viewport.width;
+  const finalFieldRight = Math.max(...finalRow.fields.map((field) => field.right));
+  assert(data.action.left - finalFieldRight <= 32, `${label}: disconnected action group at ${viewport.key}`, { actionLeft: data.action.left, finalFieldRight, gap: data.action.left - finalFieldRight, rows, data });
+  assert(containerRight - data.action.right <= 32, `${label}: action group should complete the final row at ${viewport.key}`, { containerRight, actionRight: data.action.right, gap: containerRight - data.action.right, rows, data });
+  for (const row of rows.slice(0, -1)) {
+    const rowRight = Math.max(...row.fields.map((field) => field.right));
+    assert(containerRight - rowRight <= 40, `${label}: filter row leaves excessive empty right space at ${viewport.key}`, { rowCenter: row.center, rowRight, containerRight, gap: containerRight - rowRight, rows, data });
+  }
+}
 async function checkFilterPage(page, item, type, user, viewport) {
   await openPage(page, item.route, type === "report" ? ".erpw-report-shell" : ".erpw-list-shell");
   const data = await measure(page, type);
@@ -159,6 +200,7 @@ async function runUser(user) {
           assert(data.action && !data.actionClipped, `${label}: clipped action group at ${viewport.key}`, data);
           assert(data.clippedButtons.length === 0, `${label}: clipped action button at ${viewport.key}`, data);
           assert(data.clippedFields.length === 0, `${label}: clipped filter field at ${viewport.key}`, data);
+          assertPremiumReportComposition(label, viewport, data);
           for (const actionLabel of ["Apply", "Reset", "Refresh"]) { await page.locator(`.erpw-report-command-actions button:has-text("${actionLabel}")`).first().click(); await page.waitForTimeout(220); }
         }
         await page.screenshot({ path: path.join(ARTIFACT_DIR, `${user.key}-${viewport.key}-${safe(key)}.png`), fullPage: true });

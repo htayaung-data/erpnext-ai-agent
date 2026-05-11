@@ -54,6 +54,34 @@
       .map((entry) => entry[1]);
   }
 
+  function composeProcurementAnalyticsRows(fields) {
+    const items = normalizeFields(fields);
+    const count = items.length;
+    if (!count) return [];
+    if (count <= 3) return [items];
+    if (count === 4) return [items.slice(0, 2), items.slice(2)];
+    if (count === 5) return [items.slice(0, 3), items.slice(3)];
+    if (count === 6) return [items.slice(0, 3), items.slice(3)];
+    if (count === 7) return [items.slice(0, 3), items.slice(3, 5), items.slice(5)];
+    if (count === 8) return [items.slice(0, 2), items.slice(2, 4), items.slice(4, 6), items.slice(6)];
+    const rows = [];
+    let index = 0;
+    while (index < count) {
+      const remaining = count - index;
+      let size = remaining >= 3 ? 3 : remaining;
+      if (remaining === 4) size = 2;
+      if (remaining - size === 1 && size > 2) size -= 1;
+      rows.push(items.slice(index, index + size));
+      index += size;
+    }
+    return rows;
+  }
+
+  function composeAnalyticsFieldRows(fields, pageConfig) {
+    if (isProcurementReport(pageConfig)) return composeProcurementAnalyticsRows(fields);
+    return groupFieldsByRow(fields);
+  }
+
   function reportFieldRole(field) {
     const explicit = String(field && (field.layoutRole || field.filterRole) || '').trim().toLowerCase();
     if (explicit) return explicit;
@@ -982,30 +1010,30 @@
         justify-self: start;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) {
-        grid-template-columns: max-content max-content;
-        justify-content: start;
+        grid-template-columns: minmax(0, 1fr) max-content;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields {
         gap: 10px;
         align-items: end;
       }
-      /* Procurement report filter width/action contract:
-         date/normal/link fields keep one steady desktop track; action controls
-         reserve the trailing final-row slot instead of wrapping into a detached row. */
+      /* Procurement report filter composition contract:
+         rows are composed by the shared shell into balanced groups, then fields
+         flex across the available content width so final-row actions stay attached. */
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields {
-        justify-content: start;
+        justify-content: stretch;
+        width: 100%;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-1 {
-        grid-template-columns: minmax(260px, 260px);
+        grid-template-columns: minmax(240px, min(360px, 100%));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-2 {
-        grid-template-columns: repeat(2, minmax(260px, 260px));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-3 {
-        grid-template-columns: repeat(3, minmax(260px, 260px));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
-        grid-template-columns: repeat(4, minmax(260px, 260px));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
         align-self: end;
@@ -1288,7 +1316,7 @@
 	            sortToolbarActions(actions).map((action) => renderToolbarAction(action)).join(''),
 	          '</div>',
 	        ].join('');
-	        const compactFieldRows = fieldRows.length ? fieldRows : [fields];
+	        const compactFieldRows = composeAnalyticsFieldRows(fields, pageConfig);
 	        const compactRowsMarkup = compactFieldRows.map((rowFields, rowIndex) => {
 	          const isLastRow = !separateActionRow && rowIndex === compactFieldRows.length - 1;
 	          const searchIndex = rowFields.findIndex((field) => reportFieldRole(field) === 'search');
