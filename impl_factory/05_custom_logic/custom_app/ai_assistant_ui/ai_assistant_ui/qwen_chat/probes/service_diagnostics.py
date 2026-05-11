@@ -2030,7 +2030,20 @@ def run_phase3_3_product_quantity_projection_regression_debug() -> Dict[str, Any
 				raise RuntimeError("Phase3.3 product regression failed: base product ranking still used the legacy narrative template instead of the table-first response.")
 			top_product_name = _top_ranked_name_from_markdown(base_text)
 
-			followup_message = "include Qty column in the above table"
+			row_focus_message = "Which item appears second in the table above?"
+			ok_row_focus, row_focus_payload = service_module.handle_qwen_user_message(
+				session_name=base_doc.name,
+				message=row_focus_message,
+				user="Administrator",
+			)
+			if not ok_row_focus:
+				raise RuntimeError("Phase3.3 product regression failed on the visible row lookup before quantity enrichment.")
+			session_doc = frappe.get_doc(service_module.QWEN_SESSION_DOCTYPE, base_doc.name)
+			row_focus_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
+			if "Rank 2" not in row_focus_text:
+				raise RuntimeError("Phase3.3 product regression failed: visible row lookup did not resolve the second ranked product.")
+
+			followup_message = "Include quantities alongside the results."
 			ok_followup, followup_payload = service_module.handle_qwen_user_message(
 				session_name=base_doc.name,
 				message=followup_message,
@@ -2042,6 +2055,8 @@ def run_phase3_3_product_quantity_projection_regression_debug() -> Dict[str, Any
 			followup_text = str(service_module._latest_assistant_payload(session_doc).get("text") or "").strip()
 			if any(marker in followup_text.lower() for marker in failure_markers):
 				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up still hit the governed boundary fallback instead of the approved composite continuation path.")
+			if "the follow-up is about" in followup_text.lower():
+				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up attached to the focused row instead of the ranked table.")
 			if not any(header in followup_text for header in qty_headers):
 				raise RuntimeError("Phase3.3 product regression failed: product quantity follow-up did not render the requested Product, Revenue, and Quantity projection.")
 			if "| Code |" in followup_text:
@@ -2080,6 +2095,10 @@ def run_phase3_3_product_quantity_projection_regression_debug() -> Dict[str, Any
 				"followup_turn": {
 					"mode": str((followup_payload or {}).get("mode") or "").strip(),
 					"engine": str((followup_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
+				},
+				"row_focus_turn": {
+					"mode": str((row_focus_payload or {}).get("mode") or "").strip(),
+					"engine": str((row_focus_payload or {}).get("agent_meta", {}).get("engine") or "").strip(),
 				},
 				"direct_turn": {
 					"mode": str((direct_payload or {}).get("mode") or "").strip(),

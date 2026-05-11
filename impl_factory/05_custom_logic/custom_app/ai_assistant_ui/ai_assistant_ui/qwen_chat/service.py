@@ -3330,6 +3330,49 @@ def _artifact_local_refinement_should_defer_runtime_frontdoor(
 ) -> Tuple[bool, Any | None]:
 	if not latest_grounded_turn or not latest_family_artifact:
 		return False, None
+	deterministic_projection_result = interpret_artifact_local_projection_deterministically(
+		message=message,
+		latest_grounded_turn=latest_grounded_turn,
+		latest_family_artifact=latest_family_artifact,
+	)
+	if (
+		str(getattr(deterministic_projection_result, "status", "") or "").strip() == "accepted"
+		and getattr(deterministic_projection_result, "intent", None) is not None
+	):
+		followup_resolution = build_followup_resolution(
+			request_id=request_id,
+			message=message,
+			latest_grounded_turn_available=True,
+			latest_grounded_turn=latest_grounded_turn,
+			semantic_intent=deterministic_projection_result.intent,
+			allow_heuristic_fallback=False,
+			degraded_reason="",
+		)
+		continuation_contract = build_artifact_continuation_contract(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			grounded_turn=latest_grounded_turn,
+			artifact_payload=latest_family_artifact,
+		)
+		if continuation_contract is not None:
+			followup_resolution = _authoritative_continuation_resolution(
+				request_id=request_id,
+				followup_resolution=followup_resolution,
+				continuation_contract=continuation_contract,
+				artifact_payload=latest_family_artifact,
+				grounded_turn=latest_grounded_turn,
+			)
+		requery_upgrade, _ = _requery_resolution_for_unsupported_local_columns(
+			request_id=request_id,
+			followup_resolution=followup_resolution,
+			artifact_payload=latest_family_artifact,
+			grounded_turn=latest_grounded_turn,
+			continuation_contract=continuation_contract,
+		)
+		if requery_upgrade is not None:
+			followup_resolution = requery_upgrade
+		if str(getattr(followup_resolution, "mode", "") or "").strip() == "local_grounded_transform":
+			return True, deterministic_projection_result
 	evidence_request_contract = _entity_detail_evidence_request_payload(
 		request_id=request_id,
 		raw_message=message,
@@ -3362,11 +3405,6 @@ def _artifact_local_refinement_should_defer_runtime_frontdoor(
 		recent_messages=recent_messages,
 		latest_grounded_turn=latest_grounded_turn,
 		latest_assistant_payload=latest_assistant_payload,
-	)
-	deterministic_projection_result = interpret_artifact_local_projection_deterministically(
-		message=message,
-		latest_grounded_turn=latest_grounded_turn,
-		latest_family_artifact=latest_family_artifact,
 	)
 	candidate_results = [semantic_result]
 	if (
@@ -4747,24 +4785,25 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			artifact_level_context_requested=_artifact_level_visible_context_requested(msg),
 		):
 			reasoning_preempted_by_artifact_refinement = False
-		precomputed_evidence_request_contract = _entity_detail_evidence_request_payload(
-			request_id=request_id,
-			raw_message=msg,
-			artifact_payload=latest_family_artifact,
-		) or {}
-		precomputed_evidence_answer = _grounded_artifact_direct_evidence_answer(
-			raw_message=msg,
-			artifact_payload=latest_family_artifact,
-			grounded_turn=latest_grounded_turn,
-			evidence_request_contract=precomputed_evidence_request_contract,
-		)
-		if not precomputed_evidence_answer:
-			precomputed_evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+		if not artifact_local_projection_followup_requested:
+			precomputed_evidence_request_contract = _entity_detail_evidence_request_payload(
+				request_id=request_id,
+				raw_message=msg,
+				artifact_payload=latest_family_artifact,
+			) or {}
+			precomputed_evidence_answer = _grounded_artifact_direct_evidence_answer(
 				raw_message=msg,
 				artifact_payload=latest_family_artifact,
 				grounded_turn=latest_grounded_turn,
 				evidence_request_contract=precomputed_evidence_request_contract,
 			)
+			if not precomputed_evidence_answer:
+				precomputed_evidence_boundary_answer = _grounded_artifact_evidence_boundary_answer(
+					raw_message=msg,
+					artifact_payload=latest_family_artifact,
+					grounded_turn=latest_grounded_turn,
+					evidence_request_contract=precomputed_evidence_request_contract,
+				)
 	reasoning_must_yield_to_current_artifact_evidence = _current_artifact_evidence_should_preempt_reasoning(
 		direct_evidence_answer=precomputed_evidence_answer,
 		evidence_boundary_answer=precomputed_evidence_boundary_answer,
@@ -4805,6 +4844,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and latest_grounded_turn_available
 		and not bool(context_isolation.force_new_query)
 		and entity_drilldown is None
+		and not artifact_local_projection_followup_requested
 		and not reasoning_preempted_by_artifact_refinement
 		and not reasoning_must_yield_to_current_artifact_evidence
 	):
@@ -5173,6 +5213,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if (
 		entity_drilldown is None
 		and followup_context_available
+		and not artifact_local_projection_followup_requested
 		and str(getattr(followup_resolution, "mode", "") or "").strip() == "grounded_follow_up"
 		and "detail_followup" in requested_followup_modes
 	):

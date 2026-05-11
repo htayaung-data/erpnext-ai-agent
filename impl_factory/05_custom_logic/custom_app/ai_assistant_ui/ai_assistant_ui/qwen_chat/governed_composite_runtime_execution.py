@@ -658,6 +658,8 @@ def _followup_column_alias_map(
 		for alias_value in alias_values:
 			for variant in _alias_variants(alias_value):
 				alias_map[variant] = target_metric_id
+		if target_metric_id == "quantity":
+			alias_map["quantities"] = target_metric_id
 
 	for metric_id in [_clean_text(value) for value in (metric_ids or []) if _clean_text(value)]:
 		_register_aliases(metric_id, metric_id, _metric_label(metric_id))
