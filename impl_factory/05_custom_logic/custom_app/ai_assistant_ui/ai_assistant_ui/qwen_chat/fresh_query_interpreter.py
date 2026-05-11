@@ -2607,6 +2607,60 @@ def _semantic_result_requires_deterministic_surface_rescue(result: SemanticFresh
 	)
 
 
+def _semantic_result_should_defer_to_deterministic_surface(
+	*,
+	semantic_result: SemanticFreshQueryResult,
+	deterministic_interpretation: FreshQueryInterpretationContract | None,
+) -> bool:
+	if deterministic_interpretation is None or semantic_result.interpretation is None:
+		return False
+	deterministic_intent = str(getattr(deterministic_interpretation, "intent_class", "") or "").strip()
+	deterministic_reports = set(
+		str(value or "").strip()
+		for value in (getattr(deterministic_interpretation, "candidate_reports", []) or [])
+		if str(value or "").strip()
+	)
+	semantic_reports = set(
+		str(value or "").strip()
+		for value in (getattr(semantic_result.interpretation, "candidate_reports", []) or [])
+		if str(value or "").strip()
+	)
+	semantic_intent = str(getattr(semantic_result.interpretation, "intent_class", "") or "").strip()
+	if deterministic_intent == "aging_analysis":
+		return bool(
+			deterministic_reports
+			and (semantic_intent != deterministic_intent or semantic_reports != deterministic_reports)
+		)
+	if deterministic_intent == "financial_statement":
+		return bool(deterministic_reports and (semantic_intent != deterministic_intent or semantic_reports != deterministic_reports))
+	deterministic_slots = (
+		getattr(deterministic_interpretation, "extracted_slots", {})
+		if isinstance(getattr(deterministic_interpretation, "extracted_slots", {}), dict)
+		else {}
+	)
+	semantic_slots = (
+		getattr(semantic_result.interpretation, "extracted_slots", {})
+		if isinstance(getattr(semantic_result.interpretation, "extracted_slots", {}), dict)
+		else {}
+	)
+	deterministic_composite_context = [
+		str(value or "").strip()
+		for value in (deterministic_slots.get("composite_profile_context") or [])
+		if str(value or "").strip()
+	]
+	semantic_composite_context = [
+		str(value or "").strip()
+		for value in (semantic_slots.get("composite_profile_context") or [])
+		if str(value or "").strip()
+	]
+	if deterministic_composite_context:
+		return bool(
+			semantic_intent != deterministic_intent
+			or semantic_composite_context != deterministic_composite_context
+		)
+	return False
+
+
 def _recover_pipeline_with_deterministic_surface_fallback(
 	*,
 	pipeline: Dict[str, Any],
@@ -2848,6 +2902,28 @@ def compile_from_fresh_query_message(
 				agent_meta={
 					**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
 					"deterministic_surface_fallback": True,
+				},
+			)
+	else:
+		deterministic_interpretation = _deterministic_family_surface_interpretation(
+			request_id=request_id,
+			session_id=session_id,
+			message=message,
+			confidence_threshold=semantic_result.confidence_threshold,
+		)
+		if _semantic_result_should_defer_to_deterministic_surface(
+			semantic_result=semantic_result,
+			deterministic_interpretation=deterministic_interpretation,
+		):
+			semantic_result = SemanticFreshQueryResult(
+				status="deterministic_surface_authority_override",
+				interpretation=deterministic_interpretation,
+				confidence_threshold=semantic_result.confidence_threshold,
+				runtime_error=semantic_result.runtime_error,
+				validation_error=semantic_result.validation_error,
+				agent_meta={
+					**(semantic_result.agent_meta if isinstance(semantic_result.agent_meta, dict) else {}),
+					"deterministic_surface_authority_override": True,
 				},
 			)
 	proposal_generation_latency_ms = int((time.perf_counter() - proposal_started) * 1000)
