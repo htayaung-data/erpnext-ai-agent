@@ -870,6 +870,9 @@
         --erpw-procurement-filter-gap: 10px;
         gap: 12px;
       }
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-date-window {
+        --erpw-procurement-filter-search-width: minmax(var(--erpw-procurement-filter-fixed-width), 560px);
+      }
       .erpw-list-shell.is-procurement-worklist .erpw-list-summary-card {
         padding: 13px 16px !important;
         border-radius: 14px !important;
