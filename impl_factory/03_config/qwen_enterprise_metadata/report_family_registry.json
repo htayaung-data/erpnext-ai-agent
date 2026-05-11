@@ -139,7 +139,239 @@
           "outstanding"
         ]
       },
-      "coverage_status": "active"
+      "coverage_status": "active",
+      "metric_semantic_key_map": {
+        "overdue_amount": [
+          "overdue_amount",
+          "overdue",
+          "overdue_total",
+          "past_due_amount"
+        ],
+        "overdue_ratio": [
+          "overdue_ratio",
+          "overdue_share",
+          "past_due_ratio"
+        ],
+        "outstanding_amount": [
+          "outstanding_amount",
+          "outstanding",
+          "outstanding_total",
+          "open_balance",
+          "customer_exposure",
+          "supplier_exposure"
+        ],
+        "total_due": [
+          "total_due",
+          "due_amount"
+        ],
+        "credit_utilization": [
+          "credit_utilization",
+          "credit_utilization_ratio",
+          "credit_usage",
+          "credit_limit_usage"
+        ]
+      },
+      "default_primary_metric": "overdue_amount",
+      "default_secondary_metrics": [
+        "outstanding_amount",
+        "total_due",
+        "overdue_ratio"
+      ],
+      "blocked_variations": [
+        "predictive_default_probability",
+        "collection_recommendation",
+        "supplier_payment_priority_recommendation",
+        "credit_limit_approval_decision",
+        "unapproved_overdue_severity_label",
+        "hidden_weighted_risk_score"
+      ],
+      "blocked_variation_labels": {
+        "predictive_default_probability": "predictive default probability",
+        "collection_recommendation": "collection recommendation",
+        "supplier_payment_priority_recommendation": "supplier payment-priority recommendation",
+        "credit_limit_approval_decision": "credit-limit approval decision",
+        "unapproved_overdue_severity_label": "unapproved overdue severity label",
+        "hidden_weighted_risk_score": "hidden weighted risk score"
+      },
+      "blocked_variation_aliases": {
+        "predictive_default_probability": [
+          "predict",
+          "forecast",
+          "will pay",
+          "will default",
+          "default probability",
+          "payment probability",
+          "default next month",
+          "defaulting next month",
+          "at risk of defaulting",
+          "likely to pay",
+          "likely to default"
+        ],
+        "collection_recommendation": [
+          "who should we collect from",
+          "who should we collect from first",
+          "who to collect from",
+          "who to collect from first",
+          "collect from first",
+          "collect first",
+          "collection recommendation",
+          "recommend collection",
+          "prioritize collection",
+          "prioritise collection",
+          "prioritized for collection",
+          "prioritised for collection"
+        ],
+        "supplier_payment_priority_recommendation": [
+          "who should we pay first",
+          "which supplier should we pay first",
+          "which supplier to pay first",
+          "pay supplier first",
+          "pay first",
+          "supplier payment priority",
+          "supplier payment recommendation",
+          "prioritize supplier payment",
+          "prioritise supplier payment"
+        ],
+        "credit_limit_approval_decision": [
+          "approve credit",
+          "increase credit limit",
+          "decrease credit limit",
+          "credit approval",
+          "credit limit approval",
+          "should approve"
+        ],
+        "unapproved_overdue_severity_label": [
+          "high risk",
+          "medium risk",
+          "low risk",
+          "risk severity",
+          "severity label",
+          "risk label"
+        ],
+        "hidden_weighted_risk_score": [
+          "risk score",
+          "weighted risk score",
+          "score this customer",
+          "score the customer",
+          "score this supplier",
+          "score the supplier"
+        ]
+      },
+      "business_reasoning_authority_policies": {
+        "predictive_default_probability": {
+          "policy_artifact_id": "default_prediction_policy",
+          "policy_artifact_label": "Default Prediction Policy",
+          "approval_state": "blocked_missing_policy",
+          "required_policy_state": "approved_active",
+          "runtime_execution_state": "disabled_pending_policy_approval",
+          "allowed_execution_modes": [],
+          "recommendation_result_type": "predictive_default_probability",
+          "required_evidence_metrics": [
+            "overdue_amount",
+            "outstanding_amount",
+            "overdue_ratio",
+            "payment_behavior",
+            "commitment_history"
+          ],
+          "required_governed_artifacts": [
+            "accounts_receivable_aging",
+            "customer_payment_behavior_analysis",
+            "approved_default_prediction_model"
+          ],
+          "safe_next_action": "Use the current aging facts as risk evidence only, or define and approve a default-prediction policy/model before asking for a default forecast."
+        },
+        "collection_recommendation": {
+          "policy_artifact_id": "customer_collection_priority_policy",
+          "policy_artifact_label": "Customer Collection Priority Policy",
+          "approval_state": "blocked_missing_policy",
+          "required_policy_state": "approved_active",
+          "runtime_execution_state": "disabled_pending_policy_approval",
+          "allowed_execution_modes": [],
+          "recommendation_result_type": "ranked_collection_action",
+          "required_evidence_metrics": [
+            "overdue_amount",
+            "outstanding_amount",
+            "overdue_ratio",
+            "aging_buckets"
+          ],
+          "required_governed_artifacts": [
+            "accounts_receivable_aging",
+            "customer_payment_behavior_analysis"
+          ],
+          "safe_next_action": "Define and approve the Customer Collection Priority Policy before asking for a collection recommendation. Until then, use the governed ranking as evidence only."
+        },
+        "supplier_payment_priority_recommendation": {
+          "policy_artifact_id": "supplier_payment_priority_policy",
+          "policy_artifact_label": "Supplier Payment Priority Policy",
+          "approval_state": "blocked_missing_policy",
+          "required_policy_state": "approved_active",
+          "runtime_execution_state": "disabled_pending_policy_approval",
+          "allowed_execution_modes": [],
+          "recommendation_result_type": "ranked_supplier_payment_action",
+          "required_evidence_metrics": [
+            "overdue_amount",
+            "outstanding_amount",
+            "overdue_ratio",
+            "supplier_criticality",
+            "cash_availability"
+          ],
+          "required_governed_artifacts": [
+            "accounts_payable_aging",
+            "supplier_criticality_policy",
+            "cash_position_summary"
+          ],
+          "safe_next_action": "Define and approve the Supplier Payment Priority Policy before asking for a supplier payment recommendation. Until then, use the governed payable ranking as evidence only."
+        }
+      },
+      "driver_analysis_policy": {
+        "blocked_modes": [
+          "causal_root_cause_driver",
+          "trend_change_driver",
+          "payment_behavior_driver"
+        ],
+        "blocked_mode_aliases": {
+          "causal_root_cause_driver": [
+            "root cause",
+            "caused",
+            "cause of",
+            "why did this happen",
+            "why did it happen",
+            "real reason"
+          ],
+          "trend_change_driver": [
+            "why did it increase",
+            "why did risk increase",
+            "why did it decrease",
+            "why did risk decrease",
+            "what changed",
+            "trend driver",
+            "change driver",
+            "compared to last month",
+            "compared with last month",
+            "worse than before",
+            "better than before",
+            "risk increase",
+            "increase in risk",
+            "led to the increase",
+            "led to increase",
+            "risk went up",
+            "risk has increased"
+          ],
+          "payment_behavior_driver": [
+            "payment behavior",
+            "payment habit",
+            "collection history",
+            "payment history",
+            "late payment pattern",
+            "settlement behavior"
+          ]
+        },
+        "mode_labels": {
+          "causal_root_cause_driver": "causal root-cause driver analysis",
+          "trend_change_driver": "trend/change driver analysis",
+          "payment_behavior_driver": "payment-behavior driver analysis"
+        }
+      }
     },
     {
       "family_id": "ranking_analytics",

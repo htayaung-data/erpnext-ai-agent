@@ -4,7 +4,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from ai_assistant_ui.qwen_chat.metadata import get_composite_family_spec
+from ai_assistant_ui.qwen_chat.metadata import (
+	get_composite_family_spec,
+	get_report_family_spec,
+)
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_metric_label
 
 
@@ -52,7 +55,42 @@ def _source_composite_family_id(artifact_payload: Dict[str, Any]) -> str:
 def _source_composite_family_label(family_spec: Dict[str, Any], artifact_payload: Dict[str, Any]) -> str:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	return _clean_text(dimensions.get("source_composite_family_label") or family_spec.get("label") or "Composite View")
+	return _clean_text(
+		dimensions.get("source_composite_family_label")
+		or family_spec.get("label")
+		or family_spec.get("family_label")
+		or "ERP result"
+	)
+
+
+def _family_spec_active(family_spec: Dict[str, Any]) -> bool:
+	if not family_spec:
+		return False
+	state = _clean_text(family_spec.get("activation_state") or family_spec.get("coverage_status"))
+	return not state or state == "active"
+
+
+def _family_spec_has_reasoning_authority(family_spec: Dict[str, Any]) -> bool:
+	return bool(
+		family_spec.get("blocked_variations")
+		or family_spec.get("driver_analysis_policy")
+		or family_spec.get("business_reasoning_authority_policies")
+	)
+
+
+def _authority_family_spec_for_artifact(artifact_payload: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	composite_family_id = _source_composite_family_id(artifact)
+	if composite_family_id:
+		composite_spec = get_composite_family_spec(composite_family_id)
+		if _family_spec_active(composite_spec) and _family_spec_has_reasoning_authority(composite_spec):
+			return composite_family_id, composite_spec
+	report_family_id = _clean_text(artifact.get("family_id"))
+	if report_family_id:
+		report_family_spec = get_report_family_spec(report_family_id)
+		if _family_spec_active(report_family_spec) and _family_spec_has_reasoning_authority(report_family_spec):
+			return report_family_id, report_family_spec
+	return "", {}
 
 
 def _subject_alias(family_spec: Dict[str, Any]) -> str:
@@ -67,13 +105,18 @@ def _subject_alias(family_spec: Dict[str, Any]) -> str:
 def _ranked_rows(artifact_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	return [dict(row) for row in (sections.get("ranked_rows") or []) if isinstance(row, dict)]
+	for section_key in ("ranked_rows", "parties", "customers", "suppliers", "items"):
+		rows = sections.get(section_key)
+		if isinstance(rows, list) and rows:
+			return [dict(row) for row in rows if isinstance(row, dict)]
+	return []
 
 
 def _entity_label(row: Dict[str, Any]) -> str:
 	return _clean_text(
 		row.get("entity_name")
 		or row.get("entity")
+		or row.get("party")
 		or row.get("customer")
 		or row.get("supplier")
 		or row.get("item_name")
@@ -288,12 +331,25 @@ def _available_governed_artifact_ids(
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	filters = artifact.get("filters") if isinstance(artifact.get("filters"), dict) else {}
+	artifact_family_id = _clean_text(artifact.get("family_id"))
+	aging_type = _clean_text(dimensions.get("aging_type"))
 	candidates: List[Any] = [
-		artifact.get("family_id"),
+		artifact_family_id,
 		artifact.get("source_composite_family_id"),
 		filters.get("composite_family_id"),
 		dimensions.get("source_composite_family_id"),
 	]
+	if artifact_family_id == "aging" and aging_type == "accounts_receivable":
+		candidates.append("accounts_receivable_aging")
+	if artifact_family_id == "aging" and aging_type == "accounts_payable":
+		candidates.append("accounts_payable_aging")
+	source_reports = artifact.get("source_reports") if isinstance(artifact.get("source_reports"), list) else []
+	for report_name in source_reports:
+		normalized_report_name = _normalize_text(report_name)
+		if "accounts receivable" in normalized_report_name:
+			candidates.append("accounts_receivable_aging")
+		if "accounts payable" in normalized_report_name:
+			candidates.append("accounts_payable_aging")
 	for key in (
 		"evidence_artifact_ids",
 		"supporting_governed_artifact_ids",
@@ -315,6 +371,7 @@ def _authority_policy_gate_payload(
 	authority_policy: Dict[str, Any],
 	artifact_payload: Dict[str, Any],
 	selected_row: Dict[str, Any],
+	family_spec: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
 	if not authority_policy:
 		return {
@@ -330,7 +387,11 @@ def _authority_policy_gate_payload(
 	required_policy_state = _clean_text(authority_policy.get("required_policy_state")) or "approved_active"
 	required_metrics = _policy_list_values(authority_policy, "required_evidence_metrics")
 	required_artifacts = _policy_list_values(authority_policy, "required_governed_artifacts")
-	available_metrics = _available_metric_keys_for_row(selected_row)
+	available_metrics = _available_policy_metric_keys_for_row(
+		selected_row,
+		required_metrics=required_metrics,
+		family_spec=family_spec or {},
+	)
 	available_artifacts = _available_governed_artifact_ids(artifact_payload=artifact_payload)
 	missing_metrics = [value for value in required_metrics if value not in set(available_metrics)]
 	missing_artifacts = [value for value in required_artifacts if value not in set(available_artifacts)]
@@ -507,12 +568,70 @@ def _selected_ranked_row(
 	return {}
 
 
-def _metric_value(row: Dict[str, Any], metric_key: str) -> tuple[Any, str]:
+def _metric_value(row: Dict[str, Any], metric_key: str, family_spec: Dict[str, Any] | None = None) -> tuple[Any, str]:
 	metric_values = row.get("metric_values") if isinstance(row.get("metric_values"), dict) else {}
 	value_payload = metric_values.get(metric_key) if isinstance(metric_values.get(metric_key), dict) else {}
 	if value_payload:
 		return value_payload.get("value"), _clean_text(value_payload.get("display_value"))
-	return row.get(metric_key), ""
+	if metric_key in row:
+		return row.get(metric_key), ""
+	family = family_spec if isinstance(family_spec, dict) else {}
+	metric_map = family.get("metric_semantic_key_map") if isinstance(family.get("metric_semantic_key_map"), dict) else {}
+	common_aliases = {
+		"outstanding_amount": ["outstanding", "outstanding_total", "outstanding_amount"],
+		"overdue_amount": ["overdue", "overdue_total", "overdue_amount", "past_due_amount"],
+		"total_due": ["total_due", "due_amount"],
+		"credit_utilization": ["credit_utilization", "credit_utilization_ratio", "credit_usage"],
+	}
+	alias_keys = list(metric_map.get(metric_key) or []) + common_aliases.get(metric_key, [])
+	for alias_key in alias_keys:
+		clean_key = _clean_text(alias_key)
+		if clean_key and clean_key in row:
+			return row.get(clean_key), ""
+	if metric_key == "overdue_amount":
+		bucket_total = sum(
+			_numeric(row.get(key))
+			for key in ("bucket_31_60", "bucket_61_90", "bucket_91_120", "bucket_121_above")
+		)
+		if bucket_total:
+			return bucket_total, ""
+	if metric_key == "overdue_ratio":
+		overdue_value, _display = _metric_value(row, "overdue_amount", family_spec=family)
+		outstanding_value, _display = _metric_value(row, "outstanding_amount", family_spec=family)
+		outstanding = _numeric(outstanding_value)
+		if outstanding > 0:
+			return _numeric(overdue_value) / outstanding, ""
+	return "", ""
+
+
+def _row_has_aging_bucket_evidence(row: Dict[str, Any]) -> bool:
+	return any(
+		key in row and row.get(key) not in (None, "")
+		for key in ("bucket_31_60", "bucket_61_90", "bucket_91_120", "bucket_121_above")
+	)
+
+
+def _available_policy_metric_keys_for_row(
+	row: Dict[str, Any],
+	*,
+	required_metrics: List[str],
+	family_spec: Dict[str, Any],
+) -> List[str]:
+	available = _available_metric_keys_for_row(row)
+	available_set = set(available)
+	for metric_key in required_metrics:
+		clean_metric = _clean_text(metric_key)
+		if not clean_metric or clean_metric in available_set:
+			continue
+		if clean_metric == "aging_buckets" and _row_has_aging_bucket_evidence(row):
+			available.append(clean_metric)
+			available_set.add(clean_metric)
+			continue
+		value, display_value = _metric_value(row, clean_metric, family_spec=family_spec)
+		if value not in (None, "") or bool(display_value):
+			available.append(clean_metric)
+			available_set.add(clean_metric)
+	return list(dict.fromkeys(available))
 
 
 def _metric_rows(
@@ -543,7 +662,7 @@ def _metric_rows(
 	for metric_key in metric_keys:
 		if not metric_key:
 			continue
-		value, display_value = _metric_value(row, metric_key)
+		value, display_value = _metric_value(row, metric_key, family_spec=family_spec)
 		if value in (None, "") and not display_value:
 			continue
 		out.append(
@@ -601,11 +720,10 @@ def assess_business_reasoning_authority(
 	grounded_turn: Dict[str, Any] | None = None,
 ) -> BusinessReasoningAuthorityDecision:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	family_id = _source_composite_family_id(artifact)
+	family_id, family_spec = _authority_family_spec_for_artifact(artifact)
 	if not family_id:
 		return BusinessReasoningAuthorityDecision(policy_state="not_applicable")
-	family_spec = get_composite_family_spec(family_id)
-	if _clean_text(family_spec.get("activation_state")) != "active":
+	if not _family_spec_active(family_spec):
 		return BusinessReasoningAuthorityDecision(policy_state="not_applicable", source_family_id=family_id)
 	blocked_variation = _matched_blocked_variation(raw_message=raw_message, family_spec=family_spec)
 	family_label = _source_composite_family_label(family_spec, artifact)
@@ -641,7 +759,7 @@ def assess_business_reasoning_authority(
 			allowed_to_answer=True,
 		)
 	authority_policy = _authority_policy_for_variation(family_spec, blocked_variation)
-	prefer_first_ranked_row = blocked_variation == "collection_recommendation"
+	prefer_first_ranked_row = _authority_class_for_variation(blocked_variation) in {"prediction", "recommendation"}
 	selected_row = _selected_ranked_row(
 		raw_message=raw_message,
 		artifact_payload=artifact,
@@ -652,6 +770,7 @@ def assess_business_reasoning_authority(
 		authority_policy=authority_policy,
 		artifact_payload=artifact,
 		selected_row=selected_row,
+		family_spec=family_spec,
 	)
 	default_next_action = "Use the current ranking as supporting evidence, or define an approved company policy before asking for a decision or recommendation."
 	return BusinessReasoningAuthorityDecision(
@@ -749,7 +868,7 @@ def render_business_reasoning_policy_boundary_answer(policy_payload: Dict[str, A
 		lines.extend(
 			[
 				"",
-				"Required policy before this can become a recommendation:",
+				"Required policy before this can become a governed decision:",
 				f"- Policy: {policy_label}",
 				f"- Approval state: {policy_state}",
 				f"- Gate state: {gate_state}",
