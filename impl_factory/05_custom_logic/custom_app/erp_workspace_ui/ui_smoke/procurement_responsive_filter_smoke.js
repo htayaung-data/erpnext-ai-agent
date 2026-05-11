@@ -77,7 +77,14 @@ async function openPage(page, route, shell) {
   } else {
     await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   }
-  await page.locator(shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.waitForFunction((selector) => {
+    const visible = (node) => {
+      const style = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+    };
+    return Array.from(document.querySelectorAll(selector)).some(visible);
+  }, shell, { timeout: TIMEOUT });
   await page.waitForTimeout(450);
 }
 async function measure(page, type) {
