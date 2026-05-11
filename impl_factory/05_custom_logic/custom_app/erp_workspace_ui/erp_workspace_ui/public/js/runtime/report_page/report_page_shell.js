@@ -1047,7 +1047,7 @@
         padding: 12px 13px;
         border-radius: 14px;
       }
-      @media (max-width: 1320px) {
+      @media (max-width: 1600px) {
         .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
           grid-template-columns: repeat(2, minmax(240px, 1fr));
         }
