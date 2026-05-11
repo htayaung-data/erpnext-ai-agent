@@ -1047,6 +1047,17 @@
         padding: 12px 13px;
         border-radius: 14px;
       }
+      @media (max-width: 1320px) {
+        .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
+          grid-template-columns: repeat(2, minmax(240px, 1fr));
+        }
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) .erpw-report-command-actions {
+          justify-self: end;
+        }
+      }
       @media (max-width: 1080px) {
         .erpw-report-shell.is-procurement-report .erpw-report-command-row {
           grid-template-columns: minmax(0, 1fr);
@@ -1055,6 +1066,9 @@
         .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
           justify-self: start;
           justify-content: flex-start;
+        }
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) .erpw-report-command-actions {
+          justify-self: start;
         }
       }
       @media (max-width: 1024px) {
