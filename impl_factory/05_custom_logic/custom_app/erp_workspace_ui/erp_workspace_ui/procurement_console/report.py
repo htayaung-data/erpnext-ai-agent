@@ -78,6 +78,8 @@ def get_procurement_console_report_context(
 		return _build_purchase_order_analysis(overrides)
 	if normalized_key == "demand_to_order_coverage":
 		return _build_demand_to_order_coverage(overrides)
+	if normalized_key == "item_purchase_history":
+		return _build_item_purchase_history(overrides)
 	return _state_payload(normalized_key, service.unavailable_state())
 
 
@@ -125,6 +127,10 @@ def _build_report_index() -> dict[str, object]:
 			"open_demand_to_order_coverage": {
 				"kind": "report_page",
 				"report_key": "demand_to_order_coverage",
+			},
+			"open_item_purchase_history": {
+				"kind": "report_page",
+				"report_key": "item_purchase_history",
 			},
 		},
 	}
@@ -195,10 +201,12 @@ def _report_index_sections() -> list[dict[str, object]]:
 					"key": "item_purchase_history",
 					"title": "Item Purchase History",
 					"purpose": "Review buying history by item, supplier, and order reference.",
-					"status": "planned",
-					"status_label": "Planned",
-					"boundary": "Planned read-only history.",
+					"status": "ready",
+					"status_label": "Ready",
+					"boundary": "Read-only price review.",
 					"icon": "item",
+					"action_key": "open_item_purchase_history",
+					"target_route": "/desk/procurement-console-report/item-purchase-history",
 				},
 			],
 		},
@@ -802,6 +810,270 @@ def _demand_coverage_metrics(rows: list[dict[str, object]]) -> list[dict[str, ob
 		common.metric("Partially ordered", len(partial_rows), "Demand lines with ordering progress and remaining open quantity.", "indigo"),
 		common.metric("Fully ordered", len(fully_rows), "Demand lines fully covered by purchase orders.", "teal"),
 		common.metric("Overdue open", len(overdue_open), "Open demand lines past required date.", "red"),
+	]
+
+
+ITEM_HISTORY_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+	"Purchase Order": ("transaction_date", "supplier", "supplier_name", "currency", "status"),
+	"Purchase Order Item": ("item_code", "item_name", "qty", "uom", "rate", "amount", "base_rate", "base_amount"),
+}
+
+
+def _build_item_purchase_history(overrides: dict[str, object]) -> dict[str, object]:
+	filters = _item_history_filters(overrides)
+	if not common.can_read("Purchase Order"):
+		return _item_history_payload(
+			filters,
+			rows=[],
+			state=common.restricted_state("Item Purchase History restricted", "Purchase Order"),
+			metrics=[],
+			action_targets={},
+		)
+	missing_fields = _missing_item_history_fields()
+	if missing_fields:
+		return _item_history_payload(
+			filters,
+			rows=[],
+			state=common.unavailable_state(
+				"Item Purchase History unavailable",
+				"Required item buying history fields are not available: " + ", ".join(missing_fields),
+			),
+			metrics=[],
+			action_targets={},
+		)
+	try:
+		purchase_orders = _visible_item_history_purchase_orders(filters)
+		po_names = [cstr(row.get("name")).strip() for row in purchase_orders if cstr(row.get("name")).strip()]
+		items = _purchase_order_items_for_history(po_names, filters)
+		source_rows = _item_history_source_rows(purchase_orders, items)
+		rows, action_targets = _item_history_rows(source_rows)
+		state = common.ready_state() if rows else common.empty_state(
+			"No item purchase history",
+			"The selected filters did not return visible item buying history lines.",
+		)
+		return _item_history_payload(filters, rows=rows, state=state, metrics=_item_history_metrics(source_rows), action_targets=action_targets)
+	except Exception as exc:  # pragma: no cover - exercised against live ERP runtime
+		message = getattr(exc, "message", None) or str(exc) or "Unknown report error."
+		return _item_history_payload(filters, rows=[], state=common.state("error", "Item Purchase History failed", message), metrics=[], action_targets={})
+
+
+def _item_history_payload(
+	filters: dict[str, object],
+	rows: list[dict[str, object]],
+	state: dict[str, object],
+	metrics: list[dict[str, object]],
+	action_targets: dict[str, object],
+) -> dict[str, object]:
+	return {
+		"page": {"title": "Item Purchase History", "key": "item_purchase_history"},
+		"summary": {
+			"kicker": "Item and price review",
+			"title": "Item Purchase History",
+			"subtitle": "Review item buying history, suppliers, rates, and purchase order references.",
+		},
+		"controls": _item_history_controls(filters),
+		"metrics": {"appearance": "analytics_compact", "layout": "five_up", "items": metrics},
+		"results": {
+			"title": "Item buying history",
+			"subtitle": "Purchase order lines summarized for buyer price review.",
+			"meta": f"{len(rows)} shown",
+			"columns": _item_history_display_columns(),
+			"rows": rows[:ROW_LIMIT],
+			"state": state,
+			"tableMinWidth": 1580,
+		},
+		"action_targets": action_targets,
+	}
+
+
+def _missing_item_history_fields() -> list[str]:
+	missing: list[str] = []
+	for doctype, fields in ITEM_HISTORY_REQUIRED_FIELDS.items():
+		for field in fields:
+			if not common.has_field(doctype, field):
+				missing.append(f"{doctype}.{field}")
+	return missing
+
+
+def _item_history_filters(overrides: dict[str, object]) -> dict[str, object]:
+	return {
+		"from_date": cstr(overrides.get("from_date")).strip() or common.date_days_ago(90),
+		"to_date": cstr(overrides.get("to_date")).strip() or common.today_string(),
+		"item_code": cstr(overrides.get("item_code") or overrides.get("item")).strip(),
+		"supplier": cstr(overrides.get("supplier")).strip(),
+		"item_group": cstr(overrides.get("item_group")).strip(),
+	}
+
+
+def _item_history_controls(filters: dict[str, object]) -> dict[str, object]:
+	return {
+		"appearance": "analytics_compact",
+		"submitLabel": "Apply",
+		"resetLabel": "Reset",
+		"meta": [
+			{"label": "Mode", "value": "Read-only"},
+			{"label": "Scope", "value": "Buyer price review"},
+		],
+		"fields": [
+			{"key": "from_date", "label": "From", "type": "date", "value": filters.get("from_date"), "row": 1},
+			{"key": "to_date", "label": "To", "type": "date", "value": filters.get("to_date"), "row": 1},
+			{"key": "item_code", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item_code"), "placeholder": "Select item", "row": 1},
+			{"key": "supplier", "label": "Supplier", "type": "link", "linkDoctype": "Supplier", "value": filters.get("supplier"), "placeholder": "Select supplier", "row": 1},
+			{"key": "item_group", "label": "Item Group", "type": "link", "linkDoctype": "Item Group", "value": filters.get("item_group"), "placeholder": "Select item group", "row": 2},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+		],
+	}
+
+
+def _item_history_display_columns() -> list[dict[str, object]]:
+	return [
+		{"key": "item_code", "label": "Item", "nowrap": True},
+		{"key": "supplier", "label": "Supplier", "nowrap": True},
+		{"key": "purchase_order", "label": "Purchase Order", "nowrap": True},
+		{"key": "order_date", "label": "Order Date", "nowrap": True},
+		{"key": "qty", "label": "Qty", "align": "right"},
+		{"key": "uom", "label": "UOM", "nowrap": True},
+		{"key": "rate", "label": "Rate", "align": "right"},
+		{"key": "amount", "label": "Amount", "align": "right"},
+		{"key": "currency", "label": "Currency", "nowrap": True},
+		{"key": "price_signal", "label": "Price Signal", "nowrap": True},
+	]
+
+
+def _visible_item_history_purchase_orders(filters: dict[str, object]) -> list[dict[str, object]]:
+	query_filters: list[list[object]] = [["Purchase Order", "docstatus", "<", 2]]
+	if filters.get("from_date"):
+		query_filters.append(["Purchase Order", "transaction_date", ">=", filters.get("from_date")])
+	if filters.get("to_date"):
+		query_filters.append(["Purchase Order", "transaction_date", "<=", filters.get("to_date")])
+	if filters.get("supplier"):
+		query_filters.append(["Purchase Order", "supplier", "=", filters.get("supplier")])
+	fields = ["name", "transaction_date", "supplier", "supplier_name", "currency", "status", "docstatus"]
+	return common.get_list("Purchase Order", fields=fields, filters=query_filters, order_by="transaction_date desc, name desc", limit=ROW_LIMIT)
+
+
+def _purchase_order_items_for_history(po_names: list[str], filters: dict[str, object]) -> list[dict[str, object]]:
+	if not po_names:
+		return []
+	child_filters: dict[str, object] = {"parent": ["in", po_names]}
+	if filters.get("item_code"):
+		child_filters["item_code"] = filters.get("item_code")
+	if filters.get("item_group"):
+		child_filters["item_group"] = filters.get("item_group")
+	try:
+		return list(
+			frappe.get_all(
+				"Purchase Order Item",
+				filters=child_filters,
+				fields=_available_child_fields("Purchase Order Item", ["name", "parent", "idx", "item_code", "item_name", "item_group", "qty", "uom", "rate", "amount", "base_rate", "base_amount"]),
+				order_by="parent desc, idx asc",
+				limit_page_length=ROW_LIMIT,
+			)
+		)
+	except Exception:
+		return []
+
+
+def _item_history_source_rows(purchase_orders: list[dict[str, object]], items: list[dict[str, object]]) -> list[dict[str, object]]:
+	po_by_name = {cstr(row.get("name")).strip(): row for row in purchase_orders if cstr(row.get("name")).strip()}
+	rows: list[dict[str, object]] = []
+	for item in items:
+		po_name = cstr(item.get("parent")).strip()
+		po = po_by_name.get(po_name)
+		if not po:
+			continue
+		rows.append(
+			{
+				"key": cstr(item.get("name") or f"{po_name}:{item.get('item_code')}"),
+				"purchase_order": po_name,
+				"order_date": cstr(po.get("transaction_date")).strip(),
+				"supplier": cstr(po.get("supplier")).strip(),
+				"supplier_name": cstr(po.get("supplier_name") or po.get("supplier")).strip(),
+				"currency": cstr(po.get("currency")).strip(),
+				"status": cstr(po.get("status")).strip(),
+				"item_code": cstr(item.get("item_code")).strip(),
+				"item_name": cstr(item.get("item_name")).strip(),
+				"item_group": cstr(item.get("item_group")).strip(),
+				"qty": flt(item.get("qty")),
+				"uom": cstr(item.get("uom")).strip(),
+				"rate": flt(item.get("rate")),
+				"amount": flt(item.get("amount")),
+				"base_rate": flt(item.get("base_rate")),
+				"base_amount": flt(item.get("base_amount")),
+			}
+		)
+	return rows
+
+
+def _item_history_rows(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, object]]:
+	formatted_rows: list[dict[str, object]] = []
+	action_targets: dict[str, object] = {}
+	last_by_item = _last_item_history_rate_by_item(rows)
+	can_read_supplier = common.can_read("Supplier")
+	can_read_item = common.can_read("Item")
+	for row in rows[:ROW_LIMIT]:
+		po_name = cstr(row.get("purchase_order")).strip()
+		supplier = cstr(row.get("supplier")).strip()
+		item_code = cstr(row.get("item_code")).strip()
+		currency = cstr(row.get("currency")).strip()
+		po_action = f"item_history:po:{po_name}"
+		supplier_action = f"item_history:supplier:{supplier}"
+		item_action = f"item_history:item:{item_code}"
+		if po_name:
+			action_targets[po_action] = {"kind": "page", "route": "procurement-console-po-follow-up", "route_parts": [po_name]}
+		if supplier and can_read_supplier:
+			action_targets[supplier_action] = {"kind": "page", "route": "procurement-console-supplier", "route_parts": [supplier]}
+		if item_code and can_read_item:
+			action_targets[item_action] = {"kind": "page", "route": "procurement-console-item", "route_parts": [item_code]}
+		is_last = row.get("key") == last_by_item.get(item_code, {}).get("key")
+		formatted_rows.append(
+			{
+				"key": cstr(row.get("key") or f"{po_name}:{item_code}"),
+				"cells": {
+					"item_code": {"value": item_code or "-", "detail": cstr(row.get("item_name")).strip(), "actionKey": item_action} if item_code and can_read_item else {"value": item_code or "-", "detail": cstr(row.get("item_name")).strip()},
+					"supplier": {"value": supplier or "-", "detail": cstr(row.get("supplier_name")).strip(), "actionKey": supplier_action} if supplier and can_read_supplier else {"value": supplier or "-", "detail": cstr(row.get("supplier_name")).strip()},
+					"purchase_order": {"value": po_name or "-", "actionKey": po_action} if po_name else {"value": "-"},
+					"order_date": {"value": cstr(row.get("order_date") or "-")},
+					"qty": {"value": _quantity(row.get("qty"))},
+					"uom": {"value": cstr(row.get("uom") or "-")},
+					"rate": {"value": _money(row.get("rate"), currency)},
+					"amount": {"value": _money(row.get("amount"), currency)},
+					"currency": {"value": currency or "-"},
+					"price_signal": {"value": "Last purchase" if is_last else "History"},
+				},
+			}
+		)
+	return formatted_rows, action_targets
+
+
+def _last_item_history_rate_by_item(rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+	latest: dict[str, dict[str, object]] = {}
+	for row in rows:
+		item_code = cstr(row.get("item_code")).strip()
+		if not item_code:
+			continue
+		current = latest.get(item_code)
+		if not current or cstr(row.get("order_date")).strip() > cstr(current.get("order_date")).strip():
+			latest[item_code] = row
+	return latest
+
+
+def _item_history_metrics(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+	items = {cstr(row.get("item_code")).strip() for row in rows if cstr(row.get("item_code")).strip()}
+	suppliers = {cstr(row.get("supplier")).strip() for row in rows if cstr(row.get("supplier")).strip()}
+	currency = cstr(rows[0].get("currency")).strip() if rows else ""
+	latest = max(rows, key=lambda row: cstr(row.get("order_date")).strip(), default={})
+	qty_total = sum(max(flt(row.get("qty")), 0) for row in rows)
+	amount_total = sum(flt(row.get("amount")) for row in rows)
+	weighted_rate = amount_total / qty_total if qty_total else 0
+	return [
+		common.metric("Purchase lines", len(rows), "Visible purchase order lines in this report.", "slate"),
+		common.metric("Items", len(items), "Distinct items represented in visible purchase lines.", "teal"),
+		common.metric("Suppliers", len(suppliers), "Distinct suppliers represented in visible purchase lines.", "indigo"),
+		common.metric("Last rate", _money(latest.get("rate"), cstr(latest.get("currency") or currency)), "Most recent visible purchase rate.", "amber"),
+		common.metric("Weighted average", _money(weighted_rate, currency), "Amount divided by quantity across visible purchase lines.", "red"),
 	]
 
 

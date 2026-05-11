@@ -381,6 +381,12 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "schedule_date": "2026-05-08",
                 "expected_delivery_date": "2026-05-06",
                 "qty": 10,
+                "uom": "Nos",
+                "rate": 100,
+                "amount": 1000,
+                "base_rate": 100,
+                "base_amount": 1000,
+                "item_group": "Products",
                 "received_qty": 0,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-001",
@@ -395,6 +401,12 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "schedule_date": "2026-04-30",
                 "expected_delivery_date": "",
                 "qty": 5,
+                "uom": "Nos",
+                "rate": 440,
+                "amount": 2200,
+                "base_rate": 440,
+                "base_amount": 2200,
+                "item_group": "Products",
                 "received_qty": 0,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-002",
@@ -409,6 +421,12 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "schedule_date": "2026-05-20",
                 "expected_delivery_date": "",
                 "qty": 8,
+                "uom": "Nos",
+                "rate": 375,
+                "amount": 3000,
+                "base_rate": 375,
+                "base_amount": 3000,
+                "item_group": "Products",
                 "received_qty": 4,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-003",
@@ -423,6 +441,12 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "schedule_date": "2026-05-12",
                 "expected_delivery_date": "",
                 "qty": 6,
+                "uom": "Nos",
+                "rate": 666.67,
+                "amount": 4000,
+                "base_rate": 666.67,
+                "base_amount": 4000,
+                "item_group": "Products",
                 "received_qty": 6,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-004",
@@ -448,6 +472,9 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
         item_filter = (filters or {}).get("item_code") if isinstance(filters, dict) else None
         if item_filter:
             rows = [row for row in rows if row["item_code"] == item_filter]
+        item_group_filter = (filters or {}).get("item_group") if isinstance(filters, dict) else None
+        if item_group_filter:
+            rows = [row for row in rows if row.get("item_group") == item_group_filter]
         return rows
     if doctype == "Purchase Receipt Item":
         return [
@@ -1789,10 +1816,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(card_by_key["purchase_order_analysis"]["target_route"], "/desk/procurement-console-report/purchase-order-analysis")
         self.assertEqual(
             [card["status"] for card in cards],
-            ["ready", "ready", "ready", "planned"],
+            ["ready", "ready", "ready", "ready"],
         )
         self.assertEqual(card_by_key["demand_to_order_coverage"]["status"], "ready")
         self.assertEqual(card_by_key["demand_to_order_coverage"]["target_route"], "/desk/procurement-console-report/demand-to-order-coverage")
+        self.assertEqual(card_by_key["item_purchase_history"]["status"], "ready")
+        self.assertEqual(card_by_key["item_purchase_history"]["target_route"], "/desk/procurement-console-report/item-purchase-history")
         self.assertEqual(
             payload["action_targets"]["open_supplier_quotation_comparison"],
             {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
@@ -1804,6 +1833,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(
             payload["action_targets"]["open_demand_to_order_coverage"],
             {"kind": "report_page", "report_key": "demand_to_order_coverage"},
+        )
+        self.assertEqual(
+            payload["action_targets"]["open_item_purchase_history"],
+            {"kind": "report_page", "report_key": "item_purchase_history"},
         )
         payload_text = str(payload).lower()
         self.assertNotIn("query-report", payload_text)
@@ -1983,6 +2016,71 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         MISSING_FIELDS.add(("Purchase Order Item", "material_request_item"))
 
         payload = report.get_procurement_console_report_context("demand_to_order_coverage")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
+        self.assertEqual(payload["results"]["rows"], [])
+
+
+    def test_item_purchase_history_returns_ready_productized_report(self):
+        payload = report.get_procurement_console_report_context("item_purchase_history", {"item_code": "ITEM-002", "supplier": "SUP-001", "item_group": "Products"})
+
+        self.assertEqual(payload["page"], {"title": "Item Purchase History", "key": "item_purchase_history"})
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(payload["metrics"].get("layout"), "five_up")
+        self.assertIsNone(_field_by_key(payload, "company"))
+        self.assertEqual(_field_by_key(payload, "item_code")["linkDoctype"], "Item")
+        self.assertEqual(_field_by_key(payload, "supplier")["linkDoctype"], "Supplier")
+        self.assertEqual(_field_by_key(payload, "item_group")["linkDoctype"], "Item Group")
+        column_by_key = {column["key"]: column for column in payload["results"]["columns"]}
+        self.assertTrue(column_by_key["item_code"].get("nowrap"))
+        self.assertTrue(column_by_key["purchase_order"].get("nowrap"))
+        self.assertTrue(column_by_key["order_date"].get("nowrap"))
+        self.assertEqual(len(payload["results"]["rows"]), 1)
+        row = payload["results"]["rows"][0]
+        self.assertEqual(row["cells"]["item_code"]["value"], "ITEM-002")
+        self.assertEqual(row["cells"]["purchase_order"]["value"], "PUR-OVERDUE-001")
+        self.assertEqual(row["cells"]["purchase_order"]["actionKey"], "item_history:po:PUR-OVERDUE-001")
+        self.assertEqual(row["cells"]["supplier"]["actionKey"], "item_history:supplier:SUP-001")
+        self.assertEqual(row["cells"]["item_code"]["actionKey"], "item_history:item:ITEM-002")
+        self.assertEqual(payload["action_targets"]["item_history:po:PUR-OVERDUE-001"], {"kind": "page", "route": "procurement-console-po-follow-up", "route_parts": ["PUR-OVERDUE-001"]})
+        self.assertEqual(payload["action_targets"]["item_history:supplier:SUP-001"], {"kind": "page", "route": "procurement-console-supplier", "route_parts": ["SUP-001"]})
+        self.assertEqual(payload["action_targets"]["item_history:item:ITEM-002"], {"kind": "page", "route": "procurement-console-item", "route_parts": ["ITEM-002"]})
+        _assert_no_forbidden_mutation_actions(self, payload)
+        payload_text = str(payload).lower()
+        self.assertNotIn("query-report", payload_text)
+        self.assertNotIn("update item price", payload_text)
+        self.assertNotIn("set default supplier", payload_text)
+        self.assertNotIn("create purchase order", payload_text)
+        self.assertNotIn("form", payload_text)
+
+    def test_item_purchase_history_empty_after_filter(self):
+        payload = report.get_procurement_console_report_context("item_purchase_history", {"item_code": "ITEM-NOPE"})
+
+        self.assertEqual(payload["results"]["state"]["kind"], "empty")
+        self.assertEqual(payload["results"]["rows"], [])
+
+    def test_item_purchase_history_restricted_without_purchase_order_read(self):
+        _set_readable_doctypes("Supplier", "Item", "Item Price")
+
+        payload = report.get_procurement_console_report_context("item_purchase_history")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
+
+    def test_item_purchase_history_hides_supplier_and_item_drilldowns_without_read(self):
+        _set_readable_doctypes("Purchase Order")
+
+        payload = report.get_procurement_console_report_context("item_purchase_history", {"item_code": "ITEM-002"})
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        row = payload["results"]["rows"][0]
+        self.assertNotIn("actionKey", row["cells"]["supplier"])
+        self.assertNotIn("actionKey", row["cells"]["item_code"])
+        self.assertTrue(any(key.startswith("item_history:po:") for key in payload["action_targets"]))
+
+    def test_item_purchase_history_unavailable_when_required_rate_field_missing(self):
+        MISSING_FIELDS.add(("Purchase Order Item", "base_rate"))
+
+        payload = report.get_procurement_console_report_context("item_purchase_history")
 
         self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
         self.assertEqual(payload["results"]["rows"], [])

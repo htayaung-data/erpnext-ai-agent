@@ -966,13 +966,13 @@ async function checkProcurementReportsIndex(page) {
   })));
   assert(cardDensity.every((card) => card.height <= 170), "Reports Index cards are too tall or text-heavy for the compact catalog", { cardDensity });
   assert(cardDensity.every((card) => !/not exposed here|execution remain outside|will not create|stay disabled/i.test(card.text)), "Reports Index card copy should be concise, not documentation-style governance text", { cardDensity });
-  const readyCards = ["Quote Comparison", "Purchase Order Analysis", "Demand-to-Order Coverage"];
+  const readyCards = ["Quote Comparison", "Purchase Order Analysis", "Demand-to-Order Coverage", "Item Purchase History"];
   for (const label of readyCards) {
     const card = page.locator(".erpw-procurement-report-card", { hasText: label }).first();
     await card.waitFor({ state: "visible", timeout: TIMEOUT });
     assert(!(await card.isDisabled()), `${label}: ready report card should be active`);
   }
-  const plannedCards = ["Item Purchase History"];
+  const plannedCards = [];
   for (const label of plannedCards) {
     const card = page.locator(".erpw-procurement-report-card", { hasText: label }).first();
     await card.waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1026,7 +1026,16 @@ async function checkProcurementReportsIndex(page) {
   const demandCoverage = await checkDemandToOrderCoverageReport(page, { exerciseControls: true, exerciseDrilldowns: true });
   await openDeskRoute(page, "/desk/procurement-console-report/demand-to-order-coverage");
   const directDemandCoverage = await checkDemandToOrderCoverageReport(page, { exerciseControls: false, exerciseDrilldowns: false });
-  return { screenshot, quoteUrl: page.url(), cardGrid, nowrapCheck, poAnalysis, directPoAnalysis, demandCoverage, directDemandCoverage };
+
+  await openDeskRoute(page, "/desk/procurement-console-report");
+  const itemHistoryCard = page.locator(".erpw-procurement-report-card", { hasText: "Item Purchase History" }).first();
+  await itemHistoryCard.waitFor({ state: "visible", timeout: TIMEOUT });
+  await itemHistoryCard.click();
+  await page.waitForURL((url) => url.pathname === "/desk/procurement-console-report/item-purchase-history", { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  const itemHistory = await checkItemPurchaseHistoryReport(page, { exerciseControls: true, exerciseDrilldowns: true });
+  await openDeskRoute(page, "/desk/procurement-console-report/item-purchase-history");
+  const directItemHistory = await checkItemPurchaseHistoryReport(page, { exerciseControls: false, exerciseDrilldowns: false });
+  return { screenshot, quoteUrl: page.url(), cardGrid, nowrapCheck, poAnalysis, directPoAnalysis, demandCoverage, directDemandCoverage, itemHistory, directItemHistory };
 }
 
 async function checkPurchaseOrderAnalysisReport(page, options = {}) {
@@ -1162,6 +1171,107 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
   return { screenshot, tableCheck, drilldowns };
 }
 
+
+
+async function checkItemPurchaseHistoryReport(page, options = {}) {
+  await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.waitForFunction(() => /Item Purchase History/.test(document.body.innerText || ""), null, { timeout: TIMEOUT });
+  await assertSingleProcurementShell(page, "report", "Item Purchase History report");
+  const text = normalizeText(await page.locator(".erpw-report-shell").first().innerText({ timeout: TIMEOUT }));
+  assert(/Item Purchase History/i.test(text), "Item Purchase History report did not render", { text });
+  assert(/Item buying history/i.test(text), "Item Purchase History results title missing", { text });
+  assert(!/query-report|Set Default Supplier|Update Item Price|New Item Price|Create Purchase Order/i.test(text), "Item Purchase History exposes raw/native report or mutation wording", { text });
+  const actionLabels = await page.locator(".erpw-report-shell").first().evaluate((shell) => Array.from(shell.querySelectorAll("button, a, [role='button']")).map((node) => (node.textContent || "").replace(/\s+/g, " " ).trim()).filter(Boolean));
+  assert(!actionLabels.some((label) => /^(Receive|Bill|Pay|Approve|Reject|Submit|Cancel|Amend|Close|Create Purchase Order|New Item Price)$/i.test(label)), "Item Purchase History exposes forbidden mutation action", { actionLabels });
+  const fields = await page.locator(".erpw-report-shell").first().evaluate((shell) => Array.from(shell.querySelectorAll("[data-erpw-control-key]")).map((node) => ({
+    key: node.getAttribute("data-erpw-control-key"),
+    doctype: node.getAttribute("data-erpw-link-doctype") || "",
+    tag: node.tagName,
+  })));
+  const fieldByKey = Object.fromEntries(fields.map((field) => [field.key, field]));
+  for (const key of ["from_date", "to_date", "item_code", "supplier", "item_group"]) {
+    assert(fieldByKey[key], `Item Purchase History missing filter ${key}`, { fields });
+  }
+  assert(fieldByKey.item_code.doctype === "Item", "Item History item filter is not a Link control", { fields });
+  assert(fieldByKey.supplier.doctype === "Supplier", "Item History supplier filter is not a Link control", { fields });
+  assert(fieldByKey.item_group.doctype === "Item Group", "Item History item group filter is not a Link control", { fields });
+  assert(!fieldByKey.company, "Item Purchase History should not expose company filter in single-company mode", { fields });
+
+  const tableCheck = await page.locator(".erpw-report-table").first().evaluate((table) => {
+    const headers = Array.from(table.querySelectorAll("thead th")).map((node) => node.textContent.trim());
+    const rows = Array.from(table.querySelectorAll("tbody tr"));
+    const cells = Array.from(table.querySelectorAll("tbody td.nowrap, thead th.nowrap")).map((cell) => ({ text: cell.textContent.replace(/\s+/g, " ").trim(), whiteSpace: getComputedStyle(cell).whiteSpace, className: cell.className }));
+    const actionKeys = Array.from(table.querySelectorAll("[data-erpw-report-action-key]")).map((node) => node.getAttribute("data-erpw-report-action-key"));
+    return { headers, rowCount: rows.length, cells, actionKeys };
+  });
+  for (const label of ["Item", "Supplier", "Purchase Order", "Order Date", "Qty", "UOM", "Rate", "Amount", "Currency"]) {
+    assert(tableCheck.headers.includes(label), `Item Purchase History missing column ${label}`, tableCheck);
+  }
+  assert(tableCheck.cells.every((cell) => cell.whiteSpace === "nowrap"), "Item Purchase History nowrap cells are allowed to wrap", tableCheck);
+  assert(tableCheck.actionKeys.every((key) => /^item_history:(item|supplier|po):/.test(key)), "Item Purchase History has non-productized report action keys", tableCheck);
+
+  const metricLayout = await page.locator(".erpw-report-metrics").first().evaluate((node) => {
+    const cards = Array.from(node.querySelectorAll(".erpw-report-metric"));
+    const rows = new Map();
+    cards.forEach((card) => {
+      const top = Math.round(card.getBoundingClientRect().top);
+      rows.set(top, (rows.get(top) || 0) + 1);
+    });
+    return {
+      className: node.className,
+      rowCounts: Array.from(rows.values()),
+      cardCount: cards.length,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert(metricLayout.cardCount === 5, "Item Purchase History should render five KPI metrics", metricLayout);
+  assert(metricLayout.className.includes("layout-five-up"), "Item Purchase History metrics should use the balanced five-up layout", metricLayout);
+  assert(!metricLayout.rowCounts.includes(1), "Item Purchase History KPI metrics create a lonely single-card row", metricLayout);
+  assert(metricLayout.overflow <= 2, "Item Purchase History KPI metrics introduced horizontal overflow", metricLayout);
+  const screenshot = await captureSmokeScreenshot(page, "procurement-item-purchase-history");
+
+  if (options.exerciseControls) {
+    const urlBefore = page.url();
+    await page.evaluate(() => { window.__erpwProcurementReportMarker = String(Date.now()); });
+    await page.locator(".erpw-report-control-button.primary").first().click();
+    await page.waitForFunction(() => document.querySelector(".erpw-report-shell") && document.querySelector(".erpw-report-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+    assert(await page.evaluate(() => Boolean(window.__erpwProcurementReportMarker)), "Item Purchase History Apply reloaded the full page unexpectedly");
+    assert(page.url() === urlBefore, "Item Purchase History Apply changed route unexpectedly", { before: urlBefore, after: page.url() });
+    await page.locator(".erpw-report-control-reset").first().click();
+    await page.waitForFunction(() => document.querySelector(".erpw-report-shell") && document.querySelector(".erpw-report-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+    assert(await page.evaluate(() => Boolean(window.__erpwProcurementReportMarker)), "Item Purchase History Reset reloaded the full page unexpectedly");
+    await page.locator('[data-erpw-report-action-key="refresh"]').first().click();
+    await page.waitForFunction(() => document.querySelector(".erpw-report-shell") && document.querySelector(".erpw-report-shell").getAttribute("aria-busy") !== "true", null, { timeout: TIMEOUT });
+    assert(await page.evaluate(() => Boolean(window.__erpwProcurementReportMarker)), "Item Purchase History Refresh reloaded the full page unexpectedly");
+  }
+
+  const drilldowns = {};
+  if (options.exerciseDrilldowns && tableCheck.actionKeys.some((key) => /^item_history:item:/.test(key))) {
+    await page.locator('[data-erpw-report-action-key^="item_history:item:"]').first().click();
+    await page.waitForURL((url) => /\/desk\/procurement-console-item\//.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "itemDetail", "Item Purchase History Item drilldown");
+    drilldowns.item = page.url();
+    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "report", "Item Purchase History after Item drilldown back");
+  }
+  if (options.exerciseDrilldowns && tableCheck.actionKeys.some((key) => /^item_history:supplier:/.test(key))) {
+    await page.locator('[data-erpw-report-action-key^="item_history:supplier:"]').first().click();
+    await page.waitForURL((url) => /\/desk\/procurement-console-supplier\//.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "supplierDetail", "Item Purchase History Supplier drilldown");
+    drilldowns.supplier = page.url();
+    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "report", "Item Purchase History after Supplier drilldown back");
+  }
+  if (options.exerciseDrilldowns && tableCheck.actionKeys.some((key) => /^item_history:po:/.test(key))) {
+    await page.locator('[data-erpw-report-action-key^="item_history:po:"]').first().click();
+    await page.waitForURL((url) => /\/desk\/procurement-console-po-follow-up\//.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "poDetail", "Item Purchase History PO drilldown");
+    drilldowns.po = page.url();
+    await page.goBack({ waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await assertSingleProcurementShell(page, "report", "Item Purchase History after PO drilldown back");
+  }
+  return { screenshot, tableCheck, drilldowns };
+}
 
 async function checkDemandToOrderCoverageReport(page, options = {}) {
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1375,6 +1485,11 @@ async function checkSupplierAutocomplete(page) {
   });
   assert(demandCoverageResponse.ok, "Demand-to-Order Coverage API failed for autocomplete setup", demandCoverageResponse);
   const demandCoveragePayload = demandCoverageResponse.data.message || {};
+  const itemHistoryResponse = await callMethod(page, "erp_workspace_ui.procurement_console.report.get_procurement_console_report_context", {
+    report_key: "item_purchase_history",
+  });
+  assert(itemHistoryResponse.ok, "Item Purchase History API failed for autocomplete setup", itemHistoryResponse);
+  const itemHistoryPayload = itemHistoryResponse.data.message || {};
 
   assertLinkField(supplierPayload, "supplier", "Supplier", "Supplier Directory", "Select supplier");
   assertLinkField(supplierPayload, "supplier_group", "Supplier Group", "Supplier Directory", "Select supplier group");
@@ -1413,6 +1528,10 @@ async function checkSupplierAutocomplete(page) {
   assertLinkField(demandCoveragePayload, "item_code", "Item", "Demand-to-Order Coverage", "Select item");
   assertLinkField(demandCoveragePayload, "warehouse", "Warehouse", "Demand-to-Order Coverage", "Select warehouse");
   assertNoCompanyField(demandCoveragePayload, "Demand-to-Order Coverage");
+  assertLinkField(itemHistoryPayload, "item_code", "Item", "Item Purchase History", "Select item");
+  assertLinkField(itemHistoryPayload, "supplier", "Supplier", "Item Purchase History", "Select supplier");
+  assertLinkField(itemHistoryPayload, "item_group", "Item Group", "Item Purchase History", "Select item group");
+  assertNoCompanyField(itemHistoryPayload, "Item Purchase History");
 
   const supplierSeed = firstRowName(supplierPayload) || await fetchLinkSeed(page, "Supplier", "S");
   const requestSeed = firstRowName(requestPayload);
@@ -1431,6 +1550,9 @@ async function checkSupplierAutocomplete(page) {
   results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/purchase-order-analysis", "purchase_order", "Purchase Order", orderSeed, "PO Analysis Purchase Order"));
   results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/purchase-order-analysis", "supplier", "Supplier", supplierSeed, "PO Analysis Supplier"));
   results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/purchase-order-analysis", "item_code", "Item", itemSeed, "PO Analysis Item"));
+  results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "item_code", "Item", itemSeed, "Item History Item"));
+  results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "supplier", "Supplier", supplierSeed, "Item History Supplier"));
+  results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "item_group", "Item Group", "Products", "Item History Item Group"));
 
   await openDeskRoute(page, "/desk/procurement-console-worklist/purchase-order-directory");
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1938,6 +2060,7 @@ async function checkTopChrome(page) {
     { route: "/desk/procurement-console-report/supplier-quotation-comparison", shell: ".erpw-report-shell", title: "Quote Comparison" },
     { route: "/desk/procurement-console-report/purchase-order-analysis", shell: ".erpw-report-shell", title: "Purchase Order Analysis" },
     { route: "/desk/procurement-console-report/demand-to-order-coverage", shell: ".erpw-report-shell", title: "Demand-to-Order Coverage" },
+    { route: "/desk/procurement-console-report/item-purchase-history", shell: ".erpw-report-shell", title: "Item Purchase History" },
   ];
   const results = [];
   for (const item of pages) {

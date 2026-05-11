@@ -196,6 +196,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             "procurement-console-report/supplier_quotation_comparison",
             "procurement-console-report/purchase_order_analysis",
             "procurement-console-report/demand_to_order_coverage",
+            "procurement-console-report/item_purchase_history",
             "procurement-console-po-follow-up",
             "procurement-console-purchase-request-review",
             "Form/Material Request/new-purchase",
@@ -210,6 +211,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "procurement-report-index-open-quote-comparison",
                 "procurement-report-index-open-purchase-order-analysis",
                 "procurement-report-index-open-demand-coverage",
+                "procurement-report-index-open-item-purchase-history",
             }
         }
 
@@ -245,6 +247,16 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         )
         self.assertIsNone(demand_action.get("native_exception_ref"))
 
+        item_history_action = actions["procurement-report-index-open-item-purchase-history"]
+        self.assertEqual("open_item_purchase_history", item_history_action["action_key"])
+        self.assertEqual("productized_navigation", item_history_action["classification"])
+        self.assertEqual("report_page", item_history_action["target_kind"])
+        self.assertEqual(
+            "/desk/procurement-console-report/item-purchase-history",
+            item_history_action["target_route_pattern"],
+        )
+        self.assertIsNone(item_history_action.get("native_exception_ref"))
+
     def test_procurement_purchase_order_analysis_drilldowns_are_productized(self):
         action = next(
             item
@@ -268,6 +280,20 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
 
         self.assertEqual("procurement", action["workspace_id"])
         self.assertEqual("procurement-console-report/demand_to_order_coverage", action["source_route"])
+        self.assertEqual("productized_navigation", action["classification"])
+        self.assertEqual("page", action["target_kind"])
+        self.assertEqual("/desk/procurement-console-*", action["target_route_pattern"])
+        self.assertIsNone(action.get("native_exception_ref"))
+
+    def test_procurement_item_purchase_history_drilldowns_are_productized(self):
+        action = next(
+            item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] == "procurement-report-item-purchase-history-drilldown"
+        )
+
+        self.assertEqual("procurement", action["workspace_id"])
+        self.assertEqual("procurement-console-report/item_purchase_history", action["source_route"])
         self.assertEqual("productized_navigation", action["classification"])
         self.assertEqual("page", action["target_kind"])
         self.assertEqual("/desk/procurement-console-*", action["target_route_pattern"])
