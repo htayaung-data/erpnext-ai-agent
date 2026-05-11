@@ -248,6 +248,9 @@ from ai_assistant_ui.qwen_chat.visible_context_followup_activation import (
 	try_activate_visible_context_followup_response as _try_activate_visible_context_followup_response,
 	visible_context_followup_requested as _visible_context_followup_requested,
 )
+from ai_assistant_ui.qwen_chat.visible_context_trace_inspection import (
+	try_activate_visible_context_trace_inspection_response as _try_activate_visible_context_trace_inspection_response,
+)
 from ai_assistant_ui.qwen_chat.lanes.clarification_lane import (
 	build_pending_clarification_frontdoor_skip,
 	handle_pending_clarification_turn,
@@ -3617,6 +3620,32 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		conversation_state=conversation_state_snapshot,
 	)
 	nbu_shadow_tool_payloads = [nbu_shadow_trace_payload] if isinstance(nbu_shadow_trace_payload, dict) and nbu_shadow_trace_payload else []
+	trace_inspection_handled, trace_inspection_payload = _try_activate_visible_context_trace_inspection_response(
+		session_doc=session_doc,
+		request_id=request_id,
+		session_id=session_name,
+		user_id=user,
+		site_name=site_name,
+		raw_message=raw_msg,
+		user_message_already_appended=False,
+		append_message=_append_message,
+		append_tool_payload=_append_tool_payload,
+		assistant_text_payload=_assistant_text_payload,
+		save_session=_save_session,
+		additional_tool_payloads=[
+			payload
+			for payload in [
+				interaction_contract.to_payload() if hasattr(interaction_contract, "to_payload") else {},
+				conversation_control_evidence_contract.to_payload()
+				if conversation_control_evidence_contract is not None and hasattr(conversation_control_evidence_contract, "to_payload")
+				else {},
+				*nbu_shadow_tool_payloads,
+			]
+			if isinstance(payload, dict) and payload
+		],
+	)
+	if trace_inspection_handled and trace_inspection_payload is not None:
+		return True, trace_inspection_payload
 	compound_completion_answer = _compound_request_completion_answer_from_snapshot(
 		conversation_state_snapshot=conversation_state_snapshot,
 		message=raw_msg,
