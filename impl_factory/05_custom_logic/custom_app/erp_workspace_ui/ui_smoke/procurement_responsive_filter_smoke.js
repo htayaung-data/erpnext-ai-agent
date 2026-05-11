@@ -128,7 +128,7 @@ function assertReportFieldOrder(label, viewport, fields) {
   assert(actual.join(',') === expected.join(','), `${label}: non-premium filter priority order at ${viewport.key}`, { expected, actual, fields });
 }
 function assertReportFieldWidths(label, viewport, fields) {
-  const maxWidth = label === 'Quote Comparison' ? 285 : 330;
+  const maxWidth = label === 'Quote Comparison' ? 285 : 370;
   const oversized = fields.filter((field) => field.width > maxWidth);
   assert(oversized.length === 0, `${label}: oversized report filter field at ${viewport.key}`, { maxWidth, oversized, fields });
   const dateFields = fields.filter((field) => field.key === 'from_date' || field.key === 'to_date');

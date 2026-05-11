@@ -1021,6 +1021,8 @@
         color: #475569;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-controls.analytics-compact {
+        width: min(100%, 980px);
+        justify-self: center;
         padding: 12px 14px;
         gap: 12px;
         border-radius: 14px;
@@ -1118,10 +1120,7 @@
         border-radius: 14px;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-2:not(.without-actions) {
-        grid-template-columns: max-content max-content;
-      }
-      .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-2:not(.without-actions) .erpw-report-command-fields.field-count-2 {
-        grid-template-columns: repeat(2, minmax(220px, 260px));
+        grid-template-columns: minmax(0, 1fr) max-content;
       }
       @media (max-width: 1080px) {
         .erpw-report-shell.is-procurement-report .erpw-report-command-row {
