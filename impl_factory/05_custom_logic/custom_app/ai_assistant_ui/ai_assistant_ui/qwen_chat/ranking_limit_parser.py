@@ -40,7 +40,7 @@ _TIME_UNIT_PATTERN = r"(?:day|days|week|weeks|month|months|year|years|quarter|qu
 
 def _normalize_text(value: Any) -> str:
 	text = str(value or "").strip().lower()
-	text = re.sub(r"[–—]", "-", text)
+	text = re.sub(r"[\u2010-\u2015\u2212]", "-", text)
 	text = re.sub(r"\s+", " ", text)
 	return text
 

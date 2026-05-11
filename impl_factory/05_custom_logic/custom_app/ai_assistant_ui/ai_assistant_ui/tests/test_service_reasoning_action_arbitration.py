@@ -8,6 +8,7 @@ from ai_assistant_ui.qwen_chat.service import (
 	_context_isolation_should_yield_to_prior_reasoning_action,
 	_fresh_query_should_skip_pre_frontdoor_reasoning,
 	_message_should_override_stale_context_as_fresh_query,
+	_nbu_presentation_should_yield_to_local_or_visible_context,
 	_runtime_gate_should_yield_to_visible_context,
 	_visible_context_followup_should_preempt_clarification,
 )
@@ -98,6 +99,11 @@ class ServiceReasoningActionArbitrationTests(unittest.TestCase):
 		)
 		self.assertTrue(
 			_visible_context_followup_should_preempt_clarification(
+				"Provide additional details about the product ranked eighth."
+			)
+		)
+		self.assertTrue(
+			_visible_context_followup_should_preempt_clarification(
 				"Tell me Rank 11 Customer from the above table"
 			)
 		)
@@ -153,12 +159,37 @@ class ServiceReasoningActionArbitrationTests(unittest.TestCase):
 		)
 		self.assertTrue(
 			_runtime_gate_should_yield_to_visible_context(
+				"Provide additional details about the product ranked eighth."
+			)
+		)
+		self.assertTrue(
+			_runtime_gate_should_yield_to_visible_context(
 				"who is second invoice in the above context?"
 			)
 		)
 		self.assertFalse(
 			_runtime_gate_should_yield_to_visible_context(
 				"Top 7 Products by Revenue Last Year"
+			)
+		)
+
+	def test_nbu_presentation_yields_to_visible_rank_and_local_projection(self):
+		self.assertTrue(
+			_nbu_presentation_should_yield_to_local_or_visible_context(
+				message="Provide additional details about the product ranked eighth.",
+				artifact_local_projection_followup_requested=False,
+			)
+		)
+		self.assertTrue(
+			_nbu_presentation_should_yield_to_local_or_visible_context(
+				message="Include quantities alongside the results.",
+				artifact_local_projection_followup_requested=True,
+			)
+		)
+		self.assertFalse(
+			_nbu_presentation_should_yield_to_local_or_visible_context(
+				message="Explain the revenue trend as a business consultant.",
+				artifact_local_projection_followup_requested=False,
 			)
 		)
 

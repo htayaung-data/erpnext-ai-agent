@@ -728,6 +728,19 @@ def _runtime_gate_should_yield_to_visible_context(message: str) -> bool:
 	return _visible_context_followup_should_preempt_clarification(message)
 
 
+def _nbu_presentation_should_yield_to_local_or_visible_context(
+	*,
+	message: str,
+	artifact_local_projection_followup_requested: bool = False,
+) -> bool:
+	"""Generic presentation must not outrank visible-table or local projection authority."""
+
+	return bool(
+		artifact_local_projection_followup_requested
+		or _visible_context_followup_should_preempt_clarification(message)
+	)
+
+
 def _message_has_grounded_context_anchor(message: str) -> bool:
 	text = " ".join(str(message or "").strip().lower().split())
 	if not text:
@@ -4485,6 +4498,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 	if (
 		entity_drilldown is None
 		and not pending_clarification_signal
+		and not _nbu_presentation_should_yield_to_local_or_visible_context(
+			message=raw_msg,
+			artifact_local_projection_followup_requested=artifact_local_projection_followup_requested,
+		)
 		and not _reasoning_activation_has_execution_authority(pre_frontdoor_reasoning_semantic_result)
 		and not (
 			latest_grounded_turn_available
@@ -5183,7 +5200,10 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		and not pending_clarification_signal
 		and not precomputed_evidence_answer
 		and not precomputed_evidence_boundary_answer
-		and not _visible_context_followup_requested(raw_msg)
+		and not _nbu_presentation_should_yield_to_local_or_visible_context(
+			message=raw_msg,
+			artifact_local_projection_followup_requested=artifact_local_projection_followup_requested,
+		)
 		and _nbu_presentation_activation_allowed_for_followup(followup_resolution)
 	):
 		nbu_presentation_handled, nbu_presentation_payload = _try_activate_nbu_presentation_response(

@@ -498,7 +498,7 @@ def _ranking_requested_column_alias_map(
 			}
 		)
 	if "quantity" in available_metric_keys:
-		alias_map.update({"qty": "quantity", "quantity": "quantity"})
+		alias_map.update({"qty": "quantity", "quantity": "quantity", "quantities": "quantity"})
 	if "average_order_value" in available_metric_keys:
 		alias_map.update({"aov": "average_order_value", "average_order_value": "average_order_value"})
 	if "average_invoice_value" in available_metric_keys:
