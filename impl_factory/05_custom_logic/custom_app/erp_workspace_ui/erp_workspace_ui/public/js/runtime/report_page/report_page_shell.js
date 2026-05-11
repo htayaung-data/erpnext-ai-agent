@@ -978,6 +978,13 @@
       .erpw-report-shell.is-procurement-report .erpw-report-command-row.without-actions {
         grid-template-columns: minmax(0, 1fr);
       }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.without-actions .erpw-report-command-fields {
+        justify-self: start;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) {
+        grid-template-columns: max-content max-content;
+        justify-content: start;
+      }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields {
         gap: 10px;
         align-items: end;
