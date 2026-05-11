@@ -65,7 +65,18 @@ async function resolveDetails(page) {
   return details;
 }
 async function openPage(page, route, shell) {
-  await page.goto(routeUrl(route), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  const targetUrl = routeUrl(route);
+  const targetPath = new URL(targetUrl).pathname;
+  const canUseDeskRouter = await page.evaluate(() => Boolean(window.frappe && typeof frappe.set_route === "function")).catch(() => false);
+  if (canUseDeskRouter && targetPath.startsWith("/desk/")) {
+    const parts = targetPath.replace(/^\/desk\/?/, "").split("/").filter(Boolean).map((part) => {
+      try { return decodeURIComponent(part); } catch (error) { return part; }
+    });
+    await page.evaluate((routeParts) => frappe.set_route.apply(frappe, routeParts), parts);
+    await page.waitForURL((url) => url.pathname === targetPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  } else {
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  }
   await page.locator(shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
   await page.waitForTimeout(450);
 }
