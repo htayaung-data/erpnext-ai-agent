@@ -1206,7 +1206,6 @@ def _native_comparison_filters(filters: dict[str, object]) -> dict[str, object]:
 def _comparison_controls(filters: dict[str, object]) -> dict[str, object]:
 	return {
 		"appearance": "analytics_compact",
-		"actionLayout": "separate_row",
 		"submitLabel": "Apply",
 		"resetLabel": "Reset",
 		"meta": [

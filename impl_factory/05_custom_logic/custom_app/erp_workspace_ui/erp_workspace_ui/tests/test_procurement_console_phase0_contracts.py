@@ -1507,7 +1507,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(_field_by_key(comparison_payload, "supplier_quotation")["placeholder"], "Select supplier quotation")
         self.assertEqual(_field_by_key(comparison_payload, "request_for_quotation")["linkDoctype"], "Request for Quotation")
         self.assertEqual(_field_by_key(comparison_payload, "request_for_quotation")["placeholder"], "Select RFQ")
-        self.assertEqual(comparison_payload["controls"]["actionLayout"], "separate_row")
+        self.assertNotIn("actionLayout", comparison_payload["controls"])
         self.assertEqual(_field_by_key(comparison_payload, "include_expired")["row"], 1)
         self.assertEqual(_field_by_key(comparison_payload, "item_code")["row"], 2)
         self.assertEqual(_field_by_key(comparison_payload, "supplier")["row"], 2)
