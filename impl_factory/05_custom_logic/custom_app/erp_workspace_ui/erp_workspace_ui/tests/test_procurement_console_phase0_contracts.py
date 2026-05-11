@@ -28,6 +28,7 @@ HIDDEN_MATERIAL_REQUEST_LIST_NAMES = set()
 HIDDEN_RFQ_LIST_NAMES = set()
 HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES = set()
 MISSING_NATIVE_REPORTS = set()
+MISSING_FIELDS = set()
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -315,22 +316,26 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
             ]
         return []
     if doctype == "Material Request Item":
-        if isinstance(filters, dict) and filters.get("parent") == "MAT-MR-001":
-            return [
-                {
-                    "name": "MRI-001",
-                    "parent": "MAT-MR-001",
-                    "item_code": "ITEM-001",
-                    "item_name": "Widget",
-                    "qty": 5,
-                    "ordered_qty": 1,
-                    "received_qty": 0,
-                    "uom": "Nos",
-                    "schedule_date": "2026-05-10",
-                    "warehouse": "Stores - DC",
-                }
-            ]
-        return []
+        rows = [
+            {
+                "name": "MRI-001",
+                "parent": "MAT-MR-001",
+                "item_code": "ITEM-001",
+                "item_name": "Widget",
+                "qty": 5,
+                "ordered_qty": 1,
+                "received_qty": 0,
+                "uom": "Nos",
+                "schedule_date": "2026-05-10",
+                "warehouse": "Stores - DC",
+            }
+        ]
+        parent_filter = (filters or {}).get("parent") if isinstance(filters, dict) else None
+        if isinstance(parent_filter, list) and len(parent_filter) == 2 and parent_filter[0] == "in":
+            rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
+        elif parent_filter:
+            rows = [row for row in rows if row["parent"] == parent_filter]
+        return rows
     if doctype == "Request for Quotation Item":
         if isinstance(filters, dict) and filters.get("parent") == "RFQ-001":
             return [
@@ -379,6 +384,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "received_qty": 0,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-001",
+                "material_request_item": "MRI-001",
                 "supplier_quotation": "SUP-QTN-001",
             },
             {
@@ -392,6 +398,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "received_qty": 0,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-002",
+                "material_request_item": "MRI-002",
                 "supplier_quotation": "SUP-QTN-002",
             },
             {
@@ -405,6 +412,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "received_qty": 4,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-003",
+                "material_request_item": "MRI-003",
                 "supplier_quotation": "SUP-QTN-003",
             },
             {
@@ -418,6 +426,7 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
                 "received_qty": 6,
                 "warehouse": "Stores - DC",
                 "material_request": "MAT-MR-004",
+                "material_request_item": "MRI-004",
                 "supplier_quotation": "SUP-QTN-004",
             },
         ]
@@ -426,6 +435,16 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
             rows = [row for row in rows if row["parent"] in set(parent_filter[1])]
         elif parent_filter:
             rows = [row for row in rows if row["parent"] == parent_filter]
+        mr_filter = (filters or {}).get("material_request") if isinstance(filters, dict) else None
+        if isinstance(mr_filter, list) and len(mr_filter) == 2 and mr_filter[0] == "in":
+            rows = [row for row in rows if row.get("material_request") in set(mr_filter[1])]
+        elif mr_filter:
+            rows = [row for row in rows if row.get("material_request") == mr_filter]
+        mri_filter = (filters or {}).get("material_request_item") if isinstance(filters, dict) else None
+        if isinstance(mri_filter, list) and len(mri_filter) == 2 and mri_filter[0] == "in":
+            rows = [row for row in rows if row.get("material_request_item") in set(mri_filter[1])]
+        elif mri_filter:
+            rows = [row for row in rows if row.get("material_request_item") == mri_filter]
         item_filter = (filters or {}).get("item_code") if isinstance(filters, dict) else None
         if item_filter:
             rows = [row for row in rows if row["item_code"] == item_filter]
@@ -476,6 +495,8 @@ class _FakeMeta:
         self.doctype = doctype
 
     def has_field(self, fieldname):
+        if (self.doctype, fieldname) in MISSING_FIELDS:
+            return False
         if self.doctype == "Request for Quotation Supplier" and fieldname == "quote_status":
             return HAS_QUOTE_STATUS
         return True
@@ -768,6 +789,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         HIDDEN_RFQ_LIST_NAMES.clear()
         HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES.clear()
         MISSING_NATIVE_REPORTS.clear()
+        MISSING_FIELDS.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -1767,8 +1789,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(card_by_key["purchase_order_analysis"]["target_route"], "/desk/procurement-console-report/purchase-order-analysis")
         self.assertEqual(
             [card["status"] for card in cards],
-            ["ready", "ready", "planned", "planned"],
+            ["ready", "ready", "ready", "planned"],
         )
+        self.assertEqual(card_by_key["demand_to_order_coverage"]["status"], "ready")
+        self.assertEqual(card_by_key["demand_to_order_coverage"]["target_route"], "/desk/procurement-console-report/demand-to-order-coverage")
         self.assertEqual(
             payload["action_targets"]["open_supplier_quotation_comparison"],
             {"kind": "report_page", "report_key": "supplier_quotation_comparison"},
@@ -1776,6 +1800,10 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(
             payload["action_targets"]["open_purchase_order_analysis"],
             {"kind": "report_page", "report_key": "purchase_order_analysis"},
+        )
+        self.assertEqual(
+            payload["action_targets"]["open_demand_to_order_coverage"],
+            {"kind": "report_page", "report_key": "demand_to_order_coverage"},
         )
         payload_text = str(payload).lower()
         self.assertNotIn("query-report", payload_text)
@@ -1900,7 +1928,60 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["results"]["state"]["kind"], "unavailable")
         self.assertEqual(payload["results"]["rows"], [])
 
-    def test_later_phase_report_returns_unavailable_not_ready(self):
+    def test_demand_to_order_coverage_returns_ready_productized_report(self):
+        payload = report.get_procurement_console_report_context("demand_to_order_coverage", {"material_request": "MAT-MR-001", "item_code": "ITEM-001", "coverage_status": "partially_ordered"})
+
+        self.assertEqual(payload["page"], {"title": "Demand-to-Order Coverage", "key": "demand_to_order_coverage"})
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        self.assertEqual(payload["metrics"].get("layout"), "five_up")
+        self.assertIsNone(_field_by_key(payload, "company"))
+        self.assertEqual(_field_by_key(payload, "material_request")["linkDoctype"], "Material Request")
+        self.assertEqual(_field_by_key(payload, "item_code")["linkDoctype"], "Item")
+        self.assertEqual(_field_by_key(payload, "warehouse")["linkDoctype"], "Warehouse")
+        column_by_key = {column["key"]: column for column in payload["results"]["columns"]}
+        self.assertTrue(column_by_key["material_request"].get("nowrap"))
+        self.assertTrue(column_by_key["required_date"].get("nowrap"))
+        self.assertEqual(len(payload["results"]["rows"]), 1)
+        row = payload["results"]["rows"][0]
+        self.assertEqual(row["cells"]["material_request"]["value"], "MAT-MR-001")
+        self.assertEqual(row["cells"]["coverage_status"]["value"], "Partially Ordered")
+        self.assertEqual(row["cells"]["open_qty"]["value"], "4")
+        self.assertEqual(row["cells"]["linked_purchase_order"]["actionKey"], "demand_coverage:po:PUR-DUE-001")
+        self.assertEqual(payload["action_targets"]["demand_coverage:request:MAT-MR-001"], {"kind": "page", "route": "procurement-console-purchase-request-review", "route_parts": ["MAT-MR-001"]})
+        self.assertEqual(payload["action_targets"]["demand_coverage:item:ITEM-001"], {"kind": "page", "route": "procurement-console-item", "route_parts": ["ITEM-001"]})
+        self.assertEqual(payload["action_targets"]["demand_coverage:po:PUR-DUE-001"], {"kind": "page", "route": "procurement-console-po-follow-up", "route_parts": ["PUR-DUE-001"]})
+        _assert_no_forbidden_mutation_actions(self, payload)
+        payload_text = str(payload).lower()
+        self.assertNotIn("query-report", payload_text)
+        self.assertNotIn("create purchase order", payload_text)
+        self.assertNotIn("form", payload_text)
+
+    def test_demand_to_order_coverage_empty_after_filter(self):
+        payload = report.get_procurement_console_report_context("demand_to_order_coverage", {"coverage_status": "fully_ordered"})
+
+        self.assertEqual(payload["results"]["state"]["kind"], "empty")
+        self.assertEqual(payload["results"]["rows"], [])
+
+    def test_demand_to_order_coverage_restricted_without_material_request_read(self):
+        _set_readable_doctypes("Supplier", "Item", "Purchase Order")
+
+        payload = report.get_procurement_console_report_context("demand_to_order_coverage")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "restricted")
+
+    def test_demand_to_order_coverage_hides_po_drilldown_without_po_read(self):
+        _set_readable_doctypes("Supplier", "Item", "Material Request")
+
+        payload = report.get_procurement_console_report_context("demand_to_order_coverage")
+
+        self.assertEqual(payload["results"]["state"]["kind"], "ready")
+        row = payload["results"]["rows"][0]
+        self.assertEqual(row["cells"]["linked_purchase_order"]["value"], "-")
+        self.assertFalse(any(key.startswith("demand_coverage:po:") for key in payload["action_targets"]))
+
+    def test_demand_to_order_coverage_unavailable_when_required_link_field_missing(self):
+        MISSING_FIELDS.add(("Purchase Order Item", "material_request_item"))
+
         payload = report.get_procurement_console_report_context("demand_to_order_coverage")
 
         self.assertEqual(payload["results"]["state"]["kind"], "unavailable")

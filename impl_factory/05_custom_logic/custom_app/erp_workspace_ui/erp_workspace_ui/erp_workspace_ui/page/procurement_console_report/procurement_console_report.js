@@ -14,6 +14,8 @@
   const REPORT_CHROME_LABELS = {
     procurement_reports_index: "Procurement Reports",
     supplier_quotation_comparison: "Quote Comparison",
+    purchase_order_analysis: "Purchase Order Analysis",
+    demand_to_order_coverage: "Demand-to-Order Coverage",
   };
   const REPORT_SHELL_URL = "/assets/erp_workspace_ui/js/runtime/report_page/report_page_shell.js?v=2026-05-02-report-link-suggest-v1";
   const REPORT_SHELL_VERSION = "2026-05-02-report-link-suggest-v1";
@@ -149,6 +151,8 @@
     const labelMap = {
       procurement_reports_index: "Procurement Reports",
       supplier_quotation_comparison: "Supplier Quotation Comparison",
+      purchase_order_analysis: "Purchase Order Analysis",
+      demand_to_order_coverage: "Demand-to-Order Coverage",
     };
     const label = labelMap[reportKey] || REPORT_CHROME_TITLE;
     return {

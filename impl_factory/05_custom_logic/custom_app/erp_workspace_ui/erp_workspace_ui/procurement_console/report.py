@@ -76,6 +76,8 @@ def get_procurement_console_report_context(
 		return _build_supplier_quotation_comparison(overrides)
 	if normalized_key == "purchase_order_analysis":
 		return _build_purchase_order_analysis(overrides)
+	if normalized_key == "demand_to_order_coverage":
+		return _build_demand_to_order_coverage(overrides)
 	return _state_payload(normalized_key, service.unavailable_state())
 
 
@@ -119,6 +121,10 @@ def _build_report_index() -> dict[str, object]:
 			"open_purchase_order_analysis": {
 				"kind": "report_page",
 				"report_key": "purchase_order_analysis",
+			},
+			"open_demand_to_order_coverage": {
+				"kind": "report_page",
+				"report_key": "demand_to_order_coverage",
 			},
 		},
 	}
@@ -171,10 +177,12 @@ def _report_index_sections() -> list[dict[str, object]]:
 					"key": "demand_to_order_coverage",
 					"title": "Demand-to-Order Coverage",
 					"purpose": "Track purchase demand that is ordered, partial, or still open.",
-					"status": "planned",
-					"status_label": "Planned",
-					"boundary": "Planned report.",
+					"status": "ready",
+					"status_label": "Ready",
+					"boundary": "Read-only demand coverage.",
 					"icon": "quotation",
+					"action_key": "open_demand_to_order_coverage",
+					"target_route": "/desk/procurement-console-report/demand-to-order-coverage",
 				},
 			],
 		},
@@ -439,6 +447,361 @@ def _po_analysis_metrics(rows: list[dict[str, object]]) -> list[dict[str, object
 		common.metric("Open receiving", _quantity(open_receiving), "Quantity still not received. Warehouse owns receipt execution.", "amber"),
 		common.metric("Open billing", _quantity(open_billing), "Quantity not fully billed. Finance owns invoice and payment work.", "indigo"),
 		common.metric("Overdue open", len(overdue_pos), "Open purchase orders past required date.", "red"),
+	]
+
+
+DEMAND_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+	"Material Request": ("material_request_type", "transaction_date", "schedule_date", "status"),
+	"Material Request Item": ("item_code", "qty", "ordered_qty", "schedule_date"),
+	"Purchase Order Item": ("material_request", "material_request_item", "item_code", "qty"),
+}
+
+
+def _build_demand_to_order_coverage(overrides: dict[str, object]) -> dict[str, object]:
+	filters = _demand_coverage_filters(overrides)
+	if not common.can_read("Material Request"):
+		return _demand_coverage_payload(
+			filters,
+			rows=[],
+			state=common.restricted_state("Demand-to-Order Coverage restricted", "Material Request"),
+			metrics=[],
+			action_targets={},
+		)
+	missing_fields = _missing_demand_coverage_fields()
+	if missing_fields:
+		return _demand_coverage_payload(
+			filters,
+			rows=[],
+			state=common.unavailable_state(
+				"Demand-to-Order Coverage unavailable",
+				"Required purchase demand linkage fields are not available: " + ", ".join(missing_fields),
+			),
+			metrics=[],
+			action_targets={},
+		)
+	try:
+		material_requests = _visible_purchase_material_requests(filters)
+		request_names = [cstr(row.get("name")).strip() for row in material_requests if cstr(row.get("name")).strip()]
+		items = _material_request_items_for(request_names)
+		linked_pos = _visible_linked_purchase_orders_by_material_request(request_names, [cstr(row.get("name")).strip() for row in items if cstr(row.get("name")).strip()])
+		coverage_rows = _demand_coverage_source_rows(material_requests, items, linked_pos, filters)
+		filtered_rows = _filter_demand_coverage_rows(coverage_rows, filters)
+		rows, action_targets = _demand_coverage_rows(filtered_rows)
+		state = common.ready_state() if rows else common.empty_state(
+			"No demand coverage lines",
+			"The selected filters did not return visible purchase demand coverage lines.",
+		)
+		return _demand_coverage_payload(filters, rows=rows, state=state, metrics=_demand_coverage_metrics(filtered_rows), action_targets=action_targets)
+	except Exception as exc:  # pragma: no cover - exercised against live ERP runtime
+		message = getattr(exc, "message", None) or str(exc) or "Unknown report error."
+		return _demand_coverage_payload(filters, rows=[], state=common.state("error", "Demand-to-Order Coverage failed", message), metrics=[], action_targets={})
+
+
+def _demand_coverage_payload(
+	filters: dict[str, object],
+	rows: list[dict[str, object]],
+	state: dict[str, object],
+	metrics: list[dict[str, object]],
+	action_targets: dict[str, object],
+) -> dict[str, object]:
+	return {
+		"page": {"title": "Demand-to-Order Coverage", "key": "demand_to_order_coverage"},
+		"summary": {
+			"kicker": "Demand coverage",
+			"title": "Demand-to-Order Coverage",
+			"subtitle": "Track purchase demand that is ordered, partial, or still open for buyer action.",
+		},
+		"controls": _demand_coverage_controls(filters),
+		"metrics": {"appearance": "analytics_compact", "layout": "five_up", "items": metrics},
+		"results": {
+			"title": "Demand coverage lines",
+			"subtitle": "Purchase request lines compared with linked purchase order coverage.",
+			"meta": f"{len(rows)} shown",
+			"columns": _demand_coverage_display_columns(),
+			"rows": rows[:ROW_LIMIT],
+			"state": state,
+			"tableMinWidth": 1480,
+		},
+		"action_targets": action_targets,
+	}
+
+
+def _missing_demand_coverage_fields() -> list[str]:
+	missing: list[str] = []
+	for doctype, fields in DEMAND_REQUIRED_FIELDS.items():
+		for field in fields:
+			if not common.has_field(doctype, field):
+				missing.append(f"{doctype}.{field}")
+	return missing
+
+
+def _demand_coverage_filters(overrides: dict[str, object]) -> dict[str, object]:
+	return {
+		"from_date": cstr(overrides.get("from_date")).strip() or common.date_days_ago(90),
+		"to_date": cstr(overrides.get("to_date")).strip() or common.today_string(),
+		"material_request": cstr(overrides.get("material_request") or overrides.get("purchase_request")).strip(),
+		"item_code": cstr(overrides.get("item_code") or overrides.get("item")).strip(),
+		"coverage_status": cstr(overrides.get("coverage_status")).strip(),
+		"warehouse": cstr(overrides.get("warehouse")).strip(),
+	}
+
+
+def _demand_coverage_controls(filters: dict[str, object]) -> dict[str, object]:
+	status_options = [
+		("", "All"),
+		("open_demand", "Open Demand"),
+		("partially_ordered", "Partially Ordered"),
+		("fully_ordered", "Fully Ordered"),
+		("stopped_closed", "Stopped / Closed"),
+		("cancelled", "Cancelled"),
+	]
+	return {
+		"appearance": "analytics_compact",
+		"submitLabel": "Apply",
+		"resetLabel": "Reset",
+		"meta": [
+			{"label": "Mode", "value": "Read-only"},
+			{"label": "Scope", "value": "Buyer demand review"},
+		],
+		"fields": [
+			{"key": "from_date", "label": "From", "type": "date", "value": filters.get("from_date"), "row": 1},
+			{"key": "to_date", "label": "To", "type": "date", "value": filters.get("to_date"), "row": 1},
+			{"key": "material_request", "label": "Purchase Request", "type": "link", "linkDoctype": "Material Request", "value": filters.get("material_request"), "placeholder": "Select purchase request", "row": 1},
+			{"key": "coverage_status", "label": "Coverage Status", "type": "select", "value": filters.get("coverage_status"), "row": 1, "options": [{"label": label, "value": value} for value, label in status_options]},
+			{"key": "item_code", "label": "Item", "type": "link", "linkDoctype": "Item", "value": filters.get("item_code"), "placeholder": "Select item", "row": 2},
+			{"key": "warehouse", "label": "Warehouse", "type": "link", "linkDoctype": "Warehouse", "value": filters.get("warehouse"), "placeholder": "Select warehouse", "row": 2},
+		],
+		"actions": [
+			{"key": "refresh", "label": "Refresh"},
+		],
+	}
+
+
+def _demand_coverage_display_columns() -> list[dict[str, object]]:
+	return [
+		{"key": "material_request", "label": "Purchase Request", "nowrap": True},
+		{"key": "required_date", "label": "Required By", "nowrap": True},
+		{"key": "item_code", "label": "Item", "nowrap": True},
+		{"key": "requested_qty", "label": "Requested Qty", "align": "right"},
+		{"key": "ordered_qty", "label": "Ordered Qty", "align": "right"},
+		{"key": "open_qty", "label": "Open Qty", "align": "right"},
+		{"key": "coverage_status", "label": "Coverage Status", "nowrap": True},
+		{"key": "linked_purchase_order", "label": "Linked PO", "nowrap": True},
+	]
+
+
+def _visible_purchase_material_requests(filters: dict[str, object]) -> list[dict[str, object]]:
+	query_filters: list[list[object]] = [["Material Request", "material_request_type", "=", "Purchase"]]
+	if filters.get("from_date"):
+		query_filters.append(["Material Request", "transaction_date", ">=", filters.get("from_date")])
+	if filters.get("to_date"):
+		query_filters.append(["Material Request", "transaction_date", "<=", filters.get("to_date")])
+	if filters.get("material_request"):
+		query_filters.append(["Material Request", "name", "=", filters.get("material_request")])
+	fields = ["name", "title", "transaction_date", "schedule_date", "status", "docstatus", "per_ordered"]
+	return common.get_list("Material Request", fields=fields, filters=query_filters, order_by="transaction_date desc, name desc", limit=ROW_LIMIT)
+
+
+def _available_child_fields(doctype: str, fields: list[str]) -> list[str]:
+	return [field for field in fields if field in {"name", "parent", "idx"} or common.has_field(doctype, field)]
+
+
+def _material_request_items_for(request_names: list[str]) -> list[dict[str, object]]:
+	if not request_names:
+		return []
+	try:
+		return list(
+			frappe.get_all(
+				"Material Request Item",
+				filters={"parent": ["in", request_names]},
+				fields=_available_child_fields("Material Request Item", ["name", "parent", "idx", "item_code", "item_name", "qty", "ordered_qty", "uom", "schedule_date", "warehouse"]),
+				order_by="parent desc, idx asc",
+				limit_page_length=ROW_LIMIT,
+			)
+		)
+	except Exception:
+		return []
+
+
+def _visible_linked_purchase_orders_by_material_request(request_names: list[str], item_row_names: list[str]) -> dict[str, list[dict[str, object]]]:
+	if not request_names or not common.can_read("Purchase Order"):
+		return {}
+	try:
+		po_items = list(
+			frappe.get_all(
+				"Purchase Order Item",
+				filters={"material_request": ["in", request_names]},
+				fields=_available_child_fields("Purchase Order Item", ["name", "parent", "item_code", "qty", "material_request", "material_request_item"]),
+				order_by="parent desc, idx asc",
+				limit_page_length=ROW_LIMIT * 4,
+			)
+		)
+	except Exception:
+		po_items = []
+	if item_row_names:
+		try:
+			linked_by_item = list(
+				frappe.get_all(
+					"Purchase Order Item",
+					filters={"material_request_item": ["in", item_row_names]},
+					fields=_available_child_fields("Purchase Order Item", ["name", "parent", "item_code", "qty", "material_request", "material_request_item"]),
+					order_by="parent desc, idx asc",
+					limit_page_length=ROW_LIMIT * 4,
+				)
+			)
+		except Exception:
+			linked_by_item = []
+		seen = {cstr(row.get("name")).strip() for row in po_items if cstr(row.get("name")).strip()}
+		for row in linked_by_item:
+			name = cstr(row.get("name")).strip()
+			if name and name not in seen:
+				po_items.append(row)
+				seen.add(name)
+	po_names = sorted({cstr(row.get("parent")).strip() for row in po_items if cstr(row.get("parent")).strip()})
+	if not po_names:
+		return {}
+	visible_pos = common.get_list("Purchase Order", fields=["name", "status"], filters=[["Purchase Order", "name", "in", po_names]], limit=max(len(po_names), 1))
+	visible_po_names = {cstr(row.get("name")).strip() for row in visible_pos if cstr(row.get("name")).strip()}
+	links: dict[str, list[dict[str, object]]] = {}
+	for row in po_items:
+		po_name = cstr(row.get("parent")).strip()
+		if not po_name or po_name not in visible_po_names:
+			continue
+		item_key = cstr(row.get("material_request_item")).strip()
+		request_key = cstr(row.get("material_request")).strip()
+		payload = {"purchase_order": po_name, "qty": flt(row.get("qty")), "item_code": cstr(row.get("item_code")).strip()}
+		if item_key:
+			links.setdefault(item_key, []).append(payload)
+		if request_key:
+			links.setdefault(request_key, []).append(payload)
+	return links
+
+
+def _demand_coverage_source_rows(
+	material_requests: list[dict[str, object]],
+	items: list[dict[str, object]],
+	linked_pos: dict[str, list[dict[str, object]]],
+	filters: dict[str, object],
+) -> list[dict[str, object]]:
+	request_by_name = {cstr(row.get("name")).strip(): row for row in material_requests if cstr(row.get("name")).strip()}
+	rows: list[dict[str, object]] = []
+	for item in items:
+		request_name = cstr(item.get("parent")).strip()
+		request = request_by_name.get(request_name)
+		if not request:
+			continue
+		item_code = cstr(item.get("item_code")).strip()
+		if filters.get("item_code") and item_code != filters.get("item_code"):
+			continue
+		warehouse = cstr(item.get("warehouse")).strip()
+		if filters.get("warehouse") and warehouse != filters.get("warehouse"):
+			continue
+		requested_qty = flt(item.get("qty"))
+		ordered_qty = max(flt(item.get("ordered_qty")), 0)
+		open_qty = max(requested_qty - ordered_qty, 0)
+		status_key, status_label = _demand_coverage_status(request, requested_qty, ordered_qty)
+		item_row_name = cstr(item.get("name")).strip()
+		po_links = linked_pos.get(item_row_name) or linked_pos.get(request_name) or []
+		unique_pos = []
+		seen_pos = set()
+		for link in po_links:
+			po_name = cstr(link.get("purchase_order")).strip()
+			if po_name and po_name not in seen_pos:
+				unique_pos.append(link)
+				seen_pos.add(po_name)
+		rows.append(
+			{
+				"key": item_row_name or f"{request_name}:{item_code}",
+				"material_request": request_name,
+				"request_date": cstr(request.get("transaction_date")).strip(),
+				"required_date": cstr(item.get("schedule_date") or request.get("schedule_date")).strip(),
+				"item_code": item_code,
+				"item_name": cstr(item.get("item_name")).strip(),
+				"requested_qty": requested_qty,
+				"ordered_qty": ordered_qty,
+				"open_qty": open_qty,
+				"coverage_status_key": status_key,
+				"coverage_status": status_label,
+				"warehouse": warehouse,
+				"linked_purchase_orders": unique_pos,
+			}
+		)
+	return rows
+
+
+def _demand_coverage_status(request: dict[str, object], requested_qty: float, ordered_qty: float) -> tuple[str, str]:
+	status = cstr(request.get("status")).strip().lower()
+	docstatus = cstr(request.get("docstatus")).strip()
+	if status == "cancelled" or docstatus == "2":
+		return "cancelled", "Cancelled"
+	if status in {"stopped", "closed"}:
+		return "stopped_closed", "Stopped / Closed"
+	if requested_qty > 0 and ordered_qty >= requested_qty:
+		return "fully_ordered", "Fully Ordered"
+	if ordered_qty > 0:
+		return "partially_ordered", "Partially Ordered"
+	return "open_demand", "Open Demand"
+
+
+def _filter_demand_coverage_rows(rows: list[dict[str, object]], filters: dict[str, object]) -> list[dict[str, object]]:
+	coverage_status = cstr(filters.get("coverage_status")).strip()
+	if coverage_status:
+		rows = [row for row in rows if row.get("coverage_status_key") == coverage_status]
+	return rows
+
+
+def _demand_coverage_rows(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, object]]:
+	formatted_rows: list[dict[str, object]] = []
+	action_targets: dict[str, object] = {}
+	for row in rows[:ROW_LIMIT]:
+		request_name = cstr(row.get("material_request")).strip()
+		item_code = cstr(row.get("item_code")).strip()
+		po_links = row.get("linked_purchase_orders") if isinstance(row.get("linked_purchase_orders"), list) else []
+		first_po = cstr(po_links[0].get("purchase_order")).strip() if po_links else ""
+		request_action = f"demand_coverage:request:{request_name}"
+		item_action = f"demand_coverage:item:{item_code}"
+		po_action = f"demand_coverage:po:{first_po}"
+		if request_name:
+			action_targets[request_action] = {"kind": "page", "route": "procurement-console-purchase-request-review", "route_parts": [request_name]}
+		if item_code:
+			action_targets[item_action] = {"kind": "page", "route": "procurement-console-item", "route_parts": [item_code]}
+		if first_po:
+			action_targets[po_action] = {"kind": "page", "route": "procurement-console-po-follow-up", "route_parts": [first_po]}
+		linked_po_value = "-"
+		linked_po_cell: dict[str, object] = {"value": linked_po_value}
+		if first_po:
+			linked_po_value = first_po if len(po_links) == 1 else f"{first_po} + {len(po_links) - 1} more"
+			linked_po_cell = {"value": linked_po_value, "actionKey": po_action}
+		formatted_rows.append(
+			{
+				"key": cstr(row.get("key") or f"{request_name}:{item_code}"),
+				"cells": {
+					"material_request": {"value": request_name or "-", "actionKey": request_action} if request_name else {"value": "-"},
+					"required_date": {"value": cstr(row.get("required_date") or "-")},
+					"item_code": {"value": item_code or "-", "detail": cstr(row.get("item_name")).strip(), "actionKey": item_action} if item_code else {"value": "-"},
+					"requested_qty": {"value": _quantity(row.get("requested_qty"))},
+					"ordered_qty": {"value": _quantity(row.get("ordered_qty"))},
+					"open_qty": {"value": _quantity(row.get("open_qty"))},
+					"coverage_status": {"value": cstr(row.get("coverage_status") or "-")},
+					"linked_purchase_order": linked_po_cell,
+				},
+			}
+		)
+	return formatted_rows, action_targets
+
+
+def _demand_coverage_metrics(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+	open_rows = [row for row in rows if row.get("coverage_status_key") in {"open_demand", "partially_ordered"}]
+	partial_rows = [row for row in rows if row.get("coverage_status_key") == "partially_ordered"]
+	fully_rows = [row for row in rows if row.get("coverage_status_key") == "fully_ordered"]
+	today = common.today_string()
+	overdue_open = [row for row in open_rows if cstr(row.get("required_date")).strip() and cstr(row.get("required_date")).strip() < today and flt(row.get("open_qty")) > 0]
+	return [
+		common.metric("Demand lines", len(rows), "Visible purchase request lines in this report.", "slate"),
+		common.metric("Open demand", _quantity(sum(max(flt(row.get("open_qty")), 0) for row in open_rows)), "Quantity not yet covered by purchase orders.", "amber"),
+		common.metric("Partially ordered", len(partial_rows), "Demand lines with ordering progress and remaining open quantity.", "indigo"),
+		common.metric("Fully ordered", len(fully_rows), "Demand lines fully covered by purchase orders.", "teal"),
+		common.metric("Overdue open", len(overdue_open), "Open demand lines past required date.", "red"),
 	]
 
 
