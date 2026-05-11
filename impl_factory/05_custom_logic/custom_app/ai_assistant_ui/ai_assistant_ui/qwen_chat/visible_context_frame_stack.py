@@ -455,6 +455,7 @@ def _artifact_frame(
 	frame_rows = _frame_rows(rows, artifact)
 	object_type = _business_object_type(artifact, rows)
 	row_object_types = _row_business_object_types(frame_rows)
+	artifact_source = _clean_text(artifact.get("source"))
 	return {
 		"frame_id": f"{identity or 'artifact'}:table:{authority_rank}",
 		"frame_kind": "table" if rows else "artifact",
@@ -467,6 +468,8 @@ def _artifact_frame(
 		"business_object_type": object_type,
 		"row_business_object_types": row_object_types,
 		"row_source": _clean_text(row_source),
+		"artifact_source": artifact_source,
+		"recovery_source": "visible_context_trace_frame" if artifact_source == "visible_context_trace_frame" else "",
 		"visible_row_count": len(rows),
 		"requested_limit": _requested_limit(artifact, rows),
 		"columns": _columns(rows),
@@ -628,8 +631,132 @@ def _missing_requested_object_result(
 		"requested_object_aliases": sorted(requested_aliases),
 		"available_business_object_types": available_types[:8],
 		"available_table_labels": available_labels[:8],
+		"candidate_frame_count": len(frames),
+		"candidate_frames": _frame_observability_rows(
+			raw_message="",
+			frames=frames,
+			selected_frame={},
+			requested_aliases=requested_aliases,
+			relation=relation,
+		),
+		"rejected_frames": _frame_observability_rows(
+			raw_message="",
+			frames=frames,
+			selected_frame={},
+			requested_aliases=requested_aliases,
+			relation=relation,
+			rejected_only=True,
+		),
 		"reason": "The requested object type is not present in the authoritative visible table frames.",
 	}
+
+
+def _frame_match_reasons(raw_message: str, frame: Dict[str, Any], requested_aliases: set[str], relation: str) -> List[str]:
+	reasons: List[str] = []
+	if relation:
+		reasons.append(f"relation:{relation}")
+	if _positive_int(frame.get("authority_rank")) == 0:
+		reasons.append("current_authority_rank")
+	if requested_aliases and _frame_matches_requested_object(frame, requested_aliases):
+		reasons.append("requested_object_match")
+	if not requested_aliases and raw_message and _frame_matches_message_object(raw_message, frame):
+		reasons.append("message_object_match")
+	if raw_message and _frame_matches_semantic_concepts(raw_message, frame):
+		reasons.append("semantic_context_match")
+	if _is_detail_frame(frame):
+		reasons.append("detail_frame")
+	if _clean_text(frame.get("recovery_source")):
+		reasons.append(f"recovery:{_clean_text(frame.get('recovery_source'))}")
+	return list(dict.fromkeys(reasons))
+
+
+def _frame_rejection_reason(frame: Dict[str, Any], requested_aliases: set[str], relation: str) -> str:
+	if requested_aliases and not _frame_matches_requested_object(frame, requested_aliases):
+		return "requested_object_type_mismatch"
+	if relation == "detail_table" and not _is_detail_frame(frame):
+		return "not_detail_frame"
+	if relation == "previous_table" and _clean_text(frame.get("role")).lower() == "current":
+		return "not_previous_table"
+	if relation == "parent_table" and _is_detail_frame(frame):
+		return "detail_frame_not_parent"
+	return "lower_authority_candidate"
+
+
+def _frame_observability_row(
+	*,
+	raw_message: str,
+	frame: Dict[str, Any],
+	selected_frame: Dict[str, Any],
+	requested_aliases: set[str],
+	relation: str,
+) -> Dict[str, Any]:
+	selected = bool(
+		_clean_text(frame.get("frame_id"))
+		and _clean_text(frame.get("frame_id")) == _clean_text(selected_frame.get("frame_id"))
+	)
+	row = {
+		"frame_id": _clean_text(frame.get("frame_id")),
+		"role": _clean_text(frame.get("role")),
+		"authority_rank": _positive_int(frame.get("authority_rank")),
+		"artifact_id": _clean_text(frame.get("artifact_id")),
+		"artifact_title": _clean_text(frame.get("artifact_title")),
+		"family_id": _clean_text(frame.get("family_id")),
+		"business_object_type": _clean_text(frame.get("business_object_type")),
+		"evidence_scope": _clean_text(frame.get("evidence_scope")),
+		"visible_row_count": _positive_int(frame.get("visible_row_count")),
+		"row_source": _clean_text(frame.get("row_source")),
+		"artifact_source": _clean_text(frame.get("artifact_source")),
+		"recovery_source": _clean_text(frame.get("recovery_source")),
+		"match_reasons": _frame_match_reasons(raw_message, frame, requested_aliases, relation),
+		"selected": selected,
+	}
+	if not selected:
+		row["rejection_reason"] = _frame_rejection_reason(frame, requested_aliases, relation)
+	return row
+
+
+def _frame_observability_rows(
+	*,
+	raw_message: str,
+	frames: List[Dict[str, Any]],
+	selected_frame: Dict[str, Any],
+	requested_aliases: set[str],
+	relation: str,
+	rejected_only: bool = False,
+	limit: int = 8,
+) -> List[Dict[str, Any]]:
+	rows: List[Dict[str, Any]] = []
+	for frame in frames:
+		row = _frame_observability_row(
+			raw_message=raw_message,
+			frame=frame,
+			selected_frame=selected_frame,
+			requested_aliases=requested_aliases,
+			relation=relation,
+		)
+		if rejected_only and row.get("selected"):
+			continue
+		rows.append(row)
+		if len(rows) >= limit:
+			break
+	return rows
+
+
+def _selection_strategy(
+	*,
+	relation: str,
+	selected_frame: Dict[str, Any],
+	requested_aliases: set[str],
+	matching_object_frames: List[Dict[str, Any]],
+	semantic_context_frames: List[Dict[str, Any]],
+) -> str:
+	if requested_aliases and selected_frame in matching_object_frames:
+		return f"{relation}:requested_object_match"
+	if selected_frame in semantic_context_frames:
+		return f"{relation}:semantic_context_match"
+	if relation in {"same_table", "previous_table", "parent_table", "detail_table"}:
+		return f"{relation}:relation_priority"
+	return f"{relation}:authority_rank"
 
 
 def _semantic_concept_terms(raw_message: str) -> set[str]:
@@ -752,14 +879,41 @@ def resolve_visible_context_frame_arbitration(
 			"relation": relation,
 			"reason": "No compatible context frame was selected.",
 		}
+	candidate_frames = _frame_observability_rows(
+		raw_message=raw_message,
+		frames=frames,
+		selected_frame=selected_frame,
+		requested_aliases=requested_object_aliases,
+		relation=relation,
+	)
 	return {
 		"status": "resolved",
 		"relation": relation,
+		"requested_object_label": requested_object_label,
+		"requested_object_aliases": sorted(requested_object_aliases),
 		"selected_frame_id": _clean_text(selected_frame.get("frame_id")),
 		"selected_artifact_id": _clean_text(selected_frame.get("artifact_id")),
 		"selected_business_object_type": _clean_text(selected_frame.get("business_object_type")),
 		"selected_evidence_scope": _clean_text(selected_frame.get("evidence_scope")),
 		"selected_visible_row_count": _positive_int(selected_frame.get("visible_row_count")),
+		"selected_recovery_source": _clean_text(selected_frame.get("recovery_source")),
+		"selection_strategy": _selection_strategy(
+			relation=relation,
+			selected_frame=selected_frame,
+			requested_aliases=requested_object_aliases,
+			matching_object_frames=matching_object_frames,
+			semantic_context_frames=semantic_context_frames,
+		),
+		"candidate_frame_count": len(frames),
+		"candidate_frames": candidate_frames,
+		"rejected_frames": [row for row in candidate_frames if not row.get("selected")],
+		"observability": {
+			"requested_relation": relation,
+			"requested_object_label": requested_object_label,
+			"selected_frame_id": _clean_text(selected_frame.get("frame_id")),
+			"selected_recovery_source": _clean_text(selected_frame.get("recovery_source")),
+			"rejected_frame_count": len([row for row in candidate_frames if not row.get("selected")]),
+		},
 		"reason": "Resolved the authoritative visible table frame from the shared frame stack.",
 	}
 

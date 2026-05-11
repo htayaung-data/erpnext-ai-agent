@@ -276,10 +276,14 @@ def _assert_visible_answer(
 	trace = result.trace
 	testcase.assertEqual(trace.get("type"), "qwen_visible_context_followup_trace_contract")
 	arbitration = trace.get("frame_arbitration") or {}
+	observability = trace.get("authority_observability") or {}
 	testcase.assertEqual(arbitration.get("status"), "resolved" if mode == "visible_context_answer" else "out_of_range")
 	if relation:
 		testcase.assertEqual(arbitration.get("relation"), relation)
 	testcase.assertEqual(arbitration.get("selected_business_object_type"), business_object_type)
+	testcase.assertEqual(observability.get("selected_business_object_type"), business_object_type)
+	testcase.assertTrue(observability.get("selected_frame_id"))
+	testcase.assertGreaterEqual(observability.get("candidate_frame_count") or 0, 1)
 	execution_path = result.execution_path
 	testcase.assertEqual(execution_path.get("path"), mode)
 	testcase.assertFalse(execution_path.get("requires_runtime"))
@@ -333,6 +337,10 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 		)
 		arbitration = repeated_lookup.trace.get("frame_arbitration") or {}
 		self.assertEqual(arbitration.get("selected_evidence_scope"), "visible_rendered_table")
+		self.assertEqual(arbitration.get("selected_recovery_source"), "visible_context_trace_frame")
+		self.assertIn("recovery:visible_context_trace_frame", arbitration.get("candidate_frames", [{}])[0].get("match_reasons", []))
+		observability = repeated_lookup.trace.get("authority_observability") or {}
+		self.assertEqual(observability.get("selected_recovery_source"), "visible_context_trace_frame")
 
 	def test_missing_typed_detail_does_not_fall_back_to_stale_source_table(self):
 		chat = VisibleConversationHarness()
@@ -365,6 +373,13 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 		arbitration = missing_invoice.trace.get("frame_arbitration") or {}
 		self.assertEqual(arbitration.get("status"), "missing_requested_object")
 		self.assertEqual(arbitration.get("relation"), "detail_table")
+		self.assertEqual(arbitration.get("requested_object_label"), "invoice")
+		self.assertGreaterEqual(arbitration.get("candidate_frame_count") or 0, 1)
+		self.assertTrue(arbitration.get("rejected_frames"))
+		self.assertEqual(arbitration.get("rejected_frames")[0].get("rejection_reason"), "requested_object_type_mismatch")
+		observability = missing_invoice.trace.get("authority_observability") or {}
+		self.assertEqual(observability.get("requested_object_label"), "invoice")
+		self.assertGreaterEqual(observability.get("rejected_frame_count") or 0, 1)
 		self.assertFalse(missing_invoice.execution_path.get("requires_runtime"))
 
 	def test_ar_comparison_out_of_range_stays_on_latest_visible_table(self):

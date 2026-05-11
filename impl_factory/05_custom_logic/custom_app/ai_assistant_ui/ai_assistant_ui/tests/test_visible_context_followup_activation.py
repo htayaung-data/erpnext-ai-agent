@@ -918,8 +918,15 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		trace = self._latest_visible_context_trace(payloads)
 		stack = trace.get("context_frame_stack")
 		arbitration = trace.get("frame_arbitration")
+		observability = trace.get("authority_observability")
 		self.assertEqual(arbitration.get("status"), "resolved")
 		self.assertEqual(arbitration.get("selected_business_object_type"), "item")
+		self.assertEqual(arbitration.get("selection_strategy"), "current_table:authority_rank")
+		self.assertGreaterEqual(arbitration.get("candidate_frame_count"), 1)
+		self.assertTrue(arbitration.get("candidate_frames"))
+		self.assertEqual(arbitration.get("candidate_frames")[0].get("selected"), True)
+		self.assertEqual(observability.get("selected_business_object_type"), "item")
+		self.assertEqual(observability.get("selection_strategy"), "current_table:authority_rank")
 		self.assertEqual(stack.get("type"), "qwen_visible_context_frame_stack_contract")
 		table_frames = [frame for frame in stack.get("frames", []) if frame.get("frame_kind") == "table"]
 		self.assertGreaterEqual(len(table_frames), 1)
@@ -948,6 +955,10 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		arbitration = trace.get("frame_arbitration")
 		self.assertEqual(arbitration.get("status"), "resolved")
 		self.assertEqual(arbitration.get("selected_business_object_type"), "supplier")
+		self.assertEqual(arbitration.get("requested_object_label"), "supplier")
+		self.assertEqual(arbitration.get("selection_strategy"), "current_table:requested_object_match")
+		self.assertTrue(arbitration.get("rejected_frames"))
+		self.assertEqual(arbitration.get("rejected_frames")[0].get("rejection_reason"), "requested_object_type_mismatch")
 		self.assertTrue(
 			any(
 				frame.get("business_object_type") == "supplier"

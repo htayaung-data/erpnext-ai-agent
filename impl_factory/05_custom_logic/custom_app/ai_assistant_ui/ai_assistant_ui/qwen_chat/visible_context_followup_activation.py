@@ -1227,6 +1227,18 @@ def _trace_payload(
 	resolution_payload = _clean_dict(resolution)
 	frame_stack = _clean_dict(resolution_payload.pop("context_frame_stack", {}))
 	frame_arbitration = _clean_dict(resolution_payload.pop("frame_arbitration", {}))
+	authority_observability = {
+		"relation": _clean_text(frame_arbitration.get("relation")),
+		"requested_object_label": _clean_text(frame_arbitration.get("requested_object_label")),
+		"selected_frame_id": _clean_text(frame_arbitration.get("selected_frame_id")),
+		"selected_artifact_id": _clean_text(frame_arbitration.get("selected_artifact_id")),
+		"selected_business_object_type": _clean_text(frame_arbitration.get("selected_business_object_type")),
+		"selected_evidence_scope": _clean_text(frame_arbitration.get("selected_evidence_scope")),
+		"selected_recovery_source": _clean_text(frame_arbitration.get("selected_recovery_source")),
+		"selection_strategy": _clean_text(frame_arbitration.get("selection_strategy")),
+		"candidate_frame_count": _positive_int(frame_arbitration.get("candidate_frame_count")),
+		"rejected_frame_count": len(_clean_list(frame_arbitration.get("rejected_frames"))),
+	}
 	return {
 		"type": "qwen_visible_context_followup_trace_contract",
 		"contract_version": CONTRACT_VERSION,
@@ -1238,6 +1250,7 @@ def _trace_payload(
 		"resolution": resolution_payload,
 		"context_frame_stack": frame_stack,
 		"frame_arbitration": frame_arbitration,
+		"authority_observability": authority_observability,
 		"created_at_unix": time.time(),
 	}
 
