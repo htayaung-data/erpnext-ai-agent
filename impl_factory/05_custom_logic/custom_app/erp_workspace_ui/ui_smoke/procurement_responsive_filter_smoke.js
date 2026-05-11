@@ -99,8 +99,19 @@ async function checkFilterPage(page, item, type, user, viewport) {
   await page.screenshot({ path: path.join(ARTIFACT_DIR, `${user.key}-${viewport.key}-${safe(item.key)}.png`), fullPage: true });
   return data;
 }
+async function waitForSingleShell(page) {
+  await page.waitForFunction(() => {
+    const visible = (node) => {
+      const style = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
+    };
+    return Array.from(document.querySelectorAll(".erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell")).filter(visible).length === 1;
+  }, { timeout: TIMEOUT });
+}
 async function checkStaticPage(page, item, user, viewport) {
   await openPage(page, item.route, item.shell);
+  await waitForSingleShell(page);
   const data = await measure(page, "detail");
   assert(data.horizontalOverflow <= 1, `${item.label}: horizontal overflow at ${viewport.key}`, data);
   assert(data.shellCount === 1, `${item.label}: duplicate shell at ${viewport.key}`, data);
