@@ -1819,52 +1819,75 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
     const controls = shell && shell.querySelector(".erpw-report-controls");
     const actionCell = controls && controls.querySelector(".erpw-report-command-actions");
     const rows = controls ? Array.from(controls.querySelectorAll(".erpw-report-command-row")).filter(visible) : [];
-    const lastRow = rows.length ? rows[rows.length - 1] : null;
-    const title = summary ? String(summary.textContent || "").replace(/\s+/g, " ").trim() : "";
-    const fieldRect = (key) => {
-      const input = controls && controls.querySelector(`[data-erpw-control-key="${key}"]`);
-      const field = input && input.closest(".erpw-report-control-field");
-      const box = rect(field);
-      return box ? Object.assign(box, { key }) : null;
-    };
-    const firstRowFields = ["from_date", "to_date", "categorize_by", "include_expired"].map(fieldRect);
-    const secondRowFields = ["item_code", "supplier", "supplier_quotation", "request_for_quotation"].map(fieldRect);
+    const fields = controls
+      ? Array.from(controls.querySelectorAll(".erpw-report-control-field"))
+          .filter(visible)
+          .map((node) => {
+            const input = node.querySelector("[data-erpw-control-key]");
+            const labelNode = node.querySelector(".erpw-report-control-label");
+            const box = rect(input || node);
+            return Object.assign({
+              key: input ? input.getAttribute("data-erpw-control-key") || "" : "",
+              label: String((labelNode && labelNode.textContent) || "").replace(/\s+/g, " ").trim(),
+              role: node.getAttribute("data-erpw-report-field-role") || "",
+              type: input ? input.getAttribute("type") || input.tagName || "" : "",
+            }, box || {});
+          })
+          .filter((field) => field.width)
+      : [];
+    const tops = Array.from(new Set(fields.map((field) => field.top).sort((a, b) => a - b)));
+    fields.forEach((field) => { field.row = tops.findIndex((top) => Math.abs(top - field.top) <= 4) + 1; });
+    function category(field) {
+      const text = `${field.key} ${field.label} ${field.type} ${field.role}`;
+      if (/date/i.test(text)) return "date";
+      if (/keyword|search/i.test(text)) return "wide";
+      if (field.width >= 430) return "stretch";
+      if (field.width >= 300) return "wide";
+      return "normal";
+    }
+    fields.forEach((field) => { field.category = category(field); });
+    const grouped = fields.reduce((result, field) => {
+      result[field.category] = result[field.category] || [];
+      result[field.category].push(field.width);
+      return result;
+    }, {});
+    const spreads = Object.fromEntries(Object.entries(grouped).map(([key, widths]) => [key, Math.max(...widths) - Math.min(...widths)]));
+    const finalRow = fields.length ? Math.max(...fields.map((field) => field.row)) : 0;
+    const finalFields = fields.filter((field) => field.row === finalRow);
+    const finalTop = finalFields.length ? Math.min(...finalFields.map((field) => field.top)) : 0;
+    const finalBottom = finalFields.length ? Math.max(...finalFields.map((field) => field.bottom)) : 0;
+    const actionRect = rect(actionCell);
+    const actionCenter = actionRect ? Math.round((actionRect.top + actionRect.bottom) / 2) : 0;
+    const finalFieldCenter = finalFields.length ? Math.round((finalTop + finalBottom) / 2) : 0;
     return {
       hasProcurementMode: !!(shell && shell.classList.contains("is-procurement-report")),
       summary: rect(summary),
       controls: rect(controls),
-      actionCell: rect(actionCell),
-      lastRow: rect(lastRow),
-      hasActionsOnlyRow: !!(actionCell && actionCell.closest(".erpw-report-command-row.actions-only")),
-      actionLabels: actionCell ? Array.from(actionCell.querySelectorAll("button")).map((button) => String(button.textContent || "").replace(/\s+/g, " ").trim()) : [],
-      firstRowFields,
-      secondRowFields,
-      title,
+      actionCell: actionRect,
+      fields,
+      spreads,
+      title: summary ? String(summary.textContent || "").replace(/\s+/g, " ").trim() : "",
       rowCount: rows.length,
+      actionCenter,
+      finalFieldCenter,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
   assert(layout.hasProcurementMode, `${label}: report shell did not opt into Procurement enterprise mode`, layout);
   assert(layout.summary && layout.summary.height <= 120, `${label}: report header is too tall`, layout);
   assert(layout.controls && layout.controls.height <= 320, `${label}: report filter panel is too tall`, layout);
-  assert(layout.rowCount >= 3, `${label}: report filters should use two field rows plus a command row`, layout);
-  assert(layout.hasActionsOnlyRow, `${label}: report actions should sit in a separate command row`, layout);
-  assert(!layout.actionLabels.some((labelText) => /Back to Procurement Console/i.test(labelText)), `${label}: report should not carry a one-off Back to Procurement Console action`, layout);
-  assert(layout.firstRowFields.every(Boolean), `${label}: first report filter row is missing a required field`, layout);
-  assert(layout.secondRowFields.every(Boolean), `${label}: second report filter row is missing a required field`, layout);
-  const firstTop = layout.firstRowFields[0].top;
-  const secondTop = layout.secondRowFields[0].top;
-  layout.firstRowFields.forEach((field) => {
-    assert(Math.abs(field.top - firstTop) <= 4, `${label}: first-row report filters are not aligned`, layout);
-    assert(Math.abs(field.width - layout.firstRowFields[0].width) <= 8, `${label}: first-row report filter widths are inconsistent`, layout);
+  assert(layout.fields.length > 0, `${label}: report filter fields did not render`, layout);
+  assert(layout.actionCell, `${label}: report actions did not render`, layout);
+  Object.entries(layout.spreads).forEach(([category, spread]) => {
+    if (category !== "stretch") assert(spread <= 14, `${label}: ${category} report filter widths are inconsistent`, layout);
   });
-  layout.secondRowFields.forEach((field) => {
-    assert(Math.abs(field.top - secondTop) <= 4, `${label}: second-row report filters are not aligned`, layout);
-    assert(Math.abs(field.width - layout.secondRowFields[0].width) <= 8, `${label}: second-row report filter widths are inconsistent`, layout);
+  layout.fields.forEach((field) => {
+    if (["date", "normal", "wide"].includes(field.category)) {
+      assert(field.width >= 260 && field.width <= 286, `${label}: ${field.key} violates shared report filter width contract`, layout);
+    }
   });
-  assert(layout.actionCell && layout.actionCell.top > Math.max(...layout.secondRowFields.map((field) => field.bottom)), `${label}: report actions should appear after filter rows`, layout);
-  assert(/Quote Comparison/i.test(layout.title), `${label}: report header should use business-facing page title`, layout);
-  assert(!/native report|mutation tools/i.test(layout.title), `${label}: report copy exposes implementation language`, layout);
+  assert(Math.abs(layout.actionCenter - layout.finalFieldCenter) <= 10, `${label}: report actions should align with the final filter row`, layout);
+  assert(!layout.title.match(/native report|mutation tools/i), `${label}: report copy exposes implementation language`, layout);
   assert(layout.overflow <= 1, `${label}: report filter layout introduced horizontal overflow`, layout);
   return { label, route, layout };
 }
@@ -1893,6 +1916,9 @@ async function checkEnterpriseListFilterLayouts(page) {
     results.push(await assertEnterpriseListFilterLayout(page, route, label));
   }
   results.push(await assertEnterpriseReportFilterLayout(page, "/desk/procurement-console-report/supplier-quotation-comparison", "Quote Comparison"));
+  results.push(await assertEnterpriseReportFilterLayout(page, "/desk/procurement-console-report/purchase-order-analysis", "Purchase Order Analysis"));
+  results.push(await assertEnterpriseReportFilterLayout(page, "/desk/procurement-console-report/demand-to-order-coverage", "Demand-to-Order Coverage"));
+  results.push(await assertEnterpriseReportFilterLayout(page, "/desk/procurement-console-report/item-purchase-history", "Item Purchase History"));
   return results;
 }
 

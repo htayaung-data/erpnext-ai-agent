@@ -982,6 +982,21 @@
         gap: 10px;
         align-items: end;
       }
+      /* Procurement report filter width contract:
+         date/normal/link fields keep one steady desktop track; action controls
+         live in the trailing command cell instead of shrinking final-row fields. */
+      .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-1 {
+        grid-template-columns: minmax(260px, 280px);
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-2 {
+        grid-template-columns: repeat(2, minmax(260px, 278px));
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-3 {
+        grid-template-columns: repeat(3, minmax(240px, 278px));
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
       .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
         align-self: end;
         min-height: 38px;
