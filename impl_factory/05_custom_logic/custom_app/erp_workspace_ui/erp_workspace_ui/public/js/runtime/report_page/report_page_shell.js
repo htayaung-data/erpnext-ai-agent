@@ -924,7 +924,7 @@
       }
 
       .erpw-report-shell.is-procurement-report {
-        width: min(1180px, calc(100% - 24px));
+        width: min(1360px, calc(100% - 24px));
         gap: 12px;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-summary {
@@ -982,20 +982,23 @@
         gap: 10px;
         align-items: end;
       }
-      /* Procurement report filter width contract:
+      /* Procurement report filter width/action contract:
          date/normal/link fields keep one steady desktop track; action controls
-         live in the trailing command cell instead of shrinking final-row fields. */
+         reserve the trailing final-row slot instead of wrapping into a detached row. */
+      .erpw-report-shell.is-procurement-report .erpw-report-command-fields {
+        justify-content: start;
+      }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-1 {
-        grid-template-columns: minmax(260px, 280px);
+        grid-template-columns: minmax(260px, 260px);
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-2 {
-        grid-template-columns: repeat(2, minmax(260px, 278px));
+        grid-template-columns: repeat(2, minmax(260px, 260px));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-3 {
-        grid-template-columns: repeat(3, minmax(240px, 278px));
+        grid-template-columns: repeat(3, minmax(260px, 260px));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(260px, 260px));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
         align-self: end;
@@ -1006,6 +1009,7 @@
         border-color: rgba(226, 232, 240, 0.86);
         background: #ffffff;
         box-shadow: 0 1px 0 rgba(255, 255, 255, 0.98) inset;
+        white-space: nowrap;
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-actions .erpw-report-control-button {
         min-height: 32px;
