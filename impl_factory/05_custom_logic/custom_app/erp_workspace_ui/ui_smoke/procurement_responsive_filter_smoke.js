@@ -1,63 +1,69 @@
-const { chromium } = require("playwright");
-const fs = require("fs");
-const path = require("path");
-const BASE_URL = process.env.ERPW_BASE_URL || "https://meet.erpbosai.com";
+const { chromium } = require('playwright');
+const fs = require('fs');
+const path = require('path');
+const BASE_URL = process.env.ERPW_BASE_URL || 'https://meet.erpbosai.com';
 const TIMEOUT = Number(process.env.ERPW_PROCUREMENT_SMOKE_TIMEOUT || 60000);
-const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_ARTIFACT_DIR || path.join(__dirname, "artifacts", "procurement-responsive-filters");
+const ARTIFACT_DIR = process.env.ERPW_PROCUREMENT_ARTIFACT_DIR || path.join(__dirname, 'artifacts', 'procurement-responsive-filters');
 fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 const USERS = [
-  { key: "manager", username: process.env.ERPW_MANAGER_USERNAME, password: process.env.ERPW_MANAGER_PASSWORD },
-  { key: "user", username: process.env.ERPW_USER_USERNAME, password: process.env.ERPW_USER_PASSWORD },
+  { key: 'manager', username: process.env.ERPW_MANAGER_USERNAME, password: process.env.ERPW_MANAGER_PASSWORD },
+  { key: 'user', username: process.env.ERPW_USER_USERNAME, password: process.env.ERPW_USER_PASSWORD },
 ].filter((user) => user.username && user.password);
-const VIEWPORTS = [{ key: "desktop-1240", width: 1240, height: 768 }, { key: "desktop-1440", width: 1440, height: 900 }];
+const VIEWPORTS = [{ key: 'desktop-1240', width: 1240, height: 768 }, { key: 'desktop-1440', width: 1440, height: 900 }];
 const REPORTS = [
-  ["reports-index", "Reports Index", "/desk/procurement-console-report", false],
-  ["quote-comparison", "Quote Comparison", "/desk/procurement-console-report/supplier-quotation-comparison", true],
-  ["purchase-order-analysis", "Purchase Order Analysis", "/desk/procurement-console-report/purchase-order-analysis", true],
-  ["demand-to-order-coverage", "Demand-to-Order Coverage", "/desk/procurement-console-report/demand-to-order-coverage", true],
-  ["item-purchase-history", "Item Purchase History", "/desk/procurement-console-report/item-purchase-history", true],
+  ['reports-index', 'Reports Index', '/desk/procurement-console-report', false],
+  ['quote-comparison', 'Quote Comparison', '/desk/procurement-console-report/supplier-quotation-comparison', true],
+  ['purchase-order-analysis', 'Purchase Order Analysis', '/desk/procurement-console-report/purchase-order-analysis', true],
+  ['demand-to-order-coverage', 'Demand-to-Order Coverage', '/desk/procurement-console-report/demand-to-order-coverage', true],
+  ['item-purchase-history', 'Item Purchase History', '/desk/procurement-console-report/item-purchase-history', true],
 ];
 const WORKLISTS = [
-  ["supplier-directory", "Supplier Directory", "/desk/procurement-console-worklist/supplier-directory"],
-  ["purchase-request-directory", "Purchase Request Directory", "/desk/procurement-console-worklist/purchase-request-directory"],
-  ["purchase-order-directory", "Purchase Order Directory", "/desk/procurement-console-worklist/purchase-order-directory"],
-  ["rfq-directory", "RFQ Directory", "/desk/procurement-console-worklist/rfq-directory"],
-  ["supplier-quotation-directory", "Supplier Quotation Directory", "/desk/procurement-console-worklist/supplier-quotation-directory"],
-  ["buying-items-directory", "Buying Items Directory", "/desk/procurement-console-worklist/buying-item-directory"],
-  ["purchase-orders-open", "Open Purchase Orders", "/desk/procurement-console-worklist/purchase-orders-open"],
-  ["purchase-orders-overdue", "Overdue Purchase Orders", "/desk/procurement-console-worklist/purchase-orders-overdue"],
-  ["purchase-orders-due-soon", "Purchase Orders Due Soon", "/desk/procurement-console-worklist/purchase-orders-due-soon"],
-  ["purchase-orders-supplier-follow-up", "Supplier Follow-up", "/desk/procurement-console-worklist/purchase-orders-supplier-follow-up"],
+  ['supplier-directory', 'Supplier Directory', '/desk/procurement-console-worklist/supplier-directory'],
+  ['purchase-request-directory', 'Purchase Request Directory', '/desk/procurement-console-worklist/purchase-request-directory'],
+  ['purchase-order-directory', 'Purchase Order Directory', '/desk/procurement-console-worklist/purchase-order-directory'],
+  ['rfq-directory', 'RFQ Directory', '/desk/procurement-console-worklist/rfq-directory'],
+  ['supplier-quotation-directory', 'Supplier Quotation Directory', '/desk/procurement-console-worklist/supplier-quotation-directory'],
+  ['buying-items-directory', 'Buying Items Directory', '/desk/procurement-console-worklist/buying-item-directory'],
+  ['purchase-orders-open', 'Open Purchase Orders', '/desk/procurement-console-worklist/purchase-orders-open'],
+  ['purchase-orders-overdue', 'Overdue Purchase Orders', '/desk/procurement-console-worklist/purchase-orders-overdue'],
+  ['purchase-orders-due-soon', 'Purchase Orders Due Soon', '/desk/procurement-console-worklist/purchase-orders-due-soon'],
+  ['purchase-orders-supplier-follow-up', 'Supplier Follow-up', '/desk/procurement-console-worklist/purchase-orders-supplier-follow-up'],
 ];
 const DETAIL_QUEUES = [
-  ["purchase_order_directory", "po-detail", "PO Follow-up Detail", (name) => `/desk/procurement-console-po-follow-up/${encodeURIComponent(name)}`, ".erpw-procurement-po-follow-up-shell"],
-  ["purchase_request_directory", "purchase-request-review", "Purchase Request Review", (name) => `/desk/procurement-console-purchase-request-review/${encodeURIComponent(name)}`, ".erpw-procurement-review-shell"],
-  ["rfq_directory", "rfq-review", "RFQ Review", (name) => `/desk/procurement-console-rfq-review/${encodeURIComponent(name)}`, ".erpw-procurement-review-shell"],
-  ["supplier_quotation_directory", "supplier-quotation-review", "Supplier Quotation Review", (name) => `/desk/procurement-console-supplier-quotation-review/${encodeURIComponent(name)}`, ".erpw-procurement-review-shell"],
-  ["supplier_directory", "supplier-detail", "Supplier Detail", (name) => `/desk/procurement-console-supplier/${encodeURIComponent(name)}`, ".erpw-procurement-supplier-detail-shell"],
-  ["buying_item_directory", "item-detail", "Item Detail", (name) => `/desk/procurement-console-item/${encodeURIComponent(name)}`, ".erpw-procurement-item-detail-shell"],
+  ['purchase_order_directory', 'po-detail', 'PO Follow-up Detail', (name) => `/desk/procurement-console-po-follow-up/${encodeURIComponent(name)}`, '.erpw-procurement-po-follow-up-shell'],
+  ['purchase_request_directory', 'purchase-request-review', 'Purchase Request Review', (name) => `/desk/procurement-console-purchase-request-review/${encodeURIComponent(name)}`, '.erpw-procurement-review-shell'],
+  ['rfq_directory', 'rfq-review', 'RFQ Review', (name) => `/desk/procurement-console-rfq-review/${encodeURIComponent(name)}`, '.erpw-procurement-review-shell'],
+  ['supplier_quotation_directory', 'supplier-quotation-review', 'Supplier Quotation Review', (name) => `/desk/procurement-console-supplier-quotation-review/${encodeURIComponent(name)}`, '.erpw-procurement-review-shell'],
+  ['supplier_directory', 'supplier-detail', 'Supplier Detail', (name) => `/desk/procurement-console-supplier/${encodeURIComponent(name)}`, '.erpw-procurement-supplier-detail-shell'],
+  ['buying_item_directory', 'item-detail', 'Item Detail', (name) => `/desk/procurement-console-item/${encodeURIComponent(name)}`, '.erpw-procurement-item-detail-shell'],
 ];
+const REPORT_FIELD_ORDER = {
+  'Quote Comparison': ['item_code', 'supplier', 'supplier_quotation', 'request_for_quotation', 'categorize_by', 'include_expired', 'from_date', 'to_date'],
+  'Purchase Order Analysis': ['purchase_order', 'status', 'supplier', 'item_code', 'from_date', 'to_date'],
+  'Demand-to-Order Coverage': ['material_request', 'coverage_status', 'item_code', 'warehouse', 'from_date', 'to_date'],
+  'Item Purchase History': ['item_code', 'supplier', 'item_group', 'from_date', 'to_date'],
+};
 function routeUrl(route) { return new URL(route, BASE_URL).toString(); }
-function safe(value) { return String(value || "shot").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, ""); }
+function safe(value) { return String(value || 'shot').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, ''); }
 function assert(condition, message, details = {}) { if (!condition) { const error = new Error(message); error.details = details; throw error; } }
 async function login(page, user) {
-  await page.goto(routeUrl("/login"), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-  await page.locator("#login_email, input[name='usr'], input[name='login_email'], input[type='email'], input[type='text']").first().fill(user.username);
-  await page.locator("#login_password, input[name='pwd'], input[name='login_password'], input[type='password']").first().fill(user.password);
-  await Promise.all([page.waitForURL(/\/(?:app|desk)(?:[/?#]|$)/, { waitUntil: "domcontentloaded", timeout: TIMEOUT }), page.locator("button:has-text('Login'), button.btn-login, .btn-login").first().click()]);
+  await page.goto(routeUrl('/login'), { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+  await page.locator('#login_email, input[name=usr], input[name=login_email], input[type=email], input[type=text]').first().fill(user.username);
+  await page.locator('#login_password, input[name=pwd], input[name=login_password], input[type=password]').first().fill(user.password);
+  await Promise.all([page.waitForURL(/\/(?:app|desk)(?:[/?#]|$)/, { waitUntil: 'domcontentloaded', timeout: TIMEOUT }), page.locator('button:has-text(\'Login\'), button.btn-login, .btn-login').first().click()]);
 }
 async function callMethod(page, method, args = {}) {
   return page.evaluate(async ({ method, args, timeout }) => {
     const body = new URLSearchParams();
-    Object.entries(args || {}).forEach(([key, value]) => body.set(key, typeof value === "string" ? value : JSON.stringify(value)));
-    const response = await fetch(`/api/method/${method}`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Frappe-CSRF-Token": (window.frappe && window.frappe.csrf_token) || "" }, body, signal: AbortSignal.timeout(timeout) });
+    Object.entries(args || {}).forEach(([key, value]) => body.set(key, typeof value === 'string' ? value : JSON.stringify(value)));
+    const response = await fetch(`/api/method/${method}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8', 'X-Frappe-CSRF-Token': (window.frappe && window.frappe.csrf_token) || '' }, body, signal: AbortSignal.timeout(timeout) });
     return { ok: response.ok, status: response.status, data: await response.json().catch(() => ({})) };
   }, { method, args, timeout: TIMEOUT });
 }
 async function resolveDetails(page) {
   const details = [];
   for (const [queue, key, label, routeFor, shell] of DETAIL_QUEUES) {
-    const response = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", { queue_key: queue }).catch(() => null);
+    const response = await callMethod(page, 'erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context', { queue_key: queue }).catch(() => null);
     const row = response && response.ok ? ((((response.data.message || {}).results || {}).rows || [])[0] || {}) : {};
     const name = row.name || row.key;
     if (name) details.push({ key, label, route: routeFor(name), shell });
@@ -67,40 +73,37 @@ async function resolveDetails(page) {
 async function openPage(page, route, shell) {
   const targetUrl = routeUrl(route);
   const targetPath = new URL(targetUrl).pathname;
-  const canUseDeskRouter = await page.evaluate(() => Boolean(window.frappe && typeof frappe.set_route === "function")).catch(() => false);
-  if (canUseDeskRouter && targetPath.startsWith("/desk/")) {
-    const parts = targetPath.replace(/^\/desk\/?/, "").split("/").filter(Boolean).map((part) => {
-      try { return decodeURIComponent(part); } catch (error) { return part; }
-    });
+  const canUseDeskRouter = await page.evaluate(() => Boolean(window.frappe && typeof frappe.set_route === 'function')).catch(() => false);
+  if (canUseDeskRouter && targetPath.startsWith('/desk/')) {
+    const parts = targetPath.replace(/^\/desk\/?/, '').split('/').filter(Boolean).map((part) => { try { return decodeURIComponent(part); } catch (error) { return part; } });
     await page.evaluate((routeParts) => frappe.set_route.apply(frappe, routeParts), parts);
-    await page.waitForURL((url) => url.pathname === targetPath, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.waitForURL((url) => url.pathname === targetPath, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
   } else {
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
   }
   await page.waitForFunction((selector) => {
-    const visible = (node) => {
-      const style = getComputedStyle(node);
-      const box = node.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
-    };
+    const visible = (node) => { const style = getComputedStyle(node); const box = node.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0; };
     return Array.from(document.querySelectorAll(selector)).some(visible);
   }, shell, { timeout: TIMEOUT });
   await page.waitForTimeout(450);
 }
 async function measure(page, type) {
   return page.evaluate((type) => {
-    const visible = (node) => { if (!node) return false; const style = getComputedStyle(node); const box = node.getBoundingClientRect(); return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0; };
+    const visible = (node) => { if (!node) return false; const style = getComputedStyle(node); const box = node.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0; };
     const rect = (node) => { if (!node) return null; const box = node.getBoundingClientRect(); return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom), width: Math.round(box.width), height: Math.round(box.height) }; };
-    const shellSelector = type === "report" ? ".erpw-report-shell" : type === "list" ? ".erpw-list-shell" : ".erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell";
-    const controls = document.querySelector(type === "report" ? ".erpw-report-controls" : ".erpw-list-controls-strip");
-    const action = controls && controls.querySelector(type === "report" ? ".erpw-report-command-actions" : ".erpw-list-command-action-cell .erpw-list-toolbar-actions, .erpw-list-toolbar-actions");
-    const fields = controls ? Array.from(controls.querySelectorAll(type === "report" ? ".erpw-report-control-field" : ".erpw-list-control-field:not(.erpw-list-action-field)")).filter(visible).map((node) => rect(node.querySelector("input, select, textarea") || node)) : [];
-    const buttons = action ? Array.from(action.querySelectorAll("button")).filter(visible).map((button) => Object.assign({ text: button.textContent.trim() }, rect(button))) : [];
+    const shellSelector = type === 'report' ? '.erpw-report-shell' : type === 'list' ? '.erpw-list-shell' : '.erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell';
+    const controls = document.querySelector(type === 'report' ? '.erpw-report-controls' : '.erpw-list-controls-strip');
+    const action = controls && controls.querySelector(type === 'report' ? '.erpw-report-command-actions' : '.erpw-list-command-action-cell .erpw-list-toolbar-actions, .erpw-list-toolbar-actions');
+    const fields = controls ? Array.from(controls.querySelectorAll(type === 'report' ? '.erpw-report-control-field' : '.erpw-list-control-field:not(.erpw-list-action-field)')).filter(visible).map((node) => {
+      const input = node.querySelector('input, select, textarea') || node;
+      return Object.assign({ key: node.getAttribute(type === 'report' ? 'data-erpw-report-field-key' : 'data-erpw-list-field-shell-key') || input.getAttribute(type === 'report' ? 'data-erpw-control-key' : 'data-erpw-list-field-key') || '', role: node.getAttribute(type === 'report' ? 'data-erpw-report-field-role' : 'data-erpw-list-field-role') || '', label: ((node.querySelector(type === 'report' ? '.erpw-report-control-label' : '.erpw-list-control-label') || {}).textContent || '').trim() }, rect(input));
+    }) : [];
+    const buttons = action ? Array.from(action.querySelectorAll('button')).filter(visible).map((button) => Object.assign({ text: button.textContent.trim() }, rect(button))) : [];
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const controlsRect = rect(controls);
     const actionRect = rect(action);
     const clipped = (box) => box && (box.left < 0 || box.right > viewport.width || (controlsRect && (box.left < controlsRect.left || box.right > controlsRect.right)));
-    return { url: location.href, viewport, shell: rect(document.querySelector(shellSelector)), controls: controlsRect, action: actionRect, fields, buttons, actionClipped: clipped(actionRect), clippedButtons: buttons.filter(clipped), clippedFields: fields.filter(clipped), shellCount: Array.from(document.querySelectorAll(".erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell")).filter(visible).length, horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    return { url: location.href, viewport, shell: rect(document.querySelector(shellSelector)), controls: controlsRect, action: actionRect, fields, buttons, actionClipped: clipped(actionRect), clippedButtons: buttons.filter(clipped), clippedFields: fields.filter(clipped), shellCount: Array.from(document.querySelectorAll('.erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell')).filter(visible).length, horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
   }, type);
 }
 function fieldCenter(field) { return Math.round((field.top + field.bottom) / 2); }
@@ -117,20 +120,33 @@ function groupRowsByCenter(fields) {
   rows.forEach((row) => row.fields.sort((a, b) => a.left - b.left));
   return rows.sort((a, b) => a.center - b.center);
 }
-function expectedReportPattern(fieldCount) {
-  const patterns = { 4: [2, 2], 5: [3, 2], 6: [3, 3], 8: [2, 2, 2, 2] };
-  return patterns[fieldCount] || null;
+function expectedReportPattern(fieldCount) { return ({ 4: [2, 2], 5: [3, 2], 6: [3, 3], 8: [4, 4] })[fieldCount] || null; }
+function assertReportFieldOrder(label, viewport, fields) {
+  const expected = REPORT_FIELD_ORDER[label];
+  if (!expected) return;
+  const actual = fields.slice().sort((a, b) => (fieldCenter(a) - fieldCenter(b)) || (a.left - b.left)).map((field) => field.key);
+  assert(actual.join(',') === expected.join(','), `${label}: non-premium filter priority order at ${viewport.key}`, { expected, actual, fields });
+}
+function assertReportFieldWidths(label, viewport, fields) {
+  const maxWidth = label === 'Quote Comparison' ? 285 : 330;
+  const oversized = fields.filter((field) => field.width > maxWidth);
+  assert(oversized.length === 0, `${label}: oversized report filter field at ${viewport.key}`, { maxWidth, oversized, fields });
+  const dateFields = fields.filter((field) => field.key === 'from_date' || field.key === 'to_date');
+  if (dateFields.length === 2) {
+    assert(Math.abs(fieldCenter(dateFields[0]) - fieldCenter(dateFields[1])) <= 8, `${label}: date range is not paired at ${viewport.key}`, { dateFields, fields });
+    assert(Math.abs(dateFields[0].width - dateFields[1].width) <= 6, `${label}: date range widths are inconsistent at ${viewport.key}`, { dateFields, fields });
+  }
 }
 function assertPremiumReportComposition(label, viewport, data) {
   const fields = data.fields || [];
   if (!fields.length) return;
+  assertReportFieldOrder(label, viewport, fields);
+  assertReportFieldWidths(label, viewport, fields);
   const rows = groupRowsByCenter(fields);
   const counts = rows.map((row) => row.fields.length);
   const expected = expectedReportPattern(fields.length);
   assert(Boolean(data.action), `${label}: missing report action group at ${viewport.key}`, { rows, data });
-  if (expected) {
-    assert(counts.join(',') === expected.join(','), `${label}: non-premium filter row pattern at ${viewport.key}`, { expected, actual: counts, data });
-  }
+  if (expected) assert(counts.join(',') === expected.join(','), `${label}: non-premium filter row pattern at ${viewport.key}`, { expected, actual: counts, data });
   const finalRow = rows[rows.length - 1];
   assert(finalRow && finalRow.fields.length !== 1, `${label}: orphan final filter field at ${viewport.key}`, { rows, data });
   const actionCenter = Math.round((data.action.top + data.action.bottom) / 2);
@@ -139,20 +155,35 @@ function assertPremiumReportComposition(label, viewport, data) {
   const finalFieldRight = Math.max(...finalRow.fields.map((field) => field.right));
   assert(data.action.left - finalFieldRight <= 32, `${label}: disconnected action group at ${viewport.key}`, { actionLeft: data.action.left, finalFieldRight, gap: data.action.left - finalFieldRight, rows, data });
   assert(containerRight - data.action.right <= 32, `${label}: action group should complete the final row at ${viewport.key}`, { containerRight, actionRight: data.action.right, gap: containerRight - data.action.right, rows, data });
-  for (const row of rows.slice(0, -1)) {
-    const rowRight = Math.max(...row.fields.map((field) => field.right));
-    assert(containerRight - rowRight <= 40, `${label}: filter row leaves excessive empty right space at ${viewport.key}`, { rowCenter: row.center, rowRight, containerRight, gap: containerRight - rowRight, rows, data });
+}
+function median(values) { const sorted = values.slice().sort((a, b) => a - b); return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0; }
+function assertWorklistFilterWidths(label, viewport, data) {
+  const fields = data.fields || [];
+  const dateFields = fields.filter((field) => field.role === 'date' || field.key === 'date_start' || field.key === 'date_end');
+  const searchFields = fields.filter((field) => field.role === 'search' || field.key === 'keyword');
+  const normalFields = fields.filter((field) => !dateFields.includes(field) && !searchFields.includes(field));
+  if (dateFields.length === 2 && normalFields.length) {
+    const normalWidth = median(normalFields.map((field) => field.width));
+    const mismatched = dateFields.filter((field) => Math.abs(field.width - normalWidth) > 35);
+    assert(mismatched.length === 0, `${label}: date filters do not match standard width at ${viewport.key}`, { normalWidth, dateFields, normalFields, data });
+    assert(Math.abs(fieldCenter(dateFields[0]) - fieldCenter(dateFields[1])) <= 8, `${label}: date filters are not paired at ${viewport.key}`, { dateFields, data });
+  }
+  for (const field of searchFields) {
+    const normalWidth = normalFields.length ? median(normalFields.map((item) => item.width)) : field.width;
+    assert(field.width >= normalWidth - 8, `${label}: search field is narrower than normal filters at ${viewport.key}`, { field, normalWidth, data });
+    assert(field.width <= Math.max(normalWidth * 2.4, normalWidth + 320), `${label}: search field is excessively wide at ${viewport.key}`, { field, normalWidth, data });
   }
 }
 async function checkFilterPage(page, item, type, user, viewport) {
-  await openPage(page, item.route, type === "report" ? ".erpw-report-shell" : ".erpw-list-shell");
+  await openPage(page, item.route, type === 'report' ? '.erpw-report-shell' : '.erpw-list-shell');
   const data = await measure(page, type);
   assert(data.horizontalOverflow <= 1, `${item.label}: horizontal overflow at ${viewport.key}`, data);
   assert(data.action && !data.actionClipped, `${item.label}: clipped action group at ${viewport.key}`, data);
   assert(data.clippedButtons.length === 0, `${item.label}: clipped action button at ${viewport.key}`, data);
   assert(data.clippedFields.length === 0, `${item.label}: clipped filter field at ${viewport.key}`, data);
-  for (const label of ["Apply", "Reset", "Refresh"]) {
-    await page.locator(`${type === "report" ? ".erpw-report-command-actions" : ".erpw-list-toolbar-actions"} button:has-text("${label}")`).first().click();
+  if (type === 'list') assertWorklistFilterWidths(item.label, viewport, data);
+  for (const label of ['Apply', 'Reset', 'Refresh']) {
+    await page.locator(`${type === 'report' ? '.erpw-report-command-actions' : '.erpw-list-toolbar-actions'} button:has-text('${label}')`).first().click();
     await page.waitForTimeout(220);
   }
   await page.screenshot({ path: path.join(ARTIFACT_DIR, `${user.key}-${viewport.key}-${safe(item.key)}.png`), fullPage: true });
@@ -160,18 +191,14 @@ async function checkFilterPage(page, item, type, user, viewport) {
 }
 async function waitForSingleShell(page) {
   await page.waitForFunction(() => {
-    const visible = (node) => {
-      const style = getComputedStyle(node);
-      const box = node.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" && box.width > 0 && box.height > 0;
-    };
-    return Array.from(document.querySelectorAll(".erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell")).filter(visible).length === 1;
+    const visible = (node) => { const style = getComputedStyle(node); const box = node.getBoundingClientRect(); return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0; };
+    return Array.from(document.querySelectorAll('.erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell')).filter(visible).length === 1;
   }, { timeout: TIMEOUT });
 }
 async function checkStaticPage(page, item, user, viewport) {
   await openPage(page, item.route, item.shell);
   await waitForSingleShell(page);
-  const data = await measure(page, "detail");
+  const data = await measure(page, 'detail');
   assert(data.horizontalOverflow <= 1, `${item.label}: horizontal overflow at ${viewport.key}`, data);
   assert(data.shellCount === 1, `${item.label}: duplicate shell at ${viewport.key}`, data);
   await page.screenshot({ path: path.join(ARTIFACT_DIR, `${user.key}-${viewport.key}-${safe(item.key)}.png`), fullPage: true });
@@ -182,9 +209,9 @@ async function runUser(user) {
   const page = await browser.newPage();
   const errors = [];
   const failures = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text()); });
-  page.on("response", (response) => { if (response.status() >= 400 && !/favicon|manifest|socket.io/.test(response.url())) failures.push({ url: response.url(), status: response.status() }); });
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
+  page.on('response', (response) => { if (response.status() >= 400 && !/favicon|manifest|socket.io/.test(response.url())) failures.push({ url: response.url(), status: response.status() }); });
   const measurements = [];
   try {
     await page.setViewportSize({ width: 1240, height: 768 });
@@ -193,21 +220,21 @@ async function runUser(user) {
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
       for (const [key, label, route, hasFilter] of REPORTS) {
-        await openPage(page, route, ".erpw-report-shell");
-        const data = await measure(page, "report");
+        await openPage(page, route, '.erpw-report-shell');
+        const data = await measure(page, 'report');
         assert(data.horizontalOverflow <= 1, `${label}: horizontal overflow at ${viewport.key}`, data);
         if (hasFilter) {
           assert(data.action && !data.actionClipped, `${label}: clipped action group at ${viewport.key}`, data);
           assert(data.clippedButtons.length === 0, `${label}: clipped action button at ${viewport.key}`, data);
           assert(data.clippedFields.length === 0, `${label}: clipped filter field at ${viewport.key}`, data);
           assertPremiumReportComposition(label, viewport, data);
-          for (const actionLabel of ["Apply", "Reset", "Refresh"]) { await page.locator(`.erpw-report-command-actions button:has-text("${actionLabel}")`).first().click(); await page.waitForTimeout(220); }
+          for (const actionLabel of ['Apply', 'Reset', 'Refresh']) { await page.locator(`.erpw-report-command-actions button:has-text('${actionLabel}')`).first().click(); await page.waitForTimeout(220); }
         }
         await page.screenshot({ path: path.join(ARTIFACT_DIR, `${user.key}-${viewport.key}-${safe(key)}.png`), fullPage: true });
-        measurements.push({ user: user.key, viewport: viewport.key, type: "report", key, data });
+        measurements.push({ user: user.key, viewport: viewport.key, type: 'report', key, data });
       }
-      for (const [key, label, route] of WORKLISTS) measurements.push({ user: user.key, viewport: viewport.key, type: "worklist", key, data: await checkFilterPage(page, { key, label, route }, "list", user, viewport) });
-      if (viewport.key === "desktop-1240") for (const detail of details) measurements.push({ user: user.key, viewport: viewport.key, type: "detail", key: detail.key, data: await checkStaticPage(page, detail, user, viewport) });
+      for (const [key, label, route] of WORKLISTS) measurements.push({ user: user.key, viewport: viewport.key, type: 'worklist', key, data: await checkFilterPage(page, { key, label, route }, 'list', user, viewport) });
+      if (viewport.key === 'desktop-1240') for (const detail of details) measurements.push({ user: user.key, viewport: viewport.key, type: 'detail', key: detail.key, data: await checkStaticPage(page, detail, user, viewport) });
     }
     assert(failures.length === 0, `${user.key}: failed network responses`, { failures });
     assert(errors.length === 0, `${user.key}: page JS errors`, { errors });
@@ -223,9 +250,9 @@ async function runUser(user) {
   }
 }
 (async () => {
-  assert(USERS.length > 0, "No smoke users configured");
+  assert(USERS.length > 0, 'No smoke users configured');
   const results = [];
   for (const user of USERS) results.push(await runUser(user));
-  fs.writeFileSync(path.join(ARTIFACT_DIR, "summary.json"), JSON.stringify({ ok: true, users: results, viewports: VIEWPORTS }, null, 2));
+  fs.writeFileSync(path.join(ARTIFACT_DIR, 'summary.json'), JSON.stringify({ ok: true, users: results, viewports: VIEWPORTS }, null, 2));
   console.log(JSON.stringify({ ok: true, artifactDir: ARTIFACT_DIR, users: results }, null, 2));
 })().catch((error) => { console.error(error && error.stack || error); process.exit(1); });

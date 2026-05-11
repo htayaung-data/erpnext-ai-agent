@@ -54,8 +54,51 @@
       .map((entry) => entry[1]);
   }
 
-  function composeProcurementAnalyticsRows(fields) {
+  function procurementReportFilterPriority(field, index, fieldKeys) {
+    const key = String(field && field.key || '').toLowerCase();
+    const role = reportFieldRole(field);
+    const explicit = Number(field && field.priority);
+    if (Number.isFinite(explicit)) return explicit;
+    const hasPoAnalysisShape = fieldKeys && fieldKeys.has('purchase_order');
+    const hasDemandShape = fieldKeys && fieldKeys.has('material_request');
+    const order = {
+      item_code: hasPoAnalysisShape ? 40 : hasDemandShape ? 30 : 10,
+      item: hasPoAnalysisShape ? 40 : hasDemandShape ? 30 : 10,
+      purchase_order: 10,
+      material_request: 10,
+      purchase_request: 10,
+      status: 20,
+      coverage_status: 20,
+      supplier: 30,
+      supplier_quotation: 30,
+      request_for_quotation: 34,
+      item_group: 36,
+      warehouse: 40,
+      categorize_by: 54,
+      include_expired: 58,
+      from_date: 80,
+      to_date: 82,
+    };
+    if (Object.prototype.hasOwnProperty.call(order, key)) return order[key] + (index / 1000);
+    if (role === 'date') return 80 + (index / 1000);
+    if (role === 'search') return 32 + (index / 1000);
+    return 40 + (index / 1000);
+  }
+
+  function prioritizedProcurementFields(fields) {
     const items = normalizeFields(fields);
+    const fieldKeys = new Set(items.map((field) => String(field && field.key || '').toLowerCase()));
+    return items
+      .map((field, index) => ({ field, index }))
+      .sort((left, right) => {
+        const priority = procurementReportFilterPriority(left.field, left.index, fieldKeys) - procurementReportFilterPriority(right.field, right.index, fieldKeys);
+        return priority || (left.index - right.index);
+      })
+      .map((entry) => entry.field);
+  }
+
+  function composeProcurementAnalyticsRows(fields) {
+    const items = prioritizedProcurementFields(fields);
     const count = items.length;
     if (!count) return [];
     if (count <= 3) return [items];
@@ -63,13 +106,12 @@
     if (count === 5) return [items.slice(0, 3), items.slice(3)];
     if (count === 6) return [items.slice(0, 3), items.slice(3)];
     if (count === 7) return [items.slice(0, 3), items.slice(3, 5), items.slice(5)];
-    if (count === 8) return [items.slice(0, 2), items.slice(2, 4), items.slice(4, 6), items.slice(6)];
+    if (count === 8) return [items.slice(0, 4), items.slice(4)];
     const rows = [];
     let index = 0;
     while (index < count) {
       const remaining = count - index;
-      let size = remaining >= 3 ? 3 : remaining;
-      if (remaining === 4) size = 2;
+      let size = remaining >= 4 ? 4 : remaining;
       if (remaining - size === 1 && size > 2) size -= 1;
       rows.push(items.slice(index, index + size));
       index += size;
@@ -1033,7 +1075,7 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(150px, 1fr));
       }
       .erpw-report-shell.is-procurement-report .erpw-report-command-actions {
         align-self: end;
@@ -1075,16 +1117,11 @@
         padding: 12px 13px;
         border-radius: 14px;
       }
-      @media (max-width: 1600px) {
-        .erpw-report-shell.is-procurement-report .erpw-report-command-fields.field-count-4 {
-          grid-template-columns: repeat(2, minmax(240px, 1fr));
-        }
-        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) {
-          grid-template-columns: minmax(0, 1fr);
-        }
-        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) .erpw-report-command-actions {
-          justify-self: end;
-        }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-2:not(.without-actions) {
+        grid-template-columns: max-content max-content;
+      }
+      .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-2:not(.without-actions) .erpw-report-command-fields.field-count-2 {
+        grid-template-columns: repeat(2, minmax(220px, 260px));
       }
       @media (max-width: 1080px) {
         .erpw-report-shell.is-procurement-report .erpw-report-command-row {

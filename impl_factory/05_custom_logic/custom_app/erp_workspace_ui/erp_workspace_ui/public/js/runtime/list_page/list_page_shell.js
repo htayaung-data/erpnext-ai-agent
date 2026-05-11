@@ -865,7 +865,7 @@
       }
 
       .erpw-list-shell.is-procurement-worklist {
-        --erpw-procurement-filter-fixed-width: clamp(220px, 18vw, 260px);
+        --erpw-procurement-filter-fixed-width: clamp(230px, 18vw, 240px);
         --erpw-procurement-filter-search-width: minmax(var(--erpw-procurement-filter-fixed-width), 1fr);
         --erpw-procurement-filter-gap: 10px;
         gap: 12px;
@@ -1062,8 +1062,8 @@
           grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.has-date-window .erpw-list-date-window-group {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          width: min(100%, calc((250px * 2) + var(--erpw-procurement-filter-gap)));
+          grid-template-columns: repeat(2, var(--erpw-procurement-filter-fixed-width));
+          width: min(100%, calc((var(--erpw-procurement-filter-fixed-width) * 2) + var(--erpw-procurement-filter-gap)));
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
           align-self: end;
