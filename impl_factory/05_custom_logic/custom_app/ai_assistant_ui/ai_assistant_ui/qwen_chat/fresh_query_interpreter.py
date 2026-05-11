@@ -35,6 +35,7 @@ from ai_assistant_ui.qwen_chat.governed_scope_registry import (
 	master_data_lookup_mode_allowed,
 )
 from ai_assistant_ui.qwen_chat.governed_report_executor import execute_governed_report
+from ai_assistant_ui.qwen_chat.ranking_limit_parser import extract_requested_top_n
 from ai_assistant_ui.qwen_chat.metadata import (
 	capability_report_names,
 	capability_default_report_name,
@@ -184,21 +185,7 @@ def _normalize_key(value: Any) -> str:
 
 
 def _extract_structural_target_limit_seed(message: str) -> int:
-	text = str(message or "").strip().lower()
-	if not text:
-		return 0
-	match = re.search(r"\b(?:top|last|latest)\s+(\d{1,2})\b", text)
-	if not match:
-		return 0
-	if re.match(
-		r"\s+(?:day|days|week|weeks|month|months|year|years|quarter|quarters)\b",
-		text[match.end():],
-	):
-		return 0
-	try:
-		return max(0, min(50, int(match.group(1) or 0)))
-	except Exception:
-		return 0
+	return extract_requested_top_n(message, default_limit=0, max_limit=50)
 
 
 def _normalized_lookup(values: List[str]) -> Dict[str, str]:

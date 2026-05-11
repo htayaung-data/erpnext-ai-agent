@@ -849,13 +849,17 @@ def resolve_visible_context_frame_arbitration(
 			else [frame for frame in detail_frames if _frame_matches_message_object(raw_message, frame)]
 		)
 		if requested_object_aliases and not candidates:
-			return _missing_requested_object_result(
-				relation=relation,
-				requested_aliases=requested_object_aliases,
-				requested_label=requested_object_label,
-				frames=detail_frames or frames,
-			)
-		selected_frame = (candidates or detail_frames or matching_business_frames or frames)[0]
+			if matching_business_frames:
+				selected_frame = matching_business_frames[0]
+			else:
+				return _missing_requested_object_result(
+					relation=relation,
+					requested_aliases=requested_object_aliases,
+					requested_label=requested_object_label,
+					frames=frames,
+				)
+		else:
+			selected_frame = (candidates or detail_frames or matching_business_frames or frames)[0]
 	else:
 		current_frame = frames[0]
 		if requested_object_aliases and not _frame_matches_requested_object(current_frame, requested_object_aliases):

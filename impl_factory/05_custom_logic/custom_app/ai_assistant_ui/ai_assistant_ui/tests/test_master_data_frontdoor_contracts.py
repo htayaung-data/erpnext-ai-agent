@@ -110,6 +110,24 @@ class TestMasterDataFrontDoorContracts(unittest.TestCase):
 		self.assertEqual(assessment.report_name, "Customer Master List")
 		self.assertIsNone(payload.get("clarification_signal"))
 
+	def test_customer_risk_levels_are_not_claimed_as_customer_master_list(self):
+		payload = assess_master_data_frontdoor_request(
+			request_id="frontdoor-customer-risk-levels",
+			message="Display customer risk levels.",
+			frontdoor_extracted_slots={
+				"lookup_mode": "directory_list",
+				"entity_grain": "customer",
+			},
+		)
+		assessment = payload.get("assessment_contract")
+		self.assertIsNotNone(assessment)
+		self.assertEqual(assessment.status, "not_applicable")
+		self.assertIsNone(payload.get("clarification_signal"))
+		self.assertIn(
+			"risk",
+			(assessment.internal_details or {}).get("blocked_by_business_concepts", []),
+		)
+
 	def test_master_data_frontdoor_assessment_resolves_standard_directory_projection(self):
 		payload = assess_master_data_frontdoor_request(
 			request_id="frontdoor-customer-full-list",

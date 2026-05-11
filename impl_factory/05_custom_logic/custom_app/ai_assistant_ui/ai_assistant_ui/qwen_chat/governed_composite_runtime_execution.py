@@ -51,6 +51,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_composite_family_specs,
 	list_semantic_resolution_alias_entries,
 )
+from ai_assistant_ui.qwen_chat.ranking_limit_parser import extract_requested_top_n
 from ai_assistant_ui.qwen_chat.semantic_aliases import get_aliases
 from ai_assistant_ui.qwen_chat.semantic_resolution_registry import best_semantic_slot_alias
 from ai_assistant_ui.qwen_chat.runtime_support import tool_trace_payload
@@ -218,13 +219,7 @@ def _family_subject_requested(message: str, family_spec: Dict[str, Any]) -> bool
 
 
 def _requested_top_n(message: str, default_limit: int = 10) -> int:
-	match = re.search(r"\btop\s+(\d{1,3})\b", _normalize_text(message))
-	if not match:
-		return default_limit
-	try:
-		return max(1, min(int(match.group(1)), 100))
-	except Exception:
-		return default_limit
+	return extract_requested_top_n(message, default_limit=default_limit, max_limit=100)
 
 
 def _sort_direction_from_message(message: str, default_direction: str = "desc") -> str:

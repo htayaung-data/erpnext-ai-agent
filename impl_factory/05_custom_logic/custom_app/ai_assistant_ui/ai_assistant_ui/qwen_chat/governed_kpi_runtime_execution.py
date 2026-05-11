@@ -51,6 +51,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	list_business_definition_specs,
 	list_semantic_resolution_alias_entries,
 )
+from ai_assistant_ui.qwen_chat.ranking_limit_parser import extract_requested_top_n
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys
 from ai_assistant_ui.qwen_chat.semantic_resolution_registry import (
 	best_semantic_slot_alias,
@@ -695,13 +696,7 @@ def _looks_like_customer_ranking_request(message: str) -> bool:
 
 
 def _requested_top_n(message: str, default_limit: int = 10) -> int:
-	match = re.search(r"\btop\s+(\d{1,3})\b", _normalize_text(message))
-	if not match:
-		return default_limit
-	try:
-		return max(1, min(int(match.group(1)), 100))
-	except Exception:
-		return default_limit
+	return extract_requested_top_n(message, default_limit=default_limit, max_limit=100)
 
 
 def _customer_metric_alias_keys(message: str) -> set[str]:

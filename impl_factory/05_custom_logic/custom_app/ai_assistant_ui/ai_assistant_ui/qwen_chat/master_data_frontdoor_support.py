@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 
 from ai_assistant_ui.qwen_chat.contracts import (
@@ -31,6 +32,15 @@ _MASTER_DATA_COMPATIBLE_CONCEPTS = {
 	"territory",
 	"warehouse",
 }
+_MASTER_DATA_BLOCKING_TEXT_PATTERNS = {
+	"accounts_receivable": r"\b(?:accounts?\s+receivable|a/r|ar)\b",
+	"accounts_payable": r"\b(?:accounts?\s+payable|a/p|ap)\b",
+	"aging": r"\baging\b",
+	"collection": r"\b(?:collect|collection|collections)\b",
+	"default_risk": r"\bdefault(?:ing)?\b",
+	"overdue": r"\boverdue\b",
+	"risk": r"\b(?:risk|risks|risky|risk\s+level|risk\s+levels)\b",
+}
 
 
 def _clean_text(value: Any) -> str:
@@ -49,11 +59,16 @@ def _master_data_blocking_business_concepts(message: str) -> List[str]:
 		for value in ontology_detect_concepts(message)
 		if _clean_text(value)
 	]
-	return [
+	blocking = [
 		value
 		for value in list(dict.fromkeys(concepts))
 		if value not in _MASTER_DATA_COMPATIBLE_CONCEPTS
 	]
+	text = _clean_text(message).lower()
+	for concept, pattern in _MASTER_DATA_BLOCKING_TEXT_PATTERNS.items():
+		if re.search(pattern, text, flags=re.IGNORECASE) and concept not in blocking:
+			blocking.append(concept)
+	return blocking
 
 
 def _active_master_data_grains(*, request_mode: str = "") -> List[str]:

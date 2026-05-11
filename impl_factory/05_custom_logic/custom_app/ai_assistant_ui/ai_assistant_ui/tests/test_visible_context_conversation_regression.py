@@ -261,6 +261,43 @@ Rank	Product	Revenue (MMK)
 """
 
 
+def _product_revenue_top_10_with_qty_text() -> str:
+	return """Top 10 Products by Revenue (2025-04-01 to 2026-03-31)
+
+Top Ranked Rows
+
+Rank	Product	Revenue	Quantity
+1	Samsung Galaxy A15 (6GB 128GB)	341,209,000	348
+2	Xiaomi Redmi Note 13 (8GB 256GB)	281,770,000	286
+3	Power Bank 20000mAh	174,195,000	1,569
+4	Apple iPhone 13 128GB	134,835,000	66
+5	Samsung PD Charger 25W	72,170,500	2,263
+6	JBL GO3 Bluetooth Speaker	67,472,000	312
+7	Xiaomi Fast Charger 33W	65,799,000	2,175
+8	Apple iPhone 14 128GB	60,650,000	23
+9	Redmi TWS Earbuds	57,238,000	987
+10	MicroSD Card 128GB	42,351,000	1,582
+"""
+
+
+def _customer_names_list_text() -> str:
+	return """10 Customers Found as of 2026-05-11
+
+Customer Names
+
+Min Min Naing
+Chan Aye Mobile Trading Hub
+Thaketa Mobile Exchange
+Pazundaung Mobile Distribution
+Lanmadaw Digital Wholesale
+Zegyo Mobile Supply House
+Hledan Mobile Trade Center
+Theingyi Telecom Distribution
+Maha Bandula Mobile Wholesale
+Daw aaaa
+"""
+
+
 def _assert_visible_answer(
 	testcase: unittest.TestCase,
 	result: ConversationTurnResult,
@@ -377,6 +414,8 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 		self.assertGreaterEqual(arbitration.get("candidate_frame_count") or 0, 1)
 		self.assertTrue(arbitration.get("rejected_frames"))
 		self.assertEqual(arbitration.get("rejected_frames")[0].get("rejection_reason"), "requested_object_type_mismatch")
+		self.assertEqual(arbitration.get("rejected_frames")[0].get("business_object_type"), "supplier")
+		self.assertIn("Accounts Payable Aging", arbitration.get("rejected_frames")[0].get("artifact_title", ""))
 		observability = missing_invoice.trace.get("authority_observability") or {}
 		self.assertEqual(observability.get("requested_object_label"), "invoice")
 		self.assertGreaterEqual(observability.get("rejected_frame_count") or 0, 1)
@@ -384,6 +423,14 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 
 	def test_ar_comparison_out_of_range_stays_on_latest_visible_table(self):
 		chat = VisibleConversationHarness()
+		chat.assistant(_cogs_source_detail_text())
+		cogs_lookup = chat.ask("who is second in the above table?")
+		_assert_visible_answer(
+			self,
+			cogs_lookup,
+			answer_contains="Delivery Note MAT-DN-2026-00336",
+			business_object_type="document",
+		)
 		chat.assistant(_ar_top_10_text())
 		chat.assistant(_ar_overdue_comparison_text())
 
@@ -406,6 +453,18 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 		self.assertEqual(arbitration.get("status"), "resolved")
 		self.assertEqual(arbitration.get("selected_business_object_type"), "party")
 		self.assertFalse(out_of_range.execution_path.get("requires_runtime"))
+
+		semantic_out_of_range = chat.ask("Provide additional details about the customer ranked 11th.")
+		self.assertTrue(semantic_out_of_range.handled)
+		self.assertEqual(semantic_out_of_range.payload["mode"], "visible_context_out_of_range")
+		self.assertIn("only 7 visible rows", semantic_out_of_range.answer)
+		self.assertIn("Rank 7: Bayint Naung Wholesale Mobile", semantic_out_of_range.answer)
+		self.assertNotIn("Delivery Note MAT-DN-2026-00336", semantic_out_of_range.answer)
+		semantic_arbitration = semantic_out_of_range.trace.get("frame_arbitration") or {}
+		self.assertEqual(semantic_arbitration.get("status"), "resolved")
+		self.assertEqual(semantic_arbitration.get("selected_business_object_type"), "party")
+		self.assertEqual(semantic_arbitration.get("relation"), "detail_table")
+		self.assertFalse(semantic_out_of_range.execution_path.get("requires_runtime"))
 
 	def test_ap_supplier_invoice_sequence_preserves_relation_and_response_shape(self):
 		chat = VisibleConversationHarness()
@@ -501,6 +560,46 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 			answer_contains="Xiaomi Redmi Note 13",
 			business_object_type="item",
 		)
+
+	def test_visible_product_detail_request_uses_current_ranked_table_before_deeper_drilldown(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_cogs_source_detail_text())
+		cogs_lookup = chat.ask("who is second in the above table?")
+		_assert_visible_answer(
+			self,
+			cogs_lookup,
+			answer_contains="Delivery Note MAT-DN-2026-00336",
+			business_object_type="document",
+		)
+		chat.assistant(_product_revenue_top_10_with_qty_text())
+
+		product_detail = chat.ask("Provide additional details about the product ranked eighth.")
+
+		_assert_visible_answer(
+			self,
+			product_detail,
+			answer_contains="Apple iPhone 14 128GB",
+			business_object_type="item",
+			relation="detail_table",
+		)
+		self.assertIn("Quantity", product_detail.answer)
+		self.assertIn("23", product_detail.answer)
+		self.assertNotIn("The requested object type is not present", product_detail.answer)
+
+	def test_plain_customer_name_list_preserves_each_visible_row(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_customer_names_list_text())
+
+		third_customer = chat.ask("Which customer appears in the third row of the table above?")
+
+		_assert_visible_answer(
+			self,
+			third_customer,
+			answer_contains="Thaketa Mobile Exchange",
+			business_object_type="customer",
+		)
+		arbitration = third_customer.trace.get("frame_arbitration") or {}
+		self.assertEqual(arbitration.get("selected_visible_row_count"), 10)
 
 	def test_business_intent_boundaries_are_enforced_from_visible_evidence(self):
 		chat = VisibleConversationHarness()
