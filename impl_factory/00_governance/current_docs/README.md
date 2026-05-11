@@ -8,11 +8,12 @@ Read this first:
 
 1. [qwen_erp_current_roadmap_reconciliation_and_next_plan_2026-05-04.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_current_roadmap_reconciliation_and_next_plan_2026-05-04.md)
 2. [qwen_erp_ai_assistant_enterprise_context_filter_mi_roadmap_2026-05-07.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_ai_assistant_enterprise_context_filter_mi_roadmap_2026-05-07.md)
-3. [qwen_erp_phase3_6a_current_governance_doc_index_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6a_current_governance_doc_index_2026-04-28.md)
-4. [qwen_erp_phase3_6a_archive_candidate_map_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6a_archive_candidate_map_2026-04-28.md)
-5. [qwen_erp_phase3_6b_business_question_quality_matrix_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6b_business_question_quality_matrix_2026-04-28.md)
-6. [qwen_erp_phase3_6c_automated_quality_gate_harness_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6c_automated_quality_gate_harness_2026-04-28.md)
-7. [qwen_erp_phase3_6d0_full_capability_inventory_and_uat_coverage_map_2026-04-29.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6d0_full_capability_inventory_and_uat_coverage_map_2026-04-29.md)
+3. [qwen_erp_context_authority_acceptance_pack_2026-05-11.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_context_authority_acceptance_pack_2026-05-11.md)
+4. [qwen_erp_phase3_6a_current_governance_doc_index_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6a_current_governance_doc_index_2026-04-28.md)
+5. [qwen_erp_phase3_6a_archive_candidate_map_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6a_archive_candidate_map_2026-04-28.md)
+6. [qwen_erp_phase3_6b_business_question_quality_matrix_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6b_business_question_quality_matrix_2026-04-28.md)
+7. [qwen_erp_phase3_6c_automated_quality_gate_harness_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6c_automated_quality_gate_harness_2026-04-28.md)
+8. [qwen_erp_phase3_6d0_full_capability_inventory_and_uat_coverage_map_2026-04-29.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6d0_full_capability_inventory_and_uat_coverage_map_2026-04-29.md)
 
 That index is the current source-of-truth map for:
 
@@ -30,7 +31,8 @@ Current active bridge milestone:
 
 1. [qwen_erp_current_roadmap_reconciliation_and_next_plan_2026-05-04.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_current_roadmap_reconciliation_and_next_plan_2026-05-04.md)
 2. [qwen_erp_ai_assistant_enterprise_context_filter_mi_roadmap_2026-05-07.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_ai_assistant_enterprise_context_filter_mi_roadmap_2026-05-07.md)
-3. [qwen_erp_phase3_6_release_readiness_and_quality_exit_gate_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6_release_readiness_and_quality_exit_gate_2026-04-28.md)
+3. [qwen_erp_context_authority_acceptance_pack_2026-05-11.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_context_authority_acceptance_pack_2026-05-11.md)
+4. [qwen_erp_phase3_6_release_readiness_and_quality_exit_gate_2026-04-28.md](/home/deploy/erp-projects/erpai_project1/impl_factory/00_governance/current_docs/qwen_erp_phase3_6_release_readiness_and_quality_exit_gate_2026-04-28.md)
 
 Current decision:
 
