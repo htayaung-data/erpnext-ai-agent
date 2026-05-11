@@ -9,7 +9,7 @@ from .natural_business_understanding_context_resolution import (
 	nbu_row_entity_payload,
 )
 from .natural_business_understanding_contracts import CONTRACT_VERSION
-from .natural_business_understanding_visible_artifacts import session_visible_rendered_artifacts
+from .natural_business_understanding_visible_artifacts import visible_artifacts_from_assistant_text
 from .metadata import ontology_detect_concepts
 
 
@@ -136,6 +136,16 @@ def _message_content(message: Any) -> Any:
 	return content
 
 
+def _assistant_text_from_content(content: Any) -> str:
+	text = _clean_text(content)
+	if not text:
+		return ""
+	payload = _safe_json_loads(text)
+	if payload:
+		return _clean_text(payload.get("text") or payload.get("message") or payload.get("content"))
+	return text
+
+
 def visible_context_payload_identity(payload: Dict[str, Any]) -> str:
 	payload = _clean_dict(payload)
 	for key in ("artifact_id", "request_id", "trace_id", "source_artifact_id", "source_request_id"):
@@ -145,9 +155,124 @@ def visible_context_payload_identity(payload: Dict[str, Any]) -> str:
 	return _clean_text(payload.get("title") or payload.get("report_name") or payload.get("family_id"))
 
 
+def _section_key_for_business_object_type(value: Any) -> str:
+	object_type = _normalize(value)
+	if object_type in {"customer", "customers", "party", "parties"}:
+		return "top_customers"
+	if object_type in {"supplier", "suppliers", "vendor", "vendors"}:
+		return "top_suppliers"
+	if object_type in {"item", "items", "product", "products"}:
+		return "top_items"
+	if object_type in DOCUMENT_OBJECT_TYPES:
+		return "documents"
+	return "rows"
+
+
+def _artifact_from_trace_frame(frame: Dict[str, Any], trace_payload: Dict[str, Any], *, fallback_index: int) -> Dict[str, Any]:
+	clean_frame = _clean_dict(frame)
+	frame_rows = _clean_list(clean_frame.get("rows"))
+	rows = [
+		_clean_dict(_clean_dict(row).get("values"))
+		for row in frame_rows
+		if _clean_dict(_clean_dict(row).get("values"))
+	]
+	if not rows:
+		return {}
+	object_type = _clean_text(clean_frame.get("business_object_type"))
+	artifact_id = _clean_text(clean_frame.get("artifact_id") or clean_frame.get("frame_id"))
+	if not artifact_id:
+		artifact_id = f"visible-trace-{_clean_text(trace_payload.get('request_id')) or fallback_index}"
+	return {
+		"type": "qwen_visible_rendered_artifact",
+		"schema_version": VISIBLE_CONTEXT_FRAME_STACK_VERSION,
+		"artifact_id": artifact_id,
+		"title": _clean_text(clean_frame.get("artifact_title") or clean_frame.get("family_id") or artifact_id),
+		"report_title": _clean_text(clean_frame.get("artifact_title") or clean_frame.get("family_id") or artifact_id),
+		"family_id": _clean_text(clean_frame.get("family_id")),
+		"dimensions": {
+			key: value
+			for key, value in {
+				"entity_dimension": object_type,
+				"business_object_type": object_type,
+				"source": "visible_context_trace_frame",
+			}.items()
+			if value
+		},
+		"sections": {_section_key_for_business_object_type(object_type): rows},
+		"source": "visible_context_trace_frame",
+	}
+
+
+def _trace_frame_artifacts(payload: Dict[str, Any], *, fallback_index: int) -> List[Dict[str, Any]]:
+	trace = _clean_dict(payload)
+	if _clean_text(trace.get("type")).lower() != "qwen_visible_context_followup_trace_contract":
+		return []
+	frame_stack = _clean_dict(trace.get("context_frame_stack"))
+	frames = [
+		_clean_dict(frame)
+		for frame in _clean_list(frame_stack.get("frames"))
+		if _clean_text(_clean_dict(frame).get("frame_kind")).lower() == "table"
+	]
+	if not frames:
+		return []
+	arbitration = _clean_dict(trace.get("frame_arbitration"))
+	selected_frame_id = _clean_text(arbitration.get("selected_frame_id"))
+	if selected_frame_id:
+		frames = sorted(frames, key=lambda frame: 0 if _clean_text(frame.get("frame_id")) == selected_frame_id else 1)
+	artifacts = [_artifact_from_trace_frame(frames[0], trace, fallback_index=fallback_index)]
+	return [artifact for artifact in artifacts if artifact]
+
+
+def _session_visible_artifacts_with_trace(session_doc: Any, *, limit: int = 8) -> List[Dict[str, Any]]:
+	candidates: List[Tuple[str, Dict[str, Any]]] = []
+	for offset, message in enumerate(reversed(_session_messages(session_doc)), start=1):
+		role = _message_role(message)
+		if role == "assistant":
+			for artifact in visible_artifacts_from_assistant_text(
+					_assistant_text_from_content(_message_content(message)),
+					artifact_id=f"visible-assistant-{offset}",
+			):
+				candidates.append(("assistant", artifact))
+		elif role == "tool":
+			for artifact in _trace_frame_artifacts(_safe_json_loads(_message_content(message)), fallback_index=offset):
+				candidates.append(("trace", artifact))
+		if len(candidates) >= limit * 2:
+			break
+	assistant_artifacts = [artifact for source, artifact in candidates if source == "assistant"]
+	artifacts: List[Dict[str, Any]] = []
+	for source, artifact in candidates:
+		if source == "trace" and _equivalent_artifact_available(artifact, assistant_artifacts):
+			continue
+		artifacts.append(artifact)
+		if len(artifacts) >= limit:
+			break
+	return artifacts
+
+
 def _has_rows(payload: Dict[str, Any]) -> bool:
 	rows, _source = nbu_artifact_rows(_clean_dict(payload))
 	return bool(rows)
+
+
+def _artifact_row_signature(payload: Dict[str, Any]) -> Tuple[str, ...]:
+	rows, _source = nbu_artifact_rows(_clean_dict(payload))
+	signature: List[str] = []
+	for row in rows[:8]:
+		entity = nbu_row_entity_payload(_clean_dict(row), _clean_dict(payload), {})
+		label = _normalize(entity.get("entity_label") or entity.get("entity_key"))
+		if label:
+			signature.append(label)
+	return tuple(signature)
+
+
+def _equivalent_artifact_available(candidate: Dict[str, Any], artifacts: List[Dict[str, Any]]) -> bool:
+	candidate_signature = _artifact_row_signature(candidate)
+	if not candidate_signature:
+		return False
+	for artifact in artifacts:
+		if _artifact_row_signature(_clean_dict(artifact)) == candidate_signature:
+			return True
+	return False
 
 
 def _row_source(payload: Dict[str, Any]) -> str:
@@ -208,7 +333,7 @@ def visible_context_artifacts(
 			seen.add(identity)
 		artifacts.append(clean_payload)
 
-	for payload in session_visible_rendered_artifacts(session_doc, limit=limit):
+	for payload in _session_visible_artifacts_with_trace(session_doc, limit=limit):
 		append(payload)
 	primary_tool_artifacts, secondary_tool_artifacts, fallback_tool_artifacts = _session_tool_artifact_groups(session_doc, limit=limit)
 	for payload in primary_tool_artifacts:
@@ -258,7 +383,7 @@ def _requested_limit(artifact: Dict[str, Any], rows: List[Dict[str, Any]]) -> in
 
 
 def _evidence_scope(artifact: Dict[str, Any]) -> str:
-	if _clean_text(artifact.get("source")).lower() == "assistant_visible_markdown":
+	if _clean_text(artifact.get("source")).lower() in {"assistant_visible_markdown", "visible_context_trace_frame"}:
 		return "visible_rendered_table"
 	if artifact.get("source_detail_drilldown"):
 		return "approved_source_detail"

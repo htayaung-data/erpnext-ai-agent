@@ -307,6 +307,33 @@ class VisibleContextConversationRegressionTests(unittest.TestCase):
 			relation="same_table",
 		)
 
+	def test_repeated_above_table_can_recover_from_visible_trace_frame(self):
+		chat = VisibleConversationHarness()
+		chat.assistant(_cogs_source_detail_text())
+		first_lookup = chat.ask("who is second in the above table?")
+		_assert_visible_answer(
+			self,
+			first_lookup,
+			answer_contains="Delivery Note MAT-DN-2026-00336",
+			business_object_type="document",
+		)
+		chat.session_doc["messages"] = [
+			message
+			for message in chat.session_doc["messages"]
+			if "Breakdown by source document" not in str(message.get("content", ""))
+		]
+
+		repeated_lookup = chat.ask("who is second in the above table?")
+
+		_assert_visible_answer(
+			self,
+			repeated_lookup,
+			answer_contains="Delivery Note MAT-DN-2026-00336",
+			business_object_type="document",
+		)
+		arbitration = repeated_lookup.trace.get("frame_arbitration") or {}
+		self.assertEqual(arbitration.get("selected_evidence_scope"), "visible_rendered_table")
+
 	def test_missing_typed_detail_does_not_fall_back_to_stale_source_table(self):
 		chat = VisibleConversationHarness()
 		chat.assistant(_cogs_source_detail_text())
