@@ -137,29 +137,58 @@ def _frame_title(frame: Dict[str, Any]) -> str:
 	return _clean_text(frame.get("artifact_title") or frame.get("family_id") or frame.get("frame_id")) or "unnamed frame"
 
 
-def _format_frame_line(frame: Dict[str, Any], *, ordinal: int) -> str:
-	selected = "selected" if frame.get("selected") else "not selected"
-	parts = [
-		f"Frame {ordinal}: {_frame_title(frame)}",
-		f"type={_clean_text(frame.get('business_object_type')) or 'unknown'}",
-		f"rows={_clean_text(frame.get('visible_row_count')) or '0'}",
-		f"role={_clean_text(frame.get('role')) or 'unknown'}",
-		selected,
-	]
+def _md_value(value: Any) -> str:
+	text = _clean_text(value)
+	if not text:
+		return "none"
+	return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _frame_decision(frame: Dict[str, Any]) -> str:
+	decision = "selected" if frame.get("selected") else "not selected"
 	rejection_reason = _clean_text(frame.get("rejection_reason"))
 	if rejection_reason:
-		parts.append(f"rejection={rejection_reason}")
+		decision = f"{decision}; rejection={rejection_reason}"
 	recovery_source = _clean_text(frame.get("recovery_source"))
 	if recovery_source:
-		parts.append(f"recovery={recovery_source}")
-	return "- " + " | ".join(parts)
+		decision = f"{decision}; recovery={recovery_source}"
+	return decision
 
 
 def _format_match_reasons(frame: Dict[str, Any]) -> str:
 	reasons = [_clean_text(reason) for reason in _clean_list(frame.get("match_reasons")) if _clean_text(reason)]
 	if not reasons:
-		return ""
-	return f"  Match reasons: {', '.join(reasons[:6])}"
+		return "none"
+	return ", ".join(reasons[:6])
+
+
+def _append_kv_table(lines: List[str], rows: List[Tuple[str, Any]]) -> None:
+	lines.extend(["| Field | Value |", "|---|---|"])
+	for key, value in rows:
+		lines.append(f"| {_md_value(key)} | {_md_value(value)} |")
+
+
+def _append_frame_table(lines: List[str], frames: List[Dict[str, Any]]) -> None:
+	lines.extend(["| # | Table | Type | Rows | Role | Decision | Match reasons |", "|---|---|---|---:|---|---|---|"])
+	if not frames:
+		lines.append("| - | none | none | 0 | none | none | none |")
+		return
+	for index, frame in enumerate(frames[:6], start=1):
+		lines.append(
+			"| "
+			+ " | ".join(
+				[
+					_md_value(index),
+					_md_value(_frame_title(frame)),
+					_md_value(_clean_text(frame.get("business_object_type")) or "unknown"),
+					_md_value(_clean_text(frame.get("visible_row_count")) or "0"),
+					_md_value(_clean_text(frame.get("role")) or "unknown"),
+					_md_value(_frame_decision(frame)),
+					_md_value(_format_match_reasons(frame)),
+				]
+			)
+			+ " |"
+		)
 
 
 def render_visible_context_authority_trace(trace_payload: Dict[str, Any]) -> str:
@@ -183,51 +212,55 @@ def render_visible_context_authority_trace(trace_payload: Dict[str, Any]) -> str
 		or observability.get("selected_recovery_source")
 		or selected_frame.get("recovery_source")
 	) or "none"
-	lines = [
-		"Context Authority Trace",
-		"",
-		f"Status: {status}",
-		f"Raw request: {_clean_text(trace.get('raw_message')) or 'unknown'}",
-		f"Relation: {_clean_text(arbitration.get('relation') or observability.get('relation')) or 'unknown'}",
-		f"Requested object: {requested_object}",
-		f"Selected frame: {selected_frame_id or 'none'}",
-	]
-	if selected_title:
-		lines.append(f"Selected table: {selected_title}")
-	lines.extend(
+	lines = ["**Context Authority Trace**", "", "**Authority Summary**"]
+	_append_kv_table(
+		lines,
 		[
-			f"Selected object type: {_clean_text(arbitration.get('selected_business_object_type') or observability.get('selected_business_object_type')) or 'none'}",
-			f"Evidence scope: {_clean_text(arbitration.get('selected_evidence_scope') or observability.get('selected_evidence_scope')) or 'none'}",
-			f"Visible row count: {_clean_text(arbitration.get('selected_visible_row_count') or observability.get('selected_visible_row_count')) or '0'}",
-			f"Selection strategy: {_clean_text(arbitration.get('selection_strategy') or observability.get('selection_strategy')) or 'none'}",
-			f"Recovery source: {recovery_source}",
-		]
+			("Status", status),
+			("Raw request", _clean_text(trace.get("raw_message")) or "unknown"),
+			("Relation", _clean_text(arbitration.get("relation") or observability.get("relation")) or "unknown"),
+			("Requested object", requested_object),
+			("Selected frame", selected_frame_id or "none"),
+			("Selected table", selected_title or "none"),
+			(
+				"Selected object type",
+				_clean_text(arbitration.get("selected_business_object_type") or observability.get("selected_business_object_type")) or "none",
+			),
+			(
+				"Evidence scope",
+				_clean_text(arbitration.get("selected_evidence_scope") or observability.get("selected_evidence_scope")) or "none",
+			),
+			(
+				"Visible row count",
+				_clean_text(arbitration.get("selected_visible_row_count") or observability.get("selected_visible_row_count")) or "0",
+			),
+			(
+				"Selection strategy",
+				_clean_text(arbitration.get("selection_strategy") or observability.get("selection_strategy")) or "none",
+			),
+			("Recovery source", recovery_source),
+		],
 	)
 	selected_row, row_facts = _selected_row_summary(resolution)
 	if selected_row:
-		lines.extend(["", "Resolved row", selected_row])
-		lines.extend(row_facts)
+		lines.extend(["", "**Resolved Row**"])
+		rows: List[Tuple[str, Any]] = [("Row", selected_row)]
+		for fact in row_facts:
+			if ":" in fact:
+				key, value = fact.split(":", 1)
+				rows.append((key, value.strip()))
+			else:
+				rows.append(("Fact", fact))
+		_append_kv_table(lines, rows)
 	candidate_frames = [_clean_dict(frame) for frame in _clean_list(arbitration.get("candidate_frames"))]
 	rejected_frames = [_clean_dict(frame) for frame in _clean_list(arbitration.get("rejected_frames"))]
-	lines.extend(["", f"Candidate frames: {len(candidate_frames)}"])
-	for index, frame in enumerate(candidate_frames[:6], start=1):
-		lines.append(_format_frame_line(frame, ordinal=index))
-		match_reasons = _format_match_reasons(frame)
-		if match_reasons:
-			lines.append(match_reasons)
-	if not candidate_frames:
-		lines.append("- none")
-	lines.extend(["", f"Rejected frames: {len(rejected_frames)}"])
-	for index, frame in enumerate(rejected_frames[:6], start=1):
-		lines.append(_format_frame_line(frame, ordinal=index))
-		match_reasons = _format_match_reasons(frame)
-		if match_reasons:
-			lines.append(match_reasons)
-	if not rejected_frames:
-		lines.append("- none")
+	lines.extend(["", f"**Candidate Frames ({len(candidate_frames)})**"])
+	_append_frame_table(lines, candidate_frames)
+	lines.extend(["", f"**Rejected Frames ({len(rejected_frames)})**"])
+	_append_frame_table(lines, rejected_frames)
 	reason = _clean_text(arbitration.get("reason") or resolution.get("reason"))
 	if reason:
-		lines.extend(["", f"Authority reason: {reason}"])
+		lines.extend(["", "**Authority Reason**", "", reason])
 	return "\n".join(lines).strip()
 
 
