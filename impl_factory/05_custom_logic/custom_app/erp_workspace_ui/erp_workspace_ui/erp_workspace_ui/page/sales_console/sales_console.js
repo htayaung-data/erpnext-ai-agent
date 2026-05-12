@@ -2455,6 +2455,37 @@
     return getConsoleRuntimeMethod("rebalanceActionStrips")($root);
   }
 
+  function getCurrentRoleNames() {
+    return new Set((Array.isArray(frappe.user_roles) ? frappe.user_roles : [])
+      .map((role) => String(role || "").trim().toLowerCase())
+      .filter(Boolean));
+  }
+
+  function initialSectionOrder() {
+    const roles = getCurrentRoleNames();
+    if (roles.has("general manager") || roles.has("executive approver")) {
+      return ["approvals", "inquiry", "reports", "work", "lifecycle"];
+    }
+    if (roles.has("sales manager") || roles.has("sales supervisor")) {
+      return ["approvals", "inquiry", "work", "lifecycle", "reports"];
+    }
+    return ["inquiry", "work", "lifecycle", "approvals", "reports"];
+  }
+
+  function appendSectionsInOrder($container, sectionMap, order) {
+    const appended = new Set();
+    (Array.isArray(order) ? order : []).forEach((key) => {
+      const $section = sectionMap[key];
+      if (!$section || !$section.length || appended.has(key)) return;
+      $container.append($section);
+      appended.add(key);
+    });
+    Object.entries(sectionMap).forEach(([key, $section]) => {
+      if (!$section || !$section.length || appended.has(key)) return;
+      $container.append($section);
+    });
+  }
+
   function applyUiProfile($root, profile) {
     if (!profile) return;
 
@@ -3084,7 +3115,13 @@
       </section>
     `);
 
-    $body.append($inquirySection, $workSection, $lifecycleSection, $approvalsSection, $reportsSection);
+    appendSectionsInOrder($body, {
+      inquiry: $inquirySection,
+      work: $workSection,
+      lifecycle: $lifecycleSection,
+      approvals: $approvalsSection,
+      reports: $reportsSection,
+    }, initialSectionOrder());
     $root.append($header, $actionsSection, $body);
     renderReportsSection($root, pageState, defaultReportCardsForCurrentRole());
     const lifecycle = window.erpWorkspaceUiRouteLifecycle;

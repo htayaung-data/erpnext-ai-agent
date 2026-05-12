@@ -225,6 +225,9 @@ run_step "git-diff-check" "$ARTIFACT_ROOT/git-diff-check.log" "git diff --check 
 
 run_smoke "sales-route-lifecycle" "ERPW_CAPTURE_ROOT" "test:sales-route-lifecycle"
 run_smoke "sales-action-cards" "ERPW_SALES_ACTIONS_OUT" "test:sales-actions"
+mkdir -p "$ARTIFACT_ROOT/sales-worklists/source-overrides"
+cp "$APP_ROOT/erp_workspace_ui/public/css/erp_workspace_ui.css" "$ARTIFACT_ROOT/sales-worklists/source-overrides/erp_workspace_ui.css"
+cp "$APP_ROOT/erp_workspace_ui/public/js/runtime/list_page/list_page_shell.js" "$ARTIFACT_ROOT/sales-worklists/source-overrides/list_page_shell.js"
 run_smoke "sales-worklists" "ERPW_SALES_WORKLISTS_OUT" "test:sales-worklists"
 run_smoke "sales-detail-boundary" "ERPW_SALES_DETAIL_OUT" "test:sales-detail-boundary"
 run_smoke "sales-reports" "ERPW_SALES_REPORTS_OUT" "test:sales-reports"

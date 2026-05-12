@@ -59,6 +59,31 @@ function safeFileKey(value) {
   return String(value || "worklist").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "worklist";
 }
 
+function sourceOverridePath(fileName) {
+  return path.join(OUT_DIR, "source-overrides", fileName);
+}
+
+async function installSourceAssetOverrides(context) {
+  const cssPath = sourceOverridePath("erp_workspace_ui.css");
+  const listShellPath = sourceOverridePath("list_page_shell.js");
+  if (fs.existsSync(cssPath)) {
+    const cssBody = fs.readFileSync(cssPath, "utf8");
+    await context.route("**/assets/erp_workspace_ui/css/erp_workspace_ui.css*", (route) => route.fulfill({
+      status: 200,
+      contentType: "text/css",
+      body: cssBody,
+    }));
+  }
+  if (fs.existsSync(listShellPath)) {
+    const listShellBody = fs.readFileSync(listShellPath, "utf8");
+    await context.route("**/assets/erp_workspace_ui/js/runtime/list_page/list_page_shell.js*", (route) => route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: listShellBody,
+    }));
+  }
+}
+
 function assert(condition, message, details = {}) {
   if (!condition) {
     const error = new Error(message);
@@ -221,6 +246,67 @@ async function assertDatePairLayout(page, item, report) {
   report.datePairLayouts[item.key] = layout;
 }
 
+async function assertDateWidthContract(page, item, report, viewportLabel) {
+  const layout = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+    };
+    const field = (key) => {
+      const node = document.querySelector(`[data-erpw-list-field-key="${key}"]`);
+      if (!node || !visible(node)) return null;
+      const rect = node.getBoundingClientRect();
+      return {
+        width: Math.round(rect.width * 100) / 100,
+        top: Math.round(rect.top * 100) / 100,
+        left: Math.round(rect.left * 100) / 100,
+        right: Math.round(rect.right * 100) / 100,
+        height: Math.round(rect.height * 100) / 100,
+      };
+    };
+    const actionGroup = Array.from(document.querySelectorAll(".erpw-list-toolbar-actions")).find(visible);
+    const actionRect = actionGroup && actionGroup.getBoundingClientRect();
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      fields: {
+        view: field("view"),
+        status: field("status"),
+        keyword: field("keyword"),
+        date_start: field("date_start"),
+        date_end: field("date_end"),
+      },
+      actionGroup: actionRect ? {
+        top: Math.round(actionRect.top * 100) / 100,
+        left: Math.round(actionRect.left * 100) / 100,
+        right: Math.round(actionRect.right * 100) / 100,
+        width: Math.round(actionRect.width * 100) / 100,
+        height: Math.round(actionRect.height * 100) / 100,
+      } : null,
+      scroll: {
+        documentWidth: document.documentElement.scrollWidth,
+        viewportWidth: window.innerWidth,
+      },
+    };
+  });
+  const fields = layout.fields || {};
+  ["view", "status", "keyword", "date_start", "date_end"].forEach((key) => {
+    assert(fields[key], `${item.key}: missing ${key} field for date-width contract at ${viewportLabel}`, layout);
+  });
+  assert(Math.abs(fields.date_start.width - fields.view.width) <= 1, `${item.key}: Date Start width must match View at ${viewportLabel}`, layout);
+  assert(Math.abs(fields.date_end.width - fields.status.width) <= 1, `${item.key}: Date End width must match Status at ${viewportLabel}`, layout);
+  assert(fields.keyword.width > fields.view.width + 40, `${item.key}: keyword field must remain intentionally flexible at ${viewportLabel}`, layout);
+  assert(Math.abs(fields.date_start.top - fields.date_end.top) <= 8, `${item.key}: Date Start and Date End must remain on one row at ${viewportLabel}`, layout);
+  assert(layout.actionGroup && layout.actionGroup.right <= layout.viewport.width + 1, `${item.key}: action group is clipped at ${viewportLabel}`, layout);
+  assert(layout.scroll.documentWidth <= layout.scroll.viewportWidth + 2, `${item.key}: horizontal page overflow at ${viewportLabel}`, layout);
+  const key = `${item.key}:${viewportLabel}`;
+  report.dateWidthContracts[key] = layout;
+  const screenshot = path.join(OUT_DIR, `${safeFileKey(item.key)}-date-width-${safeFileKey(viewportLabel)}.png`);
+  await page.screenshot({ path: screenshot, fullPage: true });
+  report.screenshots.push(screenshot);
+}
+
 async function assertFocusStability(page, item, report) {
   const before = await page.locator(".erpw-list-controls-strip").first().boundingBox();
   const firstField = page.locator("[data-erpw-list-field-key]:visible").first();
@@ -297,7 +383,15 @@ async function runWorklist(page, item, report) {
   await openWorklist(page, item);
   await assertFocusStability(page, item, report);
   await assertActionAlignment(page, item, report);
-  if (item.datePair) await assertDatePairLayout(page, item, report);
+  if (item.datePair) {
+    await assertDatePairLayout(page, item, report);
+    await assertDateWidthContract(page, item, report, "desktop-1440");
+    await page.setViewportSize({ width: 1136, height: 900 });
+    await openWorklist(page, item);
+    await assertDateWidthContract(page, item, report, "laptop-1136");
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await openWorklist(page, item);
+  }
   if (item.linkDoctype) await assertLinkAutocomplete(page, item, report);
   await exerciseApplyResetRefresh(page, item, report);
   const inlineOpenCount = await page.locator(".erpw-list-inline-open:visible").count();
@@ -318,6 +412,7 @@ async function runWorklist(page, item, report) {
     ignoreHTTPSErrors: true,
     viewport: { width: 1440, height: 1200 },
   });
+  await installSourceAssetOverrides(context);
   const page = await context.newPage();
   const consoleMessages = [];
   page.on("console", (message) => {
@@ -331,6 +426,7 @@ async function runWorklist(page, item, report) {
     autocomplete: {},
     actionAlignment: {},
     datePairLayouts: {},
+    dateWidthContracts: {},
     focusStability: {},
     screenshots: [],
     consoleMessages,

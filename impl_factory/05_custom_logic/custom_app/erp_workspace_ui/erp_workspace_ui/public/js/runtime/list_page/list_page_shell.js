@@ -310,7 +310,7 @@
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck {
         --erpw-list-filter-standard-width: minmax(168px, 204px);
         --erpw-list-filter-search-width: minmax(260px, 1fr);
-        --erpw-list-filter-date-width: minmax(154px, 198px);
+        --erpw-list-filter-date-width: var(--erpw-list-filter-standard-width);
       }
       .erpw-list-shell:not(.is-procurement-worklist) .erpw-list-filter-deck.has-actions.main-count-2.has-search.search-index-1 .erpw-list-filter-main-row {
         grid-template-columns: var(--erpw-list-filter-search-width) var(--erpw-list-filter-standard-width);
