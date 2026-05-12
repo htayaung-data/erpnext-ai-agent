@@ -22,6 +22,8 @@
     "test:sales-actions:docker": "bash ./run_playwright_docker.sh npm run test:sales-actions",
     "test:sales-worklists": "node sales_worklist_shell_smoke.js",
     "test:sales-worklists:docker": "bash ./run_playwright_docker.sh npm run test:sales-worklists",
+    "test:sales-directory-performance": "node sales_directory_performance_smoke.js",
+    "test:sales-directory-performance:docker": "bash ./run_playwright_docker.sh npm run test:sales-directory-performance",
     "test:sales-detail-boundary": "node sales_detail_boundary_smoke.js",
     "test:sales-detail-boundary:docker": "bash ./run_playwright_docker.sh npm run test:sales-detail-boundary",
     "test:sales-reports": "node sales_report_family_smoke.js",

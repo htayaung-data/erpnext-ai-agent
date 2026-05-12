@@ -373,14 +373,18 @@ def _build_quotation_directory_worklist(today, context: dict[str, object], scope
 		date_end=date_end,
 		keyword=keyword,
 	)
+	pending_workflow_lookup = _pending_workflow_lookup("Quotation")
 	results_rows = []
 	action_targets: dict[str, object] = {}
+	waiting_action_count = 0
+	approval_count = 0
+	expiring_count = 0
 	for record in rows:
 		row_key = str(record.get("name") or frappe.generate_hash(length=10))
 		results_rows.append(
 			{
 				"key": row_key,
-				"cells": _quotation_directory_row(record, today)["cells"],
+				"cells": _quotation_directory_row(record, today, pending_workflow_lookup)["cells"],
 				"actions": [{"key": "open_record", "label": "Open"}],
 			}
 		)
@@ -389,10 +393,12 @@ def _build_quotation_directory_worklist(today, context: dict[str, object], scope
 			"doctype": "Quotation",
 			"name": record.get("name"),
 		}
-
-	waiting_action_count = sum(1 for row in rows if _quotation_waiting_action_match(row))
-	approval_count = sum(1 for row in rows if _pending_workflow_match("Quotation", row.get("workflow_state")))
-	expiring_count = sum(1 for row in rows if _quotation_expiring_match(row, today))
+		if _quotation_waiting_action_match(record, pending_workflow_lookup):
+			waiting_action_count += 1
+		if _pending_workflow_match("Quotation", record.get("workflow_state"), pending_workflow_lookup):
+			approval_count += 1
+		if _quotation_expiring_match(record, today):
+			expiring_count += 1
 
 	results_state = None
 	if not results_rows:
@@ -508,14 +514,19 @@ def _build_sales_order_directory_worklist(today, context: dict[str, object], sco
 		date_end=date_end,
 		keyword=keyword,
 	)
+	pending_workflow_lookup = _pending_workflow_lookup("Sales Order")
 	results_rows = []
 	action_targets: dict[str, object] = {}
+	open_orders_count = 0
+	pending_fulfillment_count = 0
+	approval_count = 0
+	due_soon_count = 0
 	for record in rows:
 		row_key = str(record.get("name") or frappe.generate_hash(length=10))
 		results_rows.append(
 			{
 				"key": row_key,
-				"cells": _sales_order_directory_row(record, today)["cells"],
+				"cells": _sales_order_directory_row(record, today, pending_workflow_lookup)["cells"],
 				"actions": [{"key": "open_record", "label": "Open"}],
 			}
 		)
@@ -524,11 +535,14 @@ def _build_sales_order_directory_worklist(today, context: dict[str, object], sco
 			"doctype": "Sales Order",
 			"name": record.get("name"),
 		}
-
-	open_orders_count = sum(1 for row in rows if _sales_order_active_match(row))
-	pending_fulfillment_count = sum(1 for row in rows if _sales_order_pending_fulfillment_match(row))
-	approval_count = sum(1 for row in rows if _pending_workflow_match("Sales Order", row.get("workflow_state")))
-	due_soon_count = sum(1 for row in rows if _sales_order_due_soon_match(row, today))
+		if _sales_order_active_match(record):
+			open_orders_count += 1
+		if _sales_order_pending_fulfillment_match(record, pending_workflow_lookup):
+			pending_fulfillment_count += 1
+		if _pending_workflow_match("Sales Order", record.get("workflow_state"), pending_workflow_lookup):
+			approval_count += 1
+		if _sales_order_due_soon_match(record, today, pending_workflow_lookup):
+			due_soon_count += 1
 
 	results_state = None
 	if not results_rows:
@@ -2299,17 +2313,21 @@ def _sales_order_keyword_filters(keyword: str) -> list[list[object]]:
 	return filters
 
 
-def _pending_workflow_match(doctype: str, workflow_state: object) -> bool:
+def _pending_workflow_lookup(doctype: str) -> set[str]:
+	return {cstr(item).casefold() for item in service._configured_pending_states(doctype)}
+
+
+def _pending_workflow_match(doctype: str, workflow_state: object, pending_lookup: set[str] | None = None) -> bool:
 	state = cstr(workflow_state).strip()
 	if not state:
 		return False
-	matching_states = {cstr(item).casefold() for item in service._configured_pending_states(doctype)}
+	matching_states = pending_lookup if pending_lookup is not None else _pending_workflow_lookup(doctype)
 	return state.casefold() in matching_states
 
 
-def _quotation_waiting_action_match(record: dict[str, object]) -> bool:
+def _quotation_waiting_action_match(record: dict[str, object], pending_lookup: set[str] | None = None) -> bool:
 	status = cstr(record.get("status")).strip()
-	return status in {"Draft", "Open"} and not _pending_workflow_match("Quotation", record.get("workflow_state"))
+	return status in {"Draft", "Open"} and not _pending_workflow_match("Quotation", record.get("workflow_state"), pending_lookup)
 
 
 def _quotation_expiring_match(record: dict[str, object], today) -> bool:
@@ -2329,12 +2347,12 @@ def _sales_order_active_match(record: dict[str, object]) -> bool:
 	return status in set(service.ACTIVE_SALES_ORDER_STATUSES) if hasattr(service, "ACTIVE_SALES_ORDER_STATUSES") else status != ""
 
 
-def _sales_order_pending_fulfillment_match(record: dict[str, object]) -> bool:
-	return _sales_order_active_match(record) and not _pending_workflow_match("Sales Order", record.get("workflow_state"))
+def _sales_order_pending_fulfillment_match(record: dict[str, object], pending_lookup: set[str] | None = None) -> bool:
+	return _sales_order_active_match(record) and not _pending_workflow_match("Sales Order", record.get("workflow_state"), pending_lookup)
 
 
-def _sales_order_due_soon_match(record: dict[str, object], today) -> bool:
-	if not _sales_order_pending_fulfillment_match(record):
+def _sales_order_due_soon_match(record: dict[str, object], today, pending_lookup: set[str] | None = None) -> bool:
+	if not _sales_order_pending_fulfillment_match(record, pending_lookup):
 		return False
 	delivery_date = record.get("delivery_date")
 	if not delivery_date:
@@ -2407,12 +2425,12 @@ def _quotation_row(record: dict[str, object]) -> dict[str, object]:
 	}
 
 
-def _quotation_directory_row(record: dict[str, object], today) -> dict[str, object]:
+def _quotation_directory_row(record: dict[str, object], today, pending_lookup: set[str] | None = None) -> dict[str, object]:
 	customer_label = record.get("customer_name") or record.get("party_name") or "--"
 	workflow_state = cstr(record.get("workflow_state")).strip()
 	status = cstr(record.get("status")).strip() or "--"
 	validity_meta, validity_tone = _quotation_validity_meta(record, today)
-	commercial_value = workflow_state if _pending_workflow_match("Quotation", workflow_state) else status
+	commercial_value = workflow_state if _pending_workflow_match("Quotation", workflow_state, pending_lookup) else status
 	commercial_meta = status if workflow_state and workflow_state != status else ""
 	return {
 		"cells": {
@@ -2452,11 +2470,11 @@ def _customer_row(record: dict[str, object]) -> dict[str, object]:
 	}
 
 
-def _sales_order_directory_row(record: dict[str, object], today) -> dict[str, object]:
+def _sales_order_directory_row(record: dict[str, object], today, pending_lookup: set[str] | None = None) -> dict[str, object]:
 	workflow_state = cstr(record.get("workflow_state")).strip()
 	status = cstr(record.get("status")).strip() or "--"
 	delivery_meta, delivery_tone = _sales_order_delivery_meta(record, today)
-	commercial_value = workflow_state if _pending_workflow_match("Sales Order", workflow_state) else status
+	commercial_value = workflow_state if _pending_workflow_match("Sales Order", workflow_state, pending_lookup) else status
 	commercial_meta = f"{cint(flt(record.get('per_delivered') or 0))}% delivered • {cint(flt(record.get('per_billed') or 0))}% billed"
 	return {
 		"cells": {

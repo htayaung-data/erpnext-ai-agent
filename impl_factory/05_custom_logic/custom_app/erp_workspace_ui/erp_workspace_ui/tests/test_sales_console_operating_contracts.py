@@ -397,7 +397,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             worklist.service,
             "_configured_pending_states",
             return_value=["Pending Approval"],
-        ), patch.object(
+        ) as pending_states, patch.object(
             worklist.frappe,
             "get_list",
             return_value=[
@@ -406,7 +406,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
                     "customer_name": "Acme",
                     "valid_till": date(2026, 4, 30),
                     "status": "Open",
-                    "workflow_state": "",
+                    "workflow_state": "Pending Approval",
                     "grand_total": 100,
                     "currency": "USD",
                 }
@@ -423,6 +423,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             [action["key"] for action in payload["controls"]["actions"]],
             ["refresh", "reset_filters", "apply_filters"],
         )
+        self.assertEqual(pending_states.call_count, 1)
 
     def test_sales_order_directory_route_uses_shared_worklist_contract(self):
         def fake_fieldnames(doctype):
@@ -450,7 +451,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             worklist.service,
             "_configured_pending_states",
             return_value=["Pending Approval"],
-        ), patch.object(
+        ) as pending_states, patch.object(
             worklist.frappe,
             "get_list",
             return_value=[
@@ -459,7 +460,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
                     "customer": "Acme",
                     "delivery_date": date(2026, 4, 25),
                     "status": "To Deliver",
-                    "workflow_state": "",
+                    "workflow_state": "Pending Approval",
                     "per_delivered": 20,
                     "per_billed": 0,
                     "grand_total": 200,
@@ -478,6 +479,7 @@ class TestSalesConsoleOperatingContracts(unittest.TestCase):
             [action["key"] for action in payload["controls"]["actions"]],
             ["refresh", "reset_filters", "apply_filters"],
         )
+        self.assertEqual(pending_states.call_count, 1)
 
 
 if __name__ == "__main__":
