@@ -159,21 +159,41 @@ function assertPremiumReportComposition(label, viewport, data) {
 function median(values) { const sorted = values.slice().sort((a, b) => a - b); return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0; }
 function assertWorklistFilterWidths(label, viewport, data) {
   const fields = data.fields || [];
+  const rows = groupRowsByCenter(fields);
   const dateFields = fields.filter((field) => field.role === 'date' || field.key === 'date_start' || field.key === 'date_end');
   const searchFields = fields.filter((field) => field.role === 'search' || field.key === 'keyword');
   const normalFields = fields.filter((field) => !dateFields.includes(field) && !searchFields.includes(field));
+  if (data.action && data.controls) {
+    assert(data.controls.right - data.action.right <= 32, label + ': action group is not aligned to the filter deck right edge at ' + viewport.key, { rows, data });
+  }
   if (dateFields.length === 2 && normalFields.length) {
-    const normalWidth = median(normalFields.map((field) => field.width));
-    const mismatched = dateFields.filter((field) => Math.abs(field.width - normalWidth) > 35);
-    assert(mismatched.length === 0, `${label}: date filters do not match standard width at ${viewport.key}`, { normalWidth, dateFields, normalFields, data });
-    assert(Math.abs(fieldCenter(dateFields[0]) - fieldCenter(dateFields[1])) <= 8, `${label}: date filters are not paired at ${viewport.key}`, { dateFields, data });
+    const mainRow = rows.find((row) => row.fields.some((field) => !dateFields.includes(field)));
+    const dateRow = rows.find((row) => dateFields.every((field) => row.fields.includes(field)));
+    const mainNormalWidths = normalFields.filter((field) => mainRow && mainRow.fields.includes(field)).map((field) => field.width);
+    const normalWidth = median(mainNormalWidths.length ? mainNormalWidths : normalFields.map((field) => field.width));
+    const mismatched = dateFields.filter((field) => Math.abs(field.width - normalWidth) > 8);
+    assert(mismatched.length === 0, label + ': date filters do not match standard width at ' + viewport.key, { normalWidth, dateFields, normalFields, rows, data });
+    assert(Math.abs(fieldCenter(dateFields[0]) - fieldCenter(dateFields[1])) <= 8, label + ': date filters are not paired at ' + viewport.key, { dateFields, rows, data });
+    assert(dateRow && dateRow.fields.length === 2, label + ': dated worklist should keep date pair as a clean second row at ' + viewport.key, { rows, dateFields, data });
+    if (data.action && dateRow) {
+      const actionCenter = Math.round((data.action.top + data.action.bottom) / 2);
+      assert(Math.abs(actionCenter - dateRow.center) <= 28, label + ': action group should align with the date row at ' + viewport.key, { actionCenter, dateRowCenter: dateRow.center, rows, data });
+    }
+    if (mainRow && data.action) {
+      const mainRight = Math.max(...mainRow.fields.map((field) => field.right));
+      assert(Math.abs(mainRight - data.action.right) <= 20, label + ': top-row final filter should align with action rhythm at ' + viewport.key, { mainRight, actionRight: data.action.right, rows, data });
+    }
   }
   for (const field of searchFields) {
     const normalWidth = normalFields.length ? median(normalFields.map((item) => item.width)) : field.width;
-    assert(field.width >= normalWidth - 8, `${label}: search field is narrower than normal filters at ${viewport.key}`, { field, normalWidth, data });
-    assert(field.width <= Math.max(normalWidth * 2.4, normalWidth + 320), `${label}: search field is excessively wide at ${viewport.key}`, { field, normalWidth, data });
+    const searchRow = rows.find((row) => row.fields.includes(field));
+    const isThreeFieldDatedRow = dateFields.length === 2 && searchRow && searchRow.fields.length === 3;
+    const maxWidth = isThreeFieldDatedRow ? Math.max(normalWidth * 3, normalWidth + 520) : Math.max(normalWidth * 2.1, normalWidth + 220);
+    assert(field.width >= normalWidth - 8, label + ': search field is narrower than normal filters at ' + viewport.key, { field, normalWidth, rows, data });
+    assert(field.width <= maxWidth, label + ': search field is excessively wide at ' + viewport.key, { field, normalWidth, maxWidth, rows, data });
   }
 }
+
 async function checkFilterPage(page, item, type, user, viewport) {
   await openPage(page, item.route, type === 'report' ? '.erpw-report-shell' : '.erpw-list-shell');
   const data = await measure(page, type);

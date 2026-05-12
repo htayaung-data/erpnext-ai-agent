@@ -865,12 +865,13 @@
       }
 
       .erpw-list-shell.is-procurement-worklist {
-        --erpw-procurement-filter-fixed-width: clamp(230px, 18vw, 240px);
+        --erpw-procurement-filter-fixed-width: clamp(234px, 18vw, 240px);
         --erpw-procurement-filter-search-width: minmax(var(--erpw-procurement-filter-fixed-width), 1fr);
         --erpw-procurement-filter-gap: 10px;
         gap: 12px;
       }
-      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-date-window {
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-date-window.main-count-4,
+      .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-date-window.main-count-5 {
         --erpw-procurement-filter-search-width: minmax(var(--erpw-procurement-filter-fixed-width), 560px);
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-summary-card {
