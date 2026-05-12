@@ -9,7 +9,7 @@ const USERS = [
   { key: 'manager', username: process.env.ERPW_MANAGER_USERNAME, password: process.env.ERPW_MANAGER_PASSWORD },
   { key: 'user', username: process.env.ERPW_USER_USERNAME, password: process.env.ERPW_USER_PASSWORD },
 ].filter((user) => user.username && user.password);
-const VIEWPORTS = [{ key: 'desktop-1240', width: 1240, height: 768 }, { key: 'desktop-1440', width: 1440, height: 900 }];
+const VIEWPORTS = [{ key: 'laptop-1136', width: 1136, height: 768 }, { key: 'desktop-1240', width: 1240, height: 768 }, { key: 'desktop-1440', width: 1440, height: 900 }];
 const REPORTS = [
   ['reports-index', 'Reports Index', '/desk/procurement-console-report', false],
   ['quote-comparison', 'Quote Comparison', '/desk/procurement-console-report/supplier-quotation-comparison', true],

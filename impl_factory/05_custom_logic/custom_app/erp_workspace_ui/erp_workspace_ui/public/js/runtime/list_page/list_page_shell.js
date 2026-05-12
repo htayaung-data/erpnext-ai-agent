@@ -1066,8 +1066,8 @@
           grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-filter-deck.has-actions.has-date-window .erpw-list-date-window-group {
-          grid-template-columns: repeat(2, var(--erpw-procurement-filter-fixed-width));
-          width: min(100%, calc((var(--erpw-procurement-filter-fixed-width) * 2) + var(--erpw-procurement-filter-gap)));
+          grid-template-columns: repeat(2, var(--erpw-procurement-date-field-width, var(--erpw-procurement-filter-fixed-width)));
+          width: min(100%, calc((var(--erpw-procurement-date-field-width, var(--erpw-procurement-filter-fixed-width)) * 2) + var(--erpw-procurement-filter-gap)));
         }
         .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
           align-self: end;
