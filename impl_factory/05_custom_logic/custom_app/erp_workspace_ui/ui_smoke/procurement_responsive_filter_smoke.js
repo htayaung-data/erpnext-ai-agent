@@ -99,11 +99,15 @@ async function measure(page, type) {
       return Object.assign({ key: node.getAttribute(type === 'report' ? 'data-erpw-report-field-key' : 'data-erpw-list-field-shell-key') || input.getAttribute(type === 'report' ? 'data-erpw-control-key' : 'data-erpw-list-field-key') || '', role: node.getAttribute(type === 'report' ? 'data-erpw-report-field-role' : 'data-erpw-list-field-role') || '', label: ((node.querySelector(type === 'report' ? '.erpw-report-control-label' : '.erpw-list-control-label') || {}).textContent || '').trim() }, rect(input));
     }) : [];
     const buttons = action ? Array.from(action.querySelectorAll('button')).filter(visible).map((button) => Object.assign({ text: button.textContent.trim() }, rect(button))) : [];
+    const dateWidthContracts = type === 'list' && controls ? Array.from(controls.querySelectorAll('.erpw-list-filter-deck.has-date-window')).map((deck) => ({
+      value: (getComputedStyle(deck).getPropertyValue('--erpw-procurement-date-field-width') || '').trim(),
+      rect: rect(deck),
+    })) : [];
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const controlsRect = rect(controls);
     const actionRect = rect(action);
     const clipped = (box) => box && (box.left < 0 || box.right > viewport.width || (controlsRect && (box.left < controlsRect.left || box.right > controlsRect.right)));
-    return { url: location.href, viewport, shell: rect(document.querySelector(shellSelector)), controls: controlsRect, action: actionRect, fields, buttons, actionClipped: clipped(actionRect), clippedButtons: buttons.filter(clipped), clippedFields: fields.filter(clipped), shellCount: Array.from(document.querySelectorAll('.erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell')).filter(visible).length, horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    return { url: location.href, viewport, shell: rect(document.querySelector(shellSelector)), controls: controlsRect, action: actionRect, fields, buttons, dateWidthContracts, actionClipped: clipped(actionRect), clippedButtons: buttons.filter(clipped), clippedFields: fields.filter(clipped), shellCount: Array.from(document.querySelectorAll('.erpw-report-shell, .erpw-list-shell, .erpw-procurement-po-follow-up-shell, .erpw-procurement-review-shell, .erpw-procurement-supplier-detail-shell, .erpw-procurement-item-detail-shell')).filter(visible).length, horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
   }, type);
 }
 function fieldCenter(field) { return Math.round((field.top + field.bottom) / 2); }
@@ -171,6 +175,10 @@ function assertWorklistFilterWidths(label, viewport, data) {
     const dateRow = rows.find((row) => dateFields.every((field) => row.fields.includes(field)));
     const mainNormalWidths = normalFields.filter((field) => mainRow && mainRow.fields.includes(field)).map((field) => field.width);
     const normalWidth = median(mainNormalWidths.length ? mainNormalWidths : normalFields.map((field) => field.width));
+    const contractValue = data.dateWidthContracts && data.dateWidthContracts[0] && data.dateWidthContracts[0].value;
+    const contractWidth = Number.parseFloat(contractValue || '0');
+    assert(contractWidth > 0, label + ': dated worklist is missing the shared date-width contract at ' + viewport.key, { contractValue, rows, data });
+    assert(Math.abs(contractWidth - normalWidth) <= 8, label + ': shared date-width contract does not match top-row normal width at ' + viewport.key, { contractWidth, normalWidth, rows, data });
     const mismatched = dateFields.filter((field) => Math.abs(field.width - normalWidth) > 8);
     assert(mismatched.length === 0, label + ': date filters do not match standard width at ' + viewport.key, { normalWidth, dateFields, normalFields, rows, data });
     assert(Math.abs(fieldCenter(dateFields[0]) - fieldCenter(dateFields[1])) <= 8, label + ': date filters are not paired at ' + viewport.key, { dateFields, rows, data });

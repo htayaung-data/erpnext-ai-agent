@@ -1021,9 +1021,9 @@
         justify-content: flex-start;
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-date-window-group {
-        grid-template-columns: repeat(2, var(--erpw-procurement-filter-fixed-width));
+        grid-template-columns: repeat(2, var(--erpw-procurement-date-field-width, var(--erpw-procurement-filter-fixed-width)));
         gap: var(--erpw-procurement-filter-gap);
-        width: min(calc(var(--erpw-procurement-filter-fixed-width) + var(--erpw-procurement-filter-fixed-width) + var(--erpw-procurement-filter-gap)), 100%);
+        width: min(calc(var(--erpw-procurement-date-field-width, var(--erpw-procurement-filter-fixed-width)) + var(--erpw-procurement-date-field-width, var(--erpw-procurement-filter-fixed-width)) + var(--erpw-procurement-filter-gap)), 100%);
         max-width: 100%;
       }
       .erpw-list-shell.is-procurement-worklist .erpw-list-command-action-cell {
@@ -1715,6 +1715,7 @@
     $shell.attr('data-erpw-list-signature', renderWorklist(page));
     setDataRefreshing($shell, false);
     bindDateFields($shell);
+    syncProcurementDateWindowWidths($shell);
     bindActions($shell, config || {});
     return $shell;
   }
@@ -1939,6 +1940,35 @@
     });
   }
 
+  function syncProcurementDateWindowWidths($shell) {
+    if (!$shell || !$shell.length || !$shell.hasClass('is-procurement-worklist')) return;
+    const sync = function () {
+      $shell.find('.erpw-list-filter-deck.has-date-window').each(function () {
+        const deck = this;
+        const mainFields = Array.prototype.slice.call(deck.querySelectorAll('.erpw-list-filter-main-row .erpw-list-control-field'));
+        const visibleFields = mainFields.filter(function (field) {
+          const box = field.getBoundingClientRect();
+          const style = window.getComputedStyle(field);
+          return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0;
+        });
+        const referenceField = visibleFields.find(function (field) {
+          const role = field.getAttribute('data-erpw-list-field-role') || '';
+          const key = field.getAttribute('data-erpw-list-field-shell-key') || '';
+          return role !== 'search' && key !== 'keyword';
+        }) || visibleFields[0];
+        const referenceInput = referenceField && (referenceField.querySelector('input, select, textarea') || referenceField);
+        const width = referenceInput ? Math.round(referenceInput.getBoundingClientRect().width) : 0;
+        if (width > 0) {
+          deck.style.setProperty('--erpw-procurement-date-field-width', width + 'px');
+        } else {
+          deck.style.removeProperty('--erpw-procurement-date-field-width');
+        }
+      });
+    };
+    window.requestAnimationFrame(sync);
+    window.setTimeout(sync, 80);
+  }
+
   function mountWorklist(target, config) {
     ensureStyles();
     const $shell = ensureShell(target);
@@ -1953,6 +1983,7 @@
     }
 
     bindDateFields($shell);
+    syncProcurementDateWindowWidths($shell);
     bindActions($shell, config || {});
     return $shell;
   }
