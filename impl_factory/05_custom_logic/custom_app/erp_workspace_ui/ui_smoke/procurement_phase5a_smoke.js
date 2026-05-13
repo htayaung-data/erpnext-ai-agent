@@ -72,27 +72,91 @@ async function waitForManagedForm(page) {
 async function assertStableManagedForm(page, label) {
   await waitForManagedForm(page);
   const state = await page.evaluate(() => {
-    const shell = document.querySelector(".erpw-managed-pr-page .erpw-managed-pr-shell");
-    const actionButtons = Array.from(document.querySelectorAll(".erpw-child-toolbar-action")).map((button) => button.textContent.trim());
-    const bodyWidth = Math.ceil(document.body.scrollWidth);
+    const visiblePages = Array.from(document.querySelectorAll(".erpw-managed-pr-page")).filter((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    });
+    const pageEl = visiblePages[0] || null;
+    const shell = pageEl ? pageEl.querySelector(".erpw-managed-pr-shell") : null;
+    const actionButtons = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-child-toolbar-action")).map((button) => button.textContent.trim()) : [];
+    const removeRects = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-managed-pr-row-button")).map((button) => {
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      return {
+        text: button.textContent.trim(),
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        width: Math.round(rect.width),
+        visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+      };
+    }) : [];
+    const tableWrap = pageEl ? pageEl.querySelector(".erpw-managed-pr-table-wrap") : null;
+    const tableWrapRect = tableWrap ? tableWrap.getBoundingClientRect() : null;
+    const summary = pageEl ? pageEl.querySelector(".erpw-child-summary") : null;
+    const summaryRect = summary ? summary.getBoundingClientRect() : null;
+    const companyInput = pageEl ? pageEl.querySelector('[data-field="company"]') : null;
+    const companyInputRect = companyInput ? companyInput.getBoundingClientRect() : null;
+    const companyInputStyle = companyInput ? window.getComputedStyle(companyInput) : null;
+    const companyContext = pageEl ? pageEl.querySelector(".erpw-managed-pr-context-card") : null;
+    const companyContextRect = companyContext ? companyContext.getBoundingClientRect() : null;
+    const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     return {
       url: location.pathname,
       shellCount: document.querySelectorAll(".erpw-managed-pr-page").length,
+      visibleShellCount: visiblePages.length,
       duplicateHeads: document.querySelectorAll(".page-head").length,
-      hasForm: Boolean(shell && document.querySelector(".erpw-managed-pr-card")),
+      hasForm: Boolean(shell && pageEl && pageEl.querySelector(".erpw-managed-pr-card")),
       actionButtons,
       bodyWidth,
       viewportWidth,
-      text: document.body.innerText,
+      documentWidth: Math.ceil(document.documentElement.scrollWidth),
+      summaryHeight: summaryRect ? Math.round(summaryRect.height) : null,
+      tableWrapRight: tableWrapRect ? Math.round(tableWrapRect.right) : null,
+      tableWrapWidth: tableWrapRect ? Math.round(tableWrapRect.width) : null,
+      removeRects,
+      companyContextVisible: Boolean(companyContextRect && companyContextRect.width > 0 && companyContextRect.height > 0),
+      companyInputVisible: Boolean(companyInputRect && companyInputRect.width > 0 && companyInputRect.height > 0 && companyInputStyle && companyInputStyle.display !== "none" && companyInputStyle.visibility !== "hidden"),
+      duplicateDraftHeadings: pageEl ? (pageEl.innerText.match(/Purchase Request Draft/g) || []).length : 0,
+      openErpBeforeSave: actionButtons.filter((label) => /Open ERP Form/i.test(label)).length,
+      text: pageEl ? pageEl.innerText : document.body.innerText,
     };
   });
   assert(state.hasForm, `${label}: managed PR form did not render`, state);
-  assert(state.shellCount === 1, `${label}: managed PR form shell stacked`, state);
+  assert(state.shellCount === 1 && state.visibleShellCount === 1, `${label}: managed PR form shell stacked`, state);
   assert(state.bodyWidth <= state.viewportWidth + 2, `${label}: horizontal body overflow`, state);
+  assert((state.summaryHeight || 0) > 0 && state.summaryHeight <= 130, `${label}: managed PR header still has an oversized empty band`, state);
+  assert(state.duplicateDraftHeadings === 0, `${label}: duplicate Purchase Request Draft copy visible`, state);
+  assert(state.companyContextVisible, `${label}: company context metadata is missing`, state);
+  assert(!state.companyInputVisible, `${label}: company still renders as editable-looking form input`, state);
+  assert(state.openErpBeforeSave === 0, `${label}: Open ERP Form must not appear before a managed Purchase Request draft is saved`, state);
+  assert(state.removeRects.some((rect) => rect.visible && /Remove/i.test(rect.text)), `${label}: Remove line action is not visible`, state);
+  assert(state.removeRects.every((rect) => !rect.visible || rect.right <= state.viewportWidth + 1), `${label}: Remove line action clips past viewport`, state);
+  assert(!state.tableWrapRight || state.tableWrapRight <= state.viewportWidth + 1, `${label}: line-entry area clips past viewport`, state);
   assert(!FORBIDDEN_ACTION_RE.test(state.actionButtons.join(" ")), `${label}: forbidden action visible`, state);
   assert(!/\/desk\/Form\/Material Request\/new/i.test(page.url()), `${label}: native Material Request create route opened`, state);
   return state;
+}
+
+async function assertManagedFormFocusStable(page, label) {
+  const before = await page.evaluate(() => {
+    const shell = document.querySelector(".erpw-managed-pr-page .erpw-managed-pr-shell");
+    return {
+      bodyWidth: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)),
+      shellWidth: shell ? Math.round(shell.getBoundingClientRect().width) : 0,
+    };
+  });
+  await page.locator(".erpw-managed-pr-page .item-link").first().focus();
+  await page.waitForTimeout(125);
+  const after = await page.evaluate(() => {
+    const shell = document.querySelector(".erpw-managed-pr-page .erpw-managed-pr-shell");
+    return {
+      bodyWidth: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)),
+      shellWidth: shell ? Math.round(shell.getBoundingClientRect().width) : 0,
+    };
+  });
+  assert(Math.abs(after.bodyWidth - before.bodyWidth) <= 1 && Math.abs(after.shellWidth - before.shellWidth) <= 1, `${label}: focus changed managed PR layout width`, { before, after });
 }
 
 async function getFixtureValues(page) {
@@ -130,10 +194,8 @@ async function fillAndSaveDraft(page, userKey) {
     const uom = document.querySelector('[data-row-field="uom"]');
     return uom && String(uom.value || "").trim().length > 0;
   }, null, { timeout: TIMEOUT }).catch(() => {});
-  await Promise.all([
-    page.waitForURL(/procurement-console-purchase-request-form\/[^/]+$/, { timeout: TIMEOUT }).catch(() => null),
-    page.locator("button:has-text('Save Draft')").click(),
-  ]);
+  await page.locator("button:has-text('Save Draft')").click();
+  await page.waitForFunction(() => /procurement-console-purchase-request-form\/(?!new$)[^/]+$/.test(location.pathname), null, { timeout: TIMEOUT });
   await waitForManagedForm(page);
   await capture(page, `${userKey}-managed-pr-saved`);
   const state = await page.evaluate(() => ({
@@ -180,6 +242,7 @@ async function verifyResponsive(page, user) {
     const state = await assertStableManagedForm(page, `${user.label} ${size.width}x${size.height}`);
     await capture(page, `${user.key}-managed-pr-${size.width}x${size.height}`);
     assert(state.actionButtons.includes("Save Draft"), "Save Draft action missing at responsive size", state);
+    await assertManagedFormFocusStable(page, `${user.label} ${size.width}x${size.height}`);
   }
 }
 
