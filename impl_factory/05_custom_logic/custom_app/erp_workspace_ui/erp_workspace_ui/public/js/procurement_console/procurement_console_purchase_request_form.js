@@ -255,7 +255,7 @@
   function saveDraft(viewState) {
     const form = collectForm(viewState.$shell, viewState);
     setMessage(viewState.$shell, "Saving draft...", "");
-    return frappe.call({ method: SAVE_METHOD, args: { payload: form } }).then((response) => {
+    return frappe.call({ method: SAVE_METHOD, args: { payload: JSON.stringify(form) } }).then((response) => {
       const payload = response && response.message ? response.message : {};
       if (payload.state && payload.state.kind === "ready") {
         const nextName = payload.form && payload.form.name ? payload.form.name : form.name;
