@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-purchase-request-form",
+  "page_name": "procurement-console-purchase-request-form",
+  "title": "Purchase Request Form",
+  "icon": "octicon octicon-checklist",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

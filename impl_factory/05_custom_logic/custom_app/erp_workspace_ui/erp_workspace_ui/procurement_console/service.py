@@ -530,8 +530,8 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 			"key": "new_purchase_request",
 			"title": "New Purchase Request",
 			"doctype": "Material Request",
-			"defaults": {"material_request_type": "Purchase"},
-			"note": "Starts a Purchase Material Request in ERPNext.",
+			"target": {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]},
+			"note": "Starts a managed Purchase Request draft.",
 		},
 		{
 			"key": "new_rfq",
@@ -562,6 +562,8 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 		if not doctype or not common.can_create(doctype):
 			continue
 		key = cstr(item.get("key")).strip()
+		if key == "new_purchase_request" and not common.can_write(doctype):
+			continue
 		actions.append(
 			{
 				"key": key,
@@ -572,9 +574,13 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 				"note": item.get("note"),
 			}
 		)
-		targets[key] = {
-			"kind": "new_doc",
-			"doctype": doctype,
-			"defaults": dict(item.get("defaults") or {}),
-		}
+		target = item.get("target")
+		if isinstance(target, dict):
+			targets[key] = dict(target)
+		else:
+			targets[key] = {
+				"kind": "new_doc",
+				"doctype": doctype,
+				"defaults": dict(item.get("defaults") or {}),
+			}
 	return {"create_actions": actions, "action_targets": targets}

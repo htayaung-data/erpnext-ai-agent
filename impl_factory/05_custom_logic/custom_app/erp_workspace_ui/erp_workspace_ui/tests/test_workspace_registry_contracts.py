@@ -52,6 +52,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         app_root = Path(__file__).resolve().parents[1]
         pages = {
             "procurement_console_purchase_request_review": "procurement-console-purchase-request-review",
+            "procurement_console_purchase_request_form": "procurement-console-purchase-request-form",
             "procurement_console_rfq_review": "procurement-console-rfq-review",
             "procurement_console_supplier_quotation_review": "procurement-console-supplier-quotation-review",
         }
@@ -85,6 +86,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "supplier_detail": "procurement-console-supplier",
                 "item_detail": "procurement-console-item",
                 "purchase_request_review": "procurement-console-purchase-request-review",
+                "purchase_request_form": "procurement-console-purchase-request-form",
                 "rfq_review": "procurement-console-rfq-review",
                 "supplier_quotation_review": "procurement-console-supplier-quotation-review",
             },
@@ -100,6 +102,18 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
         self.assertEqual(
             workspace["methods"]["purchase_request_review_context"],
             "erp_workspace_ui.procurement_console.document_reviews.get_purchase_request_review_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["managed_purchase_request_context"],
+            "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_context",
+        )
+        self.assertEqual(
+            workspace["methods"]["managed_purchase_request_save"],
+            "erp_workspace_ui.procurement_console.managed_purchase_request.save_managed_purchase_request_draft",
+        )
+        self.assertEqual(
+            workspace["methods"]["managed_purchase_request_item_defaults"],
+            "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_item_defaults",
         )
         self.assertEqual(
             workspace["methods"]["rfq_review_context"],
@@ -208,6 +222,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
             "procurement-console-worklist",
             "procurement-console-report",
             "procurement-console-po-follow-up",
+            "procurement-console-purchase-request-form",
             "procurement-console-supplier",
             "procurement-console-item",
         ]:

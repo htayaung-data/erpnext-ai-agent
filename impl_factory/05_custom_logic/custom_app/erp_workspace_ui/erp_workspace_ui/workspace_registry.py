@@ -73,6 +73,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"supplier_detail": "procurement-console-supplier",
 		"item_detail": "procurement-console-item",
 		"purchase_request_review": "procurement-console-purchase-request-review",
+		"purchase_request_form": "procurement-console-purchase-request-form",
 		"rfq_review": "procurement-console-rfq-review",
 		"supplier_quotation_review": "procurement-console-supplier-quotation-review",
 	},
@@ -86,6 +87,9 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"supplier_detail_context": "erp_workspace_ui.procurement_console.supplier_detail.get_supplier_detail_context",
 		"item_detail_context": "erp_workspace_ui.procurement_console.items.get_item_detail_context",
 		"purchase_request_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_purchase_request_review_context",
+		"managed_purchase_request_context": "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_context",
+		"managed_purchase_request_save": "erp_workspace_ui.procurement_console.managed_purchase_request.save_managed_purchase_request_draft",
+		"managed_purchase_request_item_defaults": "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_item_defaults",
 		"rfq_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_rfq_review_context",
 		"supplier_quotation_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_supplier_quotation_review_context",
 	},
@@ -265,15 +269,8 @@ def get_workspace_by_route(route_key: str) -> dict[str, Any] | None:
 
 	for workspace in _ACTIVE_WORKSPACES.values():
 		routes = workspace.get("routes") or {}
-		if normalized in {
-			routes.get("launcher"),
-			routes.get("home"),
-			routes.get("worklist"),
-			routes.get("report"),
-			routes.get("po_follow_up"),
-			routes.get("supplier_detail"),
-			routes.get("item_detail"),
-		}:
+		route_values = {str(value) for key, value in routes.items() if not str(key).endswith("_path")}
+		if normalized in route_values:
 			return deepcopy(workspace)
 	return None
 

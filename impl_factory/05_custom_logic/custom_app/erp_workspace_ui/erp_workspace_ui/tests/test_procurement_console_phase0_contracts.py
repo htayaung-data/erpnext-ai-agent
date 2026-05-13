@@ -10,6 +10,8 @@ READABLE_DOCTYPES = {
     "Supplier",
     "Item",
     "Item Price",
+    "Warehouse",
+    "Company",
     "Material Request",
     "Purchase Order",
     "Purchase Receipt",
@@ -29,6 +31,7 @@ HIDDEN_RFQ_LIST_NAMES = set()
 HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES = set()
 MISSING_NATIVE_REPORTS = set()
 MISSING_FIELDS = set()
+SAVED_MATERIAL_REQUESTS = {}
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -195,6 +198,12 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
                 "modified": "2026-05-03",
             }
         ], filters)
+    if doctype == "Warehouse":
+        return _filter_rows(doctype, [
+            {"name": "Stores - DC", "warehouse_name": "Stores", "company": "Demo Company", "modified": "2026-05-03"}
+        ], filters)
+    if doctype == "Company":
+        return [{"name": "Demo Company"}]
     if doctype == "Item Price":
         return _filter_rows(doctype, [
             {
@@ -529,6 +538,73 @@ class _FakeMeta:
         return True
 
 
+
+
+class _FakeChildDoc:
+    def __init__(self, values=None):
+        for key, value in dict(values or {}).items():
+            setattr(self, key, value)
+
+
+class _FakeMaterialRequestDoc:
+    def __init__(self, name=None, values=None):
+        values = dict(values or {})
+        self.doctype = "Material Request"
+        self.name = name or values.get("name") or ""
+        self.material_request_type = values.get("material_request_type") or "Purchase"
+        self.transaction_date = values.get("transaction_date") or "2026-05-03"
+        self.schedule_date = values.get("schedule_date") or ""
+        self.company = values.get("company") or "Demo Company"
+        self.docstatus = values.get("docstatus", 0)
+        self.items = [child if isinstance(child, _FakeChildDoc) else _FakeChildDoc(child) for child in values.get("items", [])]
+
+    def set(self, fieldname, value):
+        setattr(self, fieldname, value)
+
+    def append(self, fieldname, value):
+        if not hasattr(self, fieldname):
+            setattr(self, fieldname, [])
+        getattr(self, fieldname).append(_FakeChildDoc(value))
+
+    def check_permission(self, ptype):
+        if not _has_permission("Material Request", ptype):
+            raise _FakePermissionError("No permission")
+
+    def insert(self):
+        self.check_permission("create")
+        if not self.name:
+            self.name = "MAT-MR-DRAFT-001"
+        self.docstatus = 0
+        SAVED_MATERIAL_REQUESTS[self.name] = self
+        return self
+
+    def save(self):
+        self.check_permission("write")
+        SAVED_MATERIAL_REQUESTS[self.name] = self
+        return self
+
+
+def _get_doc(*args, **kwargs):
+    if args and isinstance(args[0], dict):
+        return _FakeMaterialRequestDoc(values=args[0])
+    if len(args) >= 2 and args[0] == "Material Request":
+        name = args[1]
+        if name in SAVED_MATERIAL_REQUESTS:
+            return SAVED_MATERIAL_REQUESTS[name]
+        if name == "MAT-MR-SUBMITTED":
+            return _FakeMaterialRequestDoc(name=name, values={"docstatus": 1})
+        if name == "MAT-MR-NONPUR":
+            return _FakeMaterialRequestDoc(name=name, values={"material_request_type": "Material Transfer"})
+        if name == "MAT-MR-001":
+            return _FakeMaterialRequestDoc(name=name, values={
+                "material_request_type": "Purchase",
+                "transaction_date": "2026-05-02",
+                "schedule_date": "2026-05-10",
+                "company": "Demo Company",
+                "items": [{"item_code": "ITEM-001", "qty": 5, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}],
+            })
+    raise Exception("Document not found")
+
 def _run_query_report(report_name, filters=None, ignore_prepared_report=None, **kwargs):
     CAPTURED_REPORT_CALLS.append(
         {
@@ -662,6 +738,7 @@ fake_frappe.get_roles = lambda *args, **kwargs: list(CURRENT_ROLES)
 fake_frappe.has_permission = _has_permission
 fake_frappe.get_list = _get_list
 fake_frappe.get_all = _get_all
+fake_frappe.get_doc = _get_doc
 fake_frappe.get_meta = lambda doctype: _FakeMeta(doctype)
 fake_frappe.generate_hash = lambda length=10: "x" * length
 fake_frappe.conf = {}
@@ -720,7 +797,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_reviews, items, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_request, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -799,6 +876,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             "Supplier",
             "Item",
             "Item Price",
+            "Warehouse",
+            "Company",
             "Material Request",
             "Purchase Order",
             "Purchase Receipt",
@@ -817,6 +896,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES.clear()
         MISSING_NATIVE_REPORTS.clear()
         MISSING_FIELDS.clear()
+        SAVED_MATERIAL_REQUESTS.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -858,6 +938,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("buying_item_directory", payload["directories"])
 
     def test_procurement_create_actions_follow_erpnext_create_permissions(self):
+        _set_writeable_doctypes("Material Request")
         _set_createable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
 
         payload = service.get_procurement_console_bootstrap()
@@ -867,12 +948,79 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             ["new_purchase_request", "new_rfq", "new_supplier_quotation", "new_purchase_order"],
         )
         self.assertEqual([action["variant"] for action in payload["create_actions"]], ["primary", "primary", "primary", "primary"])
-        self.assertEqual(payload["action_targets"]["new_purchase_request"]["kind"], "new_doc")
-        self.assertEqual(payload["action_targets"]["new_purchase_request"]["doctype"], "Material Request")
-        self.assertEqual(payload["action_targets"]["new_purchase_request"]["defaults"], {"material_request_type": "Purchase"})
+        self.assertEqual(payload["action_targets"]["new_purchase_request"], {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]})
         self.assertEqual(payload["action_targets"]["new_purchase_order"]["doctype"], "Purchase Order")
         self.assertNotIn("new_supplier", payload["action_targets"])
         self.assertNotIn("new_item", payload["action_targets"])
+
+    def test_managed_purchase_request_context_is_ready_for_purchase_roles(self):
+        _set_writeable_doctypes("Material Request")
+        _set_createable_doctypes("Material Request")
+
+        payload = managed_purchase_request.get_managed_purchase_request_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["form"]["header"]["material_request_type"], "Purchase")
+        self.assertEqual(payload["action_targets"]["back_to_purchase_requests"], {"kind": "worklist", "queue_key": "purchase_request_directory"})
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_purchase_request_context_restricts_sales_roles(self):
+        _set_user("sales@example.com", ["Sales User"])
+        _set_writeable_doctypes("Material Request")
+        _set_createable_doctypes("Material Request")
+
+        payload = managed_purchase_request.get_managed_purchase_request_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "restricted")
+
+    def test_managed_purchase_request_save_creates_purchase_draft(self):
+        _set_writeable_doctypes("Material Request")
+        _set_createable_doctypes("Material Request")
+
+        payload = managed_purchase_request.save_managed_purchase_request_draft({
+            "header": {"transaction_date": "2026-05-03", "schedule_date": "2026-05-20", "company": "Demo Company", "material_request_type": "Purchase"},
+            "items": [{"item_code": "ITEM-001", "qty": 2, "schedule_date": "2026-05-20", "warehouse": "Stores - DC", "uom": "Wrong"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertIn("MAT-MR-DRAFT-001", SAVED_MATERIAL_REQUESTS)
+        doc = SAVED_MATERIAL_REQUESTS["MAT-MR-DRAFT-001"]
+        self.assertEqual(doc.material_request_type, "Purchase")
+        self.assertEqual(doc.docstatus, 0)
+        self.assertEqual(doc.items[0].uom, "Nos")
+        self.assertEqual(doc.items[0].stock_uom, "Nos")
+        self.assertEqual(doc.items[0].conversion_factor, 1)
+        self.assertEqual(payload["review_route"], "/desk/procurement-console-purchase-request-review/MAT-MR-DRAFT-001")
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_purchase_request_rejects_non_purchase_type_and_forbidden_fields(self):
+        _set_writeable_doctypes("Material Request")
+        _set_createable_doctypes("Material Request")
+
+        non_purchase = managed_purchase_request.save_managed_purchase_request_draft({
+            "header": {"material_request_type": "Material Transfer", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
+        })
+        forbidden = managed_purchase_request.save_managed_purchase_request_draft({
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20", "item_price": 100}],
+        })
+
+        self.assertEqual(non_purchase["state"]["kind"], "error")
+        self.assertEqual(forbidden["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_MATERIAL_REQUESTS)
+
+    def test_managed_purchase_request_cannot_edit_submitted_document(self):
+        _set_writeable_doctypes("Material Request")
+        _set_createable_doctypes("Material Request")
+
+        payload = managed_purchase_request.save_managed_purchase_request_draft({
+            "name": "MAT-MR-SUBMITTED",
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
 
     def test_procurement_supplier_and_item_create_actions_are_deferred(self):
         _set_user("manager@example.com", ["Purchase Manager"])
@@ -898,6 +1046,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         self.assertIn("create_actions", source)
         self.assertIn("new_doc", source)
+        self.assertIn('if (target.kind === "page"', source)
         self.assertIn('frappe.set_route("Form"', source)
         self.assertIn("cleanupProcurementRouteShells", source)
         self.assertIn("workspace_console_runtime.js", source)
@@ -1456,6 +1605,26 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(request_target["options"], {"return_queue": "purchase_request_directory"})
         filters = CAPTURED_GET_LIST_CALLS[-1]["filters"]
         self.assertTrue(_filter_contains(filters, ["Material Request", "material_request_type", "=", "Purchase"]))
+
+    def test_purchase_request_directory_exposes_managed_create_action_when_permitted(self):
+        _set_writeable_doctypes("Material Request")
+        _set_createable_doctypes("Material Request")
+
+        payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
+
+        actions = payload["controls"]["actions"]
+        self.assertEqual(actions[0]["key"], "new_purchase_request")
+        self.assertEqual(actions[0]["category"], "navigation")
+        self.assertEqual(actions[0]["kind"], "create")
+        self.assertEqual(
+            payload["action_targets"]["new_purchase_request"],
+            {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]},
+        )
+
+        _set_writeable_doctypes()
+        _set_createable_doctypes()
+        restricted_payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")
+        self.assertNotIn("new_purchase_request", [action["key"] for action in restricted_payload["controls"]["actions"]])
 
     def test_procurement_filters_use_link_metadata_where_business_fields_reference_doctypes(self):
         request_payload = worklist.get_procurement_console_worklist_context("purchase_request_directory")

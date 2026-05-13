@@ -143,6 +143,11 @@ def _purchase_request_payload(
 	rows: list[dict[str, object]],
 	state: dict[str, object],
 ) -> dict[str, object]:
+	actions = list(common.standard_actions())
+	action_targets = common.page_action_targets_for_rows("procurement-console-purchase-request-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")})
+	if queue_key == "purchase_request_directory" and common.can_create("Material Request") and common.can_write("Material Request"):
+		actions.insert(0, {"key": "new_purchase_request", "label": "New Purchase Request", "kind": "create", "category": "navigation"})
+		action_targets["new_purchase_request"] = {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]}
 	return {
 		"page": {"title": title, "key": queue_key},
 		"summary": {
@@ -170,7 +175,7 @@ def _purchase_request_payload(
 				{"key": "date_start", "label": "Request Date From", "type": "date", "value": filters.get("date_start", "")},
 				{"key": "date_end", "label": "Request Date To", "type": "date", "value": filters.get("date_end", "")},
 			],
-			"actions": common.standard_actions(),
+			"actions": actions,
 			"scopeChips": ["Material Request", "Purchase only"],
 		},
 		"metrics": [
@@ -190,5 +195,5 @@ def _purchase_request_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.page_action_targets_for_rows("procurement-console-purchase-request-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")}),
+		"action_targets": action_targets,
 	}

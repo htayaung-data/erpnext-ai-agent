@@ -199,9 +199,31 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             "procurement-console-report/item_purchase_history",
             "procurement-console-po-follow-up",
             "procurement-console-purchase-request-review",
+            "procurement-console-purchase-request-form",
             "Form/Material Request/new-purchase",
         }:
             self.assertIn(expected, procurement_keys)
+
+
+    def test_procurement_managed_purchase_request_actions_are_productized(self):
+        actions = {
+            item["manifest_key"]: item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] in {
+                "procurement-new-purchase-request",
+                "procurement-worklist-new-purchase-request",
+                "procurement-managed-pr-save-draft",
+                "procurement-managed-pr-open-native",
+            }
+        }
+
+        self.assertEqual("productized_navigation", actions["procurement-new-purchase-request"]["classification"])
+        self.assertEqual("page", actions["procurement-new-purchase-request"]["target_kind"])
+        self.assertEqual("/desk/procurement-console-purchase-request-form/new", actions["procurement-new-purchase-request"]["target_route_pattern"])
+        self.assertEqual("/desk/procurement-console-purchase-request-form/new", actions["procurement-worklist-new-purchase-request"]["target_route_pattern"])
+        self.assertEqual("productized_primary_action", actions["procurement-managed-pr-save-draft"]["classification"])
+        self.assertEqual("governed_native_action", actions["procurement-managed-pr-open-native"]["classification"])
+        self.assertEqual("procurement-secondary-native-open-v1", actions["procurement-managed-pr-open-native"]["native_exception_ref"])
 
     def test_procurement_reports_index_card_action_is_productized_navigation(self):
         actions = {

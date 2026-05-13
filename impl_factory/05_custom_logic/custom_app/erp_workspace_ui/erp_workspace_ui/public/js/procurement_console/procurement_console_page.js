@@ -165,6 +165,11 @@
     }
     if (target.kind === "worklist" && target.queue_key) return routeToWorklist(target.queue_key, target.filters || null);
     if (target.kind === "report_page" && target.report_key) return routeToReport(target.report_key, target.filters || null);
+    if (target.kind === "page" && target.route) {
+      frappe.route_options = target.options || {};
+      const parts = [target.route].concat(Array.isArray(target.route_parts) ? target.route_parts : []);
+      return frappe.set_route.apply(frappe, parts);
+    }
   }
 
   function makeInsightCard(config) {
