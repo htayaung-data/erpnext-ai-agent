@@ -1122,6 +1122,17 @@
       .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-2:not(.without-actions) {
         grid-template-columns: minmax(0, 1fr) max-content;
       }
+      @media (max-width: 1180px) {
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) {
+          grid-template-columns: minmax(0, 1fr) !important;
+        }
+        .erpw-report-shell.is-procurement-report .erpw-report-command-row.field-count-4:not(.without-actions) .erpw-report-command-actions {
+          justify-self: start;
+          justify-content: flex-start;
+          max-width: 100%;
+          margin-top: 0 !important;
+        }
+      }
       @media (max-width: 1080px) {
         .erpw-report-shell.is-procurement-report .erpw-report-command-row {
           grid-template-columns: minmax(0, 1fr);

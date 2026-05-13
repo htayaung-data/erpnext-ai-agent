@@ -34,7 +34,8 @@
     "test:sales-visual-stability:docker": "bash ./run_playwright_docker.sh npm run test:sales-visual-stability",
     "test:sales-freeze-watchlist": "bash ./check_sales_freeze_watchlist.sh",
     "test:sales-freeze-protection": "bash ./run_sales_freeze_protection_gate.sh",
-    "test:procurement-responsive-filters": "node procurement_responsive_filter_smoke.js"
+    "test:procurement-responsive-filters": "node procurement_responsive_filter_smoke.js",
+    "test:protected-workspaces": "bash ./run_protected_workspace_gate.sh"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

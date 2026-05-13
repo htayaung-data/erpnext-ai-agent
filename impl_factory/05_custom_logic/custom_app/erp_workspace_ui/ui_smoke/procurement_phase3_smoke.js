@@ -41,6 +41,21 @@ function assert(condition, message, details = {}) {
   }
 }
 
+const PROCUREMENT_SMOKE_SECTIONS = new Set([
+  "full",
+  "core-navigation-and-chrome",
+  "worklists-and-details",
+  "reports-and-filter-layout",
+  "autocomplete-and-link-controls",
+  "role-user-regression",
+]);
+const SMOKE_SECTION = process.env.ERPW_PROCUREMENT_SMOKE_SECTION || "full";
+const DIAGNOSTIC_MODE = process.env.ERPW_PROCUREMENT_DIAGNOSTICS === "1";
+assert(PROCUREMENT_SMOKE_SECTIONS.has(SMOKE_SECTION), "Unknown Procurement smoke section", { section: SMOKE_SECTION, valid: Array.from(PROCUREMENT_SMOKE_SECTIONS) });
+function shouldRunSection(...sections) {
+  return SMOKE_SECTION === "full" || sections.includes(SMOKE_SECTION);
+}
+
 function normalizeText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -57,6 +72,11 @@ async function captureSmokeScreenshot(page, name) {
   const file = path.join(ARTIFACT_DIR, `${safeFileName(name)}.png`);
   await page.screenshot({ path: file, fullPage: true });
   return file;
+}
+
+async function maybeCaptureSmokeScreenshot(page, name) {
+  if (!DIAGNOSTIC_MODE) return null;
+  return captureSmokeScreenshot(page, name);
 }
 
 function valuesFromContainer(value) {
@@ -402,6 +422,36 @@ async function procurementChromeSnapshot(page, label) {
     function textOf(node) {
       return String((node && node.textContent) || "").replace(/\s+/g, " ").trim();
     }
+    function rectOf(node) {
+      if (!node) return null;
+      const box = node.getBoundingClientRect();
+      return {
+        top: Math.round(box.top),
+        left: Math.round(box.left),
+        right: Math.round(box.right),
+        bottom: Math.round(box.bottom),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      };
+    }
+    function dataAttrs(node) {
+      if (!node || !node.attributes) return {};
+      return Array.from(node.attributes).reduce((result, attr) => {
+        if (attr.name.startsWith("data-")) result[attr.name] = attr.value;
+        return result;
+      }, {});
+    }
+    function describeNode(node) {
+      return {
+        tag: node.tagName,
+        id: node.id || "",
+        className: typeof node.className === "string" ? node.className : "",
+        data: dataAttrs(node),
+        ariaLabel: node.getAttribute("aria-label") || "",
+        text: textOf(node),
+        rect: rectOf(node),
+      };
+    }
     const pageHeads = Array.from(document.querySelectorAll(".page-head")).filter(visible);
     const managedChromeHeads = pageHeads.filter((node) => node.getAttribute("data-erpw-procurement-managed-chrome") === "1");
     const visiblePageHeadIcons = pageHeads.flatMap((node) => {
@@ -411,53 +461,65 @@ async function procurementChromeSnapshot(page, label) {
       return Array.from(node.querySelectorAll(".page-icon, .indicator-pill, .title-area > .icon, .title-area > svg")).filter(visible);
     });
     const breadcrumbRows = Array.from(document.querySelectorAll(".navbar-breadcrumbs, .breadcrumb, .breadcrumbs, .page-breadcrumbs, .breadcrumb-container, .page-title")).filter(visible);
-    const headerRows = pageHeads.map((node) => ({
-      text: textOf(node),
+    const pageTitleCandidates = Array.from(document.querySelectorAll(".page-title, .title-text, .title-area, .page-head .title-area, .page-head h1, .page-head h2")).filter(visible);
+    const breadcrumbCandidates = Array.from(document.querySelectorAll(".navbar-breadcrumbs, .breadcrumb, .breadcrumbs, .page-breadcrumbs, .breadcrumb-container")).filter(visible);
+    const headerRows = pageHeads.map((node) => Object.assign(describeNode(node), {
+      managed: node.getAttribute("data-erpw-procurement-managed-chrome") === "1",
       links: Array.from(node.querySelectorAll("a")).map((link) => ({
         text: textOf(link),
         href: link.href || "",
         route: link.getAttribute("data-route") || "",
+        rect: rectOf(link),
+        className: typeof link.className === "string" ? link.className : "",
+        data: dataAttrs(link),
       })),
     }));
-    const breadcrumbDetails = breadcrumbRows.map((node) => ({
-      text: textOf(node),
+    const breadcrumbDetails = breadcrumbRows.map((node) => Object.assign(describeNode(node), {
       links: Array.from(node.querySelectorAll("a")).map((link) => ({
         text: textOf(link),
         href: link.href || "",
         route: link.getAttribute("data-route") || "",
+        rect: rectOf(link),
+        className: typeof link.className === "string" ? link.className : "",
+        data: dataAttrs(link),
       })),
     })).filter((row) => row.text || row.links.length);
     const nativeParentWords = /^(Stock|Buying|Material Request|Request for Quotation|Supplier Quotation|Purchase Order|Supplier|Item)$/i;
     const parentLinkLeaks = breadcrumbDetails.flatMap((row) => row.links).filter((link) => {
-      const label = String(link.text || "").replace(/\s+/g, " ").trim();
+      const linkLabel = String(link.text || "").replace(/\s+/g, " ").trim();
       const href = String(link.href || "");
       const route = String(link.route || "");
-      return nativeParentWords.test(label) && !/procurement-console/i.test(href + " " + route);
+      return nativeParentWords.test(linkLabel) && !/procurement-console/i.test(href + " " + route);
     });
     const parentTextLeaks = headerRows.filter((row) => /^(Stock|Buying)(Material Request|Request for Quotation|Supplier Quotation|Purchase Order|Supplier|Item)/i.test(row.text));
     const overviewVisible = Array.from(document.querySelectorAll(".sales-console-title, .sales-console-header-note")).some((node) => visible(node) && /Procurement Console|Buyer workbench/i.test(textOf(node)));
+    const procurementShellState = {
+      overview: document.querySelectorAll('.sales-console-shell[data-erpw-workspace="procurement"]').length,
+      worklist: document.querySelectorAll(".erpw-procurement-console-worklist-page").length,
+      report: document.querySelectorAll(".erpw-procurement-console-report-page").length,
+      poDetail: document.querySelectorAll(".erpw-procurement-po-follow-up-page").length,
+      supplierDetail: document.querySelectorAll(".erpw-procurement-supplier-detail-page").length,
+      itemDetail: document.querySelectorAll(".erpw-procurement-item-detail-page").length,
+    };
+    procurementShellState.total = Object.values(procurementShellState).reduce((total, count) => total + count, 0);
     return {
       label,
       url: window.location.href,
       route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [],
       pageHeadCount: pageHeads.length,
+      visiblePageHeadCount: pageHeads.length,
       managedChromeHeadCount: managedChromeHeads.length,
       visiblePageHeadIconCount: visiblePageHeadIcons.length,
       visibleManagedChromeIconCount: visibleManagedChromeIcons.length,
       breadcrumbRowCount: breadcrumbDetails.length,
       headerRows,
+      pageTitleCandidates: pageTitleCandidates.map(describeNode),
+      breadcrumbCandidates: breadcrumbCandidates.map(describeNode),
       breadcrumbRows: breadcrumbDetails,
       parentLinkLeaks,
       parentTextLeaks: parentTextLeaks.map((row) => row.text),
       overviewVisible,
-      procurementShellState: {
-        overview: document.querySelectorAll('.sales-console-shell[data-erpw-workspace="procurement"]').length,
-        worklist: document.querySelectorAll(".erpw-procurement-console-worklist-page").length,
-        report: document.querySelectorAll(".erpw-procurement-console-report-page").length,
-        poDetail: document.querySelectorAll(".erpw-procurement-po-follow-up-page").length,
-        supplierDetail: document.querySelectorAll(".erpw-procurement-supplier-detail-page").length,
-        itemDetail: document.querySelectorAll(".erpw-procurement-item-detail-page").length,
-      },
+      procurementShellState,
     };
   }, label);
 }
@@ -1063,37 +1125,77 @@ async function checkPurchaseOrderAnalysisReport(page, options = {}) {
 
   const filterActionLayout = await page.locator(".erpw-report-controls").first().evaluate((controls) => {
     const rows = Array.from(controls.querySelectorAll(".erpw-report-command-row"));
+    const controlsRect = controls.getBoundingClientRect();
     const actionCell = controls.querySelector(".erpw-report-command-actions");
-    const secondRowFields = ["supplier", "item_code"].map((key) => {
-      const input = controls.querySelector(`[data-erpw-control-key="${key}"]`);
-      const field = input && input.closest(".erpw-report-control-field");
-      if (!field) return null;
-      const rect = field.getBoundingClientRect();
-      const inputRect = input.getBoundingClientRect();
-      return { key, top: Math.round(rect.top), bottom: Math.round(rect.bottom), inputTop: Math.round(inputRect.top), inputBottom: Math.round(inputRect.bottom) };
-    }).filter(Boolean);
     const actionRow = actionCell && actionCell.closest(".erpw-report-command-row");
     const actionRect = actionCell ? actionCell.getBoundingClientRect() : null;
+    const visible = (node) => {
+      if (!node) return false;
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const rectFor = (rect) => rect ? {
+      top: Math.round(rect.top),
+      left: Math.round(rect.left),
+      right: Math.round(rect.right),
+      bottom: Math.round(rect.bottom),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    } : null;
+    const fieldKeys = ["purchase_order", "status", "supplier", "item_code", "from_date", "to_date"];
+    const fields = fieldKeys.map((key) => {
+      const input = controls.querySelector(`[data-erpw-control-key="${key}"]`);
+      const field = input && input.closest(".erpw-report-control-field");
+      const row = field && field.closest(".erpw-report-command-row");
+      const rect = field ? field.getBoundingClientRect() : null;
+      const inputRect = input ? input.getBoundingClientRect() : null;
+      return {
+        key,
+        rowIndex: row ? rows.indexOf(row) : -1,
+        rect: rectFor(rect),
+        inputRect: rectFor(inputRect),
+      };
+    });
+    const finalRowFields = fields.filter((field) => field.rowIndex === rows.length - 1);
     const actionCenter = actionRect ? Math.round((actionRect.top + actionRect.bottom) / 2) : 0;
-    const fieldCenter = secondRowFields.length
-      ? Math.round((Math.min(...secondRowFields.map((field) => field.inputTop)) + Math.max(...secondRowFields.map((field) => field.inputBottom))) / 2)
+    const fieldCenter = finalRowFields.length
+      ? Math.round((Math.min(...finalRowFields.map((field) => field.inputRect.top)) + Math.max(...finalRowFields.map((field) => field.inputRect.bottom))) / 2)
       : 0;
+    const buttons = actionCell ? Array.from(actionCell.querySelectorAll("button")).map((button) => {
+      const buttonRect = button.getBoundingClientRect();
+      const clipped = buttonRect.left < controlsRect.left - 1 || buttonRect.right > controlsRect.right + 1 || buttonRect.left < -1 || buttonRect.right > window.innerWidth + 1;
+      return {
+        text: button.textContent.replace(/\s+/g, " ").trim(),
+        visible: visible(button),
+        clipped,
+        rect: rectFor(buttonRect),
+      };
+    }) : [];
     return {
       rowCount: rows.length,
       hasActionsOnlyRow: rows.some((row) => row.classList.contains("actions-only")),
+      actionRowIndex: actionRow ? rows.indexOf(actionRow) : -1,
       actionRowClass: actionRow ? actionRow.className : "",
-      secondRowFields,
-      actionRect: actionRect ? { top: Math.round(actionRect.top), bottom: Math.round(actionRect.bottom), height: Math.round(actionRect.height) } : null,
+      fields,
+      firstRowFields: fields.filter((field) => field.rowIndex === 0).map((field) => field.key),
+      finalRowFields: finalRowFields.map((field) => field.key),
+      actionRect: rectFor(actionRect),
       actionCenter,
       fieldCenter,
-      controlsHeight: Math.round(controls.getBoundingClientRect().height),
+      buttons,
+      controlsHeight: Math.round(controlsRect.height),
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
   assert(filterActionLayout.rowCount === 2, "PO Analysis filters should use two active field rows without a detached command row", filterActionLayout);
   assert(!filterActionLayout.hasActionsOnlyRow, "PO Analysis Apply/Reset/Refresh should not sit in a detached action-only row", filterActionLayout);
-  assert(filterActionLayout.actionRowClass.includes("field-count-2"), "PO Analysis actions should share the second filter row", filterActionLayout);
-  assert(Math.abs(filterActionLayout.actionCenter - filterActionLayout.fieldCenter) <= 8, "PO Analysis actions should align with the second-row filter inputs", filterActionLayout);
+  ["purchase_order", "status", "supplier"].forEach((key) => assert(filterActionLayout.firstRowFields.includes(key), `PO Analysis ${key} filter should stay in the first business-priority row`, filterActionLayout));
+  ["item_code", "from_date", "to_date"].forEach((key) => assert(filterActionLayout.finalRowFields.includes(key), `PO Analysis ${key} filter should stay in the final action row`, filterActionLayout));
+  assert(filterActionLayout.actionRowIndex === 1, "PO Analysis actions should share the final filter row", filterActionLayout);
+  assert(Math.abs(filterActionLayout.actionCenter - filterActionLayout.fieldCenter) <= 8, "PO Analysis actions should align with the final-row filter inputs", filterActionLayout);
+  assert(filterActionLayout.buttons.length >= 3, "PO Analysis action group should expose Apply, Reset, and Refresh", filterActionLayout);
+  assert(filterActionLayout.buttons.every((button) => button.visible && !button.clipped), "PO Analysis action buttons should be visible and unclipped", filterActionLayout);
   assert(filterActionLayout.controlsHeight <= 250, "PO Analysis filter panel still has oversized empty action area", filterActionLayout);
   assert(filterActionLayout.overflow <= 1, "PO Analysis filter action layout introduced horizontal overflow", filterActionLayout);
 
@@ -1405,6 +1507,13 @@ function queryFromSeed(seed) {
   return value.slice(0, Math.max(2, Math.min(6, value.length)));
 }
 
+function autocompleteQueryFromSeed(seed, doctype) {
+  const value = normalizeText(seed);
+  if (!value) return "";
+  if (doctype === "Item Group") return value;
+  return queryFromSeed(value);
+}
+
 async function worklistPayload(page, queueKey) {
   const response = await callMethod(page, "erp_workspace_ui.procurement_console.worklist.get_procurement_console_worklist_context", {
     queue_key: queueKey,
@@ -1426,40 +1535,178 @@ async function fetchLinkSeed(page, doctype, fallbackTxt = "") {
   return row.value || row.name || row.label || "";
 }
 
+function linkSearchRowValue(row) {
+  if (!row) return '';
+  if (typeof row === 'string') return row;
+  return row.value || row.name || row.label || '';
+}
+
+async function fetchLinkOptions(page, doctype, txt = '') {
+  const response = await callMethod(page, 'frappe.desk.search.search_link', {
+    doctype,
+    txt,
+    page_length: 5,
+  });
+  return response.ok && Array.isArray(response.data.message) ? response.data.message : [];
+}
+
+async function resolveAutocompleteQuery(page, doctype, seed) {
+  const candidates = [];
+  const add = (value) => {
+    const normalized = normalizeText(value);
+    if (normalized && !candidates.includes(normalized)) candidates.push(normalized);
+  };
+  const seedValue = normalizeText(seed);
+  add(autocompleteQueryFromSeed(seedValue, doctype));
+  add(queryFromSeed(seedValue));
+  add(seedValue);
+  const seedRows = await fetchLinkOptions(page, doctype, '');
+  seedRows.map(linkSearchRowValue).forEach((value) => {
+    add(autocompleteQueryFromSeed(value, doctype));
+    add(queryFromSeed(value));
+    add(value);
+  });
+  for (const candidate of candidates) {
+    const rows = await fetchLinkOptions(page, doctype, candidate);
+    if (rows.length) return candidate;
+  }
+  return '';
+}
+
+async function collectAutocompleteDiagnostics(page, config) {
+  const inputValue = await config.input.inputValue().catch(() => "");
+  const evaluateConfig = {
+    containerSelector: config.containerSelector,
+    optionSelector: config.optionSelector,
+    inputSelector: config.inputSelector,
+  };
+  const dom = await page.evaluate(({ containerSelector, optionSelector, inputSelector }) => {
+    const visible = (node) => {
+      if (!node) return false;
+      const style = window.getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return !node.hidden && style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const describe = (node) => {
+      if (!node) return null;
+      return {
+        tag: node.tagName,
+        id: node.id || "",
+        className: typeof node.className === "string" ? node.className : "",
+        key: node.getAttribute("data-erpw-control-key") || node.getAttribute("data-erpw-list-field-key") || "",
+        doctype: node.getAttribute("data-erpw-link-doctype") || node.getAttribute("data-erpw-list-link-doctype") || "",
+        value: typeof node.value === "string" ? node.value : "",
+        text: String(node.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160),
+      };
+    };
+    const containers = Array.from(document.querySelectorAll(containerSelector));
+    const visibleContainers = containers.filter(visible);
+    const options = Array.from(document.querySelectorAll(optionSelector));
+    const visibleOptions = options.filter(visible);
+    const input = document.querySelector(inputSelector);
+    return {
+      containerCount: containers.length,
+      visibleContainerCount: visibleContainers.length,
+      optionCount: options.length,
+      visibleOptionCount: visibleOptions.length,
+      activeElement: describe(document.activeElement),
+      inputElement: describe(input),
+      visibleContainerText: visibleContainers.map((node) => String(node.textContent || "").replace(/\s+/g, " ").trim().slice(0, 240)),
+      visibleOptionText: visibleOptions.map((node) => String(node.textContent || "").replace(/\s+/g, " ").trim().slice(0, 160)),
+    };
+  }, evaluateConfig);
+  return {
+    label: config.label,
+    route: config.route,
+    key: config.key,
+    doctype: config.doctype,
+    query: config.query,
+    currentUrl: page.url(),
+    inputValue,
+    beforeTypingScreenshot: config.beforeTypingScreenshot,
+    afterTypingScreenshot: config.afterTypingScreenshot,
+    failureScreenshot: config.failureScreenshot || null,
+    dom,
+    recentPageErrors: (page.__erpwPageErrors || []).slice(-5),
+    recentConsoleMessages: (page.__erpwConsoleMessages || []).slice(-10),
+  };
+}
+
+async function waitForAutocompleteOption(page, config) {
+  try {
+    const option = page.locator(`${config.containerSelector}:not([hidden])`).locator(config.optionSelector).first();
+    await option.waitFor({ state: "visible", timeout: TIMEOUT });
+    return option;
+  } catch (error) {
+    config.failureScreenshot = await captureSmokeScreenshot(page, `autocomplete-${config.label}-${config.key}-failure`).catch(() => null);
+    const diagnostics = await collectAutocompleteDiagnostics(page, config);
+    const wrapped = new Error(`${config.label}: autocomplete suggestions did not render`);
+    wrapped.stack = error.stack || wrapped.stack;
+    wrapped.details = diagnostics;
+    throw wrapped;
+  }
+}
+
 async function exerciseListLinkAutocomplete(page, route, key, doctype, seed, label) {
-  const query = queryFromSeed(seed) || queryFromSeed(await fetchLinkSeed(page, doctype, ""));
-  if (!query) return { label, skipped: true, reason: `No ${doctype} seed available` };
+  const query = autocompleteQueryFromSeed(seed, doctype) || autocompleteQueryFromSeed(await fetchLinkSeed(page, doctype, ""), doctype);
+  if (!query) return { label, skipped: true, reason: `No searchable ${doctype} seed available` };
   await openDeskRoute(page, route);
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
-  const input = page.locator(`[data-erpw-list-field-key="${key}"][data-erpw-list-link-doctype="${doctype}"]`).first();
+  const inputSelector = `[data-erpw-list-field-key="${key}"][data-erpw-list-link-doctype="${doctype}"]`;
+  const input = page.locator(inputSelector).first();
   await input.waitFor({ state: "visible", timeout: TIMEOUT });
+  const shotBase = `autocomplete-${label}-${key}`;
+  const beforeTypingScreenshot = await maybeCaptureSmokeScreenshot(page, `${shotBase}-before-typing`);
   await input.fill(query);
-  const suggestions = page.locator(".erpw-list-link-suggestions:not([hidden])").first();
-  await suggestions.waitFor({ state: "visible", timeout: TIMEOUT });
-  const option = suggestions.locator("[data-erpw-list-link-option]").first();
-  await option.waitFor({ state: "visible", timeout: TIMEOUT });
+  const afterTypingScreenshot = await maybeCaptureSmokeScreenshot(page, `${shotBase}-after-typing`);
+  const option = await waitForAutocompleteOption(page, {
+    label,
+    route,
+    key,
+    doctype,
+    query,
+    input,
+    inputSelector,
+    containerSelector: ".erpw-list-link-suggestions",
+    optionSelector: "[data-erpw-list-link-option]",
+    beforeTypingScreenshot,
+    afterTypingScreenshot,
+  });
   await option.click();
   const selected = await input.inputValue();
   assert(selected.length > 0, `${label}: autocomplete did not select a value`, { query, selected });
-  return { label, query, selected };
+  return { label, query, selected, beforeTypingScreenshot, afterTypingScreenshot };
 }
 
 async function exerciseReportLinkAutocomplete(page, route, key, doctype, seed, label) {
-  const query = queryFromSeed(seed) || queryFromSeed(await fetchLinkSeed(page, doctype, ""));
-  if (!query) return { label, skipped: true, reason: `No ${doctype} seed available` };
+  const query = autocompleteQueryFromSeed(seed, doctype) || autocompleteQueryFromSeed(await fetchLinkSeed(page, doctype, ""), doctype);
+  if (!query) return { label, skipped: true, reason: `No searchable ${doctype} seed available` };
   await openDeskRoute(page, route);
   await page.locator(".erpw-report-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
-  const input = page.locator(`[data-erpw-control-key="${key}"][data-erpw-link-doctype="${doctype}"]`).first();
+  const inputSelector = `[data-erpw-control-key="${key}"][data-erpw-link-doctype="${doctype}"]`;
+  const input = page.locator(inputSelector).first();
   await input.waitFor({ state: "visible", timeout: TIMEOUT });
+  const shotBase = `autocomplete-${label}-${key}`;
+  const beforeTypingScreenshot = await maybeCaptureSmokeScreenshot(page, `${shotBase}-before-typing`);
   await input.fill(query);
-  const suggestions = page.locator(".erpw-report-link-suggestions:not([hidden])").first();
-  await suggestions.waitFor({ state: "visible", timeout: TIMEOUT });
-  const option = suggestions.locator("[data-erpw-report-link-option]").first();
-  await option.waitFor({ state: "visible", timeout: TIMEOUT });
+  const afterTypingScreenshot = await maybeCaptureSmokeScreenshot(page, `${shotBase}-after-typing`);
+  const option = await waitForAutocompleteOption(page, {
+    label,
+    route,
+    key,
+    doctype,
+    query,
+    input,
+    inputSelector,
+    containerSelector: ".erpw-report-link-suggestions",
+    optionSelector: "[data-erpw-report-link-option]",
+    beforeTypingScreenshot,
+    afterTypingScreenshot,
+  });
   await option.click();
   const selected = await input.inputValue();
   assert(selected.length > 0, `${label}: report autocomplete did not select a value`, { query, selected });
-  return { label, query, selected };
+  return { label, query, selected, beforeTypingScreenshot, afterTypingScreenshot };
 }
 
 async function checkSupplierAutocomplete(page) {
@@ -1552,7 +1799,7 @@ async function checkSupplierAutocomplete(page) {
   results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/purchase-order-analysis", "item_code", "Item", itemSeed, "PO Analysis Item"));
   results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "item_code", "Item", itemSeed, "Item History Item"));
   results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "supplier", "Supplier", supplierSeed, "Item History Supplier"));
-  results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "item_group", "Item Group", "Products", "Item History Item Group"));
+  results.push(await exerciseReportLinkAutocomplete(page, "/desk/procurement-console-report/item-purchase-history", "item_group", "Item Group", "All", "Item History Item Group"));
 
   await openDeskRoute(page, "/desk/procurement-console-worklist/purchase-order-directory");
   await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
@@ -1814,11 +2061,25 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
       const box = node.getBoundingClientRect();
       return { top: Math.round(box.top), left: Math.round(box.left), right: Math.round(box.right), bottom: Math.round(box.bottom), width: Math.round(box.width), height: Math.round(box.height) };
     };
+    const intersects = (left, right) => Boolean(left && right && left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top);
     const shell = document.querySelector(".erpw-report-shell");
     const summary = shell && shell.querySelector(".erpw-report-summary");
     const controls = shell && shell.querySelector(".erpw-report-controls");
     const actionCell = controls && controls.querySelector(".erpw-report-command-actions");
     const rows = controls ? Array.from(controls.querySelectorAll(".erpw-report-command-row")).filter(visible) : [];
+    const controlsRect = rect(controls);
+    const actionRect = rect(actionCell);
+    const actionRow = actionCell && actionCell.closest(".erpw-report-command-row");
+    const actionRowIndex = actionRow ? rows.indexOf(actionRow) + 1 : 0;
+    const buttons = actionCell ? Array.from(actionCell.querySelectorAll("button")).map((button) => {
+      const box = rect(button);
+      return {
+        text: String(button.textContent || "").replace(/\s+/g, " ").trim(),
+        visible: visible(button),
+        clipped: !!(box && controlsRect && (box.left < controlsRect.left - 1 || box.right > controlsRect.right + 1 || box.left < -1 || box.right > window.innerWidth + 1)),
+        rect: box,
+      };
+    }) : [];
     const fields = controls
       ? Array.from(controls.querySelectorAll(".erpw-report-control-field"))
           .filter(visible)
@@ -1826,11 +2087,14 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
             const input = node.querySelector("[data-erpw-control-key]");
             const labelNode = node.querySelector(".erpw-report-control-label");
             const box = rect(input || node);
+            const rowNode = node.closest(".erpw-report-command-row");
             return Object.assign({
               key: input ? input.getAttribute("data-erpw-control-key") || "" : "",
               label: String((labelNode && labelNode.textContent) || "").replace(/\s+/g, " ").trim(),
               role: node.getAttribute("data-erpw-report-field-role") || "",
               type: input ? input.getAttribute("type") || input.tagName || "" : "",
+              commandRow: rowNode ? rows.indexOf(rowNode) + 1 : 0,
+              clipped: !!(box && controlsRect && (box.left < controlsRect.left - 1 || box.right > controlsRect.right + 1 || box.left < -1 || box.right > window.innerWidth + 1)),
             }, box || {});
           })
           .filter((field) => field.width)
@@ -1847,29 +2111,50 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
     }
     fields.forEach((field) => { field.category = category(field); });
     const grouped = fields.reduce((result, field) => {
-      result[field.category] = result[field.category] || [];
-      result[field.category].push(field.width);
+      const commandRow = field.commandRow || field.row || 0;
+      const key = `${commandRow}:${field.category}`;
+      result[key] = result[key] || { commandRow, category: field.category, widths: [] };
+      result[key].widths.push(field.width);
       return result;
     }, {});
-    const spreads = Object.fromEntries(Object.entries(grouped).map(([key, widths]) => [key, Math.max(...widths) - Math.min(...widths)]));
+    const spreads = Object.fromEntries(Object.entries(grouped).map(([key, group]) => [key, {
+      commandRow: group.commandRow,
+      category: group.category,
+      widths: group.widths,
+      spread: Math.max(...group.widths) - Math.min(...group.widths),
+    }]));
     const finalRow = fields.length ? Math.max(...fields.map((field) => field.row)) : 0;
     const finalFields = fields.filter((field) => field.row === finalRow);
     const finalTop = finalFields.length ? Math.min(...finalFields.map((field) => field.top)) : 0;
     const finalBottom = finalFields.length ? Math.max(...finalFields.map((field) => field.bottom)) : 0;
-    const actionRect = rect(actionCell);
+    const finalCommandRow = finalFields.length ? finalFields[0].commandRow : 0;
     const actionCenter = actionRect ? Math.round((actionRect.top + actionRect.bottom) / 2) : 0;
     const finalFieldCenter = finalFields.length ? Math.round((finalTop + finalBottom) / 2) : 0;
+    const actionFieldOverlaps = fields
+      .filter((field) => intersects(field, actionRect))
+      .map((field) => ({ key: field.key, rect: { top: field.top, left: field.left, right: field.right, bottom: field.bottom } }));
+    const actionAlignedInline = Math.abs(actionCenter - finalFieldCenter) <= 10;
+    const actionStackedCompactly = Boolean(actionRect && finalBottom && actionRect.top >= finalBottom && actionRect.top - finalBottom <= 32);
     return {
       hasProcurementMode: !!(shell && shell.classList.contains("is-procurement-report")),
       summary: rect(summary),
-      controls: rect(controls),
+      controls: controlsRect,
       actionCell: actionRect,
+      actionRowIndex,
+      finalCommandRow,
+      buttons,
       fields,
       spreads,
       title: summary ? String(summary.textContent || "").replace(/\s+/g, " ").trim() : "",
       rowCount: rows.length,
       actionCenter,
       finalFieldCenter,
+      finalBottom,
+      actionAlignedInline,
+      actionStackedCompactly,
+      actionFieldOverlaps,
+      clippedFields: fields.filter((field) => field.clipped).map((field) => field.key),
+      clippedButtons: buttons.filter((button) => button.clipped || !button.visible).map((button) => button.text),
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
@@ -1878,15 +2163,20 @@ async function assertEnterpriseReportFilterLayout(page, route, label) {
   assert(layout.controls && layout.controls.height <= 320, `${label}: report filter panel is too tall`, layout);
   assert(layout.fields.length > 0, `${label}: report filter fields did not render`, layout);
   assert(layout.actionCell, `${label}: report actions did not render`, layout);
-  Object.entries(layout.spreads).forEach(([category, spread]) => {
-    if (category !== "stretch") assert(spread <= 14, `${label}: ${category} report filter widths are inconsistent`, layout);
-  });
-  layout.fields.forEach((field) => {
-    if (["date", "normal", "wide"].includes(field.category)) {
-      assert(field.width >= 260 && field.width <= 286, `${label}: ${field.key} violates shared report filter width contract`, layout);
+  Object.entries(layout.spreads).forEach(([groupKey, group]) => {
+    if (group.category !== "stretch" && group.widths.length > 1) {
+      assert(group.spread <= 24, `${label}: row ${group.commandRow} ${group.category} report filter widths are inconsistent`, layout);
     }
   });
-  assert(Math.abs(layout.actionCenter - layout.finalFieldCenter) <= 10, `${label}: report actions should align with the final filter row`, layout);
+  layout.fields.forEach((field) => {
+    if (field.category === "wide") assert(field.width >= 200, `${label}: ${field.key} search filter is below readable width`, layout);
+    if (["date", "normal"].includes(field.category)) assert(field.width >= 144, `${label}: ${field.key} compact filter is below readable width`, layout);
+  });
+  assert(layout.actionRowIndex === layout.finalCommandRow, `${label}: report actions should belong to the final command row`, layout);
+  assert(layout.actionAlignedInline || layout.actionStackedCompactly, `${label}: report actions should align inline or stack compactly under the final filter row`, layout);
+  assert(layout.actionFieldOverlaps.length === 0, `${label}: report actions overlap filter fields`, layout);
+  assert(layout.clippedFields.length === 0, `${label}: report filter inputs are clipped`, layout);
+  assert(layout.clippedButtons.length === 0, `${label}: report action buttons are clipped or invisible`, layout);
   assert(!layout.title.match(/native report|mutation tools/i), `${label}: report copy exposes implementation language`, layout);
   assert(layout.overflow <= 1, `${label}: report filter layout introduced horizontal overflow`, layout);
   return { label, route, layout };
@@ -1961,6 +2251,14 @@ async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
     const toolbar = actionCell && actionCell.querySelector(".erpw-list-toolbar-actions");
     const actionRect = rect(actionCell);
     const toolbarRect = rect(toolbar);
+    const shellRect = rect(shell);
+    const contentRect = rect((shell && shell.closest(".layout-main-section")) || (shell && shell.parentElement));
+    const buttons = toolbar
+      ? Array.from(toolbar.querySelectorAll("button")).filter(visible).map((button) => ({
+          text: String(button.textContent || "").replace(/\s+/g, " ").trim(),
+          rect: rect(button),
+        }))
+      : [];
     const overlaps = [];
     fields.forEach((field) => {
       const box = field.input || field.rect;
@@ -1986,30 +2284,86 @@ async function assertNarrowFilterActionsDoNotOverlap(page, route, label) {
     const primaryBottom = primaryFields.length ? Math.max(...primaryFields.map((field) => field.bottom)) : 0;
     const primaryCenter = primaryFields.length ? Math.round((primaryTop + primaryBottom) / 2) : 0;
     const toolbarCenter = toolbarRect ? Math.round((toolbarRect.top + toolbarRect.bottom) / 2) : 0;
+    const actionStartsAfterFields = toolbarRect ? toolbarRect.top >= fieldBottom - 2 : false;
+    const actionAlignedWithDateWindow = dateFields.length ? Math.abs(toolbarCenter - dateCenter) <= 8 : false;
+    const actionAlignedWithPrimaryRow = primaryFields.length ? Math.abs(toolbarCenter - primaryCenter) <= 8 : false;
+    const actionInline = Boolean(toolbarRect && primaryFields.length && Math.abs(toolbarCenter - primaryCenter) <= 8);
+    const actionWrapped = Boolean(toolbarRect && fieldBottom && toolbarRect.top >= fieldBottom - 2);
+    const deckRect = rect(deck);
+    const fieldRects = fields.map((field) => field.input || field.rect).filter(Boolean);
+    const maxFieldRight = fieldRects.length ? Math.max(...fieldRects.map((field) => field.right)) : 0;
+    const actionGapFromFields = actionRect && maxFieldRight ? actionRect.left - maxFieldRight : 0;
+    const toolbarInsideDeck = Boolean(toolbarRect && deckRect
+      && toolbarRect.left >= deckRect.left - 1
+      && toolbarRect.right <= deckRect.right + 1
+      && toolbarRect.top >= deckRect.top - 1
+      && toolbarRect.bottom <= deckRect.bottom + 1);
+    const buttonsInsideDeck = Boolean(deckRect && buttons.length)
+      && buttons.every((button) => button.rect
+        && button.rect.left >= deckRect.left - 1
+        && button.rect.right <= deckRect.right + 1
+        && button.rect.top >= deckRect.top - 1
+        && button.rect.bottom <= deckRect.bottom + 1
+        && button.rect.width >= 32
+        && button.rect.height >= 30);
+    const denseNarrowFilterRow = !dateFields.length && fields.length >= 4 && deckRect && deckRect.width <= 900;
+    const controlledCompactActionZone = Boolean(toolbarRect && actionRect && deckRect
+      && toolbarInsideDeck
+      && buttonsInsideDeck
+      && toolbarRect.height <= 44
+      && actionRect.height <= deckRect.height + 1
+      && (actionGapFromFields >= 8 || actionWrapped));
+    const requireInlineActions = !dateFields.length && !denseNarrowFilterRow;
     return {
-      deck: rect(deck),
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      content: contentRect,
+      shell: shellRect,
+      deck: deckRect,
+      contentWidth: contentRect ? contentRect.width : 0,
+      deckWidth: deckRect ? deckRect.width : 0,
       deckColumns: deck ? getComputedStyle(deck).gridTemplateColumns : "",
       fields,
       actionRect,
       toolbarRect,
+      buttons,
       overlaps,
-      actionStartsAfterFields: toolbarRect ? toolbarRect.top >= fieldBottom - 2 : false,
-      actionAlignedWithDateWindow: dateFields.length ? Math.abs(toolbarCenter - dateCenter) <= 8 : false,
-      actionAlignedWithPrimaryRow: primaryFields.length ? Math.abs(toolbarCenter - primaryCenter) <= 8 : false,
+      actionStartsAfterFields,
+      actionInline,
+      actionWrapped,
+      actionAlignedWithDateWindow,
+      actionAlignedWithPrimaryRow,
+      toolbarInsideDeck,
+      buttonsInsideDeck,
+      maxFieldRight,
+      actionGapFromFields,
+      denseNarrowFilterRow,
+      controlledCompactActionZone,
+      requireInlineActions,
       hasDateWindow: dateFields.length >= 2,
       fixedSpread,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     };
   });
+  const screenshot = await captureSmokeScreenshot(page, `narrow-filter-${label}-1138`);
+  const measurementPath = path.join(ARTIFACT_DIR, `${safeFileName(`narrow-filter-${label}-1138-measurement`)}.json`);
+  const evidence = { label, route, screenshot, measurementPath, layout };
+  fs.writeFileSync(measurementPath, JSON.stringify(evidence, null, 2) + "\n");
+  layout.screenshot = screenshot;
+  layout.measurementPath = measurementPath;
   assert(layout.overlaps.length === 0, `${label}: filter actions overlap visible controls at laptop width`, layout);
   if (layout.hasDateWindow) {
     assert(layout.actionAlignedWithDateWindow, `${label}: date-window filter actions should align with the date row`, layout);
+  } else if (layout.requireInlineActions) {
+    assert(!layout.actionStartsAfterFields, `${label}: single-row filter actions should stay inline when the shared deck has room`, layout);
+    assert(layout.actionAlignedWithPrimaryRow, `${label}: single-row filter actions should align with the visible filter controls when the shared deck has room`, layout);
   } else {
-    assert(!layout.actionStartsAfterFields, `${label}: single-row filter actions should stay inline instead of creating an extra command band`, layout);
-    assert(layout.actionAlignedWithPrimaryRow, `${label}: single-row filter actions should align with the visible filter controls`, layout);
+    assert(layout.controlledCompactActionZone, `${label}: dense narrow filters should use a controlled compact action zone without detached or clipped commands`, layout);
   }
+  assert(layout.toolbarInsideDeck, `${label}: action toolbar should stay inside the shared filter deck`, layout);
+  assert(layout.buttonsInsideDeck, `${label}: action buttons should remain visible and unclipped inside the shared filter deck`, layout);
   assert(layout.fields.every((field) => !field.input || field.input.right <= layout.deck.right + 1), `${label}: filter controls should stay inside the shared deck at laptop width`, layout);
-  assert(layout.deck.height <= (layout.hasDateWindow ? 180 : 115), `${label}: filter deck command area is taller than the shared compact standard`, layout);
+  assert(layout.deck.height <= (layout.hasDateWindow ? 180 : layout.denseNarrowFilterRow ? 140 : 115), `${label}: filter deck command area is taller than the shared compact standard`, layout);
   assert(layout.fixedSpread <= 12, `${label}: fixed filter widths should remain consistent at laptop width`, layout);
   assert(layout.fields.every((field) => field.inputFontSize === "14px" && field.labelFontSize === "11px"), `${label}: Procurement filter typography drifted from shared worklist scale`, layout);
   assert(layout.overflow <= 1, `${label}: narrow filter layout introduced horizontal overflow`, layout);
@@ -2093,8 +2447,18 @@ async function checkTopChrome(page) {
     await openDeskRoute(page, item.route);
     await page.locator(item.shell).first().waitFor({ state: "visible", timeout: TIMEOUT });
     const snapshot = await procurementChromeSnapshot(page, item.title);
-    const headerText = normalizeText((snapshot.pageHeads || []).map((row) => row.text).join(" ") + " " + (snapshot.breadcrumbRows || []).map((row) => row.text).join(" "));
-    assert(headerText.includes("Procurement Console") && headerText.includes(item.title), `${item.title}: top chrome did not show workspace and page context`, { headerText, snapshot });
+    const assertionTextSource = {
+      pageHeadTexts: (snapshot.headerRows || []).map((row) => row.text),
+      breadcrumbTexts: (snapshot.breadcrumbRows || []).map((row) => row.text),
+    };
+    const headerText = normalizeText(assertionTextSource.pageHeadTexts.join(" ") + " " + assertionTextSource.breadcrumbTexts.join(" "));
+    const hasExpectedChrome = headerText.includes("Procurement Console") && headerText.includes(item.title);
+    const screenshot = DIAGNOSTIC_MODE || !hasExpectedChrome ? await captureSmokeScreenshot(page, `top-chrome-${item.title}`) : null;
+    snapshot.checkedRoute = item.route;
+    snapshot.expectedTitle = item.title;
+    snapshot.screenshot = screenshot;
+    snapshot.assertionTextSource = Object.assign({}, assertionTextSource, { combined: headerText });
+    assert(hasExpectedChrome, `${item.title}: top chrome did not show workspace and page context`, { headerText, screenshot, snapshot });
     assert(!/Procurement Console Worklist|Procurement Console Report/i.test(headerText), `${item.title}: top chrome still exposes generic route title`, { headerText, snapshot });
     assert(snapshot.pageHeadCount <= 1, `${item.title}: duplicate Procurement page-head rows are visible`, snapshot);
     assert(snapshot.managedChromeHeadCount >= 1, `${item.title}: Procurement page head was not marked as managed chrome`, snapshot);
@@ -2350,60 +2714,80 @@ async function runUser(browser, user) {
   });
   const page = await context.newPage();
   const pageErrors = [];
+  const consoleMessages = [];
+  page.__erpwPageErrors = pageErrors;
+  page.__erpwConsoleMessages = consoleMessages;
   page.on("dialog", (dialog) => dialog.accept().catch(() => {}));
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  const report = { user: user.key };
+  page.on("console", (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
+  const report = { user: user.key, section: SMOKE_SECTION };
   try {
     await login(page, user);
-    report.overviewDirectLoadStability = await checkOverviewDirectLoadStability(page);
-    report.defaultLandingUrl = await checkDefaultLanding(page, user);
-    report.overviewStyles = await checkOverviewStyling(page);
-    report.nativeChromeLifecycle = await checkProcurementNativeChromeLifecycle(page, user);
-    report.reportHeaderLifecycle = await checkQuoteComparisonHeaderLifecycle(page);
-    report.targetAudit = await checkProcurementTargetAudit(page, user);
-    report.overviewNavigationLifecycle = await checkProcurementOverviewNavigationLifecycle(page);
-    report.backForwardLifecycle = await checkProcurementBackForwardLifecycle(page);
-    report.sidebarLabels = await checkProcurementSidebar(page);
-    report.reportsIndex = await checkProcurementReportsIndex(page);
+
+    if (shouldRunSection("core-navigation-and-chrome", "role-user-regression")) {
+      report.overviewDirectLoadStability = await checkOverviewDirectLoadStability(page);
+      report.defaultLandingUrl = await checkDefaultLanding(page, user);
+      report.overviewStyles = await checkOverviewStyling(page);
+      report.nativeChromeLifecycle = await checkProcurementNativeChromeLifecycle(page, user);
+      report.reportHeaderLifecycle = await checkQuoteComparisonHeaderLifecycle(page);
+      report.targetAudit = await checkProcurementTargetAudit(page, user);
+      report.overviewNavigationLifecycle = await checkProcurementOverviewNavigationLifecycle(page);
+      report.backForwardLifecycle = await checkProcurementBackForwardLifecycle(page);
+      report.sidebarLabels = await checkProcurementSidebar(page);
+      if (user.key === "manager") report.topChrome = await checkTopChrome(page);
+    }
+
+    if (shouldRunSection("reports-and-filter-layout", "role-user-regression")) {
+      report.reportHeaderLifecycle = report.reportHeaderLifecycle || await checkQuoteComparisonHeaderLifecycle(page);
+      report.reportsIndex = await checkProcurementReportsIndex(page);
+      if (user.key === "manager") {
+        report.datePairLayout = await checkDatePairLayout(page);
+        report.enterpriseListFilterLayouts = await checkEnterpriseListFilterLayouts(page);
+        report.narrowProcurementFilterLayout = await checkNarrowProcurementFilterLayout(page);
+      }
+    }
+
     await openDeskRoute(page, "/desk/procurement-console");
     const bootstrap = await callMethod(page, "erp_workspace_ui.procurement_console.service.get_procurement_console_bootstrap");
     assert(bootstrap.ok, `${user.label}: bootstrap failed`, bootstrap);
     const bootstrapPayload = bootstrap.data && bootstrap.data.message ? bootstrap.data.message : {};
     const state = bootstrapPayload && bootstrapPayload.state ? bootstrapPayload.state.kind : "missing";
     report.bootstrapState = state;
+
     if (state === "ready") {
-      if (user.key === "manager") {
-        report.topChrome = await checkTopChrome(page);
-        report.focusStability = await checkFocusStability(page);
-        report.datePairLayout = await checkDatePairLayout(page);
-        report.enterpriseListFilterLayouts = await checkEnterpriseListFilterLayouts(page);
-        report.narrowProcurementFilterLayout = await checkNarrowProcurementFilterLayout(page);
+      if (shouldRunSection("autocomplete-and-link-controls")) {
+        if (user.key === "manager") report.focusStability = await checkFocusStability(page);
+        report.supplierAutocomplete = await checkSupplierAutocomplete(page);
       }
-      report.createActions = await checkCreateActions(page, user, bootstrapPayload);
-      report.worklists = {};
-      let firstPoName = process.env.ERPW_PROCUREMENT_PO_NAME || "";
-      for (const item of WORKLISTS) {
-        const result = await checkWorklist(page, item, user);
-        report.worklists[item.key] = result;
-        if (!firstPoName && result.firstRow && result.firstRow.name) firstPoName = result.firstRow.name;
+
+      if (shouldRunSection("worklists-and-details", "role-user-regression")) {
+        report.createActions = await checkCreateActions(page, user, bootstrapPayload);
+        report.worklists = {};
+        let firstPoName = process.env.ERPW_PROCUREMENT_PO_NAME || "";
+        for (const item of WORKLISTS) {
+          const result = await checkWorklist(page, item, user);
+          report.worklists[item.key] = result;
+          if (!firstPoName && result.firstRow && result.firstRow.name) firstPoName = result.firstRow.name;
+        }
+        if (!firstPoName) {
+          const purchaseOrderPayload = await worklistPayload(page, "purchase_order_directory");
+          firstPoName = firstRowName(purchaseOrderPayload);
+        }
+        const directPoName = process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010";
+        report.documentCodeWrapping = await checkDocumentCodeWrapping(page, directPoName);
+        report.directDetail = await checkDetail(page, directPoName, { requireReadyShell: true, exerciseToolbar: true });
+        report.supplierDetail = await checkSupplierDetail(page, user);
+        report.itemDetail = await checkItemDetail(page, user);
+        report.quoteComparisonUrl = await checkQuoteComparisonDirectRoute(page);
+        report.detail = await checkDetail(page, firstPoName);
       }
-      if (!firstPoName) {
-        const purchaseOrderPayload = await worklistPayload(page, "purchase_order_directory");
-        firstPoName = firstRowName(purchaseOrderPayload);
-      }
-      const directPoName = process.env.ERPW_PROCUREMENT_DIRECT_PO_NAME || firstPoName || "PUR-ORD-2026-00010";
-      report.documentCodeWrapping = await checkDocumentCodeWrapping(page, directPoName);
-      report.directDetail = await checkDetail(page, directPoName, { requireReadyShell: true, exerciseToolbar: true });
-      report.supplierAutocomplete = await checkSupplierAutocomplete(page);
-      report.supplierDetail = await checkSupplierDetail(page, user);
-      report.itemDetail = await checkItemDetail(page, user);
-      report.quoteComparisonUrl = await checkQuoteComparisonDirectRoute(page);
-      report.detail = await checkDetail(page, firstPoName);
     } else {
       assert(state === "restricted", `${user.label}: unexpected bootstrap state`, { state });
-      await openDeskRoute(page, "/desk/procurement-console-worklist/purchase-orders-overdue");
-      await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
-      report.restrictedRoute = true;
+      if (shouldRunSection("core-navigation-and-chrome", "role-user-regression", "worklists-and-details")) {
+        await openDeskRoute(page, "/desk/procurement-console-worklist/purchase-orders-overdue");
+        await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+        report.restrictedRoute = true;
+      }
     }
     assert(pageErrors.length === 0, `${user.label}: page JS error`, { pageErrors });
     return report;

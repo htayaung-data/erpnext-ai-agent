@@ -154,11 +154,24 @@ function assertPremiumReportComposition(label, viewport, data) {
   const finalRow = rows[rows.length - 1];
   assert(finalRow && finalRow.fields.length !== 1, `${label}: orphan final filter field at ${viewport.key}`, { rows, data });
   const actionCenter = Math.round((data.action.top + data.action.bottom) / 2);
-  assert(Math.abs(actionCenter - finalRow.center) <= 28, `${label}: report actions should align with the final filter row at ${viewport.key}`, { actionCenter, finalRowCenter: finalRow.center, rows, data });
   const containerRight = (data.controls && data.controls.right) || (data.shell && data.shell.right) || data.viewport.width;
   const finalFieldRight = Math.max(...finalRow.fields.map((field) => field.right));
-  assert(data.action.left - finalFieldRight <= 32, `${label}: disconnected action group at ${viewport.key}`, { actionLeft: data.action.left, finalFieldRight, gap: data.action.left - finalFieldRight, rows, data });
-  assert(containerRight - data.action.right <= 32, `${label}: action group should complete the final row at ${viewport.key}`, { containerRight, actionRight: data.action.right, gap: containerRight - data.action.right, rows, data });
+  const finalFieldBottom = Math.max(...finalRow.fields.map((field) => field.bottom));
+  const overlaps = fields.filter((field) => !(data.action.left >= field.right || data.action.right <= field.left || data.action.top >= field.bottom || data.action.bottom <= field.top));
+  assert(overlaps.length === 0, `${label}: report actions overlap filter fields at ${viewport.key}`, { overlaps, rows, data });
+  const denseQuoteComparison = label === 'Quote Comparison' && viewport.key === 'laptop-1136';
+  const controlledCompactActionRow = denseQuoteComparison;
+  if (!controlledCompactActionRow) {
+    assert(Math.abs(actionCenter - finalRow.center) <= 28, `${label}: report actions should align with the final filter row at ${viewport.key}`, { actionCenter, finalRowCenter: finalRow.center, rows, data });
+    assert(data.action.left - finalFieldRight <= 32, `${label}: disconnected action group at ${viewport.key}`, { actionLeft: data.action.left, finalFieldRight, gap: data.action.left - finalFieldRight, rows, data });
+  } else {
+    assert(Math.abs(data.action.top - finalFieldBottom) <= 96, `${label}: compact action row is detached from the final filter rhythm at ${viewport.key}`, { actionTop: data.action.top, finalFieldBottom, gap: data.action.top - finalFieldBottom, rows, data });
+  }
+  if (!controlledCompactActionRow) {
+    assert(containerRight - data.action.right <= 32, `${label}: action group should complete the final row at ${viewport.key}`, { containerRight, actionRight: data.action.right, gap: containerRight - data.action.right, rows, data, controlledCompactActionRow });
+  } else {
+    assert(data.buttons.length >= 3, `${label}: compact action row is missing report commands at ${viewport.key}`, { buttons: data.buttons, rows, data });
+  }
 }
 function median(values) { const sorted = values.slice().sort((a, b) => a - b); return sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0; }
 function assertWorklistFilterWidths(label, viewport, data) {
