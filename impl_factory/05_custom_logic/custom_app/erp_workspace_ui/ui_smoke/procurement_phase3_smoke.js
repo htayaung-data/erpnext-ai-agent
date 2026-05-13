@@ -583,7 +583,14 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
   if (user.key !== "manager") return { skipped: "native create chrome is checked with manager permissions" };
   const snapshots = [];
   const createRoutes = [
-    { key: "new_purchase_request", label: "New Purchase Request", path: /\/desk\/material-request\// },
+    {
+      key: "new_purchase_request",
+      label: "New Purchase Request",
+      path: /\/desk\/procurement-console-purchase-request-form\/new$/,
+      managed: true,
+      backSelector: "button:has-text('Back to Purchase Requests')",
+      backPath: /\/desk\/procurement-console-worklist\/purchase-request-directory$/,
+    },
     { key: "new_rfq", label: "New RFQ", path: /\/desk\/request-for-quotation\// },
     { key: "new_supplier_quotation", label: "New Supplier Quotation", path: /\/desk\/supplier-quotation\// },
     { key: "new_purchase_order", label: "New Purchase Order", path: /\/desk\/purchase-order\// },
@@ -593,6 +600,13 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
   for (const item of createRoutes) {
     await clickProcurementCreateAction(page, item.key, item.path);
     snapshots.push(await procurementChromeSnapshot(page, item.label));
+    if (item.managed) {
+      await page.locator(".erpw-managed-pr-page .erpw-managed-pr-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+      assert(!/\/desk\/material-request\//i.test(page.url()), `${item.label}: managed create action leaked to native Material Request route`, { url: page.url() });
+      await page.locator(item.backSelector).first().click();
+      await page.waitForURL((url) => item.backPath.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      continue;
+    }
     const parentCrumb = page.locator('[data-erpw-procurement-native-kind="parent"]').first();
     await parentCrumb.waitFor({ state: "visible", timeout: TIMEOUT });
     await suppressUnsavedFormGuard(page);
