@@ -238,7 +238,7 @@ def _form_payload(name: str | None, header: dict[str, Any] | None = None, items:
             "layout": "detail_header",
             "kicker": "Purchase Request",
             "title": title,
-            "subtitle": "Create a draft material request for buyer review.",
+            "subtitle": "Capture purchase demand before sourcing.",
             "chips": [
                 {"label": "Saved Draft" if saved else "Draft", "tone": "review"},
                 {"label": "Purchase only", "tone": "neutral"},

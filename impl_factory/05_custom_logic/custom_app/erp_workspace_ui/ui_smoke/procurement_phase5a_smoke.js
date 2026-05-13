@@ -100,6 +100,8 @@ async function assertStableManagedForm(page, label) {
     const companyInputStyle = companyInput ? window.getComputedStyle(companyInput) : null;
     const companyContext = pageEl ? pageEl.querySelector(".erpw-managed-pr-context-card") : null;
     const companyContextRect = companyContext ? companyContext.getBoundingClientRect() : null;
+    const summaryFacts = pageEl ? pageEl.querySelector(".erpw-child-summary-facts") : null;
+    const summaryFactsRect = summaryFacts ? summaryFacts.getBoundingClientRect() : null;
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     return {
@@ -118,7 +120,10 @@ async function assertStableManagedForm(page, label) {
       removeRects,
       companyContextVisible: Boolean(companyContextRect && companyContextRect.width > 0 && companyContextRect.height > 0),
       companyInputVisible: Boolean(companyInputRect && companyInputRect.width > 0 && companyInputRect.height > 0 && companyInputStyle && companyInputStyle.display !== "none" && companyInputStyle.visibility !== "hidden"),
+      summaryFactsVisible: Boolean(summaryFactsRect && summaryFactsRect.width > 0 && summaryFactsRect.height > 0 && summaryFacts && summaryFacts.children.length === 0),
       duplicateDraftHeadings: pageEl ? (pageEl.innerText.match(/Purchase Request Draft/g) || []).length : 0,
+      phase5aTextCount: pageEl ? (pageEl.innerText.match(/Phase 5A/g) || []).length : 0,
+      companyTextCount: pageEl ? (pageEl.innerText.match(/\bCompany\b|Mingalar Mobile Distribution Co\., Ltd\./g) || []).length : 0,
       openErpBeforeSave: actionButtons.filter((label) => /Open ERP Form/i.test(label)).length,
       text: pageEl ? pageEl.innerText : document.body.innerText,
     };
@@ -126,9 +131,12 @@ async function assertStableManagedForm(page, label) {
   assert(state.hasForm, `${label}: managed PR form did not render`, state);
   assert(state.shellCount === 1 && state.visibleShellCount === 1, `${label}: managed PR form shell stacked`, state);
   assert(state.bodyWidth <= state.viewportWidth + 2, `${label}: horizontal body overflow`, state);
-  assert((state.summaryHeight || 0) > 0 && state.summaryHeight <= 130, `${label}: managed PR header still has an oversized empty band`, state);
+  assert((state.summaryHeight || 0) > 0 && state.summaryHeight <= 95, `${label}: managed PR header still has an oversized empty band`, state);
+  assert(!state.summaryFactsVisible, `${label}: empty summary fact band is visible`, state);
   assert(state.duplicateDraftHeadings === 0, `${label}: duplicate Purchase Request Draft copy visible`, state);
-  assert(state.companyContextVisible, `${label}: company context metadata is missing`, state);
+  assert(state.phase5aTextCount === 0, `${label}: Phase 5A implementation copy is visible`, state);
+  assert(state.companyTextCount === 0, `${label}: company context still consumes visible form space`, state);
+  assert(!state.companyContextVisible, `${label}: company context metadata should be omitted from the main form`, state);
   assert(!state.companyInputVisible, `${label}: company still renders as editable-looking form input`, state);
   assert(state.openErpBeforeSave === 0, `${label}: Open ERP Form must not appear before a managed Purchase Request draft is saved`, state);
   assert(state.removeRects.some((rect) => rect.visible && /Remove/i.test(rect.text)), `${label}: Remove line action is not visible`, state);
@@ -230,6 +238,66 @@ async function verifyDirectoryAction(page, user) {
   await capture(page, `${user.key}-managed-pr-new-directory`);
 }
 
+
+async function verifyAutocompleteOverlay(page, user) {
+  await page.setViewportSize({ width: 1136, height: 768 });
+  await openDeskRoute(page, "/desk/procurement-console-purchase-request-form/new");
+  await assertStableManagedForm(page, `${user.label} autocomplete base`);
+  const before = await page.evaluate(() => ({
+    bodyWidth: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)),
+    shellHeight: Math.round(document.querySelector(".erpw-managed-pr-shell").getBoundingClientRect().height),
+  }));
+  const input = page.locator(".erpw-managed-pr-page .item-link").first();
+  await input.fill("");
+  await input.type("a");
+  await page.locator(".erpw-managed-pr-suggestion").first().waitFor({ state: "visible", timeout: TIMEOUT });
+  await page.waitForTimeout(150);
+  await capture(page, `${user.key}-managed-pr-item-autocomplete-1136x768`);
+  const state = await page.evaluate(() => {
+    const rect = (el) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return {
+        left: Math.round(r.left),
+        top: Math.round(r.top),
+        right: Math.round(r.right),
+        bottom: Math.round(r.bottom),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+        position: style.position,
+        zIndex: style.zIndex,
+        display: style.display,
+        visibility: style.visibility,
+      };
+    };
+    const menu = document.querySelector(".erpw-managed-pr-suggestions");
+    const itemInput = document.querySelector(".erpw-managed-pr-page .item-link");
+    const shell = document.querySelector(".erpw-managed-pr-shell");
+    return {
+      bodyWidth: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      shellHeight: shell ? Math.round(shell.getBoundingClientRect().height) : 0,
+      menu: rect(menu),
+      input: rect(itemInput),
+      suggestionCount: document.querySelectorAll(".erpw-managed-pr-suggestion").length,
+      menuParent: menu && menu.parentElement ? menu.parentElement.tagName : null,
+      topElementClass: menu ? (document.elementFromPoint(menu.getBoundingClientRect().left + 12, menu.getBoundingClientRect().top + 12) || {}).className || "" : "",
+    };
+  });
+  assert(state.suggestionCount > 0, `${user.label}: item autocomplete returned no suggestions`, state);
+  assert(state.menu && state.menu.position === "fixed", `${user.label}: item autocomplete is not using a floating overlay`, state);
+  assert(Number(state.menu.zIndex || 0) >= 1000, `${user.label}: item autocomplete z-index is too low`, state);
+  assert(state.menuParent === "BODY", `${user.label}: item autocomplete is still trapped inside the form DOM`, state);
+  assert(state.menu.left >= state.input.left - 2 && state.menu.top >= state.input.bottom, `${user.label}: item autocomplete is not aligned to input`, state);
+  assert(state.menu.width >= state.input.width, `${user.label}: item autocomplete is narrower than input`, state);
+  assert(state.menu.right <= state.viewportWidth + 1 && state.menu.bottom <= state.viewportHeight + 1, `${user.label}: item autocomplete clips outside viewport`, state);
+  assert(state.bodyWidth <= state.viewportWidth + 2, `${user.label}: item autocomplete caused horizontal overflow`, state);
+  assert(Math.abs(state.bodyWidth - before.bodyWidth) <= 1 && Math.abs(state.shellHeight - before.shellHeight) <= 1, `${user.label}: item autocomplete caused layout shift`, { before, state });
+  await page.locator(".erpw-managed-pr-suggestion").first().click();
+}
+
 async function verifyResponsive(page, user) {
   const sizes = [
     { width: 1136, height: 768 },
@@ -243,6 +311,7 @@ async function verifyResponsive(page, user) {
     await capture(page, `${user.key}-managed-pr-${size.width}x${size.height}`);
     assert(state.actionButtons.includes("Save Draft"), "Save Draft action missing at responsive size", state);
     await assertManagedFormFocusStable(page, `${user.label} ${size.width}x${size.height}`);
+    if (size.width === 1136) await verifyAutocompleteOverlay(page, user);
   }
 }
 
