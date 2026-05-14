@@ -103,6 +103,33 @@ async function assertStableManagedForm(page, label) {
         visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
       };
     }) : [];
+    const uomDisplays = pageEl ? Array.from(pageEl.querySelectorAll("[data-uom-display]")).map((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return {
+        text: node.textContent.trim(),
+        width: Math.round(rect.width),
+        right: Math.round(rect.right),
+        scrollWidth: node.scrollWidth,
+        clientWidth: node.clientWidth,
+        visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+        whiteSpace: style.whiteSpace,
+        letterSpacing: style.letterSpacing,
+        overflow: style.overflow,
+        textOverflow: style.textOverflow,
+      };
+    }) : [];
+    const itemHeaderRows = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-managed-pr-table thead tr")).filter((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }) : [];
+    const repeatedRowLabels = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-managed-pr-table td[data-label]")).filter((node) => {
+      const before = window.getComputedStyle(node, "::before");
+      const content = String(before.content || "").replace(/^"|"$/g, "");
+      return before.display !== "none" && content.trim().length > 0;
+    }).length : 0;
+    const rowCount = pageEl ? pageEl.querySelectorAll(".erpw-managed-pr-table tbody tr[data-row-index]").length : 0;
     const tableWrap = pageEl ? pageEl.querySelector(".erpw-managed-pr-table-wrap") : null;
     const tableWrapRect = tableWrap ? tableWrap.getBoundingClientRect() : null;
     const summary = pageEl ? pageEl.querySelector(".erpw-child-summary") : null;
@@ -142,6 +169,10 @@ async function assertStableManagedForm(page, label) {
       tableWrapRight: tableWrapRect ? Math.round(tableWrapRect.right) : null,
       tableWrapWidth: tableWrapRect ? Math.round(tableWrapRect.width) : null,
       removeRects,
+      uomDisplays,
+      itemHeaderCount: itemHeaderRows.length,
+      repeatedRowLabels,
+      rowCount,
       companyContextVisible: Boolean(companyContextRect && companyContextRect.width > 0 && companyContextRect.height > 0),
       companyInputVisible: Boolean(companyInputRect && companyInputRect.width > 0 && companyInputRect.height > 0 && companyInputStyle && companyInputStyle.display !== "none" && companyInputStyle.visibility !== "hidden"),
       summaryFactsVisible: Boolean(summaryFactsRect && summaryFactsRect.width > 0 && summaryFactsRect.height > 0 && summaryFacts && summaryFacts.children.length === 0),
@@ -180,6 +211,10 @@ async function assertStableManagedForm(page, label) {
   assert(state.openErpBeforeSave === 0, `${label}: Open ERP Form must not appear before a managed Purchase Request draft is saved`, state);
   assert(state.removeRects.some((rect) => rect.visible && /Remove/i.test(rect.text)), `${label}: Remove line action is not visible`, state);
   assert(state.removeRects.every((rect) => !rect.visible || rect.right <= state.viewportWidth + 1), `${label}: Remove line action clips past viewport`, state);
+  assert(state.itemHeaderCount === 1, `${label}: item lines should have one desktop header row`, state);
+  assert(state.repeatedRowLabels === 0, `${label}: item row labels repeat at desktop/tablet width`, state);
+  assert(state.uomDisplays.some((display) => display.visible && display.text === "Derived"), `${label}: Derived UOM placeholder missing`, state);
+  assert(state.uomDisplays.every((display) => !display.visible || (display.text === "Derived" && display.scrollWidth <= display.clientWidth + 1 && display.whiteSpace === "nowrap" && display.letterSpacing === "normal" && display.overflow === "visible" && display.textOverflow === "clip")), `${label}: Derived UOM display is clipped, wrapped, or awkwardly spaced`, state);
   assert(!state.tableWrapRight || state.tableWrapRight <= state.viewportWidth + 1, `${label}: line-entry area clips past viewport`, state);
   assert(!FORBIDDEN_ACTION_RE.test(state.actionButtons.join(" ")), `${label}: forbidden action visible`, state);
   assert(!/\/desk\/Form\/Material Request\/new/i.test(page.url()), `${label}: native Material Request create route opened`, state);
@@ -230,19 +265,30 @@ async function chooseAutocomplete(page, selector, value) {
 async function fillAndSaveDraft(page, userKey) {
   const { item, warehouse } = await getFixtureValues(page);
   const defaultDate = "2026-05-20";
+  const changedDefaultDate = "2026-05-24";
   const manualLineDate = "2026-05-22";
   await page.locator('[data-field="transaction_date"]').fill("2026-05-13");
   await page.locator('[data-field="schedule_date"]').fill(defaultDate);
+  let dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-pr-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === defaultDate, "Managed PR first inherited line did not update from Default Required By", { dateState, defaultDate });
+  await page.locator('[data-add-row]').click();
+  dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-pr-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === defaultDate && dateState[1] === defaultDate, "Managed PR new line did not inherit the current default date", { dateState, defaultDate });
+  await page.locator('.erpw-managed-pr-page [data-row-field="schedule_date"]').nth(1).fill(manualLineDate);
+  await page.locator('[data-field="schedule_date"]').fill(changedDefaultDate);
+  dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-pr-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === changedDefaultDate && dateState[1] === manualLineDate, "Managed PR default date update did not preserve manual line date", { dateState, changedDefaultDate, manualLineDate });
+  await page.locator('[data-add-row]').click();
+  dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-pr-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === changedDefaultDate && dateState[1] === manualLineDate && dateState[2] === changedDefaultDate, "Managed PR third line did not inherit changed default date", { dateState, changedDefaultDate, manualLineDate });
+  await capture(page, `${userKey}-managed-pr-three-lines-1136x768`);
+  await page.locator('[data-remove-row="2"]').click();
+  await page.locator('[data-remove-row="1"]').click();
   await chooseAutocomplete(page, ".item-link", item.name);
   await page.locator('[data-row-field="qty"]').first().fill("1");
-  await page.locator('[data-row-field="schedule_date"]').first().fill(manualLineDate);
   if (warehouse && warehouse.name) {
     await chooseAutocomplete(page, ".warehouse-link", warehouse.name);
   }
-  await page.locator('[data-add-row]').click();
-  const dateDefaultState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-pr-page [data-row-field="schedule_date"]')).map((input) => input.value));
-  assert(dateDefaultState[0] === manualLineDate && dateDefaultState[1] === defaultDate, "Managed PR line date defaulting overwrote a manual line date or failed to copy the default", { dateDefaultState, defaultDate, manualLineDate });
-  await page.locator('[data-remove-row="1"]').click();
   await page.waitForFunction(() => {
     const uom = document.querySelector('[data-row-field="uom"]');
     return uom && String(uom.value || "").trim().length > 0;
@@ -368,6 +414,13 @@ async function verifyResponsive(page, user) {
     await capture(page, `${user.key}-managed-pr-${size.width}x${size.height}`);
     assert(state.actionButtons.includes("Save Request"), "Save Request action missing at responsive size", state);
     await assertManagedFormFocusStable(page, `${user.label} ${size.width}x${size.height}`);
+    if (size.width === 1136 || size.width === 1440) {
+      await page.locator('[data-add-row]').click();
+      await page.locator('[data-add-row]').click();
+      const multiState = await assertStableManagedForm(page, `${user.label} ${size.width}x${size.height} three item lines`);
+      assert(multiState.rowCount === 3, `${user.label}: managed PR three-line layout did not render three rows`, multiState);
+      await capture(page, `${user.key}-managed-pr-three-lines-${size.width}x${size.height}`);
+    }
     if (size.width === 1136) await verifyAutocompleteOverlay(page, user);
   }
 }

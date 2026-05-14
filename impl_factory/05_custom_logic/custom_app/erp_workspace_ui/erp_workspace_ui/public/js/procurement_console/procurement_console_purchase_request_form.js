@@ -89,14 +89,16 @@
       .erpw-managed-pr-table-wrap { overflow: visible; border: 0; border-radius: 0; background: transparent; }
       .erpw-managed-pr-table, .erpw-managed-pr-table tbody, .erpw-managed-pr-table tr, .erpw-managed-pr-table td { display: block; box-sizing: border-box; }
       .erpw-managed-pr-table { width: 100%; min-width: 0; border-collapse: separate; border-spacing: 0; }
-      .erpw-managed-pr-table thead { display: none; }
+      .erpw-managed-pr-table thead { display: block; margin: 0 0 6px; }
+      .erpw-managed-pr-table thead tr { display: grid; grid-template-columns: minmax(240px, 1.35fr) 78px 128px minmax(180px, 1fr) 76px 66px; gap: 10px; align-items: end; padding: 0 12px; border: 0; background: transparent; box-shadow: none; }
+      .erpw-managed-pr-table th { display: block; min-width: 0; padding: 0; border: 0; color: #64748b; font-size: 10px; line-height: 1.15; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; text-align: left; white-space: nowrap; }
       .erpw-managed-pr-table tbody { display: grid; gap: 10px; }
-      .erpw-managed-pr-table tr { display: grid; grid-template-columns: minmax(240px, 1.35fr) 78px 128px minmax(180px, 1fr) 76px 66px; gap: 10px; align-items: end; padding: 12px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
+      .erpw-managed-pr-table tbody tr { display: grid; grid-template-columns: minmax(240px, 1.35fr) 78px 128px minmax(180px, 1fr) 76px 66px; gap: 10px; align-items: end; padding: 12px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
       .erpw-managed-pr-table td { min-width: 0; padding: 0; border: 0; display: grid; gap: 6px; vertical-align: top; }
-      .erpw-managed-pr-table td::before { content: attr(data-label); font-size: 10px; line-height: 1.15; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
+      .erpw-managed-pr-table td::before { content: ""; display: none; }
       .erpw-managed-pr-table td.row-action { align-self: end; }
       .erpw-managed-pr-table td.row-action::before { content: ""; display: none; }
-      .erpw-managed-pr-uom-value { display: inline-flex; align-items: center; justify-content: center; min-height: 37px; max-width: 100%; border-radius: 999px; border: 1px solid #dbe6f2; background: #f8fafc; color: #334155; padding: 0 9px; font-size: 12px; font-weight: 760; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .erpw-managed-pr-uom-value { display: inline-flex; align-items: center; justify-content: center; min-width: 70px; min-height: 37px; max-width: 100%; border-radius: 999px; border: 1px solid #dbe6f2; background: #f8fafc; color: #334155; padding: 0 11px; font-size: 13px; line-height: 1; font-weight: 650; letter-spacing: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; white-space: nowrap; overflow: visible; text-overflow: clip; box-sizing: border-box; }
       .erpw-managed-pr-row-button, .erpw-managed-pr-add-line { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #12365f; font-weight: 740; font-size: 12px; padding: 0 10px; }
       .erpw-managed-pr-row-button { width: 100%; max-width: 62px; padding: 0 8px; color: #475569; }
       .erpw-managed-pr-row-button:hover, .erpw-managed-pr-add-line:hover { border-color: #9db7d2; background: #f8fbff; color: #12365f; }
@@ -109,7 +111,13 @@
       .erpw-managed-pr-suggestion:hover, .erpw-managed-pr-suggestion:focus-visible { background: #f1f5f9; outline: none; }
       .erpw-managed-pr-link-cell { position: relative; }
       @media (max-width: 1180px) {
-        .erpw-managed-pr-table tr { grid-template-columns: minmax(250px, 1fr) 78px 76px 62px; grid-template-areas: "item qty uom action" "date warehouse warehouse warehouse"; align-items: end; }
+        .erpw-managed-pr-table thead tr, .erpw-managed-pr-table tbody tr { grid-template-columns: minmax(250px, 1fr) 78px 76px 62px; grid-template-areas: "item qty uom action" "date warehouse warehouse warehouse"; align-items: end; }
+        .erpw-managed-pr-table th:nth-child(1) { grid-area: item; }
+        .erpw-managed-pr-table th.qty { grid-area: qty; }
+        .erpw-managed-pr-table th.date { grid-area: date; }
+        .erpw-managed-pr-table th:nth-child(4) { grid-area: warehouse; }
+        .erpw-managed-pr-table th.uom { grid-area: uom; }
+        .erpw-managed-pr-table th.row-action { grid-area: action; }
         .erpw-managed-pr-line-item { grid-area: item; }
         .erpw-managed-pr-line-qty { grid-area: qty; }
         .erpw-managed-pr-line-date { grid-area: date; max-width: 180px; }
@@ -120,7 +128,9 @@
       @media (max-width: 720px) {
         .erpw-managed-pr-grid { grid-template-columns: 1fr; }
         .erpw-managed-pr-shell .erpw-child-summary-top { display: grid; }
-        .erpw-managed-pr-table tr { grid-template-columns: 1fr 86px 74px; grid-template-areas: "item item item" "qty uom action" "date date date" "warehouse warehouse warehouse"; }
+        .erpw-managed-pr-table thead { display: none; }
+        .erpw-managed-pr-table tbody tr { grid-template-columns: 1fr 86px 74px; grid-template-areas: "item item item" "qty uom action" "date date date" "warehouse warehouse warehouse"; }
+        .erpw-managed-pr-table td::before { content: attr(data-label); display: block; font-size: 10px; line-height: 1.15; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
         .erpw-managed-pr-line-date { max-width: none; }
       }
 
@@ -208,7 +218,11 @@
         company: header.company || "",
         material_request_type: "Purchase",
       },
-      items: items.map((row) => Object.assign({ item_code: "", qty: 1, schedule_date: header.schedule_date || "", warehouse: "", uom: "" }, row || {})),
+      items: items.map((row) => {
+        const current = Object.assign({ item_code: "", qty: 1, schedule_date: header.schedule_date || "", warehouse: "", uom: "" }, row || {});
+        current._schedule_date_mode = current._schedule_date_mode || (current.schedule_date && current.schedule_date !== (header.schedule_date || "") ? "manual" : "inherited");
+        return current;
+      }),
     };
   }
 
@@ -255,13 +269,13 @@
         </div>
         <div class="erpw-managed-pr-table-wrap">
           <table class="erpw-managed-pr-table">
-            <thead><tr><th>Item</th><th class="qty">Qty</th><th class="date">Line Required By</th><th>Warehouse</th><th class="uom">UOM</th><th class="row-action"></th></tr></thead>
+            <thead><tr><th>Item</th><th class="qty">Qty</th><th class="date">Line Required By</th><th>Warehouse</th><th class="uom">UOM</th><th class="row-action">Action</th></tr></thead>
             <tbody>
               ${(form.items || []).map((row, index) => `
                 <tr data-row-index="${index}">
                   <td class="erpw-managed-pr-link-cell erpw-managed-pr-line-item" data-label="Item"><input class="item-link" data-row-field="item_code" value="${escapeHtml(row.item_code || "")}" placeholder="Select item" autocomplete="off"></td>
                   <td class="erpw-managed-pr-line-qty" data-label="Qty"><input data-row-field="qty" type="number" min="0" step="0.01" value="${escapeHtml(row.qty || "")}"></td>
-                  <td class="erpw-managed-pr-line-date" data-label="Line Required By"><input data-row-field="schedule_date" type="date" value="${escapeHtml(row.schedule_date || header.schedule_date || "")}"></td>
+                  <td class="erpw-managed-pr-line-date" data-label="Line Required By"><input data-row-field="schedule_date" data-schedule-mode="${escapeHtml(row._schedule_date_mode || "inherited")}" type="date" value="${escapeHtml(row.schedule_date || header.schedule_date || "")}"></td>
                   <td class="erpw-managed-pr-link-cell erpw-managed-pr-line-warehouse" data-label="Warehouse"><input class="warehouse-link" data-row-field="warehouse" value="${escapeHtml(row.warehouse || "")}" placeholder="Optional warehouse" autocomplete="off"></td>
                   <td class="uom erpw-managed-pr-line-uom" data-label="UOM"><span class="erpw-managed-pr-uom-value" data-uom-display>${escapeHtml(row.uom || "Derived")}</span><input type="hidden" data-row-field="uom" value="${escapeHtml(row.uom || "")}"></td>
                   <td class="row-action erpw-managed-pr-line-action"><button type="button" class="erpw-managed-pr-row-button" data-remove-row="${index}">Remove</button></td>
@@ -287,7 +301,9 @@
       const index = Number($(this).attr("data-row-index"));
       const row = form.items[index] || {};
       $(this).find("[data-row-field]").each(function () {
-        row[$(this).attr("data-row-field")] = $(this).val();
+        const key = $(this).attr("data-row-field");
+        row[key] = $(this).val();
+        if (key === "schedule_date") row._schedule_date_mode = $(this).attr("data-schedule-mode") || row._schedule_date_mode || "inherited";
       });
       form.items[index] = row;
     });
@@ -297,6 +313,24 @@
 
   function setMessage($shell, message, tone) {
     $shell.find("[data-managed-pr-message]").text(message || "").toggleClass("error", tone === "error");
+  }
+
+  function syncInheritedLineDates($shell, viewState, defaultDate) {
+    const form = viewState.form || stateForm(viewState.payload);
+    form.header.schedule_date = defaultDate || "";
+    $shell.find('tr[data-row-index]').each(function () {
+      const index = Number($(this).attr("data-row-index"));
+      const $date = $(this).find('[data-row-field="schedule_date"]');
+      const mode = $date.attr("data-schedule-mode") || (form.items[index] && form.items[index]._schedule_date_mode) || "inherited";
+      if (mode !== "manual") {
+        $date.val(defaultDate || "").attr("data-schedule-mode", "inherited");
+        if (form.items[index]) {
+          form.items[index].schedule_date = defaultDate || "";
+          form.items[index]._schedule_date_mode = "inherited";
+        }
+      }
+    });
+    viewState.form = form;
   }
 
   function saveDraft(viewState) {
@@ -323,18 +357,28 @@
   }
 
   function bindForm($shell, viewState) {
-    $shell.find("[data-field], [data-row-field]").off("input.prform change.prform").on("input.prform change.prform", () => collectForm($shell, viewState));
+    $shell.find("[data-field], [data-row-field]").off("input.prform change.prform");
+    $shell.find('[data-field="schedule_date"]').on("input.prform change.prform", function () {
+      collectForm($shell, viewState);
+      syncInheritedLineDates($shell, viewState, $(this).val() || "");
+      collectForm($shell, viewState);
+    });
+    $shell.find('[data-row-field="schedule_date"]').on("input.prform change.prform", function () {
+      $(this).attr("data-schedule-mode", "manual");
+      collectForm($shell, viewState);
+    });
+    $shell.find('[data-field]:not([data-field="schedule_date"]), [data-row-field]:not([data-row-field="schedule_date"])').on("input.prform change.prform", () => collectForm($shell, viewState));
     $shell.find("[data-add-row]").off("click.prform").on("click.prform", () => {
       collectForm($shell, viewState);
       const headerDate = viewState.form.header.schedule_date || "";
-      viewState.form.items.push({ item_code: "", qty: 1, schedule_date: headerDate, warehouse: "", uom: "" });
+      viewState.form.items.push({ item_code: "", qty: 1, schedule_date: headerDate, warehouse: "", uom: "", _schedule_date_mode: "inherited" });
       renderPayload(viewState);
     });
     $shell.find("[data-remove-row]").off("click.prform").on("click.prform", function () {
       collectForm($shell, viewState);
       const index = Number($(this).attr("data-remove-row"));
       viewState.form.items.splice(index, 1);
-      if (!viewState.form.items.length) viewState.form.items.push({ item_code: "", qty: 1, schedule_date: viewState.form.header.schedule_date || "", warehouse: "", uom: "" });
+      if (!viewState.form.items.length) viewState.form.items.push({ item_code: "", qty: 1, schedule_date: viewState.form.header.schedule_date || "", warehouse: "", uom: "", _schedule_date_mode: "inherited" });
       renderPayload(viewState);
     });
     bindLinkField($shell, viewState, ".item-link", "Item");

@@ -102,6 +102,8 @@ async function stableRfqSnapshot(page, label) {
         text: node.textContent.trim(),
         width: Math.round(rect.width),
         right: Math.round(rect.right),
+        scrollWidth: node.scrollWidth,
+        clientWidth: node.clientWidth,
         visible: visible(node),
         whiteSpace: style.whiteSpace,
         overflow: style.overflow,
@@ -115,6 +117,17 @@ async function stableRfqSnapshot(page, label) {
     const formLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-field label")).map((node) => node.textContent.trim()) : [];
     const rowLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-table td[data-label]")).map((node) => node.getAttribute("data-label") || "") : [];
     const helperCount = shell ? (shell.innerText.match(/New item lines use the default date unless changed\./g) || []).length : 0;
+    const itemHeaderRows = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-table thead tr")).filter((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    }) : [];
+    const repeatedRowLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-table td[data-label]")).filter((node) => {
+      const before = window.getComputedStyle(node, "::before");
+      const content = String(before.content || "").replace(/^"|"$/g, "");
+      return before.display !== "none" && content.trim().length > 0;
+    }).length : 0;
+    const rowCount = shell ? shell.querySelectorAll(".erpw-managed-rfq-table tbody tr[data-row-index]").length : 0;
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     const text = shell ? shell.innerText : document.body.innerText;
@@ -152,6 +165,9 @@ async function stableRfqSnapshot(page, label) {
       summaryBackgroundImage: summaryStyle ? summaryStyle.backgroundImage : "",
       cardBackgroundImage: cardStyle ? cardStyle.backgroundImage : "",
       removeRects,
+      itemHeaderCount: itemHeaderRows.length,
+      repeatedRowLabels,
+      rowCount,
       uomDisplays,
       hasCompanyField: Boolean(shell && shell.querySelector('[data-field="company"]')),
       text,
@@ -175,8 +191,10 @@ async function stableRfqSnapshot(page, label) {
   assert(!/\bDraft\b|Phase 5B/i.test(state.text || ""), `${label}: technical draft or phase text visible`, state);
   assert(!FORBIDDEN_ACTION_RE.test(state.buttons.join(" ")), `${label}: forbidden RFQ action visible`, state);
   assert(state.removeRects.every((rect) => !rect.visible || rect.right <= state.viewportWidth + 1), `${label}: remove action clips past viewport`, state);
+  assert(state.itemHeaderCount === 1, `${label}: item lines should have one desktop header row`, state);
+  assert(state.repeatedRowLabels === 0, `${label}: item row labels repeat at desktop/tablet width`, state);
   assert(state.uomDisplays.some((display) => display.visible && display.text === "Derived"), `${label}: Derived UOM placeholder missing`, state);
-  assert(state.uomDisplays.every((display) => !display.visible || (display.right <= state.viewportWidth + 1 && display.width >= 62 && display.whiteSpace === "nowrap")), `${label}: Derived UOM display is clipped or wrapping`, state);
+  assert(state.uomDisplays.every((display) => !display.visible || (display.right <= state.viewportWidth + 1 && display.width >= 62 && display.scrollWidth <= display.clientWidth + 1 && display.whiteSpace === "nowrap" && display.overflow === "visible" && display.textOverflow === "clip")), `${label}: Derived UOM display is clipped or wrapping`, state);
   assert(!/\/desk\/(?:request-for-quotation|Form\/Request%20for%20Quotation|Form\/Request for Quotation)\//i.test(page.url()), `${label}: native RFQ route leaked`, state);
   return state;
 }
@@ -284,18 +302,29 @@ async function verifyAutocompleteGeometry(page, userKey, width, height) {
 async function fillAndSaveRfq(page, userKey) {
   const { supplier, item, warehouse } = await getFixtureValues(page);
   const defaultDate = "2026-05-21";
+  const changedDefaultDate = "2026-05-25";
   const manualLineDate = "2026-05-23";
   await page.locator('[data-field="transaction_date"]').fill("2026-05-14");
   await page.locator('[data-field="schedule_date"]').fill(defaultDate);
+  let dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-rfq-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === defaultDate, "Managed RFQ first inherited line did not update from Default Required By", { dateState, defaultDate });
   await chooseAutocomplete(page, ".supplier-link", supplier.name, `${userKey}-supplier-autocomplete-1136`);
+  await page.locator('[data-add-row]').click();
+  dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-rfq-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === defaultDate && dateState[1] === defaultDate, "Managed RFQ new line did not inherit the current default date", { dateState, defaultDate });
+  await page.locator('.erpw-managed-rfq-page [data-row-field="schedule_date"]').nth(1).fill(manualLineDate);
+  await page.locator('[data-field="schedule_date"]').fill(changedDefaultDate);
+  dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-rfq-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === changedDefaultDate && dateState[1] === manualLineDate, "Managed RFQ default date update did not preserve manual line date", { dateState, changedDefaultDate, manualLineDate });
+  await page.locator('[data-add-row]').click();
+  dateState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-rfq-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateState[0] === changedDefaultDate && dateState[1] === manualLineDate && dateState[2] === changedDefaultDate, "Managed RFQ third line did not inherit changed default date", { dateState, changedDefaultDate, manualLineDate });
+  await capture(page, `${userKey}-managed-rfq-three-lines-1136x768`);
+  await page.locator('[data-remove-row="2"]').click();
+  await page.locator('[data-remove-row="1"]').click();
   await chooseAutocomplete(page, ".item-link", item.name, `${userKey}-item-autocomplete-1136`);
   await page.locator('[data-row-field="qty"]').first().fill("1");
-  await page.locator('[data-row-field="schedule_date"]').first().fill(manualLineDate);
   if (warehouse && warehouse.name) await chooseAutocomplete(page, ".warehouse-link", warehouse.name, `${userKey}-warehouse-autocomplete-1136`);
-  await page.locator('[data-add-row]').click();
-  const dateDefaultState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-rfq-page [data-row-field="schedule_date"]')).map((input) => input.value));
-  assert(dateDefaultState[0] === manualLineDate && dateDefaultState[1] === defaultDate, "Managed RFQ line date defaulting overwrote a manual line date or failed to copy the default", { dateDefaultState, defaultDate, manualLineDate });
-  await page.locator('[data-remove-row="1"]').click();
   await page.locator("button:has-text('Save RFQ')").click();
   await page.waitForFunction(() => /procurement-console-rfq-form\/(?!new$)[^/]+$/.test(location.pathname), null, { timeout: TIMEOUT });
   await waitForManagedRfq(page);
@@ -356,6 +385,13 @@ async function runForViewport(page, user, width, height) {
   const state = await stableRfqSnapshot(page, `${user.label} managed RFQ ${width}x${height}`);
   await assertFocusStable(page, `${user.label} managed RFQ ${width}x${height}`);
   await capture(page, `${user.key}-managed-rfq-new-${width}x${height}`);
+  if (width === 1136 || width === 1440) {
+    await page.locator('[data-add-row]').click();
+    await page.locator('[data-add-row]').click();
+    const multiState = await stableRfqSnapshot(page, `${user.label} managed RFQ ${width}x${height} three item lines`);
+    assert(multiState.rowCount === 3, `${user.label}: managed RFQ three-line layout did not render three rows`, multiState);
+    await capture(page, `${user.key}-managed-rfq-three-lines-${width}x${height}`);
+  }
   return state;
 }
 
