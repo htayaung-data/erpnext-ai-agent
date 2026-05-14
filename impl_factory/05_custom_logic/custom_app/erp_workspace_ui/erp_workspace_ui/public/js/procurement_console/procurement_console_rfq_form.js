@@ -97,7 +97,7 @@
       .erpw-managed-rfq-table td::before, .erpw-managed-rfq-supplier-table td::before { content: attr(data-label); font-size: 10px; line-height: 1.15; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
       .erpw-managed-rfq-table td.row-action, .erpw-managed-rfq-supplier-table td.row-action { align-self: end; }
       .erpw-managed-rfq-table td.row-action::before, .erpw-managed-rfq-supplier-table td.row-action::before { content: ""; display: none; }
-      .erpw-managed-rfq-uom-value { display: inline-flex; align-items: center; justify-content: center; min-height: 37px; max-width: 100%; border-radius: 999px; border: 1px solid #dbe6f2; background: #f8fafc; color: #334155; padding: 0 9px; font-size: 12px; font-weight: 760; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .erpw-managed-rfq-uom-value { display: inline-flex; align-items: center; justify-content: center; min-width: 70px; min-height: 37px; max-width: 100%; border-radius: 999px; border: 1px solid #dbe6f2; background: #f8fafc; color: #334155; padding: 0 11px; font-size: 13px; line-height: 1; font-weight: 650; letter-spacing: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; white-space: nowrap; overflow: visible; text-overflow: clip; box-sizing: border-box; }
       .erpw-managed-rfq-row-button, .erpw-managed-rfq-add-line { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #12365f; font-weight: 740; font-size: 12px; padding: 0 10px; }
       .erpw-managed-rfq-row-button { width: 100%; max-width: 62px; padding: 0 8px; color: #475569; }
       .erpw-managed-rfq-row-button:hover, .erpw-managed-rfq-add-line:hover { border-color: #9db7d2; background: #f8fbff; color: #12365f; }
@@ -412,8 +412,12 @@
     const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
     const width = Math.min(Math.max(rect.width, 300), Math.max(220, viewportWidth - rect.left - 12));
-    const maxHeight = Math.min(240, Math.max(120, viewportHeight - rect.bottom - 16));
-    $menu.css({ left: `${Math.round(rect.left)}px`, top: `${Math.round(rect.bottom + 6)}px`, width: `${Math.round(width)}px`, maxHeight: `${Math.round(maxHeight)}px` });
+    const availableBelow = Math.max(80, viewportHeight - rect.bottom - 16);
+    const availableAbove = Math.max(80, rect.top - 16);
+    const placeAbove = availableBelow < 140 && availableAbove > availableBelow;
+    const maxHeight = Math.min(240, placeAbove ? availableAbove : availableBelow);
+    const top = placeAbove ? Math.max(12, rect.top - maxHeight - 6) : rect.bottom + 6;
+    $menu.css({ left: `${Math.round(rect.left)}px`, top: `${Math.round(top)}px`, width: `${Math.round(width)}px`, maxHeight: `${Math.round(maxHeight)}px` });
   }
 
   function showSuggestions($shell, input, doctype, viewState) {

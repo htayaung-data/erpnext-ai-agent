@@ -1,4 +1,4 @@
-﻿const { chromium } = require("playwright");
+const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 
@@ -85,6 +85,19 @@ async function stableRfqSnapshot(page, label) {
       const rect = button.getBoundingClientRect();
       return { text: button.textContent.trim(), right: Math.round(rect.right), visible: visible(button) };
     }) : [];
+    const uomDisplays = shell ? Array.from(shell.querySelectorAll("[data-uom-display]")).map((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return {
+        text: node.textContent.trim(),
+        width: Math.round(rect.width),
+        right: Math.round(rect.right),
+        visible: visible(node),
+        whiteSpace: style.whiteSpace,
+        overflow: style.overflow,
+        textOverflow: style.textOverflow,
+      };
+    }) : [];
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     const text = shell ? shell.innerText : document.body.innerText;
@@ -96,6 +109,7 @@ async function stableRfqSnapshot(page, label) {
       viewportWidth,
       buttons,
       removeRects,
+      uomDisplays,
       hasCompanyField: Boolean(shell && shell.querySelector('[data-field="company"]')),
       text,
     };
@@ -108,6 +122,8 @@ async function stableRfqSnapshot(page, label) {
   assert(!/\bDraft\b|Phase 5B/i.test(state.text || ""), `${label}: technical draft or phase text visible`, state);
   assert(!FORBIDDEN_ACTION_RE.test(state.buttons.join(" ")), `${label}: forbidden RFQ action visible`, state);
   assert(state.removeRects.every((rect) => !rect.visible || rect.right <= state.viewportWidth + 1), `${label}: remove action clips past viewport`, state);
+  assert(state.uomDisplays.some((display) => display.visible && display.text === "Derived"), `${label}: Derived UOM placeholder missing`, state);
+  assert(state.uomDisplays.every((display) => !display.visible || (display.right <= state.viewportWidth + 1 && display.width >= 62 && display.whiteSpace === "nowrap")), `${label}: Derived UOM display is clipped or wrapping`, state);
   assert(!/\/desk\/(?:request-for-quotation|Form\/Request%20for%20Quotation|Form\/Request for Quotation)\//i.test(page.url()), `${label}: native RFQ route leaked`, state);
   return state;
 }
@@ -134,17 +150,39 @@ async function getFixtureValues(page) {
 
 async function chooseAutocomplete(page, selector, value, screenshotName) {
   const input = page.locator(selector).first();
+  const bodyWidthBefore = await page.evaluate(() => Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)));
   await input.fill("");
   await input.type(String(value).slice(0, Math.min(6, String(value).length)));
   const suggestion = page.locator(".erpw-managed-rfq-suggestion").first();
   await suggestion.waitFor({ state: "visible", timeout: TIMEOUT });
   if (screenshotName) {
     const overlay = await suggestion.evaluate((node) => {
-      const rect = node.getBoundingClientRect();
-      const style = window.getComputedStyle(node);
-      return { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom, zIndex: style.zIndex, viewportWidth: window.innerWidth, visible: rect.width > 0 && rect.height > 0 };
+      const menu = node.closest(".erpw-managed-rfq-suggestions") || node;
+      const rect = menu.getBoundingClientRect();
+      const style = window.getComputedStyle(menu);
+      const inputRect = document.activeElement ? document.activeElement.getBoundingClientRect() : null;
+      return {
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        bottom: Math.round(rect.bottom),
+        width: Math.round(rect.width),
+        zIndex: Number(style.zIndex) || 0,
+        position: style.position,
+        viewportWidth: Math.ceil(window.innerWidth),
+        viewportHeight: Math.ceil(window.innerHeight),
+        parentIsBody: menu.parentElement === document.body,
+        inputLeft: inputRect ? Math.round(inputRect.left) : null,
+        inputRight: inputRect ? Math.round(inputRect.right) : null,
+        visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+      };
     });
-    assert(overlay.visible && overlay.right <= window.innerWidth + 2, `${screenshotName}: autocomplete overlay clipped`, overlay);
+    const bodyWidthAfter = await page.evaluate(() => Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)));
+    assert(overlay.visible, `${screenshotName}: autocomplete overlay hidden`, overlay);
+    assert(overlay.left >= 0 && overlay.right <= overlay.viewportWidth + 2, `${screenshotName}: autocomplete overlay clipped horizontally`, overlay);
+    assert(overlay.top >= 0 && overlay.bottom <= overlay.viewportHeight + 2, `${screenshotName}: autocomplete overlay clipped vertically`, overlay);
+    assert(overlay.parentIsBody && overlay.position === "fixed" && overlay.zIndex >= 1000, `${screenshotName}: autocomplete overlay trapped inside form layer`, overlay);
+    assert(Math.abs(bodyWidthAfter - bodyWidthBefore) <= 1, `${screenshotName}: autocomplete changed body width`, { bodyWidthBefore, bodyWidthAfter, overlay });
     await capture(page, screenshotName);
   }
   await suggestion.click();
@@ -158,7 +196,7 @@ async function fillAndSaveRfq(page, userKey) {
   await chooseAutocomplete(page, ".item-link", item.name, `${userKey}-item-autocomplete-1136`);
   await page.locator('[data-row-field="qty"]').first().fill("1");
   await page.locator('[data-row-field="schedule_date"]').first().fill("2026-05-21");
-  if (warehouse && warehouse.name) await chooseAutocomplete(page, ".warehouse-link", warehouse.name);
+  if (warehouse && warehouse.name) await chooseAutocomplete(page, ".warehouse-link", warehouse.name, `${userKey}-warehouse-autocomplete-1136`);
   await page.locator("button:has-text('Save RFQ')").click();
   await page.waitForFunction(() => /procurement-console-rfq-form\/(?!new$)[^/]+$/.test(location.pathname), null, { timeout: TIMEOUT });
   await waitForManagedRfq(page);
