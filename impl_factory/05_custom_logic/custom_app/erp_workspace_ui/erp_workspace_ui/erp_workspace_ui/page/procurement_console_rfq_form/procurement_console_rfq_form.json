@@ -1,9 +1,9 @@
 {
-  " doctype\: \Page\,
- \name\: \procurement-console-rfq-form\,
- \page_name\: \procurement-console-rfq-form\,
- \title\: \RFQ Form\,
- \icon\: \octicon octicon-checklist\,
- \module\: \ERP Workspace UI\,
- \standard\: \Yes\
+  "doctype": "Page",
+  "name": "procurement-console-rfq-form",
+  "page_name": "procurement-console-rfq-form",
+  "title": "RFQ Form",
+  "icon": "octicon octicon-checklist",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
 }
