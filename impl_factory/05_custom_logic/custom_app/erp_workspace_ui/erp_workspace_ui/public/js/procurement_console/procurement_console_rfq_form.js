@@ -374,14 +374,16 @@
     $shell.find("[data-managed-rfq-message]").text(message || "").toggleClass("error", tone === "error");
   }
 
-  function syncInheritedLineDates($shell, viewState, defaultDate) {
+  function syncInheritedLineDates($shell, viewState, defaultDate, previousDefaultDate) {
     const form = viewState.form || stateForm(viewState.payload);
     form.header.schedule_date = defaultDate || "";
     $shell.find('tr[data-row-index]').each(function () {
       const index = Number($(this).attr("data-row-index"));
       const $date = $(this).find('[data-row-field="schedule_date"]');
       const mode = $date.attr("data-schedule-mode") || (form.items[index] && form.items[index]._schedule_date_mode) || "inherited";
-      if (mode !== "manual") {
+      const currentDate = $date.val() || "";
+      const stillDefaulted = currentDate === (previousDefaultDate || "");
+      if (mode !== "manual" || stillDefaulted) {
         $date.val(defaultDate || "").attr("data-schedule-mode", "inherited");
         if (form.items[index]) {
           form.items[index].schedule_date = defaultDate || "";
@@ -418,8 +420,9 @@
   function bindForm($shell, viewState) {
     $shell.find("[data-field], [data-row-field], [data-supplier-field]").off("input.rfqform change.rfqform");
     $shell.find('[data-field="schedule_date"]').on("input.rfqform change.rfqform", function () {
+      const previousDefaultDate = (viewState.form && viewState.form.header && viewState.form.header.schedule_date) || "";
       collectForm($shell, viewState);
-      syncInheritedLineDates($shell, viewState, $(this).val() || "");
+      syncInheritedLineDates($shell, viewState, $(this).val() || "", previousDefaultDate);
       collectForm($shell, viewState);
     });
     $shell.find('[data-row-field="schedule_date"]').on("input.rfqform change.rfqform", function () {

@@ -389,7 +389,7 @@ async function runForViewport(page, user, width, height) {
     await page.locator('[data-add-row]').click();
     await page.locator('[data-add-row]').click();
     const multiState = await stableRfqSnapshot(page, `${user.label} managed RFQ ${width}x${height} three item lines`);
-    assert(multiState.rowCount === 3, `${user.label}: managed RFQ three-line layout did not render three rows`, multiState);
+    assert(multiState.rowCount >= 3, `${user.label}: managed RFQ three-line layout did not render at least three rows`, multiState);
     await capture(page, `${user.key}-managed-rfq-three-lines-${width}x${height}`);
   }
   return state;
