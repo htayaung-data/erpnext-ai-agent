@@ -125,6 +125,9 @@ async function assertStableManagedForm(page, label) {
       phase5aTextCount: pageEl ? (pageEl.innerText.match(/Phase 5A/g) || []).length : 0,
       companyTextCount: pageEl ? (pageEl.innerText.match(/\bCompany\b|Mingalar Mobile Distribution Co\., Ltd\./g) || []).length : 0,
       openErpBeforeSave: actionButtons.filter((label) => /Open ERP Form/i.test(label)).length,
+      saveDraftTextCount: pageEl ? (pageEl.innerText.match(/Save Draft/g) || []).length : 0,
+      draftWordCount: pageEl ? (pageEl.innerText.match(/\bDraft\b/g) || []).length : 0,
+      newRequestCount: pageEl ? (pageEl.innerText.match(/New Request/g) || []).length : 0,
       text: pageEl ? pageEl.innerText : document.body.innerText,
     };
   });
@@ -136,6 +139,10 @@ async function assertStableManagedForm(page, label) {
   assert(state.duplicateDraftHeadings === 0, `${label}: duplicate Purchase Request Draft copy visible`, state);
   assert(state.phase5aTextCount === 0, `${label}: Phase 5A implementation copy is visible`, state);
   assert(state.companyTextCount === 0, `${label}: company context still consumes visible form space`, state);
+  assert(state.saveDraftTextCount === 0, `${label}: Save Draft wording is still visible`, state);
+  assert(state.draftWordCount === 0, `${label}: Draft wording is still visible in the productized managed PR flow`, state);
+  assert(state.newRequestCount > 0, `${label}: New Request status is not visible`, state);
+  assert(state.actionButtons.includes("Save Request"), `${label}: Save Request action missing`, state);
   assert(!state.companyContextVisible, `${label}: company context metadata should be omitted from the main form`, state);
   assert(!state.companyInputVisible, `${label}: company still renders as editable-looking form input`, state);
   assert(state.openErpBeforeSave === 0, `${label}: Open ERP Form must not appear before a managed Purchase Request draft is saved`, state);
@@ -202,16 +209,22 @@ async function fillAndSaveDraft(page, userKey) {
     const uom = document.querySelector('[data-row-field="uom"]');
     return uom && String(uom.value || "").trim().length > 0;
   }, null, { timeout: TIMEOUT }).catch(() => {});
-  await page.locator("button:has-text('Save Draft')").click();
+  await page.locator("button:has-text('Save Request')").click();
   await page.waitForFunction(() => /procurement-console-purchase-request-form\/(?!new$)[^/]+$/.test(location.pathname), null, { timeout: TIMEOUT });
   await waitForManagedForm(page);
   await capture(page, `${userKey}-managed-pr-saved`);
-  const state = await page.evaluate(() => ({
-    url: location.pathname,
-    actions: Array.from(document.querySelectorAll(".erpw-child-toolbar-action")).map((button) => button.textContent.trim()),
-    message: document.querySelector("[data-managed-pr-message]") ? document.querySelector("[data-managed-pr-message]").textContent.trim() : "",
-  }));
-  assert(/procurement-console-purchase-request-form\/(?!new$)/.test(state.url), "Save Draft did not move to a saved managed PR route", state);
+  const state = await page.evaluate(() => {
+    const shell = document.querySelector(".erpw-managed-pr-page");
+    return {
+      url: location.pathname,
+      actions: Array.from(shell ? shell.querySelectorAll(".erpw-child-toolbar-action") : document.querySelectorAll(".erpw-child-toolbar-action")).map((button) => button.textContent.trim()),
+      message: document.querySelector("[data-managed-pr-message]") ? document.querySelector("[data-managed-pr-message]").textContent.trim() : "",
+      text: shell ? shell.innerText : document.body.innerText,
+    };
+  });
+  assert(/procurement-console-purchase-request-form\/(?!new$)/.test(state.url), "Save Request did not move to a saved managed PR route", state);
+  assert(/Request Recorded/.test(state.text || ""), "Request Recorded status missing after save", state);
+  assert(!/Save Draft|Saved Draft|\bDraft\b/.test(state.text || ""), "Draft wording visible after save", state);
   assert(state.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after save", state);
   assert(state.actions.some((label) => /Review Request/i.test(label)), "Review Request action missing after save", state);
 }
@@ -232,6 +245,9 @@ async function verifyDirectoryAction(page, user) {
   await capture(page, `${user.key}-purchase-requests-before-new-pr`);
   const createButton = page.locator("button:has-text('New Purchase Request')").first();
   await createButton.waitFor({ state: "visible", timeout: TIMEOUT });
+  const createClass = await createButton.evaluate((button) => button.className || "");
+  assert(/\bcreate\b/.test(createClass), `${user.label}: New Purchase Request does not use the shared create action style`, { createClass });
+  assert(!/\bnavigation\b/.test(createClass), `${user.label}: New Purchase Request is styled as secondary navigation instead of create action`, { createClass });
   await createButton.click();
   await page.waitForURL(/procurement-console-purchase-request-form\/new$/, { timeout: TIMEOUT });
   await assertStableManagedForm(page, `${user.label} directory New Purchase Request`);
@@ -309,7 +325,7 @@ async function verifyResponsive(page, user) {
     await openDeskRoute(page, "/desk/procurement-console-purchase-request-form/new");
     const state = await assertStableManagedForm(page, `${user.label} ${size.width}x${size.height}`);
     await capture(page, `${user.key}-managed-pr-${size.width}x${size.height}`);
-    assert(state.actionButtons.includes("Save Draft"), "Save Draft action missing at responsive size", state);
+    assert(state.actionButtons.includes("Save Request"), "Save Request action missing at responsive size", state);
     await assertManagedFormFocusStable(page, `${user.label} ${size.width}x${size.height}`);
     if (size.width === 1136) await verifyAutocompleteOverlay(page, user);
   }

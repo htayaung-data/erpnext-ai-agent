@@ -301,7 +301,7 @@
 
   function saveDraft(viewState) {
     const form = collectForm(viewState.$shell, viewState);
-    setMessage(viewState.$shell, "Saving draft...", "");
+    setMessage(viewState.$shell, "Recording request...", "");
     return frappe.call({ method: SAVE_METHOD, args: { payload: JSON.stringify(form) } }).then((response) => {
       const payload = response && response.message ? response.message : {};
       if (payload.state && payload.state.kind === "ready") {
@@ -313,7 +313,7 @@
           return;
         }
         renderPayload(viewState);
-        setMessage(viewState.$shell, payload.message || "Draft saved.", "");
+        setMessage(viewState.$shell, payload.message || "Request recorded for procurement review.", "");
         return;
       }
       renderPayload(viewState, payload);
@@ -419,7 +419,7 @@
   function loadingPayload() {
     return {
       state: { kind: "loading", title: "Loading Purchase Request form", detail: "Reading draft context." },
-      summary: { kicker: "Purchase Request", title: "New Purchase Request", subtitle: "Capture purchase demand before sourcing.", chips: [{ label: "Draft" }, { label: "Purchase only" }] },
+      summary: { kicker: "Purchase Request", title: "New Purchase Request", subtitle: "Capture internal purchase demand before sourcing.", chips: [{ label: "New Request" }, { label: "Purchase only" }] },
       controls: { actions: [] },
       form: { header: { transaction_date: "", schedule_date: "", company: "", material_request_type: "Purchase" }, items: [{ item_code: "", qty: 1, schedule_date: "", warehouse: "", uom: "" }] },
       action_targets: {},

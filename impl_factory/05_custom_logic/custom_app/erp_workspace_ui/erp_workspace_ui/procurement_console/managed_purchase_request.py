@@ -205,7 +205,7 @@ def _base_actions(name: str | None = None) -> tuple[list[dict[str, object]], dic
     actions: list[dict[str, object]] = [
         {"key": "back_to_purchase_requests", "label": "Back to Purchase Requests", "category": "navigation"},
         {"key": "reset_unsaved", "label": "Reset unsaved changes"},
-        {"key": "save_draft", "label": "Save Draft", "kind": "primary"},
+        {"key": "save_draft", "label": "Save Request", "kind": "primary"},
     ]
     targets: dict[str, object] = {
         "back_to_purchase_requests": {"kind": "worklist", "queue_key": DIRECTORY_QUEUE},
@@ -238,9 +238,9 @@ def _form_payload(name: str | None, header: dict[str, Any] | None = None, items:
             "layout": "detail_header",
             "kicker": "Purchase Request",
             "title": title,
-            "subtitle": "Capture purchase demand before sourcing.",
+            "subtitle": "Capture internal purchase demand before sourcing.",
             "chips": [
-                {"label": "Saved Draft" if saved else "Draft", "tone": "review"},
+                {"label": "Request Recorded" if saved else "New Request", "tone": "review"},
                 {"label": "Purchase only", "tone": "neutral"},
             ],
         },

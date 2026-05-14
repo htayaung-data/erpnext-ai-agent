@@ -1618,7 +1618,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         actions = payload["controls"]["actions"]
         self.assertEqual(actions[0]["key"], "new_purchase_request")
-        self.assertEqual(actions[0]["category"], "navigation")
+        self.assertEqual(actions[0]["category"], "create-action")
         self.assertEqual(actions[0]["kind"], "create")
         self.assertEqual(
             payload["action_targets"]["new_purchase_request"],
