@@ -537,8 +537,8 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 			"key": "new_rfq",
 			"title": "New RFQ",
 			"doctype": "Request for Quotation",
-			"defaults": {},
-			"note": "Starts an ERPNext Request for Quotation.",
+			"target": {"kind": "page", "route": "procurement-console-rfq-form", "route_parts": ["new"]},
+			"note": "Starts a managed RFQ request.",
 		},
 		{
 			"key": "new_supplier_quotation",
@@ -562,7 +562,7 @@ def _build_create_action_payload(context: dict[str, object]) -> dict[str, object
 		if not doctype or not common.can_create(doctype):
 			continue
 		key = cstr(item.get("key")).strip()
-		if key == "new_purchase_request" and not common.can_write(doctype):
+		if key in {"new_purchase_request", "new_rfq"} and not common.can_write(doctype):
 			continue
 		actions.append(
 			{

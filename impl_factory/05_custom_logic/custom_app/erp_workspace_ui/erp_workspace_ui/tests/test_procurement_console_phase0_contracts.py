@@ -32,6 +32,7 @@ HIDDEN_SUPPLIER_QUOTATION_LIST_NAMES = set()
 MISSING_NATIVE_REPORTS = set()
 MISSING_FIELDS = set()
 SAVED_MATERIAL_REQUESTS = {}
+SAVED_RFQS = {}
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -583,10 +584,67 @@ class _FakeMaterialRequestDoc:
         SAVED_MATERIAL_REQUESTS[self.name] = self
         return self
 
+class _FakeRFQDoc:
+    def __init__(self, name=None, values=None):
+        values = dict(values or {})
+        self.doctype = "Request for Quotation"
+        self.name = name or values.get("name") or ""
+        self.transaction_date = values.get("transaction_date") or "2026-05-03"
+        self.schedule_date = values.get("schedule_date") or ""
+        self.company = values.get("company") or "Demo Company"
+        self.subject = values.get("subject") or "Request for Quotation"
+        self.message_for_supplier = values.get("message_for_supplier") or "Please supply the specified items at the best possible rates"
+        self.docstatus = values.get("docstatus", 0)
+        self.suppliers = [child if isinstance(child, _FakeChildDoc) else _FakeChildDoc(child) for child in values.get("suppliers", [])]
+        self.items = [child if isinstance(child, _FakeChildDoc) else _FakeChildDoc(child) for child in values.get("items", [])]
+
+    def set(self, fieldname, value):
+        setattr(self, fieldname, value)
+
+    def append(self, fieldname, value):
+        if not hasattr(self, fieldname):
+            setattr(self, fieldname, [])
+        getattr(self, fieldname).append(_FakeChildDoc(value))
+
+    def check_permission(self, ptype):
+        if not _has_permission("Request for Quotation", ptype):
+            raise _FakePermissionError("No permission")
+
+    def insert(self):
+        self.check_permission("create")
+        if not self.name:
+            self.name = "PUR-RFQ-DRAFT-001"
+        self.docstatus = 0
+        SAVED_RFQS[self.name] = self
+        return self
+
+    def save(self):
+        self.check_permission("write")
+        SAVED_RFQS[self.name] = self
+        return self
+
+
 
 def _get_doc(*args, **kwargs):
     if args and isinstance(args[0], dict):
+        doctype = args[0].get("doctype")
+        if doctype == "Request for Quotation":
+            return _FakeRFQDoc(values=args[0])
         return _FakeMaterialRequestDoc(values=args[0])
+    if len(args) >= 2 and args[0] == "Request for Quotation":
+        name = args[1]
+        if name in SAVED_RFQS:
+            return SAVED_RFQS[name]
+        if name == "PUR-RFQ-SUBMITTED":
+            return _FakeRFQDoc(name=name, values={"docstatus": 1})
+        if name == "PUR-RFQ-001":
+            return _FakeRFQDoc(name=name, values={
+                "transaction_date": "2026-05-02",
+                "schedule_date": "2026-05-10",
+                "company": "Demo Company",
+                "suppliers": [{"supplier": "SUP-001"}],
+                "items": [{"item_code": "ITEM-001", "qty": 5, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}],
+            })
     if len(args) >= 2 and args[0] == "Material Request":
         name = args[1]
         if name in SAVED_MATERIAL_REQUESTS:
@@ -797,7 +855,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_request, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_request, managed_rfq, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -897,6 +955,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         MISSING_NATIVE_REPORTS.clear()
         MISSING_FIELDS.clear()
         SAVED_MATERIAL_REQUESTS.clear()
+        SAVED_RFQS.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -938,7 +997,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("buying_item_directory", payload["directories"])
 
     def test_procurement_create_actions_follow_erpnext_create_permissions(self):
-        _set_writeable_doctypes("Material Request")
+        _set_writeable_doctypes("Material Request", "Request for Quotation")
         _set_createable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
 
         payload = service.get_procurement_console_bootstrap()
@@ -949,6 +1008,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         )
         self.assertEqual([action["variant"] for action in payload["create_actions"]], ["primary", "primary", "primary", "primary"])
         self.assertEqual(payload["action_targets"]["new_purchase_request"], {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]})
+        self.assertEqual(payload["action_targets"]["new_rfq"], {"kind": "page", "route": "procurement-console-rfq-form", "route_parts": ["new"]})
+        self.assertEqual(payload["action_targets"]["new_supplier_quotation"]["doctype"], "Supplier Quotation")
         self.assertEqual(payload["action_targets"]["new_purchase_order"]["doctype"], "Purchase Order")
         self.assertNotIn("new_supplier", payload["action_targets"])
         self.assertNotIn("new_item", payload["action_targets"])
@@ -1017,6 +1078,96 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         payload = managed_purchase_request.save_managed_purchase_request_draft({
             "name": "MAT-MR-SUBMITTED",
             "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
+
+    def test_managed_rfq_context_is_ready_for_purchase_roles(self):
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        payload = managed_rfq.get_managed_rfq_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["chips"][0]["label"], "New RFQ")
+        self.assertEqual(payload["form"]["header"]["subject"], "Request for Quotation")
+        self.assertEqual(payload["action_targets"]["back_to_rfqs"], {"kind": "worklist", "queue_key": "rfq_directory"})
+        self.assertEqual(payload["conversion"]["purchase_request_to_rfq"], "deferred")
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_rfq_context_restricts_sales_roles(self):
+        _set_user("sales@example.com", ["Sales User"])
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        payload = managed_rfq.get_managed_rfq_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "restricted")
+
+    def test_managed_rfq_save_creates_draft(self):
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        payload = managed_rfq.save_managed_rfq_draft({
+            "header": {"transaction_date": "2026-05-03", "schedule_date": "2026-05-20", "company": "Demo Company"},
+            "suppliers": [{"supplier": "SUP-001"}],
+            "items": [{"item_code": "ITEM-001", "qty": 2, "schedule_date": "2026-05-20", "warehouse": "Stores - DC", "uom": "Wrong"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertIn("PUR-RFQ-DRAFT-001", SAVED_RFQS)
+        doc = SAVED_RFQS["PUR-RFQ-DRAFT-001"]
+        self.assertEqual(doc.docstatus, 0)
+        self.assertEqual(doc.suppliers[0].supplier, "SUP-001")
+        self.assertEqual(doc.items[0].uom, "Nos")
+        self.assertEqual(doc.items[0].stock_uom, "Nos")
+        self.assertEqual(doc.items[0].conversion_factor, 1)
+        self.assertEqual(payload["review_route"], "/desk/procurement-console-rfq-review/PUR-RFQ-DRAFT-001")
+        self.assertNotIn("open_erp_form", [action["key"] for action in managed_rfq.get_managed_rfq_context("new")["controls"]["actions"]])
+        self.assertIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_rfq_requires_supplier_and_item(self):
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        missing_supplier = managed_rfq.save_managed_rfq_draft({
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "suppliers": [],
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
+        })
+        missing_item = managed_rfq.save_managed_rfq_draft({
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "suppliers": [{"supplier": "SUP-001"}],
+            "items": [],
+        })
+
+        self.assertEqual(missing_supplier["state"]["kind"], "error")
+        self.assertEqual(missing_item["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_RFQS)
+
+    def test_managed_rfq_rejects_forbidden_fields(self):
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        payload = managed_rfq.save_managed_rfq_draft({
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company", "submit": 1},
+            "suppliers": [{"supplier": "SUP-001", "email_id": "supplier@example.com"}],
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20", "supplier_quotation": "SQ-001"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_RFQS)
+
+    def test_managed_rfq_cannot_edit_submitted_document(self):
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        payload = managed_rfq.save_managed_rfq_draft({
+            "name": "PUR-RFQ-SUBMITTED",
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "suppliers": [{"supplier": "SUP-001"}],
             "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
         })
 
@@ -1323,8 +1474,12 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("checkProcurementBackForwardLifecycle", source)
         self.assertIn("New Purchase Request must use the managed Phase 5A page route", source)
         self.assertIn("Overview and Purchase Requests directory must route to the same managed PR form", source)
+        self.assertIn("New RFQ must use the managed Phase 5B page route", source)
+        self.assertIn("Overview and RFQ Directory must route to the same managed RFQ form", source)
         self.assertIn("Open ERP Form must not appear before a managed Purchase Request draft is saved", source)
-        self.assertIn("new_rfq: \"Request for Quotation\"", source)
+        self.assertIn("New RFQ must use the managed Phase 5B page route", source)
+        self.assertIn("Overview and RFQ Directory must route to the same managed RFQ form", source)
+        self.assertIn("new_supplier_quotation: \"Supplier Quotation\"", source)
         self.assertIn("must remain a governed native exception", source)
         self.assertIn("new_purchase_request", source)
         self.assertIn("Repeated navigation", source)
@@ -1842,6 +1997,26 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertNotIn("send", str(payload.get("controls", {})).lower())
         self.assertNotIn("email", str(payload.get("controls", {})).lower())
         self.assertNotIn("send_email", str(payload))
+
+    def test_rfq_directory_exposes_managed_create_action_when_permitted(self):
+        _set_writeable_doctypes("Request for Quotation")
+        _set_createable_doctypes("Request for Quotation")
+
+        payload = worklist.get_procurement_console_worklist_context("rfq_directory")
+
+        actions = payload["controls"]["actions"]
+        self.assertEqual(actions[0]["key"], "new_rfq")
+        self.assertEqual(actions[0]["category"], "create-action")
+        self.assertEqual(actions[0]["kind"], "create")
+        self.assertEqual(
+            payload["action_targets"]["new_rfq"],
+            {"kind": "page", "route": "procurement-console-rfq-form", "route_parts": ["new"]},
+        )
+
+        _set_writeable_doctypes()
+        _set_createable_doctypes()
+        restricted_payload = worklist.get_procurement_console_worklist_context("rfq_directory")
+        self.assertNotIn("new_rfq", [action["key"] for action in restricted_payload["controls"]["actions"]])
 
     def test_rfqs_awaiting_response_uses_quote_status(self):
         payload = worklist.get_procurement_console_worklist_context("rfqs_awaiting_supplier_response")

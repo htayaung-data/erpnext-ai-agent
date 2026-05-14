@@ -2665,7 +2665,6 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   const targets = (bootstrapPayload && bootstrapPayload.action_targets) || {};
   const keys = actions.map((action) => action.key).filter(Boolean);
   const governedNativeCreateTargets = {
-    new_rfq: "Request for Quotation",
     new_supplier_quotation: "Supplier Quotation",
     new_purchase_order: "Purchase Order",
     new_supplier: "Supplier",
@@ -2676,7 +2675,13 @@ async function checkCreateActions(page, user, bootstrapPayload) {
     if (key === "new_purchase_request") {
       assert(target.kind === "page", "New Purchase Request must use the managed Phase 5A page route", { target });
       assert(target.route === "procurement-console-purchase-request-form", "New Purchase Request route must target the managed Purchase Request form", { target });
-      assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New Purchase Request route must open the new managed draft form", { target });
+      assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New Purchase Request route must open the new managed request form", { target });
+      return;
+    }
+    if (key === "new_rfq") {
+      assert(target.kind === "page", "New RFQ must use the managed Phase 5B page route", { target });
+      assert(target.route === "procurement-console-rfq-form", "New RFQ route must target the managed RFQ form", { target });
+      assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New RFQ route must open the new managed RFQ form", { target });
       return;
     }
     if (governedNativeCreateTargets[key]) {
@@ -2723,6 +2728,7 @@ async function checkCreateActions(page, user, bootstrapPayload) {
     assert(primaryLayout.actionCount === 4 && primaryLayout.declaredColumns === "2", "Core Procurement create actions should render as a balanced 2x2 primary grid", primaryLayout);
   }
   let createRoute = null;
+  let rfqCreateRoute = null;
   if (keys.includes("new_purchase_request")) {
     await page.locator('[data-erpw-procurement-create-action="new_purchase_request"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-purchase-request-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
@@ -2762,7 +2768,46 @@ async function checkCreateActions(page, user, bootstrapPayload) {
     await openDeskRoute(page, "/desk/procurement-console");
     await assertSingleProcurementShell(page, "overview", "After directory create action return to Procurement Overview");
   }
-  return { keys, labels, createRoute };
+  if (keys.includes("new_rfq")) {
+    await page.locator('[data-erpw-procurement-create-action="new_rfq"]').first().click();
+    await page.waitForURL(/\/desk\/procurement-console-rfq-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.locator(".erpw-managed-rfq-page .erpw-managed-rfq-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    rfqCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    assert(!/\/desk\/(?:request-for-quotation|Form\/Request%20for%20Quotation|Form\/Request for Quotation)\//i.test(page.url()), "New RFQ primary action leaked to native Request for Quotation route", rfqCreateRoute);
+    const activeManagedRfq = await page.locator(".erpw-managed-rfq-page").evaluateAll((nodes) => {
+      const visible = (node) => {
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+      };
+      const visibleShells = nodes.filter(visible);
+      const actions = visibleShells.flatMap((shell) =>
+        Array.from(shell.querySelectorAll(".erpw-child-toolbar-action"))
+          .filter(visible)
+          .map((node) => (node.textContent || "").replace(/\s+/g, " ").trim())
+      );
+      return { count: visibleShells.length, actions };
+    });
+    assert(activeManagedRfq.count === 1, "Managed RFQ create route must have exactly one active visible form shell", activeManagedRfq);
+    assert(!activeManagedRfq.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear before a managed RFQ is saved", activeManagedRfq);
+    const managedState = await procurementShellState(page);
+    assert(managedState.managedRfqForm === 1, "Managed RFQ create route did not render as the active Procurement shell", managedState);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After RFQ create action return to Procurement Overview");
+    await openDeskRoute(page, "/desk/procurement-console-worklist/rfq-directory");
+    await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const directoryCreate = page.locator("button:has-text('New RFQ')").first();
+    await directoryCreate.waitFor({ state: "visible", timeout: TIMEOUT });
+    await directoryCreate.click();
+    await page.waitForURL(/\/desk\/procurement-console-rfq-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    const directoryCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    assert(rfqCreateRoute.url.replace(/[#?].*$/, "") === directoryCreateRoute.url.replace(/[#?].*$/, ""), "Overview and RFQ Directory must route to the same managed RFQ form", { rfqCreateRoute, directoryCreateRoute });
+    assert(!/\/desk\/(?:request-for-quotation|Form\/Request%20for%20Quotation|Form\/Request for Quotation)\//i.test(page.url()), "RFQ Directory New RFQ leaked to native Request for Quotation route", directoryCreateRoute);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After RFQ directory create action return to Procurement Overview");
+  }
+  return { keys, labels, createRoute, rfqCreateRoute };
 }
 
 async function runUser(browser, user) {

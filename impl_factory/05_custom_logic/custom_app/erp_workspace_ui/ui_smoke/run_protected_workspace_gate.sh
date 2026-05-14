@@ -164,7 +164,7 @@ collect_node_check_files() {
 	{
 		git -C "$APP_ROOT" ls-files 			"erp_workspace_ui/public/js/*.js" 			"erp_workspace_ui/public/js/runtime/**/*.js" 			"erp_workspace_ui/erp_workspace_ui/page/**/*.js"
 		printf "%s
-" 			"ui_smoke/procurement_phase3_smoke.js" 			"ui_smoke/procurement_responsive_filter_smoke.js" 			"ui_smoke/sales_action_cards_smoke.js" 			"ui_smoke/sales_detail_boundary_smoke.js" 			"ui_smoke/sales_directory_performance_smoke.js" 			"ui_smoke/sales_native_leakage_smoke.js" 			"ui_smoke/sales_order_analysis_smoke.js" 			"ui_smoke/sales_report_family_smoke.js" 			"ui_smoke/sales_route_lifecycle_smoke.js" 			"ui_smoke/sales_visual_stability_smoke.js" 			"ui_smoke/sales_worklist_shell_smoke.js"
+" 			"ui_smoke/procurement_phase3_smoke.js" 			"ui_smoke/procurement_phase5b_smoke.js" 			"ui_smoke/procurement_responsive_filter_smoke.js" 			"ui_smoke/sales_action_cards_smoke.js" 			"ui_smoke/sales_detail_boundary_smoke.js" 			"ui_smoke/sales_directory_performance_smoke.js" 			"ui_smoke/sales_native_leakage_smoke.js" 			"ui_smoke/sales_order_analysis_smoke.js" 			"ui_smoke/sales_report_family_smoke.js" 			"ui_smoke/sales_route_lifecycle_smoke.js" 			"ui_smoke/sales_visual_stability_smoke.js" 			"ui_smoke/sales_worklist_shell_smoke.js"
 	} | sort -u > "$NODE_CHECK_LIST"
 }
 run_node_checks() {

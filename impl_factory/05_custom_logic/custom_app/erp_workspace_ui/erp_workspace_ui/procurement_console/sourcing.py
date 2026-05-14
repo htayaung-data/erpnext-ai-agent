@@ -274,6 +274,11 @@ def _rfq_payload(
 	rows: list[dict[str, object]],
 	state: dict[str, object],
 ) -> dict[str, object]:
+	actions = list(common.standard_actions())
+	action_targets = common.page_action_targets_for_rows("procurement-console-rfq-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")})
+	if queue_key == "rfq_directory" and common.can_create("Request for Quotation") and common.can_write("Request for Quotation"):
+		actions.insert(0, {"key": "new_rfq", "label": "New RFQ", "kind": "create", "category": "create-action"})
+		action_targets["new_rfq"] = {"kind": "page", "route": "procurement-console-rfq-form", "route_parts": ["new"]}
 	return {
 		"page": {"title": title, "key": queue_key},
 		"summary": {
@@ -283,7 +288,7 @@ def _rfq_payload(
 		},
 		"controls": {
 			"fields": _rfq_control_fields(filters),
-			"actions": common.standard_actions(),
+			"actions": actions,
 			"scopeChips": ["Request for Quotation", "Supplier response visibility"],
 		},
 		"metrics": [common.metric("RFQs in view", len(rows), "Matching RFQs.")],
@@ -302,7 +307,7 @@ def _rfq_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.page_action_targets_for_rows("procurement-console-rfq-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")}),
+		"action_targets": action_targets,
 	}
 
 
