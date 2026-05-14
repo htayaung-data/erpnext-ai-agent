@@ -79,7 +79,19 @@ async function assertStableManagedForm(page, label) {
     });
     const pageEl = visiblePages[0] || null;
     const shell = pageEl ? pageEl.querySelector(".erpw-managed-pr-shell") : null;
-    const actionButtons = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-child-toolbar-action")).map((button) => button.textContent.trim()) : [];
+    const actionDetails = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-child-toolbar-action")).map((button) => {
+      const rect = button.getBoundingClientRect();
+      const style = window.getComputedStyle(button);
+      return {
+        text: button.textContent.trim(),
+        className: button.className || "",
+        backgroundImage: style.backgroundImage,
+        borderColor: style.borderColor,
+        color: style.color,
+        visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+      };
+    }) : [];
+    const actionButtons = actionDetails.map((button) => button.text);
     const removeRects = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-managed-pr-row-button")).map((button) => {
       const rect = button.getBoundingClientRect();
       const style = window.getComputedStyle(button);
@@ -102,6 +114,12 @@ async function assertStableManagedForm(page, label) {
     const companyContextRect = companyContext ? companyContext.getBoundingClientRect() : null;
     const summaryFacts = pageEl ? pageEl.querySelector(".erpw-child-summary-facts") : null;
     const summaryFactsRect = summaryFacts ? summaryFacts.getBoundingClientRect() : null;
+    const card = pageEl ? pageEl.querySelector(".erpw-managed-pr-card") : null;
+    const summaryStyle = summary ? window.getComputedStyle(summary) : null;
+    const cardStyle = card ? window.getComputedStyle(card) : null;
+    const formLabels = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-managed-pr-field label")).map((node) => node.textContent.trim()) : [];
+    const rowLabels = pageEl ? Array.from(pageEl.querySelectorAll(".erpw-managed-pr-table td[data-label]")).map((node) => node.getAttribute("data-label") || "") : [];
+    const helperCount = pageEl ? (pageEl.innerText.match(/New item lines use the default date unless changed\./g) || []).length : 0;
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     return {
@@ -111,6 +129,12 @@ async function assertStableManagedForm(page, label) {
       duplicateHeads: document.querySelectorAll(".page-head").length,
       hasForm: Boolean(shell && pageEl && pageEl.querySelector(".erpw-managed-pr-card")),
       actionButtons,
+      actionDetails,
+      formLabels,
+      rowLabels,
+      helperCount,
+      summaryBackgroundImage: summaryStyle ? summaryStyle.backgroundImage : "",
+      cardBackgroundImage: cardStyle ? cardStyle.backgroundImage : "",
       bodyWidth,
       viewportWidth,
       documentWidth: Math.ceil(document.documentElement.scrollWidth),
@@ -143,6 +167,14 @@ async function assertStableManagedForm(page, label) {
   assert(state.draftWordCount === 0, `${label}: Draft wording is still visible in the productized managed PR flow`, state);
   assert(state.newRequestCount > 0, `${label}: New Request status is not visible`, state);
   assert(state.actionButtons.includes("Save Request"), `${label}: Save Request action missing`, state);
+  const saveAction = state.actionDetails.find((button) => button.text === "Save Request");
+  const secondaryPrimaryActions = state.actionDetails.filter((button) => button.text !== "Save Request" && /\bprimary\b/.test(button.className || ""));
+  assert(saveAction && /\bprimary\b/.test(saveAction.className || ""), `${label}: Save Request does not use the shared primary action style`, state);
+  assert(!secondaryPrimaryActions.length, `${label}: secondary actions are styled as primary`, { secondaryPrimaryActions, state });
+  assert(state.formLabels.includes("Default Required By"), `${label}: Default Required By header label missing`, state);
+  assert(state.rowLabels.includes("Line Required By"), `${label}: Line Required By row label missing`, state);
+  assert(state.helperCount === 1, `${label}: default-date helper copy must appear once`, state);
+  assert(!/gradient/i.test(state.summaryBackgroundImage || "") && !/gradient/i.test(state.cardBackgroundImage || ""), `${label}: managed PR header/card uses a non-standard gradient`, state);
   assert(!state.companyContextVisible, `${label}: company context metadata should be omitted from the main form`, state);
   assert(!state.companyInputVisible, `${label}: company still renders as editable-looking form input`, state);
   assert(state.openErpBeforeSave === 0, `${label}: Open ERP Form must not appear before a managed Purchase Request draft is saved`, state);
@@ -197,14 +229,20 @@ async function chooseAutocomplete(page, selector, value) {
 
 async function fillAndSaveDraft(page, userKey) {
   const { item, warehouse } = await getFixtureValues(page);
+  const defaultDate = "2026-05-20";
+  const manualLineDate = "2026-05-22";
   await page.locator('[data-field="transaction_date"]').fill("2026-05-13");
-  await page.locator('[data-field="schedule_date"]').fill("2026-05-20");
+  await page.locator('[data-field="schedule_date"]').fill(defaultDate);
   await chooseAutocomplete(page, ".item-link", item.name);
   await page.locator('[data-row-field="qty"]').first().fill("1");
-  await page.locator('[data-row-field="schedule_date"]').first().fill("2026-05-20");
+  await page.locator('[data-row-field="schedule_date"]').first().fill(manualLineDate);
   if (warehouse && warehouse.name) {
     await chooseAutocomplete(page, ".warehouse-link", warehouse.name);
   }
+  await page.locator('[data-add-row]').click();
+  const dateDefaultState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-pr-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateDefaultState[0] === manualLineDate && dateDefaultState[1] === defaultDate, "Managed PR line date defaulting overwrote a manual line date or failed to copy the default", { dateDefaultState, defaultDate, manualLineDate });
+  await page.locator('[data-remove-row="1"]').click();
   await page.waitForFunction(() => {
     const uom = document.querySelector('[data-row-field="uom"]');
     return uom && String(uom.value || "").trim().length > 0;
@@ -215,9 +253,11 @@ async function fillAndSaveDraft(page, userKey) {
   await capture(page, `${userKey}-managed-pr-saved`);
   const state = await page.evaluate(() => {
     const shell = document.querySelector(".erpw-managed-pr-page");
+    const actionDetails = Array.from(shell ? shell.querySelectorAll(".erpw-child-toolbar-action") : document.querySelectorAll(".erpw-child-toolbar-action")).map((button) => ({ text: button.textContent.trim(), className: button.className || "" }));
     return {
       url: location.pathname,
-      actions: Array.from(shell ? shell.querySelectorAll(".erpw-child-toolbar-action") : document.querySelectorAll(".erpw-child-toolbar-action")).map((button) => button.textContent.trim()),
+      actions: actionDetails.map((button) => button.text),
+      actionDetails,
       message: document.querySelector("[data-managed-pr-message]") ? document.querySelector("[data-managed-pr-message]").textContent.trim() : "",
       text: shell ? shell.innerText : document.body.innerText,
     };
@@ -227,6 +267,7 @@ async function fillAndSaveDraft(page, userKey) {
   assert(!/Save Draft|Saved Draft|\bDraft\b/.test(state.text || ""), "Draft wording visible after save", state);
   assert(state.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after save", state);
   assert(state.actions.some((label) => /Review Request/i.test(label)), "Review Request action missing after save", state);
+  assert(state.actionDetails.every((button) => !/Open ERP Form|Review Request|Back to Purchase Requests|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed PR secondary actions must not use primary style", state);
 }
 
 async function verifyOverviewAction(page, user) {

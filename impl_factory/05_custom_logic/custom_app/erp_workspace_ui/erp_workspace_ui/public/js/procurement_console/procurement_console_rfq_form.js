@@ -268,12 +268,12 @@
         <div class="erpw-managed-rfq-section-head">
           <div>
             <div class="erpw-managed-rfq-section-title">RFQ details</div>
-            <div class="erpw-managed-rfq-section-note">Set sourcing dates and request lines before supplier communication.</div>
+            <div class="erpw-managed-rfq-section-note">New item lines use the default date unless changed.</div>
           </div>
         </div>
         <div class="erpw-managed-rfq-grid">
           <div class="erpw-managed-rfq-field"><label>Transaction Date</label><input class="erpw-managed-rfq-input" data-field="transaction_date" type="date" value="${escapeHtml(header.transaction_date || "")}"></div>
-          <div class="erpw-managed-rfq-field"><label>Required By</label><input class="erpw-managed-rfq-input" data-field="schedule_date" type="date" value="${escapeHtml(header.schedule_date || "")}"></div>
+          <div class="erpw-managed-rfq-field"><label>Default Required By</label><input class="erpw-managed-rfq-input" data-field="schedule_date" type="date" value="${escapeHtml(header.schedule_date || "")}"></div>
         </div>
         <div class="erpw-managed-rfq-lines-head">
           <div>
@@ -300,18 +300,18 @@
         <div class="erpw-managed-rfq-lines-head">
           <div>
             <div class="erpw-managed-rfq-lines-title">Items</div>
-            <div class="erpw-managed-rfq-lines-note">Select items, quantities, required dates, and optional warehouse.</div>
+            <div class="erpw-managed-rfq-lines-note">Select items, quantities, line dates, and optional warehouse.</div>
           </div>
         </div>
         <div class="erpw-managed-rfq-table-wrap">
           <table class="erpw-managed-rfq-table">
-            <thead><tr><th>Item</th><th class="qty">Qty</th><th class="date">Required By</th><th>Warehouse</th><th class="uom">UOM</th><th class="row-action"></th></tr></thead>
+            <thead><tr><th>Item</th><th class="qty">Qty</th><th class="date">Line Required By</th><th>Warehouse</th><th class="uom">UOM</th><th class="row-action"></th></tr></thead>
             <tbody>
               ${(form.items || []).map((row, index) => `
                 <tr data-row-index="${index}">
                   <td class="erpw-managed-rfq-link-cell erpw-managed-rfq-line-item" data-label="Item"><input class="item-link" data-row-field="item_code" value="${escapeHtml(row.item_code || "")}" placeholder="Select item" autocomplete="off"></td>
                   <td class="erpw-managed-rfq-line-qty" data-label="Qty"><input data-row-field="qty" type="number" min="0" step="0.01" value="${escapeHtml(row.qty || "")}"></td>
-                  <td class="erpw-managed-rfq-line-date" data-label="Required By"><input data-row-field="schedule_date" type="date" value="${escapeHtml(row.schedule_date || header.schedule_date || "")}"></td>
+                  <td class="erpw-managed-rfq-line-date" data-label="Line Required By"><input data-row-field="schedule_date" type="date" value="${escapeHtml(row.schedule_date || header.schedule_date || "")}"></td>
                   <td class="erpw-managed-rfq-link-cell erpw-managed-rfq-line-warehouse" data-label="Warehouse"><input class="warehouse-link" data-row-field="warehouse" value="${escapeHtml(row.warehouse || "")}" placeholder="Optional warehouse" autocomplete="off"></td>
                   <td class="uom erpw-managed-rfq-line-uom" data-label="UOM"><span class="erpw-managed-rfq-uom-value" data-uom-display>${escapeHtml(row.uom || "Derived")}</span><input type="hidden" data-row-field="uom" value="${escapeHtml(row.uom || "")}"></td>
                   <td class="row-action erpw-managed-rfq-line-action"><button type="button" class="erpw-managed-rfq-row-button" data-remove-row="${index}">Remove</button></td>

@@ -80,7 +80,17 @@ async function stableRfqSnapshot(page, label) {
     };
     const shells = Array.from(document.querySelectorAll(".erpw-managed-rfq-page")).filter(visible);
     const shell = shells[0] || null;
-    const buttons = shell ? Array.from(shell.querySelectorAll(".erpw-child-toolbar-action")).filter(visible).map((button) => button.textContent.trim()) : [];
+    const actionDetails = shell ? Array.from(shell.querySelectorAll(".erpw-child-toolbar-action")).filter(visible).map((button) => {
+      const style = window.getComputedStyle(button);
+      return {
+        text: button.textContent.trim(),
+        className: button.className || "",
+        backgroundImage: style.backgroundImage,
+        borderColor: style.borderColor,
+        color: style.color,
+      };
+    }) : [];
+    const buttons = actionDetails.map((button) => button.text);
     const removeRects = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-row-button")).map((button) => {
       const rect = button.getBoundingClientRect();
       return { text: button.textContent.trim(), right: Math.round(rect.right), visible: visible(button) };
@@ -98,6 +108,13 @@ async function stableRfqSnapshot(page, label) {
         textOverflow: style.textOverflow,
       };
     }) : [];
+    const summary = shell ? shell.querySelector(".erpw-child-summary") : null;
+    const card = shell ? shell.querySelector(".erpw-managed-rfq-card") : null;
+    const summaryStyle = summary ? window.getComputedStyle(summary) : null;
+    const cardStyle = card ? window.getComputedStyle(card) : null;
+    const formLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-field label")).map((node) => node.textContent.trim()) : [];
+    const rowLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-rfq-table td[data-label]")).map((node) => node.getAttribute("data-label") || "") : [];
+    const helperCount = shell ? (shell.innerText.match(/New item lines use the default date unless changed\./g) || []).length : 0;
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     const text = shell ? shell.innerText : document.body.innerText;
@@ -128,6 +145,12 @@ async function stableRfqSnapshot(page, label) {
       bodyWidth,
       viewportWidth,
       buttons,
+      actionDetails,
+      formLabels,
+      rowLabels,
+      helperCount,
+      summaryBackgroundImage: summaryStyle ? summaryStyle.backgroundImage : "",
+      cardBackgroundImage: cardStyle ? cardStyle.backgroundImage : "",
       removeRects,
       uomDisplays,
       hasCompanyField: Boolean(shell && shell.querySelector('[data-field="company"]')),
@@ -139,6 +162,14 @@ async function stableRfqSnapshot(page, label) {
   assert(!state.rfqFormTextHits.some((hit) => !hit.insideShell || hit.belowShell), `${label}: stale RFQ Form chrome visible outside managed form`, state);
   assert(state.bodyWidth <= state.viewportWidth + 2, `${label}: horizontal overflow`, state);
   assert(state.buttons.includes("Save RFQ"), `${label}: Save RFQ action missing`, state);
+  const saveAction = state.actionDetails.find((button) => button.text === "Save RFQ");
+  const secondaryPrimaryActions = state.actionDetails.filter((button) => button.text !== "Save RFQ" && /\bprimary\b/.test(button.className || ""));
+  assert(saveAction && /\bprimary\b/.test(saveAction.className || ""), `${label}: Save RFQ does not use the shared primary action style`, state);
+  assert(!secondaryPrimaryActions.length, `${label}: secondary actions are styled as primary`, { secondaryPrimaryActions, state });
+  assert(state.formLabels.includes("Default Required By"), `${label}: Default Required By header label missing`, state);
+  assert(state.rowLabels.includes("Line Required By"), `${label}: Line Required By row label missing`, state);
+  assert(state.helperCount === 1, `${label}: default-date helper copy must appear once`, state);
+  assert(!/gradient/i.test(state.summaryBackgroundImage || "") && !/gradient/i.test(state.cardBackgroundImage || ""), `${label}: managed RFQ header/card uses a non-standard gradient`, state);
   assert(!state.buttons.some((label) => /Open ERP Form/i.test(label)) || !/\/new$/.test(state.url), `${label}: Open ERP Form appeared before save`, state);
   assert(!state.hasCompanyField, `${label}: company field should not render in managed RFQ UI`, state);
   assert(!/\bDraft\b|Phase 5B/i.test(state.text || ""), `${label}: technical draft or phase text visible`, state);
@@ -252,24 +283,32 @@ async function verifyAutocompleteGeometry(page, userKey, width, height) {
 
 async function fillAndSaveRfq(page, userKey) {
   const { supplier, item, warehouse } = await getFixtureValues(page);
+  const defaultDate = "2026-05-21";
+  const manualLineDate = "2026-05-23";
   await page.locator('[data-field="transaction_date"]').fill("2026-05-14");
-  await page.locator('[data-field="schedule_date"]').fill("2026-05-21");
+  await page.locator('[data-field="schedule_date"]').fill(defaultDate);
   await chooseAutocomplete(page, ".supplier-link", supplier.name, `${userKey}-supplier-autocomplete-1136`);
   await chooseAutocomplete(page, ".item-link", item.name, `${userKey}-item-autocomplete-1136`);
   await page.locator('[data-row-field="qty"]').first().fill("1");
-  await page.locator('[data-row-field="schedule_date"]').first().fill("2026-05-21");
+  await page.locator('[data-row-field="schedule_date"]').first().fill(manualLineDate);
   if (warehouse && warehouse.name) await chooseAutocomplete(page, ".warehouse-link", warehouse.name, `${userKey}-warehouse-autocomplete-1136`);
+  await page.locator('[data-add-row]').click();
+  const dateDefaultState = await page.evaluate(() => Array.from(document.querySelectorAll('.erpw-managed-rfq-page [data-row-field="schedule_date"]')).map((input) => input.value));
+  assert(dateDefaultState[0] === manualLineDate && dateDefaultState[1] === defaultDate, "Managed RFQ line date defaulting overwrote a manual line date or failed to copy the default", { dateDefaultState, defaultDate, manualLineDate });
+  await page.locator('[data-remove-row="1"]').click();
   await page.locator("button:has-text('Save RFQ')").click();
   await page.waitForFunction(() => /procurement-console-rfq-form\/(?!new$)[^/]+$/.test(location.pathname), null, { timeout: TIMEOUT });
   await waitForManagedRfq(page);
   await capture(page, `${userKey}-managed-rfq-saved`);
   const saved = await page.evaluate(() => {
     const shell = document.querySelector(".erpw-managed-rfq-page");
-    return { url: location.pathname, text: shell ? shell.innerText : document.body.innerText, actions: Array.from(shell ? shell.querySelectorAll(".erpw-child-toolbar-action") : []).map((button) => button.textContent.trim()) };
+    const actionDetails = Array.from(shell ? shell.querySelectorAll(".erpw-child-toolbar-action") : []).map((button) => ({ text: button.textContent.trim(), className: button.className || "" }));
+    return { url: location.pathname, text: shell ? shell.innerText : document.body.innerText, actions: actionDetails.map((button) => button.text), actionDetails };
   });
   assert(/RFQ Recorded/.test(saved.text || ""), "RFQ Recorded status missing after save", saved);
   assert(saved.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form should appear only after saved RFQ", saved);
   assert(saved.actions.some((label) => /Review RFQ/i.test(label)), "Review RFQ action missing after save", saved);
+  assert(saved.actionDetails.every((button) => !/Open ERP Form|Review RFQ|Back to RFQs|Reset/i.test(button.text) || !/\bprimary\b/.test(button.className || "")), "Saved managed RFQ secondary actions must not use primary style", saved);
   assert(!/Submit|Send Email|Supplier Portal|Create Supplier Quotation|Create Purchase Order/i.test(saved.text || ""), "Forbidden RFQ action text visible after save", saved);
 }
 

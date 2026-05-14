@@ -240,28 +240,28 @@
         <div class="erpw-managed-pr-section-head">
           <div>
             <div class="erpw-managed-pr-section-title">Request details</div>
-            <div class="erpw-managed-pr-section-note">Add required dates and purchase items.</div>
+            <div class="erpw-managed-pr-section-note">New item lines use the default date unless changed.</div>
           </div>
         </div>
         <div class="erpw-managed-pr-grid">
           <div class="erpw-managed-pr-field"><label>Transaction Date</label><input class="erpw-managed-pr-input" data-field="transaction_date" type="date" value="${escapeHtml(header.transaction_date || "")}"></div>
-          <div class="erpw-managed-pr-field"><label>Required By</label><input class="erpw-managed-pr-input" data-field="schedule_date" type="date" value="${escapeHtml(header.schedule_date || "")}"></div>
+          <div class="erpw-managed-pr-field"><label>Default Required By</label><input class="erpw-managed-pr-input" data-field="schedule_date" type="date" value="${escapeHtml(header.schedule_date || "")}"></div>
         </div>
         <div class="erpw-managed-pr-lines-head">
           <div>
             <div class="erpw-managed-pr-lines-title">Items</div>
-            <div class="erpw-managed-pr-lines-note">Select items, quantities, required dates, and optional warehouse.</div>
+            <div class="erpw-managed-pr-lines-note">Select items, quantities, line dates, and optional warehouse.</div>
           </div>
         </div>
         <div class="erpw-managed-pr-table-wrap">
           <table class="erpw-managed-pr-table">
-            <thead><tr><th>Item</th><th class="qty">Qty</th><th class="date">Required By</th><th>Warehouse</th><th class="uom">UOM</th><th class="row-action"></th></tr></thead>
+            <thead><tr><th>Item</th><th class="qty">Qty</th><th class="date">Line Required By</th><th>Warehouse</th><th class="uom">UOM</th><th class="row-action"></th></tr></thead>
             <tbody>
               ${(form.items || []).map((row, index) => `
                 <tr data-row-index="${index}">
                   <td class="erpw-managed-pr-link-cell erpw-managed-pr-line-item" data-label="Item"><input class="item-link" data-row-field="item_code" value="${escapeHtml(row.item_code || "")}" placeholder="Select item" autocomplete="off"></td>
                   <td class="erpw-managed-pr-line-qty" data-label="Qty"><input data-row-field="qty" type="number" min="0" step="0.01" value="${escapeHtml(row.qty || "")}"></td>
-                  <td class="erpw-managed-pr-line-date" data-label="Required By"><input data-row-field="schedule_date" type="date" value="${escapeHtml(row.schedule_date || header.schedule_date || "")}"></td>
+                  <td class="erpw-managed-pr-line-date" data-label="Line Required By"><input data-row-field="schedule_date" type="date" value="${escapeHtml(row.schedule_date || header.schedule_date || "")}"></td>
                   <td class="erpw-managed-pr-link-cell erpw-managed-pr-line-warehouse" data-label="Warehouse"><input class="warehouse-link" data-row-field="warehouse" value="${escapeHtml(row.warehouse || "")}" placeholder="Optional warehouse" autocomplete="off"></td>
                   <td class="uom erpw-managed-pr-line-uom" data-label="UOM"><span class="erpw-managed-pr-uom-value" data-uom-display>${escapeHtml(row.uom || "Derived")}</span><input type="hidden" data-row-field="uom" value="${escapeHtml(row.uom || "")}"></td>
                   <td class="row-action erpw-managed-pr-line-action"><button type="button" class="erpw-managed-pr-row-button" data-remove-row="${index}">Remove</button></td>
@@ -365,8 +365,14 @@
     const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
     const width = Math.min(Math.max(rect.width, 300), Math.max(220, viewportWidth - rect.left - 12));
-    const maxHeight = Math.min(240, Math.max(120, viewportHeight - rect.bottom - 16));
-    $menu.css({ left: `${Math.round(rect.left)}px`, top: `${Math.round(rect.bottom + 6)}px`, width: `${Math.round(width)}px`, maxHeight: `${Math.round(maxHeight)}px` });
+    const availableBelow = Math.max(40, viewportHeight - rect.bottom - 16);
+    const availableAbove = Math.max(40, rect.top - 16);
+    const naturalHeight = Math.min(240, Math.max(40, $menu.get(0) ? $menu.get(0).scrollHeight : 40));
+    const placeAbove = naturalHeight + 6 > availableBelow && availableAbove > availableBelow;
+    const maxHeight = Math.min(240, placeAbove ? availableAbove : availableBelow);
+    const menuHeight = Math.min(naturalHeight, maxHeight);
+    const top = placeAbove ? Math.max(12, rect.top - menuHeight - 6) : rect.bottom + 6;
+    $menu.css({ left: `${Math.round(rect.left)}px`, top: `${Math.round(top)}px`, width: `${Math.round(width)}px`, maxHeight: `${Math.round(maxHeight)}px` });
   }
 
   function showSuggestions($shell, input, doctype, viewState) {
