@@ -589,10 +589,21 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
       label: "New Purchase Request",
       path: /\/desk\/procurement-console-purchase-request-form\/new$/,
       managed: true,
+      shellSelector: ".erpw-managed-pr-page .erpw-managed-pr-card",
+      nativeLeakPattern: /\/desk\/material-request\//i,
       backSelector: "button:has-text('Back to Purchase Requests')",
       backPath: /\/desk\/procurement-console-worklist\/purchase-request-directory$/,
     },
-    { key: "new_rfq", label: "New RFQ", path: /\/desk\/request-for-quotation\// },
+    {
+      key: "new_rfq",
+      label: "New RFQ",
+      path: /\/desk\/procurement-console-rfq-form\/new$/,
+      managed: true,
+      shellSelector: ".erpw-managed-rfq-page .erpw-managed-rfq-card",
+      nativeLeakPattern: /\/desk\/(?:request-for-quotation|Form\/Request%20for%20Quotation|Form\/Request for Quotation)\//i,
+      backSelector: "button:has-text('Back to RFQs')",
+      backPath: /\/desk\/procurement-console-worklist\/rfq-directory$/,
+    },
     { key: "new_supplier_quotation", label: "New Supplier Quotation", path: /\/desk\/supplier-quotation\// },
     { key: "new_purchase_order", label: "New Purchase Order", path: /\/desk\/purchase-order\// },
   ];
@@ -602,8 +613,8 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
     await clickProcurementCreateAction(page, item.key, item.path);
     snapshots.push(await procurementChromeSnapshot(page, item.label));
     if (item.managed) {
-      await page.locator(".erpw-managed-pr-page .erpw-managed-pr-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
-      assert(!/\/desk\/material-request\//i.test(page.url()), `${item.label}: managed create action leaked to native Material Request route`, { url: page.url() });
+      await page.locator(item.shellSelector).first().waitFor({ state: "visible", timeout: TIMEOUT });
+      assert(!item.nativeLeakPattern.test(page.url()), `${item.label}: managed create action leaked to native ERP route`, { url: page.url() });
       await page.locator(item.backSelector).first().click();
       await page.waitForURL((url) => item.backPath.test(url.pathname), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
       continue;
