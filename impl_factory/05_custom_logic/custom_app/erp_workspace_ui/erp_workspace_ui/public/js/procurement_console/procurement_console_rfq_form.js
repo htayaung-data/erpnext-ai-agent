@@ -164,6 +164,29 @@
     }
   }
 
+  function cleanupManagedPageChrome(wrapper) {
+    $(wrapper).find(".page-head").remove();
+  }
+
+  function cleanupRouteShells() {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.cleanupProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.cleanupProcurementRouteShells(PAGE_KEY, { removeActive: true });
+    }
+  }
+
+  function pruneRouteShells(keepNode) {
+    if (window.erpWorkspaceUiBoot && typeof window.erpWorkspaceUiBoot.pruneProcurementRouteShells === "function") {
+      window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode);
+      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 0);
+      setTimeout(() => window.erpWorkspaceUiBoot.pruneProcurementRouteShells(PAGE_KEY, keepNode), 80);
+    }
+  }
+
+  function isAttached($node) {
+    const node = $node && $node.get ? $node.get(0) : null;
+    return Boolean(node && document.documentElement.contains(node));
+  }
+
   function rememberNativeChromeTarget(target) {
     const context = target && target.native_chrome && typeof target.native_chrome === "object" ? Object.assign({}, target.native_chrome) : null;
     if (!context) return;
@@ -412,11 +435,13 @@
     const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
     const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
     const width = Math.min(Math.max(rect.width, 300), Math.max(220, viewportWidth - rect.left - 12));
-    const availableBelow = Math.max(80, viewportHeight - rect.bottom - 16);
-    const availableAbove = Math.max(80, rect.top - 16);
-    const placeAbove = availableBelow < 140 && availableAbove > availableBelow;
+    const availableBelow = Math.max(40, viewportHeight - rect.bottom - 16);
+    const availableAbove = Math.max(40, rect.top - 16);
+    const naturalHeight = Math.min(240, Math.max(40, $menu.get(0) ? $menu.get(0).scrollHeight : 40));
+    const placeAbove = naturalHeight + 6 > availableBelow && availableAbove > availableBelow;
     const maxHeight = Math.min(240, placeAbove ? availableAbove : availableBelow);
-    const top = placeAbove ? Math.max(12, rect.top - maxHeight - 6) : rect.bottom + 6;
+    const menuHeight = Math.min(naturalHeight, maxHeight);
+    const top = placeAbove ? Math.max(12, rect.top - menuHeight - 6) : rect.bottom + 6;
     $menu.css({ left: `${Math.round(rect.left)}px`, top: `${Math.round(top)}px`, width: `${Math.round(width)}px`, maxHeight: `${Math.round(maxHeight)}px` });
   }
 
@@ -519,17 +544,22 @@
   }
 
   function render(wrapper) {
+    cleanupRouteShells();
     ensureStyles();
     const page = makePage(wrapper);
+    cleanupManagedPageChrome(wrapper);
     const host = ensureHost(page, wrapper);
     const viewState = { page, wrapper, $host: host.$host, $shell: host.$shell, payload: loadingPayload(), form: null };
     wrapper.__erpwManagedRfqForm = viewState;
+    pruneRouteShells(host.$host.get(0));
     ensureRuntime().then(() => loadRoute(viewState));
   }
 
   function show(wrapper) {
     const state = wrapper && wrapper.__erpwManagedRfqForm;
-    if (state && state.$shell && state.$shell.length) {
+    if (state && state.$shell && state.$shell.length && isAttached(state.$host) && isAttached(state.$shell)) {
+      cleanupManagedPageChrome(wrapper);
+      pruneRouteShells(state.$host.get(0));
       loadRoute(state);
       return;
     }

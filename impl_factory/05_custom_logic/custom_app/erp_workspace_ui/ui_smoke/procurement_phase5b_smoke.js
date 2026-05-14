@@ -101,10 +101,30 @@ async function stableRfqSnapshot(page, label) {
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     const text = shell ? shell.innerText : document.body.innerText;
+    const shellRect = shell ? shell.getBoundingClientRect() : null;
+    const pageHeadTexts = Array.from(document.querySelectorAll(".page-head")).filter(visible).map((node) => (node.innerText || "").replace(/\s+/g, " ").trim());
+    const rfqFormTextHits = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const value = String(walker.currentNode.nodeValue || "").replace(/\s+/g, " ").trim();
+      if (!/RFQ Form/i.test(value)) continue;
+      const parent = walker.currentNode.parentElement;
+      if (!visible(parent)) continue;
+      const rect = parent.getBoundingClientRect();
+      rfqFormTextHits.push({
+        text: value,
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+        insideShell: shell ? shell.contains(parent) : false,
+        belowShell: shellRect ? rect.top > shellRect.bottom + 2 : false,
+      });
+    }
     return {
       url: location.pathname,
       shellCount: document.querySelectorAll(".erpw-managed-rfq-page").length,
       visibleShellCount: shells.length,
+      pageHeadTexts,
+      rfqFormTextHits,
       bodyWidth,
       viewportWidth,
       buttons,
@@ -115,6 +135,8 @@ async function stableRfqSnapshot(page, label) {
     };
   });
   assert(state.visibleShellCount === 1 && state.shellCount === 1, `${label}: managed RFQ shell stacked`, state);
+  assert(!state.pageHeadTexts.some((value) => /RFQ Form/i.test(value)), `${label}: duplicate RFQ Form page header is visible`, state);
+  assert(!state.rfqFormTextHits.some((hit) => !hit.insideShell || hit.belowShell), `${label}: stale RFQ Form chrome visible outside managed form`, state);
   assert(state.bodyWidth <= state.viewportWidth + 2, `${label}: horizontal overflow`, state);
   assert(state.buttons.includes("Save RFQ"), `${label}: Save RFQ action missing`, state);
   assert(!state.buttons.some((label) => /Open ERP Form/i.test(label)) || !/\/new$/.test(state.url), `${label}: Open ERP Form appeared before save`, state);
@@ -161,6 +183,24 @@ async function chooseAutocomplete(page, selector, value, screenshotName) {
       const rect = menu.getBoundingClientRect();
       const style = window.getComputedStyle(menu);
       const inputRect = document.activeElement ? document.activeElement.getBoundingClientRect() : null;
+      const fieldRects = ["supplier-link", "item-link", "warehouse-link"].map((className) => {
+        const field = document.querySelector(`.${className}`);
+        if (!field) return null;
+        const fieldRect = field.getBoundingClientRect();
+        const centerX = fieldRect.left + fieldRect.width / 2;
+        const centerY = fieldRect.top + fieldRect.height / 2;
+        const overlayCenterX = rect.left + rect.width / 2;
+        const overlayCenterY = rect.top + rect.height / 2;
+        return {
+          key: className.replace("-link", ""),
+          top: Math.round(fieldRect.top),
+          left: Math.round(fieldRect.left),
+          right: Math.round(fieldRect.right),
+          bottom: Math.round(fieldRect.bottom),
+          width: Math.round(fieldRect.width),
+          distance: Math.round(Math.sqrt(Math.pow(overlayCenterX - centerX, 2) + Math.pow(overlayCenterY - centerY, 2))),
+        };
+      }).filter(Boolean);
       return {
         top: Math.round(rect.top),
         left: Math.round(rect.left),
@@ -172,8 +212,13 @@ async function chooseAutocomplete(page, selector, value, screenshotName) {
         viewportWidth: Math.ceil(window.innerWidth),
         viewportHeight: Math.ceil(window.innerHeight),
         parentIsBody: menu.parentElement === document.body,
+        inputTop: inputRect ? Math.round(inputRect.top) : null,
         inputLeft: inputRect ? Math.round(inputRect.left) : null,
         inputRight: inputRect ? Math.round(inputRect.right) : null,
+        inputBottom: inputRect ? Math.round(inputRect.bottom) : null,
+        verticalGap: inputRect ? Math.round(rect.top - inputRect.bottom) : null,
+        leftDelta: inputRect ? Math.round(rect.left - inputRect.left) : null,
+        nearestField: fieldRects.sort((a, b) => a.distance - b.distance)[0] || null,
         visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
       };
     });
@@ -181,11 +226,28 @@ async function chooseAutocomplete(page, selector, value, screenshotName) {
     assert(overlay.visible, `${screenshotName}: autocomplete overlay hidden`, overlay);
     assert(overlay.left >= 0 && overlay.right <= overlay.viewportWidth + 2, `${screenshotName}: autocomplete overlay clipped horizontally`, overlay);
     assert(overlay.top >= 0 && overlay.bottom <= overlay.viewportHeight + 2, `${screenshotName}: autocomplete overlay clipped vertically`, overlay);
+    const expectedField = selector.includes("supplier") ? "supplier" : selector.includes("warehouse") ? "warehouse" : "item";
     assert(overlay.parentIsBody && overlay.position === "fixed" && overlay.zIndex >= 1000, `${screenshotName}: autocomplete overlay trapped inside form layer`, overlay);
+    assert(Math.abs(overlay.leftDelta) <= 2 && overlay.verticalGap >= 4 && overlay.verticalGap <= 12, `${screenshotName}: autocomplete overlay is detached from active input`, overlay);
+    assert(overlay.nearestField && overlay.nearestField.key === expectedField, `${screenshotName}: autocomplete overlay is closer to another field`, { expectedField, overlay });
     assert(Math.abs(bodyWidthAfter - bodyWidthBefore) <= 1, `${screenshotName}: autocomplete changed body width`, { bodyWidthBefore, bodyWidthAfter, overlay });
     await capture(page, screenshotName);
   }
   await suggestion.click();
+}
+
+async function verifyAutocompleteGeometry(page, userKey, width, height) {
+  await page.setViewportSize({ width, height });
+  await openDeskRoute(page, "/desk/procurement-console-rfq-form/new");
+  await waitForManagedRfq(page);
+  const { supplier, item, warehouse } = await getFixtureValues(page);
+  await page.locator('[data-field="transaction_date"]').fill("2026-05-14");
+  await page.locator('[data-field="schedule_date"]').fill("2026-05-21");
+  await chooseAutocomplete(page, ".supplier-link", supplier.name, `${userKey}-supplier-autocomplete-${width}x${height}`);
+  await chooseAutocomplete(page, ".item-link", item.name, `${userKey}-item-autocomplete-${width}x${height}`);
+  await page.locator('[data-row-field="qty"]').first().fill("1");
+  await page.locator('[data-row-field="schedule_date"]').first().fill("2026-05-21");
+  if (warehouse && warehouse.name) await chooseAutocomplete(page, ".warehouse-link", warehouse.name, `${userKey}-warehouse-autocomplete-${width}x${height}`);
 }
 
 async function fillAndSaveRfq(page, userKey) {
@@ -225,11 +287,20 @@ async function verifyDirectoryAction(page, user, expectedUrl) {
   await openDeskRoute(page, "/desk/procurement-console-worklist/rfq-directory");
   await page.waitForSelector(".erpw-list-shell", { state: "visible", timeout: TIMEOUT });
   await capture(page, `${user.key}-rfq-directory-new-rfq`);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    await page.locator("button:has-text('New RFQ')").first().click();
+    await page.waitForURL(/procurement-console-rfq-form\/new$/, { timeout: TIMEOUT });
+    await stableRfqSnapshot(page, `${user.label} RFQ Directory New RFQ repeat ${attempt}`);
+    await capture(page, `${user.key}-managed-rfq-directory-repeat-${attempt}`);
+    const actualUrl = page.url().replace(/[#?].*$/, "");
+    assert(actualUrl === expectedUrl, "Overview and RFQ Directory must route to the same managed RFQ form", { expectedUrl, actualUrl, attempt });
+    await page.locator("button:has-text('Back to RFQs')").first().click();
+    await page.waitForURL(/procurement-console-worklist\/rfq-directory$/, { timeout: TIMEOUT });
+    await page.waitForSelector(".erpw-list-shell", { state: "visible", timeout: TIMEOUT });
+  }
   await page.locator("button:has-text('New RFQ')").first().click();
   await page.waitForURL(/procurement-console-rfq-form\/new$/, { timeout: TIMEOUT });
-  await stableRfqSnapshot(page, `${user.label} RFQ Directory New RFQ`);
-  const actualUrl = page.url().replace(/[#?].*$/, "");
-  assert(actualUrl === expectedUrl, "Overview and RFQ Directory must route to the same managed RFQ form", { expectedUrl, actualUrl });
+  await stableRfqSnapshot(page, `${user.label} RFQ Directory New RFQ final`);
 }
 
 async function verifyNoPrConversion(page, user) {
@@ -264,6 +335,11 @@ async function runUser(browser, user) {
     await page.setViewportSize({ width: 1136, height: 768 });
     const overviewUrl = await verifyOverviewAction(page, user);
     await verifyDirectoryAction(page, user, overviewUrl);
+    for (const [width, height] of [[1136, 768], [1240, 768], [1440, 900]]) {
+      await verifyAutocompleteGeometry(page, user.key, width, height);
+    }
+    await page.setViewportSize({ width: 1136, height: 768 });
+    await openDeskRoute(page, "/desk/procurement-console-rfq-form/new");
     await fillAndSaveRfq(page, user.key);
     await verifyNoPrConversion(page, user);
     assert(errors.length === 0, `${user.label}: page JS error`, { errors });
