@@ -405,8 +405,9 @@ async function procurementShellState(page) {
     rfqReview: await visibleElementCount(page, ".erpw-procurement-rfq-review-shell"),
     supplierQuotationReview: await visibleElementCount(page, ".erpw-procurement-supplier-quotation-review-shell"),
     managedPurchaseRequestForm: await visibleElementCount(page, ".erpw-managed-pr-page"),
+    managedRfqForm: await visibleElementCount(page, ".erpw-managed-rfq-page"),
   };
-  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview + state.managedPurchaseRequestForm;
+  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview + state.managedPurchaseRequestForm + state.managedRfqForm;
   state.url = page.url();
   return state;
 }
@@ -501,6 +502,8 @@ async function procurementChromeSnapshot(page, label) {
       poDetail: document.querySelectorAll(".erpw-procurement-po-follow-up-page").length,
       supplierDetail: document.querySelectorAll(".erpw-procurement-supplier-detail-page").length,
       itemDetail: document.querySelectorAll(".erpw-procurement-item-detail-page").length,
+      managedPurchaseRequestForm: document.querySelectorAll(".erpw-managed-pr-page").length,
+      managedRfqForm: document.querySelectorAll(".erpw-managed-rfq-page").length,
     };
     procurementShellState.total = Object.values(procurementShellState).reduce((total, count) => total + count, 0);
     return {
