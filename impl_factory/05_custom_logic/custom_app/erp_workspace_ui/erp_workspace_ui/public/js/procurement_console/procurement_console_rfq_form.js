@@ -335,7 +335,6 @@
           <div class="erpw-managed-rfq-output-actions">
             <button type="button" class="erpw-managed-rfq-output-button" data-rfq-output-preview ${context ? "" : "disabled"}>Preview RFQ</button>
             <button type="button" class="erpw-managed-rfq-output-button" data-rfq-output-download ${context ? "" : "disabled"}>Download RFQ PDF</button>
-            <button type="button" class="erpw-managed-rfq-output-button" disabled>Email suppliers</button>
           </div>
         </div>
         <div class="erpw-managed-rfq-output-message" data-rfq-output-message>${escapeHtml(context ? context.send_block_reason || "Email send is deferred." : "Loading output controls...")}</div>

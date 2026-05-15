@@ -179,7 +179,8 @@ async function assertOutputChrome(page, type, userKey, name, supplier) {
   assert(state.bodyWidth <= state.viewportWidth + 2, `${type} output page has horizontal overflow`, state);
   assert(!state.nativeLeak, `${type} output route leaked native path`, state);
   assert(state.hasPreview && state.hasDownload, `${type} output buttons missing`, state);
-  assert(state.buttons.some((button) => /Email/.test(button.text) && button.disabled), `${type} email action must be disabled`, state);
+  assert(!state.buttons.some((button) => /Email|Send/i.test(button.text) && !button.disabled), `${type} send action must not be active`, state);
+  assert(/send/i.test(state.cardText), `${type} send block copy missing`, state);
   assert(!FORBIDDEN_LIFECYCLE_RE.test(state.buttons.filter((button) => !button.disabled).map((button) => button.text).join(" ")), `${type} active forbidden action visible`, state);
   if (type === "rfq") {
     assert(/Draft \/ Not sent/.test(state.cardText), "RFQ draft/not-sent status missing", state);

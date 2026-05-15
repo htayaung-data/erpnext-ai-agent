@@ -16,7 +16,7 @@ ALLOWED_DOCTYPES = {RFQ_DOCTYPE, PO_DOCTYPE}
 RFQ_WARNING = "Draft / Not sent"
 PO_WARNING = "Draft / Not for supplier"
 RFQ_SEND_BLOCK = "Email send requires a governed RFQ send step. This draft has not been sent to suppliers."
-PO_SEND_BLOCK = "Supplier send requires approved/submitted purchase order governance. This draft is not a supplier commitment."
+PO_SEND_BLOCK = "Supplier send requires a governed purchase order release step. This draft is not a supplier commitment."
 
 
 def _state(kind: str, title: str, detail: str = "") -> dict[str, str]:
@@ -210,7 +210,7 @@ def _output_context(doc: object, supplier: str | None = None) -> dict[str, objec
             {"key": "download_pdf", "label": "Download RFQ PDF" if doctype == RFQ_DOCTYPE else "Download PO PDF", "kind": "secondary"},
             {
                 "key": "send",
-                "label": "Email suppliers" if doctype == RFQ_DOCTYPE else "Email supplier",
+                "label": "RFQ send deferred" if doctype == RFQ_DOCTYPE else "PO send deferred",
                 "kind": "blocked",
                 "disabled": True,
                 "reason": _send_block_for(doctype),

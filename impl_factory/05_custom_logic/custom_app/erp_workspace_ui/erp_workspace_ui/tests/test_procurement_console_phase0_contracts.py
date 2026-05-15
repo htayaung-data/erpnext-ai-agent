@@ -1548,7 +1548,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(po_context["state"]["kind"], "ready")
         self.assertEqual(po_context["warning"], "Draft / Not for supplier")
         self.assertFalse(po_context["can_send"])
-        self.assertIn("approved", po_context["send_block_reason"])
+        self.assertIn("governed purchase order release", po_context["send_block_reason"])
         _assert_no_forbidden_mutation_actions(self, rfq_context)
         _assert_no_forbidden_mutation_actions(self, po_context)
 
