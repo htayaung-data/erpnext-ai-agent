@@ -407,8 +407,9 @@ async function procurementShellState(page) {
     managedPurchaseRequestForm: await visibleElementCount(page, ".erpw-managed-pr-page"),
     managedRfqForm: await visibleElementCount(page, ".erpw-managed-rfq-page"),
     managedSupplierQuotationForm: await visibleElementCount(page, ".erpw-managed-sq-page"),
+    managedPurchaseOrderForm: await visibleElementCount(page, ".erpw-managed-po-page"),
   };
-  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview + state.managedPurchaseRequestForm + state.managedRfqForm + state.managedSupplierQuotationForm;
+  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview + state.managedPurchaseRequestForm + state.managedRfqForm + state.managedSupplierQuotationForm + state.managedPurchaseOrderForm;
   state.url = page.url();
   return state;
 }
@@ -506,6 +507,7 @@ async function procurementChromeSnapshot(page, label) {
       managedPurchaseRequestForm: document.querySelectorAll(".erpw-managed-pr-page").length,
       managedRfqForm: document.querySelectorAll(".erpw-managed-rfq-page").length,
       managedSupplierQuotationForm: document.querySelectorAll(".erpw-managed-sq-page").length,
+      managedPurchaseOrderForm: document.querySelectorAll(".erpw-managed-po-page").length,
     };
     procurementShellState.total = Object.values(procurementShellState).reduce((total, count) => total + count, 0);
     return {
@@ -619,7 +621,16 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
       backSelector: "button:has-text('Back to Supplier Quotations')",
       backPath: /\/desk\/procurement-console-worklist\/supplier-quotation-directory$/,
     },
-    { key: "new_purchase_order", label: "New Purchase Order", path: /\/desk\/purchase-order\// },
+    {
+      key: "new_purchase_order",
+      label: "New Purchase Order",
+      path: /\/desk\/procurement-console-purchase-order-form\/new$/,
+      managed: true,
+      shellSelector: ".erpw-managed-po-page .erpw-managed-po-card",
+      nativeLeakPattern: /\/desk\/(?:purchase-order|Form\/Purchase%20Order|Form\/Purchase Order)\//i,
+      backSelector: "button:has-text('Back to Purchase Orders')",
+      backPath: /\/desk\/procurement-console-worklist\/purchase-order-directory$/,
+    },
   ];
   await openDeskRoute(page, "/desk/procurement-console");
   snapshots.push(await procurementChromeSnapshot(page, "Procurement Overview"));
@@ -2690,7 +2701,6 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   const targets = (bootstrapPayload && bootstrapPayload.action_targets) || {};
   const keys = actions.map((action) => action.key).filter(Boolean);
   const governedNativeCreateTargets = {
-    new_purchase_order: "Purchase Order",
     new_supplier: "Supplier",
     new_item: "Item",
   };
@@ -2712,6 +2722,12 @@ async function checkCreateActions(page, user, bootstrapPayload) {
       assert(target.kind === "page", "New Supplier Quotation must use the managed Phase 5C page route", { target });
       assert(target.route === "procurement-console-supplier-quotation-form", "New Supplier Quotation route must target the managed Supplier Quotation form", { target });
       assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New Supplier Quotation route must open the new managed Supplier Quotation form", { target });
+      return;
+    }
+    if (key === "new_purchase_order") {
+      assert(target.kind === "page", "New Purchase Order must use the managed Phase 5D page route", { target });
+      assert(target.route === "procurement-console-purchase-order-form", "New Purchase Order route must target the managed Purchase Order form", { target });
+      assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New Purchase Order route must open the new managed Purchase Order form", { target });
       return;
     }
     if (governedNativeCreateTargets[key]) {
@@ -2760,6 +2776,7 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   let createRoute = null;
   let rfqCreateRoute = null;
   let supplierQuotationCreateRoute = null;
+  let purchaseOrderCreateRoute = null;
   if (keys.includes("new_purchase_request")) {
     await page.locator('[data-erpw-procurement-create-action="new_purchase_request"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-purchase-request-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
@@ -2877,7 +2894,47 @@ async function checkCreateActions(page, user, bootstrapPayload) {
     await openDeskRoute(page, "/desk/procurement-console");
     await assertSingleProcurementShell(page, "overview", "After Supplier Quotation directory create action return to Procurement Overview");
   }
-  return { keys, labels, createRoute, rfqCreateRoute, supplierQuotationCreateRoute };
+
+  if (keys.includes("new_purchase_order")) {
+    await page.locator('[data-erpw-procurement-create-action="new_purchase_order"]').first().click();
+    await page.waitForURL(/\/desk\/procurement-console-purchase-order-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.locator(".erpw-managed-po-page .erpw-managed-po-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    purchaseOrderCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    assert(!/\/desk\/(?:purchase-order|Form\/Purchase%20Order|Form\/Purchase Order)\//i.test(page.url()), "New Purchase Order primary action leaked to native Purchase Order route", purchaseOrderCreateRoute);
+    const activeManagedPo = await page.locator(".erpw-managed-po-page").evaluateAll((nodes) => {
+      const visible = (node) => {
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+      };
+      const visibleShells = nodes.filter(visible);
+      const actions = visibleShells.flatMap((shell) =>
+        Array.from(shell.querySelectorAll(".erpw-child-toolbar-action"))
+          .filter(visible)
+          .map((node) => (node.textContent || "").replace(/\s+/g, " ").trim())
+      );
+      return { count: visibleShells.length, actions };
+    });
+    assert(activeManagedPo.count === 1, "Managed Purchase Order create route must have exactly one active visible form shell", activeManagedPo);
+    assert(!activeManagedPo.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear before a managed Purchase Order is saved", activeManagedPo);
+    const managedState = await procurementShellState(page);
+    assert(managedState.managedPurchaseOrderForm === 1, "Managed Purchase Order create route did not render as the active Procurement shell", managedState);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After Purchase Order create action return to Procurement Overview");
+    await openDeskRoute(page, "/desk/procurement-console-worklist/purchase-order-directory");
+    await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const directoryCreate = page.locator("button:has-text('New Purchase Order')").first();
+    await directoryCreate.waitFor({ state: "visible", timeout: TIMEOUT });
+    await directoryCreate.click();
+    await page.waitForURL(/\/desk\/procurement-console-purchase-order-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    const directoryCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    assert(purchaseOrderCreateRoute.url.replace(/[#?].*$/, "") === directoryCreateRoute.url.replace(/[#?].*$/, ""), "Overview and Purchase Orders Directory must route to the same managed Purchase Order form", { purchaseOrderCreateRoute, directoryCreateRoute });
+    assert(!/\/desk\/(?:purchase-order|Form\/Purchase%20Order|Form\/Purchase Order)\//i.test(page.url()), "Purchase Orders directory New Purchase Order leaked to native Purchase Order route", directoryCreateRoute);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After Purchase Order directory create action return to Procurement Overview");
+  }
+  return { keys, labels, createRoute, rfqCreateRoute, supplierQuotationCreateRoute, purchaseOrderCreateRoute };
 }
 
 async function runUser(browser, user) {

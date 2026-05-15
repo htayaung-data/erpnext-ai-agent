@@ -164,7 +164,7 @@ collect_node_check_files() {
 	{
 		git -C "$APP_ROOT" ls-files 			"erp_workspace_ui/public/js/*.js" 			"erp_workspace_ui/public/js/runtime/**/*.js" 			"erp_workspace_ui/erp_workspace_ui/page/**/*.js"
 		printf "%s
-" 			"ui_smoke/procurement_phase3_smoke.js" 			"ui_smoke/procurement_phase5b_smoke.js" 			"ui_smoke/procurement_phase5c_smoke.js" 			"ui_smoke/procurement_responsive_filter_smoke.js" 			"ui_smoke/sales_action_cards_smoke.js" 			"ui_smoke/sales_detail_boundary_smoke.js" 			"ui_smoke/sales_directory_performance_smoke.js" 			"ui_smoke/sales_native_leakage_smoke.js" 			"ui_smoke/sales_order_analysis_smoke.js" 			"ui_smoke/sales_report_family_smoke.js" 			"ui_smoke/sales_route_lifecycle_smoke.js" 			"ui_smoke/sales_visual_stability_smoke.js" 			"ui_smoke/sales_worklist_shell_smoke.js"
+" 			"ui_smoke/procurement_phase3_smoke.js" 			"ui_smoke/procurement_phase5b_smoke.js" 			"ui_smoke/procurement_phase5c_smoke.js" 			"ui_smoke/procurement_phase5d_smoke.js" 			"ui_smoke/procurement_responsive_filter_smoke.js" 			"ui_smoke/sales_action_cards_smoke.js" 			"ui_smoke/sales_detail_boundary_smoke.js" 			"ui_smoke/sales_directory_performance_smoke.js" 			"ui_smoke/sales_native_leakage_smoke.js" 			"ui_smoke/sales_order_analysis_smoke.js" 			"ui_smoke/sales_report_family_smoke.js" 			"ui_smoke/sales_route_lifecycle_smoke.js" 			"ui_smoke/sales_visual_stability_smoke.js" 			"ui_smoke/sales_worklist_shell_smoke.js"
 	} | sort -u > "$NODE_CHECK_LIST"
 }
 run_node_checks() {
@@ -277,6 +277,14 @@ run_procurement_phase5c_for_role() {
 		ERPW_PROCUREMENT_PHASE5C_ARTIFACT_DIR="/freeze-artifacts/procurement-phase5c-$role_key"
 }
 
+run_procurement_phase5d_for_role() {
+	local role_key="$1"
+	local username_var="$2"
+	local password_var="$3"
+	local out_dir="$ARTIFACT_ROOT/procurement-phase5d-$role_key"
+	run_docker_smoke 		"procurement-phase5d-$role_key" 		"$out_dir" 		"run_playwright_docker.sh npm run test:procurement-phase5d for $role_key" 		"test:procurement-phase5d" 		ERPW_BASE_URL="$BASE_URL_VALUE" 		ERPW_PLAYWRIGHT_ARTIFACT_ROOT="$ARTIFACT_ROOT" 		ERPW_MANAGER_USERNAME="$username_var" 		ERPW_MANAGER_PASSWORD="$password_var" 		ERPW_USER_USERNAME= 		ERPW_USER_PASSWORD= 		ERPW_PROCUREMENT_PHASE5D_ARTIFACT_DIR="/freeze-artifacts/procurement-phase5d-$role_key"
+}
+
 run_sales_directory_performance() {
 	run_docker_smoke \
 		"sales-directory-performance" \
@@ -304,6 +312,8 @@ run_sales_freeze_gate
 run_procurement_phase4a_split_gates
 run_procurement_phase5c_for_role "purchase-manager" "$ERPW_PURCHASE_MANAGER_USERNAME" "$ERPW_PURCHASE_MANAGER_PASSWORD"
 run_procurement_phase5c_for_role "purchase-user" "$ERPW_PURCHASE_USER_USERNAME" "$ERPW_PURCHASE_USER_PASSWORD"
+run_procurement_phase5d_for_role "purchase-manager" "$ERPW_PURCHASE_MANAGER_USERNAME" "$ERPW_PURCHASE_MANAGER_PASSWORD"
+run_procurement_phase5d_for_role "purchase-user" "$ERPW_PURCHASE_USER_USERNAME" "$ERPW_PURCHASE_USER_PASSWORD"
 run_procurement_responsive_for_role "purchase-manager" "$ERPW_PURCHASE_MANAGER_USERNAME" "$ERPW_PURCHASE_MANAGER_PASSWORD"
 run_procurement_responsive_for_role "purchase-user" "$ERPW_PURCHASE_USER_USERNAME" "$ERPW_PURCHASE_USER_PASSWORD"
 run_sales_directory_performance

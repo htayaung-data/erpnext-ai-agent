@@ -229,7 +229,11 @@ def _purchase_order_payload(
 				{"key": "date_start", "label": "PO Date From", "type": "date", "value": filters.get("date_start", "")},
 				{"key": "date_end", "label": "PO Date To", "type": "date", "value": filters.get("date_end", "")},
 			],
-			"actions": common.standard_actions(),
+			"actions": (
+				([{"key": "new_purchase_order", "label": "New Purchase Order", "kind": "create", "category": "create-action"}] if queue_key == "purchase_order_directory" and common.can_create("Purchase Order") and common.can_write("Purchase Order") else [])
+				+ common.standard_actions()
+			),
+
 			"scopeChips": ["Purchase Order", "Visibility only"],
 		},
 		"metrics": [
@@ -250,5 +254,8 @@ def _purchase_order_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.page_action_targets_for_rows(DETAIL_ROUTE, rows, options_by_name),
+		"action_targets": {
+			**({"new_purchase_order": {"kind": "page", "route": "procurement-console-purchase-order-form", "route_parts": ["new"]}} if queue_key == "purchase_order_directory" and common.can_create("Purchase Order") and common.can_write("Purchase Order") else {}),
+			**common.page_action_targets_for_rows(DETAIL_ROUTE, rows, options_by_name),
+		},
 	}

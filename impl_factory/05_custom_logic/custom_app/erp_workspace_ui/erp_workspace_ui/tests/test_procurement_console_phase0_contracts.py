@@ -34,6 +34,7 @@ MISSING_FIELDS = set()
 SAVED_MATERIAL_REQUESTS = {}
 SAVED_RFQS = {}
 SAVED_SUPPLIER_QUOTATIONS = {}
+SAVED_PURCHASE_ORDERS = {}
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -675,6 +676,48 @@ class _FakeSupplierQuotationDoc:
 
 
 
+class _FakePurchaseOrderDoc:
+    def __init__(self, name=None, values=None):
+        values = dict(values or {})
+        self.doctype = "Purchase Order"
+        self.name = name or values.get("name") or ""
+        self.supplier = values.get("supplier") or ""
+        self.transaction_date = values.get("transaction_date") or "2026-05-03"
+        self.schedule_date = values.get("schedule_date") or ""
+        self.set_warehouse = values.get("set_warehouse") or ""
+        self.buying_price_list = values.get("buying_price_list") or ""
+        self.company = values.get("company") or "Demo Company"
+        self.currency = values.get("currency") or "MMK"
+        self.conversion_rate = values.get("conversion_rate", 1)
+        self.docstatus = values.get("docstatus", 0)
+        self.items = [child if isinstance(child, _FakeChildDoc) else _FakeChildDoc(child) for child in values.get("items", [])]
+
+    def set(self, fieldname, value):
+        setattr(self, fieldname, value)
+
+    def append(self, fieldname, value):
+        if not hasattr(self, fieldname):
+            setattr(self, fieldname, [])
+        getattr(self, fieldname).append(_FakeChildDoc(value))
+
+    def check_permission(self, ptype):
+        if not _has_permission("Purchase Order", ptype):
+            raise _FakePermissionError("No permission")
+
+    def insert(self):
+        self.check_permission("create")
+        if not self.name:
+            self.name = "PUR-ORD-DRAFT-001"
+        self.docstatus = 0
+        SAVED_PURCHASE_ORDERS[self.name] = self
+        return self
+
+    def save(self):
+        self.check_permission("write")
+        SAVED_PURCHASE_ORDERS[self.name] = self
+        return self
+
+
 def _get_doc(*args, **kwargs):
     if args and isinstance(args[0], dict):
         doctype = args[0].get("doctype")
@@ -682,7 +725,24 @@ def _get_doc(*args, **kwargs):
             return _FakeRFQDoc(values=args[0])
         if doctype == "Supplier Quotation":
             return _FakeSupplierQuotationDoc(values=args[0])
+        if doctype == "Purchase Order":
+            return _FakePurchaseOrderDoc(values=args[0])
         return _FakeMaterialRequestDoc(values=args[0])
+    if len(args) >= 2 and args[0] == "Purchase Order":
+        name = args[1]
+        if name in SAVED_PURCHASE_ORDERS:
+            return SAVED_PURCHASE_ORDERS[name]
+        if name == "PUR-ORD-SUBMITTED":
+            return _FakePurchaseOrderDoc(name=name, values={"docstatus": 1})
+        if name == "PUR-DUE-001":
+            return _FakePurchaseOrderDoc(name=name, values={
+                "supplier": "SUP-001",
+                "transaction_date": "2026-05-02",
+                "schedule_date": "2026-05-20",
+                "company": "Demo Company",
+                "currency": "MMK",
+                "items": [{"item_code": "ITEM-001", "qty": 5, "rate": 100, "amount": 500, "schedule_date": "2026-05-20", "warehouse": "Stores - DC", "uom": "Nos"}],
+            })
     if len(args) >= 2 and args[0] == "Supplier Quotation":
         name = args[1]
         if name in SAVED_SUPPLIER_QUOTATIONS:
@@ -922,7 +982,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -1024,6 +1084,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         SAVED_MATERIAL_REQUESTS.clear()
         SAVED_RFQS.clear()
         SAVED_SUPPLIER_QUOTATIONS.clear()
+        SAVED_PURCHASE_ORDERS.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -1065,7 +1126,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("buying_item_directory", payload["directories"])
 
     def test_procurement_create_actions_follow_erpnext_create_permissions(self):
-        _set_writeable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation")
+        _set_writeable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
         _set_createable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
 
         payload = service.get_procurement_console_bootstrap()
@@ -1078,7 +1139,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["action_targets"]["new_purchase_request"], {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]})
         self.assertEqual(payload["action_targets"]["new_rfq"], {"kind": "page", "route": "procurement-console-rfq-form", "route_parts": ["new"]})
         self.assertEqual(payload["action_targets"]["new_supplier_quotation"], {"kind": "page", "route": "procurement-console-supplier-quotation-form", "route_parts": ["new"]})
-        self.assertEqual(payload["action_targets"]["new_purchase_order"]["doctype"], "Purchase Order")
+        self.assertEqual(payload["action_targets"]["new_purchase_order"], {"kind": "page", "route": "procurement-console-purchase-order-form", "route_parts": ["new"]})
         self.assertNotIn("new_supplier", payload["action_targets"])
         self.assertNotIn("new_item", payload["action_targets"])
 
@@ -1347,6 +1408,108 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             "name": "SUP-QTN-SUBMITTED",
             "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
             "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
+
+
+    def test_managed_purchase_order_context_is_ready_for_purchase_roles(self):
+        _set_writeable_doctypes("Purchase Order")
+        _set_createable_doctypes("Purchase Order")
+
+        payload = managed_purchase_order.get_managed_purchase_order_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["chips"][0]["label"], "New Purchase Order")
+        self.assertEqual(payload["form"]["doctype"], "Purchase Order")
+        self.assertEqual(payload["form"]["header"]["currency"], "MMK")
+        self.assertEqual(len(payload["form"]["items"]), 1)
+        self.assertEqual(payload["action_targets"]["back_to_purchase_orders"], {"kind": "worklist", "queue_key": "purchase_order_directory"})
+        self.assertEqual(payload["conversion"]["supplier_quotation_to_purchase_order"], "deferred")
+        self.assertNotIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_purchase_order_context_restricts_sales_roles(self):
+        _set_user("sales@example.com", ["Sales User"])
+        _set_writeable_doctypes("Purchase Order")
+        _set_createable_doctypes("Purchase Order")
+
+        payload = managed_purchase_order.get_managed_purchase_order_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "restricted")
+
+    def test_managed_purchase_order_save_creates_draft(self):
+        _set_writeable_doctypes("Purchase Order")
+        _set_createable_doctypes("Purchase Order")
+
+        payload = managed_purchase_order.save_managed_purchase_order({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "schedule_date": "2026-05-30", "company": "Demo Company", "currency": "MMK", "set_warehouse": "Stores - DC"},
+            "items": [{"item_code": "ITEM-001", "qty": 2, "rate": 100, "schedule_date": "2026-05-30", "warehouse": "Stores - DC", "uom": "Wrong"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertIn("PUR-ORD-DRAFT-001", SAVED_PURCHASE_ORDERS)
+        doc = SAVED_PURCHASE_ORDERS["PUR-ORD-DRAFT-001"]
+        self.assertEqual(doc.docstatus, 0)
+        self.assertEqual(doc.supplier, "SUP-001")
+        self.assertEqual(doc.items[0].uom, "Nos")
+        self.assertEqual(doc.items[0].stock_uom, "Nos")
+        self.assertEqual(doc.items[0].conversion_factor, 1)
+        self.assertEqual(doc.items[0].rate, 100.0)
+        self.assertEqual(doc.items[0].amount, 200.0)
+        self.assertEqual(doc.items[0].schedule_date, "2026-05-30")
+        self.assertEqual(payload["route"], "/desk/procurement-console-purchase-order-form/PUR-ORD-DRAFT-001")
+        self.assertEqual(payload["review_route"], "/desk/procurement-console-po-follow-up/PUR-ORD-DRAFT-001")
+        self.assertIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_purchase_order_requires_supplier_item_qty_and_rate(self):
+        _set_writeable_doctypes("Purchase Order")
+        _set_createable_doctypes("Purchase Order")
+
+        missing_supplier = managed_purchase_order.save_managed_purchase_order({
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100, "schedule_date": "2026-05-20"}],
+        })
+        missing_item = managed_purchase_order.save_managed_purchase_order({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [],
+        })
+        invalid_qty = managed_purchase_order.save_managed_purchase_order({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 0, "rate": 100, "schedule_date": "2026-05-20"}],
+        })
+        missing_rate = managed_purchase_order.save_managed_purchase_order({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
+        })
+
+        self.assertEqual(missing_supplier["state"]["kind"], "error")
+        self.assertEqual(missing_item["state"]["kind"], "error")
+        self.assertEqual(invalid_qty["state"]["kind"], "error")
+        self.assertEqual(missing_rate["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_PURCHASE_ORDERS)
+
+    def test_managed_purchase_order_rejects_forbidden_fields(self):
+        _set_writeable_doctypes("Purchase Order")
+        _set_createable_doctypes("Purchase Order")
+
+        payload = managed_purchase_order.save_managed_purchase_order({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "submit": 1},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100, "schedule_date": "2026-05-20", "purchase_receipt": "PR-001", "item_price": 100}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_PURCHASE_ORDERS)
+
+    def test_managed_purchase_order_cannot_edit_submitted_document(self):
+        _set_writeable_doctypes("Purchase Order")
+        _set_createable_doctypes("Purchase Order")
+
+        payload = managed_purchase_order.save_managed_purchase_order({
+            "name": "PUR-ORD-SUBMITTED",
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100, "schedule_date": "2026-05-20"}],
         })
 
         self.assertEqual(payload["state"]["kind"], "error")

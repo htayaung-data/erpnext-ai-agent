@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-purchase-order-form",
+  "page_name": "procurement-console-purchase-order-form",
+  "title": "Purchase Order Form",
+  "icon": "octicon octicon-checklist",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

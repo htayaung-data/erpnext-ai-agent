@@ -91,6 +91,7 @@ class TestWorkspaceRegistryContracts(unittest.TestCase):
                 "rfq_review": "procurement-console-rfq-review",
                 "supplier_quotation_form": "procurement-console-supplier-quotation-form",
                 "supplier_quotation_review": "procurement-console-supplier-quotation-review",
+                "purchase_order_form": "procurement-console-purchase-order-form",
             },
         )
         self.assertEqual(
