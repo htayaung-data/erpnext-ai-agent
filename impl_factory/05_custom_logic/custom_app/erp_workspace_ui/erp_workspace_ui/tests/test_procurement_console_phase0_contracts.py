@@ -33,6 +33,7 @@ MISSING_NATIVE_REPORTS = set()
 MISSING_FIELDS = set()
 SAVED_MATERIAL_REQUESTS = {}
 SAVED_RFQS = {}
+SAVED_SUPPLIER_QUOTATIONS = {}
 
 
 def _identity_whitelist(*args, **kwargs):
@@ -512,6 +513,15 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
 
 
 def _db_get_value(doctype, name=None, fieldname=None, as_dict=False, **kwargs):
+    if doctype == "Company" and name == "Demo Company":
+        if as_dict:
+            return {"name": "Demo Company", "default_currency": "MMK"}
+        if isinstance(fieldname, (list, tuple)):
+            return tuple("MMK" if field == "default_currency" else "Demo Company" if field == "name" else None for field in fieldname)
+        if fieldname == "default_currency":
+            return "MMK"
+        if fieldname == "name":
+            return "Demo Company"
     if doctype == "Purchase Order" and name:
         rows = _filter_rows("Purchase Order", _purchase_order_rows(), [["Purchase Order", "name", "=", name]])
         if not rows:
@@ -624,13 +634,70 @@ class _FakeRFQDoc:
         return self
 
 
+class _FakeSupplierQuotationDoc:
+    def __init__(self, name=None, values=None):
+        values = dict(values or {})
+        self.doctype = "Supplier Quotation"
+        self.name = name or values.get("name") or ""
+        self.supplier = values.get("supplier") or ""
+        self.transaction_date = values.get("transaction_date") or "2026-05-03"
+        self.valid_till = values.get("valid_till") or ""
+        self.company = values.get("company") or "Demo Company"
+        self.currency = values.get("currency") or "MMK"
+        self.conversion_rate = values.get("conversion_rate", 1)
+        self.docstatus = values.get("docstatus", 0)
+        self.items = [child if isinstance(child, _FakeChildDoc) else _FakeChildDoc(child) for child in values.get("items", [])]
+
+    def set(self, fieldname, value):
+        setattr(self, fieldname, value)
+
+    def append(self, fieldname, value):
+        if not hasattr(self, fieldname):
+            setattr(self, fieldname, [])
+        getattr(self, fieldname).append(_FakeChildDoc(value))
+
+    def check_permission(self, ptype):
+        if not _has_permission("Supplier Quotation", ptype):
+            raise _FakePermissionError("No permission")
+
+    def insert(self):
+        self.check_permission("create")
+        if not self.name:
+            self.name = "SUP-QTN-DRAFT-001"
+        self.docstatus = 0
+        SAVED_SUPPLIER_QUOTATIONS[self.name] = self
+        return self
+
+    def save(self):
+        self.check_permission("write")
+        SAVED_SUPPLIER_QUOTATIONS[self.name] = self
+        return self
+
+
 
 def _get_doc(*args, **kwargs):
     if args and isinstance(args[0], dict):
         doctype = args[0].get("doctype")
         if doctype == "Request for Quotation":
             return _FakeRFQDoc(values=args[0])
+        if doctype == "Supplier Quotation":
+            return _FakeSupplierQuotationDoc(values=args[0])
         return _FakeMaterialRequestDoc(values=args[0])
+    if len(args) >= 2 and args[0] == "Supplier Quotation":
+        name = args[1]
+        if name in SAVED_SUPPLIER_QUOTATIONS:
+            return SAVED_SUPPLIER_QUOTATIONS[name]
+        if name == "SUP-QTN-SUBMITTED":
+            return _FakeSupplierQuotationDoc(name=name, values={"docstatus": 1})
+        if name == "SUP-QTN-001":
+            return _FakeSupplierQuotationDoc(name=name, values={
+                "supplier": "SUP-001",
+                "transaction_date": "2026-05-02",
+                "valid_till": "2026-05-30",
+                "company": "Demo Company",
+                "currency": "MMK",
+                "items": [{"item_code": "ITEM-001", "qty": 5, "rate": 100, "amount": 500, "uom": "Nos"}],
+            })
     if len(args) >= 2 and args[0] == "Request for Quotation":
         name = args[1]
         if name in SAVED_RFQS:
@@ -785,7 +852,7 @@ def _db_exists(doctype, name=None, **kwargs):
 fake_frappe.db = types.SimpleNamespace(
     get_value=_db_get_value,
     exists=_db_exists,
-    get_single_value=lambda doctype, fieldname: "Demo Company" if doctype == "Global Defaults" else None,
+    get_single_value=lambda doctype, fieldname: "Demo Company" if doctype == "Global Defaults" and fieldname == "default_company" else "MMK" if doctype == "Global Defaults" and fieldname == "default_currency" else None,
     count=_count,
 )
 fake_frappe.defaults = types.SimpleNamespace(
@@ -855,7 +922,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_request, managed_rfq, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -956,6 +1023,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         MISSING_FIELDS.clear()
         SAVED_MATERIAL_REQUESTS.clear()
         SAVED_RFQS.clear()
+        SAVED_SUPPLIER_QUOTATIONS.clear()
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -997,7 +1065,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("buying_item_directory", payload["directories"])
 
     def test_procurement_create_actions_follow_erpnext_create_permissions(self):
-        _set_writeable_doctypes("Material Request", "Request for Quotation")
+        _set_writeable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation")
         _set_createable_doctypes("Material Request", "Request for Quotation", "Supplier Quotation", "Purchase Order")
 
         payload = service.get_procurement_console_bootstrap()
@@ -1009,7 +1077,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual([action["variant"] for action in payload["create_actions"]], ["primary", "primary", "primary", "primary"])
         self.assertEqual(payload["action_targets"]["new_purchase_request"], {"kind": "page", "route": "procurement-console-purchase-request-form", "route_parts": ["new"]})
         self.assertEqual(payload["action_targets"]["new_rfq"], {"kind": "page", "route": "procurement-console-rfq-form", "route_parts": ["new"]})
-        self.assertEqual(payload["action_targets"]["new_supplier_quotation"]["doctype"], "Supplier Quotation")
+        self.assertEqual(payload["action_targets"]["new_supplier_quotation"], {"kind": "page", "route": "procurement-console-supplier-quotation-form", "route_parts": ["new"]})
         self.assertEqual(payload["action_targets"]["new_purchase_order"]["doctype"], "Purchase Order")
         self.assertNotIn("new_supplier", payload["action_targets"])
         self.assertNotIn("new_item", payload["action_targets"])
@@ -1169,6 +1237,116 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
             "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
             "suppliers": [{"supplier": "SUP-001"}],
             "items": [{"item_code": "ITEM-001", "qty": 1, "schedule_date": "2026-05-20"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
+
+    def test_managed_supplier_quotation_context_is_ready_for_purchase_roles(self):
+        _set_writeable_doctypes("Supplier Quotation")
+        _set_createable_doctypes("Supplier Quotation")
+
+        payload = managed_supplier_quotation.get_managed_supplier_quotation_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertEqual(payload["summary"]["chips"][0]["label"], "New Quotation")
+        self.assertEqual(payload["form"]["doctype"], "Supplier Quotation")
+        self.assertEqual(payload["form"]["header"]["currency"], "MMK")
+        self.assertEqual(payload["action_targets"]["back_to_supplier_quotations"], {"kind": "worklist", "queue_key": "supplier_quotation_directory"})
+        self.assertEqual(payload["conversion"]["rfq_to_supplier_quotation"], "deferred")
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_supplier_quotation_currency_never_uses_company_name(self):
+        original_get_value = fake_frappe.db.get_value
+        original_get_single_value = fake_frappe.db.get_single_value
+        fake_frappe.db.get_value = lambda doctype, name=None, fieldname=None, as_dict=False, **kwargs: None
+        fake_frappe.db.get_single_value = lambda doctype, fieldname: "Demo Company" if doctype == "Global Defaults" else None
+        try:
+            _set_writeable_doctypes("Supplier Quotation")
+            _set_createable_doctypes("Supplier Quotation")
+
+            payload = managed_supplier_quotation.get_managed_supplier_quotation_context("new")
+
+            self.assertEqual(payload["form"]["header"]["company"], "Demo Company")
+            self.assertEqual(payload["form"]["header"]["currency"], "MMK")
+        finally:
+            fake_frappe.db.get_value = original_get_value
+            fake_frappe.db.get_single_value = original_get_single_value
+
+    def test_managed_supplier_quotation_context_restricts_sales_roles(self):
+        _set_user("sales@example.com", ["Sales User"])
+        _set_writeable_doctypes("Supplier Quotation")
+        _set_createable_doctypes("Supplier Quotation")
+
+        payload = managed_supplier_quotation.get_managed_supplier_quotation_context("new")
+
+        self.assertEqual(payload["state"]["kind"], "restricted")
+
+    def test_managed_supplier_quotation_save_creates_draft(self):
+        _set_writeable_doctypes("Supplier Quotation")
+        _set_createable_doctypes("Supplier Quotation")
+
+        payload = managed_supplier_quotation.save_managed_supplier_quotation_draft({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "valid_till": "2026-05-30", "company": "Demo Company", "currency": "MMK"},
+            "items": [{"item_code": "ITEM-001", "qty": 2, "rate": 100, "uom": "Wrong"}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "ready")
+        self.assertIn("SUP-QTN-DRAFT-001", SAVED_SUPPLIER_QUOTATIONS)
+        doc = SAVED_SUPPLIER_QUOTATIONS["SUP-QTN-DRAFT-001"]
+        self.assertEqual(doc.docstatus, 0)
+        self.assertEqual(doc.supplier, "SUP-001")
+        self.assertEqual(doc.items[0].uom, "Nos")
+        self.assertEqual(doc.items[0].stock_uom, "Nos")
+        self.assertEqual(doc.items[0].conversion_factor, 1)
+        self.assertEqual(doc.items[0].rate, 100.0)
+        self.assertEqual(doc.items[0].amount, 200.0)
+        self.assertEqual(payload["review_route"], "/desk/procurement-console-supplier-quotation-review/SUP-QTN-DRAFT-001")
+        self.assertNotIn("open_erp_form", [action["key"] for action in managed_supplier_quotation.get_managed_supplier_quotation_context("new")["controls"]["actions"]])
+        self.assertIn("open_erp_form", [action["key"] for action in payload["controls"]["actions"]])
+        _assert_no_forbidden_mutation_actions(self, payload)
+
+    def test_managed_supplier_quotation_requires_supplier_item_and_rate(self):
+        _set_writeable_doctypes("Supplier Quotation")
+        _set_createable_doctypes("Supplier Quotation")
+
+        missing_supplier = managed_supplier_quotation.save_managed_supplier_quotation_draft({
+            "header": {"transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100}],
+        })
+        missing_item = managed_supplier_quotation.save_managed_supplier_quotation_draft({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [],
+        })
+        missing_rate = managed_supplier_quotation.save_managed_supplier_quotation_draft({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 0}],
+        })
+
+        self.assertEqual(missing_supplier["state"]["kind"], "error")
+        self.assertEqual(missing_item["state"]["kind"], "error")
+        self.assertEqual(missing_rate["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
+
+    def test_managed_supplier_quotation_rejects_forbidden_fields(self):
+        _set_writeable_doctypes("Supplier Quotation")
+        _set_createable_doctypes("Supplier Quotation")
+
+        payload = managed_supplier_quotation.save_managed_supplier_quotation_draft({
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "submit": 1},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100, "purchase_order": "PO-001", "item_price": 100}],
+        })
+
+        self.assertEqual(payload["state"]["kind"], "error")
+        self.assertEqual({}, SAVED_SUPPLIER_QUOTATIONS)
+
+    def test_managed_supplier_quotation_cannot_edit_submitted_document(self):
+        _set_writeable_doctypes("Supplier Quotation")
+        _set_createable_doctypes("Supplier Quotation")
+
+        payload = managed_supplier_quotation.save_managed_supplier_quotation_draft({
+            "name": "SUP-QTN-SUBMITTED",
+            "header": {"supplier": "SUP-001", "transaction_date": "2026-05-03", "company": "Demo Company"},
+            "items": [{"item_code": "ITEM-001", "qty": 1, "rate": 100}],
         })
 
         self.assertEqual(payload["state"]["kind"], "error")
@@ -1479,7 +1657,8 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("Open ERP Form must not appear before a managed Purchase Request draft is saved", source)
         self.assertIn("New RFQ must use the managed Phase 5B page route", source)
         self.assertIn("Overview and RFQ Directory must route to the same managed RFQ form", source)
-        self.assertIn("new_supplier_quotation: \"Supplier Quotation\"", source)
+        self.assertIn("New Supplier Quotation must use the managed Phase 5C page route", source)
+        self.assertIn("Overview and Supplier Quotations Directory must route to the same managed Supplier Quotation form", source)
         self.assertIn("must remain a governed native exception", source)
         self.assertIn("new_purchase_request", source)
         self.assertIn("Repeated navigation", source)

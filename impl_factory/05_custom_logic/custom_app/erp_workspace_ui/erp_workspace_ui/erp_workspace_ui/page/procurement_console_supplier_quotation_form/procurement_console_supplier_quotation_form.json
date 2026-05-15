@@ -1,0 +1,9 @@
+{
+  "doctype": "Page",
+  "name": "procurement-console-supplier-quotation-form",
+  "page_name": "procurement-console-supplier-quotation-form",
+  "title": "Supplier Quotation Form",
+  "icon": "octicon octicon-checklist",
+  "module": "ERP Workspace UI",
+  "standard": "Yes"
+}

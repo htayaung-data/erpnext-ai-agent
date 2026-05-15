@@ -74,6 +74,7 @@
       purchaseRequestForm: "procurement-console-purchase-request-form",
       rfqForm: "procurement-console-rfq-form",
       rfqReview: "procurement-console-rfq-review",
+      supplierQuotationForm: "procurement-console-supplier-quotation-form",
       supplierQuotationReview: "procurement-console-supplier-quotation-review",
     },
     methods: {
@@ -92,6 +93,9 @@
       managedRfqContext: "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_context",
       managedRfqSave: "erp_workspace_ui.procurement_console.managed_rfq.save_managed_rfq_draft",
       managedRfqItemDefaults: "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_item_defaults",
+      managedSupplierQuotationContext: "erp_workspace_ui.procurement_console.managed_supplier_quotation.get_managed_supplier_quotation_context",
+      managedSupplierQuotationSave: "erp_workspace_ui.procurement_console.managed_supplier_quotation.save_managed_supplier_quotation_draft",
+      managedSupplierQuotationItemDefaults: "erp_workspace_ui.procurement_console.managed_supplier_quotation.get_managed_supplier_quotation_item_defaults",
       rfqReviewContext: "erp_workspace_ui.procurement_console.document_reviews.get_rfq_review_context",
       supplierQuotationReviewContext: "erp_workspace_ui.procurement_console.document_reviews.get_supplier_quotation_review_context",
     },

@@ -406,8 +406,9 @@ async function procurementShellState(page) {
     supplierQuotationReview: await visibleElementCount(page, ".erpw-procurement-supplier-quotation-review-shell"),
     managedPurchaseRequestForm: await visibleElementCount(page, ".erpw-managed-pr-page"),
     managedRfqForm: await visibleElementCount(page, ".erpw-managed-rfq-page"),
+    managedSupplierQuotationForm: await visibleElementCount(page, ".erpw-managed-sq-page"),
   };
-  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview + state.managedPurchaseRequestForm + state.managedRfqForm;
+  state.total = state.overview + state.worklist + state.report + state.poDetail + state.supplierDetail + state.itemDetail + state.purchaseRequestReview + state.rfqReview + state.supplierQuotationReview + state.managedPurchaseRequestForm + state.managedRfqForm + state.managedSupplierQuotationForm;
   state.url = page.url();
   return state;
 }
@@ -504,6 +505,7 @@ async function procurementChromeSnapshot(page, label) {
       itemDetail: document.querySelectorAll(".erpw-procurement-item-detail-page").length,
       managedPurchaseRequestForm: document.querySelectorAll(".erpw-managed-pr-page").length,
       managedRfqForm: document.querySelectorAll(".erpw-managed-rfq-page").length,
+      managedSupplierQuotationForm: document.querySelectorAll(".erpw-managed-sq-page").length,
     };
     procurementShellState.total = Object.values(procurementShellState).reduce((total, count) => total + count, 0);
     return {
@@ -607,7 +609,16 @@ async function checkProcurementNativeChromeLifecycle(page, user) {
       backSelector: "button:has-text('Back to RFQs')",
       backPath: /\/desk\/procurement-console-worklist\/rfq-directory$/,
     },
-    { key: "new_supplier_quotation", label: "New Supplier Quotation", path: /\/desk\/supplier-quotation\// },
+    {
+      key: "new_supplier_quotation",
+      label: "New Supplier Quotation",
+      path: /\/desk\/procurement-console-supplier-quotation-form\/new$/,
+      managed: true,
+      shellSelector: ".erpw-managed-sq-page .erpw-managed-sq-card",
+      nativeLeakPattern: /\/desk\/(?:supplier-quotation|Form\/Supplier%20Quotation|Form\/Supplier Quotation)\//i,
+      backSelector: "button:has-text('Back to Supplier Quotations')",
+      backPath: /\/desk\/procurement-console-worklist\/supplier-quotation-directory$/,
+    },
     { key: "new_purchase_order", label: "New Purchase Order", path: /\/desk\/purchase-order\// },
   ];
   await openDeskRoute(page, "/desk/procurement-console");
@@ -2679,7 +2690,6 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   const targets = (bootstrapPayload && bootstrapPayload.action_targets) || {};
   const keys = actions.map((action) => action.key).filter(Boolean);
   const governedNativeCreateTargets = {
-    new_supplier_quotation: "Supplier Quotation",
     new_purchase_order: "Purchase Order",
     new_supplier: "Supplier",
     new_item: "Item",
@@ -2696,6 +2706,12 @@ async function checkCreateActions(page, user, bootstrapPayload) {
       assert(target.kind === "page", "New RFQ must use the managed Phase 5B page route", { target });
       assert(target.route === "procurement-console-rfq-form", "New RFQ route must target the managed RFQ form", { target });
       assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New RFQ route must open the new managed RFQ form", { target });
+      return;
+    }
+    if (key === "new_supplier_quotation") {
+      assert(target.kind === "page", "New Supplier Quotation must use the managed Phase 5C page route", { target });
+      assert(target.route === "procurement-console-supplier-quotation-form", "New Supplier Quotation route must target the managed Supplier Quotation form", { target });
+      assert(Array.isArray(target.route_parts) && target.route_parts.includes("new"), "New Supplier Quotation route must open the new managed Supplier Quotation form", { target });
       return;
     }
     if (governedNativeCreateTargets[key]) {
@@ -2743,6 +2759,7 @@ async function checkCreateActions(page, user, bootstrapPayload) {
   }
   let createRoute = null;
   let rfqCreateRoute = null;
+  let supplierQuotationCreateRoute = null;
   if (keys.includes("new_purchase_request")) {
     await page.locator('[data-erpw-procurement-create-action="new_purchase_request"]').first().click();
     await page.waitForURL(/\/desk\/procurement-console-purchase-request-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
@@ -2821,7 +2838,46 @@ async function checkCreateActions(page, user, bootstrapPayload) {
     await openDeskRoute(page, "/desk/procurement-console");
     await assertSingleProcurementShell(page, "overview", "After RFQ directory create action return to Procurement Overview");
   }
-  return { keys, labels, createRoute, rfqCreateRoute };
+  if (keys.includes("new_supplier_quotation")) {
+    await page.locator('[data-erpw-procurement-create-action="new_supplier_quotation"]').first().click();
+    await page.waitForURL(/\/desk\/procurement-console-supplier-quotation-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    await page.locator(".erpw-managed-sq-page .erpw-managed-sq-card").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    supplierQuotationCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    assert(!/\/desk\/(?:supplier-quotation|Form\/Supplier%20Quotation|Form\/Supplier Quotation)\//i.test(page.url()), "New Supplier Quotation primary action leaked to native Supplier Quotation route", supplierQuotationCreateRoute);
+    const activeManagedSq = await page.locator(".erpw-managed-sq-page").evaluateAll((nodes) => {
+      const visible = (node) => {
+        if (!node) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || "1") !== 0 && rect.width > 0 && rect.height > 0;
+      };
+      const visibleShells = nodes.filter(visible);
+      const actions = visibleShells.flatMap((shell) =>
+        Array.from(shell.querySelectorAll(".erpw-child-toolbar-action"))
+          .filter(visible)
+          .map((node) => (node.textContent || "").replace(/\s+/g, " ").trim())
+      );
+      return { count: visibleShells.length, actions };
+    });
+    assert(activeManagedSq.count === 1, "Managed Supplier Quotation create route must have exactly one active visible form shell", activeManagedSq);
+    assert(!activeManagedSq.actions.some((label) => /Open ERP Form/i.test(label)), "Open ERP Form must not appear before a managed Supplier Quotation is saved", activeManagedSq);
+    const managedState = await procurementShellState(page);
+    assert(managedState.managedSupplierQuotationForm === 1, "Managed Supplier Quotation create route did not render as the active Procurement shell", managedState);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After Supplier Quotation create action return to Procurement Overview");
+    await openDeskRoute(page, "/desk/procurement-console-worklist/supplier-quotation-directory");
+    await page.locator(".erpw-list-shell").first().waitFor({ state: "visible", timeout: TIMEOUT });
+    const directoryCreate = page.locator("button:has-text('New Supplier Quotation')").first();
+    await directoryCreate.waitFor({ state: "visible", timeout: TIMEOUT });
+    await directoryCreate.click();
+    await page.waitForURL(/\/desk\/procurement-console-supplier-quotation-form\/new$/, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+    const directoryCreateRoute = { url: page.url(), route: await page.evaluate(() => (window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : [])) };
+    assert(supplierQuotationCreateRoute.url.replace(/[#?].*$/, "") === directoryCreateRoute.url.replace(/[#?].*$/, ""), "Overview and Supplier Quotations Directory must route to the same managed Supplier Quotation form", { supplierQuotationCreateRoute, directoryCreateRoute });
+    assert(!/\/desk\/(?:supplier-quotation|Form\/Supplier%20Quotation|Form\/Supplier Quotation)\//i.test(page.url()), "Supplier Quotations directory New Supplier Quotation leaked to native Supplier Quotation route", directoryCreateRoute);
+    await openDeskRoute(page, "/desk/procurement-console");
+    await assertSingleProcurementShell(page, "overview", "After Supplier Quotation directory create action return to Procurement Overview");
+  }
+  return { keys, labels, createRoute, rfqCreateRoute, supplierQuotationCreateRoute };
 }
 
 async function runUser(browser, user) {

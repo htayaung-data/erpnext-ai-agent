@@ -75,6 +75,7 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"purchase_request_review": "procurement-console-purchase-request-review",
 		"purchase_request_form": "procurement-console-purchase-request-form",
 		"rfq_review": "procurement-console-rfq-review",
+		"supplier_quotation_form": "procurement-console-supplier-quotation-form",
 		"supplier_quotation_review": "procurement-console-supplier-quotation-review",
 	},
 	"methods": {
@@ -90,6 +91,9 @@ _PROCUREMENT_WORKSPACE: dict[str, Any] = {
 		"managed_purchase_request_context": "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_context",
 		"managed_purchase_request_save": "erp_workspace_ui.procurement_console.managed_purchase_request.save_managed_purchase_request_draft",
 		"managed_purchase_request_item_defaults": "erp_workspace_ui.procurement_console.managed_purchase_request.get_managed_purchase_request_item_defaults",
+		"managed_supplier_quotation_context": "erp_workspace_ui.procurement_console.managed_supplier_quotation.get_managed_supplier_quotation_context",
+		"managed_supplier_quotation_save": "erp_workspace_ui.procurement_console.managed_supplier_quotation.save_managed_supplier_quotation_draft",
+		"managed_supplier_quotation_item_defaults": "erp_workspace_ui.procurement_console.managed_supplier_quotation.get_managed_supplier_quotation_item_defaults",
 		"rfq_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_rfq_review_context",
 		"supplier_quotation_review_context": "erp_workspace_ui.procurement_console.document_reviews.get_supplier_quotation_review_context",
 	},

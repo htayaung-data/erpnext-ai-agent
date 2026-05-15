@@ -378,6 +378,11 @@ def _supplier_quotation_payload(
 	rows: list[dict[str, object]],
 	state: dict[str, object],
 ) -> dict[str, object]:
+	actions = list(common.standard_actions())
+	action_targets = common.page_action_targets_for_rows("procurement-console-supplier-quotation-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")})
+	if queue_key == "supplier_quotation_directory" and common.can_create("Supplier Quotation") and common.can_write("Supplier Quotation"):
+		actions.insert(0, {"key": "new_supplier_quotation", "label": "New Supplier Quotation", "kind": "create", "category": "create-action"})
+		action_targets["new_supplier_quotation"] = {"kind": "page", "route": "procurement-console-supplier-quotation-form", "route_parts": ["new"]}
 	return {
 		"page": {"title": title, "key": queue_key},
 		"summary": {
@@ -387,7 +392,7 @@ def _supplier_quotation_payload(
 		},
 		"controls": {
 			"fields": _supplier_quotation_control_fields(filters),
-			"actions": common.standard_actions(),
+			"actions": actions,
 			"scopeChips": ["Supplier Quotation", "Read-only quote review"],
 		},
 		"metrics": [common.metric("Quotations in view", len(rows), "Matching supplier quotations.")],
@@ -406,7 +411,7 @@ def _supplier_quotation_payload(
 			"rowActions": True,
 			"state": state,
 		},
-		"action_targets": common.page_action_targets_for_rows("procurement-console-supplier-quotation-review", rows, {row["name"]: {"return_queue": queue_key} for row in rows if row.get("name")}),
+		"action_targets": action_targets,
 	}
 
 
