@@ -127,7 +127,9 @@
       .erpw-managed-sq-link-cell { position: relative; }
       @media (max-width: 1180px) {
         .erpw-managed-sq-grid { grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(150px, 180px)); }
-        .erpw-managed-sq-table thead tr, .erpw-managed-sq-table tbody tr { grid-template-columns: minmax(250px, 1fr) 82px 112px 76px 66px; grid-template-areas: "item qty rate uom action" "amount amount amount amount amount"; align-items: end; }
+        .erpw-managed-sq-table thead tr, .erpw-managed-sq-table tbody tr { grid-template-columns: minmax(230px, 1fr) 76px 96px 74px 104px 62px; grid-template-areas: "item qty rate uom amount action"; gap: 8px; align-items: end; }
+        .erpw-managed-sq-table thead tr { padding: 0 10px; }
+        .erpw-managed-sq-table tbody tr { padding: 10px; }
         .erpw-managed-sq-table th:nth-child(1) { grid-area: item; }
         .erpw-managed-sq-table th.qty { grid-area: qty; }
         .erpw-managed-sq-table th.rate { grid-area: rate; }
@@ -138,8 +140,10 @@
         .erpw-managed-sq-line-qty { grid-area: qty; }
         .erpw-managed-sq-line-rate { grid-area: rate; }
         .erpw-managed-sq-line-uom { grid-area: uom; }
-        .erpw-managed-sq-line-amount { grid-area: amount; max-width: 180px; }
+        .erpw-managed-sq-line-amount { grid-area: amount; max-width: none; }
         .erpw-managed-sq-line-action { grid-area: action; }
+        .erpw-managed-sq-amount-value { min-width: 0; width: 100%; }
+        .erpw-managed-sq-row-button { max-width: 60px; padding: 0 6px; font-size: 11.5px; }
       }
       @media (max-width: 720px) {
         .erpw-managed-sq-grid { grid-template-columns: 1fr; }

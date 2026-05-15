@@ -69,9 +69,18 @@ async function waitForManagedSq(page) {
   await page.waitForSelector(".erpw-managed-sq-page .erpw-managed-sq-card", { state: "visible", timeout: TIMEOUT });
 }
 
+async function openFreshManagedSq(page) {
+  await page.goto(routeUrl("/desk/procurement-console-supplier-quotation-form/new"), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+  if (/\/login(?:[/?#]|$)/.test(page.url())) throw new Error("Managed Supplier Quotation new route redirected to login");
+  await page.waitForFunction(() => Boolean(window.frappe), null, { timeout: TIMEOUT });
+  await waitForManagedSq(page);
+  const rowCount = await page.locator(".erpw-managed-sq-table tbody tr[data-row-index]").count();
+  assert(rowCount === 1, "Fresh managed Supplier Quotation form did not reset to one item row", { rowCount, url: page.url() });
+}
+
 async function stableSqSnapshot(page, label) {
   await waitForManagedSq(page);
-  const state = await page.evaluate(() => {
+  const state = await page.evaluate((snapshotLabel) => {
     const visible = (node) => {
       if (!node) return false;
       const rect = node.getBoundingClientRect();
@@ -119,7 +128,7 @@ async function stableSqSnapshot(page, label) {
     }) : [];
     const pageHeadTexts = Array.from(document.querySelectorAll(".page-head")).filter(visible).map((node) => (node.textContent || "").replace(/\s+/g, " ").trim());
     return {
-      label,
+      label: snapshotLabel,
       url: location.pathname,
       text: shell ? shell.innerText : document.body.innerText,
       visibleShellCount: shells.length,
@@ -139,7 +148,7 @@ async function stableSqSnapshot(page, label) {
       amountDisplays,
       removeRects,
     };
-  });
+  }, label);
   assert(state.visibleShellCount === 1 && state.shellCount === 1, `${label}: managed Supplier Quotation shell stacked`, state);
   assert(!state.pageHeadTexts.some((value) => /Supplier Quotation Form/i.test(value)), `${label}: duplicate Supplier Quotation Form page header is visible`, state);
   assert(state.bodyWidth <= state.viewportWidth + 2, `${label}: horizontal overflow`, state);
@@ -258,7 +267,7 @@ async function verifyDirectoryAction(page, user, expectedUrl) {
 
 async function verifyNewLayout(page, userKey, width, height) {
   await page.setViewportSize({ width, height });
-  await openDeskRoute(page, "/desk/procurement-console-supplier-quotation-form/new");
+  await openFreshManagedSq(page);
   const state = await stableSqSnapshot(page, `managed Supplier Quotation ${width}x${height}`);
   await capture(page, `${userKey}-managed-sq-new-${width}x${height}`);
   if (width === 1136 || width === 1440) {
@@ -273,8 +282,7 @@ async function verifyNewLayout(page, userKey, width, height) {
 
 async function verifyAutocompleteGeometry(page, userKey, width, height) {
   await page.setViewportSize({ width, height });
-  await openDeskRoute(page, "/desk/procurement-console-supplier-quotation-form/new");
-  await waitForManagedSq(page);
+  await openFreshManagedSq(page);
   const { supplier, item } = await getFixtureValues(page);
   await page.locator('[data-field="transaction_date"]').fill("2026-05-15");
   await page.locator('[data-field="valid_till"]').fill("2026-05-30");
@@ -284,8 +292,7 @@ async function verifyAutocompleteGeometry(page, userKey, width, height) {
 
 async function fillAndSaveSq(page, userKey) {
   const { supplier, item } = await getFixtureValues(page);
-  await openDeskRoute(page, "/desk/procurement-console-supplier-quotation-form/new");
-  await waitForManagedSq(page);
+  await openFreshManagedSq(page);
   await page.locator('[data-field="transaction_date"]').fill("2026-05-15");
   await page.locator('[data-field="valid_till"]').fill("2026-05-30");
   await chooseAutocomplete(page, ".supplier-link", supplier.name, `${userKey}-supplier-autocomplete-save`);
