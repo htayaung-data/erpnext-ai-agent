@@ -10,6 +10,9 @@
   const CONTEXT_METHOD = procurementMethods.managedRfqContext || "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_context";
   const SAVE_METHOD = procurementMethods.managedRfqSave || "erp_workspace_ui.procurement_console.managed_rfq.save_managed_rfq_draft";
   const ITEM_DEFAULTS_METHOD = procurementMethods.managedRfqItemDefaults || "erp_workspace_ui.procurement_console.managed_rfq.get_managed_rfq_item_defaults";
+  const OUTPUT_CONTEXT_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_output_context";
+  const OUTPUT_PREVIEW_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_print_preview_context";
+  const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
@@ -74,6 +77,31 @@
       .erpw-managed-rfq-shell .erpw-child-toolbar-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
       .erpw-managed-rfq-shell .erpw-child-toolbar-action { min-height: 34px; border-radius: 10px; }
       .erpw-managed-rfq-card { display: grid; gap: 12px; padding: 15px 18px 18px; overflow: visible; }
+      .erpw-managed-rfq-output-card { display: grid; gap: 12px; padding: 15px 18px 18px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
+      .erpw-managed-rfq-output-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .erpw-managed-rfq-output-title { font-size: 15px; line-height: 1.25; font-weight: 790; color: #0f172a; }
+      .erpw-managed-rfq-output-note { margin-top: 3px; color: #475569; font-size: 12.5px; line-height: 1.36; max-width: 680px; }
+      .erpw-managed-rfq-output-badge { display: inline-flex; min-height: 26px; align-items: center; padding: 0 10px; border-radius: 999px; border: 1px solid #d9eadf; background: #f3faf6; color: #166534; font-size: 12px; font-weight: 760; white-space: nowrap; }
+      .erpw-managed-rfq-output-grid { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 12px; align-items: end; }
+      .erpw-managed-rfq-output-field { display: grid; gap: 6px; min-width: 0; }
+      .erpw-managed-rfq-output-field label { font-size: 10.5px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin: 0; }
+      .erpw-managed-rfq-output-field select { width: 100%; min-height: 37px; border: 1px solid #d5e2ef; border-radius: 11px; padding: 0 10px; background: #fff; color: #0f172a; font-size: 13px; box-sizing: border-box; }
+      .erpw-managed-rfq-output-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .erpw-managed-rfq-output-button { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #12365f; font-weight: 740; font-size: 12px; padding: 0 12px; }
+      .erpw-managed-rfq-output-button:hover:not(:disabled) { border-color: #9db7d2; background: #f8fbff; }
+      .erpw-managed-rfq-output-button:disabled { opacity: 0.58; cursor: not-allowed; }
+      .erpw-managed-rfq-output-message { min-height: 18px; color: #64748b; font-size: 12.5px; line-height: 1.36; }
+      .erpw-managed-rfq-output-message.error { color: #b42318; }
+      .erpw-output-modal-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(15,23,42,0.36); display: flex; align-items: center; justify-content: center; padding: 22px; }
+      .erpw-output-modal { width: min(980px, 96vw); max-height: min(820px, 92vh); overflow: hidden; display: grid; grid-template-rows: auto 1fr; border-radius: 16px; background: #fff; box-shadow: 0 26px 70px rgba(15,23,42,0.28); border: 1px solid #dbe6f2; }
+      .erpw-output-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+      .erpw-output-modal-title { font-weight: 800; color: #0f172a; }
+      .erpw-output-modal-close { min-height: 32px; border: 1px solid #d5e2ef; border-radius: 9px; background: #fff; color: #12365f; font-weight: 740; padding: 0 10px; }
+      .erpw-output-modal-body { overflow: auto; background: #f8fafc; padding: 16px; }
+      .erpw-output-preview { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+      .erpw-output-preview-banner { padding: 9px 12px; background: #fefce8; color: #854d0e; font-size: 12px; font-weight: 800; border-bottom: 1px solid #fef3c7; }
+      .erpw-output-preview-supplier { padding: 8px 12px; color: #334155; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
+      .erpw-output-preview-body { padding: 12px; overflow: auto; }
       .erpw-managed-rfq-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
       .erpw-managed-rfq-section-kicker { font-size: 10.5px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; }
       .erpw-managed-rfq-section-title { margin-top: 3px; font-size: 15.5px; line-height: 1.25; font-weight: 790; color: #0f172a; }
@@ -129,7 +157,7 @@
         .erpw-managed-rfq-line-action { grid-area: action; }
       }
       @media (max-width: 720px) {
-        .erpw-managed-rfq-grid { grid-template-columns: 1fr; }
+        .erpw-managed-rfq-grid, .erpw-managed-rfq-output-grid { grid-template-columns: 1fr; }
         .erpw-managed-rfq-supplier-table tr { grid-template-columns: 1fr 66px; }
         .erpw-managed-rfq-shell .erpw-child-summary-top { display: grid; }
         .erpw-managed-rfq-table thead { display: none; }
@@ -275,6 +303,123 @@
         }
       },
     }));
+  }
+
+
+  function isSavedForm(form) {
+    return form && form.name && form.name !== "new";
+  }
+
+  function outputCardMarkup(form, outputContext) {
+    if (!isSavedForm(form)) return "";
+    const context = outputContext && outputContext.name === form.name ? outputContext : null;
+    const suppliers = context && Array.isArray(context.suppliers) ? context.suppliers : [];
+    const selected = context && context.selected_supplier ? context.selected_supplier : (suppliers.length === 1 ? suppliers[0].supplier : "");
+    return `
+      <section class="erpw-managed-rfq-output-card" data-managed-rfq-output-card data-document-name="${escapeHtml(form.name)}">
+        <div class="erpw-managed-rfq-output-top">
+          <div>
+            <div class="erpw-managed-rfq-output-title">Supplier Communication</div>
+            <div class="erpw-managed-rfq-output-note">Preview and PDF output are supplier-specific. Email send is deferred until a governed RFQ send step exists.</div>
+          </div>
+          <span class="erpw-managed-rfq-output-badge">${escapeHtml(context ? context.warning || "Draft / Not sent" : "Draft / Not sent")}</span>
+        </div>
+        <div class="erpw-managed-rfq-output-grid">
+          <div class="erpw-managed-rfq-output-field">
+            <label>Supplier context</label>
+            <select data-rfq-output-supplier ${context ? "" : "disabled"}>
+              <option value="">Select supplier</option>
+              ${suppliers.map((row) => `<option value="${escapeHtml(row.supplier)}" ${row.supplier === selected ? "selected" : ""}>${escapeHtml(row.supplier_name || row.supplier)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="erpw-managed-rfq-output-actions">
+            <button type="button" class="erpw-managed-rfq-output-button" data-rfq-output-preview ${context ? "" : "disabled"}>Preview RFQ</button>
+            <button type="button" class="erpw-managed-rfq-output-button" data-rfq-output-download ${context ? "" : "disabled"}>Download RFQ PDF</button>
+            <button type="button" class="erpw-managed-rfq-output-button" disabled>Email suppliers</button>
+          </div>
+        </div>
+        <div class="erpw-managed-rfq-output-message" data-rfq-output-message>${escapeHtml(context ? context.send_block_reason || "Email send is deferred." : "Loading output controls...")}</div>
+      </section>
+    `;
+  }
+
+  function selectedOutputSupplier($shell) {
+    return String($shell.find("[data-rfq-output-supplier]").val() || "").trim();
+  }
+
+  function outputPdfUrl(args) {
+    const params = new URLSearchParams();
+    Object.keys(args || {}).forEach((key) => {
+      if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== "") params.set(key, args[key]);
+    });
+    return `/api/method/${OUTPUT_PDF_METHOD}?${params.toString()}`;
+  }
+
+  function showOutputMessage($shell, message, tone) {
+    $shell.find("[data-rfq-output-message]").text(message || "").toggleClass("error", tone === "error");
+  }
+
+  function showPreviewModal(title, html) {
+    $(".erpw-output-modal-backdrop").remove();
+    const $modal = $(
+      `<div class="erpw-output-modal-backdrop" role="dialog" aria-modal="true">
+        <section class="erpw-output-modal">
+          <div class="erpw-output-modal-head"><div class="erpw-output-modal-title"></div><button type="button" class="erpw-output-modal-close">Close</button></div>
+          <div class="erpw-output-modal-body"></div>
+        </section>
+      </div>`
+    );
+    $modal.find(".erpw-output-modal-title").text(title || "Document preview");
+    $modal.find(".erpw-output-modal-body").html(html || "");
+    $modal.find(".erpw-output-modal-close").on("click", () => $modal.remove());
+    $modal.on("click", (event) => { if (event.target === $modal.get(0)) $modal.remove(); });
+    $(document.body).append($modal);
+  }
+
+  function loadOutputContext(viewState) {
+    const form = viewState.form || stateForm(viewState.payload);
+    if (!isSavedForm(form)) return Promise.resolve(null);
+    if (viewState.outputContext && viewState.outputContext.name === form.name) return Promise.resolve(viewState.outputContext);
+    return frappe.call({ method: OUTPUT_CONTEXT_METHOD, args: { doctype: "Request for Quotation", name: form.name } }).then((response) => {
+      const context = response && response.message ? response.message : {};
+      viewState.outputContext = context;
+      renderPayload(viewState);
+      return context;
+    });
+  }
+
+  function bindOutputCard($shell, viewState) {
+    const $card = $shell.find("[data-managed-rfq-output-card]");
+    if (!$card.length) return;
+    loadOutputContext(viewState);
+    $card.find("[data-rfq-output-preview]").off("click.output").on("click.output", () => {
+      const form = viewState.form || stateForm(viewState.payload);
+      const supplier = selectedOutputSupplier($shell);
+      if (!supplier) {
+        showOutputMessage($shell, "Select one supplier before previewing RFQ output.", "error");
+        return;
+      }
+      showOutputMessage($shell, "Rendering RFQ preview...", "");
+      frappe.call({ method: OUTPUT_PREVIEW_METHOD, args: { doctype: "Request for Quotation", name: form.name, supplier } }).then((response) => {
+        const payload = response && response.message ? response.message : {};
+        if (payload.state && payload.state.kind === "ready") {
+          showPreviewModal(`RFQ Preview - ${supplier}`, payload.html || "");
+          showOutputMessage($shell, payload.filename || "RFQ preview ready.", "");
+        } else {
+          showOutputMessage($shell, payload.state && payload.state.detail ? payload.state.detail : "RFQ preview unavailable.", "error");
+        }
+      });
+    });
+    $card.find("[data-rfq-output-download]").off("click.output").on("click.output", () => {
+      const form = viewState.form || stateForm(viewState.payload);
+      const supplier = selectedOutputSupplier($shell);
+      if (!supplier) {
+        showOutputMessage($shell, "Select one supplier before downloading RFQ PDF.", "error");
+        return;
+      }
+      showOutputMessage($shell, "Preparing RFQ PDF...", "");
+      window.open(outputPdfUrl({ doctype: "Request for Quotation", name: form.name, supplier }), "_blank", "noopener");
+    });
   }
 
   function formMarkup(form) {
@@ -567,7 +712,8 @@
     removeSuggestions();
     const payload = overridePayload || viewState.payload || loadingPayload();
     const form = overridePayload && overridePayload.state && overridePayload.state.kind !== "ready" ? viewState.form || stateForm(viewState.payload) : viewState.form || stateForm(payload);
-    const extra = payload.state && payload.state.kind && payload.state.kind !== "ready" && payload.state.kind !== "loading" ? renderState(viewState.$shell, payload) : formMarkup(form);
+    const output = outputCardMarkup(form, viewState.outputContext);
+    const extra = payload.state && payload.state.kind && payload.state.kind !== "ready" && payload.state.kind !== "loading" ? renderState(viewState.$shell, payload) : formMarkup(form) + output;
     shellContent().renderShellContent(viewState.$shell, {
       summary: payload.summary || loadingPayload().summary,
       actions: actionConfig(payload, viewState),
@@ -575,7 +721,10 @@
       extraSectionsHtml: extra,
     });
     viewState.$shell.attr("data-erpw-managed-rfq-state", payload.state && payload.state.kind ? payload.state.kind : "ready");
-    if (payload.state && payload.state.kind === "ready") bindForm(viewState.$shell, viewState);
+    if (payload.state && payload.state.kind === "ready") {
+      bindForm(viewState.$shell, viewState);
+      bindOutputCard(viewState.$shell, viewState);
+    }
   }
 
   function loadRoute(viewState, options) {
@@ -586,6 +735,7 @@
       const payload = response && response.message ? response.message : {};
       viewState.payload = payload;
       viewState.form = stateForm(payload);
+      viewState.outputContext = null;
       renderPayload(viewState);
     }).catch((error) => {
       renderPayload(viewState, { state: { kind: "error", title: "RFQ form failed", detail: error && error.message ? error.message : "The managed form could not load." } });

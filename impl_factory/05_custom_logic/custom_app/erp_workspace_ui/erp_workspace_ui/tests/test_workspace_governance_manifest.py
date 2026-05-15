@@ -200,6 +200,7 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             "procurement-console-po-follow-up",
             "procurement-console-purchase-request-review",
             "procurement-console-purchase-request-form",
+            "procurement-console-rfq-form",
             "procurement-console-supplier-quotation-form",
             "Form/Material Request/new-purchase",
         }:
@@ -226,6 +227,30 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("governed_native_action", actions["procurement-managed-pr-open-native"]["classification"])
         self.assertEqual("procurement-secondary-native-open-v1", actions["procurement-managed-pr-open-native"]["native_exception_ref"])
 
+    def test_procurement_managed_rfq_output_actions_are_productized(self):
+        actions = {
+            item["manifest_key"]: item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] in {
+                "procurement-new-rfq",
+                "procurement-worklist-new-rfq",
+                "procurement-managed-rfq-save-draft",
+                "procurement-managed-rfq-open-native",
+                "procurement-managed-rfq-preview-output",
+                "procurement-managed-rfq-download-pdf",
+                "procurement-managed-rfq-email-blocked",
+            }
+        }
+
+        self.assertEqual("productized_navigation", actions["procurement-new-rfq"]["classification"])
+        self.assertEqual("/desk/procurement-console-rfq-form/new", actions["procurement-new-rfq"]["target_route_pattern"])
+        self.assertEqual("/desk/procurement-console-rfq-form/new", actions["procurement-worklist-new-rfq"]["target_route_pattern"])
+        self.assertEqual("productized_primary_action", actions["procurement-managed-rfq-save-draft"]["classification"])
+        self.assertEqual("governed_native_action", actions["procurement-managed-rfq-open-native"]["classification"])
+        self.assertEqual("productized_secondary_action", actions["procurement-managed-rfq-preview-output"]["classification"])
+        self.assertEqual("controlled_pdf_endpoint", actions["procurement-managed-rfq-download-pdf"]["target_kind"])
+        self.assertEqual("disabled", actions["procurement-managed-rfq-email-blocked"]["target_kind"])
+
     def test_procurement_managed_supplier_quotation_actions_are_productized(self):
         actions = {
             item["manifest_key"]: item
@@ -245,6 +270,30 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("productized_primary_action", actions["procurement-managed-sq-save-draft"]["classification"])
         self.assertEqual("governed_native_action", actions["procurement-managed-sq-open-native"]["classification"])
         self.assertEqual("procurement-secondary-native-open-v1", actions["procurement-managed-sq-open-native"]["native_exception_ref"])
+
+    def test_procurement_managed_purchase_order_output_actions_are_productized(self):
+        actions = {
+            item["manifest_key"]: item
+            for item in ACTION_MANIFEST
+            if item["manifest_key"] in {
+                "procurement-new-purchase-order",
+                "procurement-worklist-new-purchase-order",
+                "procurement-managed-po-save-draft",
+                "procurement-managed-po-open-native",
+                "procurement-managed-po-preview-output",
+                "procurement-managed-po-download-pdf",
+                "procurement-managed-po-email-blocked",
+            }
+        }
+
+        self.assertEqual("productized_navigation", actions["procurement-new-purchase-order"]["classification"])
+        self.assertEqual("/desk/procurement-console-purchase-order-form/new", actions["procurement-new-purchase-order"]["target_route_pattern"])
+        self.assertEqual("/desk/procurement-console-purchase-order-form/new", actions["procurement-worklist-new-purchase-order"]["target_route_pattern"])
+        self.assertEqual("productized_primary_action", actions["procurement-managed-po-save-draft"]["classification"])
+        self.assertEqual("governed_native_action", actions["procurement-managed-po-open-native"]["classification"])
+        self.assertEqual("productized_secondary_action", actions["procurement-managed-po-preview-output"]["classification"])
+        self.assertEqual("controlled_pdf_endpoint", actions["procurement-managed-po-download-pdf"]["target_kind"])
+        self.assertEqual("disabled", actions["procurement-managed-po-email-blocked"]["target_kind"])
 
     def test_procurement_reports_index_card_action_is_productized_navigation(self):
         actions = {

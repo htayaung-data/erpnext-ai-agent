@@ -573,6 +573,11 @@ class _FakeMaterialRequestDoc:
     def set(self, fieldname, value):
         setattr(self, fieldname, value)
 
+    def update_supplier_part_no(self, supplier):
+        self.vendor = supplier
+        for item in self.items:
+            item.supplier_part_no = f"{supplier}-{getattr(item, 'item_code', '')}".strip("-")
+
     def append(self, fieldname, value):
         if not hasattr(self, fieldname):
             setattr(self, fieldname, [])
@@ -772,6 +777,14 @@ def _get_doc(*args, **kwargs):
                 "suppliers": [{"supplier": "SUP-001"}],
                 "items": [{"item_code": "ITEM-001", "qty": 5, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}],
             })
+        if name == "PUR-RFQ-MULTI":
+            return _FakeRFQDoc(name=name, values={
+                "transaction_date": "2026-05-02",
+                "schedule_date": "2026-05-10",
+                "company": "Demo Company",
+                "suppliers": [{"supplier": "SUP-001", "supplier_name": "Alpha Supplier"}, {"supplier": "SUP-002", "supplier_name": "Beta Supplier"}],
+                "items": [{"item_code": "ITEM-001", "qty": 5, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}],
+            })
     if len(args) >= 2 and args[0] == "Material Request":
         name = args[1]
         if name in SAVED_MATERIAL_REQUESTS:
@@ -925,9 +938,14 @@ fake_frappe.get_list = _get_list
 fake_frappe.get_all = _get_all
 fake_frappe.get_doc = _get_doc
 fake_frappe.get_meta = lambda doctype: _FakeMeta(doctype)
+fake_frappe.get_print = lambda doctype, name, print_format=None, doc=None, as_pdf=False, letterhead=None, **kwargs: (
+    f"<div class='print-format'><h1>{doctype} {name}</h1><span class='supplier'>{getattr(doc, 'vendor', getattr(doc, 'supplier', ''))}</span></div>".encode("utf-8")
+    if as_pdf
+    else f"<div class='print-format'><h1>{doctype} {name}</h1><span class='supplier'>{getattr(doc, 'vendor', getattr(doc, 'supplier', ''))}</span></div>"
+)
 fake_frappe.generate_hash = lambda length=10: "x" * length
 fake_frappe.conf = {}
-fake_frappe.local = types.SimpleNamespace(site="")
+fake_frappe.local = types.SimpleNamespace(site="", response={})
 fake_frappe._ = lambda message: message
 fake_frappe._dict = lambda value=None, **kwargs: types.SimpleNamespace(**dict(value or {}, **kwargs))
 fake_frappe.scrub = lambda value: str(value or "").strip().lower().replace(" ", "_")
@@ -982,7 +1000,7 @@ sys.modules["erpnext.controllers.trends"] = fake_erpnext_trends
 from erp_workspace_ui import boot
 from pathlib import Path
 
-from erp_workspace_ui.procurement_console import document_reviews, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, worklist
+from erp_workspace_ui.procurement_console import document_output, document_reviews, items, managed_purchase_order, managed_purchase_request, managed_rfq, managed_supplier_quotation, purchase_order_detail, report, service, supplier_detail, worklist
 
 
 def _set_user(user, roles):
@@ -1085,6 +1103,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         SAVED_RFQS.clear()
         SAVED_SUPPLIER_QUOTATIONS.clear()
         SAVED_PURCHASE_ORDERS.clear()
+        fake_frappe.local.response = {}
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -1513,6 +1532,90 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         })
 
         self.assertEqual(payload["state"]["kind"], "error")
+
+    def test_document_output_context_for_rfq_and_purchase_order_is_preview_only(self):
+        _set_user("purchase@example.com", ["Purchase User"])
+
+        rfq_context = document_output.get_document_output_context("Request for Quotation", "PUR-RFQ-MULTI")
+        po_context = document_output.get_document_output_context("Purchase Order", "PUR-DUE-001")
+
+        self.assertEqual(rfq_context["state"]["kind"], "ready")
+        self.assertEqual(rfq_context["warning"], "Draft / Not sent")
+        self.assertFalse(rfq_context["can_send"])
+        self.assertIn("governed RFQ send", rfq_context["send_block_reason"])
+        self.assertTrue(rfq_context["requires_supplier_selection"])
+        self.assertEqual([row["supplier"] for row in rfq_context["suppliers"]], ["SUP-001", "SUP-002"])
+        self.assertEqual(po_context["state"]["kind"], "ready")
+        self.assertEqual(po_context["warning"], "Draft / Not for supplier")
+        self.assertFalse(po_context["can_send"])
+        self.assertIn("approved", po_context["send_block_reason"])
+        _assert_no_forbidden_mutation_actions(self, rfq_context)
+        _assert_no_forbidden_mutation_actions(self, po_context)
+
+    def test_document_output_restricts_sales_and_invalid_doctype(self):
+        _set_user("sales@example.com", ["Sales User"])
+
+        restricted = document_output.get_document_output_context("Request for Quotation", "PUR-RFQ-001")
+        invalid = document_output.get_document_output_context("Sales Order", "SO-001")
+
+        self.assertEqual(restricted["state"]["kind"], "restricted")
+        self.assertEqual(invalid["state"]["kind"], "error")
+
+    def test_rfq_preview_requires_and_isolates_selected_supplier(self):
+        missing = document_output.get_document_print_preview_context("Request for Quotation", "PUR-RFQ-MULTI")
+        selected = document_output.get_document_print_preview_context("Request for Quotation", "PUR-RFQ-MULTI", supplier="SUP-002")
+
+        self.assertEqual(missing["state"]["kind"], "error")
+        self.assertIn("Select one supplier", missing["state"]["detail"])
+        self.assertEqual(selected["state"]["kind"], "ready")
+        self.assertEqual(selected["selected_supplier"]["supplier"], "SUP-002")
+        self.assertIn("Supplier: SUP-002", selected["html"])
+        self.assertIn("SUP-002", selected["html"])
+        self.assertNotIn("Supplier: SUP-001", selected["html"])
+        self.assertEqual(selected["filename"], "PUR-RFQ-MULTI-SUP-002-DRAFT-NOT-SENT.pdf")
+
+    def test_rfq_pdf_requires_supplier_and_sets_supplier_specific_filename(self):
+        missing = None
+        try:
+            document_output.download_document_pdf("Request for Quotation", "PUR-RFQ-MULTI")
+        except Exception as exc:
+            missing = str(exc)
+        self.assertIn("Select one supplier", missing or "")
+
+        document_output.download_document_pdf("Request for Quotation", "PUR-RFQ-MULTI", supplier="SUP-001")
+
+        response = fake_frappe.local.response
+        self.assertEqual(response["type"], "pdf")
+        self.assertEqual(response["filename"], "PUR-RFQ-MULTI-SUP-001-DRAFT-NOT-SENT.pdf")
+        self.assertIn(b"Draft / Not sent", response["filecontent"])
+        self.assertIn(b"Supplier: SUP-001", response["filecontent"])
+
+    def test_po_preview_and_pdf_are_draft_internal_only(self):
+        preview = document_output.get_document_print_preview_context("Purchase Order", "PUR-DUE-001")
+        document_output.download_document_pdf("Purchase Order", "PUR-DUE-001")
+
+        self.assertEqual(preview["state"]["kind"], "ready")
+        self.assertEqual(preview["warning"], "Draft / Not for supplier")
+        self.assertIn("Draft / Not for supplier", preview["html"])
+        self.assertEqual(preview["filename"], "PUR-DUE-001-DRAFT-NOT-FOR-SUPPLIER.pdf")
+        response = fake_frappe.local.response
+        self.assertEqual(response["type"], "pdf")
+        self.assertEqual(response["filename"], "PUR-DUE-001-DRAFT-NOT-FOR-SUPPLIER.pdf")
+        self.assertIn(b"Draft / Not for supplier", response["filecontent"])
+
+    def test_document_output_has_no_send_or_communication_side_effects(self):
+        rfq_context = document_output.get_document_output_context("Request for Quotation", "PUR-RFQ-001")
+        po_context = document_output.get_document_output_context("Purchase Order", "PUR-DUE-001")
+
+        for payload in (rfq_context, po_context):
+            self.assertFalse(payload["can_send"])
+            self.assertNotIn("Communication", str(payload))
+            for action in payload["actions"]:
+                if action["key"] == "send":
+                    self.assertTrue(action["disabled"])
+                    self.assertEqual(action["kind"], "blocked")
+        _assert_no_forbidden_mutation_actions(self, rfq_context)
+        _assert_no_forbidden_mutation_actions(self, po_context)
 
     def test_procurement_supplier_and_item_create_actions_are_deferred(self):
         _set_user("manager@example.com", ["Purchase Manager"])

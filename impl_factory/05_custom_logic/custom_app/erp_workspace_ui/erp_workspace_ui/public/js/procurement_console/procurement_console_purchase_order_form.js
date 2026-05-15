@@ -10,6 +10,9 @@
   const CONTEXT_METHOD = procurementMethods.managedPurchaseOrderContext || "erp_workspace_ui.procurement_console.managed_purchase_order.get_managed_purchase_order_context";
   const SAVE_METHOD = procurementMethods.managedPurchaseOrderSave || "erp_workspace_ui.procurement_console.managed_purchase_order.save_managed_purchase_order";
   const ITEM_DEFAULTS_METHOD = procurementMethods.managedPurchaseOrderItemDefaults || "erp_workspace_ui.procurement_console.managed_purchase_order.get_managed_purchase_order_item_defaults";
+  const OUTPUT_CONTEXT_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_output_context";
+  const OUTPUT_PREVIEW_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_print_preview_context";
+  const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
@@ -89,6 +92,27 @@
       .erpw-managed-po-shell .erpw-child-toolbar-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
       .erpw-managed-po-shell .erpw-child-toolbar-action { min-height: 34px; border-radius: 10px; }
       .erpw-managed-po-card { display: grid; gap: 12px; padding: 15px 18px 18px; overflow: visible; }
+      .erpw-managed-po-output-card { display: grid; gap: 12px; padding: 15px 18px 18px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
+      .erpw-managed-po-output-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .erpw-managed-po-output-title { font-size: 15px; line-height: 1.25; font-weight: 790; color: #0f172a; }
+      .erpw-managed-po-output-note { margin-top: 3px; color: #475569; font-size: 12.5px; line-height: 1.36; max-width: 700px; }
+      .erpw-managed-po-output-badge { display: inline-flex; min-height: 26px; align-items: center; padding: 0 10px; border-radius: 999px; border: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; font-size: 12px; font-weight: 760; white-space: nowrap; }
+      .erpw-managed-po-output-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .erpw-managed-po-output-button { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #12365f; font-weight: 740; font-size: 12px; padding: 0 12px; }
+      .erpw-managed-po-output-button:hover:not(:disabled) { border-color: #9db7d2; background: #f8fbff; }
+      .erpw-managed-po-output-button:disabled { opacity: 0.58; cursor: not-allowed; }
+      .erpw-managed-po-output-message { min-height: 18px; color: #64748b; font-size: 12.5px; line-height: 1.36; }
+      .erpw-managed-po-output-message.error { color: #b42318; }
+      .erpw-output-modal-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(15,23,42,0.36); display: flex; align-items: center; justify-content: center; padding: 22px; }
+      .erpw-output-modal { width: min(980px, 96vw); max-height: min(820px, 92vh); overflow: hidden; display: grid; grid-template-rows: auto 1fr; border-radius: 16px; background: #fff; box-shadow: 0 26px 70px rgba(15,23,42,0.28); border: 1px solid #dbe6f2; }
+      .erpw-output-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+      .erpw-output-modal-title { font-weight: 800; color: #0f172a; }
+      .erpw-output-modal-close { min-height: 32px; border: 1px solid #d5e2ef; border-radius: 9px; background: #fff; color: #12365f; font-weight: 740; padding: 0 10px; }
+      .erpw-output-modal-body { overflow: auto; background: #f8fafc; padding: 16px; }
+      .erpw-output-preview { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+      .erpw-output-preview-banner { padding: 9px 12px; background: #fefce8; color: #854d0e; font-size: 12px; font-weight: 800; border-bottom: 1px solid #fef3c7; }
+      .erpw-output-preview-supplier { padding: 8px 12px; color: #334155; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
+      .erpw-output-preview-body { padding: 12px; overflow: auto; }
       .erpw-managed-po-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
       .erpw-managed-po-section-title { margin-top: 3px; font-size: 15.5px; line-height: 1.25; font-weight: 790; color: #0f172a; }
       .erpw-managed-po-section-note { margin-top: 3px; max-width: 620px; font-size: 12.5px; line-height: 1.38; color: #475569; }
@@ -296,6 +320,98 @@
         }
       },
     }));
+  }
+
+
+  function isSavedForm(form) {
+    return form && form.name && form.name !== "new";
+  }
+
+  function outputCardMarkup(form, outputContext) {
+    if (!isSavedForm(form)) return "";
+    const context = outputContext && outputContext.name === form.name ? outputContext : null;
+    return `
+      <section class="erpw-managed-po-output-card" data-managed-po-output-card data-document-name="${escapeHtml(form.name)}">
+        <div class="erpw-managed-po-output-top">
+          <div>
+            <div class="erpw-managed-po-output-title">Document Output</div>
+            <div class="erpw-managed-po-output-note">Preview and PDF are internal draft output only. Supplier send requires approved/submitted purchase order governance.</div>
+          </div>
+          <span class="erpw-managed-po-output-badge">${escapeHtml(context ? context.warning || "Draft / Not for supplier" : "Draft / Not for supplier")}</span>
+        </div>
+        <div class="erpw-managed-po-output-actions">
+          <button type="button" class="erpw-managed-po-output-button" data-po-output-preview ${context ? "" : "disabled"}>Preview Purchase Order</button>
+          <button type="button" class="erpw-managed-po-output-button" data-po-output-download ${context ? "" : "disabled"}>Download PO PDF</button>
+          <button type="button" class="erpw-managed-po-output-button" disabled>Email supplier</button>
+        </div>
+        <div class="erpw-managed-po-output-message" data-po-output-message>${escapeHtml(context ? context.send_block_reason || "Supplier send is deferred." : "Loading output controls...")}</div>
+      </section>
+    `;
+  }
+
+  function outputPdfUrl(args) {
+    const params = new URLSearchParams();
+    Object.keys(args || {}).forEach((key) => {
+      if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== "") params.set(key, args[key]);
+    });
+    return `/api/method/${OUTPUT_PDF_METHOD}?${params.toString()}`;
+  }
+
+  function showOutputMessage($shell, message, tone) {
+    $shell.find("[data-po-output-message]").text(message || "").toggleClass("error", tone === "error");
+  }
+
+  function showPreviewModal(title, html) {
+    $(".erpw-output-modal-backdrop").remove();
+    const $modal = $(
+      `<div class="erpw-output-modal-backdrop" role="dialog" aria-modal="true">
+        <section class="erpw-output-modal">
+          <div class="erpw-output-modal-head"><div class="erpw-output-modal-title"></div><button type="button" class="erpw-output-modal-close">Close</button></div>
+          <div class="erpw-output-modal-body"></div>
+        </section>
+      </div>`
+    );
+    $modal.find(".erpw-output-modal-title").text(title || "Document preview");
+    $modal.find(".erpw-output-modal-body").html(html || "");
+    $modal.find(".erpw-output-modal-close").on("click", () => $modal.remove());
+    $modal.on("click", (event) => { if (event.target === $modal.get(0)) $modal.remove(); });
+    $(document.body).append($modal);
+  }
+
+  function loadOutputContext(viewState) {
+    const form = viewState.form || stateForm(viewState.payload);
+    if (!isSavedForm(form)) return Promise.resolve(null);
+    if (viewState.outputContext && viewState.outputContext.name === form.name) return Promise.resolve(viewState.outputContext);
+    return frappe.call({ method: OUTPUT_CONTEXT_METHOD, args: { doctype: "Purchase Order", name: form.name } }).then((response) => {
+      const context = response && response.message ? response.message : {};
+      viewState.outputContext = context;
+      renderPayload(viewState);
+      return context;
+    });
+  }
+
+  function bindOutputCard($shell, viewState) {
+    const $card = $shell.find("[data-managed-po-output-card]");
+    if (!$card.length) return;
+    loadOutputContext(viewState);
+    $card.find("[data-po-output-preview]").off("click.output").on("click.output", () => {
+      const form = viewState.form || stateForm(viewState.payload);
+      showOutputMessage($shell, "Rendering Purchase Order preview...", "");
+      frappe.call({ method: OUTPUT_PREVIEW_METHOD, args: { doctype: "Purchase Order", name: form.name } }).then((response) => {
+        const payload = response && response.message ? response.message : {};
+        if (payload.state && payload.state.kind === "ready") {
+          showPreviewModal("Purchase Order Preview", payload.html || "");
+          showOutputMessage($shell, payload.filename || "Purchase Order preview ready.", "");
+        } else {
+          showOutputMessage($shell, payload.state && payload.state.detail ? payload.state.detail : "Purchase Order preview unavailable.", "error");
+        }
+      });
+    });
+    $card.find("[data-po-output-download]").off("click.output").on("click.output", () => {
+      const form = viewState.form || stateForm(viewState.payload);
+      showOutputMessage($shell, "Preparing Purchase Order PDF...", "");
+      window.open(outputPdfUrl({ doctype: "Purchase Order", name: form.name }), "_blank", "noopener");
+    });
   }
 
   function formMarkup(form) {
@@ -587,7 +703,8 @@
     removeSuggestions();
     const payload = overridePayload || viewState.payload || loadingPayload();
     const form = overridePayload && payload.state && payload.state.kind !== "ready" ? viewState.form || stateForm(viewState.payload) : viewState.form || stateForm(payload);
-    const extra = payload.state && payload.state.kind && payload.state.kind !== "ready" && payload.state.kind !== "loading" ? renderState(payload) : formMarkup(form);
+    const output = outputCardMarkup(form, viewState.outputContext);
+    const extra = payload.state && payload.state.kind && payload.state.kind !== "ready" && payload.state.kind !== "loading" ? renderState(payload) : formMarkup(form) + output;
     shellContent().renderShellContent(viewState.$shell, {
       summary: payload.summary || loadingPayload().summary,
       actions: actionConfig(payload, viewState),
@@ -595,7 +712,10 @@
       extraSectionsHtml: extra,
     });
     viewState.$shell.attr("data-erpw-managed-po-state", payload.state && payload.state.kind ? payload.state.kind : "ready");
-    if (payload.state && payload.state.kind === "ready") bindForm(viewState.$shell, viewState);
+    if (payload.state && payload.state.kind === "ready") {
+      bindForm(viewState.$shell, viewState);
+      bindOutputCard(viewState.$shell, viewState);
+    }
   }
 
   function loadRoute(viewState) {
@@ -606,6 +726,7 @@
       const payload = response && response.message ? response.message : {};
       viewState.payload = payload;
       viewState.form = stateForm(payload);
+      viewState.outputContext = null;
       renderPayload(viewState);
     }).catch((error) => {
       renderPayload(viewState, { state: { kind: "error", title: "Purchase Order form failed", detail: error && error.message ? error.message : "The managed form could not load." } });
