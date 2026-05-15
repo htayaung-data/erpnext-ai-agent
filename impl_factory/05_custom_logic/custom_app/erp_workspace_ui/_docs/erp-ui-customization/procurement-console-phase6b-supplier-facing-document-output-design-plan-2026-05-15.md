@@ -22,7 +22,7 @@ Recommended architecture:
 
 Recommended policy:
 
-- RFQ print preview and PDF download should be Phase 6C-ready for saved managed RFQs, clearly marked `Draft / Not sent` until a governed send state exists.
+- RFQ print preview and PDF download should be Phase 6C-ready for saved managed RFQs, clearly marked `Draft / Not sent` until a governed send state exists. Because one RFQ can address multiple suppliers, preview/download must require a selected supplier or use an explicit per-supplier package option; one ambiguous mixed-supplier RFQ PDF is not allowed.
 - RFQ email/send should be a separate phase after a managed ready-to-send/submission policy is approved, because installed ERPNext supplier email flow sends only submitted RFQs and may create or link supplier portal users.
 - PO print preview and PDF download should be Phase 6C-ready for saved managed POs as internal preview only, with `Draft / Not for supplier` labeling.
 - PO email/send must stay deferred until PO approval/submit governance exists. A PO is a supplier commitment, and sending a draft PO would create commercial and legal risk.
@@ -267,8 +267,8 @@ Design constraints:
 
 Policy answers:
 
-- RFQ draft print preview: allowed in Phase 6C as preview-only.
-- RFQ draft PDF download: allowed in Phase 6C as preview-only with `Draft / Not sent` marking.
+- RFQ draft print preview: allowed in Phase 6C as preview-only, but it must be supplier-specific. The user must select one supplier, or choose a controlled per-supplier package action.
+- RFQ draft PDF download: allowed in Phase 6C as preview-only with `Draft / Not sent` marking. Single PDF download must show only the selected supplier addressee/contact context; package download must generate one PDF per supplier.
 - RFQ draft email/send: not allowed until a governed ready-to-send/submission policy is approved.
 - PO draft print preview: allowed in Phase 6C as internal preview-only.
 - PO draft PDF download: allowed in Phase 6C as internal preview-only with `Draft / Not for supplier` marking.
@@ -310,6 +310,15 @@ Allowed Phase 6C1 actions:
 
 - `Preview RFQ`
 - `Download RFQ PDF`
+- Optional `Download per-supplier package` only if explicitly implemented as separate supplier-specific PDFs
+
+RFQ supplier-specific output rules:
+
+- `Preview RFQ` must require selecting one supplier when the RFQ has multiple suppliers.
+- `Download RFQ PDF` must require selecting one supplier, unless the user chooses an explicit package action.
+- A single RFQ PDF must show only the selected supplier addressee/contact context.
+- A per-supplier package must generate one PDF per supplier and must not merge supplier contact/addressee contexts inside one document.
+- RFQ PDF filenames must include the RFQ number, supplier identifier/name, and `DRAFT-NOT-SENT`.
 
 Deferred/disabled Phase 6C1 action:
 
@@ -416,10 +425,12 @@ Use ERPNext Letter Head and Print Format where possible. The installed site has 
 
 ### RFQ Template Requirements
 
+RFQ output must be supplier-specific. A preview or single PDF must be rendered for exactly one selected supplier. Package output may include multiple PDFs, but each PDF must have one supplier context only.
+
 RFQ output should include:
 
 - RFQ subject
-- supplier-specific addressee data
+- selected supplier addressee data
 - requested items
 - quantities and UOM
 - required by / response date
@@ -429,6 +440,7 @@ RFQ output should include:
 - quotation submission instructions
 - attachment list
 - draft/not-sent watermark until governed send exists
+- filename pattern such as `RFQ-0001-SUP-0001-DRAFT-NOT-SENT.pdf`
 
 RFQ should normally not include supplier pricing because it is a request for offers, not an offer from the buyer.
 
@@ -448,7 +460,7 @@ PO output should include:
 - authorized signature/approval status when governance exists
 - draft/not-for-supplier watermark until approved/submitted
 
-Phase 6C must not send a PO document that looks like an approved supplier commitment unless approval/submit governance is implemented.
+Phase 6C must not send a PO document that looks like an approved supplier commitment unless approval/submit governance is implemented. PO draft PDF filenames should include the PO number and `DRAFT-NOT-FOR-SUPPLIER`, for example `PO-0001-DRAFT-NOT-FOR-SUPPLIER.pdf`.
 
 ## Backend/API Design
 
@@ -459,8 +471,8 @@ Proposed module:
 Proposed whitelisted methods:
 
 - `get_document_output_context(doctype, name)`
-- `get_document_print_preview_context(doctype, name, print_format=None, letterhead=None)`
-- `download_document_pdf(doctype, name, print_format=None, letterhead=None)`
+- `get_document_print_preview_context(doctype, name, supplier=None, print_format=None, letterhead=None)`
+- `download_document_pdf(doctype, name, supplier=None, package=False, print_format=None, letterhead=None)`
 - `send_document_email(payload)`
 
 Allowed doctypes:
@@ -474,6 +486,7 @@ Payload model for `send_document_email`:
 {
   "doctype": "Request for Quotation",
   "name": "RFQ-0001",
+  "supplier": "SUP-0001",
   "recipients": [
     {
       "supplier": "SUP-0001",
@@ -504,6 +517,9 @@ Backend validation rules:
 - Validate doctype allowlist.
 - Validate document exists and is visible to user.
 - Validate recipient emails.
+- For RFQ preview/PDF, require a selected supplier when the RFQ has more than one supplier, unless `package=True` is explicitly requested.
+- For RFQ PDF package, render one supplier-specific PDF per supplier and prevent mixed addressee/contact context.
+- Generate safe filenames that include document number, supplier for RFQ, and draft status markers.
 - Reject send if no explicit recipient is selected.
 - Reject PO send while PO is draft or unapproved.
 - Reject RFQ send until governed RFQ ready-to-send/submission policy exists.
@@ -620,8 +636,10 @@ Communication:
 RFQ saved managed page:
 
 - Output card appears after save.
-- `Preview RFQ` opens productized preview modal/page.
-- `Download RFQ PDF` triggers controlled PDF route.
+- `Preview RFQ` opens productized preview modal/page after selecting the supplier context.
+- `Download RFQ PDF` triggers controlled PDF route for the selected supplier.
+- Multi-supplier RFQ output cannot mix supplier addressee/contact context.
+- RFQ PDF filename includes RFQ number, supplier, and `DRAFT-NOT-SENT`.
 - `Email suppliers` is absent or disabled with approved block reason in Phase 6C1.
 - Draft/not-sent watermark visible in preview.
 - No native form leakage.
@@ -632,6 +650,7 @@ PO saved managed page:
 - Output card appears after save.
 - `Preview Purchase Order` opens productized preview modal/page.
 - `Download PO PDF` triggers controlled PDF route.
+- PO draft PDF filename includes PO number and `DRAFT-NOT-FOR-SUPPLIER`.
 - `Email supplier` is absent or disabled with approved block reason.
 - Draft/not-for-supplier watermark visible in preview.
 - No Submit, Approve, Receive, Bill, Payment, Create Purchase Receipt, or Create Purchase Invoice actions.
