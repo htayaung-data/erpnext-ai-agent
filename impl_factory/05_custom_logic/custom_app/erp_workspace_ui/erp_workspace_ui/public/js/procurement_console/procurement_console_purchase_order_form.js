@@ -125,7 +125,7 @@
       .erpw-managed-po-suggestion { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 11px; font-size: 13px; color: #0f172a; }
       .erpw-managed-po-suggestion:hover, .erpw-managed-po-suggestion:focus-visible { background: #f1f5f9; outline: none; }
       .erpw-managed-po-link-cell { position: relative; }
-      @media (max-width: 1180px) {
+      @media (max-width: 1280px) {
         .erpw-managed-po-grid { grid-template-columns: minmax(260px, 1fr) repeat(2, minmax(145px, 180px)); }
         .erpw-managed-po-table thead tr, .erpw-managed-po-table tbody tr { grid-template-columns: minmax(220px, 1fr) 72px 88px 70px 96px 62px; grid-template-areas: "item qty rate uom amount action" "date warehouse warehouse warehouse warehouse action"; gap: 8px; align-items: end; }
         .erpw-managed-po-table thead tr { padding: 0 10px; }

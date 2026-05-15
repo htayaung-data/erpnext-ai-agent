@@ -105,6 +105,7 @@ async function stablePoSnapshot(page, label) {
       const rect = node.getBoundingClientRect();
       return {
         text: (node.textContent || "").replace(/\s+/g, " ").trim(),
+        top: Math.round(rect.top),
         left: Math.round(rect.left),
         right: Math.round(rect.right),
         width: Math.round(rect.width),
@@ -112,10 +113,13 @@ async function stablePoSnapshot(page, label) {
     }) : [];
     const headerPairs = [];
     for (let index = 1; index < headerCells.length; index += 1) {
+      const previous = headerCells[index - 1];
+      const current = headerCells[index];
+      if (Math.abs((current.top || 0) - (previous.top || 0)) > 2) continue;
       headerPairs.push({
-        leftText: headerCells[index - 1].text,
-        rightText: headerCells[index].text,
-        gap: headerCells[index].left - headerCells[index - 1].right,
+        leftText: previous.text,
+        rightText: current.text,
+        gap: current.left - previous.right,
       });
     }
     const repeatedRowLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-po-table td[data-label]")).filter((node) => {
