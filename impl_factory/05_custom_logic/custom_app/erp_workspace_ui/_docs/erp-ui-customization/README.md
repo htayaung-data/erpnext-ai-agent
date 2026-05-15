@@ -117,6 +117,7 @@ Documents in this folder:
 - `sales-console-frozen-protection-package-2026-05-09.md`
 - `procurement-console-phase3-stable-baseline-2026-05-10.md`
 - `procurement-console-phase5a-5b-managed-buying-baseline-2026-05-15.md`
+- `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
 - `sales-console-recovery-phase-2-2026-05-06.md`
 - `shared-core-workspace-adapter-contract-v2.md`
