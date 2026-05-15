@@ -193,12 +193,33 @@ async function assertOutputChrome(page, type, userKey, name, supplier) {
   if (type === "rfq") await page.selectOption("[data-rfq-output-supplier]", supplier);
   await page.locator(type === "rfq" ? "[data-rfq-output-preview]" : "[data-po-output-preview]").click();
   await page.waitForSelector(".erpw-output-modal .erpw-output-preview-banner", { state: "visible", timeout: TIMEOUT });
-  const previewText = await page.locator(".erpw-output-modal").innerText();
+  const previewState = await page.evaluate((type) => {
+    const modal = document.querySelector(".erpw-output-modal");
+    const body = document.querySelector(".erpw-output-modal .erpw-output-preview-body");
+    const text = (modal ? modal.innerText : document.body.innerText).replace(/\s+/g, " ").trim();
+    return {
+      text,
+      modalWidth: modal ? Math.ceil(modal.clientWidth) : 0,
+      modalScrollWidth: modal ? Math.ceil(modal.scrollWidth) : 0,
+      bodyWidth: body ? Math.ceil(body.clientWidth) : 0,
+      bodyScrollWidth: body ? Math.ceil(body.scrollWidth) : 0,
+      nativeControlsVisible: /(?:^|\s)(Print|Get PDF)(?:\s|$)/i.test(text),
+      forbiddenColumnsVisible: /Finished Good Qty|Stock UOM|Subcontracted Quantity|Discount Amount|Distributed Discount Amount|Rate Of Stock UOM/i.test(text),
+      hasProductizedTable: Boolean(modal && modal.querySelector(".erpw-output-preview-table")),
+      type,
+    };
+  }, type);
+  const previewText = previewState.text;
+  assert(!previewState.nativeControlsVisible, `${type} preview leaked native Print/Get PDF controls`, previewState);
+  assert(previewState.hasProductizedTable, `${type} preview missing productized table`, previewState);
+  assert(previewState.modalScrollWidth <= previewState.modalWidth + 2, `${type} preview modal has horizontal overflow`, previewState);
+  assert(previewState.bodyScrollWidth <= previewState.bodyWidth + 2, `${type} preview body has horizontal overflow`, previewState);
   if (type === "rfq") {
-    assert(previewText.includes("Draft / Not sent"), "RFQ preview missing draft/not-sent watermark", { previewText });
-    assert(previewText.includes(`Supplier: ${supplier}`), "RFQ preview missing selected supplier context", { previewText, supplier });
+    assert(previewText.includes("Draft / Not sent"), "RFQ preview missing draft/not-sent watermark", previewState);
+    assert(previewText.includes(`Supplier: ${supplier}`), "RFQ preview missing selected supplier context", { ...previewState, supplier });
   } else {
-    assert(previewText.includes("Draft / Not for supplier"), "PO preview missing draft/not-for-supplier watermark", { previewText });
+    assert(previewText.includes("Draft / Not for supplier"), "PO preview missing draft/not-for-supplier watermark", previewState);
+    assert(!previewState.forbiddenColumnsVisible, "PO preview exposed internal ERPNext columns", previewState);
   }
   await capture(page, `${userKey}-${prefix}-preview-1136`);
   await page.locator(".erpw-output-modal-close").click();

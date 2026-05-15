@@ -1572,6 +1572,9 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("Supplier: SUP-002", selected["html"])
         self.assertIn("SUP-002", selected["html"])
         self.assertNotIn("Supplier: SUP-001", selected["html"])
+        self.assertNotIn("Get PDF", selected["html"])
+        self.assertNotIn("<button", selected["html"])
+        self.assertIn("erpw-output-preview-table", selected["html"])
         self.assertEqual(selected["filename"], "PUR-RFQ-MULTI-SUP-002-DRAFT-NOT-SENT.pdf")
 
     def test_rfq_pdf_requires_supplier_and_sets_supplier_specific_filename(self):
@@ -1597,11 +1600,20 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(preview["state"]["kind"], "ready")
         self.assertEqual(preview["warning"], "Draft / Not for supplier")
         self.assertIn("Draft / Not for supplier", preview["html"])
+        self.assertIn("erpw-output-preview-table", preview["html"])
+        self.assertNotIn("Get PDF", preview["html"])
+        self.assertNotIn("Finished Good Qty", preview["html"])
+        self.assertNotIn("Stock UOM", preview["html"])
+        self.assertNotIn("Subcontracted Quantity", preview["html"])
+        self.assertNotIn("Discount Amount", preview["html"])
+        self.assertNotIn("Distributed Discount Amount", preview["html"])
+        self.assertNotIn("Rate Of Stock UOM", preview["html"])
         self.assertEqual(preview["filename"], "PUR-DUE-001-DRAFT-NOT-FOR-SUPPLIER.pdf")
         response = fake_frappe.local.response
         self.assertEqual(response["type"], "pdf")
         self.assertEqual(response["filename"], "PUR-DUE-001-DRAFT-NOT-FOR-SUPPLIER.pdf")
         self.assertIn(b"Draft / Not for supplier", response["filecontent"])
+        self.assertNotIn(b"Finished Good Qty", response["filecontent"])
 
     def test_document_output_has_no_send_or_communication_side_effects(self):
         rfq_context = document_output.get_document_output_context("Request for Quotation", "PUR-RFQ-001")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from typing import Any
 
@@ -247,17 +248,165 @@ def _render_print_html(doc: object, print_format: str | None = None, letterhead:
     return f"<div class=\"print-format\"><h1>{doctype} {name}</h1></div>"
 
 
-def _wrap_preview_html(doctype: str, name: str, html: str, supplier: str | None = None) -> str:
-    warning = _warning_for(doctype)
-    supplier_html = f"<div class=\"erpw-output-preview-supplier\">Supplier: {cstr(supplier)}</div>" if supplier else ""
-    return f"""
-<section class=\"erpw-output-preview\" data-doctype=\"{cstr(doctype)}\" data-name=\"{cstr(name)}\">
-  <div class=\"erpw-output-preview-banner\">{warning}</div>
-  {supplier_html}
-  <div class=\"erpw-output-preview-body\">{html}</div>
-</section>
+def _html(value: Any) -> str:
+    return html.escape(cstr(value), quote=True)
+
+
+def _number(value: Any) -> str:
+    try:
+        number = float(value or 0)
+    except Exception:
+        return _html(value)
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.2f}"
+
+
+def _money(value: Any, currency: str | None = None) -> str:
+    amount = _number(value)
+    return f"{_html(currency)} {amount}" if currency else amount
+
+
+def _preview_styles() -> str:
+    return """
+<style>
+  .erpw-output-preview { color: #172033; font-family: Inter, Arial, sans-serif; }
+  .erpw-output-preview-banner { display: inline-flex; margin-bottom: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid #b78b2a; background: #fff7e1; color: #67430a; font-size: 12px; font-weight: 700; letter-spacing: 0; }
+  .erpw-output-preview-head { display: flex; justify-content: space-between; gap: 18px; border-bottom: 1px solid #e1e7ef; padding-bottom: 14px; margin-bottom: 14px; }
+  .erpw-output-preview-title { font-size: 18px; font-weight: 760; margin: 0 0 4px; }
+  .erpw-output-preview-subtitle { color: #526174; font-size: 12px; margin: 0; }
+  .erpw-output-preview-meta { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 8px 16px; min-width: 280px; font-size: 12px; }
+  .erpw-output-preview-meta span { display: block; color: #6b7888; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+  .erpw-output-preview-party { border: 1px solid #e1e7ef; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; background: #fbfcfe; font-size: 12px; }
+  .erpw-output-preview-party strong { display: block; font-size: 13px; color: #172033; margin-bottom: 3px; }
+  .erpw-output-preview-note { color: #526174; font-size: 12px; margin: 0 0 12px; }
+  .erpw-output-preview-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+  .erpw-output-preview-table th { text-align: left; color: #5e6d7f; font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #dbe3ec; padding: 7px 6px; background: #f7f9fc; }
+  .erpw-output-preview-table td { border-bottom: 1px solid #edf1f5; padding: 8px 6px; vertical-align: top; overflow-wrap: anywhere; }
+  .erpw-output-preview-table .num { text-align: right; white-space: nowrap; }
+  .erpw-output-preview-total { display: flex; justify-content: flex-end; margin-top: 12px; font-size: 13px; font-weight: 760; }
+  .erpw-output-preview-total span { min-width: 180px; text-align: right; }
+</style>
 """.strip()
 
+
+def _item_label(row: object) -> str:
+    code = cstr(_child_value(row, "item_code")).strip()
+    name = cstr(_child_value(row, "item_name")).strip()
+    if code and name and code != name:
+        return f"{code} - {name}"
+    return code or name or "Item"
+
+
+def _productized_rfq_html(doc: object, selected_supplier: dict[str, str]) -> str:
+    rows = []
+    for row in list(_doc_value(doc, "items", []) or []):
+        rows.append(
+            "<tr>"
+            f"<td>{_html(_item_label(row))}</td>"
+            f"<td class='num'>{_number(_child_value(row, 'qty'))}</td>"
+            f"<td>{_html(_child_value(row, 'uom') or _child_value(row, 'stock_uom'))}</td>"
+            f"<td>{_html(_child_value(row, 'schedule_date') or _doc_value(doc, 'schedule_date'))}</td>"
+            f"<td>{_html(_child_value(row, 'warehouse'))}</td>"
+            "</tr>"
+        )
+    supplier_name = selected_supplier.get("supplier_name") or selected_supplier.get("supplier")
+    supplier_contact = selected_supplier.get("contact") or ""
+    supplier_email = selected_supplier.get("email_id") or ""
+    return f"""
+<div class="erpw-output-preview-head">
+  <div>
+    <h2 class="erpw-output-preview-title">Request for Quotation {_html(_doc_value(doc, 'name'))}</h2>
+    <p class="erpw-output-preview-subtitle">Supplier-specific draft preview. This RFQ has not been sent.</p>
+  </div>
+  <div class="erpw-output-preview-meta">
+    <div><span>Transaction Date</span>{_html(_doc_value(doc, 'transaction_date'))}</div>
+    <div><span>Required By</span>{_html(_doc_value(doc, 'schedule_date'))}</div>
+  </div>
+</div>
+<div class="erpw-output-preview-party">
+  <strong>Supplier: {_html(supplier_name)}</strong>
+  <div>{_html(selected_supplier.get('supplier'))}</div>
+  <div>{_html(supplier_contact)}</div>
+  <div>{_html(supplier_email)}</div>
+</div>
+<p class="erpw-output-preview-note">{_html(_doc_value(doc, 'subject') or 'Request for Quotation')}</p>
+<table class="erpw-output-preview-table">
+  <thead><tr><th style="width:42%">Item</th><th style="width:10%" class="num">Qty</th><th style="width:12%">UOM</th><th style="width:18%">Required By</th><th style="width:18%">Warehouse</th></tr></thead>
+  <tbody>{''.join(rows) or '<tr><td colspan="5">No items</td></tr>'}</tbody>
+</table>
+""".strip()
+
+
+def _productized_po_html(doc: object) -> str:
+    currency = cstr(_doc_value(doc, "currency") or "MMK").strip()
+    rows = []
+    total = 0.0
+    for row in list(_doc_value(doc, "items", []) or []):
+        qty = _child_value(row, "qty")
+        rate = _child_value(row, "rate")
+        amount = _child_value(row, "amount")
+        try:
+            computed_amount = float(amount if amount not in (None, "") else float(qty or 0) * float(rate or 0))
+        except Exception:
+            computed_amount = 0.0
+        total += computed_amount
+        rows.append(
+            "<tr>"
+            f"<td>{_html(_item_label(row))}</td>"
+            f"<td class='num'>{_number(qty)}</td>"
+            f"<td>{_html(_child_value(row, 'uom') or _child_value(row, 'stock_uom'))}</td>"
+            f"<td>{_html(_child_value(row, 'schedule_date') or _doc_value(doc, 'schedule_date'))}</td>"
+            f"<td>{_html(_child_value(row, 'warehouse') or _doc_value(doc, 'set_warehouse'))}</td>"
+            f"<td class='num'>{_money(rate, currency)}</td>"
+            f"<td class='num'>{_money(computed_amount, currency)}</td>"
+            "</tr>"
+        )
+    supplier = _po_supplier(doc)
+    return f"""
+<div class="erpw-output-preview-head">
+  <div>
+    <h2 class="erpw-output-preview-title">Purchase Order {_html(_doc_value(doc, 'name'))}</h2>
+    <p class="erpw-output-preview-subtitle">Internal draft preview. This is not a supplier commitment.</p>
+  </div>
+  <div class="erpw-output-preview-meta">
+    <div><span>Transaction Date</span>{_html(_doc_value(doc, 'transaction_date'))}</div>
+    <div><span>Required By</span>{_html(_doc_value(doc, 'schedule_date'))}</div>
+    <div><span>Currency</span>{_html(currency)}</div>
+  </div>
+</div>
+<div class="erpw-output-preview-party">
+  <strong>Supplier: {_html(supplier.get('supplier_name') or supplier.get('supplier'))}</strong>
+  <div>{_html(supplier.get('supplier'))}</div>
+  <div>{_html(supplier.get('contact'))}</div>
+  <div>{_html(supplier.get('email_id'))}</div>
+</div>
+<table class="erpw-output-preview-table">
+  <thead><tr><th style="width:30%">Item</th><th style="width:8%" class="num">Qty</th><th style="width:10%">UOM</th><th style="width:14%">Required By</th><th style="width:16%">Warehouse</th><th style="width:11%" class="num">Rate</th><th style="width:11%" class="num">Amount</th></tr></thead>
+  <tbody>{''.join(rows) or '<tr><td colspan="7">No items</td></tr>'}</tbody>
+</table>
+<div class="erpw-output-preview-total">Total <span>{_money(total, currency)}</span></div>
+""".strip()
+
+
+def _render_productized_html(doc: object, selected_supplier: dict[str, str] | None = None) -> str:
+    doctype = _validate_doctype(_doc_value(doc, "doctype"))
+    if doctype == RFQ_DOCTYPE:
+        return _productized_rfq_html(doc, selected_supplier or {})
+    return _productized_po_html(doc)
+
+
+def _wrap_preview_html(doctype: str, name: str, html_body: str, supplier: str | None = None) -> str:
+    warning = _warning_for(doctype)
+    supplier_html = f"<div class=\"erpw-output-preview-supplier\">Supplier: {_html(supplier)}</div>" if supplier else ""
+    return f"""
+<section class="erpw-output-preview" data-doctype="{_html(doctype)}" data-name="{_html(name)}">
+  {_preview_styles()}
+  <div class="erpw-output-preview-banner">{_html(warning)}</div>
+  {supplier_html}
+  <div class="erpw-output-preview-body">{html_body}</div>
+</section>
+""".strip()
 
 def _html_to_pdf(html: str) -> bytes:
     try:
@@ -313,7 +462,7 @@ def get_document_print_preview_context(
         if doctype == RFQ_DOCTYPE:
             selected_supplier = _selected_rfq_supplier(doc, supplier)
             _prepare_rfq_supplier_context(doc, selected_supplier["supplier"])
-        html = _render_print_html(doc, print_format=print_format, letterhead=letterhead)
+        html = _render_productized_html(doc, selected_supplier)
         wrapped = _wrap_preview_html(doctype, cstr(_doc_value(doc, "name")).strip(), html, selected_supplier["supplier"] if selected_supplier else None)
         context = _output_context(doc, selected_supplier["supplier"] if selected_supplier else None)
         context.update(
@@ -345,7 +494,7 @@ def download_document_pdf(
     if doctype == RFQ_DOCTYPE:
         selected_supplier = _selected_rfq_supplier(doc, supplier)
         _prepare_rfq_supplier_context(doc, selected_supplier["supplier"])
-    html = _render_print_html(doc, print_format=print_format, letterhead=letterhead)
+    html = _render_productized_html(doc, selected_supplier)
     wrapped = _wrap_preview_html(doctype, cstr(_doc_value(doc, "name")).strip(), html, selected_supplier["supplier"] if selected_supplier else None)
     filename = _filename_for(doctype, cstr(_doc_value(doc, "name")).strip(), selected_supplier["supplier"] if selected_supplier else None)
     _set_pdf_response(filename, _html_to_pdf(wrapped))
