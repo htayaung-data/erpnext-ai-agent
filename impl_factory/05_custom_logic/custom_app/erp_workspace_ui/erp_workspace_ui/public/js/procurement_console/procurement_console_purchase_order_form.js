@@ -104,10 +104,10 @@
       .erpw-managed-po-table, .erpw-managed-po-table tbody, .erpw-managed-po-table tr, .erpw-managed-po-table td { display: block; box-sizing: border-box; }
       .erpw-managed-po-table { width: 100%; min-width: 0; border-collapse: separate; border-spacing: 0; }
       .erpw-managed-po-table thead { display: block; margin: 0 0 6px; }
-      .erpw-managed-po-table thead tr { display: grid; grid-template-columns: minmax(220px, 1.25fr) 72px 104px minmax(145px, 0.9fr) 88px 72px 104px 62px; gap: 9px; align-items: end; padding: 0 12px; border: 0; background: transparent; box-shadow: none; }
+      .erpw-managed-po-table thead tr { display: grid; grid-template-columns: minmax(232px, 1.22fr) 74px minmax(128px, 0.48fr) minmax(168px, 0.82fr) 92px 78px 112px 64px; gap: 12px; align-items: end; padding: 0 12px; border: 0; background: transparent; box-shadow: none; }
       .erpw-managed-po-table th { display: block; min-width: 0; padding: 0; border: 0; color: #64748b; font-size: 10px; line-height: 1.15; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; text-align: left; white-space: nowrap; }
       .erpw-managed-po-table tbody { display: grid; gap: 10px; }
-      .erpw-managed-po-table tbody tr { display: grid; grid-template-columns: minmax(220px, 1.25fr) 72px 104px minmax(145px, 0.9fr) 88px 72px 104px 62px; gap: 9px; align-items: end; padding: 12px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
+      .erpw-managed-po-table tbody tr { display: grid; grid-template-columns: minmax(232px, 1.22fr) 74px minmax(128px, 0.48fr) minmax(168px, 0.82fr) 92px 78px 112px 64px; gap: 12px; align-items: end; padding: 12px; border: 1px solid #dbe6f2; border-radius: 14px; background: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
       .erpw-managed-po-table td { min-width: 0; padding: 0; border: 0; display: grid; gap: 6px; vertical-align: top; }
       .erpw-managed-po-table td::before { content: ""; display: none; }
       .erpw-managed-po-table td.row-action { align-self: end; }

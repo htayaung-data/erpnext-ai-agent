@@ -101,6 +101,23 @@ async function stablePoSnapshot(page, label) {
     const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
     const viewportWidth = Math.ceil(window.innerWidth);
     const itemHeaderRows = shell ? Array.from(shell.querySelectorAll(".erpw-managed-po-table thead tr")).filter(visible) : [];
+    const headerCells = shell ? Array.from(shell.querySelectorAll(".erpw-managed-po-table thead th")).filter(visible).map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        text: (node.textContent || "").replace(/\s+/g, " ").trim(),
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        width: Math.round(rect.width),
+      };
+    }) : [];
+    const headerPairs = [];
+    for (let index = 1; index < headerCells.length; index += 1) {
+      headerPairs.push({
+        leftText: headerCells[index - 1].text,
+        rightText: headerCells[index].text,
+        gap: headerCells[index].left - headerCells[index - 1].right,
+      });
+    }
     const repeatedRowLabels = shell ? Array.from(shell.querySelectorAll(".erpw-managed-po-table td[data-label]")).filter((node) => {
       const before = window.getComputedStyle(node, "::before");
       const content = String(before.content || "").replace(/^"|"$/g, "");
@@ -141,6 +158,8 @@ async function stablePoSnapshot(page, label) {
       summaryBackgroundImage: summaryStyle ? summaryStyle.backgroundImage : "",
       cardBackgroundImage: cardStyle ? cardStyle.backgroundImage : "",
       itemHeaderCount: itemHeaderRows.length,
+      headerCells,
+      headerPairs,
       repeatedRowLabels,
       rowCount: shell ? shell.querySelectorAll(".erpw-managed-po-table tbody tr[data-row-index]").length : 0,
       hasCompanyField: shell ? Array.from(shell.querySelectorAll("label")).some((labelNode) => /company/i.test(labelNode.textContent || "")) : false,
@@ -164,6 +183,7 @@ async function stablePoSnapshot(page, label) {
   assert(!FORBIDDEN_ACTION_RE.test(state.buttons.join(" ")), `${label}: forbidden Purchase Order action visible`, state);
   assert(state.removeRects.every((rect) => !rect.visible || rect.right <= state.viewportWidth + 1), `${label}: remove action clips past viewport`, state);
   assert(state.itemHeaderCount === 1, `${label}: item lines should have one desktop/tablet header row`, state);
+  assert(state.headerPairs.every((pair) => pair.gap >= 8), `${label}: item-line header labels collide or are too close`, state);
   assert(state.repeatedRowLabels === 0, `${label}: item row labels repeat at desktop/tablet width`, state);
   assert(state.uomDisplays.some((display) => display.visible && display.text === "Derived"), `${label}: Derived UOM placeholder missing`, state);
   assert(state.uomDisplays.every((display) => !display.visible || (display.right <= state.viewportWidth + 1 && display.width >= 62 && display.scrollWidth <= display.clientWidth + 1 && display.whiteSpace === "nowrap" && display.overflow === "visible" && display.textOverflow === "clip")), `${label}: Derived UOM display is clipped or wrapping`, state);
