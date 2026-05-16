@@ -732,7 +732,7 @@
     const belowIsUseful = availableBelow >= usefulBelowHeight;
     const aboveIsMateriallyBetter = aboveHeight >= usefulBelowHeight && aboveHeight > availableBelow + 80;
     const aboveAvoidsChrome = aboveTop >= protectedBottom;
-    const placeAbove = !belowIsUseful && aboveIsMateriallyBetter && aboveAvoidsChrome;
+    const placeAbove = !canUseBelow && aboveIsMateriallyBetter && aboveAvoidsChrome;
     const maxHeight = Math.max(minPanelHeight, Math.min(desiredHeight, placeAbove ? availableAbove : Math.max(availableBelow, canUseBelow ? availableBelow : minPanelHeight)));
     const menuHeight = Math.min(naturalHeight, maxHeight);
     const top = placeAbove ? aboveTop : Math.min(rect.bottom + 6, Math.max(12, viewportHeight - menuHeight - 12));
