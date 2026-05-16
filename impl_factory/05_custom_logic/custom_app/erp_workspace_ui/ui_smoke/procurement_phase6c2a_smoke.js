@@ -47,6 +47,25 @@ async function capture(page, name) {
   return file;
 }
 
+async function dismissFrameworkDialogs(page, label) {
+  const modal = page.locator(".modal.show").first();
+  if (!(await modal.count())) return null;
+  const visible = await modal.isVisible().catch(() => false);
+  if (!visible) return null;
+  const text = await modal.innerText().catch(() => "");
+  await capture(page, `${label || "framework"}-modal-before-dismiss`);
+  await page.keyboard.press("Escape").catch(() => null);
+  await modal.waitFor({ state: "hidden", timeout: 3000 }).catch(async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll(".modal.show, .modal-backdrop").forEach((node) => node.remove());
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+    });
+  });
+  return text.replace(/\s+/g, " ").trim();
+}
+
 async function login(page, user) {
   await page.goto(routeUrl("/login"), { waitUntil: "domcontentloaded", timeout: TIMEOUT });
   const userField = page.locator("#login_email, input[name='usr'], input[name='login_email'], input[type='email'], input[type='text']").first();
@@ -177,6 +196,7 @@ async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   await capture(page, `${userKey}-rfq-readiness-card-1136`);
 
   await page.selectOption("[data-rfq-output-supplier]", supplier);
+  await dismissFrameworkDialogs(page, `${userKey}-rfq-readiness`);
   await page.locator("[data-rfq-output-preview]").click();
   await page.waitForSelector(".erpw-output-modal .erpw-output-preview-banner", { state: "visible", timeout: TIMEOUT });
   const preview = await page.evaluate((supplier) => {
