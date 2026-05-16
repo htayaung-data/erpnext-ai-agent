@@ -415,7 +415,7 @@
           </div>
         </div>
         <div class="erpw-managed-rfq-output-message" data-rfq-output-message>${escapeHtml(context ? context.send_block_reason || "Email send is deferred." : "Loading output controls...")}</div>
-        ${readinessPanelMarkup(context)}
+        ${context ? readinessPanelMarkup(context) : ""}
       </section>
     `;
   }

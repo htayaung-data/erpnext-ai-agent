@@ -154,6 +154,8 @@ async function assertPdfEndpoint(page, rfqName, supplier) {
 async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   await page.waitForSelector(".erpw-managed-rfq-page [data-managed-rfq-output-card]", { state: "visible", timeout: TIMEOUT });
   await page.waitForSelector("[data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  await page.waitForSelector("[data-rfq-recipient-row]", { state: "visible", timeout: TIMEOUT });
+  await assertNoFrameworkModal(page, `${userKey}-rfq-readiness-before-state`);
   const state = await page.evaluate(() => {
     const visible = (node) => {
       if (!node) return false;
@@ -250,6 +252,7 @@ async function runForUser(browser, user) {
   await assertReadinessPanel(page, user.key, rfqName, values.supplier.name);
   await openDeskRoute(page, route);
   await page.waitForSelector("[data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  await page.waitForSelector("[data-rfq-recipient-row]", { state: "visible", timeout: TIMEOUT });
   const repeat = await page.evaluate(() => Array.from(document.querySelectorAll("[data-rfq-readiness-panel]")).filter((node) => {
     const rect = node.getBoundingClientRect();
     const style = window.getComputedStyle(node);
@@ -260,6 +263,7 @@ async function runForUser(browser, user) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openDeskRoute(page, route);
   await page.waitForSelector("[data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  await page.waitForSelector("[data-rfq-recipient-row]", { state: "visible", timeout: TIMEOUT });
   await assertNoFrameworkModal(page, `${user.key}-rfq-readiness-card-1440`);
   await capture(page, `${user.key}-rfq-readiness-card-1440`);
   await context.close();
