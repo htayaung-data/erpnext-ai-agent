@@ -122,6 +122,7 @@ Documents in this folder:
 - `procurement-console-phase6a-full-workspace-evaluation-plan-2026-05-15.md`
 - `procurement-console-phase6b-supplier-facing-document-output-design-plan-2026-05-15.md`
 - `procurement-console-phase6c1-output-preview-pdf-baseline-2026-05-16.md`
+- `procurement-console-phase6c2-rfq-email-send-design-plan-2026-05-16.md`
 - `procurement-console-phase5d-managed-purchase-order-design-plan-2026-05-15.md`
 - `procurement-console-phase5c-supplier-quotation-design-plan-2026-05-15.md`
 - `shared-core-route-action-inventory-2026-05-06.md`
