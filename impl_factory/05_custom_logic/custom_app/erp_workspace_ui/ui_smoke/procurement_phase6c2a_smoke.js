@@ -25,6 +25,7 @@ const USERS = [
 const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
 const FORBIDDEN_ACTIVE_RE = /(submit|approve|reject|receive|purchase receipt|create receipt|bill|purchase invoice|create invoice|payment|pay|item price|default supplier|supplier portal|create supplier quotation|create purchase order|email suppliers)/i;
 const FRAMEWORK_ERROR_RE = /(Insufficient Permissions|Email Account|Traceback|Server Error|Internal Server Error)/i;
+const PAGE_EVENTS = new WeakMap();
 
 function assert(condition, message, details = {}) {
   if (!condition) {
@@ -46,6 +47,36 @@ async function capture(page, name) {
   const file = path.join(ARTIFACT_DIR, `${safeFileName(name)}.png`);
   await page.screenshot({ path: file, fullPage: true });
   return file;
+}
+
+async function capturePageDiagnostics(page, label) {
+  const safeLabel = safeFileName(label || "diagnostic");
+  const screenshot = await capture(page, `${safeLabel}-screen`).catch(() => "");
+  const events = PAGE_EVENTS.get(page) || { console: [], pageErrors: [] };
+  const state = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const count = (selector) => Array.from(document.querySelectorAll(selector)).filter(visible).length;
+    return {
+      url: location.href,
+      route: window.frappe && typeof frappe.get_route === "function" ? frappe.get_route() : null,
+      bodyExcerpt: (document.body.innerText || "").replace(/\s+/g, " ").trim().slice(0, 3000),
+      managedRfqPageCount: count(".erpw-managed-rfq-page"),
+      managedRfqFormCount: count("[data-erpw-managed-rfq-form]"),
+      pageHeadCount: count(".page-head"),
+      nativeFormCount: count(".form-layout, .form-page, .frappe-control"),
+      nativeRfqCreateIndicators: count(".form-layout") > 0 && /Request for Quotation/i.test(document.body.innerText || ""),
+      frameworkModalCount: count(".modal.show"),
+      frameworkModalText: Array.from(document.querySelectorAll(".modal.show")).map((node) => (node.innerText || "").replace(/\s+/g, " ").trim()).join(" "),
+    };
+  }).catch((error) => ({ diagnosticError: error.message }));
+  const file = path.join(ARTIFACT_DIR, `${safeLabel}-diagnostic.json`);
+  fs.writeFileSync(file, JSON.stringify({ screenshot, state, console: events.console || [], pageErrors: events.pageErrors || [] }, null, 2));
+  return { screenshot, diagnostic: file, state, console: events.console || [], pageErrors: events.pageErrors || [] };
 }
 
 async function visibleFrameworkState(page) {
@@ -154,7 +185,13 @@ async function assertPdfEndpoint(page, rfqName, supplier) {
 
 async function openNewRfqForm(page) {
   await openDeskRoute(page, "/desk/procurement-console-rfq-form/new");
-  await page.waitForSelector(".erpw-managed-rfq-page [data-erpw-managed-rfq-form]", { state: "visible", timeout: TIMEOUT });
+  try {
+    await page.waitForSelector(".erpw-managed-rfq-page [data-erpw-managed-rfq-form]", { state: "visible", timeout: TIMEOUT });
+  } catch (error) {
+    const diagnostic = await capturePageDiagnostics(page, "new-rfq-route-selector-timeout");
+    error.details = Object.assign({}, error.details || {}, diagnostic);
+    throw error;
+  }
   await assertNoFrameworkModal(page, "new-rfq-before-autocomplete");
 }
 
@@ -432,9 +469,16 @@ async function assertReviewSupplierCommunication(page, userKey, rfqName, supplie
 async function runForUser(browser, user) {
   const context = await browser.newContext({ viewport: { width: 1136, height: 768 }, acceptDownloads: true });
   const page = await context.newPage();
+  const events = { console: [], pageErrors: [] };
+  PAGE_EVENTS.set(page, events);
   page.on("console", (message) => {
-    if (["error", "warning"].includes(message.type())) console.log(`[${user.key}] browser ${message.type()}: ${message.text()}`);
+    if (["error", "warning"].includes(message.type())) {
+      const entry = { type: message.type(), text: message.text() };
+      events.console.push(entry);
+      console.log(`[${user.key}] browser ${message.type()}: ${message.text()}`);
+    }
   });
+  page.on("pageerror", (error) => events.pageErrors.push(String(error && error.stack || error)));
   await login(page, user);
   const values = await fixtures(page);
   await assertNewRfqAutocompletePlacement(page, user.key, values);

@@ -18,6 +18,7 @@
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
   ];
   let runtimePromise = null;
+  let suggestionRequestId = 0;
 
   function helpers() {
     return (window.erpWorkspaceUiChildPage && window.erpWorkspaceUiChildPage.helpers) || {};
