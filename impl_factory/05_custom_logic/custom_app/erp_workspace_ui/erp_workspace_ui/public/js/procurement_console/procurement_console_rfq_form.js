@@ -92,6 +92,22 @@
       .erpw-managed-rfq-output-button:disabled { opacity: 0.58; cursor: not-allowed; }
       .erpw-managed-rfq-output-message { min-height: 18px; color: #64748b; font-size: 12.5px; line-height: 1.36; }
       .erpw-managed-rfq-output-message.error { color: #b42318; }
+      .erpw-managed-rfq-readiness { display: grid; gap: 10px; padding-top: 2px; }
+      .erpw-managed-rfq-readiness-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .erpw-managed-rfq-readiness-title { font-size: 13.5px; line-height: 1.25; font-weight: 790; color: #0f172a; }
+      .erpw-managed-rfq-readiness-note { margin-top: 2px; max-width: 690px; color: #475569; font-size: 12.3px; line-height: 1.36; }
+      .erpw-managed-rfq-readiness-pill { display: inline-flex; min-height: 25px; align-items: center; padding: 0 9px; border-radius: 999px; border: 1px solid #dbe6f2; background: #f8fafc; color: #334155; font-size: 11.5px; font-weight: 760; white-space: nowrap; }
+      .erpw-managed-rfq-readiness-pill.ready { border-color: #d9eadf; background: #f3faf6; color: #166534; }
+      .erpw-managed-rfq-readiness-pill.missing, .erpw-managed-rfq-readiness-pill.blocked { border-color: #fde2b8; background: #fff8ed; color: #9a5b13; }
+      .erpw-managed-rfq-readiness-pill.unavailable { border-color: #e7eaf0; background: #f8fafc; color: #475569; }
+      .erpw-managed-rfq-recipient-list { display: grid; gap: 8px; }
+      .erpw-managed-rfq-recipient-row { display: grid; grid-template-columns: minmax(180px, 1.1fr) minmax(170px, 1fr) minmax(210px, 1.2fr) 126px; gap: 10px; align-items: center; padding: 10px 11px; border: 1px solid #dbe6f2; border-radius: 12px; background: #fbfcfe; }
+      .erpw-managed-rfq-recipient-cell { min-width: 0; display: grid; gap: 2px; }
+      .erpw-managed-rfq-recipient-label { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; line-height: 1.1; text-transform: uppercase; }
+      .erpw-managed-rfq-recipient-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #0f172a; font-size: 12.6px; line-height: 1.25; white-space: nowrap; }
+      .erpw-managed-rfq-send-block { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 11px; border: 1px solid #e7eaf0; border-radius: 12px; background: #f8fafc; }
+      .erpw-managed-rfq-send-block-copy { max-width: 760px; color: #475569; font-size: 12.5px; line-height: 1.36; }
+      .erpw-managed-rfq-send-disabled { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #64748b; font-weight: 760; font-size: 12px; padding: 0 12px; opacity: 0.7; cursor: not-allowed; }
       .erpw-output-modal-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(15,23,42,0.36); display: flex; align-items: center; justify-content: center; padding: 22px; }
       .erpw-output-modal { width: min(980px, 96vw); max-height: min(820px, 92vh); overflow: hidden; display: grid; grid-template-rows: auto 1fr; border-radius: 16px; background: #fff; box-shadow: 0 26px 70px rgba(15,23,42,0.28); border: 1px solid #dbe6f2; }
       .erpw-output-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
@@ -155,6 +171,9 @@
         .erpw-managed-rfq-line-warehouse { grid-area: warehouse; }
         .erpw-managed-rfq-line-uom { grid-area: uom; }
         .erpw-managed-rfq-line-action { grid-area: action; }
+      }
+      @media (max-width: 960px) {
+        .erpw-managed-rfq-recipient-row { grid-template-columns: 1fr 1fr; align-items: start; }
       }
       @media (max-width: 720px) {
         .erpw-managed-rfq-grid, .erpw-managed-rfq-output-grid { grid-template-columns: 1fr; }
@@ -310,6 +329,64 @@
     return form && form.name && form.name !== "new";
   }
 
+  function readinessClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (value === "ready") return "ready";
+    if (value === "missing_email" || value === "invalid_email") return "missing";
+    if (value === "email_unavailable" || value === "unavailable") return "unavailable";
+    return "blocked";
+  }
+
+  function readinessRowsMarkup(readiness) {
+    const suppliers = readiness && Array.isArray(readiness.suppliers) ? readiness.suppliers : [];
+    if (!suppliers.length) {
+      return '<div class="erpw-managed-rfq-output-message">No supplier recipients are available on this RFQ yet.</div>';
+    }
+    return suppliers.map((row) => `
+      <div class="erpw-managed-rfq-recipient-row" data-rfq-recipient-row data-rfq-recipient-supplier="${escapeHtml(row.supplier || "")}" data-rfq-readiness-status="${escapeHtml(row.readiness_status || "")}">
+        <div class="erpw-managed-rfq-recipient-cell">
+          <div class="erpw-managed-rfq-recipient-label">Supplier</div>
+          <div class="erpw-managed-rfq-recipient-value">${escapeHtml(row.supplier_name || row.supplier || "Supplier")}</div>
+        </div>
+        <div class="erpw-managed-rfq-recipient-cell">
+          <div class="erpw-managed-rfq-recipient-label">Contact</div>
+          <div class="erpw-managed-rfq-recipient-value">${escapeHtml(row.contact_name || row.contact || "Not selected")}</div>
+        </div>
+        <div class="erpw-managed-rfq-recipient-cell">
+          <div class="erpw-managed-rfq-recipient-label">Email</div>
+          <div class="erpw-managed-rfq-recipient-value">${escapeHtml(row.email || "Missing email")}</div>
+        </div>
+        <span class="erpw-managed-rfq-readiness-pill ${readinessClass(row.readiness_status)}">${escapeHtml(row.readiness_label || "Send blocked")}</span>
+      </div>
+    `).join("");
+  }
+
+  function readinessPanelMarkup(context) {
+    const readiness = context && context.send_readiness ? context.send_readiness : null;
+    const outgoing = readiness && readiness.outgoing_email ? readiness.outgoing_email : {};
+    const outgoingAvailable = Boolean(outgoing.available);
+    const outgoingLabel = outgoingAvailable ? "Outgoing email ready" : "Email unavailable";
+    const outgoingClass = outgoingAvailable ? "ready" : "unavailable";
+    const blockReason = readiness && readiness.send_block_reason ? readiness.send_block_reason : "RFQ email send is not enabled yet.";
+    const outgoingReason = outgoing.reason || "Supplier recipients and email setup are shown for readiness review.";
+    return `
+      <div class="erpw-managed-rfq-readiness" data-rfq-readiness-panel>
+        <div class="erpw-managed-rfq-readiness-top">
+          <div>
+            <div class="erpw-managed-rfq-readiness-title">Recipient readiness</div>
+            <div class="erpw-managed-rfq-readiness-note">RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review.</div>
+          </div>
+          <span class="erpw-managed-rfq-readiness-pill ${outgoingClass}" data-rfq-outgoing-email-state="${outgoingAvailable ? "available" : "unavailable"}">${escapeHtml(outgoingLabel)}</span>
+        </div>
+        <div class="erpw-managed-rfq-recipient-list">${readinessRowsMarkup(readiness)}</div>
+        <div class="erpw-managed-rfq-send-block">
+          <div class="erpw-managed-rfq-send-block-copy" data-rfq-send-block-reason>${escapeHtml(outgoingReason)} ${escapeHtml(blockReason)}</div>
+          <button type="button" class="erpw-managed-rfq-send-disabled" data-rfq-send-disabled disabled>Send RFQ</button>
+        </div>
+      </div>
+    `;
+  }
+
   function outputCardMarkup(form, outputContext) {
     if (!isSavedForm(form)) return "";
     const context = outputContext && outputContext.name === form.name ? outputContext : null;
@@ -338,6 +415,7 @@
           </div>
         </div>
         <div class="erpw-managed-rfq-output-message" data-rfq-output-message>${escapeHtml(context ? context.send_block_reason || "Email send is deferred." : "Loading output controls...")}</div>
+        ${readinessPanelMarkup(context)}
       </section>
     `;
   }

@@ -16,7 +16,7 @@ ALLOWED_DOCTYPES = {RFQ_DOCTYPE, PO_DOCTYPE}
 
 RFQ_WARNING = "Draft / Not sent"
 PO_WARNING = "Draft / Not for supplier"
-RFQ_SEND_BLOCK = "Email send requires a governed RFQ send step. This draft has not been sent to suppliers."
+RFQ_SEND_BLOCK = "RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review. Future enablement requires a governed RFQ send policy."
 PO_SEND_BLOCK = "Supplier send requires a governed purchase order release step. This draft is not a supplier commitment."
 
 
@@ -143,6 +143,189 @@ def _rfq_suppliers(doc: object) -> list[dict[str, str]]:
     return suppliers
 
 
+def _contact_name(row: dict[str, Any]) -> str:
+    first = cstr(row.get("first_name")).strip()
+    last = cstr(row.get("last_name")).strip()
+    full = " ".join(part for part in (first, last) if part).strip()
+    return full or cstr(row.get("name")).strip()
+
+
+def _db_value(doctype: str, name: str, fieldname: str | list[str], as_dict: bool = False) -> Any:
+    try:
+        return frappe.db.get_value(doctype, name, fieldname, as_dict=as_dict)
+    except Exception:
+        return {} if as_dict else None
+
+
+def _contact_info(contact_name: str) -> dict[str, str]:
+    name = cstr(contact_name).strip()
+    if not name:
+        return {"contact": "", "contact_name": "", "email": ""}
+    row = _db_value("Contact", name, ["name", "first_name", "last_name", "email_id"], as_dict=True) or {}
+    if not isinstance(row, dict):
+        row = {}
+    contact = cstr(row.get("name") or name).strip()
+    email = cstr(row.get("email_id")).strip()
+    if not email:
+        email_rows = common.get_list(
+            "Contact Email",
+            fields=["parent", "email_id", "is_primary"],
+            filters=[["Contact Email", "parent", "=", contact]],
+            order_by="is_primary desc, idx asc",
+            limit=5,
+        )
+        for email_row in email_rows:
+            email = cstr(email_row.get("email_id")).strip()
+            if email:
+                break
+    return {"contact": contact, "contact_name": _contact_name({**row, "name": contact}), "email": email}
+
+
+def _supplier_linked_contact(supplier: str) -> dict[str, str]:
+    supplier_name = cstr(supplier).strip()
+    if not supplier_name:
+        return {"contact": "", "contact_name": "", "email": ""}
+    links: list[dict[str, Any]] = []
+    try:
+        links = list(
+            frappe.get_all(
+                "Dynamic Link",
+                filters={"link_doctype": "Supplier", "link_name": supplier_name, "parenttype": "Contact"},
+                fields=["parent"],
+                order_by="idx asc",
+                limit_page_length=5,
+            )
+        )
+    except Exception:
+        try:
+            links = list(
+                frappe.get_all(
+                    "Dynamic Link",
+                    filters={"link_doctype": "Supplier", "link_name": supplier_name},
+                    fields=["parent"],
+                    limit_page_length=5,
+                )
+            )
+        except Exception:
+            links = []
+    for link in links:
+        info = _contact_info(cstr(link.get("parent")).strip())
+        if info.get("email") or info.get("contact"):
+            return info
+    return {"contact": "", "contact_name": "", "email": ""}
+
+
+def _supplier_direct_email(supplier: str) -> str:
+    supplier_name = cstr(supplier).strip()
+    if not supplier_name:
+        return ""
+    for fieldname in ("email_id", "contact_email", "email"):
+        value = _db_value("Supplier", supplier_name, fieldname)
+        email = cstr(value).strip()
+        if email:
+            return email
+    return ""
+
+
+def _is_valid_email(value: str) -> bool:
+    email_value = cstr(value).strip()
+    if not email_value or "@" not in email_value:
+        return False
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_value))
+
+
+def _outgoing_email_status() -> dict[str, object]:
+    accounts = common.get_list(
+        "Email Account",
+        fields=["name", "email_id", "enable_outgoing", "default_outgoing", "awaiting_password"],
+        order_by="default_outgoing desc, name asc",
+        limit=20,
+    )
+    usable = [row for row in accounts if bool(row.get("enable_outgoing")) and not bool(row.get("awaiting_password"))]
+    if usable:
+        account = next((row for row in usable if bool(row.get("default_outgoing"))), usable[0])
+        return {
+            "available": True,
+            "status": "available",
+            "account": cstr(account.get("name")).strip(),
+            "email_id": cstr(account.get("email_id")).strip(),
+            "reason": "Outgoing email is configured. RFQ send still remains blocked until governed send policy is approved.",
+        }
+    if accounts:
+        reason = "Outgoing email accounts exist but none are enabled for sending. Preview and PDF remain available."
+    else:
+        reason = "Outgoing email is not configured. Preview and PDF remain available."
+    return {"available": False, "status": "unavailable", "account": "", "email_id": "", "reason": reason}
+
+
+def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    outgoing_available = bool(outgoing_email.get("available"))
+    for supplier_row in _rfq_suppliers(doc):
+        supplier = supplier_row["supplier"]
+        row_contact = cstr(supplier_row.get("contact")).strip()
+        contact_info = _contact_info(row_contact) if row_contact else _supplier_linked_contact(supplier)
+        email = cstr(supplier_row.get("email_id") or contact_info.get("email") or _supplier_direct_email(supplier)).strip()
+        contact = cstr(row_contact or contact_info.get("contact")).strip()
+        contact_name = cstr(contact_info.get("contact_name") or contact).strip()
+        if not email:
+            status = "missing_email"
+            label = "Missing email"
+            reason = "Add supplier contact/email before send can be enabled."
+        elif not _is_valid_email(email):
+            status = "invalid_email"
+            label = "Invalid email"
+            reason = "Supplier email must be corrected before send can be enabled."
+        elif not outgoing_available:
+            status = "email_unavailable"
+            label = "Email unavailable"
+            reason = cstr(outgoing_email.get("reason")).strip() or "Outgoing email is not configured."
+        else:
+            status = "ready"
+            label = "Ready"
+            reason = "Supplier recipient is ready for a future governed send step."
+        rows.append(
+            {
+                "supplier": supplier,
+                "supplier_name": supplier_row.get("supplier_name") or supplier,
+                "contact": contact,
+                "contact_name": contact_name,
+                "email": email,
+                "email_source": "rfq_supplier" if supplier_row.get("email_id") else "contact" if contact_info.get("email") else "supplier" if email else "",
+                "quote_status": supplier_row.get("quote_status") or "",
+                "readiness_status": status,
+                "readiness_label": label,
+                "reason": reason,
+            }
+        )
+    return rows
+
+
+def _rfq_send_readiness(doc: object) -> dict[str, object]:
+    outgoing_email = _outgoing_email_status()
+    suppliers = _rfq_supplier_readiness(doc, outgoing_email)
+    counts = {"total": len(suppliers), "ready": 0, "missing_email": 0, "invalid_email": 0, "email_unavailable": 0}
+    for row in suppliers:
+        status = cstr(row.get("readiness_status")).strip()
+        counts[status] = int(counts.get(status, 0)) + 1
+    return {
+        "state": _ready("RFQ send readiness ready"),
+        "rfq_name": cstr(_doc_value(doc, "name")).strip(),
+        "docstatus": int(_doc_value(doc, "docstatus", 0) or 0),
+        "status": cstr(_doc_value(doc, "status") or ("Draft" if int(_doc_value(doc, "docstatus", 0) or 0) == 0 else "")).strip(),
+        "suppliers": suppliers,
+        "summary": counts,
+        "outgoing_email": outgoing_email,
+        "can_send": False,
+        "send_block_reason": RFQ_SEND_BLOCK,
+        "future_required_policy": [
+            "Governed RFQ ready-to-send or submit policy must be approved.",
+            "Owner approval is required before portal/contact/user side effects are allowed.",
+            "Outgoing email must be configured and validated.",
+        ],
+    }
+
+
 def _po_supplier(doc: object) -> dict[str, str]:
     supplier = cstr(_doc_value(doc, "supplier")).strip()
     return {
@@ -211,7 +394,7 @@ def _output_context(doc: object, supplier: str | None = None) -> dict[str, objec
             {"key": "download_pdf", "label": "Download RFQ PDF" if doctype == RFQ_DOCTYPE else "Download PO PDF", "kind": "secondary"},
             {
                 "key": "send",
-                "label": "RFQ send deferred" if doctype == RFQ_DOCTYPE else "PO send deferred",
+                "label": "Send RFQ" if doctype == RFQ_DOCTYPE else "PO send deferred",
                 "kind": "blocked",
                 "disabled": True,
                 "reason": _send_block_for(doctype),
@@ -224,6 +407,7 @@ def _output_context(doc: object, supplier: str | None = None) -> dict[str, objec
         base["selected_supplier"] = supplier or (suppliers[0]["supplier"] if len(suppliers) == 1 else "")
         base["requires_supplier_selection"] = len(suppliers) != 1 or not base["selected_supplier"]
         base["filename_preview"] = _filename_for(doctype, name, cstr(base["selected_supplier"]).strip() or "SUPPLIER")
+        base["send_readiness"] = _rfq_send_readiness(doc)
     else:
         base["supplier"] = _po_supplier(doc)
         base["filename_preview"] = _filename_for(doctype, name)
@@ -444,6 +628,18 @@ def get_document_output_context(doctype: str, name: str) -> dict[str, object]:
         return _restricted(cstr(exc))
     except Exception as exc:
         return _error("Document output unavailable", cstr(exc))
+
+
+@frappe.whitelist()
+def get_rfq_send_readiness_context(rfq_name: str) -> dict[str, object]:
+    try:
+        doc = _get_doc(RFQ_DOCTYPE, rfq_name)
+        _check_read_permission(doc)
+        return _rfq_send_readiness(doc)
+    except PermissionError as exc:
+        return _restricted(cstr(exc))
+    except Exception as exc:
+        return _error("RFQ send readiness unavailable", cstr(exc))
 
 
 @frappe.whitelist()

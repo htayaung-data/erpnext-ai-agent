@@ -82,6 +82,19 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
             self.assertEqual(set(FORBIDDEN_MUTATION_LABELS), set(guard["labels"]), guard)
             self.assertIn("native-exception-policy-v1.md", guard["policy_doc"], guard)
 
+    def test_procurement_rfq_send_readiness_is_allowed_but_send_is_blocked(self):
+        actions = {action["manifest_key"]: action for action in ACTION_MANIFEST if action["workspace_id"] == "procurement"}
+
+        readiness = actions["procurement-managed-rfq-recipient-readiness"]
+        self.assertEqual("productized_secondary_action", readiness["classification"])
+        self.assertEqual("current_shell", readiness["target_kind"])
+        self.assertIn("Read-only", readiness["notes"])
+
+        send = actions["procurement-managed-rfq-email-blocked"]
+        self.assertEqual("disabled", send["target_kind"])
+        self.assertEqual("Send RFQ", send["label"])
+        self.assertIn("blocked", send["notes"].lower())
+
     def test_registry_route_keys_exist_in_manifest(self):
         sales_routes = get_sales_workspace_definition()["routes"]
         procurement_routes = get_procurement_workspace_definition()["routes"]

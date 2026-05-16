@@ -24,6 +24,7 @@ CREATEABLE_DOCTYPES = set()
 CAPTURED_GET_LIST_CALLS = []
 CAPTURED_GET_ALL_CALLS = []
 CAPTURED_REPORT_CALLS = []
+EMAIL_ACCOUNTS = []
 HAS_QUOTE_STATUS = True
 HIDDEN_PURCHASE_ORDER_LIST_NAMES = set()
 HIDDEN_MATERIAL_REQUEST_LIST_NAMES = set()
@@ -178,6 +179,8 @@ def _get_list(doctype, fields=None, filters=None, order_by=None, limit_page_leng
             "limit_page_length": limit_page_length,
         }
     )
+    if doctype == "Email Account":
+        return _filter_rows(doctype, list(EMAIL_ACCOUNTS), filters)
     if doctype == "Supplier":
         return _filter_rows(doctype, [
             {
@@ -514,6 +517,24 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
 
 
 def _db_get_value(doctype, name=None, fieldname=None, as_dict=False, **kwargs):
+    if doctype == "Contact" and name == "CONT-001":
+        row = {"name": "CONT-001", "first_name": "Buyer", "last_name": "Contact", "email_id": "buyer.contact@example.com"}
+        if as_dict:
+            if isinstance(fieldname, (list, tuple)):
+                return {field: row.get(field) for field in fieldname}
+            return dict(row)
+        if isinstance(fieldname, (list, tuple)):
+            return tuple(row.get(field) for field in fieldname)
+        return row.get(fieldname)
+    if doctype == "Supplier" and name == "SUP-EMAIL":
+        row = {"name": "SUP-EMAIL", "email_id": "direct.supplier@example.com"}
+        if as_dict:
+            if isinstance(fieldname, (list, tuple)):
+                return {field: row.get(field) for field in fieldname}
+            return dict(row)
+        if isinstance(fieldname, (list, tuple)):
+            return tuple(row.get(field) for field in fieldname)
+        return row.get(fieldname)
     if doctype == "Company" and name == "Demo Company":
         if as_dict:
             return {"name": "Demo Company", "default_currency": "MMK"}
@@ -1093,6 +1114,7 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         CAPTURED_GET_LIST_CALLS.clear()
         CAPTURED_GET_ALL_CALLS.clear()
         CAPTURED_REPORT_CALLS.clear()
+        EMAIL_ACCOUNTS.clear()
         HIDDEN_PURCHASE_ORDER_LIST_NAMES.clear()
         HIDDEN_MATERIAL_REQUEST_LIST_NAMES.clear()
         HIDDEN_RFQ_LIST_NAMES.clear()
@@ -1545,12 +1567,54 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertIn("governed RFQ send", rfq_context["send_block_reason"])
         self.assertTrue(rfq_context["requires_supplier_selection"])
         self.assertEqual([row["supplier"] for row in rfq_context["suppliers"]], ["SUP-001", "SUP-002"])
+        self.assertIn("send_readiness", rfq_context)
+        self.assertFalse(rfq_context["send_readiness"]["can_send"])
         self.assertEqual(po_context["state"]["kind"], "ready")
         self.assertEqual(po_context["warning"], "Draft / Not for supplier")
         self.assertFalse(po_context["can_send"])
         self.assertIn("governed purchase order release", po_context["send_block_reason"])
         _assert_no_forbidden_mutation_actions(self, rfq_context)
         _assert_no_forbidden_mutation_actions(self, po_context)
+
+    def test_rfq_send_readiness_context_reports_recipients_and_blocked_send(self):
+        _set_user("purchase.manager@example.com", ["Purchase Manager"])
+
+        context = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+
+        self.assertEqual(context["state"]["kind"], "ready")
+        self.assertFalse(context["can_send"])
+        self.assertIn("governed RFQ send", context["send_block_reason"])
+        self.assertFalse(context["outgoing_email"]["available"])
+        self.assertIn("Outgoing email", context["outgoing_email"]["reason"])
+        statuses = {row["supplier"]: row for row in context["suppliers"]}
+        self.assertEqual(statuses["SUP-001"]["email"], "buyer.contact@example.com")
+        self.assertEqual(statuses["SUP-001"]["readiness_status"], "email_unavailable")
+        self.assertEqual(statuses["SUP-002"]["readiness_status"], "missing_email")
+        self.assertEqual(context["summary"]["total"], 2)
+        self.assertEqual(context["summary"]["missing_email"], 1)
+        self.assertEqual(context["summary"]["email_unavailable"], 1)
+
+    def test_rfq_send_readiness_reports_ready_recipient_when_outgoing_email_available(self):
+        _set_user("purchase.manager@example.com", ["Purchase Manager"])
+        EMAIL_ACCOUNTS.append({"name": "Buying", "email_id": "buying@example.com", "enable_outgoing": 1, "default_outgoing": 1, "awaiting_password": 0})
+
+        context = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+
+        statuses = {row["supplier"]: row for row in context["suppliers"]}
+        self.assertTrue(context["outgoing_email"]["available"])
+        self.assertEqual(context["outgoing_email"]["account"], "Buying")
+        self.assertEqual(statuses["SUP-001"]["readiness_status"], "ready")
+        self.assertEqual(statuses["SUP-002"]["readiness_status"], "missing_email")
+        self.assertFalse(context["can_send"])
+
+    def test_rfq_send_readiness_restricts_sales_and_guest(self):
+        _set_user("sales@example.com", ["Sales User"])
+        restricted = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+        self.assertEqual(restricted["state"]["kind"], "restricted")
+
+        _set_user("Guest", [])
+        guest = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+        self.assertEqual(guest["state"]["kind"], "restricted")
 
     def test_document_output_restricts_sales_and_invalid_doctype(self):
         _set_user("sales@example.com", ["Sales User"])
