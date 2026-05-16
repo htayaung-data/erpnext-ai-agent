@@ -234,28 +234,78 @@ def _is_valid_email(value: str) -> bool:
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email_value))
 
 
+def _clear_optional_lookup_messages() -> None:
+    local = getattr(frappe, "local", None)
+    if not local:
+        return
+    if hasattr(local, "message_log"):
+        try:
+            local.message_log = []
+        except Exception:
+            pass
+    response = getattr(local, "response", None)
+    if isinstance(response, dict):
+        response.pop("_server_messages", None)
+
+
+def _safe_get_all(
+    doctype: str,
+    fields: list[str],
+    filters: list | dict | None = None,
+    order_by: str | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]] | None:
+    query: dict[str, Any] = {
+        "fields": fields,
+        "filters": filters or {},
+        "limit_page_length": limit,
+    }
+    if order_by:
+        query["order_by"] = order_by
+
+    for getter in (getattr(frappe, "get_all", None), getattr(getattr(frappe, "db", None), "get_all", None)):
+        if not callable(getter):
+            continue
+        try:
+            return list(getter(doctype, ignore_permissions=True, **query))
+        except TypeError:
+            try:
+                return list(getter(doctype, **query))
+            except Exception:
+                _clear_optional_lookup_messages()
+        except Exception:
+            _clear_optional_lookup_messages()
+    return None
+
+
+def _outgoing_email_unavailable(reason: str) -> dict[str, object]:
+    return {"available": False, "status": "unavailable", "account": "", "email_id": "", "reason": reason}
+
+
 def _outgoing_email_status() -> dict[str, object]:
-    accounts = common.get_list(
+    accounts = _safe_get_all(
         "Email Account",
         fields=["name", "email_id", "enable_outgoing", "default_outgoing", "awaiting_password"],
         order_by="default_outgoing desc, name asc",
         limit=20,
     )
+    if accounts is None:
+        return _outgoing_email_unavailable("Outgoing email availability could not be checked safely. Preview and PDF remain available.")
+
     usable = [row for row in accounts if bool(row.get("enable_outgoing")) and not bool(row.get("awaiting_password"))]
     if usable:
-        account = next((row for row in usable if bool(row.get("default_outgoing"))), usable[0])
         return {
             "available": True,
             "status": "available",
-            "account": cstr(account.get("name")).strip(),
-            "email_id": cstr(account.get("email_id")).strip(),
+            "account": "",
+            "email_id": "",
             "reason": "Outgoing email is configured. RFQ send still remains blocked until governed send policy is approved.",
         }
     if accounts:
-        reason = "Outgoing email accounts exist but none are enabled for sending. Preview and PDF remain available."
+        reason = "Outgoing email setup exists but is not enabled for sending. Preview and PDF remain available."
     else:
         reason = "Outgoing email is not configured. Preview and PDF remain available."
-    return {"available": False, "status": "unavailable", "account": "", "email_id": "", "reason": reason}
+    return _outgoing_email_unavailable(reason)
 
 
 def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> list[dict[str, object]]:

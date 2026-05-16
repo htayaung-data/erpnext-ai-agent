@@ -25,6 +25,7 @@ CAPTURED_GET_LIST_CALLS = []
 CAPTURED_GET_ALL_CALLS = []
 CAPTURED_REPORT_CALLS = []
 EMAIL_ACCOUNTS = []
+EMAIL_ACCOUNT_GET_ALL_RAISES = False
 HAS_QUOTE_STATUS = True
 HIDDEN_PURCHASE_ORDER_LIST_NAMES = set()
 HIDDEN_MATERIAL_REQUEST_LIST_NAMES = set()
@@ -300,6 +301,10 @@ def _get_all(doctype, filters=None, fields=None, order_by=None, limit_page_lengt
             "limit_page_length": limit_page_length,
         }
     )
+    if doctype == "Email Account":
+        if EMAIL_ACCOUNT_GET_ALL_RAISES:
+            raise _FakePermissionError("Insufficient Permissions for Email Account")
+        return _filter_rows(doctype, list(EMAIL_ACCOUNTS), filters)
     if doctype == "Request for Quotation Supplier":
         rows = [
             {"parent": "RFQ-001", "supplier": "SUP-001", "supplier_name": "Alpha Supplier", "quote_status": "Pending"},
@@ -1093,7 +1098,8 @@ def _assert_no_forbidden_mutation_actions(testcase, payload):
 
 class TestProcurementConsolePhase3Contracts(unittest.TestCase):
     def setUp(self):
-        global HAS_QUOTE_STATUS
+        global EMAIL_ACCOUNT_GET_ALL_RAISES, HAS_QUOTE_STATUS
+        EMAIL_ACCOUNT_GET_ALL_RAISES = False
         HAS_QUOTE_STATUS = True
         _set_user("purchase@example.com", ["Purchase User"])
         _set_readable_doctypes(
@@ -1602,10 +1608,26 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
 
         statuses = {row["supplier"]: row for row in context["suppliers"]}
         self.assertTrue(context["outgoing_email"]["available"])
-        self.assertEqual(context["outgoing_email"]["account"], "Buying")
+        self.assertEqual(context["outgoing_email"]["account"], "")
+        self.assertEqual(context["outgoing_email"]["email_id"], "")
         self.assertEqual(statuses["SUP-001"]["readiness_status"], "ready")
         self.assertEqual(statuses["SUP-002"]["readiness_status"], "missing_email")
         self.assertFalse(context["can_send"])
+
+    def test_rfq_send_readiness_handles_email_account_permission_failure_as_unavailable(self):
+        global EMAIL_ACCOUNT_GET_ALL_RAISES
+        _set_user("purchase.manager@example.com", ["Purchase Manager"])
+        EMAIL_ACCOUNT_GET_ALL_RAISES = True
+
+        context = document_output.get_rfq_send_readiness_context("PUR-RFQ-MULTI")
+
+        self.assertEqual(context["state"]["kind"], "ready")
+        self.assertFalse(context["outgoing_email"]["available"])
+        self.assertEqual(context["outgoing_email"]["status"], "unavailable")
+        self.assertIn("Outgoing email", context["outgoing_email"]["reason"])
+        self.assertNotIn("Email Account", context["outgoing_email"]["reason"])
+        self.assertFalse(context["can_send"])
+        self.assertFalse(any(call["doctype"] == "Email Account" for call in CAPTURED_GET_LIST_CALLS))
 
     def test_rfq_send_readiness_restricts_sales_and_guest(self):
         _set_user("sales@example.com", ["Sales User"])

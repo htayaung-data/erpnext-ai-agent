@@ -24,6 +24,7 @@ const USERS = [
 
 const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
 const FORBIDDEN_ACTIVE_RE = /(submit|approve|reject|receive|purchase receipt|create receipt|bill|purchase invoice|create invoice|payment|pay|item price|default supplier|supplier portal|create supplier quotation|create purchase order|email suppliers)/i;
+const FRAMEWORK_ERROR_RE = /(Insufficient Permissions|Email Account|Traceback|Server Error|Internal Server Error)/i;
 
 function assert(condition, message, details = {}) {
   if (!condition) {
@@ -47,23 +48,31 @@ async function capture(page, name) {
   return file;
 }
 
-async function dismissFrameworkDialogs(page, label) {
-  const modal = page.locator(".modal.show").first();
-  if (!(await modal.count())) return null;
-  const visible = await modal.isVisible().catch(() => false);
-  if (!visible) return null;
-  const text = await modal.innerText().catch(() => "");
-  await capture(page, `${label || "framework"}-modal-before-dismiss`);
-  await page.keyboard.press("Escape").catch(() => null);
-  await modal.waitFor({ state: "hidden", timeout: 3000 }).catch(async () => {
-    await page.evaluate(() => {
-      document.querySelectorAll(".modal.show, .modal-backdrop").forEach((node) => node.remove());
-      document.body.classList.remove("modal-open");
-      document.body.style.removeProperty("overflow");
-      document.body.style.removeProperty("padding-right");
-    });
+async function visibleFrameworkState(page) {
+  return page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const modals = Array.from(document.querySelectorAll(".modal.show")).filter(visible).map((modal) => (modal.innerText || "").replace(/\s+/g, " ").trim());
+    return {
+      modalCount: modals.length,
+      modalText: modals.join(" "),
+      bodyText: (document.body.innerText || "").replace(/\s+/g, " ").trim(),
+    };
   });
-  return text.replace(/\s+/g, " ").trim();
+}
+
+async function assertNoFrameworkModal(page, label) {
+  const state = await visibleFrameworkState(page);
+  if (state.modalCount > 0 || FRAMEWORK_ERROR_RE.test(state.modalText) || FRAMEWORK_ERROR_RE.test(state.bodyText)) {
+    await capture(page, `${label || "framework"}-unexpected-modal`);
+  }
+  assert(state.modalCount === 0, "Framework modal must not be visible", state);
+  assert(!FRAMEWORK_ERROR_RE.test(state.modalText), "Framework permission/server modal leaked", state);
+  assert(!FRAMEWORK_ERROR_RE.test(state.bodyText), "Framework permission/server error text leaked into page", state);
 }
 
 async function login(page, user) {
@@ -185,10 +194,13 @@ async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   assert(state.bodyWidth <= state.viewportWidth + 2, "RFQ readiness page has horizontal overflow", state);
   assert(!state.nativeLeak, "RFQ readiness route leaked native path", state);
   assert(!state.nativeEmailDialog, "Native email dialog appeared", state);
+  await assertNoFrameworkModal(page, `${userKey}-rfq-readiness-card`);
   assert(state.rows.length >= 1, "RFQ readiness recipient row missing", state);
   assert(state.rows.some((row) => /Ready|Missing email|Email unavailable|Invalid email|Send blocked/i.test(row.text)), "RFQ readiness row status missing", state);
   assert(/Recipient readiness/i.test(state.text), "Recipient readiness heading missing", state);
   assert(/RFQ email send is not enabled yet/i.test(state.text), "Blocked send explanation missing", state);
+  assert(/Email unavailable|Outgoing email is not configured|Outgoing email availability could not be checked safely|Outgoing email setup exists but is not enabled/i.test(state.text), "Controlled outgoing email state missing", state);
+  assert(!/Insufficient Permissions|Traceback|Server Error|Internal Server Error/i.test(state.text), "Framework error text leaked into readiness card", state);
   assert(/Preview RFQ/i.test(state.text) && /Download RFQ PDF/i.test(state.text), "Preview/PDF actions missing", state);
   assert(state.disabledSendText === "Send RFQ" && state.disabledSendDisabled, "Send RFQ must be disabled", state);
   assert(!state.activeButtons.some((label) => /Send|Email/i.test(label)), "Send/Email action must not be active", state);
@@ -196,7 +208,7 @@ async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   await capture(page, `${userKey}-rfq-readiness-card-1136`);
 
   await page.selectOption("[data-rfq-output-supplier]", supplier);
-  await dismissFrameworkDialogs(page, `${userKey}-rfq-readiness`);
+  await assertNoFrameworkModal(page, `${userKey}-rfq-readiness-before-preview`);
   await page.locator("[data-rfq-output-preview]").click();
   await page.waitForSelector(".erpw-output-modal .erpw-output-preview-banner", { state: "visible", timeout: TIMEOUT });
   const preview = await page.evaluate((supplier) => {
@@ -211,8 +223,8 @@ async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   assert(preview.text.includes("Draft / Not sent"), "RFQ preview missing draft watermark", preview);
   assert(preview.hasSupplier, "RFQ preview missing selected supplier context", preview);
   assert(!preview.nativeControlsVisible, "RFQ preview leaked native Print/Get PDF controls", preview);
+  await assertNoFrameworkModal(page, `${userKey}-rfq-readiness-preview`);
   await capture(page, `${userKey}-rfq-readiness-preview-1136`);
-  await dismissFrameworkDialogs(page, `${userKey}-rfq-readiness-preview`);
   await page.locator(".erpw-output-modal-close").click({ force: true }).catch(async () => {
     await page.evaluate(() => document.querySelectorAll(".erpw-output-modal-backdrop").forEach((node) => node.remove()));
   });
@@ -248,6 +260,7 @@ async function runForUser(browser, user) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openDeskRoute(page, route);
   await page.waitForSelector("[data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  await assertNoFrameworkModal(page, `${user.key}-rfq-readiness-card-1440`);
   await capture(page, `${user.key}-rfq-readiness-card-1440`);
   await context.close();
   return { user: user.key, rfqName };
