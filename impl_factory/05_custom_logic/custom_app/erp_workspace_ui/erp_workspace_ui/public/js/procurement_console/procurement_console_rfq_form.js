@@ -13,6 +13,8 @@
   const OUTPUT_CONTEXT_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_output_context";
   const OUTPUT_PREVIEW_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_print_preview_context";
   const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
+  const TEST_SEND_CONTEXT_METHOD = "erp_workspace_ui.procurement_console.document_output.get_rfq_test_send_context";
+  const TEST_SEND_METHOD = "erp_workspace_ui.procurement_console.document_output.send_rfq_test_email";
   const CHILD_PAGE_RUNTIME_URLS = [
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
@@ -109,6 +111,21 @@
       .erpw-managed-rfq-send-block { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 11px; border: 1px solid #e7eaf0; border-radius: 12px; background: #f8fafc; }
       .erpw-managed-rfq-send-block-copy { max-width: 760px; color: #475569; font-size: 12.5px; line-height: 1.36; }
       .erpw-managed-rfq-send-disabled { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #64748b; font-weight: 760; font-size: 12px; padding: 0 12px; opacity: 0.7; cursor: not-allowed; }
+      .erpw-managed-rfq-test-send { min-height: 34px; border: 1px solid #0f766e; border-radius: 10px; background: #0f766e; color: #fff; font-weight: 770; font-size: 12px; padding: 0 12px; }
+      .erpw-managed-rfq-test-send:hover:not(:disabled) { background: #115e59; border-color: #115e59; }
+      .erpw-managed-rfq-test-result { flex-basis: 100%; color: #166534; font-size: 12.4px; line-height: 1.35; }
+      .erpw-output-confirm { display: grid; gap: 12px; color: #0f172a; }
+      .erpw-output-confirm-warning { border: 1px solid #f7c873; border-radius: 12px; background: #fff8e1; color: #7a4a08; padding: 10px 12px; font-size: 12.6px; font-weight: 740; }
+      .erpw-output-confirm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .erpw-output-confirm-item { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: 9px 10px; min-width: 0; }
+      .erpw-output-confirm-label { color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; }
+      .erpw-output-confirm-value { margin-top: 3px; color: #0f172a; font-size: 12.8px; line-height: 1.32; overflow-wrap: anywhere; }
+      .erpw-output-confirm-body { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: 10px 11px; color: #334155; font-size: 12.8px; line-height: 1.4; }
+      .erpw-output-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+      .erpw-output-confirm-cancel, .erpw-output-confirm-send { min-height: 34px; border-radius: 10px; font-weight: 760; font-size: 12px; padding: 0 12px; }
+      .erpw-output-confirm-cancel { border: 1px solid #d5e2ef; background: #fff; color: #12365f; }
+      .erpw-output-confirm-send { border: 1px solid #0f766e; background: #0f766e; color: #fff; }
+      .erpw-output-confirm-send:disabled { opacity: 0.65; cursor: progress; }
       .erpw-output-modal-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(15,23,42,0.36); display: flex; align-items: center; justify-content: center; padding: 22px; }
       .erpw-output-modal { width: min(980px, 96vw); max-height: min(820px, 92vh); overflow: hidden; display: grid; grid-template-rows: auto 1fr; border-radius: 16px; background: #fff; box-shadow: 0 26px 70px rgba(15,23,42,0.28); border: 1px solid #dbe6f2; }
       .erpw-output-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
@@ -365,24 +382,28 @@
   function readinessPanelMarkup(context) {
     const readiness = context && context.send_readiness ? context.send_readiness : null;
     const outgoing = readiness && readiness.outgoing_email ? readiness.outgoing_email : {};
+    const testSend = context && context.test_send ? context.test_send : {};
     const outgoingAvailable = Boolean(outgoing.available);
-    const outgoingLabel = outgoingAvailable ? "Outgoing email ready" : "Email unavailable";
-    const outgoingClass = outgoingAvailable ? "ready" : "unavailable";
+    const testSendEnabled = Boolean(testSend.can_send);
+    const outgoingLabel = testSendEnabled ? "Test send ready" : outgoingAvailable ? "Outgoing email ready" : "Email unavailable";
+    const outgoingClass = testSendEnabled ? "ready" : outgoingAvailable ? "ready" : "unavailable";
     const blockReason = readiness && readiness.send_block_reason ? readiness.send_block_reason : "RFQ email send is not enabled yet.";
     const outgoingReason = outgoing.reason || "Supplier recipients and email setup are shown for readiness review.";
+    const sendCopy = testSendEnabled ? "Controlled test/demo send is ready for the configured test recipient override. This is not production supplier send." : `${outgoingReason} ${testSend.block_reason || blockReason}`;
     return `
       <div class="erpw-managed-rfq-readiness" data-rfq-readiness-panel>
         <div class="erpw-managed-rfq-readiness-top">
           <div>
             <div class="erpw-managed-rfq-readiness-title">Recipient readiness</div>
-            <div class="erpw-managed-rfq-readiness-note">RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review.</div>
+            <div class="erpw-managed-rfq-readiness-note">${testSendEnabled ? "Controlled test/demo send is available. Production RFQ send remains governed and deferred." : "RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review."}</div>
           </div>
-          <span class="erpw-managed-rfq-readiness-pill ${outgoingClass}" data-rfq-outgoing-email-state="${outgoingAvailable ? "available" : "unavailable"}">${escapeHtml(outgoingLabel)}</span>
+          <span class="erpw-managed-rfq-readiness-pill ${outgoingClass}" data-rfq-outgoing-email-state="${testSendEnabled ? "test-ready" : outgoingAvailable ? "available" : "unavailable"}">${escapeHtml(outgoingLabel)}</span>
         </div>
         <div class="erpw-managed-rfq-recipient-list">${readinessRowsMarkup(readiness)}</div>
-        <div class="erpw-managed-rfq-send-block">
-          <div class="erpw-managed-rfq-send-block-copy" data-rfq-send-block-reason>${escapeHtml(outgoingReason)} ${escapeHtml(blockReason)}</div>
-          <button type="button" class="erpw-managed-rfq-send-disabled" data-rfq-send-disabled disabled>Send RFQ</button>
+        <div class="erpw-managed-rfq-send-block" data-rfq-test-send-state="${testSendEnabled ? "ready" : "blocked"}">
+          <div class="erpw-managed-rfq-send-block-copy" data-rfq-send-block-reason>${escapeHtml(sendCopy)}</div>
+          <button type="button" class="${testSendEnabled ? "erpw-managed-rfq-test-send" : "erpw-managed-rfq-send-disabled"}" data-rfq-test-send ${testSendEnabled ? "" : "data-rfq-send-disabled disabled"}>Send RFQ</button>
+          <div class="erpw-managed-rfq-test-result" data-rfq-test-result></div>
         </div>
       </div>
     `;
@@ -454,6 +475,66 @@
     $(document.body).append($modal);
   }
 
+  function testSendDetailsMarkup(testSend, formName, supplier) {
+    const details = [
+      ["RFQ", formName || ""],
+      ["Supplier", (testSend.selected_supplier && (testSend.selected_supplier.supplier_name || testSend.selected_supplier.supplier)) || supplier || ""],
+      ["Actual recipient", `${testSend.recipient || ""} (${testSend.recipient_mode === "test_override" ? "test override" : "supplier email"})`],
+      ["Sender", `${testSend.sender_name || ""} <${testSend.sender_email || ""}>`],
+      ["Subject", testSend.subject || ""],
+      ["PDF filename", testSend.pdf_filename || ""],
+    ];
+    return `
+      <div class="erpw-output-confirm" data-rfq-test-send-confirmation>
+        <div class="erpw-output-confirm-warning">This will send an email. Phase 6C2C is test/demo mode and uses the configured test recipient override.</div>
+        <div class="erpw-output-confirm-grid">
+          ${details.map(([label, value]) => `<div class="erpw-output-confirm-item"><div class="erpw-output-confirm-label">${escapeHtml(label)}</div><div class="erpw-output-confirm-value">${escapeHtml(value)}</div></div>`).join("")}
+        </div>
+        <div class="erpw-output-confirm-body">${escapeHtml(testSend.body_preview || "Controlled RFQ test email.")}</div>
+        <div class="erpw-output-confirm-actions">
+          <button type="button" class="erpw-output-confirm-cancel" data-rfq-test-send-cancel>Cancel</button>
+          <button type="button" class="erpw-output-confirm-send" data-rfq-test-send-confirm>Confirm test send</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function showTestSendModal(title, testSend, formName, supplier, onConfirm) {
+    showPreviewModal(title || "Confirm RFQ test send", testSendDetailsMarkup(testSend, formName, supplier));
+    const $modal = $(".erpw-output-modal-backdrop").last();
+    $modal.find("[data-rfq-test-send-cancel]").on("click", () => $modal.remove());
+    $modal.find("[data-rfq-test-send-confirm]").on("click", function () {
+      const $button = $(this);
+      $button.prop("disabled", true).text("Sending...");
+      Promise.resolve(onConfirm()).catch((error) => {
+        $button.prop("disabled", false).text("Confirm test send");
+        $modal.find(".erpw-output-confirm-warning").text(error && error.message ? error.message : "RFQ test send failed.");
+      });
+    });
+  }
+
+  function applyTestSendState($shell, testSend) {
+    const state = testSend || {};
+    const ready = Boolean(state.can_send);
+    const $button = $shell.find("[data-rfq-test-send]").last();
+    const $block = $shell.find("[data-rfq-test-send-state]").last();
+    const $copy = $shell.find("[data-rfq-send-block-reason]").last();
+    const copy = ready ? "Controlled test/demo send is ready for the configured test recipient override. This is not production supplier send." : (state.block_reason || "RFQ email send is not enabled yet.");
+    $button.prop("disabled", !ready).toggleClass("erpw-managed-rfq-test-send", ready).toggleClass("erpw-managed-rfq-send-disabled", !ready);
+    if (ready) $button.removeAttr("data-rfq-send-disabled");
+    else $button.attr("data-rfq-send-disabled", "");
+    $block.attr("data-rfq-test-send-state", ready ? "ready" : "blocked");
+    $copy.text(copy);
+  }
+
+  function fetchTestSendContext(formName, supplier) {
+    return frappe.call({ method: TEST_SEND_CONTEXT_METHOD, args: { rfq_name: formName, supplier } }).then((response) => {
+      const payload = response && response.message ? response.message : {};
+      if (payload.state && payload.state.kind !== "ready") throw new Error(payload.state.detail || "RFQ test send is unavailable.");
+      return payload.test_send || {};
+    });
+  }
+
   function loadOutputContext(viewState) {
     const form = viewState.form || stateForm(viewState.payload);
     if (!isSavedForm(form)) return Promise.resolve(null);
@@ -497,6 +578,41 @@
       }
       showOutputMessage($shell, "Preparing RFQ PDF...", "");
       window.open(outputPdfUrl({ doctype: "Request for Quotation", name: form.name, supplier }), "_blank", "noopener");
+    });
+    $card.find("[data-rfq-output-supplier]").off("change.output").on("change.output", () => {
+      const form = viewState.form || stateForm(viewState.payload);
+      const supplier = selectedOutputSupplier($shell);
+      fetchTestSendContext(form.name, supplier).then((testSend) => applyTestSendState($shell, testSend)).catch((error) => {
+        applyTestSendState($shell, { can_send: false, block_reason: error && error.message ? error.message : "RFQ test send is unavailable." });
+      });
+    });
+    $card.find("[data-rfq-test-send]").off("click.output").on("click.output", () => {
+      const form = viewState.form || stateForm(viewState.payload);
+      const supplier = selectedOutputSupplier($shell);
+      if (!supplier) {
+        showOutputMessage($shell, "Select one supplier before sending a controlled RFQ test email.", "error");
+        return;
+      }
+      fetchTestSendContext(form.name, supplier).then((testSend) => {
+        applyTestSendState($shell, testSend);
+        if (!testSend.can_send) {
+          showOutputMessage($shell, testSend.block_reason || "RFQ test send is unavailable.", "error");
+          return;
+        }
+        showTestSendModal("Confirm RFQ test send", testSend, form.name, supplier, () => {
+          return frappe.call({ method: TEST_SEND_METHOD, args: { rfq_name: form.name, supplier, confirmed: 1 } }).then((response) => {
+            const result = response && response.message ? response.message : {};
+            if (result.state && result.state.kind === "ready" && result.sent) {
+              $(".erpw-output-modal-backdrop").remove();
+              const message = `Controlled RFQ test email sent to ${result.recipient || "test recipient"}.`;
+              showOutputMessage($shell, message, "");
+              $shell.find("[data-rfq-test-result]").text(`${message} ${result.sent_at || ""}`.trim());
+            } else {
+              throw new Error(result.state && result.state.detail ? result.state.detail : "RFQ test email failed.");
+            }
+          });
+        });
+      }).catch((error) => showOutputMessage($shell, error && error.message ? error.message : "RFQ test send unavailable.", "error"));
     });
   }
 

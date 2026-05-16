@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 import unittest
@@ -1140,6 +1141,18 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         SAVED_SUPPLIER_QUOTATIONS.clear()
         SAVED_PURCHASE_ORDERS.clear()
         fake_frappe.local.response = {}
+        for key in [
+            "ERPW_TEST_SMTP_EMAIL",
+            "ERPW_TEST_SMTP_USERNAME",
+            "ERPW_TEST_SMTP_PASSWORD",
+            "ERPW_TEST_SMTP_SERVER",
+            "ERPW_TEST_SMTP_PORT",
+            "ERPW_TEST_SMTP_USE_TLS",
+            "ERPW_TEST_SMTP_SENDER_NAME",
+            "ERPW_TEST_SMTP_REPLY_TO",
+            "ERPW_TEST_RFQ_RECIPIENT_OVERRIDE",
+        ]:
+            os.environ.pop(key, None)
 
     def test_guest_bootstrap_raises_permission_error(self):
         _set_user("Guest", [])
@@ -1708,6 +1721,90 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(response["filename"], "PUR-DUE-001-DRAFT-NOT-FOR-SUPPLIER.pdf")
         self.assertIn(b"Draft / Not for supplier", response["filecontent"])
         self.assertNotIn(b"Finished Good Qty", response["filecontent"])
+
+    def test_rfq_test_send_context_is_blocked_without_runtime_smtp_env(self):
+        _set_user("purchase.manager@example.com", ["Purchase Manager"])
+
+        context = document_output.get_rfq_test_send_context("PUR-RFQ-MULTI", supplier="SUP-001")
+        output = document_output.get_document_output_context("Request for Quotation", "PUR-RFQ-MULTI")
+
+        self.assertEqual(context["state"]["kind"], "ready")
+        self.assertFalse(context["test_send"]["can_send"])
+        self.assertIn("backend environment", context["test_send"]["block_reason"])
+        self.assertFalse(output["test_send"]["can_send"])
+        self.assertNotIn("unit-test-secret", str(context))
+
+    def test_rfq_test_send_context_ready_for_manager_with_override_env(self):
+        _set_user("purchase.manager@example.com", ["Purchase Manager"])
+        os.environ.update(
+            {
+                "ERPW_TEST_SMTP_EMAIL": "meet@myanmarexcel.com",
+                "ERPW_TEST_SMTP_USERNAME": "meet@myanmarexcel.com",
+                "ERPW_TEST_SMTP_PASSWORD": "unit-test-secret",
+                "ERPW_TEST_SMTP_SERVER": "smtp.gmail.com",
+                "ERPW_TEST_SMTP_PORT": "587",
+                "ERPW_TEST_SMTP_USE_TLS": "1",
+                "ERPW_TEST_SMTP_SENDER_NAME": "Mingalar Mobile Procurement",
+                "ERPW_TEST_SMTP_REPLY_TO": "meet@myanmarexcel.com",
+                "ERPW_TEST_RFQ_RECIPIENT_OVERRIDE": "htayaung.data@gmail.com",
+            }
+        )
+
+        manager = document_output.get_rfq_test_send_context("PUR-RFQ-MULTI", supplier="SUP-001")
+        _set_user("purchase.user@example.com", ["Purchase User"])
+        user = document_output.get_rfq_test_send_context("PUR-RFQ-MULTI", supplier="SUP-001")
+
+        self.assertTrue(manager["test_send"]["can_send"])
+        self.assertEqual(manager["test_send"]["recipient"], "htayaung.data@gmail.com")
+        self.assertEqual(manager["test_send"]["recipient_mode"], "test_override")
+        self.assertEqual(manager["test_send"]["pdf_filename"], "PUR-RFQ-MULTI-SUP-001-DRAFT-NOT-SENT.pdf")
+        self.assertIn("Test RFQ PUR-RFQ-MULTI", manager["test_send"]["subject"])
+        self.assertNotIn("unit-test-secret", str(manager))
+        self.assertFalse(user["test_send"]["can_send"])
+        self.assertIn("Purchase Manager", user["test_send"]["block_reason"])
+
+    def test_rfq_test_send_uses_single_override_recipient_without_native_side_effects(self):
+        _set_user("purchase.manager@example.com", ["Purchase Manager"])
+        os.environ.update(
+            {
+                "ERPW_TEST_SMTP_EMAIL": "meet@myanmarexcel.com",
+                "ERPW_TEST_SMTP_USERNAME": "meet@myanmarexcel.com",
+                "ERPW_TEST_SMTP_PASSWORD": "unit-test-secret",
+                "ERPW_TEST_SMTP_SERVER": "smtp.gmail.com",
+                "ERPW_TEST_SMTP_PORT": "587",
+                "ERPW_TEST_SMTP_USE_TLS": "1",
+                "ERPW_TEST_SMTP_SENDER_NAME": "Mingalar Mobile Procurement",
+                "ERPW_TEST_SMTP_REPLY_TO": "meet@myanmarexcel.com",
+                "ERPW_TEST_RFQ_RECIPIENT_OVERRIDE": "htayaung.data@gmail.com",
+            }
+        )
+        sent_messages = []
+        original_send = document_output._smtp_send
+        document_output._smtp_send = lambda message, config: sent_messages.append((message, config))
+        try:
+            missing_confirm = document_output.send_rfq_test_email("PUR-RFQ-MULTI", "SUP-001", confirmed=0)
+            result = document_output.send_rfq_test_email("PUR-RFQ-MULTI", "SUP-001", confirmed=1)
+        finally:
+            document_output._smtp_send = original_send
+
+        self.assertEqual(missing_confirm["state"]["kind"], "error")
+        self.assertEqual(result["state"]["kind"], "ready")
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["recipient"], "htayaung.data@gmail.com")
+        self.assertEqual(result["recipient_mode"], "test_override")
+        self.assertEqual(result["pdf_filename"], "PUR-RFQ-MULTI-SUP-001-DRAFT-NOT-SENT.pdf")
+        self.assertFalse(result["side_effects"]["native_rfq_send"])
+        self.assertFalse(result["side_effects"]["communication_created"])
+        self.assertFalse(result["side_effects"]["email_queue_created"])
+        self.assertFalse(result["side_effects"]["contact_created"])
+        self.assertFalse(result["side_effects"]["user_created"])
+        self.assertEqual(len(sent_messages), 1)
+        message, config = sent_messages[0]
+        self.assertEqual(message["To"], "htayaung.data@gmail.com")
+        self.assertIn("Mingalar Mobile Procurement", message["From"])
+        self.assertEqual(config["server"], "smtp.gmail.com")
+        self.assertNotIn("unit-test-secret", str(result))
+        self.assertNotIn("unit-test-secret", message.as_string())
 
     def test_document_output_has_no_send_or_communication_side_effects(self):
         rfq_context = document_output.get_document_output_context("Request for Quotation", "PUR-RFQ-001")

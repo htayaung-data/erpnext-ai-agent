@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import html
+import os
 import re
+import smtplib
+import ssl
+from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Any
 
 import frappe
@@ -17,7 +23,18 @@ ALLOWED_DOCTYPES = {RFQ_DOCTYPE, PO_DOCTYPE}
 RFQ_WARNING = "Draft / Not sent"
 PO_WARNING = "Draft / Not for supplier"
 RFQ_SEND_BLOCK = "RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review. Future enablement requires a governed RFQ send policy."
+RFQ_TEST_SEND_BLOCK = "Controlled RFQ test send is unavailable until backend SMTP environment and a test recipient override are configured."
 PO_SEND_BLOCK = "Supplier send requires a governed purchase order release step. This draft is not a supplier commitment."
+
+TEST_SMTP_DEFAULTS = {
+    "email": "meet@myanmarexcel.com",
+    "username": "meet@myanmarexcel.com",
+    "server": "smtp.gmail.com",
+    "port": 587,
+    "use_tls": True,
+    "sender_name": "Mingalar Mobile Procurement",
+    "reply_to": "meet@myanmarexcel.com",
+}
 
 
 def _state(kind: str, title: str, detail: str = "") -> dict[str, str]:
@@ -351,6 +368,173 @@ def _rfq_supplier_readiness(doc: object, outgoing_email: dict[str, object]) -> l
     return rows
 
 
+
+def _env_text(name: str, default: str = "") -> str:
+    return cstr(os.environ.get(name, default)).strip()
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = cstr(os.environ.get(name, "")).strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "y", "on"}
+
+
+def _test_smtp_config() -> dict[str, object]:
+    email = _env_text("ERPW_TEST_SMTP_EMAIL", TEST_SMTP_DEFAULTS["email"])
+    username = _env_text("ERPW_TEST_SMTP_USERNAME", email or TEST_SMTP_DEFAULTS["username"])
+    password_present = bool(cstr(os.environ.get("ERPW_TEST_SMTP_PASSWORD") or "").strip())
+    server = _env_text("ERPW_TEST_SMTP_SERVER", TEST_SMTP_DEFAULTS["server"])
+    port_text = _env_text("ERPW_TEST_SMTP_PORT", str(TEST_SMTP_DEFAULTS["port"]))
+    try:
+        port = int(port_text)
+    except Exception:
+        port = int(TEST_SMTP_DEFAULTS["port"])
+    use_tls = _env_bool("ERPW_TEST_SMTP_USE_TLS", bool(TEST_SMTP_DEFAULTS["use_tls"]))
+    sender_name = _env_text("ERPW_TEST_SMTP_SENDER_NAME", TEST_SMTP_DEFAULTS["sender_name"])
+    reply_to = _env_text("ERPW_TEST_SMTP_REPLY_TO", email or TEST_SMTP_DEFAULTS["reply_to"])
+    recipient_override = _env_text("ERPW_TEST_RFQ_RECIPIENT_OVERRIDE", "")
+
+    reasons: list[str] = []
+    if not email or not _is_valid_email(email):
+        reasons.append("Test sender email is not configured.")
+    if not username:
+        reasons.append("Test SMTP username is not configured.")
+    if not password_present:
+        reasons.append("Test SMTP credential is not present in the backend environment.")
+    if not server:
+        reasons.append("Test SMTP server is not configured.")
+    if not recipient_override:
+        reasons.append("A test recipient override is required before any RFQ test email can be sent.")
+    elif not _is_valid_email(recipient_override):
+        reasons.append("The configured RFQ test recipient override is not a valid email address.")
+
+    return {
+        "mode": "test_demo",
+        "available": not reasons,
+        "email": email,
+        "username": username,
+        "server": server,
+        "port": port,
+        "use_tls": use_tls,
+        "sender_name": sender_name,
+        "reply_to": reply_to,
+        "recipient_override": recipient_override,
+        "recipient_mode": "test_override" if recipient_override else "none",
+        "password_present": password_present,
+        "block_reason": " ".join(reasons) if reasons else "Controlled RFQ test send is available for the configured test recipient override.",
+    }
+
+
+def _is_purchase_manager() -> bool:
+    roles = frappe.get_roles() if hasattr(frappe, "get_roles") else []
+    return "Purchase Manager" in set(cstr(role).strip() for role in roles)
+
+
+def _rfq_test_subject(doc: object, selected_supplier: dict[str, str]) -> str:
+    supplier_name = selected_supplier.get("supplier_name") or selected_supplier.get("supplier") or "Supplier"
+    return f"Test RFQ {cstr(_doc_value(doc, 'name')).strip()} for {supplier_name}"
+
+
+def _rfq_test_body(doc: object, selected_supplier: dict[str, str]) -> str:
+    supplier_name = selected_supplier.get("supplier_name") or selected_supplier.get("supplier") or "Supplier"
+    rfq_name = cstr(_doc_value(doc, "name")).strip()
+    return (
+        f"This is a controlled Procurement RFQ test email for {supplier_name}. "
+        f"RFQ {rfq_name} remains in draft test/demo mode and has not been sent through ERPNext native RFQ send."
+    )
+
+
+def _redact_test_secret(message: Any) -> str:
+    text = cstr(message).strip()
+    secret = cstr(os.environ.get("ERPW_TEST_SMTP_PASSWORD") or "").strip()
+    if secret:
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
+def _rfq_test_send_context(doc: object, supplier: str | None = None) -> dict[str, object]:
+    config = _test_smtp_config()
+    selected_supplier: dict[str, str] | None = None
+    supplier_error = ""
+    try:
+        selected_supplier = _selected_rfq_supplier(doc, supplier)
+    except Exception as exc:
+        supplier_error = cstr(exc)
+
+    filename = _filename_for(RFQ_DOCTYPE, cstr(_doc_value(doc, "name")).strip(), selected_supplier["supplier"] if selected_supplier else supplier or "SUPPLIER")
+    can_send = bool(config.get("available")) and bool(selected_supplier) and _is_purchase_manager()
+    block_reasons = []
+    if supplier_error:
+        block_reasons.append(supplier_error)
+    if not config.get("available"):
+        block_reasons.append(cstr(config.get("block_reason")).strip() or RFQ_TEST_SEND_BLOCK)
+    if not _is_purchase_manager():
+        block_reasons.append("Only Purchase Manager can run a controlled RFQ test send.")
+
+    supplier_name = selected_supplier.get("supplier_name") if selected_supplier else ""
+    subject = _rfq_test_subject(doc, selected_supplier or {"supplier": supplier or "", "supplier_name": supplier_name})
+    body_preview = _rfq_test_body(doc, selected_supplier or {"supplier": supplier or "", "supplier_name": supplier_name})
+    return {
+        "mode": "test_demo",
+        "available": bool(config.get("available")),
+        "can_send": can_send,
+        "state": "ready" if can_send else "blocked",
+        "recipient": cstr(config.get("recipient_override")).strip(),
+        "recipient_mode": cstr(config.get("recipient_mode")).strip() or "test_override",
+        "sender_email": cstr(config.get("email")).strip(),
+        "sender_name": cstr(config.get("sender_name")).strip(),
+        "reply_to": cstr(config.get("reply_to")).strip(),
+        "smtp_server": cstr(config.get("server")).strip(),
+        "smtp_port": int(config.get("port") or 0),
+        "smtp_use_tls": bool(config.get("use_tls")),
+        "selected_supplier": selected_supplier or {},
+        "subject": subject,
+        "body_preview": body_preview,
+        "pdf_filename": filename,
+        "requires_confirmation": True,
+        "block_reason": " ".join(part for part in block_reasons if part).strip() or cstr(config.get("block_reason")).strip(),
+        "warning": "This will send an email to the configured test recipient override.",
+    }
+
+
+def _smtp_send(message: EmailMessage, config: dict[str, object]) -> None:
+    password = cstr(os.environ.get("ERPW_TEST_SMTP_PASSWORD") or "").strip()
+    if not password:
+        raise RuntimeError("Test SMTP credential is not present in the backend environment.")
+    with smtplib.SMTP(cstr(config.get("server")).strip(), int(config.get("port") or 587), timeout=30) as smtp:
+        smtp.ehlo()
+        if bool(config.get("use_tls")):
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.ehlo()
+        smtp.login(cstr(config.get("username")).strip(), password)
+        smtp.send_message(message)
+
+
+def _build_rfq_test_email(doc: object, selected_supplier: dict[str, str], context: dict[str, object], pdf_content: bytes) -> EmailMessage:
+    recipient = cstr(context.get("recipient")).strip()
+    sender_email = cstr(context.get("sender_email")).strip()
+    sender_name = cstr(context.get("sender_name")).strip()
+    reply_to = cstr(context.get("reply_to")).strip()
+    subject = cstr(context.get("subject")).strip()
+    body_preview = cstr(context.get("body_preview")).strip()
+    filename = cstr(context.get("pdf_filename")).strip()
+    html_body = (
+        "<p>This is a controlled Procurement RFQ test email.</p>"
+        f"<p>{_html(body_preview)}</p>"
+        "<p>No ERPNext native RFQ send, supplier portal invite, Contact/User creation, Communication, or Email Queue entry is used by this test wrapper.</p>"
+    )
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = formataddr((sender_name, sender_email)) if sender_name else sender_email
+    message["To"] = recipient
+    if reply_to:
+        message["Reply-To"] = reply_to
+    message.set_content(body_preview + "\n\nThis is a controlled test/demo send. Do not treat it as production supplier communication.")
+    message.add_alternative(html_body, subtype="html")
+    message.add_attachment(pdf_content, maintype="application", subtype="pdf", filename=filename)
+    return message
+
 def _rfq_send_readiness(doc: object) -> dict[str, object]:
     outgoing_email = _outgoing_email_status()
     suppliers = _rfq_supplier_readiness(doc, outgoing_email)
@@ -458,6 +642,16 @@ def _output_context(doc: object, supplier: str | None = None) -> dict[str, objec
         base["requires_supplier_selection"] = len(suppliers) != 1 or not base["selected_supplier"]
         base["filename_preview"] = _filename_for(doctype, name, cstr(base["selected_supplier"]).strip() or "SUPPLIER")
         base["send_readiness"] = _rfq_send_readiness(doc)
+        base["test_send"] = _rfq_test_send_context(doc, cstr(base["selected_supplier"]).strip() or None)
+        base["actions"].append(
+            {
+                "key": "test_send",
+                "label": "Send RFQ",
+                "kind": "controlled_test_send" if base["test_send"].get("can_send") else "blocked",
+                "disabled": not bool(base["test_send"].get("can_send")),
+                "reason": base["test_send"].get("block_reason") or RFQ_TEST_SEND_BLOCK,
+            }
+        )
     else:
         base["supplier"] = _po_supplier(doc)
         base["filename_preview"] = _filename_for(doctype, name)
@@ -690,6 +884,68 @@ def get_rfq_send_readiness_context(rfq_name: str) -> dict[str, object]:
         return _restricted(cstr(exc))
     except Exception as exc:
         return _error("RFQ send readiness unavailable", cstr(exc))
+
+
+
+@frappe.whitelist()
+def get_rfq_test_send_context(rfq_name: str, supplier: str | None = None) -> dict[str, object]:
+    try:
+        doc = _get_doc(RFQ_DOCTYPE, rfq_name)
+        _check_read_permission(doc)
+        return {"state": _ready("RFQ test send context ready"), "test_send": _rfq_test_send_context(doc, supplier)}
+    except PermissionError as exc:
+        return _restricted(cstr(exc))
+    except Exception as exc:
+        return _error("RFQ test send unavailable", cstr(exc))
+
+
+@frappe.whitelist()
+def send_rfq_test_email(rfq_name: str, supplier: str, confirmed: bool | int | str = False) -> dict[str, object]:
+    try:
+        doc = _get_doc(RFQ_DOCTYPE, rfq_name)
+        _check_read_permission(doc)
+        if not _is_purchase_manager():
+            raise PermissionError("Only Purchase Manager can run a controlled RFQ test send.")
+        confirmed_text = cstr(confirmed).strip().lower()
+        if confirmed not in (True, 1) and confirmed_text not in {"1", "true", "yes", "confirmed"}:
+            raise ValueError("Confirm the RFQ test send before sending email.")
+        selected_supplier = _selected_rfq_supplier(doc, supplier)
+        _prepare_rfq_supplier_context(doc, selected_supplier["supplier"])
+        context = _rfq_test_send_context(doc, selected_supplier["supplier"])
+        if not context.get("can_send"):
+            raise ValueError(cstr(context.get("block_reason") or RFQ_TEST_SEND_BLOCK))
+        html_body = _render_productized_html(doc, selected_supplier)
+        wrapped = _wrap_preview_html(RFQ_DOCTYPE, cstr(_doc_value(doc, "name")).strip(), html_body, selected_supplier["supplier"])
+        pdf_content = _html_to_pdf(wrapped)
+        config = _test_smtp_config()
+        message = _build_rfq_test_email(doc, selected_supplier, context, pdf_content)
+        _smtp_send(message, config)
+        return {
+            "state": _ready("RFQ test email sent"),
+            "sent": True,
+            "mode": "test_demo",
+            "rfq_name": cstr(_doc_value(doc, "name")).strip(),
+            "supplier": selected_supplier,
+            "recipient": context.get("recipient"),
+            "recipient_mode": "test_override",
+            "sender_email": context.get("sender_email"),
+            "subject": context.get("subject"),
+            "pdf_filename": context.get("pdf_filename"),
+            "sent_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "message": "Controlled RFQ test email sent to the configured test recipient override.",
+            "side_effects": {
+                "native_rfq_send": False,
+                "communication_created": False,
+                "email_queue_created": False,
+                "contact_created": False,
+                "user_created": False,
+                "submitted": False,
+            },
+        }
+    except PermissionError as exc:
+        return _restricted(cstr(exc))
+    except Exception as exc:
+        return _error("RFQ test email failed", _redact_test_secret(exc))
 
 
 @frappe.whitelist()
