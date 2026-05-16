@@ -5,7 +5,7 @@ from typing import Any
 import frappe
 from frappe.utils import cstr, flt
 
-from . import common, service
+from . import common, document_output, service
 
 
 MR_FIELDS = [
@@ -255,6 +255,7 @@ def _rfq_payload(record: dict[str, object], items: list[dict[str, object]], supp
                 _section("Requested items", "Items and quantities included in this sourcing request.", _rfq_item_table(items)),
             ],
         },
+        "output_context": document_output.get_document_output_context("Request for Quotation", name),
         "action_targets": targets,
         "context": {"role_variant": context.get("role_variant")},
     }

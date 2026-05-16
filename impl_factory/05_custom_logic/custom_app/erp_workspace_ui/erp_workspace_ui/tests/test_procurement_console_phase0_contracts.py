@@ -803,6 +803,14 @@ def _get_doc(*args, **kwargs):
                 "suppliers": [{"supplier": "SUP-001"}],
                 "items": [{"item_code": "ITEM-001", "qty": 5, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}],
             })
+        if name == "RFQ-001":
+            return _FakeRFQDoc(name=name, values={
+                "transaction_date": "2026-05-02",
+                "schedule_date": "2026-05-10",
+                "company": "Demo Company",
+                "suppliers": [{"supplier": "SUP-001", "supplier_name": "Alpha Supplier"}, {"supplier": "SUP-002", "supplier_name": "Beta Supplier"}],
+                "items": [{"item_code": "ITEM-001", "qty": 5, "schedule_date": "2026-05-10", "warehouse": "Stores - DC", "uom": "Nos"}],
+            })
         if name == "PUR-RFQ-MULTI":
             return _FakeRFQDoc(name=name, values={
                 "transaction_date": "2026-05-02",
@@ -2577,6 +2585,14 @@ class TestProcurementConsolePhase3Contracts(unittest.TestCase):
         self.assertEqual(payload["detail"]["sections"][0]["table"]["rows"][0]["cells"]["supplier"]["value"], "Alpha Supplier")
         self.assertEqual(payload["detail"]["sections"][1]["table"]["rows"][0]["cells"]["source"], "MAT-MR-001")
         self.assertEqual(payload["action_targets"]["back_to_worklist"], {"kind": "worklist", "queue_key": "rfq_directory"})
+        output_context = payload["output_context"]
+        self.assertEqual(output_context["state"]["kind"], "ready")
+        self.assertEqual(output_context["warning"], "Draft / Not sent")
+        self.assertTrue(output_context["requires_supplier_selection"])
+        self.assertEqual([row["supplier"] for row in output_context["suppliers"]], ["SUP-001", "SUP-002"])
+        self.assertFalse(output_context["can_send"])
+        self.assertIn("send_readiness", output_context)
+        self.assertFalse(output_context["send_readiness"]["can_send"])
         _assert_no_forbidden_mutation_actions(self, payload)
 
     def test_rfq_review_requires_parent_visible_before_children(self):

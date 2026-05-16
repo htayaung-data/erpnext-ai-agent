@@ -90,10 +90,20 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("current_shell", readiness["target_kind"])
         self.assertIn("Read-only", readiness["notes"])
 
+        review_readiness = actions["procurement-rfq-review-recipient-readiness"]
+        self.assertEqual("productized_secondary_action", review_readiness["classification"])
+        self.assertEqual("current_shell", review_readiness["target_kind"])
+        self.assertIn("Read-only", review_readiness["notes"])
+
         send = actions["procurement-managed-rfq-email-blocked"]
         self.assertEqual("disabled", send["target_kind"])
         self.assertEqual("Send RFQ", send["label"])
         self.assertIn("blocked", send["notes"].lower())
+
+        review_send = actions["procurement-rfq-review-email-blocked"]
+        self.assertEqual("disabled", review_send["target_kind"])
+        self.assertEqual("Send RFQ", review_send["label"])
+        self.assertIn("blocked", review_send["notes"].lower())
 
     def test_registry_route_keys_exist_in_manifest(self):
         sales_routes = get_sales_workspace_definition()["routes"]
@@ -252,6 +262,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
                 "procurement-managed-rfq-preview-output",
                 "procurement-managed-rfq-download-pdf",
                 "procurement-managed-rfq-email-blocked",
+                "procurement-rfq-review-preview-output",
+                "procurement-rfq-review-download-pdf",
+                "procurement-rfq-review-recipient-readiness",
+                "procurement-rfq-review-email-blocked",
             }
         }
 
@@ -263,6 +277,10 @@ class TestWorkspaceGovernanceManifest(unittest.TestCase):
         self.assertEqual("productized_secondary_action", actions["procurement-managed-rfq-preview-output"]["classification"])
         self.assertEqual("controlled_pdf_endpoint", actions["procurement-managed-rfq-download-pdf"]["target_kind"])
         self.assertEqual("disabled", actions["procurement-managed-rfq-email-blocked"]["target_kind"])
+        self.assertEqual("productized_secondary_action", actions["procurement-rfq-review-preview-output"]["classification"])
+        self.assertEqual("controlled_pdf_endpoint", actions["procurement-rfq-review-download-pdf"]["target_kind"])
+        self.assertEqual("productized_secondary_action", actions["procurement-rfq-review-recipient-readiness"]["classification"])
+        self.assertEqual("disabled", actions["procurement-rfq-review-email-blocked"]["target_kind"])
 
     def test_procurement_managed_supplier_quotation_actions_are_productized(self):
         actions = {

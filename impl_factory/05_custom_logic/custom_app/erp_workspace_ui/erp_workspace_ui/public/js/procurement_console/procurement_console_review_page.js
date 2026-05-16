@@ -46,6 +46,8 @@
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_helpers.js",
     "/assets/erp_workspace_ui/js/runtime/child_page/child_page_shell_content.js",
   ];
+  const OUTPUT_PREVIEW_METHOD = "erp_workspace_ui.procurement_console.document_output.get_document_print_preview_context";
+  const OUTPUT_PDF_METHOD = "erp_workspace_ui.procurement_console.document_output.download_document_pdf";
   let runtimePromise = null;
 
   function helpers() {
@@ -86,6 +88,53 @@
     const helperEscape = helpers().escapeHtml;
     if (typeof helperEscape === "function") return helperEscape(value);
     return frappe.utils.escape_html(value == null ? "" : String(value));
+  }
+
+  function ensureReviewOutputStyles() {
+    if (document.getElementById("erpw-procurement-review-output-styles")) return;
+    const style = document.createElement("style");
+    style.id = "erpw-procurement-review-output-styles";
+    style.textContent = `
+      .erpw-review-output-card { display: grid; gap: 12px; padding: 15px 18px 18px; border: 1px solid #dbe6f2; border-radius: 14px; background: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.98), 0 7px 16px rgba(15,23,42,0.03); }
+      .erpw-review-output-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .erpw-review-output-title { font-size: 15px; line-height: 1.25; font-weight: 790; color: #0f172a; }
+      .erpw-review-output-note { margin-top: 3px; color: #475569; font-size: 12.5px; line-height: 1.36; max-width: 680px; }
+      .erpw-review-output-badge { display: inline-flex; min-height: 26px; align-items: center; padding: 0 10px; border-radius: 999px; border: 1px solid #d9eadf; background: #f3faf6; color: #166534; font-size: 12px; font-weight: 760; white-space: nowrap; }
+      .erpw-review-output-grid { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 12px; align-items: end; }
+      .erpw-review-output-field { display: grid; gap: 6px; min-width: 0; }
+      .erpw-review-output-field label { font-size: 10.5px; line-height: 1.2; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin: 0; }
+      .erpw-review-output-field select { width: 100%; min-height: 37px; border: 1px solid #d5e2ef; border-radius: 11px; padding: 0 10px; background: #fff; color: #0f172a; font-size: 13px; box-sizing: border-box; }
+      .erpw-review-output-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .erpw-review-output-button { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #fff; color: #12365f; font-weight: 740; font-size: 12px; padding: 0 12px; }
+      .erpw-review-output-button:hover:not(:disabled) { border-color: #9db7d2; background: #f8fbff; }
+      .erpw-review-output-button:disabled { opacity: 0.58; cursor: not-allowed; }
+      .erpw-review-output-message { min-height: 18px; color: #64748b; font-size: 12.5px; line-height: 1.36; }
+      .erpw-review-output-message.error { color: #b42318; }
+      .erpw-review-readiness { display: grid; gap: 10px; padding-top: 2px; }
+      .erpw-review-readiness-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+      .erpw-review-readiness-title { font-size: 13.5px; line-height: 1.25; font-weight: 790; color: #0f172a; }
+      .erpw-review-readiness-note { margin-top: 2px; max-width: 690px; color: #475569; font-size: 12.3px; line-height: 1.36; }
+      .erpw-review-readiness-pill { display: inline-flex; min-height: 25px; align-items: center; padding: 0 9px; border-radius: 999px; border: 1px solid #dbe6f2; background: #f8fafc; color: #334155; font-size: 11.5px; font-weight: 760; white-space: nowrap; }
+      .erpw-review-readiness-pill.ready { border-color: #d9eadf; background: #f3faf6; color: #166534; }
+      .erpw-review-readiness-pill.missing, .erpw-review-readiness-pill.blocked { border-color: #fde2b8; background: #fff8ed; color: #9a5b13; }
+      .erpw-review-readiness-pill.unavailable { border-color: #e7eaf0; background: #f8fafc; color: #475569; }
+      .erpw-review-recipient-list { display: grid; gap: 8px; }
+      .erpw-review-recipient-row { display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 0.9fr) minmax(190px, 1.1fr) auto; gap: 10px; align-items: center; border: 1px solid #edf2f7; border-radius: 12px; padding: 9px 10px; background: #fbfdff; }
+      .erpw-review-recipient-cell { min-width: 0; }
+      .erpw-review-recipient-label { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; }
+      .erpw-review-recipient-value { margin-top: 2px; color: #0f172a; font-size: 12.5px; line-height: 1.25; overflow-wrap: anywhere; }
+      .erpw-review-send-block { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #edf2f7; padding-top: 10px; }
+      .erpw-review-send-block-copy { color: #475569; font-size: 12.4px; line-height: 1.35; }
+      .erpw-review-send-disabled { min-height: 34px; border: 1px solid #d5e2ef; border-radius: 10px; background: #f8fafc; color: #64748b; font-weight: 750; padding: 0 12px; cursor: not-allowed; white-space: nowrap; }
+      .erpw-output-modal-backdrop { position: fixed; inset: 0; z-index: 1400; background: rgba(15,23,42,0.36); display: flex; align-items: center; justify-content: center; padding: 22px; }
+      .erpw-output-modal { width: min(980px, 96vw); max-height: min(820px, 92vh); overflow: hidden; display: grid; grid-template-rows: auto 1fr; border-radius: 16px; background: #fff; box-shadow: 0 26px 70px rgba(15,23,42,0.28); border: 1px solid #dbe6f2; }
+      .erpw-output-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+      .erpw-output-modal-title { font-weight: 800; color: #0f172a; }
+      .erpw-output-modal-close { min-height: 32px; border: 1px solid #d5e2ef; border-radius: 9px; background: #fff; color: #12365f; font-weight: 740; padding: 0 10px; }
+      .erpw-output-modal-body { overflow: auto; background: #f8fafc; padding: 16px; }
+      @media (max-width: 760px) { .erpw-review-output-grid, .erpw-review-recipient-row { grid-template-columns: 1fr; } .erpw-review-send-block { align-items: flex-start; flex-direction: column; } }
+    `;
+    document.head.appendChild(style);
   }
 
   function resolveName(route) {
@@ -245,6 +294,157 @@
     `;
   }
 
+  function reviewOutputStateClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (value === "ready") return "ready";
+    if (value === "missing_email" || value === "invalid_email") return "missing";
+    if (value === "email_unavailable" || value === "unavailable") return "unavailable";
+    return "blocked";
+  }
+
+  function reviewReadinessRowsMarkup(readiness) {
+    const suppliers = readiness && Array.isArray(readiness.suppliers) ? readiness.suppliers : [];
+    if (!suppliers.length) return '<div class="erpw-review-output-message">No supplier recipients are available on this RFQ yet.</div>';
+    return suppliers.map((row) => `
+      <div class="erpw-review-recipient-row" data-rfq-recipient-row data-rfq-recipient-supplier="${escapeHtml(row.supplier || "")}" data-rfq-readiness-status="${escapeHtml(row.readiness_status || "")}">
+        <div class="erpw-review-recipient-cell"><div class="erpw-review-recipient-label">Supplier</div><div class="erpw-review-recipient-value">${escapeHtml(row.supplier_name || row.supplier || "Supplier")}</div></div>
+        <div class="erpw-review-recipient-cell"><div class="erpw-review-recipient-label">Contact</div><div class="erpw-review-recipient-value">${escapeHtml(row.contact_name || row.contact || "Not selected")}</div></div>
+        <div class="erpw-review-recipient-cell"><div class="erpw-review-recipient-label">Email</div><div class="erpw-review-recipient-value">${escapeHtml(row.email || "Missing email")}</div></div>
+        <span class="erpw-review-readiness-pill ${reviewOutputStateClass(row.readiness_status)}">${escapeHtml(row.readiness_label || "Send blocked")}</span>
+      </div>
+    `).join("");
+  }
+
+  function reviewReadinessPanelMarkup(context) {
+    const readiness = context && context.send_readiness ? context.send_readiness : null;
+    const outgoing = readiness && readiness.outgoing_email ? readiness.outgoing_email : {};
+    const outgoingAvailable = Boolean(outgoing.available);
+    const outgoingLabel = outgoingAvailable ? "Outgoing email ready" : "Email unavailable";
+    const outgoingClass = outgoingAvailable ? "ready" : "unavailable";
+    const blockReason = readiness && readiness.send_block_reason ? readiness.send_block_reason : "RFQ email send is not enabled yet.";
+    const outgoingReason = outgoing.reason || "Supplier recipients and email setup are shown for readiness review.";
+    return `
+      <div class="erpw-review-readiness" data-rfq-readiness-panel>
+        <div class="erpw-review-readiness-top">
+          <div>
+            <div class="erpw-review-readiness-title">Recipient readiness</div>
+            <div class="erpw-review-readiness-note">RFQ email send is not enabled yet. Supplier recipients and email setup are shown for readiness review.</div>
+          </div>
+          <span class="erpw-review-readiness-pill ${outgoingClass}" data-rfq-outgoing-email-state="${outgoingAvailable ? "available" : "unavailable"}">${escapeHtml(outgoingLabel)}</span>
+        </div>
+        <div class="erpw-review-recipient-list">${reviewReadinessRowsMarkup(readiness)}</div>
+        <div class="erpw-review-send-block">
+          <div class="erpw-review-send-block-copy" data-rfq-send-block-reason>${escapeHtml(outgoingReason)} ${escapeHtml(blockReason)}</div>
+          <button type="button" class="erpw-review-send-disabled" data-rfq-send-disabled disabled>Send RFQ</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function rfqReviewOutputCardMarkup(payload) {
+    const page = payload && payload.page ? payload.page : {};
+    if (page.key !== "rfq_review" || !page.name) return "";
+    const context = payload.output_context || {};
+    if (!context || context.state && context.state.kind && context.state.kind !== "ready") {
+      const detail = context && context.state && context.state.detail ? context.state.detail : "Supplier communication controls are unavailable for this RFQ.";
+      return `<section class="erpw-review-output-card" data-rfq-review-output-card><div class="erpw-review-output-title">Supplier Communication</div><div class="erpw-review-output-message error">${escapeHtml(detail)}</div></section>`;
+    }
+    const suppliers = Array.isArray(context.suppliers) ? context.suppliers : [];
+    const selected = context.selected_supplier || (suppliers.length === 1 ? suppliers[0].supplier : "");
+    return `
+      <section class="erpw-review-output-card" data-rfq-review-output-card data-managed-rfq-output-card data-document-name="${escapeHtml(page.name)}">
+        <div class="erpw-review-output-top">
+          <div>
+            <div class="erpw-review-output-title">Supplier Communication</div>
+            <div class="erpw-review-output-note">Preview and PDF output are supplier-specific. Email send is deferred until a governed RFQ send step exists.</div>
+          </div>
+          <span class="erpw-review-output-badge">${escapeHtml(context.warning || "Draft / Not sent")}</span>
+        </div>
+        <div class="erpw-review-output-grid">
+          <div class="erpw-review-output-field">
+            <label>Supplier context</label>
+            <select data-rfq-output-supplier>
+              <option value="">Select supplier</option>
+              ${suppliers.map((row) => `<option value="${escapeHtml(row.supplier)}" ${row.supplier === selected ? "selected" : ""}>${escapeHtml(row.supplier_name || row.supplier)}</option>`).join("")}
+            </select>
+          </div>
+          <div class="erpw-review-output-actions">
+            <button type="button" class="erpw-review-output-button" data-rfq-output-preview>Preview RFQ</button>
+            <button type="button" class="erpw-review-output-button" data-rfq-output-download>Download RFQ PDF</button>
+          </div>
+        </div>
+        <div class="erpw-review-output-message" data-rfq-output-message>${escapeHtml(context.send_block_reason || "Email send is deferred.")}</div>
+        ${reviewReadinessPanelMarkup(context)}
+      </section>
+    `;
+  }
+
+  function selectedReviewOutputSupplier($shell) {
+    return String($shell.find("[data-rfq-output-supplier]").val() || "").trim();
+  }
+
+  function outputPdfUrl(args) {
+    const params = new URLSearchParams();
+    Object.keys(args || {}).forEach((key) => {
+      if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== "") params.set(key, args[key]);
+    });
+    return `/api/method/${OUTPUT_PDF_METHOD}?${params.toString()}`;
+  }
+
+  function showReviewOutputMessage($shell, message, tone) {
+    $shell.find("[data-rfq-output-message]").text(message || "").toggleClass("error", tone === "error");
+  }
+
+  function showPreviewModal(title, html) {
+    $(".erpw-output-modal-backdrop").remove();
+    const $modal = $(
+      `<div class="erpw-output-modal-backdrop" role="dialog" aria-modal="true">
+        <section class="erpw-output-modal">
+          <div class="erpw-output-modal-head"><div class="erpw-output-modal-title"></div><button type="button" class="erpw-output-modal-close">Close</button></div>
+          <div class="erpw-output-modal-body"></div>
+        </section>
+      </div>`
+    );
+    $modal.find(".erpw-output-modal-title").text(title || "Document preview");
+    $modal.find(".erpw-output-modal-body").html(html || "");
+    $modal.find(".erpw-output-modal-close").on("click", () => $modal.remove());
+    $modal.on("click", (event) => { if (event.target === $modal.get(0)) $modal.remove(); });
+    $(document.body).append($modal);
+  }
+
+  function bindRfqReviewOutputCard(viewState, payload) {
+    const page = payload && payload.page ? payload.page : {};
+    if (page.key !== "rfq_review" || !page.name) return;
+    const $card = viewState.$shell.find("[data-rfq-review-output-card]");
+    if (!$card.length) return;
+    $card.find("[data-rfq-output-preview]").off("click.output").on("click.output", () => {
+      const supplier = selectedReviewOutputSupplier(viewState.$shell);
+      if (!supplier) {
+        showReviewOutputMessage(viewState.$shell, "Select one supplier before previewing RFQ output.", "error");
+        return;
+      }
+      showReviewOutputMessage(viewState.$shell, "Rendering RFQ preview...", "");
+      frappe.call({ method: OUTPUT_PREVIEW_METHOD, args: { doctype: "Request for Quotation", name: page.name, supplier } }).then((response) => {
+        const result = response && response.message ? response.message : {};
+        if (result.state && result.state.kind === "ready") {
+          showPreviewModal(`RFQ Preview - ${supplier}`, result.html || "");
+          showReviewOutputMessage(viewState.$shell, result.filename || "RFQ preview ready.", "");
+        } else {
+          showReviewOutputMessage(viewState.$shell, result.state && result.state.detail ? result.state.detail : "RFQ preview unavailable.", "error");
+        }
+      });
+    });
+    $card.find("[data-rfq-output-download]").off("click.output").on("click.output", () => {
+      const supplier = selectedReviewOutputSupplier(viewState.$shell);
+      if (!supplier) {
+        showReviewOutputMessage(viewState.$shell, "Select one supplier before downloading RFQ PDF.", "error");
+        return;
+      }
+      showReviewOutputMessage(viewState.$shell, "Preparing RFQ PDF...", "");
+      window.open(outputPdfUrl({ doctype: "Request for Quotation", name: page.name, supplier }), "_blank", "noopener");
+    });
+  }
+
   function extraSections(payload, definition) {
     const detail = (payload && payload.detail) || {};
     const state = detail.state || {};
@@ -259,10 +459,11 @@
       `;
     }
     const sections = Array.isArray(detail.sections) ? detail.sections : [];
-    return sections.map(renderSection).join("");
+    return sections.map(renderSection).join("") + rfqReviewOutputCardMarkup(payload);
   }
 
   function mountPayload(viewState, payload) {
+    viewState.payload = payload || {};
     if (viewState.page && typeof viewState.page.set_title === "function" && payload.page && payload.page.title) {
       viewState.page.set_title(payload.page.title);
     }
@@ -276,6 +477,7 @@
         extraSectionsHtml: extraSections(payload, viewState.definition),
         guidance: {},
       });
+      bindRfqReviewOutputCard(viewState, payload);
     }).catch((error) => {
       if (viewState.routeSignature !== routeSignature) return;
       viewState.$shell.html(`
@@ -349,6 +551,7 @@
 
   function render(wrapper, pageKey) {
     const definition = PAGE_DEFINITIONS[pageKey];
+    ensureReviewOutputStyles();
     cleanupRouteShells(pageKey);
     const page = makeDetailPage(wrapper, definition);
     cleanupManagedPageChrome(wrapper);

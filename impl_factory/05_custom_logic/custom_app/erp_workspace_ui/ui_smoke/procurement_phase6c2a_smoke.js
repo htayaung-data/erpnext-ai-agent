@@ -151,6 +151,95 @@ async function assertPdfEndpoint(page, rfqName, supplier) {
   assert(body.length > 500, "RFQ PDF response body is unexpectedly small", { length: body.length, disposition });
 }
 
+
+async function openNewRfqForm(page) {
+  await openDeskRoute(page, "/desk/procurement-console-rfq-form/new");
+  await page.waitForSelector(".erpw-managed-rfq-page [data-erpw-managed-rfq-form]", { state: "visible", timeout: TIMEOUT });
+  await assertNoFrameworkModal(page, "new-rfq-before-autocomplete");
+}
+
+function shortQuery(value) {
+  const text = String(value || "").trim();
+  if (!text) return "a";
+  return text.slice(0, Math.min(4, text.length));
+}
+
+async function clearRfqSuggestions(page) {
+  await page.evaluate(() => {
+    document.querySelectorAll(".erpw-managed-rfq-suggestions").forEach((node) => node.remove());
+  });
+}
+
+async function assertRfqAutocompletePlacement(page, userKey, kind, selector, query, viewport) {
+  await page.setViewportSize(viewport);
+  await openNewRfqForm(page);
+  await clearRfqSuggestions(page);
+  const input = page.locator(selector).first();
+  await input.waitFor({ state: "visible", timeout: TIMEOUT });
+  await input.click();
+  await input.fill("");
+  await input.type(query || "a", { delay: 12 });
+  await page.waitForSelector(".erpw-managed-rfq-suggestions", { state: "visible", timeout: TIMEOUT });
+  await page.waitForTimeout(120);
+  await assertNoFrameworkModal(page, `${userKey}-new-rfq-${kind}-autocomplete-${viewport.width}-modal`);
+  const metrics = await page.evaluate((selector) => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const input = document.querySelector(selector);
+    const menu = document.querySelector(".erpw-managed-rfq-suggestions");
+    const protectedNodes = Array.from(document.querySelectorAll(".erpw-child-actions-toolbar, .erpw-child-toolbar-actions, .page-head")).filter(visible);
+    const protectedBottom = protectedNodes.reduce((bottom, node) => Math.max(bottom, node.getBoundingClientRect().bottom + 8), 12);
+    const inputRect = input ? input.getBoundingClientRect() : null;
+    const menuRect = menu ? menu.getBoundingClientRect() : null;
+    const bodyWidth = Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth));
+    const text = menu ? (menu.innerText || "").replace(/\s+/g, " ").trim() : "";
+    return {
+      input: inputRect ? { left: inputRect.left, right: inputRect.right, top: inputRect.top, bottom: inputRect.bottom, width: inputRect.width } : null,
+      menu: menuRect ? { left: menuRect.left, right: menuRect.right, top: menuRect.top, bottom: menuRect.bottom, width: menuRect.width, height: menuRect.height } : null,
+      protectedBottom,
+      bodyWidth,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      suggestionText: text,
+      suggestionCount: menu ? menu.querySelectorAll(".erpw-managed-rfq-suggestion").length : 0,
+      maxHeight: menu ? window.getComputedStyle(menu).maxHeight : "",
+      overflowY: menu ? window.getComputedStyle(menu).overflowY : "",
+    };
+  }, selector);
+  assert(metrics.input && metrics.menu, `${kind} autocomplete geometry missing`, metrics);
+  assert(metrics.suggestionCount > 0, `${kind} autocomplete suggestions missing`, metrics);
+  assert(metrics.menu.top >= metrics.input.bottom - 3, `${kind} autocomplete should open below the active input when below-space is usable`, metrics);
+  assert(Math.abs(metrics.menu.left - metrics.input.left) <= 3, `${kind} autocomplete must remain horizontally attached to active input`, metrics);
+  assert(metrics.menu.width >= metrics.input.width - 4, `${kind} autocomplete width must align with active input`, metrics);
+  assert(metrics.menu.top >= metrics.protectedBottom - 2, `${kind} autocomplete must not cover the form toolbar/header`, metrics);
+  assert(metrics.menu.right <= metrics.viewportWidth + 2, `${kind} autocomplete must not overflow viewport horizontally`, metrics);
+  assert(metrics.menu.bottom <= metrics.viewportHeight + 2, `${kind} autocomplete must stay inside viewport with capped height`, metrics);
+  assert(metrics.bodyWidth <= metrics.viewportWidth + 2, `${kind} autocomplete caused horizontal page overflow`, metrics);
+  assert(/auto|scroll/i.test(metrics.overflowY), `${kind} autocomplete must be internally scrollable when capped`, metrics);
+  await capture(page, `${userKey}-new-rfq-${kind}-autocomplete-${viewport.width}`);
+  await clearRfqSuggestions(page);
+}
+
+async function assertNewRfqAutocompletePlacement(page, userKey, values) {
+  const supplierQuery = shortQuery(values.supplier.name || values.supplier.supplier_name);
+  const itemQuery = shortQuery(values.item.name || values.item.item_name);
+  const warehouseQuery = shortQuery((values.warehouse && values.warehouse.name) || "warehouse");
+  const viewports = [
+    { width: 1136, height: 768 },
+    { width: 1240, height: 768 },
+    { width: 1440, height: 900 },
+  ];
+  for (const viewport of viewports) {
+    await assertRfqAutocompletePlacement(page, userKey, "supplier", '[data-supplier-field="supplier"]', supplierQuery, viewport);
+    await assertRfqAutocompletePlacement(page, userKey, "item", '[data-row-field="item_code"]', itemQuery, viewport);
+    await assertRfqAutocompletePlacement(page, userKey, "warehouse", '[data-row-field="warehouse"]', warehouseQuery, viewport);
+  }
+}
+
 async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   await page.waitForSelector(".erpw-managed-rfq-page [data-managed-rfq-output-card]", { state: "visible", timeout: TIMEOUT });
   await page.waitForSelector("[data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
@@ -237,6 +326,109 @@ async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   await assertPdfEndpoint(page, rfqName, supplier);
 }
 
+
+async function assertReviewSupplierCommunication(page, userKey, rfqName, supplier) {
+  const reviewRoute = `/desk/procurement-console-rfq-review/${encodeURIComponent(rfqName)}`;
+  await page.setViewportSize({ width: 1136, height: 768 });
+  await openDeskRoute(page, reviewRoute);
+  await page.waitForSelector(".erpw-procurement-rfq-review-page [data-rfq-review-output-card]", { state: "visible", timeout: TIMEOUT });
+  await page.waitForSelector(".erpw-procurement-rfq-review-page [data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  await page.waitForSelector(".erpw-procurement-rfq-review-page [data-rfq-recipient-row]", { state: "visible", timeout: TIMEOUT });
+  await assertNoFrameworkModal(page, `${userKey}-rfq-review-communication-before-state`);
+  const state = await page.evaluate(() => {
+    const visible = (node) => {
+      if (!node) return false;
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const shell = document.querySelector(".erpw-procurement-rfq-review-page");
+    const card = document.querySelector(".erpw-procurement-rfq-review-page [data-rfq-review-output-card]");
+    const text = (card ? card.innerText : "").replace(/\s+/g, " ").trim();
+    const activeButtons = card ? Array.from(card.querySelectorAll("button")).filter((button) => visible(button) && !button.disabled).map((button) => (button.textContent || "").replace(/\s+/g, " ").trim()) : [];
+    const rows = card ? Array.from(card.querySelectorAll("[data-rfq-recipient-row]")).filter(visible).map((row) => ({
+      text: (row.textContent || "").replace(/\s+/g, " ").trim(),
+      status: row.getAttribute("data-rfq-readiness-status") || "",
+    })) : [];
+    const disabledSend = card ? card.querySelector("[data-rfq-send-disabled]") : null;
+    return {
+      text,
+      activeButtons,
+      rows,
+      cardCount: Array.from(document.querySelectorAll(".erpw-procurement-rfq-review-page [data-rfq-review-output-card]")).filter(visible).length,
+      panelCount: Array.from(document.querySelectorAll(".erpw-procurement-rfq-review-page [data-rfq-readiness-panel]")).filter(visible).length,
+      disabledSendText: disabledSend ? (disabledSend.textContent || "").trim() : "",
+      disabledSendDisabled: disabledSend ? disabledSend.disabled : false,
+      bodyWidth: Math.ceil(Math.max(document.body.scrollWidth, document.documentElement.scrollWidth)),
+      viewportWidth: Math.ceil(window.innerWidth),
+      nativeEmailDialog: Boolean(document.querySelector(".email-dialog, .frappe-email, [data-fieldname='recipients']")),
+      nativeLeak: /\/desk\/(?:Form|request-for-quotation)/i.test(location.pathname),
+      shellText: (shell ? shell.innerText : "").replace(/\s+/g, " ").trim(),
+    };
+  });
+  assert(state.cardCount === 1, "RFQ review Supplier Communication card duplicated or missing", state);
+  assert(state.panelCount === 1, "RFQ review recipient readiness panel duplicated or missing", state);
+  assert(state.bodyWidth <= state.viewportWidth + 2, "RFQ review output card has horizontal overflow", state);
+  assert(!state.nativeLeak, "RFQ review leaked native path", state);
+  assert(!state.nativeEmailDialog, "Native email dialog appeared on RFQ review", state);
+  assert(/Supplier Communication/i.test(state.text), "RFQ review Supplier Communication heading missing", state);
+  assert(/Draft \/ Not sent/i.test(state.text), "RFQ review draft status missing", state);
+  assert(/Recipient readiness/i.test(state.text), "RFQ review recipient readiness missing", state);
+  assert(/RFQ email send is not enabled yet/i.test(state.text), "RFQ review blocked send explanation missing", state);
+  assert(/Email unavailable|Outgoing email is not configured|Outgoing email availability could not be checked safely|Outgoing email setup exists but is not enabled/i.test(state.text), "RFQ review controlled outgoing email state missing", state);
+  assert(!/Insufficient Permissions|Email Account|Traceback|Server Error|Internal Server Error/i.test(state.text), "Framework error text leaked into RFQ review output card", state);
+  assert(/Preview RFQ/i.test(state.text) && /Download RFQ PDF/i.test(state.text), "RFQ review preview/PDF actions missing", state);
+  assert(state.rows.length >= 1, "RFQ review recipient rows missing", state);
+  assert(state.rows.some((row) => /Ready|Missing email|Email unavailable|Invalid email|Send blocked/i.test(row.text)), "RFQ review recipient row status missing", state);
+  assert(state.disabledSendText === "Send RFQ" && state.disabledSendDisabled, "RFQ review Send RFQ must be disabled", state);
+  assert(!state.activeButtons.some((label) => /Send|Email/i.test(label)), "RFQ review Send/Email action must not be active", state);
+  assert(!FORBIDDEN_ACTIVE_RE.test(state.activeButtons.join(" ")), "RFQ review active forbidden lifecycle action visible", state);
+  await assertNoFrameworkModal(page, `${userKey}-rfq-review-communication-card`);
+  await capture(page, `${userKey}-rfq-review-communication-card-1136`);
+
+  await page.selectOption(".erpw-procurement-rfq-review-page [data-rfq-output-supplier]", supplier);
+  await assertNoFrameworkModal(page, `${userKey}-rfq-review-before-preview`);
+  await page.locator(".erpw-procurement-rfq-review-page [data-rfq-output-preview]").click();
+  await page.waitForSelector(".erpw-output-modal .erpw-output-preview-banner", { state: "visible", timeout: TIMEOUT });
+  const preview = await page.evaluate((supplier) => {
+    const modal = document.querySelector(".erpw-output-modal");
+    const text = (modal ? modal.innerText : "").replace(/\s+/g, " ").trim();
+    return {
+      text,
+      nativeControlsVisible: /(?:^|\s)(Print|Get PDF)(?:\s|$)/i.test(text),
+      hasSupplier: text.includes(`Supplier: ${supplier}`),
+    };
+  }, supplier);
+  assert(preview.text.includes("Draft / Not sent"), "RFQ review preview missing draft watermark", preview);
+  assert(preview.hasSupplier, "RFQ review preview missing selected supplier context", preview);
+  assert(!preview.nativeControlsVisible, "RFQ review preview leaked native Print/Get PDF controls", preview);
+  await assertNoFrameworkModal(page, `${userKey}-rfq-review-preview`);
+  await capture(page, `${userKey}-rfq-review-preview-1136`);
+  await page.locator(".erpw-output-modal-close").click({ force: true }).catch(async () => {
+    await page.evaluate(() => document.querySelectorAll(".erpw-output-modal-backdrop").forEach((node) => node.remove()));
+  });
+  await page.locator(".erpw-output-modal-backdrop").waitFor({ state: "detached", timeout: 3000 }).catch(async () => {
+    await page.evaluate(() => document.querySelectorAll(".erpw-output-modal-backdrop").forEach((node) => node.remove()));
+  });
+  await assertPdfEndpoint(page, rfqName, supplier);
+
+  await openDeskRoute(page, reviewRoute);
+  await page.waitForSelector(".erpw-procurement-rfq-review-page [data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  const repeat = await page.evaluate(() => Array.from(document.querySelectorAll(".erpw-procurement-rfq-review-page [data-rfq-readiness-panel]")).filter((node) => {
+    const rect = node.getBoundingClientRect();
+    const style = window.getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }).length);
+  assert(repeat === 1, "Repeated RFQ review navigation duplicated Supplier Communication panel", { repeat });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openDeskRoute(page, reviewRoute);
+  await page.waitForSelector(".erpw-procurement-rfq-review-page [data-rfq-review-output-card]", { state: "visible", timeout: TIMEOUT });
+  await page.waitForSelector(".erpw-procurement-rfq-review-page [data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
+  await assertNoFrameworkModal(page, `${userKey}-rfq-review-communication-card-1440`);
+  await capture(page, `${userKey}-rfq-review-communication-card-1440`);
+}
+
 async function runForUser(browser, user) {
   const context = await browser.newContext({ viewport: { width: 1136, height: 768 }, acceptDownloads: true });
   const page = await context.newPage();
@@ -245,11 +437,14 @@ async function runForUser(browser, user) {
   });
   await login(page, user);
   const values = await fixtures(page);
+  await assertNewRfqAutocompletePlacement(page, user.key, values);
+  await page.setViewportSize({ width: 1136, height: 768 });
   const rfqName = await createRfq(page, values);
   const route = `/desk/procurement-console-rfq-form/${encodeURIComponent(rfqName)}`;
 
   await openDeskRoute(page, route);
   await assertReadinessPanel(page, user.key, rfqName, values.supplier.name);
+  await assertReviewSupplierCommunication(page, user.key, rfqName, values.supplier.name);
   await openDeskRoute(page, route);
   await page.waitForSelector("[data-rfq-readiness-panel]", { state: "visible", timeout: TIMEOUT });
   await page.waitForSelector("[data-rfq-recipient-row]", { state: "visible", timeout: TIMEOUT });
