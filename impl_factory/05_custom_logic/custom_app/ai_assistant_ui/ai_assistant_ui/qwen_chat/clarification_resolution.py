@@ -565,19 +565,24 @@ def _match_pending_clarification_option(
 	second_fuzzy_score = 0.0
 	best_fuzzy_mode = ""
 	for option in unique_options:
+		option_best_score = 0.0
+		option_best_mode = ""
 		candidate_phrases = [str(option or "").strip()] + list(option_aliases_by_option.get(option) or [])
 		for candidate_phrase in candidate_phrases:
 			normalized_candidate = _normalize_text(candidate_phrase)
 			if len(normalized_candidate) < 5:
 				continue
 			score = difflib.SequenceMatcher(None, normalized_message, normalized_candidate).ratio()
-			if score > best_fuzzy_score:
-				second_fuzzy_score = best_fuzzy_score
-				best_fuzzy_score = score
-				best_fuzzy_option = option
-				best_fuzzy_mode = "fuzzy_alias" if candidate_phrase != option else "fuzzy_option"
-			elif score > second_fuzzy_score:
-				second_fuzzy_score = score
+			if score > option_best_score:
+				option_best_score = score
+				option_best_mode = "fuzzy_alias" if candidate_phrase != option else "fuzzy_option"
+		if option_best_score > best_fuzzy_score:
+			second_fuzzy_score = best_fuzzy_score
+			best_fuzzy_score = option_best_score
+			best_fuzzy_option = option
+			best_fuzzy_mode = option_best_mode
+		elif option_best_score > second_fuzzy_score:
+			second_fuzzy_score = option_best_score
 	if best_fuzzy_option and best_fuzzy_score >= 0.9 and (best_fuzzy_score - second_fuzzy_score) >= 0.06:
 		return best_fuzzy_option, best_fuzzy_mode, float(best_fuzzy_score)
 	if len(unique_options) == 1:
@@ -1615,7 +1620,15 @@ def resolve_pending_clarification_response(
 			internal_details if isinstance(internal_details, dict) else {},
 		)
 	)
-	accepted_direct_match_modes = {"exact", "exact_alias", "exact_token", "exact_token_alias", "single_option"}
+	accepted_direct_match_modes = {
+		"exact",
+		"exact_alias",
+		"exact_token",
+		"exact_token_alias",
+		"fuzzy_alias",
+		"fuzzy_option",
+		"single_option",
+	}
 	authoritative_option_resolution = bool(
 		matched_option
 		and (

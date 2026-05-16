@@ -329,6 +329,10 @@ class NBUContextResolutionContract:
     status: str = "not_evaluated"
     target_reference: str = "none"
     resolved_artifact_id: str = ""
+    selected_report_family: str = ""
+    selected_entity_type: str = ""
+    selected_artifact_role: str = ""
+    selection_strategy: str = ""
     resolved_row_index: int = -1
     resolved_rank: int = 0
     requested_rank: int = 0
@@ -344,6 +348,10 @@ class NBUContextResolutionContract:
             "status": _clean_text(self.status) or "not_evaluated",
             "target_reference": _allowed_or_unknown(self.target_reference, ALLOWED_TARGET_REFERENCES),
             "resolved_artifact_id": _clean_text(self.resolved_artifact_id),
+            "selected_report_family": _clean_text(self.selected_report_family),
+            "selected_entity_type": _clean_text(self.selected_entity_type),
+            "selected_artifact_role": _clean_text(self.selected_artifact_role),
+            "selection_strategy": _clean_text(self.selection_strategy),
             "resolved_row_index": int(self.resolved_row_index),
             "resolved_rank": int(max(0, self.resolved_rank or 0)),
             "requested_rank": int(max(0, self.requested_rank or 0)),

@@ -49,6 +49,15 @@ NBU_ACTION_SCHEMA_HARDENING_RULES: Dict[str, Dict[str, Any]] = {
 		"requires_context_resolution_for_reference": True,
 		"requires_safe_to_execute": True,
 	},
+	"reformat_previous_answer": {
+		"allowed_response_modes": ["presentation_transform"],
+		"min_final_confidence": 0.65,
+		"required_evidence_needs": ["presentation_only"],
+		"allowed_authority_classes": ["safe_read", "safe_explanation"],
+		"requires_selected_candidate": True,
+		"requires_safe_to_execute": True,
+		"requires_business_safe_response": True,
+	},
 	"execute_fresh_governed_query": {
 		"allowed_response_modes": ["governed_query"],
 		"min_final_confidence": MIN_CONFIDENCE_FOR_GOVERNED_REQUERY,

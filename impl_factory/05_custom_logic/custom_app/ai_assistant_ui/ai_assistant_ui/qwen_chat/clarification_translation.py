@@ -431,6 +431,7 @@ def _translate_financial_summary_signal(
 		"resolved_slot_payload_by_option",
 		"selected_report_by_option",
 		"carryover_slot_values",
+		"continuation_lane",
 	):
 		if key not in details and key in spec:
 			details[key] = spec.get(key)
@@ -508,6 +509,7 @@ def _translate_compiler_signal(
 				"semantic_slot_value_by_option": option_slot_values_by_option,
 				"selected_report_by_option": option_report_names_by_option,
 				"resolved_message_by_option": resolved_message_by_option,
+				"continuation_lane": "front_door",
 			},
 		)
 	if reason_type == "time_scope_missing":

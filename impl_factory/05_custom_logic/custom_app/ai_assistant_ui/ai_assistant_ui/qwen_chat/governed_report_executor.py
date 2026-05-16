@@ -5,10 +5,17 @@ import json
 import time
 from typing import Any, Dict
 
-import frappe
-
-from ai_assistant_ui.qwen_chat.fac_client import fac_generate_report
 from ai_assistant_ui.qwen_chat.metadata import get_report_spec
+
+try:
+	from ai_assistant_ui.qwen_chat.fac_client import fac_generate_report
+except Exception:  # pragma: no cover
+	fac_generate_report = None
+
+try:
+	import frappe  # type: ignore
+except Exception:  # pragma: no cover
+	frappe = None
 
 
 def _normalize_output_obj(raw_result: Any) -> Dict[str, Any]:
@@ -239,6 +246,8 @@ def _execute_once(
 				target_limit=target_limit,
 			)
 		else:
+			if fac_generate_report is None:
+				raise RuntimeError("FAC report client is unavailable in this runtime.")
 			raw_result = fac_generate_report(
 				report_name,
 				filters=filters,

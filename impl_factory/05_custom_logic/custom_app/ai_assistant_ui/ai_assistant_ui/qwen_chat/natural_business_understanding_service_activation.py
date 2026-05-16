@@ -11,6 +11,10 @@ from .metadata import (
 	load_governed_kpi_execution_registry,
 	load_report_registry,
 )
+from .authorized_emission import (
+	ANSWER_TYPE_CONTROL,
+	emit_authorized_assistant_answer,
+)
 from .natural_business_understanding_activation import build_nbu_activation_assessment
 from .natural_business_understanding_arbitration import nbu_activation_level_supports_action
 from .natural_business_understanding_contracts import CONTRACT_VERSION
@@ -896,9 +900,6 @@ def try_activate_nbu_presentation_response(
 
 	if not user_message_already_appended:
 		append_message(session_doc, "user", raw_message)
-	if not nbu_trace_already_appended:
-		append_tool_payload(session_doc, trace)
-	append_tool_payload(session_doc, activation_contract)
 	execution_path_payload = {
 		"type": "qwen_execution_path",
 		"contract_version": CONTRACT_VERSION,
@@ -908,8 +909,10 @@ def try_activate_nbu_presentation_response(
 		"requires_runtime": False,
 		"grounded_required": False,
 	}
-	append_tool_payload(session_doc, execution_path_payload)
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+	pre_assistant_payloads: List[Dict[str, Any]] = []
+	if not nbu_trace_already_appended:
+		pre_assistant_payloads.append(trace)
+	pre_assistant_payloads.extend([activation_contract, execution_path_payload])
 	if interaction_contract is not None:
 		from .contracts import (
 			ExecutionPath,
@@ -934,8 +937,7 @@ def try_activate_nbu_presentation_response(
 			latest_grounded_turn_available=bool(_clean_dict(latest_grounded_turn).get("grounded")),
 			reason="NBU safe-response activation handled the request without executing a governed query.",
 		)
-		append_tool_payload(
-			session_doc,
+		pre_assistant_payloads.append(
 			build_audit_envelope(
 				interaction_contract=interaction_contract,
 				followup_resolution=resolution,
@@ -949,16 +951,32 @@ def try_activate_nbu_presentation_response(
 				},
 				grounded_turn_context=_clean_dict(latest_grounded_turn),
 				answer_text=answer_text,
-			).to_payload(),
+			).to_payload()
 		)
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_CONTROL,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		control_meta_authority={
+			"authority_source": "control_meta",
+			"answer_mode": _clean_text(activation_contract.get("activation_mode")) or "nbu_safe_response_activation",
+			"reason": _clean_text(activation_contract.get("reason")) or "NBU safe-response activation handled the request.",
+			"preflight_status": "passed",
+		},
+		pre_assistant_tool_payloads=pre_assistant_payloads,
+	)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
 		"mode": _clean_text(activation_contract.get("activation_mode")) or "nbu_safe_response_activation",
 		"agent_meta": {
 			"engine": "natural_business_understanding",
 			"action": _clean_text(activation.get("action")),
 			"response_mode": _clean_text(activation.get("response_mode")),
+			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

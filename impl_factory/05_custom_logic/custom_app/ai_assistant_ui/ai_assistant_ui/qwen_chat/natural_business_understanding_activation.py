@@ -11,6 +11,7 @@ PRESENTATION_ONLY_ACTIONS = {
 	"reject_with_boundary",
 	"out_of_scope_response",
 	"answer_capability_question",
+	"reformat_previous_answer",
 }
 
 DELEGATED_ACTIONS = {
@@ -89,7 +90,7 @@ def build_nbu_activation_assessment(trace_payload: Dict[str, Any]) -> Dict[str, 
 		blockers.append("runtime_interpretation_not_ready")
 	if not trace.get("candidate_interpretations"):
 		blockers.append("missing_candidate_interpretation")
-	if response_mode not in {"clarification", "boundary", "supported_options", "out_of_scope", "capability_guidance"} and action in PRESENTATION_ONLY_ACTIONS:
+	if response_mode not in {"clarification", "boundary", "supported_options", "out_of_scope", "capability_guidance", "presentation_transform"} and action in PRESENTATION_ONLY_ACTIONS:
 		blockers.append("response_mode_not_presentation_safe")
 	if _clean_text(requery.get("status")) == "ready_shadow" and action in PRESENTATION_ONLY_ACTIONS:
 		warnings.append("governed_requery_plan_available_but_not_executed")

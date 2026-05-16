@@ -530,7 +530,6 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 	def test_runtime_gate_honors_governed_uncovered_scope_without_new_query_mode(self):
 		appended_messages = []
 		appended_tools = []
-		boundary_contracts = []
 
 		def _append_message(_session_doc, role, content):
 			appended_messages.append((role, content))
@@ -538,16 +537,6 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		def _append_tool_payload(_session_doc, payload):
 			appended_tools.append(payload)
 
-		def _append_knowledge_boundary_contract(_session_doc, **kwargs):
-			boundary_contracts.append(kwargs)
-			return {
-				"type": "qwen_knowledge_boundary_contract",
-				"final_lane": "valid_erp_domain_uncovered",
-				"knowledge_coverage_state": "valid_erp_domain_uncovered",
-				"user_response_mode": "coverage_gap_explanation",
-				"grounding_required": True,
-				"grounding_available": False,
-			}
 
 		ok, payload, compiled_fallback = handle_runtime_gate_turn(
 			session_doc=object(),
@@ -578,7 +567,7 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 			compiled_rollout={"enabled": False},
 			append_tool_payload=_append_tool_payload,
 			append_message=_append_message,
-			append_knowledge_boundary_contract=_append_knowledge_boundary_contract,
+			append_knowledge_boundary_contract=lambda *_args, **_kwargs: self.fail("runtime gate should stage boundary payloads through the authorized helper"),
 			append_knowledge_boundary_observability=lambda *_args, **_kwargs: None,
 			append_compiled_attempt_artifacts=lambda *_args, **_kwargs: None,
 			compiled_rollout_fallback_eligible=lambda *_args, **_kwargs: False,
@@ -593,8 +582,10 @@ class TestSemanticFinancialResolution(unittest.TestCase):
 		self.assertTrue(ok)
 		self.assertEqual(payload["mode"], "known_unsupported_erp_domain")
 		self.assertIsNone(compiled_fallback)
-		self.assertEqual(boundary_contracts[-1]["governed_scope_contract"]["governed_scope_status"], "out_of_scope_but_valid_erp_domain")
-		self.assertEqual(boundary_contracts[-1]["governed_scope_contract"]["primary_domain"], "hr")
+		boundary_payload = next(payload for payload in appended_tools if payload.get("type") == "qwen_knowledge_boundary_contract")
+		self.assertEqual(boundary_payload["knowledge_coverage_state"], "valid_erp_domain_uncovered")
+		self.assertEqual(boundary_payload["final_lane"], "valid_erp_domain_uncovered")
+		self.assertEqual(payload["agent_meta"]["authorized_emission"]["preflight_status"], "bounded")
 		self.assertIn("headcount coverage", appended_messages[-1][1])
 
 	def test_artifact_context_signal_uses_governed_metadata_domains(self):

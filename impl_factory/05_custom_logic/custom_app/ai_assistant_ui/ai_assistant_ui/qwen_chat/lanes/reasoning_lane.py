@@ -3,10 +3,51 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Dict, Tuple
 
-from ai_assistant_ui.qwen_chat.contracts import ExecutionPath, build_audit_envelope, build_followup_resolution_contract
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_POLICY_BOUNDARY,
+	ANSWER_TYPE_REASONING,
+	emit_authorized_assistant_answer,
+)
+from ai_assistant_ui.qwen_chat.contracts import ExecutionPath, build_followup_resolution_contract
 from ai_assistant_ui.qwen_chat.knowledge_boundary import render_knowledge_boundary_answer
+from ai_assistant_ui.qwen_chat.model_role_coverage import build_model_role_contract_bundle
+from ai_assistant_ui.qwen_chat.model_role_observability import ROLE_HEAVY_REASONING, ROLE_UNKNOWN
 from ai_assistant_ui.qwen_chat.observability import record_phase6_observability_event, record_phase6_performance_metric
 from ai_assistant_ui.qwen_chat.reasoning_execution import build_reasoning_boundary_answer, execute_erp_business_reasoning
+
+
+def _reasoning_runtime_trace_payload(
+	*,
+	reasoning_agent_meta: Dict[str, Any],
+	model_role_observability: Dict[str, Any],
+	model_role_strict_readiness: Dict[str, Any],
+) -> Dict[str, Any]:
+	telemetry = (
+		reasoning_agent_meta.get("telemetry")
+		if isinstance(reasoning_agent_meta.get("telemetry"), dict)
+		else {}
+	)
+	return {
+		"agent_meta": {
+			**dict(reasoning_agent_meta or {}),
+			"model_role_observability": model_role_observability,
+			"model_role_strict_readiness": model_role_strict_readiness,
+		},
+		"runtime_latency_ms": int(max(0, telemetry.get("latency_ms") or 0)),
+	}
+
+
+def _reasoning_authority_context(
+	*,
+	reasoning_contract: Dict[str, Any],
+	boundary_payload: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+	context = {
+		"reasoning_contract": dict(reasoning_contract or {}),
+	}
+	if isinstance(boundary_payload, dict) and boundary_payload:
+		context["knowledge_boundary"] = dict(boundary_payload)
+	return context
 
 
 def handle_reasoning_turn(
@@ -64,6 +105,17 @@ def handle_reasoning_turn(
 		prior_answer_text=str(latest_assistant_payload.get("text") or "").strip(),
 	)
 	reasoning_execution_latency_ms = int(max(0, round((time.perf_counter() - reasoning_execution_started_at) * 1000)))
+	reasoning_agent_meta = reasoning_execution.agent_meta if isinstance(reasoning_execution.agent_meta, dict) else {}
+	model_role_bundle = build_model_role_contract_bundle(
+		lane="business_reasoning_answer",
+		role_owner="reasoning_lane",
+		model_role=ROLE_HEAVY_REASONING if reasoning_agent_meta else ROLE_UNKNOWN,
+		agent_meta=reasoning_agent_meta,
+		runtime_source="business_reasoning_runtime_agent_meta" if reasoning_agent_meta else "business_reasoning_without_runtime_agent_meta",
+		strict_enforcement_enabled=False,
+	)
+	model_role_observability = model_role_bundle["model_role_observability"]
+	model_role_strict_readiness = model_role_bundle["model_role_strict_readiness"]
 	append_tool_payload(
 		session_doc,
 		record_phase6_observability_event(
@@ -127,10 +179,12 @@ def handle_reasoning_turn(
 		append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())
 		append_tool_payload(session_doc, reasoning_activation_contract.to_payload())
 		append_tool_payload(session_doc, reasoning_semantic_result.to_payload())
-		append_tool_payload(session_doc, reasoning_execution.to_payload())
+		append_tool_payload(session_doc, model_role_observability)
+		append_tool_payload(session_doc, model_role_strict_readiness)
+		pre_assistant_tool_payloads = [reasoning_execution.to_payload()]
 		if reasoning_execution.reasoning_contract:
-			append_tool_payload(session_doc, reasoning_execution.reasoning_contract)
-		append_knowledge_boundary_contract(
+			pre_assistant_tool_payloads.append(reasoning_execution.reasoning_contract)
+		boundary_payload = append_knowledge_boundary_contract(
 			session_doc,
 			request_id=request_id,
 			session_id=session_id,
@@ -143,38 +197,40 @@ def handle_reasoning_turn(
 		append_tool_payload(session_doc, reasoning_followup_resolution.to_payload())
 		append_tool_payload(session_doc, execution_path.to_payload())
 		answer_text = str(reasoning_execution.answer_text or "").strip()
-		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
-		append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=reasoning_followup_resolution,
-				execution_path=execution_path,
-				runtime_trace_payload={
-					"agent_meta": dict(reasoning_execution.agent_meta or {}),
-					"runtime_latency_ms": int(
-						max(
-							0,
-							(
-								(reasoning_execution.agent_meta.get("telemetry") or {})
-								if isinstance(reasoning_execution.agent_meta, dict)
-								else {}
-							).get("latency_ms")
-							or 0,
-						)
-					),
-				},
-				grounded_turn_context=latest_grounded_turn,
-				answer_text=answer_text,
-			).to_payload(),
+		authorized_emission = emit_authorized_assistant_answer(
+			session_doc=session_doc,
+			answer_text=answer_text,
+			answer_type=ANSWER_TYPE_REASONING,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=reasoning_followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload=_reasoning_runtime_trace_payload(
+				reasoning_agent_meta=reasoning_agent_meta,
+				model_role_observability=model_role_observability,
+				model_role_strict_readiness=model_role_strict_readiness,
+			),
+			grounded_turn_context=latest_grounded_turn,
+			authority_context=_reasoning_authority_context(
+				reasoning_contract=reasoning_execution.reasoning_contract,
+			),
+			pre_assistant_tool_payloads=pre_assistant_tool_payloads,
 		)
 		save_session(session_doc, ignore_permissions=False)
+		returned_answer_text = answer_text if authorized_emission.emitted else ""
 		return True, {
-			"ok": True,
+			"ok": bool(authorized_emission.emitted),
 			"request_id": request_id,
 			"mode": "erp_business_reasoning",
-			"answer_text": answer_text,
-			"agent_meta": reasoning_execution.agent_meta if isinstance(reasoning_execution.agent_meta, dict) else {},
+			"answer_text": returned_answer_text,
+			"agent_meta": {
+				**dict(reasoning_agent_meta or {}),
+				"model_role_observability": model_role_observability,
+				"model_role_strict_readiness": model_role_strict_readiness,
+				"authorized_emission": authorized_emission.to_payload(),
+			},
 		}
 
 	reasoning_boundary_answer = build_reasoning_boundary_answer(
@@ -208,9 +264,11 @@ def handle_reasoning_turn(
 	append_tool_payload(session_doc, provisional_response_policy_contract.to_payload())
 	append_tool_payload(session_doc, reasoning_activation_contract.to_payload())
 	append_tool_payload(session_doc, reasoning_semantic_result.to_payload())
-	append_tool_payload(session_doc, reasoning_execution.to_payload())
+	append_tool_payload(session_doc, model_role_observability)
+	append_tool_payload(session_doc, model_role_strict_readiness)
+	pre_assistant_tool_payloads = [reasoning_execution.to_payload()]
 	if reasoning_execution.reasoning_contract:
-		append_tool_payload(session_doc, reasoning_execution.reasoning_contract)
+		pre_assistant_tool_payloads.append(reasoning_execution.reasoning_contract)
 	boundary_payload = append_knowledge_boundary_contract(
 		session_doc,
 		request_id=request_id,
@@ -227,39 +285,39 @@ def handle_reasoning_turn(
 		boundary_contract=boundary_payload,
 		detail_answer=reasoning_boundary_answer,
 	)
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
-	append_tool_payload(
-		session_doc,
-		build_audit_envelope(
-			interaction_contract=interaction_contract,
-			followup_resolution=reasoning_followup_resolution,
-			execution_path=execution_path,
-			runtime_trace_payload={
-				"agent_meta": dict(reasoning_execution.agent_meta or {}),
-				"runtime_latency_ms": int(
-					max(
-						0,
-						(
-							(reasoning_execution.agent_meta.get("telemetry") or {})
-							if isinstance(reasoning_execution.agent_meta, dict)
-							else {}
-						).get("latency_ms")
-						or 0,
-					)
-				),
-			},
-			grounded_turn_context=latest_grounded_turn,
-			answer_text=answer_text,
-		).to_payload(),
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		interaction_contract=interaction_contract,
+		followup_resolution=reasoning_followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload=_reasoning_runtime_trace_payload(
+			reasoning_agent_meta=reasoning_agent_meta,
+			model_role_observability=model_role_observability,
+			model_role_strict_readiness=model_role_strict_readiness,
+		),
+		grounded_turn_context={},
+		authority_context=_reasoning_authority_context(
+			reasoning_contract=reasoning_execution.reasoning_contract,
+			boundary_payload=boundary_payload,
+		),
+		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
 	)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
 		"mode": "erp_business_reasoning",
-		"answer_text": reasoning_boundary_answer,
+		"answer_text": answer_text if authorized_emission.emitted else "",
 		"agent_meta": {
 			"engine": "erp_business_reasoning_guardrail",
 			"status": str(reasoning_execution.status or "").strip(),
+			"model_role_observability": model_role_observability,
+			"model_role_strict_readiness": model_role_strict_readiness,
+			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

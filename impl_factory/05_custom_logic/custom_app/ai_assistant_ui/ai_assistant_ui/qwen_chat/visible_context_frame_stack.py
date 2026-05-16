@@ -36,6 +36,40 @@ DOCUMENT_OBJECT_TYPES = {
 	"stock_entry",
 	"payment_entry",
 }
+CONTRACT_CONTEXT_STOPWORDS = {
+	"a",
+	"an",
+	"and",
+	"above",
+	"are",
+	"as",
+	"at",
+	"based",
+	"by",
+	"entries",
+	"entry",
+	"for",
+	"from",
+	"here",
+	"in",
+	"is",
+	"of",
+	"on",
+	"or",
+	"rank",
+	"ranked",
+	"row",
+	"rows",
+	"section",
+	"sections",
+	"table",
+	"tables",
+	"the",
+	"to",
+	"was",
+	"were",
+	"with",
+}
 REQUEST_OBJECT_ALIAS_GROUPS: List[Tuple[str, set[str]]] = [
 	("purchase_invoice", {"purchase invoice", "purchase invoices", "pinv", "purchase bill", "purchase bills"}),
 	("sales_invoice", {"sales invoice", "sales invoices", "sinv"}),
@@ -81,7 +115,9 @@ def _terms(value: Any) -> set[str]:
 	terms = set(token_list)
 	for size in range(2, min(4, len(token_list)) + 1):
 		for index in range(0, len(token_list) - size + 1):
-			terms.add(" ".join(token_list[index : index + size]))
+			term_tokens = token_list[index : index + size]
+			terms.add(" ".join(term_tokens))
+			terms.add("".join(token[0] for token in term_tokens if token))
 	terms.add(normalized)
 	return terms
 
@@ -375,7 +411,7 @@ def _business_object_type(artifact: Dict[str, Any], rows: List[Dict[str, Any]]) 
 
 def _requested_limit(artifact: Dict[str, Any], rows: List[Dict[str, Any]]) -> int:
 	for source in (artifact, _clean_dict(artifact.get("metadata")), _clean_dict(artifact.get("dimensions"))):
-		for key in ("requested_limit", "limit", "top_n", "row_limit", "visible_limit"):
+		for key in ("requested_limit", "requested_top_n", "limit", "top_n", "row_limit", "visible_limit"):
 			value = _positive_int(source.get(key))
 			if value:
 				return value
@@ -548,6 +584,15 @@ def _frame_contract_terms(frame: Dict[str, Any]) -> set[str]:
 	return terms
 
 
+def _significant_contract_terms(terms: set[str]) -> set[str]:
+	significant: set[str] = set()
+	for term in terms:
+		tokens = [token for token in _normalize(term).split() if token]
+		if tokens and not all(token in CONTRACT_CONTEXT_STOPWORDS for token in tokens):
+			significant.add(term)
+	return significant
+
+
 def _frame_contextual_object_aliases(frame: Dict[str, Any], base_aliases: set[str]) -> set[str]:
 	"""Infer object labels from governed frame context, not from user wording.
 
@@ -661,6 +706,8 @@ def _frame_match_reasons(raw_message: str, frame: Dict[str, Any], requested_alia
 		reasons.append("requested_object_match")
 	if not requested_aliases and raw_message and _frame_matches_message_object(raw_message, frame):
 		reasons.append("message_object_match")
+	if raw_message and _frame_matches_contract_context(raw_message, frame):
+		reasons.append("contract_context_match")
 	if raw_message and _frame_matches_semantic_concepts(raw_message, frame):
 		reasons.append("semantic_context_match")
 	if _is_detail_frame(frame):
@@ -748,10 +795,13 @@ def _selection_strategy(
 	selected_frame: Dict[str, Any],
 	requested_aliases: set[str],
 	matching_object_frames: List[Dict[str, Any]],
+	contract_context_frames: List[Dict[str, Any]],
 	semantic_context_frames: List[Dict[str, Any]],
 ) -> str:
 	if requested_aliases and selected_frame in matching_object_frames:
 		return f"{relation}:requested_object_match"
+	if selected_frame in contract_context_frames:
+		return f"{relation}:contract_context_match"
 	if selected_frame in semantic_context_frames:
 		return f"{relation}:semantic_context_match"
 	if relation in {"same_table", "previous_table", "parent_table", "detail_table"}:
@@ -771,6 +821,12 @@ def _frame_matches_semantic_concepts(raw_message: str, frame: Dict[str, Any]) ->
 	if not concept_terms:
 		return False
 	return bool(concept_terms.intersection(_frame_contract_terms(frame)))
+
+
+def _frame_matches_contract_context(raw_message: str, frame: Dict[str, Any]) -> bool:
+	"""Match explicit artifact references against governed frame metadata."""
+
+	return bool(_message_parts(raw_message).intersection(_significant_contract_terms(_frame_contract_terms(frame))))
 
 
 def _is_detail_frame(frame: Dict[str, Any]) -> bool:
@@ -811,14 +867,22 @@ def resolve_visible_context_frame_arbitration(
 		if requested_object_aliases
 		else [frame for frame in frames if _frame_matches_message_object(raw_message, frame)]
 	)
+	contract_context_frames = [
+		frame
+		for frame in frames
+		if not _is_detail_frame(frame)
+		and _frame_matches_contract_context(raw_message, frame)
+		and frame not in matching_object_frames
+	]
 	semantic_context_frames = [
 		frame
 		for frame in frames
 		if not _is_detail_frame(frame)
 		and _frame_matches_semantic_concepts(raw_message, frame)
 		and frame not in matching_object_frames
+		and frame not in contract_context_frames
 	]
-	matching_business_frames = matching_object_frames or semantic_context_frames
+	matching_business_frames = matching_object_frames or contract_context_frames or semantic_context_frames
 	relation = "current_table"
 	if tokens.intersection(FRAME_RELATION_PARENT_TERMS):
 		relation = "parent_table"
@@ -837,7 +901,13 @@ def resolve_visible_context_frame_arbitration(
 		selected_frame = candidates[0] if candidates else {}
 	elif relation == "previous_table":
 		previous_frames = frames[1:]
-		candidates = [frame for frame in previous_frames if _frame_matches_message_object(raw_message, frame)]
+		candidates = [
+			frame
+			for frame in previous_frames
+			if _frame_matches_message_object(raw_message, frame)
+			or _frame_matches_contract_context(raw_message, frame)
+			or _frame_matches_semantic_concepts(raw_message, frame)
+		]
 		selected_frame = (candidates or previous_frames or frames)[0]
 	elif relation == "same_table":
 		selected_frame = frames[0]
@@ -874,6 +944,8 @@ def resolve_visible_context_frame_arbitration(
 				)
 		elif _is_detail_frame(current_frame) and matching_business_frames:
 			selected_frame = matching_business_frames[0]
+		elif matching_business_frames:
+			selected_frame = matching_business_frames[0]
 		else:
 			selected_frame = current_frame
 
@@ -900,12 +972,14 @@ def resolve_visible_context_frame_arbitration(
 		"selected_business_object_type": _clean_text(selected_frame.get("business_object_type")),
 		"selected_evidence_scope": _clean_text(selected_frame.get("evidence_scope")),
 		"selected_visible_row_count": _positive_int(selected_frame.get("visible_row_count")),
+		"selected_requested_limit": _positive_int(selected_frame.get("requested_limit")),
 		"selected_recovery_source": _clean_text(selected_frame.get("recovery_source")),
 		"selection_strategy": _selection_strategy(
 			relation=relation,
 			selected_frame=selected_frame,
 			requested_aliases=requested_object_aliases,
 			matching_object_frames=matching_object_frames,
+			contract_context_frames=contract_context_frames,
 			semantic_context_frames=semantic_context_frames,
 		),
 		"candidate_frame_count": len(frames),

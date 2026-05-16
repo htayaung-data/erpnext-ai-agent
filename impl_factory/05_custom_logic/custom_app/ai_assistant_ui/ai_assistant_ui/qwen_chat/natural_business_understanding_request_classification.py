@@ -149,10 +149,21 @@ def fresh_business_query_requested(message: str) -> bool:
 
 
 def _context_tokens(message: str) -> set[str]:
-	tokens = set(message_tokens(message))
-	if temporal_scope_phrase_present(message):
-		tokens.difference_update(TEMPORAL_CONTEXT_TERMS)
-	return tokens
+	normalized = normalize_message_text(message)
+	if not normalized:
+		return set()
+	context_surface = re.sub(
+		r"\b(?:last|this|current|next|previous|prior)\s+"
+		r"(?:month|months|week|weeks|year|years|quarter|quarters|day|days|period|fiscal|fy)\b",
+		" ",
+		normalized,
+	)
+	context_surface = re.sub(
+		r"\b(?:fiscal\s+year|current\s+fiscal\s+year|last\s+fiscal\s+year|ytd|mtd|qtd)\b",
+		" ",
+		context_surface,
+	)
+	return message_tokens(context_surface)
 
 
 def _artifact_set_reference_signal(message: str) -> bool:

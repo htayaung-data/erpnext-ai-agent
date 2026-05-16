@@ -441,12 +441,14 @@ def render_knowledge_boundary_answer(
 	detail = str(detail_answer or "").strip()
 
 	if user_response_mode == "coverage_gap_explanation" or knowledge_coverage_state == "valid_erp_domain_uncovered":
+		if detail:
+			return detail
 		base = (
-			"This is within ERP/business scope, but I can't answer it safely from the currently available ERP support yet."
+			"I can help with that business question, but I don't have the right ERP result in this chat to answer it accurately yet."
 		)
 		if grounding_required and not grounding_available:
 			base = (
-				"This is a valid ERP/business question, but I don't have the ERP data needed to answer it safely yet."
+				"I need the relevant ERP data first before I can answer that accurately."
 			)
 		return _join_boundary_sections(base, detail)
 
@@ -458,13 +460,13 @@ def render_knowledge_boundary_answer(
 
 	if user_response_mode == "boundary_explanation":
 		action_messages = {
-			"route_to_clarification": "I still need clarification before I can continue safely.",
-			"route_to_artifact_lane": "This turn should continue from the previous ERP answer, not from the current lane.",
-			"route_to_reasoning_lane": "This turn should continue from ERP reasoning, not from the current lane.",
-			"route_to_front_door": "This turn belongs in the front-door conversational lane, not in the current lane.",
+			"route_to_clarification": "I need one more detail before I can answer accurately.",
+			"route_to_artifact_lane": "Let's continue from the ERP result already shown instead of starting a new answer.",
+			"route_to_reasoning_lane": "Let's continue from the ERP analysis already in progress.",
+			"route_to_front_door": "I can answer that as a general assistant question rather than from the current ERP result.",
 		}
 		base = action_messages.get(safe_next_action) or (
-			f"This turn should be handled through {final_lane.replace('_', ' ')}."
+			"I need to use a safer ERP path before answering."
 			if final_lane
 			else "This turn should be handled through a safer ERP path."
 		)

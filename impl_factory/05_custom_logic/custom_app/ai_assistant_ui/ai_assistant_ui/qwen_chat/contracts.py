@@ -23,6 +23,7 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	get_frontdoor_intent_spec,
 	list_capability_specs,
 	ontology_detect_concepts,
+	ontology_concept_aliases,
 	ontology_self_contained_prefixes,
 	normalize_followup_mode_for_runtime,
 	report_capability_ids,
@@ -137,6 +138,9 @@ def _message_looks_like_self_contained_governed_business_query(
 	for term in governed_standalone_business_terms(language):
 		clean = str(term or "").strip().lower()
 		if clean and text == clean:
+			return True
+	for concept_id in ontology_detect_concepts(text, language=language, include_extended=False):
+		if text in ontology_concept_aliases(str(concept_id or "").strip(), language=language):
 			return True
 	prefixes = [
 		str(value or "").strip().lower()
@@ -664,6 +668,7 @@ class ERPBusinessReasoningContract:
 	reasoning_scope: str
 	supported_claims: List[Dict[str, Any]]
 	recommendations: List[Dict[str, Any]]
+	offered_next_actions: List[Dict[str, Any]]
 	speculation_flags: List[str]
 	allowed_to_answer: bool
 	reason: str
@@ -687,6 +692,7 @@ class ERPBusinessReasoningContract:
 			"reasoning_scope": self.reasoning_scope,
 			"supported_claims": [dict(item) for item in self.supported_claims if isinstance(item, dict)],
 			"recommendations": [dict(item) for item in self.recommendations if isinstance(item, dict)],
+			"offered_next_actions": [dict(item) for item in self.offered_next_actions if isinstance(item, dict)],
 			"speculation_flags": list(self.speculation_flags),
 			"allowed_to_answer": bool(self.allowed_to_answer),
 			"reason": self.reason,
@@ -1859,6 +1865,45 @@ class ArtifactEnrichmentCompatibilityContract:
 
 
 @dataclass(frozen=True)
+class FinalAnswerAuthorityContract:
+	request_id: str
+	session_id: str
+	authority_source: str
+	evidence_scope: str
+	selected_artifact_id: str
+	selected_report_family: str
+	selected_row_reference: str
+	policy_boundary: str
+	answer_mode: str
+	renderer_owner: str
+	authority_complete: bool
+	preflight_status: str
+	missing_fields: List[str]
+	authority_reason: str
+
+	def to_payload(self) -> Dict[str, Any]:
+		return {
+			"type": "qwen_final_answer_authority_contract",
+			"contract_version": "1.0",
+			"request_id": self.request_id,
+			"session_id": self.session_id,
+			"authority_source": self.authority_source,
+			"evidence_scope": self.evidence_scope,
+			"selected_artifact_id": self.selected_artifact_id,
+			"selected_report_family": self.selected_report_family,
+			"selected_row_reference": self.selected_row_reference,
+			"policy_boundary": self.policy_boundary,
+			"answer_mode": self.answer_mode,
+			"renderer_owner": self.renderer_owner,
+			"authority_complete": bool(self.authority_complete),
+			"preflight_status": self.preflight_status,
+			"missing_fields": list(self.missing_fields),
+			"authority_reason": self.authority_reason,
+			"created_at": _utc_now(),
+		}
+
+
+@dataclass(frozen=True)
 class AuditEnvelope:
 	request_id: str
 	session_id: str
@@ -1875,6 +1920,7 @@ class AuditEnvelope:
 	validation_status: str
 	validation_errors: List[str]
 	answer_chars: int
+	final_answer_authority: Dict[str, Any] = field(default_factory=dict)
 
 	def to_payload(self) -> Dict[str, Any]:
 		return {
@@ -1895,6 +1941,7 @@ class AuditEnvelope:
 			"validation_status": self.validation_status,
 			"validation_errors": self.validation_errors,
 			"answer_chars": self.answer_chars,
+			"final_answer_authority": dict(self.final_answer_authority),
 			"created_at": _utc_now(),
 		}
 
@@ -3191,6 +3238,7 @@ def build_erp_business_reasoning_contract(
 	reasoning_scope: str = "",
 	supported_claims: List[Dict[str, Any]] | None = None,
 	recommendations: List[Dict[str, Any]] | None = None,
+	offered_next_actions: List[Dict[str, Any]] | None = None,
 	speculation_flags: List[str] | None = None,
 	allowed_to_answer: bool = False,
 	reason: str = "",
@@ -3211,6 +3259,7 @@ def build_erp_business_reasoning_contract(
 		reasoning_scope=str(reasoning_scope or "").strip(),
 		supported_claims=[dict(item) for item in (supported_claims or []) if isinstance(item, dict)],
 		recommendations=[dict(item) for item in (recommendations or []) if isinstance(item, dict)],
+		offered_next_actions=[dict(item) for item in (offered_next_actions or []) if isinstance(item, dict)],
 		speculation_flags=[str(x or "").strip() for x in (speculation_flags or []) if str(x or "").strip()],
 		allowed_to_answer=bool(allowed_to_answer),
 		reason=str(reason or "").strip(),
@@ -5826,6 +5875,320 @@ def build_grounded_turn_context(
 	)
 
 
+def _authority_clean_dict(value: Any) -> Dict[str, Any]:
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def _authority_clean_list(value: Any) -> List[Any]:
+	return list(value) if isinstance(value, list) else []
+
+
+def _authority_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _authority_first_text(*values: Any) -> str:
+	for value in values:
+		text = _authority_text(value)
+		if text:
+			return text
+	return ""
+
+
+def _authority_sources(
+	*,
+	runtime_trace_payload: Dict[str, Any] | None,
+	authority_context: Dict[str, Any] | None,
+) -> List[Dict[str, Any]]:
+	sources: List[Dict[str, Any]] = []
+	for payload in (authority_context, runtime_trace_payload):
+		clean_payload = _authority_clean_dict(payload)
+		if not clean_payload:
+			continue
+		sources.append(clean_payload)
+		for key in (
+			"visible_context_trace",
+			"context_authority_trace",
+			"semantic_ownership_trace",
+			"trace",
+		):
+			nested = _authority_clean_dict(clean_payload.get(key))
+			if nested:
+				sources.append(nested)
+	return sources
+
+
+def _authority_ledger_from_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for source in sources:
+		ledger = _authority_clean_dict(source.get("semantic_ownership_ledger"))
+		if ledger:
+			return ledger
+	return {}
+
+
+def _authority_boundary_from_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for source in sources:
+		for key in (
+			"knowledge_boundary",
+			"knowledge_boundary_contract",
+			"policy_boundary",
+			"policy_boundary_contract",
+		):
+			boundary = _authority_clean_dict(source.get(key))
+			if boundary:
+				return boundary
+		if _authority_text(source.get("type")) == "qwen_knowledge_boundary_contract":
+			return source
+	return {}
+
+
+def _authority_artifact_from_sources(sources: List[Dict[str, Any]]) -> Dict[str, Any]:
+	for source in sources:
+		for key in (
+			"normalized_family_artifact",
+			"artifact",
+			"selected_artifact",
+			"family_artifact",
+		):
+			artifact = _authority_clean_dict(source.get(key))
+			if artifact:
+				return artifact
+		if _authority_text(source.get("type")) in {
+			"qwen_normalized_family_artifact_contract",
+			"qwen_composite_family_artifact",
+			"qwen_entity_detail_artifact",
+		}:
+			return source
+	return {}
+
+
+def _final_authority_from_ledger(
+	*,
+	interaction_contract: InteractionContract,
+	ledger: Dict[str, Any],
+	default_answer_mode: str,
+) -> Dict[str, Any]:
+	resolved_context = _authority_clean_dict(ledger.get("resolved_context"))
+	authority = _authority_clean_dict(ledger.get("authority"))
+	decision_owners = _authority_clean_dict(ledger.get("decision_owners"))
+	policy_boundary = _authority_first_text(authority.get("policy_boundary"), "none")
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": _authority_first_text(authority.get("authority_source"), authority.get("evidence_scope")),
+		"evidence_scope": _authority_first_text(authority.get("evidence_scope"), authority.get("authority_source")),
+		"selected_artifact_id": _authority_first_text(resolved_context.get("artifact_id")),
+		"selected_report_family": _authority_first_text(resolved_context.get("report_family")),
+		"selected_row_reference": _authority_first_text(resolved_context.get("row_reference"), "none"),
+		"policy_boundary": policy_boundary,
+		"answer_mode": _authority_first_text(authority.get("answer_mode"), default_answer_mode),
+		"renderer_owner": _authority_first_text(decision_owners.get("renderer"), "unknown_renderer"),
+		"authority_reason": "Final answer authority was inherited from the semantic ownership ledger.",
+	}
+
+
+def _final_authority_from_grounded_turn(
+	*,
+	interaction_contract: InteractionContract,
+	grounded_turn_context: Dict[str, Any],
+	artifact_payload: Dict[str, Any],
+	default_answer_mode: str,
+) -> Dict[str, Any]:
+	grounded = _authority_clean_dict(grounded_turn_context)
+	artifact = _authority_clean_dict(artifact_payload)
+	source_kind = _authority_text(grounded.get("source_kind"))
+	if source_kind in {"report", "composite_artifact"}:
+		authority_source = "governed_erp_report"
+	elif source_kind == "tool":
+		authority_source = "deterministic_tool"
+	elif source_kind == "transform":
+		authority_source = "deterministic_calculation"
+	else:
+		authority_source = source_kind
+	artifact_family_id = _authority_first_text(
+		grounded.get("artifact_family_id"),
+		artifact.get("family_id"),
+		artifact.get("report_family"),
+		grounded.get("source_name"),
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": authority_source,
+		"evidence_scope": "grounded_turn_context",
+		"selected_artifact_id": _authority_first_text(
+			artifact.get("artifact_id"),
+			artifact.get("id"),
+			artifact.get("request_id"),
+			grounded.get("trace_request_id"),
+			grounded.get("request_id"),
+		),
+		"selected_report_family": artifact_family_id,
+		"selected_row_reference": "none",
+		"policy_boundary": "none",
+		"answer_mode": default_answer_mode,
+		"renderer_owner": "compiled_family_renderer",
+		"authority_reason": "Final answer authority was grounded by an approved ERP report/tool execution context.",
+	}
+
+
+def _final_authority_from_policy_boundary(
+	*,
+	interaction_contract: InteractionContract,
+	boundary_payload: Dict[str, Any],
+	default_answer_mode: str,
+) -> Dict[str, Any]:
+	boundary = _authority_clean_dict(boundary_payload)
+	policy_boundary = _authority_first_text(
+		boundary.get("knowledge_coverage_state"),
+		boundary.get("user_response_mode"),
+		boundary.get("boundary_status"),
+		default_answer_mode,
+	)
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": "policy_boundary",
+		"evidence_scope": _authority_first_text(boundary.get("type"), "policy_boundary_contract"),
+		"selected_artifact_id": "",
+		"selected_report_family": _authority_first_text(boundary.get("final_lane"), boundary.get("proposed_lane")),
+		"selected_row_reference": "none",
+		"policy_boundary": policy_boundary,
+		"answer_mode": default_answer_mode,
+		"renderer_owner": "policy_boundary_renderer",
+		"authority_reason": "Final answer authority was bounded by the policy/knowledge boundary contract.",
+	}
+
+
+def _fallback_final_answer_authority(
+	*,
+	interaction_contract: InteractionContract,
+	default_answer_mode: str,
+	execution_path: ExecutionPath,
+) -> Dict[str, Any]:
+	execution_path_name = _authority_text(getattr(execution_path, "path", ""))
+	grounded_required = bool(getattr(execution_path, "grounded_required", True))
+	if not grounded_required:
+		return {
+			"request_id": interaction_contract.request_id,
+			"session_id": interaction_contract.session_id,
+			"authority_source": "execution_path_contract",
+			"evidence_scope": "execution_path_contract",
+			"selected_artifact_id": "",
+			"selected_report_family": execution_path_name,
+			"selected_row_reference": "none",
+			"policy_boundary": default_answer_mode if default_answer_mode != "visible_context_answer" else "none",
+			"answer_mode": default_answer_mode,
+			"renderer_owner": "execution_path_renderer",
+			"authority_reason": "Final answer authority was limited to a non-runtime execution path contract.",
+		}
+	return {
+		"request_id": interaction_contract.request_id,
+		"session_id": interaction_contract.session_id,
+		"authority_source": "",
+		"evidence_scope": "",
+		"selected_artifact_id": "",
+		"selected_report_family": "",
+		"selected_row_reference": "none",
+		"policy_boundary": "missing_authority",
+		"answer_mode": default_answer_mode,
+		"renderer_owner": "unknown_renderer",
+		"authority_reason": "No approved final-answer authority source was available to the audit contract.",
+	}
+
+
+def _complete_final_answer_authority(payload: Dict[str, Any]) -> tuple[bool, List[str], str]:
+	missing: List[str] = []
+	for field_name in ("authority_source", "evidence_scope", "answer_mode", "renderer_owner"):
+		if not _authority_text(payload.get(field_name)):
+			missing.append(field_name)
+	authority_source = _authority_text(payload.get("authority_source"))
+	policy_boundary = _authority_text(payload.get("policy_boundary"))
+	if authority_source == "visible_rendered_table":
+		for field_name in ("selected_artifact_id", "selected_report_family"):
+			if not _authority_text(payload.get(field_name)):
+				missing.append(field_name)
+	elif authority_source == "governed_erp_report":
+		if not _authority_text(payload.get("selected_report_family")):
+			missing.append("selected_report_family")
+	elif authority_source == "policy_boundary":
+		if not policy_boundary or policy_boundary == "none":
+			missing.append("policy_boundary")
+	authority_complete = not missing
+	if not authority_complete:
+		return False, list(dict.fromkeys(missing)), "missing_authority"
+	if authority_source == "policy_boundary" or (policy_boundary and policy_boundary != "none"):
+		return True, [], "bounded"
+	return True, [], "passed"
+
+
+def build_final_answer_authority_contract(
+	*,
+	interaction_contract: InteractionContract,
+	followup_resolution: FollowUpResolution,
+	execution_path: ExecutionPath,
+	runtime_trace_payload: Dict[str, Any] | None,
+	grounded_turn_context: Dict[str, Any] | None,
+	answer_text: str,
+	authority_context: Dict[str, Any] | None = None,
+) -> FinalAnswerAuthorityContract:
+	default_answer_mode = _authority_first_text(followup_resolution.mode, execution_path.path)
+	sources = _authority_sources(
+		runtime_trace_payload=runtime_trace_payload,
+		authority_context=authority_context,
+	)
+	ledger = _authority_ledger_from_sources(sources)
+	boundary_payload = _authority_boundary_from_sources(sources)
+	artifact_payload = _authority_artifact_from_sources(sources)
+	grounded_turn = _authority_clean_dict(grounded_turn_context)
+	if ledger:
+		payload = _final_authority_from_ledger(
+			interaction_contract=interaction_contract,
+			ledger=ledger,
+			default_answer_mode=default_answer_mode,
+		)
+	elif bool(grounded_turn.get("grounded")):
+		payload = _final_authority_from_grounded_turn(
+			interaction_contract=interaction_contract,
+			grounded_turn_context=grounded_turn,
+			artifact_payload=artifact_payload,
+			default_answer_mode=default_answer_mode,
+		)
+	elif boundary_payload:
+		payload = _final_authority_from_policy_boundary(
+			interaction_contract=interaction_contract,
+			boundary_payload=boundary_payload,
+			default_answer_mode=default_answer_mode,
+		)
+	else:
+		payload = _fallback_final_answer_authority(
+			interaction_contract=interaction_contract,
+			default_answer_mode=default_answer_mode,
+			execution_path=execution_path,
+		)
+	authority_complete, missing_fields, preflight_status = _complete_final_answer_authority(payload)
+	if not _authority_text(answer_text):
+		missing_fields = list(dict.fromkeys([*missing_fields, "answer_text"]))
+		authority_complete = False
+		preflight_status = "missing_authority"
+	return FinalAnswerAuthorityContract(
+		request_id=interaction_contract.request_id,
+		session_id=interaction_contract.session_id,
+		authority_source=_authority_text(payload.get("authority_source")),
+		evidence_scope=_authority_text(payload.get("evidence_scope")),
+		selected_artifact_id=_authority_text(payload.get("selected_artifact_id")),
+		selected_report_family=_authority_text(payload.get("selected_report_family")),
+		selected_row_reference=_authority_text(payload.get("selected_row_reference")) or "none",
+		policy_boundary=_authority_text(payload.get("policy_boundary")) or "none",
+		answer_mode=_authority_text(payload.get("answer_mode")) or default_answer_mode,
+		renderer_owner=_authority_text(payload.get("renderer_owner")) or "unknown_renderer",
+		authority_complete=authority_complete,
+		preflight_status=preflight_status,
+		missing_fields=missing_fields,
+		authority_reason=_authority_text(payload.get("authority_reason")),
+	)
+
+
 def build_audit_envelope(
 	*,
 	interaction_contract: InteractionContract,
@@ -5834,6 +6197,7 @@ def build_audit_envelope(
 	runtime_trace_payload: Dict[str, Any] | None,
 	grounded_turn_context: Dict[str, Any] | None,
 	answer_text: str,
+	authority_context: Dict[str, Any] | None = None,
 ) -> AuditEnvelope:
 	trace = runtime_trace_payload if isinstance(runtime_trace_payload, dict) else {}
 	grounded_turn = grounded_turn_context if isinstance(grounded_turn_context, dict) else {}
@@ -5852,6 +6216,15 @@ def build_audit_envelope(
 	source_name = str(grounded_turn.get("source_name") or "").strip()
 	validation_status = str(validation.get("status") or ("pass" if execution_path.path == "local_transform" else "unknown")).strip()
 	validation_errors = validation.get("errors") if isinstance(validation.get("errors"), list) else []
+	final_answer_authority = build_final_answer_authority_contract(
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload=trace,
+		grounded_turn_context=grounded_turn,
+		answer_text=answer_text,
+		authority_context=authority_context,
+	).to_payload()
 	return AuditEnvelope(
 		request_id=interaction_contract.request_id,
 		session_id=interaction_contract.session_id,
@@ -5868,6 +6241,7 @@ def build_audit_envelope(
 		validation_status=validation_status,
 		validation_errors=[str(x or "").strip() for x in validation_errors if str(x or "").strip()],
 		answer_chars=len(str(answer_text or "").strip()),
+		final_answer_authority=final_answer_authority,
 	)
 
 

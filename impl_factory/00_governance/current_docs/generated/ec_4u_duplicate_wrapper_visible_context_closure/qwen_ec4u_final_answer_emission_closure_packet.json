@@ -1,0 +1,263 @@
+{
+  "audit_hardening_backlog": [
+    "classify_unknown_append_tool_payload_sources_more_strictly",
+    "add_source_allowlist_or_provenance_for_additional_tool_payloads",
+    "expand_branch_specific_payload_leak_detection_beyond_named_business_patterns",
+    "keep_append_knowledge_boundary_contract_classified_as_safe_summary_contract_unless_source_payload_shape_changes"
+  ],
+  "audit_limitation_note": "EC-4N is a conservative static/governance audit, not a complete taint-analysis engine. It now checks known pre-helper business payloads and post-helper appends after blocked emission, but unknown append_tool_payload(...) sources require stricter classification in a later hardening slice.",
+  "branch": "feature/ai-assistant",
+  "contract_version": "1.0",
+  "created_at": "2026-05-15T18:26:41+00:00",
+  "current_dirty_status_count": 307,
+  "direct_no_leak_test_summary_by_lane": [
+    {
+      "covered_paths": [
+        "frontdoor_lane_package_governed_report_or_projection",
+        "frontdoor_lane_package_governed_kpi_definition"
+      ],
+      "guarantees": [
+        "blocked_authority_writes_no_assistant_message",
+        "blocked_authority_returns_no_answer_text",
+        "blocked_authority_writes_no_tool_trace_answer_text",
+        "blocked_authority_writes_no_business_artifact_rendered_narrative_grounded_payload",
+        "blocked_authority_writes_exactly_one_blocked_authorized_emission_contract"
+      ],
+      "lane_id": "frontdoor_governed_report_and_kpi_definition",
+      "status": "verified_pass",
+      "test_module": "test_frontdoor_authorized_emission_contracts"
+    },
+    {
+      "covered_paths": [
+        "compiled_support_result_answer"
+      ],
+      "guarantees": [
+        "blocked_authority_writes_no_assistant_message",
+        "blocked_authority_returns_no_answer_text",
+        "blocked_authority_writes_no_tool_trace_answer_text",
+        "blocked_authority_writes_no_business_artifact_rendered_narrative_grounded_payload",
+        "blocked_authority_writes_exactly_one_blocked_authorized_emission_contract"
+      ],
+      "lane_id": "compiled_support_result_answer",
+      "status": "verified_pass",
+      "test_module": "test_compiled_support_authorized_emission_contracts"
+    },
+    {
+      "covered_paths": [
+        "reasoning_lane_business_answer"
+      ],
+      "guarantees": [
+        "blocked_authority_writes_no_assistant_message",
+        "blocked_authority_returns_no_answer_text",
+        "blocked_authority_writes_no_tool_trace_answer_text",
+        "blocked_authority_writes_no_business_artifact_rendered_narrative_grounded_payload",
+        "blocked_authority_writes_exactly_one_blocked_authorized_emission_contract"
+      ],
+      "lane_id": "reasoning_business_answer",
+      "status": "verified_pass",
+      "test_module": "test_reasoning_lane_model_role_observability_contracts"
+    },
+    {
+      "covered_paths": [
+        "nbu_governed_requery_entity_detail"
+      ],
+      "guarantees": [
+        "blocked_authority_writes_no_assistant_message",
+        "blocked_authority_returns_no_answer_text",
+        "blocked_authority_writes_no_tool_trace_answer_text",
+        "blocked_authority_writes_no_business_artifact_rendered_narrative_grounded_payload",
+        "blocked_authority_writes_exactly_one_blocked_authorized_emission_contract"
+      ],
+      "lane_id": "nbu_governed_requery_entity_detail",
+      "status": "verified_pass",
+      "test_module": "test_nbu_governed_requery_authorized_emission_contracts"
+    },
+    {
+      "covered_paths": [
+        "legacy_runtime_business_or_boundary_answer"
+      ],
+      "guarantees": [
+        "blocked_authority_writes_no_assistant_message",
+        "blocked_authority_returns_no_answer_text",
+        "blocked_authority_writes_no_tool_trace_answer_text",
+        "blocked_authority_writes_no_business_artifact_rendered_narrative_grounded_payload",
+        "blocked_authority_writes_exactly_one_blocked_authorized_emission_contract"
+      ],
+      "lane_id": "legacy_runtime_business_or_boundary_answer",
+      "status": "verified_pass",
+      "test_module": "test_legacy_runtime_authorized_emission_contracts"
+    },
+    {
+      "covered_paths": [
+        "entity_followup_success",
+        "entity_followup_failure"
+      ],
+      "guarantees": [
+        "blocked_authority_writes_no_assistant_message",
+        "blocked_authority_returns_no_answer_text",
+        "blocked_authority_writes_no_tool_trace_answer_text",
+        "blocked_authority_writes_no_business_artifact_rendered_narrative_grounded_payload",
+        "blocked_authority_writes_exactly_one_blocked_authorized_emission_contract"
+      ],
+      "lane_id": "entity_followup_success_and_failure",
+      "status": "verified_pass",
+      "test_module": "test_entity_followup_authorized_emission_contracts"
+    }
+  ],
+  "ec4o_counterpart_decision": "enterprise_cleanup_ec_4t2_accepted_ec_4u_visible_context_proof_only",
+  "final_recommendation": "enterprise_cleanup_ec_4u_ready_for_qa_risk_review",
+  "fresh_ec4n_summary": {
+    "dry_run_counts": {
+      "active_runtime_direct_assistant_append_count": 0,
+      "authorized_runtime_append_sink_count": 2,
+      "excluded_non_runtime_append_count": 1,
+      "high_risk_paths": [
+        "service_append_message_wrapper"
+      ],
+      "migrated_authorized_path_count": 27,
+      "total_source_assistant_append_sites_observed": 3
+    },
+    "final_recommendation": "enterprise_cleanup_ec_4n_ready_for_counterpart_review",
+    "migrated_path_count": 27,
+    "potential_leak_count": 0,
+    "potential_leak_path_ids": [],
+    "remaining_high_risk_paths": [
+      {
+        "classification": "low_level_append_wrapper_not_migrated_by_design",
+        "ec4n_decision": "classify_only_do_not_migrate_in_ec4n",
+        "path_id": "service_append_message_wrapper",
+        "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py",
+        "risk_level": "high"
+      }
+    ]
+  },
+  "fresh_ec4q_summary": {
+    "active_direct_assistant_append_count": 0,
+    "final_recommendation": "enterprise_cleanup_ec_4q_a_ready_for_counterpart_review",
+    "inventory_item_count": 1,
+    "low_level_wrapper_count": 1,
+    "unclassified_source_append_site_count": 0
+  },
+  "frontdoor_duplicate_decision": {
+    "active_import_status": "compatibility_facade_not_imported_by_service",
+    "decision": "defer_duplicate_or_inactive",
+    "direct_append_count": 0,
+    "path_id": "frontdoor_lane_root_duplicate",
+    "required_test_before_closure": "import audit proves service imports package frontdoor lane and root duplicate has no direct assistant append",
+    "status": "closed_by_compatibility_facade"
+  },
+  "hard_runtime_blocking_scope": "migrated_lanes_only",
+  "head": "154be1e",
+  "manual_browser_required": false,
+  "non_goals": [
+    "no_new_lane_migration",
+    "no_service_append_wrapper_migration",
+    "no_active_package_frontdoor_behavior_change",
+    "no_model_role_strict_enforcement",
+    "no_release_packaging_cleanup",
+    "no_ux_mi_filter_or_family_expansion"
+  ],
+  "qa_risk_auditor_review_recommended": true,
+  "remaining_high_risk_classification": [
+    {
+      "classification": "low_level_append_wrapper_not_migrated_by_design",
+      "decision": "monitor_only_do_not_hard_gate_raw_wrapper",
+      "path_id": "service_append_message_wrapper",
+      "reason": "Low-level append helper lacks answer type and authority context; migration must happen above raw append."
+    }
+  ],
+  "report_json_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_4u_duplicate_wrapper_visible_context_closure/qwen_ec4u_final_answer_emission_closure_packet.json",
+  "report_markdown_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_4u_duplicate_wrapper_visible_context_closure/qwen_ec4u_final_answer_emission_closure_packet.md",
+  "reviewer": "codex_ec4u_a_closure",
+  "runtime_behavior_changed": false,
+  "service_wrapper_decision": {
+    "decision": "monitor_only",
+    "hard_gate_at_wrapper": false,
+    "path_id": "service_append_message_wrapper",
+    "reason": "The raw wrapper lacks answer type and authority context; EC-4 gates answer lanes above this layer.",
+    "status": "monitored_infrastructure_not_answer_lane"
+  },
+  "slice_id": "ec_4u_duplicate_wrapper_visible_context_closure",
+  "type": "qwen_ec4u_final_answer_emission_closure_packet",
+  "verification_summary": [
+    {
+      "check_id": "enterprise_guardrail",
+      "command": "python3 scripts/check_qwen_enterprise_guardrails.py",
+      "observed_result": "PASS",
+      "release_relevance": "must_remain_green"
+    },
+    {
+      "check_id": "ec4o_focused_lane_authorized_group",
+      "command": "python3 -m unittest <EC-4O focused lane/authorized group>",
+      "observed_result": "61 passed",
+      "release_relevance": "direct_no_leak_contracts"
+    },
+    {
+      "check_id": "ec4_gate_regression_dry_run_leakage_group",
+      "command": "python3 -m unittest <gate/regression/dry-run/leakage audit group>",
+      "observed_result": "35 passed",
+      "release_relevance": "closure_governance_contracts"
+    },
+    {
+      "check_id": "final_authority_trace_manual_chain",
+      "command": "python3 -m unittest <final authority / visible trace / manual chain>",
+      "observed_result": "59 passed",
+      "release_relevance": "authority_trace_manual_pipeline"
+    },
+    {
+      "check_id": "semantic_financial_resolution",
+      "command": "python3 -m unittest ai_assistant_ui.tests.test_semantic_financial_resolution",
+      "observed_result": "276 passed",
+      "release_relevance": "frontdoor_semantic_financial_regression"
+    },
+    {
+      "check_id": "syntax_compile",
+      "command": "python3 -m py_compile <EC-4O touched modules>",
+      "observed_result": "PASS",
+      "release_relevance": "syntax_sanity"
+    }
+  ],
+  "visible_context_outer_call_site_proof": {
+    "allowed_additional_payload_sources": [
+      {
+        "allowed_payload_families": [
+          "natural_business_understanding_trace",
+          "nbu_shadow_observation",
+          "conversation_control_evidence"
+        ],
+        "business_answer_text_allowed": false,
+        "source_classification": "control_shadow_payload",
+        "source_name": "nbu_shadow_tool_payloads"
+      },
+      {
+        "allowed_payload_families": [
+          "compound_request_assessment",
+          "compound_sequence_decision",
+          "conversation_control_decision"
+        ],
+        "business_answer_text_allowed": false,
+        "source_classification": "compound_control_payload",
+        "source_name": "sequence_cleanup_tool_payloads"
+      },
+      {
+        "allowed_payload_families": [],
+        "business_answer_text_allowed": false,
+        "source_classification": "no_payload",
+        "source_name": "empty_payload_list"
+      }
+    ],
+    "evidence_tests": [
+      "test_visible_context_blocked_authority_probe_writes_only_blocked_contract"
+    ],
+    "limitation": "Runtime probe covers forced malformed visible-context authority; static source provenance remains as a conservative companion check.",
+    "proof_type": "blocked_authority_runtime_probe",
+    "release_blocking": false,
+    "runtime_probe_guarantees": [
+      "no_assistant_answer",
+      "no_returned_answer_text",
+      "no_business_evidence_tool_payload_leak",
+      "exactly_one_blocked_authorized_emission_contract"
+    ],
+    "status": "runtime_blocked_authority_probe_passed"
+  }
+}

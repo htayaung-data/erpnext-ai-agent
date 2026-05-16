@@ -1,11 +1,64 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
-from ai_assistant_ui.qwen_chat.contracts import build_audit_envelope, build_known_unsupported_scope_decision_input
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_POLICY_BOUNDARY,
+	emit_authorized_assistant_answer,
+)
+from ai_assistant_ui.qwen_chat.boundary_support import knowledge_boundary_event_level
+from ai_assistant_ui.qwen_chat.contracts import build_known_unsupported_scope_decision_input
 from ai_assistant_ui.qwen_chat.fresh_query_interpreter import execute_compiled_fresh_query_message
-from ai_assistant_ui.qwen_chat.knowledge_boundary import render_knowledge_boundary_answer
+from ai_assistant_ui.qwen_chat.knowledge_boundary import evaluate_knowledge_boundary, render_knowledge_boundary_answer
+from ai_assistant_ui.qwen_chat.observability import record_phase6_observability_event, record_phase6_performance_metric
+
+
+def _payload(value: Any) -> Dict[str, Any]:
+	if hasattr(value, "to_payload"):
+		try:
+			payload = value.to_payload()
+		except Exception:
+			payload = {}
+		return dict(payload) if isinstance(payload, dict) else {}
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def _knowledge_boundary_observability_payloads(
+	*,
+	request_id: str,
+	session_id: str,
+	boundary_payload: Dict[str, Any],
+	latency_ms: int,
+) -> List[Dict[str, Any]]:
+	coverage_state = str(boundary_payload.get("knowledge_coverage_state") or "").strip()
+	final_lane = str(boundary_payload.get("final_lane") or "").strip()
+	return [
+		record_phase6_observability_event(
+			request_id=request_id,
+			session_id=session_id,
+			event_family="knowledge_boundary",
+			event_name=coverage_state or "answered",
+			event_level=knowledge_boundary_event_level(boundary_payload),
+			details={
+				"final_lane": final_lane,
+				"safe_next_action": str(boundary_payload.get("safe_next_action") or "").strip(),
+				"user_response_mode": str(boundary_payload.get("user_response_mode") or "").strip(),
+				"latency_ms": int(max(0, latency_ms)),
+			},
+		),
+		record_phase6_performance_metric(
+			request_id=request_id,
+			session_id=session_id,
+			metric_name="knowledge_boundary_latency",
+			metric_value=float(max(0, latency_ms)),
+			metric_unit="ms",
+			details={
+				"knowledge_coverage_state": coverage_state,
+				"final_lane": final_lane,
+			},
+		),
+	]
 
 
 def handle_runtime_gate_turn(
@@ -36,7 +89,7 @@ def handle_runtime_gate_turn(
 	compiled_rollout_fallback_payload: Callable[..., Dict[str, Any]],
 	handle_compiled_first_turn_result: Callable[..., Tuple[bool, Dict[str, Any]]],
 	out_of_scope_answer: Callable[[str, Dict[str, Any] | Any], str],
-	assistant_text_payload: Callable[[str], str],
+	assistant_text_payload: Callable[[str], Any],
 	save_session: Callable[..., None],
 ) -> Tuple[bool, Dict[str, Any] | None, Dict[str, Any] | None]:
 	compiled_rollout_fallback: Dict[str, Any] | None = None
@@ -112,12 +165,11 @@ def handle_runtime_gate_turn(
 			"context_domains": context_domains,
 			"primary_domain": primary_domain,
 		}
-		boundary_payload = append_knowledge_boundary_contract(
-			session_doc,
+		boundary_payload = evaluate_knowledge_boundary(
 			request_id=request_id,
 			session_id=session_id,
 			proposed_lane="artifact_lane",
-			front_door_contract=frontdoor_contract.to_payload(),
+			front_door_contract=_payload(frontdoor_contract),
 			governed_scope_contract=unsupported_scope_payload,
 			grounded_turn=latest_grounded_turn if latest_grounded_turn_available else {},
 		)
@@ -125,31 +177,48 @@ def handle_runtime_gate_turn(
 			boundary_contract=boundary_payload,
 			detail_answer=legacy_out_of_scope_answer,
 		)
-		append_knowledge_boundary_observability(
-			session_doc,
-			request_id=request_id,
-			session_id=session_id,
-			boundary_payload=boundary_payload,
-			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
-		)
-		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
-		append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=followup_resolution,
-				execution_path=execution_path,
-				runtime_trace_payload={},
-				grounded_turn_context={},
-				answer_text=answer_text,
-			).to_payload(),
+		latency_ms = int(max(0, round((time.perf_counter() - boundary_started_at) * 1000)))
+		pre_assistant_payloads: List[Dict[str, Any]] = [
+			boundary_payload,
+			*_knowledge_boundary_observability_payloads(
+				request_id=request_id,
+				session_id=session_id,
+				boundary_payload=boundary_payload,
+				latency_ms=latency_ms,
+			),
+		]
+		runtime_trace_payload = {
+			"agent_meta": {
+				"engine": "runtime_gate_lane",
+				"status": "policy_boundary",
+			}
+		}
+		# EC-4S1 runtime-gate authority checkpoint: boundary payloads stay staged until allowed.
+		authorized_emission = emit_authorized_assistant_answer(
+			session_doc=session_doc,
+			answer_text=answer_text,
+			answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload=runtime_trace_payload,
+			grounded_turn_context={},
+			authority_context={"knowledge_boundary": boundary_payload},
+			pre_assistant_tool_payloads=pre_assistant_payloads,
 		)
 		save_session(session_doc, ignore_permissions=False)
 		payload: Dict[str, Any] = {
-			"ok": True,
+			"ok": bool(authorized_emission.emitted),
 			"request_id": request_id,
+			"session_id": session_id,
 			"mode": "known_unsupported_erp_domain",
-			"agent_meta": {"engine": "local_governed_scope_guard"},
+			"agent_meta": {
+				"engine": "local_governed_scope_guard",
+				"authorized_emission": authorized_emission.to_payload(),
+			},
 		}
 		if isinstance(compiled_rollout_fallback, dict):
 			payload["compiled_rollout_fallback_reason"] = str(compiled_rollout_fallback.get("reason") or "").strip()

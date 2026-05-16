@@ -566,17 +566,19 @@ def _latest_compatible_artifact_for_rank_reference(
 	if visible_artifact:
 		return visible_artifact
 	current = _current_artifact_node(artifacts)
-	current_terms = set(DISCOURSE_CURRENT_TERMS)
-	if nbu_ordinal_reference_index(raw_message) == -2:
-		current_terms.discard("last")
-	if not prefer_previous and _contains_term(raw_message, current_terms):
-		return current
 	scored = _scored_artifacts(
 		raw_message=raw_message,
 		context_graph=context_graph,
 		artifacts=artifacts,
 		prefer_previous=prefer_previous,
 	)
+	if scored and scored[0][0] > 0:
+		return scored[0][2]
+	current_terms = set(DISCOURSE_CURRENT_TERMS)
+	if nbu_ordinal_reference_index(raw_message) == -2:
+		current_terms.discard("last")
+	if not prefer_previous and _contains_term(raw_message, current_terms):
+		return current
 	if prefer_previous:
 		previous = _previous_artifact_nodes(artifacts)
 		if previous:
@@ -622,6 +624,66 @@ def select_nbu_context_graph_artifact(
 
 def _artifact_payload_from_node(artifact_node: Dict[str, Any]) -> Dict[str, Any]:
 	return _clean_dict(_clean_dict(artifact_node).get("payload"))
+
+
+def _artifact_row_count(artifact_payload: Dict[str, Any]) -> int:
+	rows, _source_key = nbu_artifact_rows(artifact_payload)
+	return len(rows)
+
+
+def _artifact_entity_type(artifact_payload: Dict[str, Any], entity: Dict[str, Any] | None = None) -> str:
+	clean_entity = _clean_dict(entity)
+	for key in ("entity_type", "party_type", "document_type", "doctype"):
+		value = _clean_text(clean_entity.get(key))
+		if value:
+			return value
+	artifact = _clean_dict(artifact_payload)
+	dimensions = _clean_dict(artifact.get("dimensions"))
+	for key in ("entity_dimension", "entity_type", "party_type", "document_type"):
+		value = _clean_text(dimensions.get(key))
+		if value:
+			return value
+	rows, _source_key = nbu_artifact_rows(artifact)
+	if rows:
+		entity_payload = nbu_row_entity_payload(rows[0], artifact, {})
+		value = _clean_text(entity_payload.get("entity_type"))
+		if value:
+			return value
+	return ""
+
+
+def _int_value(value: Any, fallback: int = 0) -> int:
+	try:
+		return int(value)
+	except (TypeError, ValueError):
+		return fallback
+
+
+def _resolution_with_selected_artifact_trace(
+	resolution: NBUContextResolutionContract,
+	*,
+	selected_artifact: Dict[str, Any],
+	selected_payload: Dict[str, Any],
+	selection_strategy: str,
+) -> NBUContextResolutionContract:
+	payload = resolution.to_payload()
+	entity = _clean_dict(payload.get("resolved_entity"))
+	return NBUContextResolutionContract(
+		status=payload.get("status", "not_evaluated"),
+		target_reference=payload.get("target_reference", "none"),
+		resolved_artifact_id=payload.get("resolved_artifact_id") or _artifact_id(selected_payload, "selected-artifact"),
+		selected_report_family=_artifact_family(selected_payload),
+		selected_entity_type=_artifact_entity_type(selected_payload, entity),
+		selected_artifact_role=_clean_text(_clean_dict(selected_artifact).get("role")),
+		selection_strategy=selection_strategy,
+		resolved_row_index=_int_value(payload.get("resolved_row_index"), -1),
+		resolved_rank=_int_value(payload.get("resolved_rank"), 0),
+		requested_rank=_int_value(payload.get("requested_rank"), 0),
+		available_row_count=_int_value(payload.get("available_row_count"), 0) or _artifact_row_count(selected_payload),
+		resolved_entity=entity,
+		ambiguity_options=_clean_list(payload.get("ambiguity_options")),
+		reason=payload.get("reason", ""),
+	)
 
 
 def _candidate_with_target(candidate_payload: Dict[str, Any], target_reference: str) -> Dict[str, Any]:
@@ -699,31 +761,51 @@ def resolve_nbu_context_graph_reference(
 		target_reference=target_reference,
 	)
 	selected_payload = _artifact_payload_from_node(selected_artifact)
+	selection_strategy = (
+		"previous_compatible_artifact"
+		if _clean_dict(selected_artifact).get("role") == "previous"
+		else "current_compatible_artifact"
+	)
 
 	if target_reference == "unclear":
 		rows, _source_key = nbu_artifact_rows(selected_payload)
 		if rows:
-			return resolve_nbu_context_reference(
-				raw_message=raw_message,
-				candidate_payload={"target_reference": "current_artifact"},
-				current_artifact=selected_payload,
-				recent_focus=recent_focus,
+			return _resolution_with_selected_artifact_trace(
+				resolve_nbu_context_reference(
+					raw_message=raw_message,
+					candidate_payload={"target_reference": "current_artifact"},
+					current_artifact=selected_payload,
+					recent_focus=recent_focus,
+				),
+				selected_artifact=selected_artifact,
+				selected_payload=selected_payload,
+				selection_strategy=selection_strategy,
 			)
 	if target_reference == "previous_artifact":
 		target_reference = "current_artifact" if selected_payload else "previous_artifact"
 	if target_reference in {"rank_n", "current_artifact", "selected_entity", "named_entity"}:
-		return resolve_nbu_context_reference(
-			raw_message=raw_message,
-			candidate_payload=_candidate_with_target(candidate, target_reference),
-			current_artifact=selected_payload,
-			recent_focus=recent_focus,
+		return _resolution_with_selected_artifact_trace(
+			resolve_nbu_context_reference(
+				raw_message=raw_message,
+				candidate_payload=_candidate_with_target(candidate, target_reference),
+				current_artifact=selected_payload,
+				recent_focus=recent_focus,
+			),
+			selected_artifact=selected_artifact,
+			selected_payload=selected_payload,
+			selection_strategy=selection_strategy,
 		)
 	if target_reference == "candidate_list":
-		return resolve_nbu_context_reference(
-			raw_message=raw_message,
-			candidate_payload=candidate,
-			current_artifact=selected_payload,
-			recent_focus=recent_focus,
+		return _resolution_with_selected_artifact_trace(
+			resolve_nbu_context_reference(
+				raw_message=raw_message,
+				candidate_payload=candidate,
+				current_artifact=selected_payload,
+				recent_focus=recent_focus,
+			),
+			selected_artifact=selected_artifact,
+			selected_payload=selected_payload,
+			selection_strategy=selection_strategy,
 		)
 	return NBUContextResolutionContract(
 		status="not_evaluated",

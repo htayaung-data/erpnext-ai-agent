@@ -13,6 +13,8 @@ from ai_assistant_ui.qwen_chat.metadata import (
 	get_frontdoor_intent_spec,
 	list_frontdoor_intent_specs,
 )
+from ai_assistant_ui.qwen_chat.model_role_coverage import build_model_role_contract_bundle
+from ai_assistant_ui.qwen_chat.model_role_observability import ROLE_LIGHT_SEMANTIC, ROLE_UNKNOWN
 from ai_assistant_ui.qwen_chat.runtime_client import (
 	QwenRuntimeClientError,
 	call_qwen_runtime_frontdoor_interpretation,
@@ -43,6 +45,19 @@ class SemanticFrontDoorResult:
 	agent_meta: Dict[str, Any] | None = None
 
 	def to_payload(self) -> Dict[str, Any]:
+		agent_meta = dict(self.agent_meta or {})
+		model_role_bundle = build_model_role_contract_bundle(
+			lane="frontdoor_semantic_classification",
+			role_owner="frontdoor_intent_gate",
+			model_role=ROLE_LIGHT_SEMANTIC if agent_meta else ROLE_UNKNOWN,
+			agent_meta=agent_meta,
+			runtime_source=(
+				"frontdoor_runtime_agent_meta"
+				if agent_meta
+				else f"frontdoor_{self.status or 'unknown'}_without_runtime_agent_meta"
+			),
+			strict_enforcement_enabled=False,
+		)
 		return {
 			"type": "qwen_semantic_frontdoor_interpretation",
 			"contract_version": "1.0",
@@ -58,7 +73,9 @@ class SemanticFrontDoorResult:
 			}
 			if self.intent
 			else {},
-			"agent_meta": dict(self.agent_meta or {}),
+			"agent_meta": agent_meta,
+			"model_role_observability": model_role_bundle["model_role_observability"],
+			"model_role_strict_readiness": model_role_bundle["model_role_strict_readiness"],
 		}
 
 

@@ -21,6 +21,11 @@ from ai_assistant_ui.qwen_chat.audit_support import (
 	family_latency_budget_summary as _family_latency_budget_summary_helper,
 	family_metrics_summary as _family_metrics_summary_helper,
 )
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_CONTROL,
+	ANSWER_TYPE_POLICY_BOUNDARY,
+	emit_authorized_assistant_answer,
+)
 from ai_assistant_ui.qwen_chat.boundary_support import (
 	append_artifact_boundary_observability as _append_artifact_boundary_observability_helper,
 	append_knowledge_boundary_observability as _append_knowledge_boundary_observability_helper,
@@ -232,6 +237,7 @@ from ai_assistant_ui.qwen_chat.followup_interpreter import (
 	assess_context_isolation,
 )
 from ai_assistant_ui.qwen_chat.knowledge_boundary import (
+	evaluate_knowledge_boundary,
 	render_knowledge_boundary_answer,
 )
 from ai_assistant_ui.qwen_chat.natural_business_understanding_service_activation import (
@@ -1045,6 +1051,24 @@ def _append_tool_payload_values(session_doc, values) -> None:
 		values,
 		append_tool_payload=_append_tool_payload,
 	)
+
+
+def _service_tool_payload_values(values) -> List[Dict[str, Any]]:
+	payloads: List[Dict[str, Any]] = []
+	for value in values or []:
+		payload: Dict[str, Any] = {}
+		if value is None:
+			continue
+		if hasattr(value, "to_payload"):
+			try:
+				payload = dict(value.to_payload() or {})
+			except Exception:
+				payload = {}
+		elif isinstance(value, dict):
+			payload = dict(value)
+		if payload:
+			payloads.append(payload)
+	return payloads
 
 
 def _safe_json_dumps(obj: Any) -> str:
@@ -2141,9 +2165,12 @@ def _handle_prior_branch_restore_reopen_pending_clarification(
 	)
 	assistant_answer = pending_clarification_repeat_answer(pending_clarification_signal)
 	_append_message(session_doc, "user", raw_message)
-	_append_tool_payload_values(
-		session_doc,
-		[
+	authorized_emission = _emit_service_control_answer(
+		session_doc=session_doc,
+		answer_text=assistant_answer,
+		answer_mode="service_prior_branch_clarification_restore",
+		reason=execution_path.reason,
+		pre_assistant_payload_values=[
 			interaction_contract,
 			conversation_control_evidence_contract,
 			frontdoor_semantic_result,
@@ -2154,15 +2181,15 @@ def _handle_prior_branch_restore_reopen_pending_clarification(
 			execution_path,
 		],
 	)
-	_append_message(session_doc, "assistant", _assistant_text_payload(assistant_answer))
 	_save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
 		"mode": "clarification",
 		"agent_meta": {
 			"engine": "prior_branch_restore",
 			"intent_class": "reopen_pending_clarification",
+			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}
 
@@ -3223,6 +3250,122 @@ def _knowledge_boundary_event_level(boundary_payload: Dict[str, Any]) -> str:
 	return _knowledge_boundary_event_level_helper(boundary_payload)
 
 
+def _knowledge_boundary_observability_payloads(
+	*,
+	request_id: str,
+	session_id: str,
+	boundary_payload: Dict[str, Any],
+	latency_ms: int,
+) -> List[Dict[str, Any]]:
+	coverage_state = str(boundary_payload.get("knowledge_coverage_state") or "").strip()
+	final_lane = str(boundary_payload.get("final_lane") or "").strip()
+	return [
+		record_phase6_observability_event(
+			request_id=request_id,
+			session_id=session_id,
+			event_family="knowledge_boundary",
+			event_name=coverage_state or "answered",
+			event_level=_knowledge_boundary_event_level(boundary_payload),
+			details={
+				"final_lane": final_lane,
+				"safe_next_action": str(boundary_payload.get("safe_next_action") or "").strip(),
+				"user_response_mode": str(boundary_payload.get("user_response_mode") or "").strip(),
+				"latency_ms": int(max(0, latency_ms)),
+			},
+		),
+		record_phase6_performance_metric(
+			request_id=request_id,
+			session_id=session_id,
+			metric_name="knowledge_boundary_latency",
+			metric_value=float(max(0, latency_ms)),
+			metric_unit="ms",
+			details={
+				"knowledge_coverage_state": coverage_state,
+				"final_lane": final_lane,
+			},
+		),
+	]
+
+
+def _emit_service_policy_boundary_answer(
+	*,
+	session_doc,
+	request_id: str,
+	session_id: str,
+	mode: str,
+	engine: str,
+	answer_text: str,
+	boundary_payload: Dict[str, Any],
+	interaction_contract,
+	followup_resolution,
+	execution_path,
+	latency_ms: int,
+):
+	pre_assistant_payloads: List[Dict[str, Any]] = [
+		boundary_payload,
+		*_knowledge_boundary_observability_payloads(
+			request_id=request_id,
+			session_id=session_id,
+			boundary_payload=boundary_payload,
+			latency_ms=latency_ms,
+		),
+		execution_path.to_payload(),
+	]
+	runtime_trace_payload = {
+		"agent_meta": {
+			"engine": engine,
+			"status": mode,
+		}
+	}
+	# EC-4S2 service policy-boundary authority checkpoint: service boundary payloads stay staged until allowed.
+	return emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+		append_message=_append_message,
+		append_tool_payload=_append_tool_payload,
+		assistant_text_payload=_assistant_text_payload,
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload=runtime_trace_payload,
+		grounded_turn_context={},
+		authority_context={"knowledge_boundary": boundary_payload},
+		pre_assistant_tool_payloads=pre_assistant_payloads,
+	)
+
+
+def _emit_service_control_answer(
+	*,
+	session_doc,
+	answer_text: str,
+	answer_mode: str,
+	reason: str,
+	pre_assistant_payload_values: List[Any],
+	control_meta_authority: Dict[str, Any] | None = None,
+):
+	authority = (
+		dict(control_meta_authority)
+		if isinstance(control_meta_authority, dict)
+		else {
+			"authority_source": "control_meta",
+			"answer_mode": str(answer_mode or "").strip() or "service_control_answer",
+			"reason": str(reason or "").strip() or "Service emitted an explicit non-business control response.",
+			"preflight_status": "passed",
+		}
+	)
+	return emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_CONTROL,
+		append_message=_append_message,
+		append_tool_payload=_append_tool_payload,
+		assistant_text_payload=_assistant_text_payload,
+		control_meta_authority=authority,
+		pre_assistant_tool_payloads=_service_tool_payload_values(pre_assistant_payload_values),
+	)
+
+
 def _append_knowledge_boundary_observability(
 	session_doc,
 	*,
@@ -3725,54 +3868,56 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			requires_runtime=False,
 			grounded_required=False,
 		)
+		followup_resolution = build_followup_resolution_contract(
+			request_id=request_id,
+			mode="front_door",
+			requested_modes=[],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=latest_grounded_turn_available,
+			self_contained=not latest_grounded_turn_available,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			reason="The ordered compound-request sequence had no remaining steps.",
+		)
+		audit_payload = build_audit_envelope(
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload={},
+			grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
+			answer_text=compound_completion_answer,
+		).to_payload()
 		_append_message(session_doc, "user", raw_msg)
-		_append_tool_payload_values(
-			session_doc,
-			[
+		authorized_emission = _emit_service_control_answer(
+			session_doc=session_doc,
+			answer_text=compound_completion_answer,
+			answer_mode="service_compound_continue_completed",
+			reason=execution_path.reason,
+			pre_assistant_payload_values=[
 				interaction_contract,
 				conversation_control_evidence_contract,
 				*nbu_shadow_tool_payloads,
 				latest_compound_request_assessment,
 				compound_completion_decision_contract,
 				execution_path,
+				audit_payload,
 			],
-		)
-		_append_message(session_doc, "assistant", _assistant_text_payload(compound_completion_answer))
-		_append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=build_followup_resolution_contract(
-					request_id=request_id,
-					mode="front_door",
-					requested_modes=[],
-					target_dimension="",
-					target_limit=0,
-					sort_direction="",
-					target_metric="",
-					requested_columns=[],
-					requested_time_scope="",
-					target_capability_id="",
-					target_report="",
-					depends_on_grounded_turn=latest_grounded_turn_available,
-					self_contained=not latest_grounded_turn_available,
-					latest_grounded_turn_available=latest_grounded_turn_available,
-					reason="The ordered compound-request sequence had no remaining steps.",
-				),
-				execution_path=execution_path,
-				runtime_trace_payload={},
-				grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
-				answer_text=compound_completion_answer,
-			).to_payload(),
 		)
 		_save_session(session_doc, ignore_permissions=False)
 		return True, {
-			"ok": True,
+			"ok": bool(authorized_emission.emitted),
 			"request_id": request_id,
 			"mode": "front_door",
 			"agent_meta": {
 				"engine": "compound_request_control",
 				"intent_class": "compound_request_complete",
+				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
 	reasoning_rollout = _erp_business_reasoning_rollout_decision(
@@ -4120,10 +4265,39 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			requires_runtime=False,
 			grounded_required=False,
 		)
+		compound_stop_answer = "Okay, I’ll stop here."
+		followup_resolution = build_followup_resolution_contract(
+			request_id=request_id,
+			mode="front_door",
+			requested_modes=[],
+			target_dimension="",
+			target_limit=0,
+			sort_direction="",
+			target_metric="",
+			requested_columns=[],
+			requested_time_scope="",
+			target_capability_id="",
+			target_report="",
+			depends_on_grounded_turn=latest_grounded_turn_available,
+			self_contained=not latest_grounded_turn_available,
+			latest_grounded_turn_available=latest_grounded_turn_available,
+			reason="The user stopped the remaining ordered compound-request steps.",
+		)
+		audit_payload = build_audit_envelope(
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload={},
+			grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
+			answer_text=compound_stop_answer,
+		).to_payload()
 		_append_message(session_doc, "user", raw_msg)
-		_append_tool_payload_values(
-			session_doc,
-			[
+		authorized_emission = _emit_service_control_answer(
+			session_doc=session_doc,
+			answer_text=compound_stop_answer,
+			answer_mode="service_compound_stop",
+			reason=execution_path.reason,
+			pre_assistant_payload_values=[
 				interaction_contract,
 				frontdoor_semantic_result,
 				frontdoor_contract,
@@ -4131,44 +4305,18 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				cancelled_compound_assessment,
 				compound_cancellation_decision_contract,
 				execution_path,
+				audit_payload,
 			],
-		)
-		_append_message(session_doc, "assistant", _assistant_text_payload("Okay, I’ll stop here."))
-		_append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=build_followup_resolution_contract(
-					request_id=request_id,
-					mode="front_door",
-					requested_modes=[],
-					target_dimension="",
-					target_limit=0,
-					sort_direction="",
-					target_metric="",
-					requested_columns=[],
-					requested_time_scope="",
-					target_capability_id="",
-					target_report="",
-					depends_on_grounded_turn=latest_grounded_turn_available,
-					self_contained=not latest_grounded_turn_available,
-					latest_grounded_turn_available=latest_grounded_turn_available,
-					reason="The user stopped the remaining ordered compound-request steps.",
-				),
-				execution_path=execution_path,
-				runtime_trace_payload={},
-				grounded_turn_context=latest_grounded_turn if latest_grounded_turn_available else {},
-				answer_text="Okay, I’ll stop here.",
-			).to_payload(),
 		)
 		_save_session(session_doc, ignore_permissions=False)
 		return True, {
-			"ok": True,
+			"ok": bool(authorized_emission.emitted),
 			"request_id": request_id,
 			"mode": "front_door",
 			"agent_meta": {
 				"engine": "compound_request_control",
 				"intent_class": "compound_request_stop",
+				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
 	if compound_runtime_message:
@@ -5284,8 +5432,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			requires_runtime=False,
 			grounded_required=False,
 		)
-		boundary_payload = _append_knowledge_boundary_contract(
-			session_doc,
+		boundary_payload = evaluate_knowledge_boundary(
 			request_id=request_id,
 			session_id=session_name,
 			proposed_lane="artifact_lane",
@@ -5297,28 +5444,29 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 			boundary_contract=boundary_payload,
 			detail_answer=legacy_out_of_scope_answer,
 		)
-		_append_knowledge_boundary_observability(
-			session_doc,
+		authorized_emission = _emit_service_policy_boundary_answer(
+			session_doc=session_doc,
 			request_id=request_id,
 			session_id=session_name,
+			mode="out_of_scope_domain",
+			engine="local_governed_scope_guard",
+			answer_text=answer_text,
 			boundary_payload=boundary_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
 			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
 		)
-		_append_tool_payload(session_doc, execution_path.to_payload())
-		_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
-		_append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=followup_resolution,
-				execution_path=execution_path,
-				runtime_trace_payload={},
-				grounded_turn_context={},
-				answer_text=answer_text,
-			).to_payload(),
-		)
 		_save_session(session_doc, ignore_permissions=False)
-		return True, {"ok": True, "request_id": request_id, "mode": "out_of_scope_domain", "agent_meta": {"engine": "local_governed_scope_guard"}}
+		return True, {
+			"ok": bool(authorized_emission.emitted),
+			"request_id": request_id,
+			"mode": "out_of_scope_domain",
+			"agent_meta": {
+				"engine": "local_governed_scope_guard",
+				"authorized_emission": authorized_emission.to_payload(),
+			},
+		}
 
 	skip_artifact_boundary = _should_skip_artifact_boundary(
 		scope_decision_contract=scope_decision_contract,
@@ -5406,8 +5554,7 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 		)
 		if not local_transform:
 			local_boundary_started_at = time.perf_counter()
-			local_boundary_payload = _append_knowledge_boundary_contract(
-				session_doc,
+			local_boundary_payload = evaluate_knowledge_boundary(
 				request_id=request_id,
 				session_id=session_name,
 				proposed_lane="artifact_lane",
@@ -5430,34 +5577,42 @@ def handle_qwen_user_message(*, session_name: str, message: str, user: str) -> T
 				boundary_contract=local_boundary_payload,
 				detail_answer="",
 			)
-			_append_knowledge_boundary_observability(
-				session_doc,
+			authorized_emission = _emit_service_policy_boundary_answer(
+				session_doc=session_doc,
 				request_id=request_id,
 				session_id=session_name,
+				mode="known_unsupported_erp_domain",
+				engine="local_governed_scope_guard",
+				answer_text=answer_text,
 				boundary_payload=local_boundary_payload,
+				interaction_contract=interaction_contract,
+				followup_resolution=followup_resolution,
+				execution_path=execution_path,
 				latency_ms=int(max(0, round((time.perf_counter() - local_boundary_started_at) * 1000))),
-			)
-			_append_tool_payload(session_doc, execution_path.to_payload())
-			_append_message(session_doc, "assistant", _assistant_text_payload(answer_text))
-			_append_tool_payload(
-				session_doc,
-				build_audit_envelope(
-					interaction_contract=interaction_contract,
-					followup_resolution=followup_resolution,
-					execution_path=execution_path,
-					runtime_trace_payload={},
-					grounded_turn_context=latest_grounded_turn,
-					answer_text=answer_text,
-				).to_payload(),
 			)
 			_save_session(session_doc, ignore_permissions=False)
 			return True, {
-				"ok": True,
+				"ok": bool(authorized_emission.emitted),
 				"request_id": request_id,
 				"mode": "known_unsupported_erp_domain",
-				"agent_meta": {"engine": "local_governed_scope_guard"},
+				"agent_meta": {
+					"engine": "local_governed_scope_guard",
+					"authorized_emission": authorized_emission.to_payload(),
+				},
 			}
 	if local_transform:
+		local_transform_payload = (
+			local_transform[1]
+			if isinstance(local_transform, tuple) and len(local_transform) > 1 and isinstance(local_transform[1], dict)
+			else {}
+		)
+		local_authorized_emission = (
+			(local_transform_payload.get("agent_meta") or {}).get("authorized_emission")
+			if isinstance(local_transform_payload.get("agent_meta"), dict)
+			else {}
+		)
+		if isinstance(local_authorized_emission, dict) and local_authorized_emission:
+			return local_transform
 		execution_path = build_execution_path(
 			request_id=request_id,
 			followup_resolution=followup_resolution,

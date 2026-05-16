@@ -1,0 +1,143 @@
+{
+  "active_direct_assistant_append_count": 0,
+  "authorized_helper_sink_count": 2,
+  "blocking_reasons": [],
+  "branch": "feature/ai-assistant",
+  "contract_version": "1.0",
+  "count_correction_note": "inventory_item_count includes service_append_message_wrapper; active_direct_assistant_append_count excludes the low-level wrapper.",
+  "created_at": "2026-05-15T18:26:40+00:00",
+  "current_dirty_status_count": 307,
+  "decision_counts": {
+    "monitor_only": 1
+  },
+  "excluded_non_runtime_count": 1,
+  "final_recommendation": "enterprise_cleanup_ec_4q_a_ready_for_counterpart_review",
+  "frontdoor_duplicate_closure": {
+    "active_import_status": "compatibility_facade_not_imported_by_service",
+    "decision": "defer_duplicate_or_inactive",
+    "direct_append_count": 0,
+    "path_id": "frontdoor_lane_root_duplicate",
+    "required_test_before_closure": "import audit proves service imports package frontdoor lane and root duplicate has no direct assistant append",
+    "status": "closed_by_compatibility_facade"
+  },
+  "head": "154be1e",
+  "inventory_item_count": 1,
+  "low_level_wrapper_count": 1,
+  "non_goals": [
+    "no_runtime_migration_in_ec4q_a",
+    "no_service_py_implementation_change",
+    "no_model_role_strict_enforcement",
+    "no_release_packaging_cleanup",
+    "no_ux_mi_filter_or_family_expansion"
+  ],
+  "proposed_sequence": [
+    "EC-4U duplicate/wrapper closure",
+    "EC-4U visible-context blocked-authority proof",
+    "QA_Risk Auditor independent review packet"
+  ],
+  "remaining_append_inventory": [
+    {
+      "active_import_status": "active_low_level_infrastructure",
+      "answer_class": "wrapper",
+      "answer_type": "low_level_append_helper",
+      "audit_timing": "no_answer_context",
+      "current_authority_behavior": "not_applicable_low_level_append_wrapper",
+      "decision": "monitor_only",
+      "direct_append_count": 0,
+      "function_name": "_append_message",
+      "leak_risk": "monitor_high",
+      "line_reference": "1034",
+      "path_id": "service_append_message_wrapper",
+      "post_helper_payload_behavior": "not_applicable_low_level_role_wrapper",
+      "pre_helper_payload_behavior": "not_applicable_low_level_role_wrapper",
+      "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/service.py",
+      "required_test_before_closure": "source inventory keeps wrapper separate from direct answer lanes",
+      "requires_hard_gate": false,
+      "risk_level": "high"
+    }
+  ],
+  "report_json_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_4q_a_remaining_append_mapping/qwen_ec4q_a_remaining_append_mapping_report.json",
+  "report_markdown_artifact_path": "impl_factory/00_governance/current_docs/generated/ec_4q_a_remaining_append_mapping/qwen_ec4q_a_remaining_append_mapping_report.md",
+  "reviewer": "codex_ec4u_a_closure",
+  "runtime_behavior_changed": false,
+  "service_wrapper_closure": {
+    "decision": "monitor_only",
+    "hard_gate_at_wrapper": false,
+    "path_id": "service_append_message_wrapper",
+    "reason": "The raw wrapper lacks answer type and authority context; EC-4 gates answer lanes above this layer.",
+    "status": "monitored_infrastructure_not_answer_lane"
+  },
+  "slice_id": "ec_4q_a_remaining_append_mapping",
+  "source_append_scan": {
+    "explicit_ec4q_excluded_source_append_sites": [
+      {
+        "exclusion_reason": "Evaluation/smoke fixture helper, not active user-facing runtime emission.",
+        "line_reference": "2334",
+        "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/evaluation/conversation_control_smokes.py",
+        "site_id": "conversation_control_smoke_seed_direct_assistant",
+        "source_classification": "excluded_evaluation_smoke_append_site"
+      },
+      {
+        "exclusion_reason": "Evaluation/smoke pending-clarification fixture helper, not active user-facing runtime emission.",
+        "line_reference": "3063",
+        "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/evaluation/conversation_control_smokes.py",
+        "site_id": "conversation_control_smoke_pending_question_1",
+        "source_classification": "excluded_evaluation_smoke_append_site"
+      },
+      {
+        "exclusion_reason": "Evaluation/smoke pending-clarification fixture helper, not active user-facing runtime emission.",
+        "line_reference": "3162",
+        "relative_file_path": "impl_factory/05_custom_logic/custom_app/ai_assistant_ui/ai_assistant_ui/qwen_chat/evaluation/conversation_control_smokes.py",
+        "site_id": "conversation_control_smoke_pending_question_2",
+        "source_classification": "excluded_evaluation_smoke_append_site"
+      }
+    ],
+    "observed_source_append_site_count": 5,
+    "unclassified_source_append_site_count": 0,
+    "unclassified_source_append_sites": []
+  },
+  "type": "qwen_ec4q_remaining_append_mapping_contract",
+  "visible_context_call_site_proof": {
+    "allowed_additional_payload_sources": [
+      {
+        "allowed_payload_families": [
+          "natural_business_understanding_trace",
+          "nbu_shadow_observation",
+          "conversation_control_evidence"
+        ],
+        "business_answer_text_allowed": false,
+        "source_classification": "control_shadow_payload",
+        "source_name": "nbu_shadow_tool_payloads"
+      },
+      {
+        "allowed_payload_families": [
+          "compound_request_assessment",
+          "compound_sequence_decision",
+          "conversation_control_decision"
+        ],
+        "business_answer_text_allowed": false,
+        "source_classification": "compound_control_payload",
+        "source_name": "sequence_cleanup_tool_payloads"
+      },
+      {
+        "allowed_payload_families": [],
+        "business_answer_text_allowed": false,
+        "source_classification": "no_payload",
+        "source_name": "empty_payload_list"
+      }
+    ],
+    "evidence_tests": [
+      "test_visible_context_blocked_authority_probe_writes_only_blocked_contract"
+    ],
+    "limitation": "Runtime probe covers forced malformed visible-context authority; static source provenance remains as a conservative companion check.",
+    "proof_type": "blocked_authority_runtime_probe",
+    "release_blocking": false,
+    "runtime_probe_guarantees": [
+      "no_assistant_answer",
+      "no_returned_answer_text",
+      "no_business_evidence_tool_payload_leak",
+      "exactly_one_blocked_authorized_emission_contract"
+    ],
+    "status": "runtime_blocked_authority_probe_passed"
+  }
+}

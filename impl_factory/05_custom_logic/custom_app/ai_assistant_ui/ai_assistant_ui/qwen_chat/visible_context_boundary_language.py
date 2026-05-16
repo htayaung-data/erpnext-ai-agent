@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Iterable, List
 
+from .policy_boundary_response import render_policy_boundary_text
+from .policy_boundary_uniformity import build_policy_boundary_uniformity_contract
+
 
 VISIBLE_CONTEXT_BOUNDARY_LANGUAGE_VERSION = "1.0"
 
@@ -53,21 +56,18 @@ def render_prediction_boundary(
 	entity_label: str,
 	metric_lines: Iterable[str],
 ) -> str:
-	label = _clean_text(entity_label) or "the selected row"
-	lines = [
-		f"I would not call this a default prediction from the current table alone.",
-		f"The table supports risk review for {rank_text} ({label}), but it does not include an approved prediction model, payment-history trend, or credit-policy threshold.",
-		"",
-		f"Visible facts for {label}:",
-	]
-	lines.extend(_limited(metric_lines, 12))
-	lines.extend(
-		[
-			"",
-			"To answer this as a forecast, we would need governed prediction authority plus supporting payment history and trend evidence.",
-		]
+	metrics = _limited(metric_lines, 12)
+	contract = build_policy_boundary_uniformity_contract(
+		route="visible_context_boundary_language",
+		visible_authority_intent="prediction_boundary",
+		visible_metric_lines=metrics,
 	)
-	return "\n".join(line for line in lines if line is not None).strip()
+	return render_policy_boundary_text(
+		contract,
+		rank_text=rank_text,
+		entity_label=entity_label,
+		metric_lines=metrics,
+	)
 
 
 def render_recommendation_boundary(
@@ -76,20 +76,18 @@ def render_recommendation_boundary(
 	entity_label: str,
 	metric_lines: Iterable[str],
 ) -> str:
-	label = _clean_text(entity_label) or "the selected row"
-	lines = [
-		"I can show the visible evidence, but I can't turn it into a recommended action without an approved decision policy for that business choice.",
-		"",
-		f"Visible facts for {rank_text} ({label}):",
-	]
-	lines.extend(_limited(metric_lines, 12))
-	lines.extend(
-		[
-			"",
-			"If the policy is available, I can apply it to this evidence; otherwise I can compare the visible rows by the metrics shown here.",
-		]
+	metrics = _limited(metric_lines, 12)
+	contract = build_policy_boundary_uniformity_contract(
+		route="visible_context_boundary_language",
+		visible_authority_intent="recommendation_boundary",
+		visible_metric_lines=metrics,
 	)
-	return "\n".join(line for line in lines if line is not None).strip()
+	return render_policy_boundary_text(
+		contract,
+		rank_text=rank_text,
+		entity_label=entity_label,
+		metric_lines=metrics,
+	)
 
 
 def render_causal_boundary(
@@ -98,21 +96,18 @@ def render_causal_boundary(
 	entity_label: str,
 	metric_lines: Iterable[str],
 ) -> str:
-	label = _clean_text(entity_label) or "the selected row"
-	lines = [
-		f"I can't attribute cause from this single displayed result.",
-		f"The table supports a point-in-time reading for {rank_text} ({label}), but it does not show a trend, event trail, or transaction history.",
-		"",
-		f"Visible facts for {label}:",
-	]
-	lines.extend(_limited(metric_lines, 12))
-	lines.extend(
-		[
-			"",
-			"To explain cause or change, we need a governed trend, payment-behavior, or transaction-history view.",
-		]
+	metrics = _limited(metric_lines, 12)
+	contract = build_policy_boundary_uniformity_contract(
+		route="visible_context_boundary_language",
+		visible_authority_intent="causal_boundary",
+		visible_metric_lines=metrics,
 	)
-	return "\n".join(line for line in lines if line is not None).strip()
+	return render_policy_boundary_text(
+		contract,
+		rank_text=rank_text,
+		entity_label=entity_label,
+		metric_lines=metrics,
+	)
 
 
 def render_row_clarification(

@@ -1395,8 +1395,8 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("would not call this a default prediction", answer)
-		self.assertIn("payment-history trend", answer)
+		self.assertIn("can't forecast that outcome from the current table alone", answer)
+		self.assertIn("future payment outcome", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
 		self.assertNotIn("Rank 1 is Capital Telecom", answer)
 
@@ -1619,9 +1619,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("would not call this a default prediction", answer)
+		self.assertIn("can't forecast that outcome from the current table alone", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
-		self.assertIn("governed prediction authority", answer)
+		self.assertIn("approved model and an approved company decision rule", answer)
 		self.assertNotIn("Rank 1 is Capital Telecom", answer)
 
 	def test_recommendation_question_returns_policy_boundary_with_current_evidence(self):
@@ -1634,10 +1634,10 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't turn it into a recommended action", answer)
-		self.assertIn("Visible facts for Rank 1", answer)
+		self.assertIn("can't recommend a business action from the current table alone", answer)
+		self.assertIn("Visible facts for Capital Telecom (NPT)", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
-		self.assertIn("approved decision policy", answer)
+		self.assertIn("approved company decision rule", answer)
 
 	def test_causal_question_returns_boundary_not_unsupported_cause_claim(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_text())]}
@@ -1649,8 +1649,8 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't attribute cause from this single displayed result", answer)
-		self.assertIn("trend, payment-behavior, or transaction-history", answer)
+		self.assertIn("can't attribute cause from this point-in-time table alone", answer)
+		self.assertIn("trend or event-history evidence", answer)
 
 	def test_causal_change_language_returns_boundary_even_without_nbu_authority_class(self):
 		session_doc = {"messages": [_assistant_message(_ar_visible_top_10_text())]}
@@ -1661,7 +1661,7 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't attribute cause from this single displayed result", answer)
+		self.assertIn("can't attribute cause from this point-in-time table alone", answer)
 		self.assertIn("Capital Telecom (NPT)", answer)
 		self.assertNotIn("Deeper approved ERP detail", answer)
 
@@ -1819,9 +1819,9 @@ class VisibleContextFollowupActivationTests(unittest.TestCase):
 		self.assertTrue(handled)
 		self.assertEqual(payload["mode"], "visible_context_boundary")
 		answer = "\n".join(message[1] for message in messages)
-		self.assertIn("can't turn it into a recommended action", answer)
+		self.assertIn("can't recommend a business action from the current table alone", answer)
 		self.assertIn("Type-C Cable 2m Fast Charge", answer)
-		self.assertIn("approved decision policy", answer)
+		self.assertIn("approved company decision rule", answer)
 
 
 if __name__ == "__main__":

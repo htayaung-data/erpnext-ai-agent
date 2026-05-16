@@ -22,6 +22,17 @@ from .natural_business_understanding_context_resolution import (
 	nbu_row_identity_label,
 	resolve_nbu_context_reference,
 )
+from .semantic_ownership_ledger import build_visible_context_semantic_ownership_ledger
+from .policy_boundary_uniformity import build_policy_boundary_uniformity_contract
+from .model_role_observability import (
+	ROLE_DETERMINISTIC,
+	build_model_role_observability_contract,
+)
+from .model_role_strict_readiness import build_model_role_strict_readiness_contract
+from .model_role_coverage import (
+	build_deterministic_model_role_contract_bundle,
+	build_model_role_coverage_contract,
+)
 from .natural_business_understanding_contracts import CONTRACT_VERSION
 from .natural_business_understanding_request_classification import (
 	artifact_level_visible_context_requested,
@@ -52,11 +63,22 @@ from .source_detail_drilldown_execution import (
 	build_source_detail_drilldown_payload_from_artifact_line,
 	source_detail_grounding_context_from_artifact,
 )
+from .authorized_emission import (
+	ANSWER_TYPE_CONTROL,
+	ANSWER_TYPE_POLICY_BOUNDARY,
+	ANSWER_TYPE_VISIBLE_CONTEXT,
+	emit_authorized_assistant_answer,
+)
+from .contracts import (
+	ExecutionPath,
+	build_followup_resolution_contract,
+	build_interaction_contract,
+)
 
 
 AppendMessage = Callable[[Any, str, str], None]
 AppendToolPayload = Callable[[Any, Dict[str, Any]], None]
-AssistantTextPayload = Callable[[str], str]
+AssistantTextPayload = Callable[[str], Any]
 SaveSession = Callable[..., None]
 ClearPendingClarification = Callable[[Any], None]
 
@@ -311,15 +333,21 @@ def _selected_focus_allowed_for_message(raw_message: str) -> bool:
 
 
 def _artifact_scope_requested(raw_message: str) -> bool:
-	tokens = _tokens(raw_message)
-	return bool(tokens.intersection(ARTIFACT_SCOPE_TERMS))
+	return artifact_level_visible_context_requested(raw_message)
 
 
-def _selected_focus_has_continuation_authority(raw_message: str, target_reference: str) -> bool:
+def _selected_focus_has_continuation_authority(
+	raw_message: str,
+	target_reference: str,
+	*,
+	reasoning_semantic_result: Any = None,
+) -> bool:
 	if not _selected_focus_allowed_for_message(raw_message):
 		return False
 	target = _clean_text(target_reference).lower()
 	if target == "selected_entity":
+		return True
+	if target == "current_artifact" and _reasoning_type(reasoning_semantic_result) == "continuation_detail":
 		return True
 	if target == "current_artifact" and _artifact_scope_requested(raw_message):
 		return False
@@ -428,6 +456,7 @@ def _resolve_visible_context(
 	session_doc: Any,
 	raw_message: str,
 	current_artifact: Dict[str, Any],
+	reasoning_semantic_result: Any = None,
 ) -> Dict[str, Any]:
 	target = _target_reference(raw_message)
 	selected_entity = _latest_selected_entity(session_doc)
@@ -440,7 +469,11 @@ def _resolve_visible_context(
 		raw_message=raw_message,
 		frame_stack=frame_stack,
 	)
-	if _selected_focus_has_continuation_authority(raw_message, target):
+	if _selected_focus_has_continuation_authority(
+		raw_message,
+		target,
+		reasoning_semantic_result=reasoning_semantic_result,
+	):
 		selected = selected_entity
 		if _clean_dict(selected).get("row"):
 			return {
@@ -645,14 +678,7 @@ def _current_entity_detail_evidence_followup_requested(raw_message: str, current
 
 
 def _visible_ordinal_or_rank_lookup_requested(raw_message: str) -> bool:
-	tokens = _tokens(raw_message)
-	if tokens.intersection(ORDINAL_REFERENCE_TERMS):
-		return True
-	text = " ".join(_clean_text(raw_message).lower().split())
-	return bool(
-		re.search(r"\b(?:rank|row|position|number|no|#)\s*\d{1,2}\b", text)
-		or re.search(r"\b\d{1,2}(?:st|nd|rd|th)\b", text)
-	)
+	return nbu_ordinal_reference_index(raw_message) != -1
 
 
 def _row_rank(row: Dict[str, Any], fallback_index: int) -> int:
@@ -884,6 +910,10 @@ def _nbu_selected_candidate_payload(nbu_trace_payload: Dict[str, Any] | None) ->
 	return {}
 
 
+def _nbu_governed_requery_target_route(nbu_trace_payload: Dict[str, Any] | None) -> str:
+	return _clean_text(_clean_dict(_clean_dict(nbu_trace_payload).get("governed_requery_plan")).get("target_route")).lower()
+
+
 def _should_explain_row_signal(
 	row: Dict[str, Any],
 	*,
@@ -975,6 +1005,7 @@ def _visible_followup_authority_intent(
 def _should_defer_visible_context_to_governed_detail(
 	resolution: Dict[str, Any],
 	*,
+	raw_message: str = "",
 	nbu_trace_payload: Dict[str, Any] | None,
 	reasoning_semantic_result: Any = None,
 ) -> bool:
@@ -989,6 +1020,8 @@ def _should_defer_visible_context_to_governed_detail(
 	):
 		return False
 	if _nbu_selected_requested_action(nbu_trace_payload) != "detail":
+		return False
+	if _nbu_governed_requery_target_route(nbu_trace_payload) != "entity_detail" and _visible_identity_lookup_requested(raw_message):
 		return False
 	entity = _clean_dict(_clean_dict(resolution).get("resolved_entity"))
 	return bool(
@@ -1223,6 +1256,7 @@ def _trace_payload(
 	site_name: str,
 	raw_message: str,
 	resolution: Dict[str, Any],
+	answer_mode: str,
 ) -> Dict[str, Any]:
 	resolution_payload = _clean_dict(resolution)
 	frame_stack = _clean_dict(resolution_payload.pop("context_frame_stack", {}))
@@ -1239,6 +1273,62 @@ def _trace_payload(
 		"candidate_frame_count": _positive_int(frame_arbitration.get("candidate_frame_count")),
 		"rejected_frame_count": len(_clean_list(frame_arbitration.get("rejected_frames"))),
 	}
+	semantic_ownership_ledger = build_visible_context_semantic_ownership_ledger(
+		request_id=request_id,
+		raw_message=raw_message,
+		answer_mode=answer_mode,
+		resolution=resolution_payload,
+		frame_stack=frame_stack,
+		frame_arbitration=frame_arbitration,
+		authority_intent=_clean_text(resolution_payload.get("authority_intent")),
+	)
+	resolved_entity = _clean_dict(resolution_payload.get("resolved_entity"))
+	resolved_row = _clean_dict(resolved_entity.get("row"))
+	resolved_label = _entity_label(resolved_entity)
+	ledger_context = _clean_dict(semantic_ownership_ledger.get("resolved_context"))
+	policy_boundary_uniformity = build_policy_boundary_uniformity_contract(
+		raw_message=raw_message,
+		route="visible_context_followup",
+		visible_authority_intent=_clean_text(resolution_payload.get("authority_intent")),
+		selected_report_family=_clean_text(
+			ledger_context.get("report_family")
+			or frame_arbitration.get("selected_report_family")
+			or frame_arbitration.get("selected_table_title")
+		),
+		entity_type=_clean_text(
+			ledger_context.get("entity_type")
+			or frame_arbitration.get("selected_business_object_type")
+		),
+		evidence_scope=_clean_text(frame_arbitration.get("selected_evidence_scope")),
+		visible_metric_lines=_row_metric_lines(resolved_row, identity_label=resolved_label),
+	)
+	model_role_observability = build_model_role_observability_contract(
+		lane="visible_context_followup",
+		role_owner="visible_context_followup_activation",
+		model_role=ROLE_DETERMINISTIC,
+		model_name="none",
+		fallback_used=False,
+		strict_mode_enforced=False,
+		runtime_source="deterministic_visible_context_contract",
+	)
+	model_role_strict_readiness = build_model_role_strict_readiness_contract(
+		model_role_observability=model_role_observability,
+		lane="visible_context_followup",
+		strict_enforcement_enabled=False,
+	)
+	policy_model_role_bundle = build_deterministic_model_role_contract_bundle(
+		lane="policy_boundary_rendering",
+		role_owner="policy_boundary_uniformity_contract",
+		runtime_source="deterministic_policy_boundary_renderer",
+		strict_enforcement_enabled=False,
+	)
+	model_role_coverage = build_model_role_coverage_contract(
+		observed_contracts=[
+			model_role_observability,
+			policy_model_role_bundle["model_role_observability"],
+		],
+		strict_enforcement_enabled=False,
+	)
 	return {
 		"type": "qwen_visible_context_followup_trace_contract",
 		"contract_version": CONTRACT_VERSION,
@@ -1251,8 +1341,152 @@ def _trace_payload(
 		"context_frame_stack": frame_stack,
 		"frame_arbitration": frame_arbitration,
 		"authority_observability": authority_observability,
+		"semantic_ownership_ledger": semantic_ownership_ledger,
+		"policy_boundary_uniformity": policy_boundary_uniformity,
+		"model_role_observability": model_role_observability,
+		"model_role_strict_readiness": model_role_strict_readiness,
+		"policy_model_role_observability": policy_model_role_bundle["model_role_observability"],
+		"policy_model_role_strict_readiness": policy_model_role_bundle["model_role_strict_readiness"],
+		"model_role_coverage": model_role_coverage,
 		"created_at_unix": time.time(),
 	}
+
+
+def _trace_policy_boundary_applies(trace: Dict[str, Any]) -> bool:
+	policy_boundary = _clean_dict(trace.get("policy_boundary_uniformity"))
+	if bool(policy_boundary.get("boundary_applies")):
+		return True
+	ledger = _clean_dict(trace.get("semantic_ownership_ledger"))
+	authority = _clean_dict(ledger.get("authority"))
+	boundary_name = _clean_text(authority.get("policy_boundary"))
+	return bool(boundary_name and boundary_name != "none")
+
+
+def _visible_context_authorized_answer_type(*, answer_mode: str, trace: Dict[str, Any]) -> str:
+	if answer_mode == "visible_context_clarification":
+		return ANSWER_TYPE_CONTROL
+	if _trace_policy_boundary_applies(trace):
+		return ANSWER_TYPE_POLICY_BOUNDARY
+	return ANSWER_TYPE_VISIBLE_CONTEXT
+
+
+def _visible_context_control_meta_authority(
+	*,
+	answer_mode: str,
+	activation_contract: Dict[str, Any],
+) -> Dict[str, Any]:
+	return {
+		"authority_source": "control_meta",
+		"answer_mode": _clean_text(answer_mode),
+		"reason": _clean_text(activation_contract.get("reason")) or "visible_context_control_answer",
+		"preflight_status": "passed",
+	}
+
+
+def _visible_context_interaction_contract(
+	*,
+	interaction_contract: Any,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	raw_message: str,
+) -> Any:
+	if interaction_contract is not None:
+		return interaction_contract
+	return build_interaction_contract(
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		raw_message=raw_message,
+	)
+
+
+def _emit_authorized_visible_context_answer(
+	*,
+	session_doc: Any,
+	request_id: str,
+	session_id: str,
+	user_id: str,
+	site_name: str,
+	raw_message: str,
+	answer_mode: str,
+	answer_text: str,
+	status: str,
+	audit_reason: str,
+	activation_contract: Dict[str, Any],
+	trace: Dict[str, Any],
+	latest_grounded_turn: Dict[str, Any] | None,
+	interaction_contract: Any,
+	append_message: AppendMessage,
+	append_tool_payload: AppendToolPayload,
+	assistant_text_payload: AssistantTextPayload,
+	pre_assistant_tool_payloads: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path=answer_mode,
+		reason=audit_reason,
+		requires_runtime=False,
+		grounded_required=False,
+	)
+	resolution_contract = build_followup_resolution_contract(
+		request_id=request_id,
+		mode=answer_mode,
+		requested_modes=[answer_mode],
+		depends_on_grounded_turn=True,
+		self_contained=False,
+		latest_grounded_turn_available=bool(_clean_dict(latest_grounded_turn).get("grounded")),
+		reason=audit_reason,
+	)
+	effective_interaction_contract = _visible_context_interaction_contract(
+		interaction_contract=interaction_contract,
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		raw_message=raw_message,
+	)
+	answer_type = _visible_context_authorized_answer_type(
+		answer_mode=answer_mode,
+		trace=trace,
+	)
+	model_role_observability = _clean_dict(trace.get("model_role_observability"))
+	model_role_strict_readiness = _clean_dict(trace.get("model_role_strict_readiness"))
+	result = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=answer_type,
+		interaction_contract=effective_interaction_contract,
+		followup_resolution=resolution_contract,
+		execution_path=execution_path,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		authority_context={"visible_context_trace": trace},
+		runtime_trace_payload={
+			"agent_meta": {
+				"engine": "visible_context_followup",
+				"status": status,
+				"model_role_observability": model_role_observability,
+				"model_role_strict_readiness": model_role_strict_readiness,
+			},
+			"visible_context_trace": trace,
+			"activation_contract": activation_contract,
+		},
+		grounded_turn_context=_clean_dict(latest_grounded_turn),
+		control_meta_authority=(
+			_visible_context_control_meta_authority(
+				answer_mode=answer_mode,
+				activation_contract=activation_contract,
+			)
+			if answer_type == ANSWER_TYPE_CONTROL
+			else None
+		),
+		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+	)
+	return result.to_payload()
 
 
 def try_activate_visible_context_followup_response(
@@ -1284,6 +1518,7 @@ def try_activate_visible_context_followup_response(
 		session_doc=session_doc,
 		raw_message=raw_message,
 		current_artifact=_clean_dict(current_artifact),
+		reasoning_semantic_result=reasoning_semantic_result,
 	)
 	status = _clean_text(resolution.get("status")).lower()
 	if status not in {"resolved", "ambiguous", "out_of_range", "missing_requested_object"}:
@@ -1308,10 +1543,12 @@ def try_activate_visible_context_followup_response(
 		authority_intent = "safe_visible_fact"
 		if not user_message_already_appended:
 			append_message(session_doc, "user", raw_message)
-		for payload in additional_tool_payloads or []:
-			if isinstance(payload, dict) and payload:
-				append_tool_payload(session_doc, payload)
-		append_tool_payload(session_doc, filter_readiness_contract)
+		pre_assistant_tool_payloads = [
+			payload
+			for payload in (additional_tool_payloads or [])
+			if isinstance(payload, dict) and payload
+		]
+		pre_assistant_tool_payloads.append(filter_readiness_contract)
 		trace = _trace_payload(
 			request_id=request_id,
 			session_id=session_id,
@@ -1319,14 +1556,17 @@ def try_activate_visible_context_followup_response(
 			site_name=site_name,
 			raw_message=raw_message,
 			resolution={**resolution, "authority_intent": authority_intent},
+			answer_mode=answer_mode,
 		)
-		append_tool_payload(session_doc, trace)
+		pre_assistant_tool_payloads.append(trace)
+		model_role_observability = _clean_dict(trace.get("model_role_observability"))
+		model_role_strict_readiness = _clean_dict(trace.get("model_role_strict_readiness"))
 		activation_contract = _activation_contract(
 			request_id=request_id,
 			resolution=resolution,
 			answer_mode=answer_mode,
 		)
-		append_tool_payload(session_doc, activation_contract)
+		pre_assistant_tool_payloads.append(activation_contract)
 		execution_path_payload = {
 			"type": "qwen_execution_path",
 			"contract_version": CONTRACT_VERSION,
@@ -1335,22 +1575,50 @@ def try_activate_visible_context_followup_response(
 			"reason": _clean_text(activation_contract.get("reason")),
 			"requires_runtime": False,
 			"grounded_required": False,
+			"model_role_observability": model_role_observability,
+			"model_role_strict_readiness": model_role_strict_readiness,
 		}
-		append_tool_payload(session_doc, execution_path_payload)
-		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+		pre_assistant_tool_payloads.append(execution_path_payload)
+		authorized_emission = _emit_authorized_visible_context_answer(
+			session_doc=session_doc,
+			request_id=request_id,
+			session_id=session_id,
+			user_id=user_id,
+			site_name=site_name,
+			raw_message=raw_message,
+			answer_mode=answer_mode,
+			answer_text=answer_text,
+			status=status,
+			audit_reason="Visible ERP result follow-up boundary was handled before route clarification.",
+			activation_contract=activation_contract,
+			trace=trace,
+			latest_grounded_turn=latest_grounded_turn,
+			interaction_contract=interaction_contract,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+		)
 		if clear_pending_clarification_signal is not None:
 			clear_pending_clarification_signal(session_doc)
 		save_session(session_doc, ignore_permissions=False)
 		return True, {
-			"ok": True,
+			"ok": bool(authorized_emission.get("emitted")),
 			"request_id": request_id,
 			"mode": answer_mode,
-			"agent_meta": {"engine": "visible_context_followup", "status": status},
+			"agent_meta": {
+				"engine": "visible_context_followup",
+				"status": status,
+				"model_role_observability": model_role_observability,
+				"model_role_strict_readiness": model_role_strict_readiness,
+				"authorized_emission": authorized_emission,
+			},
 		}
 
 	nbu_trace_payload = _latest_nbu_trace_payload(additional_tool_payloads)
 	if _should_defer_visible_context_to_governed_detail(
 		resolution,
+		raw_message=raw_message,
 		nbu_trace_payload=nbu_trace_payload,
 		reasoning_semantic_result=reasoning_semantic_result,
 	):
@@ -1389,9 +1657,11 @@ def try_activate_visible_context_followup_response(
 
 	if not user_message_already_appended:
 		append_message(session_doc, "user", raw_message)
-	for payload in additional_tool_payloads or []:
-		if isinstance(payload, dict) and payload:
-			append_tool_payload(session_doc, payload)
+	pre_assistant_tool_payloads = [
+		payload
+		for payload in (additional_tool_payloads or [])
+		if isinstance(payload, dict) and payload
+	]
 	trace = _trace_payload(
 		request_id=request_id,
 		session_id=session_id,
@@ -1399,14 +1669,17 @@ def try_activate_visible_context_followup_response(
 		site_name=site_name,
 		raw_message=raw_message,
 		resolution={**resolution, "authority_intent": authority_intent},
+		answer_mode=answer_mode,
 	)
-	append_tool_payload(session_doc, trace)
+	pre_assistant_tool_payloads.append(trace)
+	model_role_observability = _clean_dict(trace.get("model_role_observability"))
+	model_role_strict_readiness = _clean_dict(trace.get("model_role_strict_readiness"))
 	activation_contract = _activation_contract(
 		request_id=request_id,
 		resolution=resolution,
 		answer_mode=answer_mode,
 	)
-	append_tool_payload(session_doc, activation_contract)
+	pre_assistant_tool_payloads.append(activation_contract)
 	execution_path_payload = {
 		"type": "qwen_execution_path",
 		"contract_version": CONTRACT_VERSION,
@@ -1415,45 +1688,42 @@ def try_activate_visible_context_followup_response(
 		"reason": _clean_text(activation_contract.get("reason")),
 		"requires_runtime": False,
 		"grounded_required": False,
+		"model_role_observability": model_role_observability,
+		"model_role_strict_readiness": model_role_strict_readiness,
 	}
-	append_tool_payload(session_doc, execution_path_payload)
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+	pre_assistant_tool_payloads.append(execution_path_payload)
+	authorized_emission = _emit_authorized_visible_context_answer(
+		session_doc=session_doc,
+		request_id=request_id,
+		session_id=session_id,
+		user_id=user_id,
+		site_name=site_name,
+		raw_message=raw_message,
+		answer_mode=answer_mode,
+		answer_text=answer_text,
+		status=status,
+		audit_reason="Visible ERP result follow-up was handled before route clarification.",
+		activation_contract=activation_contract,
+		trace=trace,
+		latest_grounded_turn=latest_grounded_turn,
+		interaction_contract=interaction_contract,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+	)
 	if clear_pending_clarification_signal is not None:
 		clear_pending_clarification_signal(session_doc)
-	if interaction_contract is not None:
-		from .contracts import ExecutionPath, build_audit_envelope, build_followup_resolution_contract
-
-		execution_path = ExecutionPath(
-			request_id=request_id,
-			path=answer_mode,
-			reason=_clean_text(activation_contract.get("reason")),
-			requires_runtime=False,
-			grounded_required=False,
-		)
-		resolution_contract = build_followup_resolution_contract(
-			request_id=request_id,
-			mode=answer_mode,
-			requested_modes=[answer_mode],
-			depends_on_grounded_turn=True,
-			self_contained=False,
-			latest_grounded_turn_available=bool(_clean_dict(latest_grounded_turn).get("grounded")),
-			reason="Visible ERP result follow-up was handled before route clarification.",
-		)
-		append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=resolution_contract,
-				execution_path=execution_path,
-				runtime_trace_payload={"agent_meta": {"engine": "visible_context_followup", "status": status}},
-				grounded_turn_context=_clean_dict(latest_grounded_turn),
-				answer_text=answer_text,
-			).to_payload(),
-		)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.get("emitted")),
 		"request_id": request_id,
 		"mode": answer_mode,
-		"agent_meta": {"engine": "visible_context_followup", "status": status},
+		"agent_meta": {
+			"engine": "visible_context_followup",
+			"status": status,
+			"model_role_observability": model_role_observability,
+			"model_role_strict_readiness": model_role_strict_readiness,
+			"authorized_emission": authorized_emission,
+		},
 	}

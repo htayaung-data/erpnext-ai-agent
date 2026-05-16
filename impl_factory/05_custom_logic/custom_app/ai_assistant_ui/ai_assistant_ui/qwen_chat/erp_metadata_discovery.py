@@ -6,14 +6,17 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
-import frappe
-
 from ai_assistant_ui.qwen_chat.metadata import (
 	load_capability_registry,
 	load_report_registry,
 	get_report_surface_evidence_spec,
 	list_report_surface_evidence_specs,
 )
+
+try:
+	import frappe  # type: ignore
+except Exception:  # pragma: no cover
+	frappe = None
 
 
 def _utc_now_iso() -> str:

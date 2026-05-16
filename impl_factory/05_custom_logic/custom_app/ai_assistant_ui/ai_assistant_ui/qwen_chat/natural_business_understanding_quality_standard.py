@@ -94,6 +94,13 @@ NBU_BUSINESS_CONVERSATION_QUALITY_RULES: List[Dict[str, Any]] = [
 		"applies_to_actions": ["answer_from_current_artifact", "reject_with_boundary", "ask_clarification"],
 	},
 	{
+		"rule_id": "quality_presentation_transform_preserves_facts",
+		"category": "response_presentation",
+		"requirement": "A presentation-only request may make the prior answer easier to read but must not add new ERP facts.",
+		"covered_failure_classes": ["formatting_request_wrong_clarification"],
+		"applies_to_actions": ["reformat_previous_answer"],
+	},
+	{
 		"rule_id": "quality_no_internal_vocabulary_user_facing",
 		"category": "response_language",
 		"requirement": "User-facing answers must use business language and must not expose internal architecture vocabulary.",
@@ -130,6 +137,12 @@ NBU_ACTION_QUALITY_EXPECTATIONS: Dict[str, List[str]] = {
 		"verify_visible_evidence",
 		"answer_with_specific_facts",
 		"avoid_table_repeat_unless_requested",
+	],
+	"reformat_previous_answer": [
+		"reuse_prior_answer_only",
+		"preserve_business_facts",
+		"make_readability_better",
+		"avoid_internal_architecture_terms",
 	],
 	"execute_fresh_governed_query": [
 		"select_best_business_family",

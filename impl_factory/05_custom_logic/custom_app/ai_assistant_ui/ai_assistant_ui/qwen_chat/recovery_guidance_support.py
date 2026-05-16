@@ -8,6 +8,10 @@ from ai_assistant_ui.qwen_chat.contracts import (
 	build_audit_envelope,
 	build_followup_resolution_contract,
 )
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_CONTROL,
+	emit_authorized_assistant_answer,
+)
 from ai_assistant_ui.qwen_chat.observability import (
 	record_phase6_observability_event,
 	record_phase6_performance_metric,
@@ -52,20 +56,24 @@ def handle_recovery_guidance_response(
 	if (session_doc.title or "").strip() in ("", "New Qwen Chat"):
 		session_doc.title = (raw_message[:60] + "…") if len(raw_message) > 60 else raw_message
 	append_message(session_doc, "user", raw_message)
-	append_tool_payload(session_doc, interaction_contract.to_payload())
-	append_tool_payload(session_doc, frontdoor_semantic_result.to_payload())
-	append_tool_payload(session_doc, frontdoor_contract.to_payload())
+	pre_assistant_payloads = [
+		interaction_contract.to_payload(),
+		frontdoor_semantic_result.to_payload(),
+		frontdoor_contract.to_payload(),
+	]
 	if clarification_response_contract is not None:
-		append_tool_payload(session_doc, clarification_response_contract.to_payload())
-	append_tool_payload(session_doc, response_policy_contract.to_payload())
-	append_tool_payload(session_doc, semantic_repair_payload)
-	append_tool_payload(session_doc, repair_contract_payload)
-	append_tool_payload(session_doc, followup_resolution.to_payload())
-	append_tool_payload(session_doc, execution_path.to_payload())
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+		pre_assistant_payloads.append(clarification_response_contract.to_payload())
+	pre_assistant_payloads.extend(
+		[
+			response_policy_contract.to_payload(),
+			semantic_repair_payload,
+			repair_contract_payload,
+			followup_resolution.to_payload(),
+			execution_path.to_payload(),
+		]
+	)
 	recovery_guidance_latency_ms = int(max(0, round((time.perf_counter() - started_at) * 1000)))
-	append_tool_payload(
-		session_doc,
+	pre_assistant_payloads.append(
 		record_phase6_observability_event(
 			request_id=request_id,
 			session_id=str(getattr(session_doc, "name", "") or "").strip(),
@@ -79,10 +87,9 @@ def handle_recovery_guidance_response(
 				"grounded_context_available": bool(latest_grounded_turn),
 				"latency_ms": recovery_guidance_latency_ms,
 			},
-		),
+		)
 	)
-	append_tool_payload(
-		session_doc,
+	pre_assistant_payloads.append(
 		record_phase6_performance_metric(
 			request_id=request_id,
 			session_id=str(getattr(session_doc, "name", "") or "").strip(),
@@ -93,10 +100,9 @@ def handle_recovery_guidance_response(
 				"repair_intent_type": str(repair_contract_payload.get("repair_intent_type") or "").strip(),
 				"repair_state": str(repair_contract_payload.get("repair_state") or "").strip(),
 			},
-		),
+		)
 	)
-	append_tool_payload(
-		session_doc,
+	pre_assistant_payloads.append(
 		build_audit_envelope(
 			interaction_contract=interaction_contract,
 			followup_resolution=followup_resolution,
@@ -104,13 +110,31 @@ def handle_recovery_guidance_response(
 			runtime_trace_payload={},
 			grounded_turn_context=latest_grounded_turn,
 			answer_text=answer_text,
-		).to_payload(),
+		).to_payload()
+	)
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_CONTROL,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		control_meta_authority={
+			"authority_source": "control_meta",
+			"answer_mode": "recovery_guidance",
+			"reason": "The assistant rendered bounded recovery guidance from the active recovery contract.",
+			"preflight_status": "passed",
+		},
+		pre_assistant_tool_payloads=pre_assistant_payloads,
 	)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
 		"mode": "recovery_guidance",
-		"answer_text": answer_text,
-		"agent_meta": {"engine": "recovery_guidance"},
+		"answer_text": answer_text if authorized_emission.emitted else "",
+		"agent_meta": {
+			"engine": "recovery_guidance",
+			"authorized_emission": authorized_emission.to_payload(),
+		},
 	}

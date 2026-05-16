@@ -1,10 +1,58 @@
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Callable, Dict, Tuple
 
-from ai_assistant_ui.qwen_chat.contracts import ExecutionPath, build_audit_envelope
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_GOVERNED_REPORT,
+	ANSWER_TYPE_POLICY_BOUNDARY,
+	emit_authorized_assistant_answer,
+)
+from ai_assistant_ui.qwen_chat.contracts import ExecutionPath
 from ai_assistant_ui.qwen_chat.knowledge_boundary import render_knowledge_boundary_answer
+
+
+class _ToolPayloadCollector:
+	def __init__(self) -> None:
+		self.messages = []
+
+	def append(self, fieldname: str, value: Dict[str, Any]) -> None:
+		if str(fieldname or "").strip() == "messages":
+			self.messages.append(value)
+
+
+def _payloads_from_collector(collector: _ToolPayloadCollector) -> list[Dict[str, Any]]:
+	payloads: list[Dict[str, Any]] = []
+	for row in list(getattr(collector, "messages", []) or []):
+		if not isinstance(row, dict) or str(row.get("role") or "").strip() != "tool":
+			continue
+		content = row.get("content")
+		payload = content if isinstance(content, dict) else {}
+		if not payload:
+			try:
+				decoded = json.loads(str(content or ""))
+			except Exception:
+				decoded = {}
+			payload = decoded if isinstance(decoded, dict) else {}
+		if payload:
+			payloads.append(payload)
+	return payloads
+
+
+def _collect_tool_payloads(builder: Callable[..., Dict[str, Any]], **kwargs) -> tuple[Dict[str, Any], list[Dict[str, Any]]]:
+	collector = _ToolPayloadCollector()
+	payload = builder(collector, **kwargs)
+	payloads = _payloads_from_collector(collector)
+	if isinstance(payload, dict) and payload and payload not in payloads:
+		payloads.append(payload)
+	return payload if isinstance(payload, dict) else {}, payloads
+
+
+def _collect_observability_payloads(builder: Callable[..., None], **kwargs) -> list[Dict[str, Any]]:
+	collector = _ToolPayloadCollector()
+	builder(collector, **kwargs)
+	return _payloads_from_collector(collector)
 
 
 def handle_artifact_boundary_turn(
@@ -72,7 +120,6 @@ def handle_artifact_boundary_turn(
 			requires_runtime=False,
 			grounded_required=True,
 		)
-		append_tool_payload(session_doc, execution_path.to_payload())
 		narrative_contract_payload = (
 			evidence_response.get("narrative_contract_payload")
 			if isinstance(evidence_response.get("narrative_contract_payload"), dict)
@@ -93,36 +140,63 @@ def handle_artifact_boundary_turn(
 			if isinstance(evidence_response.get("selected_entity_activation_payload"), dict)
 			else {}
 		)
+		pre_assistant_tool_payloads = [execution_path.to_payload()]
 		if evidence_request_contract_payload:
-			append_tool_payload(session_doc, evidence_request_contract_payload)
+			pre_assistant_tool_payloads.append(evidence_request_contract_payload)
 		if narrative_contract_payload:
-			append_tool_payload(session_doc, narrative_contract_payload)
+			pre_assistant_tool_payloads.append(narrative_contract_payload)
 		if selected_entity_activation_payload:
-			append_tool_payload(session_doc, selected_entity_activation_payload)
+			pre_assistant_tool_payloads.append(selected_entity_activation_payload)
 		if clarification_signal_payload:
-			append_tool_payload(session_doc, clarification_signal_payload)
+			pre_assistant_tool_payloads.append(clarification_signal_payload)
+		narrative_engine = str(
+			narrative_contract_payload.get("narrative_engine")
+			or "local_grounded_evidence"
+		).strip()
+		# EC-4R1 evidence authority checkpoint: staged evidence payloads are appended only by this helper.
+		authorized_emission = emit_authorized_assistant_answer(
+			session_doc=session_doc,
+			answer_text=evidence_answer,
+			answer_type=ANSWER_TYPE_GOVERNED_REPORT,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload={
+				"agent_meta": {
+					"engine": narrative_engine,
+					"mode": "grounded_evidence_answer",
+				}
+			},
+			grounded_turn_context=latest_grounded_turn,
+			authority_context={"normalized_family_artifact": latest_family_artifact},
+			pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+		)
+		if not authorized_emission.emitted:
+			save_session(session_doc, ignore_permissions=False)
+			return False, {
+				"ok": False,
+				"request_id": request_id,
+				"mode": "grounded_evidence_answer",
+				"agent_meta": {
+					"engine": narrative_engine,
+					"authorized_emission": authorized_emission.to_payload(),
+				},
+			}
+		if clarification_signal_payload:
 			store_pending_clarification_signal(session_doc, clarification_signal_payload)
 		elif callable(clear_pending_clarification_signal):
 			clear_pending_clarification_signal(session_doc)
-		append_message(session_doc, "assistant", assistant_text_payload(evidence_answer))
-		append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=followup_resolution,
-				execution_path=execution_path,
-				runtime_trace_payload={},
-				grounded_turn_context=latest_grounded_turn,
-				answer_text=evidence_answer,
-			).to_payload(),
-		)
 		save_session(session_doc, ignore_permissions=False)
 		return True, {
 			"ok": True,
 			"request_id": request_id,
 			"mode": "grounded_evidence_answer",
 			"agent_meta": {
-				"engine": str(narrative_contract_payload.get("narrative_engine") or "local_grounded_evidence").strip(),
+				"engine": narrative_engine,
+				"authorized_emission": authorized_emission.to_payload(),
 			},
 		}
 
@@ -142,8 +216,8 @@ def handle_artifact_boundary_turn(
 			requires_runtime=False,
 			grounded_required=True,
 		)
-		boundary_payload = append_knowledge_boundary_contract(
-			session_doc,
+		boundary_payload, boundary_payloads = _collect_tool_payloads(
+			append_knowledge_boundary_contract,
 			request_id=request_id,
 			session_id=session_id,
 			proposed_lane="artifact_lane",
@@ -151,8 +225,8 @@ def handle_artifact_boundary_turn(
 			governed_scope_contract=scope_decision_contract.to_payload(),
 			grounded_turn=latest_grounded_turn,
 		)
-		append_grounded_evidence_recovery_contract(
-			session_doc,
+		recovery_payload, recovery_payloads = _collect_tool_payloads(
+			append_grounded_evidence_recovery_contract,
 			request_id=request_id,
 			session_id=session_id,
 			artifact_payload=latest_family_artifact,
@@ -160,16 +234,12 @@ def handle_artifact_boundary_turn(
 			followup_resolution=followup_resolution,
 			reason=execution_path.reason,
 		)
-		recovery_payload = latest_tool_payload_by_type(
-			session_tool_payloads(session_doc),
-			"qwen_artifact_enrichment_recovery_contract",
-		)
 		answer_text = render_knowledge_boundary_answer(
 			boundary_contract=boundary_payload,
 			detail_answer=evidence_boundary_answer,
 		)
-		append_artifact_boundary_observability(
-			session_doc,
+		observability_payloads = _collect_observability_payloads(
+			append_artifact_boundary_observability,
 			request_id=request_id,
 			session_id=session_id,
 			boundary_name="grounded_evidence_boundary",
@@ -177,27 +247,54 @@ def handle_artifact_boundary_turn(
 			recovery_payload=recovery_payload,
 			grounded_turn_available=bool(latest_grounded_turn),
 		)
-		append_tool_payload(session_doc, execution_path.to_payload())
+		# EC-4R1 grounded-boundary authority checkpoint: recovery payloads stay staged until allowed.
+		authorized_emission = emit_authorized_assistant_answer(
+			session_doc=session_doc,
+			answer_text=answer_text,
+			answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+			append_message=append_message,
+			append_tool_payload=append_tool_payload,
+			assistant_text_payload=assistant_text_payload,
+			interaction_contract=interaction_contract,
+			followup_resolution=followup_resolution,
+			execution_path=execution_path,
+			runtime_trace_payload={
+				"agent_meta": {
+					"engine": "local_grounded_boundary",
+					"mode": "grounded_evidence_boundary",
+				}
+			},
+			grounded_turn_context={},
+			authority_context={"knowledge_boundary": boundary_payload},
+			pre_assistant_tool_payloads=[
+				*boundary_payloads,
+				*recovery_payloads,
+				*observability_payloads,
+				execution_path.to_payload(),
+			],
+		)
+		if not authorized_emission.emitted:
+			save_session(session_doc, ignore_permissions=False)
+			return False, {
+				"ok": False,
+				"request_id": request_id,
+				"mode": "grounded_evidence_boundary",
+				"agent_meta": {
+					"engine": "local_grounded_boundary",
+					"authorized_emission": authorized_emission.to_payload(),
+				},
+			}
 		if callable(clear_pending_clarification_signal):
 			clear_pending_clarification_signal(session_doc)
-		append_message(session_doc, "assistant", assistant_text_payload(answer_text))
-		append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=followup_resolution,
-				execution_path=execution_path,
-				runtime_trace_payload={},
-				grounded_turn_context=latest_grounded_turn,
-				answer_text=answer_text,
-			).to_payload(),
-		)
 		save_session(session_doc, ignore_permissions=False)
 		return True, {
 			"ok": True,
 			"request_id": request_id,
 			"mode": "grounded_evidence_boundary",
-			"agent_meta": {"engine": "local_grounded_boundary"},
+			"agent_meta": {
+				"engine": "local_grounded_boundary",
+				"authorized_emission": authorized_emission.to_payload(),
+			},
 		}
 
 	if enrichment_compatibility_contract is None or bool(getattr(enrichment_compatibility_contract, "compatible", False)):
@@ -219,8 +316,8 @@ def handle_artifact_boundary_turn(
 		requires_runtime=False,
 		grounded_required=True,
 	)
-	boundary_payload = append_knowledge_boundary_contract(
-		session_doc,
+	boundary_payload, boundary_payloads = _collect_tool_payloads(
+		append_knowledge_boundary_contract,
 		request_id=request_id,
 		session_id=session_id,
 		proposed_lane="artifact_lane",
@@ -228,24 +325,20 @@ def handle_artifact_boundary_turn(
 		governed_scope_contract=scope_decision_contract.to_payload(),
 		grounded_turn=latest_grounded_turn,
 	)
-	append_enrichment_recovery_contract(
-		session_doc,
+	recovery_payload, recovery_payloads = _collect_tool_payloads(
+		append_enrichment_recovery_contract,
 		request_id=request_id,
 		session_id=session_id,
 		compatibility_contract=enrichment_compatibility_contract,
 		grounded_turn=latest_grounded_turn,
 		followup_resolution=followup_resolution,
 	)
-	recovery_payload = latest_tool_payload_by_type(
-		session_tool_payloads(session_doc),
-		"qwen_artifact_enrichment_recovery_contract",
-	)
 	answer_text = render_knowledge_boundary_answer(
 		boundary_contract=boundary_payload,
 		detail_answer=enrichment_boundary_answer,
 	)
-	append_artifact_boundary_observability(
-		session_doc,
+	observability_payloads = _collect_observability_payloads(
+		append_artifact_boundary_observability,
 		request_id=request_id,
 		session_id=session_id,
 		boundary_name="artifact_enrichment_boundary",
@@ -253,25 +346,52 @@ def handle_artifact_boundary_turn(
 		recovery_payload=recovery_payload,
 		grounded_turn_available=bool(latest_grounded_turn),
 	)
-	append_tool_payload(session_doc, execution_path.to_payload())
+	# EC-4R1 enrichment-boundary authority checkpoint: recovery payloads stay staged until allowed.
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_POLICY_BOUNDARY,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload={
+			"agent_meta": {
+				"engine": "local_grounded_boundary",
+				"mode": "artifact_enrichment_boundary",
+			}
+		},
+		grounded_turn_context={},
+		authority_context={"knowledge_boundary": boundary_payload},
+		pre_assistant_tool_payloads=[
+			*boundary_payloads,
+			*recovery_payloads,
+			*observability_payloads,
+			execution_path.to_payload(),
+		],
+	)
+	if not authorized_emission.emitted:
+		save_session(session_doc, ignore_permissions=False)
+		return False, {
+			"ok": False,
+			"request_id": request_id,
+			"mode": "artifact_enrichment_boundary",
+			"agent_meta": {
+				"engine": "local_grounded_boundary",
+				"authorized_emission": authorized_emission.to_payload(),
+			},
+		}
 	if callable(clear_pending_clarification_signal):
 		clear_pending_clarification_signal(session_doc)
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
-	append_tool_payload(
-		session_doc,
-		build_audit_envelope(
-			interaction_contract=interaction_contract,
-			followup_resolution=followup_resolution,
-			execution_path=execution_path,
-			runtime_trace_payload={},
-			grounded_turn_context=latest_grounded_turn,
-			answer_text=answer_text,
-		).to_payload(),
-	)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
 		"ok": True,
 		"request_id": request_id,
 		"mode": "artifact_enrichment_boundary",
-		"agent_meta": {"engine": "local_grounded_boundary"},
+		"agent_meta": {
+			"engine": "local_grounded_boundary",
+			"authorized_emission": authorized_emission.to_payload(),
+		},
 	}

@@ -1,6 +1,23 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, List, Tuple
+
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_VISIBLE_CONTEXT,
+	emit_authorized_assistant_answer,
+)
+from ai_assistant_ui.qwen_chat.contracts import ExecutionPath
+
+
+def _payload_from_tool_message(value: Any) -> Dict[str, Any]:
+	if isinstance(value, dict):
+		return dict(value)
+	try:
+		decoded = json.loads(str(value or ""))
+	except Exception:
+		decoded = {}
+	return dict(decoded) if isinstance(decoded, dict) else {}
 
 
 def apply_local_followup_transforms(
@@ -315,25 +332,55 @@ def try_local_followup_transform(
 		transformed = narrative_text
 		applied_transforms.append("artifact_narrative_followup")
 
-	append_message(session_doc, "assistant", assistant_text_payload(transformed))
-	if family_artifact_update_payload:
-		append_tool_payload(session_doc, family_artifact_update_payload)
-	if family_followup_payload:
-		append_tool_payload(session_doc, family_followup_payload)
-	if narrative_contract_payload:
-		append_tool_payload(session_doc, narrative_contract_payload)
-	append_message(
-		session_doc,
-		"tool",
+	local_transform_trace_payload = _payload_from_tool_message(
 		local_transform_trace_message(
 			request_id=request_id,
 			source_request_id=str(trace.get("request_id") or "").strip(),
 			transforms=applied_transforms,
-		),
+		)
+	)
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path="local_transform",
+		reason="The answer was produced by transforming the latest grounded assistant artifact without a new ERP runtime call.",
+		requires_runtime=False,
+		grounded_required=True,
+	)
+	pre_assistant_tool_payloads: List[Dict[str, Any]] = []
+	if family_artifact_update_payload:
+		pre_assistant_tool_payloads.append(family_artifact_update_payload)
+	if family_followup_payload:
+		pre_assistant_tool_payloads.append(family_followup_payload)
+	if narrative_contract_payload:
+		pre_assistant_tool_payloads.append(narrative_contract_payload)
+	if local_transform_trace_payload:
+		pre_assistant_tool_payloads.append(local_transform_trace_payload)
+	pre_assistant_tool_payloads.append(execution_path.to_payload())
+
+	# EC-4R2 local-transform authority checkpoint: transformed evidence stays staged until allowed.
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=transformed,
+		answer_type=ANSWER_TYPE_VISIBLE_CONTEXT,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload=local_transform_trace_payload,
+		grounded_turn_context=grounded_turn,
+		authority_context={"normalized_family_artifact": effective_family_artifact_payload},
+		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
 	)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
-		"agent_meta": {"engine": "local_transform", "transforms": applied_transforms},
+		"mode": "local_grounded_transform",
+		"agent_meta": {
+			"engine": "local_transform",
+			"transforms": applied_transforms,
+			"authorized_emission": authorized_emission.to_payload(),
+		},
 	}

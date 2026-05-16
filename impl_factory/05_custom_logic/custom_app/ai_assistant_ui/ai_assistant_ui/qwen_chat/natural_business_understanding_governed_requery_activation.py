@@ -5,6 +5,8 @@ import json
 import re
 from typing import Any, Callable, Dict, List, Tuple
 
+from .authorized_emission import ANSWER_TYPE_GOVERNED_REPORT, emit_authorized_assistant_answer
+from .contracts import ExecutionPath, build_followup_resolution_contract
 from .governed_scope_registry import entity_detail_runtime_policy
 from .entity_detail_request_support import (
 	entity_detail_capability_id,
@@ -25,7 +27,7 @@ from .semantic_aliases import detect_canonical_keys
 
 AppendMessage = Callable[[Any, str, str], None]
 AppendToolPayload = Callable[[Any, Dict[str, Any]], None]
-AssistantTextPayload = Callable[[str], str]
+AssistantTextPayload = Callable[[str], Any]
 SaveSession = Callable[..., None]
 ClearPendingClarification = Callable[[Any], None]
 
@@ -729,6 +731,35 @@ def _append_outcome_payloads(
 			append_tool_payload(session_doc, payload)
 
 
+def _authority_grounded_turn_payload(
+	*,
+	grounded_turn: Dict[str, Any],
+	artifact_payload: Dict[str, Any],
+	request_id: str,
+) -> Dict[str, Any]:
+	grounded = _clean_dict(grounded_turn)
+	artifact = _clean_dict(artifact_payload)
+	if not artifact or not bool(grounded.get("grounded")):
+		return {}
+	artifact_family_id = _clean_text(
+		grounded.get("artifact_family_id")
+		or grounded.get("family_id")
+		or artifact.get("family_id")
+		or artifact.get("report_family")
+		or "entity_detail"
+	)
+	return {
+		**grounded,
+		"request_id": _clean_text(grounded.get("request_id")) or _clean_text(request_id),
+		"trace_request_id": _clean_text(grounded.get("trace_request_id")) or _clean_text(request_id),
+		"grounded": True,
+		"source_kind": _clean_text(grounded.get("source_kind")) or "tool",
+		"source_name": _clean_text(grounded.get("source_name")) or "entity_detail_requery",
+		"artifact_family_id": artifact_family_id,
+		"artifact_type": _clean_text(grounded.get("artifact_type") or artifact.get("type")) or "qwen_entity_detail_artifact",
+	}
+
+
 def try_activate_nbu_governed_requery_response(
 	*,
 	session_doc: Any,
@@ -832,76 +863,89 @@ def try_activate_nbu_governed_requery_response(
 	append_tool_payload(session_doc, assessment)
 	activation_contract = _activation_contract(request_id=request_id, assessment=assessment)
 	append_tool_payload(session_doc, activation_contract)
-	_append_outcome_payloads(
-		append_tool_payload=append_tool_payload,
-		session_doc=session_doc,
-		outcome=outcome,
-		direct_response=direct_response,
+	pre_assistant_tool_payloads: List[Dict[str, Any]] = []
+	for key in (
+		"artifact_payload",
+		"rendered_response_payload",
+		"narrative_contract_payload",
+		"grounded_turn_payload",
+	):
+		payload = outcome.get(key)
+		if isinstance(payload, dict) and payload:
+			pre_assistant_tool_payloads.append(payload)
+	for key in (
+		"rendered_response_payload",
+		"narrative_payload",
+		"narrative_contract_payload",
+		"clarification_signal_payload",
+		"evidence_request_contract_payload",
+	):
+		payload = direct_response.get(key)
+		if isinstance(payload, dict) and payload:
+			pre_assistant_tool_payloads.append(payload)
+	execution_path = ExecutionPath(
+		request_id=request_id,
+		path="nbu_governed_requery_entity_detail",
+		reason=_clean_text(activation_contract.get("reason")),
+		requires_runtime=False,
+		grounded_required=True,
 	)
-	execution_path = None
 	execution_path_payload = {
-		"type": "qwen_execution_path",
-		"contract_version": CONTRACT_VERSION,
-		"request_id": _clean_text(request_id),
-		"path": "nbu_governed_requery_entity_detail",
-		"reason": _clean_text(activation_contract.get("reason")),
-		"requires_runtime": False,
-		"grounded_required": True,
+		**execution_path.to_payload(),
 		"answer_selection_mode": "rich_entity_detail" if prefer_rich_detail_answer else "direct_evidence_first",
 	}
-	try:
-		from .contracts import ExecutionPath, build_audit_envelope, build_followup_resolution_contract
-
-		execution_path = ExecutionPath(
+	pre_assistant_tool_payloads.append(execution_path_payload)
+	followup_resolution = build_followup_resolution_contract(
+		request_id=request_id,
+		mode="nbu_governed_requery_entity_detail",
+		requested_modes=["nbu_governed_requery_entity_detail"],
+		depends_on_grounded_turn=True,
+		self_contained=False,
+		latest_grounded_turn_available=bool(_clean_dict(latest_grounded_turn).get("grounded")),
+		reason="NBU activated a governed requery from visible context to entity detail.",
+	)
+	runtime_latency_ms = int(max(0, round((time.perf_counter() - started_at) * 1000)))
+	runtime_trace_payload = {
+		"agent_meta": {
+			"engine": "nbu_governed_requery",
+			"mode": "entity_detail",
+			"latency_ms": runtime_latency_ms,
+		},
+		"runtime_latency_ms": runtime_latency_ms,
+	}
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=ANSWER_TYPE_GOVERNED_REPORT,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=execution_path,
+		runtime_trace_payload=runtime_trace_payload,
+		grounded_turn_context=_authority_grounded_turn_payload(
+			grounded_turn=grounded_turn,
+			artifact_payload=artifact_payload,
 			request_id=request_id,
-			path="nbu_governed_requery_entity_detail",
-			reason=_clean_text(activation_contract.get("reason")),
-			requires_runtime=False,
-			grounded_required=True,
-		)
-		execution_path_payload = execution_path.to_payload()
-	except Exception:
-		build_audit_envelope = None
-		build_followup_resolution_contract = None
-	append_tool_payload(session_doc, execution_path_payload)
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
-	if clear_pending_clarification_signal is not None:
+		),
+		authority_context={
+			"normalized_family_artifact": artifact_payload,
+			"activation_contract": activation_contract,
+		},
+		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+	)
+	if authorized_emission.emitted and clear_pending_clarification_signal is not None:
 		clear_pending_clarification_signal(session_doc)
-	if interaction_contract is not None and execution_path is not None and build_audit_envelope is not None and build_followup_resolution_contract is not None:
-		followup_resolution = build_followup_resolution_contract(
-			request_id=request_id,
-			mode="nbu_governed_requery_entity_detail",
-			requested_modes=["nbu_governed_requery_entity_detail"],
-			depends_on_grounded_turn=True,
-			self_contained=False,
-			latest_grounded_turn_available=bool(_clean_dict(latest_grounded_turn).get("grounded")),
-			reason="NBU activated a governed requery from visible context to entity detail.",
-		)
-		append_tool_payload(
-			session_doc,
-			build_audit_envelope(
-				interaction_contract=interaction_contract,
-				followup_resolution=followup_resolution,
-				execution_path=execution_path,
-				runtime_trace_payload={
-					"agent_meta": {
-						"engine": "nbu_governed_requery",
-						"mode": "entity_detail",
-						"latency_ms": int(max(0, round((time.perf_counter() - started_at) * 1000))),
-					}
-				},
-				grounded_turn_context=grounded_turn,
-				answer_text=answer_text,
-			).to_payload(),
-		)
 	save_session(session_doc, ignore_permissions=False)
 	return True, {
-		"ok": True,
+		"ok": bool(authorized_emission.emitted),
 		"request_id": request_id,
 		"mode": "nbu_governed_requery_entity_detail",
 		"agent_meta": {
 			"engine": "nbu_governed_requery",
 			"planner_mode": _clean_text(assessment.get("planner_mode")),
 			"target_entity_type": _clean_text(entity_reference.get("entity_type")),
+			"authorized_emission": authorized_emission.to_payload(),
 		},
 	}

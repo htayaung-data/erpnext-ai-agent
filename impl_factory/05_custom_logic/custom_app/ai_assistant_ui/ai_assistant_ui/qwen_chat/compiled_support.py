@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import time
 from typing import Any, Callable, Dict, List, Tuple
 
+from ai_assistant_ui.qwen_chat.authorized_emission import (
+	ANSWER_TYPE_CONTROL,
+	ANSWER_TYPE_ERROR,
+	ANSWER_TYPE_GOVERNED_REPORT,
+	ANSWER_TYPE_POLICY_BOUNDARY,
+	emit_authorized_assistant_answer,
+)
 from ai_assistant_ui.qwen_chat.clarification_translation import render_clarification_signal_user_text
 from ai_assistant_ui.qwen_chat.compound_request_support import (
 	build_post_result_multi_step_assessment_payload,
 	build_multi_step_step_result_integration_payload,
 )
 from ai_assistant_ui.qwen_chat.contracts import (
+	ExecutionPath,
 	build_clarification_reason_contract_from_sources,
 )
 from ai_assistant_ui.qwen_chat.master_data_family_support import is_master_data_listing_family
@@ -30,12 +39,19 @@ def compiled_clarification_reason_contract(*, request_id: str, result: Dict[str,
 	)
 
 
-def append_compiled_attempt_artifacts(
-	session_doc,
-	result: Dict[str, Any],
-	*,
-	append_tool_payload: Callable[..., None],
-) -> None:
+def _compiled_payload_dict(value: Any) -> Dict[str, Any]:
+	if isinstance(value, dict):
+		return dict(value)
+	if isinstance(value, str):
+		try:
+			loaded = json.loads(value)
+		except Exception:
+			return {}
+		return dict(loaded) if isinstance(loaded, dict) else {}
+	return {}
+
+
+def _compiled_attempt_artifact_payloads(result: Dict[str, Any]) -> List[Dict[str, Any]]:
 	pipeline = result.get("pipeline") if isinstance(result.get("pipeline"), dict) else {}
 	normalized_family_artifact = result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {}
 	rendered_response = result.get("rendered_response") if isinstance(result.get("rendered_response"), dict) else {}
@@ -47,32 +63,44 @@ def append_compiled_attempt_artifacts(
 	semantic_payload = result.get("semantic_intent_validation") if isinstance(result.get("semantic_intent_validation"), dict) else {}
 	compiled_audit = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
 	composite_execution_audit = result.get("composite_execution_audit") if isinstance(result.get("composite_execution_audit"), dict) else {}
+	payloads: List[Dict[str, Any]] = []
 	for key in ("fresh_query_interpretation", "fresh_query_compiler", "compiled_query_request", "composite_read_plan"):
 		payload = pipeline.get(key)
 		if isinstance(payload, dict) and payload:
-			append_tool_payload(session_doc, payload)
+			payloads.append(payload)
 	if normalized_family_artifact:
-		append_tool_payload(session_doc, normalized_family_artifact)
+		payloads.append(normalized_family_artifact)
 	if rendered_response:
-		append_tool_payload(session_doc, rendered_response)
+		payloads.append(rendered_response)
 	if narrative_response:
-		append_tool_payload(session_doc, narrative_response)
+		payloads.append(narrative_response)
 	for payload in composite_family_artifacts:
 		if isinstance(payload, dict) and payload:
-			append_tool_payload(session_doc, payload)
+			payloads.append(payload)
 	for payload in composite_step_validations:
 		if isinstance(payload, dict) and payload:
-			append_tool_payload(session_doc, payload)
+			payloads.append(payload)
 	if composite_validation:
-		append_tool_payload(session_doc, composite_validation)
+		payloads.append(composite_validation)
 	if family_validation and str(family_validation.get("type") or "").strip():
-		append_tool_payload(session_doc, family_validation)
+		payloads.append(family_validation)
 	if semantic_payload:
-		append_tool_payload(session_doc, semantic_payload)
+		payloads.append(semantic_payload)
 	if compiled_audit:
-		append_tool_payload(session_doc, compiled_audit)
+		payloads.append(compiled_audit)
 	if composite_execution_audit:
-		append_tool_payload(session_doc, composite_execution_audit)
+		payloads.append(composite_execution_audit)
+	return payloads
+
+
+def append_compiled_attempt_artifacts(
+	session_doc,
+	result: Dict[str, Any],
+	*,
+	append_tool_payload: Callable[..., None],
+) -> None:
+	for payload in _compiled_attempt_artifact_payloads(result):
+		append_tool_payload(session_doc, payload)
 
 
 def compiled_rollout_fallback_reason(result: Dict[str, Any]) -> str:
@@ -291,6 +319,169 @@ def _compound_request_next_step_note(payload: Dict[str, Any]) -> str:
 	return f'If you\'d like, I can show {remaining_labels[0]} next. Just say "continue".'
 
 
+def _compiled_clean_dict(value: Any) -> Dict[str, Any]:
+	return dict(value) if isinstance(value, dict) else {}
+
+
+def _compiled_text(value: Any) -> str:
+	return str(value or "").strip()
+
+
+def _compiled_assistant_payload(answer_text: str, assistant_text_payload: Callable[[str], Any]) -> Dict[str, Any]:
+	try:
+		payload_value = assistant_text_payload(answer_text)
+	except Exception:
+		payload_value = ""
+	if isinstance(payload_value, dict):
+		return dict(payload_value)
+	try:
+		parsed = json.loads(str(payload_value or ""))
+	except Exception:
+		parsed = {}
+	if isinstance(parsed, dict) and parsed:
+		return parsed
+	return {"type": "text", "text": _compiled_text(answer_text)}
+
+
+def _compiled_boundary_blocks_answer(boundary_payload: Dict[str, Any]) -> bool:
+	boundary = _compiled_clean_dict(boundary_payload)
+	if not boundary:
+		return False
+	if bool(boundary.get("allowed_to_answer")):
+		return False
+	return _compiled_text(boundary.get("safe_next_action")) != "allow_current_lane"
+
+
+def _compiled_family_validation_passed(family_payload: Dict[str, Any]) -> bool:
+	return _compiled_text(family_payload.get("status") or "pass") in {"", "pass", "not_run"}
+
+
+def _compiled_answer_type(
+	*,
+	answer_text: str,
+	clarification_signal_payload: Dict[str, Any],
+	boundary_payload: Dict[str, Any],
+	runtime_payload: Dict[str, Any],
+	family_payload: Dict[str, Any],
+	semantic_payload: Dict[str, Any],
+) -> str:
+	if clarification_signal_payload:
+		return ANSWER_TYPE_CONTROL
+	if _compiled_boundary_blocks_answer(boundary_payload):
+		return ANSWER_TYPE_POLICY_BOUNDARY
+	if _compiled_text(runtime_payload.get("error")) and not bool(runtime_payload.get("ok")):
+		return ANSWER_TYPE_ERROR
+	if (
+		_compiled_text(answer_text)
+		and bool(runtime_payload.get("ok"))
+		and _compiled_text(semantic_payload.get("status")) == "pass"
+		and _compiled_family_validation_passed(family_payload)
+	):
+		return ANSWER_TYPE_GOVERNED_REPORT
+	return ANSWER_TYPE_ERROR
+
+
+def _compiled_control_meta_authority(
+	*,
+	answer_type: str,
+	clarification_signal_payload: Dict[str, Any],
+	runtime_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+	if answer_type == ANSWER_TYPE_ERROR:
+		return {
+			"authority_source": "error_fallback",
+			"answer_mode": "compiled_first_turn",
+			"reason": _compiled_text(runtime_payload.get("error")) or "Compiled runtime fallback answer.",
+			"preflight_status": "passed",
+		}
+	return {
+		"authority_source": "control_meta",
+		"answer_mode": "compiled_first_turn",
+		"reason": (
+			"Compiled clarification response."
+			if clarification_signal_payload
+			else "Compiled non-business control response."
+		),
+		"preflight_status": "passed",
+	}
+
+
+def _compiled_execution_path_for_authority(
+	*,
+	execution_path: ExecutionPath,
+	answer_type: str,
+) -> ExecutionPath:
+	if answer_type == ANSWER_TYPE_GOVERNED_REPORT:
+		return ExecutionPath(
+			request_id=execution_path.request_id,
+			path=execution_path.path,
+			reason=execution_path.reason,
+			requires_runtime=execution_path.requires_runtime,
+			grounded_required=True,
+		)
+	return execution_path
+
+
+def _compiled_authority_context(
+	*,
+	answer_type: str,
+	boundary_payload: Dict[str, Any],
+	result: Dict[str, Any],
+	family_payload: Dict[str, Any],
+	semantic_payload: Dict[str, Any],
+	compiled_audit_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+	context: Dict[str, Any] = {
+		"normalized_family_artifact": result.get("normalized_family_artifact")
+		if isinstance(result.get("normalized_family_artifact"), dict)
+		else {},
+		"family_validation": family_payload,
+		"semantic_validation": semantic_payload,
+		"compiled_execution_audit": compiled_audit_payload,
+	}
+	if answer_type == ANSWER_TYPE_POLICY_BOUNDARY and boundary_payload:
+		context["knowledge_boundary"] = boundary_payload
+	return context
+
+
+def _compiled_grounded_turn_payload_for_authority(
+	*,
+	grounded_turn_payload: Dict[str, Any],
+	result: Dict[str, Any],
+	request_id: str,
+) -> Dict[str, Any]:
+	payload = _compiled_clean_dict(grounded_turn_payload)
+	if not payload or not bool(payload.get("grounded")):
+		return payload
+	artifact = (
+		result.get("normalized_family_artifact")
+		if isinstance(result.get("normalized_family_artifact"), dict)
+		else {}
+	)
+	if not _compiled_text(payload.get("source_kind")):
+		payload["source_kind"] = "report"
+	if not _compiled_text(payload.get("source_name")):
+		payload["source_name"] = _compiled_text(
+			artifact.get("report_family")
+			or artifact.get("family_id")
+			or artifact.get("artifact_type")
+			or "compiled_family_artifact"
+		)
+	if not _compiled_text(payload.get("artifact_family_id")):
+		payload["artifact_family_id"] = _compiled_text(
+			artifact.get("family_id")
+			or artifact.get("report_family")
+			or payload.get("source_name")
+		)
+	if not _compiled_text(payload.get("trace_request_id")):
+		payload["trace_request_id"] = _compiled_text(
+			artifact.get("artifact_id")
+			or artifact.get("request_id")
+			or request_id
+		)
+	return payload
+
+
 def handle_compiled_first_turn_result(
 	*,
 	session_doc,
@@ -328,7 +519,7 @@ def handle_compiled_first_turn_result(
 	runtime_latency_ms = int(max(0, latency.get("runtime_execution_latency_ms") or 0))
 	boundary_started_at = time.perf_counter()
 
-	append_compiled_attempt_artifacts(session_doc, result)
+	pre_assistant_tool_payloads: List[Dict[str, Any]] = _compiled_attempt_artifact_payloads(result)
 
 	answer_text, clarification_signal_payload = compiled_decision_message(
 		request_id=request_id,
@@ -340,10 +531,10 @@ def handle_compiled_first_turn_result(
 		next_step_note = _compound_request_next_step_note(compound_request_assessment_payload)
 		if next_step_note:
 			answer_text = f"{answer_text}\n\n{next_step_note}"
-	append_message(session_doc, "assistant", assistant_text_payload(answer_text))
+	assistant_payload_for_grounding = _compiled_assistant_payload(answer_text, assistant_text_payload)
 	for payload in (pre_result_tool_payloads or []):
 		if isinstance(payload, dict) and payload:
-			append_tool_payload(session_doc, payload)
+			pre_assistant_tool_payloads.append(payload)
 	clarification_reason_payload: Dict[str, Any] = {}
 	if clarification_signal_payload:
 		clarification_reason_contract = compiled_clarification_reason_contract(
@@ -352,9 +543,8 @@ def handle_compiled_first_turn_result(
 		)
 		if clarification_reason_contract is not None:
 			clarification_reason_payload = clarification_reason_contract.to_payload()
-			append_tool_payload(session_doc, clarification_reason_payload)
-		append_tool_payload(session_doc, clarification_signal_payload)
-		store_pending_clarification_signal(session_doc, clarification_signal_payload)
+			pre_assistant_tool_payloads.append(clarification_reason_payload)
+		pre_assistant_tool_payloads.append(clarification_signal_payload)
 	else:
 		clear_pending_clarification_signal(session_doc)
 
@@ -362,27 +552,37 @@ def handle_compiled_first_turn_result(
 	agent_meta = runtime_payload.get("agent_meta") if isinstance(runtime_payload.get("agent_meta"), dict) else {}
 	error = str(runtime_payload.get("error") or "").strip()
 	if tool_trace or runtime_payload:
-		append_message(
-			session_doc,
-			"tool",
-			tool_trace_message(
-				request_id=request_id,
-				ok=bool(runtime_payload.get("ok")),
-				tool_trace=tool_trace,
-				agent_meta=agent_meta,
-				error=error,
-				runtime_latency_ms=runtime_latency_ms,
-			),
+		pre_assistant_tool_payloads.append(
+			_compiled_payload_dict(
+				tool_trace_message(
+					request_id=request_id,
+					ok=bool(runtime_payload.get("ok")),
+					tool_trace=tool_trace,
+					agent_meta=agent_meta,
+					error=error,
+					runtime_latency_ms=runtime_latency_ms,
+				)
+			)
 		)
+	runtime_trace_payload = (
+		pre_assistant_tool_payloads[-1]
+		if pre_assistant_tool_payloads and pre_assistant_tool_payloads[-1].get("type")
+		else {
+			"request_id": request_id,
+			"ok": bool(runtime_payload.get("ok")),
+			"tool_trace": tool_trace,
+			"agent_meta": agent_meta,
+			"error": error,
+			"runtime_latency_ms": runtime_latency_ms,
+		}
+	)
 
 	grounded_turn_payload: Dict[str, Any] = {}
 	if str(semantic_payload.get("status") or "").strip() == "pass" and bool(runtime_payload.get("ok")):
-		runtime_trace_payload = latest_qwen_trace_payload(session_doc)
-		assistant_payload = latest_assistant_payload(session_doc)
 		grounded_turn_context = build_grounded_turn_context(
 			request_id=request_id,
 			interaction_contract=interaction_contract,
-			assistant_payload=assistant_payload,
+			assistant_payload=assistant_payload_for_grounding,
 			runtime_payload={
 				**runtime_trace_payload,
 				"request_id": request_id,
@@ -390,8 +590,12 @@ def handle_compiled_first_turn_result(
 			artifact_payload=result.get("normalized_family_artifact") if isinstance(result.get("normalized_family_artifact"), dict) else {},
 		)
 		if grounded_turn_context and grounded_turn_context.grounded:
-			grounded_turn_payload = grounded_turn_context.to_payload()
-			append_tool_payload(session_doc, grounded_turn_payload)
+			grounded_turn_payload = _compiled_grounded_turn_payload_for_authority(
+				grounded_turn_payload=grounded_turn_context.to_payload(),
+				result=result,
+				request_id=request_id,
+			)
+			pre_assistant_tool_payloads.append(grounded_turn_payload)
 	step_result_integration_payload = build_multi_step_step_result_integration_payload(
 		request_id=request_id,
 		compound_assessment_payload=compound_request_assessment_payload,
@@ -404,13 +608,13 @@ def handle_compiled_first_turn_result(
 		semantic_validation_payload=semantic_payload,
 	)
 	if step_result_integration_payload:
-		append_tool_payload(session_doc, step_result_integration_payload)
+		pre_assistant_tool_payloads.append(step_result_integration_payload)
 	updated_compound_assessment_payload = build_post_result_multi_step_assessment_payload(
 		compound_assessment_payload=compound_request_assessment_payload,
 		step_result_integration_payload=step_result_integration_payload,
 	)
 	if updated_compound_assessment_payload:
-		append_tool_payload(session_doc, updated_compound_assessment_payload)
+		pre_assistant_tool_payloads.append(updated_compound_assessment_payload)
 	compiled_audit_payload = result.get("compiled_execution_audit") if isinstance(result.get("compiled_execution_audit"), dict) else {}
 	boundary_payload = append_knowledge_boundary_contract(
 		session_doc,
@@ -426,7 +630,53 @@ def handle_compiled_first_turn_result(
 		semantic_validation=semantic_payload,
 		grounded_turn=grounded_turn_payload,
 	)
-	if knowledge_boundary_event_level(boundary_payload) == "warning":
+	should_append_boundary_observability = knowledge_boundary_event_level(boundary_payload) == "warning"
+
+	answer_type = _compiled_answer_type(
+		answer_text=answer_text,
+		clarification_signal_payload=clarification_signal_payload,
+		boundary_payload=boundary_payload,
+		runtime_payload=runtime_payload,
+		family_payload=family_payload,
+		semantic_payload=semantic_payload,
+	)
+	authorized_emission = emit_authorized_assistant_answer(
+		session_doc=session_doc,
+		answer_text=answer_text,
+		answer_type=answer_type,
+		append_message=append_message,
+		append_tool_payload=append_tool_payload,
+		assistant_text_payload=assistant_text_payload,
+		interaction_contract=interaction_contract,
+		followup_resolution=followup_resolution,
+		execution_path=_compiled_execution_path_for_authority(
+			execution_path=execution_path,
+			answer_type=answer_type,
+		),
+		runtime_trace_payload=runtime_trace_payload,
+		grounded_turn_context=grounded_turn_payload,
+		authority_context=_compiled_authority_context(
+			answer_type=answer_type,
+			boundary_payload=boundary_payload,
+			result=result,
+			family_payload=family_payload,
+			semantic_payload=semantic_payload,
+			compiled_audit_payload=compiled_audit_payload,
+		),
+		control_meta_authority=(
+			_compiled_control_meta_authority(
+				answer_type=answer_type,
+				clarification_signal_payload=clarification_signal_payload,
+				runtime_payload=runtime_payload,
+			)
+			if answer_type in {ANSWER_TYPE_CONTROL, ANSWER_TYPE_ERROR}
+			else None
+		),
+		pre_assistant_tool_payloads=pre_assistant_tool_payloads,
+	)
+	if authorized_emission.emitted and clarification_signal_payload:
+		store_pending_clarification_signal(session_doc, clarification_signal_payload)
+	if authorized_emission.emitted and should_append_boundary_observability:
 		append_knowledge_boundary_observability(
 			session_doc,
 			request_id=request_id,
@@ -434,28 +684,27 @@ def handle_compiled_first_turn_result(
 			boundary_payload=boundary_payload,
 			latency_ms=int(max(0, round((time.perf_counter() - boundary_started_at) * 1000))),
 		)
-
-	append_tool_payload(
-		session_doc,
-		build_audit_envelope(
-			interaction_contract=interaction_contract,
-			followup_resolution=followup_resolution,
-			execution_path=execution_path,
-			runtime_trace_payload=latest_qwen_trace_payload(session_doc),
-			grounded_turn_context=grounded_turn_payload,
-			answer_text=answer_text,
-		).to_payload(),
+	clarification_turn_ok = bool(answer_text and clarification_signal_payload)
+	grounded_runtime_turn_ok = (
+		bool(runtime_payload.get("ok"))
+		and str(semantic_payload.get("status") or "").strip() == "pass"
+		and str(family_payload.get("status") or "pass").strip() in {"", "pass", "not_run"}
 	)
 	save_session(session_doc, ignore_permissions=False)
+	agent_meta_payload = dict(agent_meta)
+	agent_meta_payload["authorized_emission"] = authorized_emission.to_payload()
 	return True, {
-		"ok": (
-			bool(runtime_payload.get("ok"))
-			and str(semantic_payload.get("status") or "").strip() == "pass"
-			and str(family_payload.get("status") or "pass").strip() in {"", "pass", "not_run"}
+		"ok": bool(
+			authorized_emission.emitted
+			and (
+				clarification_turn_ok
+				or grounded_runtime_turn_ok
+				or answer_type in {ANSWER_TYPE_POLICY_BOUNDARY, ANSWER_TYPE_CONTROL, ANSWER_TYPE_ERROR}
+			)
 		),
 		"request_id": request_id,
 		"mode": "compiled_first_turn",
-		"agent_meta": agent_meta,
+		"agent_meta": agent_meta_payload,
 		"family_validation_status": str(family_payload.get("status") or "not_run").strip(),
 		"semantic_validation_status": str(semantic_payload.get("status") or "not_run").strip(),
 	}

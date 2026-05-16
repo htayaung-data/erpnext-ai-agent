@@ -10,6 +10,10 @@ from ai_assistant_ui.qwen_chat.composite_evidence_support import (
 	composite_ranked_row_direct_evidence_rendered_payload,
 )
 from ai_assistant_ui.qwen_chat.customer_boundary_answer_support import customer_boundary_direct_evidence_answer
+from ai_assistant_ui.qwen_chat.evidence_expansion_support import (
+	build_evidence_expansion_plan,
+	evidence_expansion_user_guidance,
+)
 from ai_assistant_ui.qwen_chat.item_stock_boundary_support import (
 	item_stock_direct_evidence_answer,
 	item_stock_direct_evidence_rendered_payload,
@@ -20,6 +24,7 @@ from ai_assistant_ui.qwen_chat.observability import (
 	record_phase6_observability_event,
 	record_phase6_performance_metric,
 )
+from ai_assistant_ui.qwen_chat.semantic_resolution_registry import semantic_alias_phrase_matches
 from ai_assistant_ui.qwen_chat.semantic_aliases import detect_canonical_keys, get_canonical_key, get_metric_label
 from ai_assistant_ui.qwen_chat.supplier_boundary_answer_support import supplier_boundary_direct_evidence_answer
 
@@ -106,125 +111,436 @@ def _normalized_phrase(value: Any) -> str:
 	return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
-def _statement_section_alias_map(statement_type: str) -> Dict[str, List[str]]:
-	if statement_type == "balance_sheet":
-		return {
-			"assets": ["asset", "assets", "debtor", "debtors", "cash", "stock", "inventory", "fixed asset"],
-			"liabilities": ["liability", "liabilities", "payable", "payables", "creditor", "creditors", "loan", "debt", "overdraft"],
-			"equity": ["equity", "capital", "retained earning", "retained earnings", "dividend", "dividends"],
-		}
-	if statement_type == "profit_and_loss":
-		return {
-			"income": ["income", "revenue", "sales", "turnover"],
-			"expense": ["expense", "expenses", "cost", "costs", "cogs", "salary", "rent", "freight"],
-		}
-	if statement_type == "cash_flow":
-		return {
-			"operations": ["operation", "operations", "operating", "cash from operations"],
-			"investing": ["investing", "investment", "capex", "fixed asset"],
-			"financing": ["financing", "finance", "borrowings", "equity", "loan"],
-		}
-	return {}
-
-
-def _statement_section_from_message(raw_message: str, artifact: Dict[str, Any]) -> str:
-	if str(artifact.get("family_id") or "").strip() != "financial_statement":
-		return ""
+def _artifact_title(artifact: Dict[str, Any]) -> str:
+	title = str(artifact.get("title") or artifact.get("report_title") or artifact.get("report_name") or "").strip()
+	if title:
+		return title
 	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
 	statement_type = str(dimensions.get("statement_type") or "").strip()
-	message_text = f" {_normalized_phrase(raw_message)} "
-	if not statement_type or not message_text.strip():
-		return ""
-	if _message_requests_financial_statement_variant(message_text):
-		return ""
-	if not _message_requests_statement_section_detail(message_text):
-		return ""
+	if statement_type:
+		return statement_type.replace("_", " ").title()
+	family_id = str(artifact.get("family_id") or "").strip()
+	return family_id.replace("_", " ").title() if family_id else "ERP result"
+
+
+def _artifact_sections(artifact: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
 	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
-	for section_key, aliases in _statement_section_alias_map(statement_type).items():
-		if section_key not in sections:
+	out: Dict[str, List[Dict[str, Any]]] = {}
+	for section_key, rows in sections.items():
+		if not isinstance(rows, list):
 			continue
-		for alias in aliases:
-			normalized_alias = _normalized_phrase(alias)
-			if normalized_alias and f" {normalized_alias} " in message_text:
-				return section_key
+		clean_rows = [dict(row) for row in rows if isinstance(row, dict)]
+		if clean_rows:
+			out[str(section_key or "").strip()] = clean_rows
+	return {key: value for key, value in out.items() if key and value}
+
+
+def _section_label(section_key: str) -> str:
+	return str(section_key or "").strip().replace("_", " ").title()
+
+
+def _singular_candidates(value: str) -> List[str]:
+	text = str(value or "").strip()
+	candidates = [text]
+	if text.endswith("ies") and len(text) > 3:
+		candidates.append(text[:-3] + "y")
+	elif text.endswith("s") and len(text) > 1:
+		candidates.append(text[:-1])
+	return list(dict.fromkeys(candidate for candidate in candidates if candidate))
+
+
+def _row_label(row: Dict[str, Any]) -> str:
+	for key in (
+		"label",
+		"account",
+		"metric",
+		"line",
+		"name",
+		"bucket",
+		"item_name",
+		"item_code",
+		"customer",
+		"supplier",
+		"warehouse",
+		"sales_invoice",
+		"purchase_invoice",
+		"document_name",
+		"document",
+	):
+		value = str(row.get(key) or "").strip()
+		if value:
+			return value
 	return ""
 
 
-def _message_requests_financial_statement_variant(normalized_message: str) -> bool:
-	text = str(normalized_message or "")
-	return bool(
-		" cash flow " in text
-		or " balance sheet " in text
-		or " profit and loss " in text
-		or " p l " in text
-		or " p and l " in text
-		or " pl statement " in text
-	)
+def _row_label_acronyms(label: str) -> List[str]:
+	words = [
+		token
+		for token in re.findall(r"[A-Za-z0-9]+", str(label or ""))
+		if token
+	]
+	if len(words) < 2:
+		return []
+	acronyms: List[str] = []
+	all_words = "".join(word[:1].upper() for word in words if word[:1]).strip()
+	if all_words:
+		acronyms.append(all_words)
+	significant_words = [
+		word
+		for word in words
+		if word.lower() not in {"and", "or", "of", "the", "a", "an"}
+	]
+	if len(significant_words) >= 2:
+		significant = "".join(word[:1].upper() for word in significant_words if word[:1]).strip()
+		if significant:
+			acronyms.append(significant)
+	return list(dict.fromkeys(acronym for acronym in acronyms if len(acronym) >= 3))
 
 
-def _message_requests_statement_section_detail(normalized_message: str) -> bool:
-	text = str(normalized_message or "")
-	return bool(
-		" explain " in text
-		or " more about " in text
-		or " breakdown " in text
-		or " detail " in text
-		or " details " in text
-		or " line " in text
-		or " lines " in text
-		or " show " in text
-		or " what is " in text
-		or " what are " in text
-		or " why " in text
-	)
+def _row_target_phrases(row: Dict[str, Any]) -> List[str]:
+	label = _row_label(row)
+	phrases = [label]
+	phrases.extend(_row_label_acronyms(label))
+	return list(dict.fromkeys(phrase for phrase in phrases if _normalized_phrase(phrase)))
 
 
-def _statement_section_label(section_key: str) -> str:
-	return {
-		"assets": "Assets",
-		"liabilities": "Liabilities",
-		"equity": "Equity",
-		"income": "Income",
-		"expense": "Expenses",
-		"operations": "Operating Cash Flow",
-		"investing": "Investing Cash Flow",
-		"financing": "Financing Cash Flow",
-	}.get(str(section_key or "").strip(), str(section_key or "").strip().replace("_", " ").title())
+def _section_target_phrases(section_key: str, rows: List[Dict[str, Any]]) -> List[str]:
+	phrases: List[str] = []
+	for candidate in _singular_candidates(str(section_key or "").strip().replace("_", " ")):
+		phrases.append(candidate)
+	for row in rows:
+		phrases.extend(_row_target_phrases(row))
+	return list(dict.fromkeys(phrase for phrase in phrases if _normalized_phrase(phrase)))
 
 
-def _statement_title_from_type(statement_type: str) -> str:
-	return {
-		"profit_and_loss": "Profit and Loss Statement",
-		"balance_sheet": "Balance Sheet",
-		"cash_flow": "Cash Flow statement",
-	}.get(str(statement_type or "").strip(), "financial statement")
+def _artifact_surface_concept(artifact: Dict[str, Any]) -> str:
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	statement_type = str(dimensions.get("statement_type") or "").strip()
+	if statement_type:
+		return statement_type
+	return str(artifact.get("concept_id") or artifact.get("artifact_concept") or "").strip()
 
 
-def _statement_section_total(section_key: str, artifact: Dict[str, Any]) -> Any:
+def _message_requests_different_artifact_surface(raw_message: str, artifact: Dict[str, Any]) -> bool:
+	current_surface = _artifact_surface_concept(artifact)
+	if not current_surface:
+		return False
+	try:
+		concepts = ontology_detect_concepts(raw_message)
+	except Exception:
+		concepts = []
+	for concept in concepts:
+		clean = str(concept or "").strip()
+		if clean and clean != current_surface:
+			return True
+	return False
+
+
+def _artifact_section_from_message(raw_message: str, artifact: Dict[str, Any]) -> str:
+	if _message_requests_different_artifact_surface(raw_message, artifact):
+		return ""
+	sections = _artifact_sections(artifact)
+	best_key = ""
+	best_score = -1
+	for section_key, rows in sections.items():
+		for phrase in _section_target_phrases(section_key, rows):
+			if not semantic_alias_phrase_matches(raw_message, phrase):
+				continue
+			score = len(_normalized_phrase(phrase))
+			if score > best_score:
+				best_key = section_key
+				best_score = score
+	return best_key
+
+
+def _artifact_line_from_message(raw_message: str, artifact: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+	if _message_requests_different_artifact_surface(raw_message, artifact):
+		return "", {}
+	sections = _artifact_sections(artifact)
+	best_key = ""
+	best_row: Dict[str, Any] = {}
+	best_score = -1
+	for section_key, rows in sections.items():
+		for row in rows:
+			for phrase in _row_target_phrases(row):
+				if not semantic_alias_phrase_matches(raw_message, phrase):
+					continue
+				score = len(_normalized_phrase(phrase))
+				if score > best_score:
+					best_key = section_key
+					best_row = dict(row)
+					best_score = score
+	return best_key, best_row
+
+
+def _metric_total_for_section(section_key: str, artifact: Dict[str, Any]) -> Any:
 	metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
-	return {
-		"assets": metrics.get("total_asset"),
-		"liabilities": metrics.get("total_liability"),
-		"equity": metrics.get("total_equity"),
-		"income": metrics.get("total_income"),
-		"expense": metrics.get("total_expense"),
-		"operations": metrics.get("net_cash_from_operations"),
-		"investing": metrics.get("net_cash_from_investing"),
-		"financing": metrics.get("net_cash_from_financing"),
-	}.get(str(section_key or "").strip())
+	section_terms = {
+		_normalized_phrase(candidate).replace(" ", "_")
+		for candidate in _singular_candidates(str(section_key or "").strip().replace("_", " "))
+		if _normalized_phrase(candidate)
+	}
+	if not section_terms:
+		return None
+	for metric_key, metric_value in metrics.items():
+		normalized_key = _normalized_phrase(metric_key).replace(" ", "_")
+		if not normalized_key:
+			continue
+		if any(term and term in normalized_key for term in section_terms):
+			return metric_value
+	return None
 
 
-def _statement_section_rows(section_key: str, artifact: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
+def _metric_value_by_key(artifact: Dict[str, Any], *keys: str) -> Any:
+	metrics = artifact.get("metrics") if isinstance(artifact.get("metrics"), dict) else {}
+	wanted = {
+		_normalized_phrase(key).replace(" ", "_")
+		for key in keys
+		if _normalized_phrase(key)
+	}
+	for metric_key, metric_value in metrics.items():
+		if _normalized_phrase(metric_key).replace(" ", "_") in wanted:
+			return metric_value
+	return None
+
+
+def _section_rows(section_key: str, artifact: Dict[str, Any], limit: int = 8) -> List[Dict[str, Any]]:
 	sections = artifact.get("sections") if isinstance(artifact.get("sections"), dict) else {}
 	rows = [dict(row) for row in (sections.get(section_key) or []) if isinstance(row, dict)]
 	clean_rows = [
 		row
 		for row in rows
-		if str(row.get("label") or row.get("account") or "").strip()
+		if _row_label(row)
 		and abs(_numeric(row.get("amount"))) > 0.0001
 	]
 	clean_rows.sort(key=lambda row: abs(_numeric(row.get("amount"))), reverse=True)
-	return clean_rows[: max(1, int(limit or 6))]
+	return clean_rows[: max(1, int(limit or 8))]
+
+
+def _section_row_columns(rows: List[Dict[str, Any]]) -> List[str]:
+	preferred = [
+		"label",
+		"account",
+		"metric",
+		"line",
+		"bucket",
+		"item_name",
+		"item_code",
+		"customer",
+		"supplier",
+		"warehouse",
+		"amount",
+		"value",
+		"qty",
+		"quantity",
+		"outstanding",
+		"overdue",
+	]
+	seen: List[str] = []
+	for key in preferred:
+		if any(str(row.get(key) or "").strip() for row in rows):
+			seen.append(key)
+	for row in rows:
+		for key in row.keys():
+			if key not in seen and str(row.get(key) or "").strip():
+				seen.append(key)
+			if len(seen) >= 5:
+				return seen
+	return seen[:5]
+
+
+def _human_column_label(key: str) -> str:
+	return str(key or "").strip().replace("_", " ").title()
+
+
+def _format_section_cell(key: str, value: Any, currency: str) -> str:
+	clean_key = str(key or "").strip().lower()
+	if clean_key in {"amount", "value", "outstanding", "overdue", "total_due", "grand_total"}:
+		return f"{_money(value)} {currency}"
+	return str(value or "").strip()
+
+
+def _business_account_label(value: Any) -> str:
+	value_text = str(value or "").strip()
+	if not value_text:
+		return ""
+	if " - " in value_text:
+		return value_text.split(" - ", 1)[0].strip()
+	return value_text
+
+
+def _line_item_business_category(row: Dict[str, Any]) -> str:
+	parent = _business_account_label(row.get("parent_account"))
+	label = _business_account_label(row.get("label"))
+	if parent and parent != label:
+		return parent
+	return ""
+
+
+def _line_item_detail_answer(
+	*,
+	section_key: str,
+	row: Dict[str, Any],
+	artifact: Dict[str, Any],
+	currency: str,
+) -> str:
+	line_label = _row_label(row)
+	if not line_label:
+		return ""
+	section_label = _section_label(section_key)
+	artifact_title = _artifact_title(artifact)
+	total_value = _metric_total_for_section(section_key, artifact)
+	amount = _numeric(row.get("amount") if row.get("amount") not in (None, "") else row.get("value"))
+	total_income = _metric_value_by_key(artifact, "total_income")
+	lines: List[str] = [
+		f"{line_label} is shown under {section_label} in the current {artifact_title}.",
+		"",
+		"Business facts:",
+		f"- Amount: {_money(amount)} {currency}",
+	]
+	if total_value not in (None, "") and abs(_numeric(total_value)) > 0.0001:
+		lines.append(f"- Share of {section_label.lower()}: {abs(amount) / abs(_numeric(total_value)) * 100:.1f}%")
+	if total_income not in (None, "") and abs(_numeric(total_income)) > 0.0001:
+		lines.append(f"- Share of income: {abs(amount) / abs(_numeric(total_income)) * 100:.1f}%")
+	category = _line_item_business_category(row)
+	if category:
+		lines.append(f"- Business category: {category}")
+	interpretation: List[str] = []
+	absolute_amount = abs(amount)
+	if total_value not in (None, "") and abs(_numeric(total_value)) > 0.0001:
+		share = absolute_amount / abs(_numeric(total_value)) * 100
+		interpretation.append(
+			f"This line represents {share:.1f}% of {section_label.lower()}, so it is a material driver rather than a minor variance."
+		)
+	if total_income not in (None, "") and abs(_numeric(total_income)) > 0.0001:
+		income_share = absolute_amount / abs(_numeric(total_income)) * 100
+		interpretation.append(
+			f"Relative to total income, this line consumes {income_share:.1f}% of revenue, so it has direct margin impact."
+		)
+		remainder = _numeric(total_income) - absolute_amount
+		interpretation.append(
+			f"After this line alone, the remaining margin room before other expenses is {_money(remainder)} {currency}."
+		)
+	if interpretation:
+		lines.append("")
+		lines.append("Consultant view:")
+		lines.extend(f"- {item}" for item in interpretation)
+	expansion_plan = build_evidence_expansion_plan(
+		grounding_context={
+			"evidence_policy": "evidence_expansion_preferred",
+			"answer_obligation": "expand_grounded_detail",
+			"grounded_source": {
+				"family_id": str(artifact.get("family_id") or "").strip(),
+				"source_name": artifact_title,
+				"source_reports": [
+					str(value or "").strip()
+					for value in (artifact.get("source_reports") or [])
+					if str(value or "").strip()
+				],
+			},
+		},
+		focused_row=row,
+	)
+	expansion_guidance = evidence_expansion_user_guidance(expansion_plan)
+	if expansion_guidance:
+		lines.append("")
+		lines.append("Next investigation:")
+		lines.append(f"- {expansion_guidance}")
+		lines.append(
+			f"- For this {section_label.lower()} line, the useful drilldown is source detail that explains which transactions, items, suppliers, or timing movements created the amount."
+		)
+	lines.append("")
+	lines.append("This is based only on the result above.")
+	return "\n".join(lines).strip()
+
+
+def _section_insight_rows(rows: List[Dict[str, Any]], total_value: Any) -> List[Dict[str, Any]]:
+	total_number = abs(_numeric(total_value))
+	if len(rows) <= 1 or total_number <= 0.0001:
+		return rows
+	# Some ERP reports include both a section total row and child rows in the
+	# same section. Use non-total rows for insight percentages to avoid double
+	# counting hierarchy totals while still rendering the full table below.
+	non_total_rows = [
+		row
+		for row in rows
+		if abs(abs(_numeric(row.get("amount"))) - total_number) > max(0.01, total_number * 0.0001)
+	]
+	return non_total_rows or rows
+
+
+def _section_insight_lines(section_label: str, rows: List[Dict[str, Any]], total_value: Any, currency: str) -> List[str]:
+	if not rows:
+		return []
+	total_number = _numeric(total_value)
+	insight_rows = _section_insight_rows(rows, total_value)
+	largest = insight_rows[0]
+	largest_label = _row_label(largest)
+	largest_amount = _numeric(largest.get("amount"))
+	lines: List[str] = []
+	if largest_label and abs(largest_amount) > 0.0001:
+		if abs(total_number) > 0.0001:
+			lines.append(
+				f"- Largest line: {largest_label} at {_money(largest_amount)} {currency}, "
+				f"or {abs(largest_amount) / abs(total_number) * 100:.1f}% of {section_label.lower()}."
+			)
+		else:
+			lines.append(f"- Largest line: {largest_label} at {_money(largest_amount)} {currency}.")
+	if len(insight_rows) > 1 and abs(total_number) > 0.0001:
+		top_sum = sum(abs(_numeric(row.get("amount"))) for row in insight_rows[:3])
+		if top_sum <= abs(total_number) * 1.05:
+			lines.append(
+				f"- Top displayed lines represent {top_sum / abs(total_number) * 100:.1f}% of {section_label.lower()}."
+			)
+	return lines
+
+
+def artifact_section_detail_direct_evidence_answer(
+	*,
+	raw_message: str,
+	artifact_payload: Dict[str, Any],
+) -> str:
+	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
+	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
+	currency = str(dimensions.get("currency") or "MMK").strip() or "MMK"
+	line_section_key, line_row = _artifact_line_from_message(raw_message, artifact)
+	if line_section_key and line_row:
+		line_answer = _line_item_detail_answer(
+			section_key=line_section_key,
+			row=line_row,
+			artifact=artifact,
+			currency=currency,
+		)
+		if line_answer:
+			return line_answer
+	section_key = _artifact_section_from_message(raw_message, artifact)
+	if not section_key:
+		return ""
+	section_label = _section_label(section_key)
+	artifact_title = _artifact_title(artifact)
+	total_value = _metric_total_for_section(section_key, artifact)
+	rows = _section_rows(section_key, artifact)
+	lines: List[str] = []
+	if total_value not in (None, ""):
+		lines.append(f"{section_label} in the current {artifact_title} total {_money(total_value)} {currency}.")
+	else:
+		lines.append(f"{section_label} in the current {artifact_title}:")
+	insights = _section_insight_lines(section_label, rows, total_value, currency)
+	if insights:
+		lines.append("")
+		lines.append("Key insights from the visible data:")
+		lines.extend(insights)
+	if rows:
+		columns = _section_row_columns(rows)
+		lines.append("")
+		lines.append(f"{section_label} Lines")
+		lines.append("| " + " | ".join(_human_column_label(column) for column in columns) + " |")
+		lines.append("| " + " | ".join("---" for _ in columns) + " |")
+		for row in rows:
+			lines.append("| " + " | ".join(_format_section_cell(column, row.get(column), currency) for column in columns) + " |")
+	lines.append("")
+	lines.append("This is based only on the result above.")
+	return "\n".join(lines).strip()
 
 
 def financial_statement_section_direct_evidence_answer(
@@ -233,36 +549,12 @@ def financial_statement_section_direct_evidence_answer(
 	artifact_payload: Dict[str, Any],
 ) -> str:
 	artifact = artifact_payload if isinstance(artifact_payload, dict) else {}
-	section_key = _statement_section_from_message(raw_message, artifact)
-	if not section_key:
+	if str(artifact.get("family_id") or "").strip() != "financial_statement":
 		return ""
-	dimensions = artifact.get("dimensions") if isinstance(artifact.get("dimensions"), dict) else {}
-	statement_type = str(dimensions.get("statement_type") or "").strip()
-	currency = str(dimensions.get("currency") or "MMK").strip() or "MMK"
-	section_label = _statement_section_label(section_key)
-	statement_title = _statement_title_from_type(statement_type)
-	total_value = _statement_section_total(section_key, artifact)
-	rows = _statement_section_rows(section_key, artifact)
-	lines: List[str] = []
-	if total_value not in (None, ""):
-		lines.append(
-			f"{section_label} in the current {statement_title} total {_money(total_value)} {currency}."
-		)
-	else:
-		lines.append(f"{section_label} in the current {statement_title}:")
-	if rows:
-		lines.append("")
-		lines.append(f"{section_label} Lines")
-		lines.append("| Account | Amount ({}) |".format(currency))
-		lines.append("| --- | --- |")
-		for row in rows:
-			label = str(row.get("label") or row.get("account") or "").strip()
-			if not label:
-				continue
-			lines.append(f"| {label} | {_money(row.get('amount'))} |")
-	lines.append("")
-	lines.append("This is based only on the financial statement above.")
-	return "\n".join(lines).strip()
+	return artifact_section_detail_direct_evidence_answer(
+		raw_message=raw_message,
+		artifact_payload=artifact,
+	)
 
 
 def _summary_block(title: str, rows: List[List[str]]) -> Dict[str, Any]:
@@ -1081,42 +1373,26 @@ def artifact_enrichment_boundary_answer(
 			return str(get_metric_label(canonical) or value or "").strip()
 		return str(value or "").replace("_", " ").strip()
 
-	def _join_labels(values: List[str]) -> str:
-		clean = [str(value or "").strip() for value in values if str(value or "").strip()]
-		if not clean:
-			return ""
-		if len(clean) == 1:
-			return clean[0]
-		return ", ".join(clean[:-1]) + f", and {clean[-1]}"
-
 	requested_targets = list(requested_columns or ([target_metric] if target_metric else []))
 	raw_requested = [value for value in requested_targets if value]
-	requested_labels = []
-	for value in requested_targets:
-		label = _label_for(value)
-		if label and label not in requested_labels:
-			requested_labels.append(label)
-	label_text = _join_labels(requested_labels) or "the requested columns or metrics"
 	base_metric_label = _label_for(target_metric) if target_metric else ""
 	source_report = str(getattr(compatibility_contract, "source_report", "") or "").strip()
 	report_basis = source_report or "the current ERP report"
-	missing_reason = str(getattr(compatibility_contract, "reason", "") or "").strip()
 	if raw_requested:
 		return (
-			f"The answer above cannot safely add {label_text} from {report_basis}.\n\n"
-			f"This result does not expose those requested fields directly, so this follow-up needs a fresh ERP lookup instead of local reshaping."
-			+ (f"\n\nWhy: {missing_reason}" if missing_reason else "")
+			f"The current {report_basis} result does not include the deeper supporting detail needed for that breakdown.\n\n"
+			"I can summarize the facts already shown, but I should not invent source rows, transactions, or item-level detail from a summary line. "
+			"Ask for the relevant detail or source view behind this line if you want the breakdown."
 		)
 	if base_metric_label:
 		return (
-			f"The answer above cannot safely switch this result to {base_metric_label} from {report_basis}.\n\n"
-			"This follow-up needs a fresh ERP lookup because the requested metric is not directly populated in the current result."
-			+ (f"\n\nWhy: {missing_reason}" if missing_reason else "")
+			f"The current {report_basis} result does not include enough supporting detail to switch this answer to {base_metric_label} accurately.\n\n"
+			"I can summarize the facts already shown, but I should not invent a metric that is not present in the current result. "
+			"Ask for the report or detail view that contains that metric if you want me to calculate or compare it."
 		)
 	return (
-		f"The answer above cannot safely produce that enriched output from {report_basis}.\n\n"
-		"This follow-up needs a fresh ERP lookup instead of local reshaping."
-		+ (f"\n\nWhy: {missing_reason}" if missing_reason else "")
+		f"The current {report_basis} result does not include enough supporting detail for that deeper view.\n\n"
+		"I can summarize the facts already shown, but I should not invent missing detail. Ask for the relevant detail or source view if you want a fuller breakdown."
 	)
 
 
