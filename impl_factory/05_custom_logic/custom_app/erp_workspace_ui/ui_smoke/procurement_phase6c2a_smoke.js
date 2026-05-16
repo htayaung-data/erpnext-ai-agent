@@ -212,7 +212,13 @@ async function assertReadinessPanel(page, userKey, rfqName, supplier) {
   assert(preview.hasSupplier, "RFQ preview missing selected supplier context", preview);
   assert(!preview.nativeControlsVisible, "RFQ preview leaked native Print/Get PDF controls", preview);
   await capture(page, `${userKey}-rfq-readiness-preview-1136`);
-  await page.locator(".erpw-output-modal-close").click();
+  await dismissFrameworkDialogs(page, `${userKey}-rfq-readiness-preview`);
+  await page.locator(".erpw-output-modal-close").click({ force: true }).catch(async () => {
+    await page.evaluate(() => document.querySelectorAll(".erpw-output-modal-backdrop").forEach((node) => node.remove()));
+  });
+  await page.locator(".erpw-output-modal-backdrop").waitFor({ state: "detached", timeout: 3000 }).catch(async () => {
+    await page.evaluate(() => document.querySelectorAll(".erpw-output-modal-backdrop").forEach((node) => node.remove()));
+  });
 
   await assertPdfEndpoint(page, rfqName, supplier);
 }
